@@ -685,11 +685,13 @@ export function CharacterDock({
         if (!box || box.height === 0) return null;
         return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
       })();
-      // 🔴 THE ARCS ARE UNCHANGED AND THEY MEAN SOMETHING DIFFERENT LEVELLED, which is the point.
-      // They are ±1.6 character-widths, and the avatar normalises an aim against 2.5 widths, so
-      // this sweep is ±16.6° of yaw. Added to `curious`'s own 16° it used to run from level to 33°
-      // off — a sweep that spent its whole time on one side. Levelled (`facing="forward"`) the
-      // identical arithmetic swings ±16.6° AROUND FORWARD, which is what "searching" always meant.
+      // 🔴 THE ARCS ARE UNCHANGED AND THEY MEAN SOMETHING DIFFERENT DEPENDING ON `facing`, which is
+      // the point. They are ±1.6 character-widths, and the avatar normalises an aim against 2.5
+      // widths, so this sweep is ±16.6° of yaw. Under `facing="forward"` the identical arithmetic
+      // swung ±16.6° AROUND FORWARD. 🔴 REPOINTED 2026-08-27 to `facing="free"` (owner's choice on
+      // the model sheet): it now runs from `curious`'s own 16° out to 33° and back, which is a
+      // sweep that spends its whole time on one side — and that is correct for SEARCHING, which is
+      // what this sweep is. `CAP_YAW` is what stops it reaching the angle where an eye is lost.
       // 🔴 THINKING EYES SEARCH, THEY DO NOT FOLLOW (owner 2026-08-25: working must not be "just
       // staring"). At the middle the eyes drift on two slow, unsynchronised arcs, mostly upward,
       // the way anyone's do when recalling, rather than falling through to the pointer.
@@ -771,7 +773,7 @@ export function CharacterDock({
           size={size}
           speed={speedOf(shown)}
           animation={shown}
-          facing="forward"
+          facing="free"
           silhouette={CHARACTER_SILHOUETTE}
           track
           waggle={motion === "waggle"}

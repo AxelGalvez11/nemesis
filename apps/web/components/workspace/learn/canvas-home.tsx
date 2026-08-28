@@ -438,11 +438,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             }
           >
             <div className={greeter.motion === "jump" ? "character-jump" : greeter.motion === "spin" ? "character-spin" : undefined}>
-              {/* 🔴 `facing="forward"` IS THE SAME LEVELLING THE DOCK GETS, AND THE HAND-OFF IS WHY
-                  IT IS NOT OPTIONAL. This character flies into the canvas and BECOMES the dock's
-                  character; if one end were levelled and the other were not, the head would swing
-                  about 28° at the exact frame of the route swap — a fresh version of the glitch
-                  the whole handoff sequence was rebuilt to remove. See the prop's own note. */}
+              {/* 🔴 `facing` MUST MATCH THE DOCK'S, AND THE HAND-OFF IS WHY IT IS NOT OPTIONAL.
+                  This character flies into the canvas and BECOMES the dock's character; if the two
+                  ends disagreed about facing, the head would swing about 28° at the exact frame of
+                  the route swap — a fresh version of the glitch the whole handoff sequence was
+                  rebuilt to remove. Both were `"forward"`; both are `"free"` since 2026-08-27.
+                  `character-place.test.ts` pins that they agree. See the prop's own note. */}
               <NemesisAvatar
                 accent={accent}
                 entrance
@@ -450,7 +451,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 onPoke={greeter.poke}
                 size={GREETER_SIZE}
                 animation={greeterFace}
-                facing="forward"
+                facing="free"
                 silhouette={CHARACTER_SILHOUETTE}
                 track
                 waggle={greeter.motion === "waggle"}

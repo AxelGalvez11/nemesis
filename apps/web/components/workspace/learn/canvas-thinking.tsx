@@ -73,7 +73,7 @@ export function CanvasThinking({ phase }: { phase: ThinkingPhase }) {
             animation={stateForCanvas({ listening: false, preparing: false, thinking: true })}
             ink={characterInk(accent, theme === "dark")}
             size={THINKING_SIZE}
-            facing="forward"
+            facing="free"
             silhouette={CHARACTER_SILHOUETTE}
             track
           />

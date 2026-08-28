@@ -33,7 +33,7 @@ function Character({ animation }: { animation: string }) {
     <NemesisAvatar
       accent={accent}
       animation={animation}
-      facing="forward"
+      facing="free"
       ink={characterInk(accent, theme === "dark")}
       silhouette={CHARACTER_SILHOUETTE}
       size={SIZE}

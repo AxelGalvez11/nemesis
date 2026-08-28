@@ -20,76 +20,168 @@
 // face again — see `stations.ts`. A montage over a working character would be exactly the rule
 // breaking in the way that matters.
 
+import { ANIMATION_BY_ID, animationDuration } from "@/lib/avatar";
+
 /**
- * Every face the montage can be asked to wear, with a word a person can read.
+ * Everything the montage can be asked to wear, with a word a person can read.
  *
- * 🔴🔴 THE OWNER PICKS FROM THIS, WHICH IS WHY IT CARRIES LABELS (2026-08-27: *"its still not doing
- * the expression montage i want, allow me to pick the expressions for the montage"*). The ids are
- * the catalogue's; the words are for the settings card, and they are the only place in this file
- * that is a matter of taste rather than fact.
+ * 🔴🔴 THE SIXTEEN WERE NOT ALL OF IT, AND THAT WAS THE BUG (owner 2026-08-27: *"there are still
+ * some expressions missing, check the github, because the website doesnt just show them forward
+ * facing but also moving around"*). This list used to hold the sixteen FEELINGS only, and
+ * `resolveMontage` drops anything not on it — so a learner picking a gaze loop got it silently
+ * discarded and the default set back. The loops were in the catalogue the whole time.
  *
- * All SIXTEEN are offered, including the two the default leaves out — the default is a
- * recommendation, not a cage, and someone who wants a grumpy character should be able to have one.
+ * 🔴🔴 AND THE TWO KINDS ARE NOT THE SAME THING WEARING DIFFERENT NAMES. A `feeling` holds ONE
+ * face; a `loop` cycles two to six of the measured poses and is where every bit of movement in
+ * this character lives. Measured on a 76px character, eye travel over one cycle:
+ *
+ * | | travel |
+ * |---|---|
+ * | the busiest loop (`gaze-curious`) | **29.9px** |
+ * | loops, typical | 13-30px |
+ * | the sixteen feelings, median | **0.8px** |
+ *
+ * Under a pixel. That is a photograph, and it is the whole reason four separate reports said the
+ * character was not pulling faces. The `kind` is carried so the settings card can say which is
+ * which rather than offering thirty-nine indistinguishable words.
  */
-export const MONTAGE_CHOICES: readonly { readonly id: string; readonly label: string }[] = [
-  { id: "neutral", label: "Neutral" },
-  { id: "curious", label: "Curious" },
-  { id: "attentive", label: "Attentive" },
-  { id: "happy", label: "Happy" },
-  { id: "proud", label: "Proud" },
-  { id: "surprised", label: "Surprised" },
-  { id: "shy", label: "Shy" },
-  { id: "sleepy", label: "Sleepy" },
-  { id: "suspicious", label: "Suspicious" },
-  { id: "confused", label: "Confused" },
-  { id: "excited", label: "Excited" },
-  { id: "laughing", label: "Laughing" },
-  { id: "unimpressed", label: "Unimpressed" },
-  { id: "sad", label: "Sad" },
-  { id: "angry", label: "Angry" },
-  { id: "scared", label: "Scared" },
+export interface MontageChoice {
+  readonly id: string;
+  readonly label: string;
+  /** `loop` cycles several measured poses; `feeling` holds one drawn face. */
+  readonly kind: "loop" | "feeling";
+}
+
+export const MONTAGE_CHOICES: readonly MontageChoice[] = [
+  { id: "gaze-idle", label: "Idle", kind: "loop" },
+  { id: "gaze-listening", label: "Listening", kind: "loop" },
+  { id: "gaze-thinking", label: "Thinking", kind: "loop" },
+  { id: "gaze-searching", label: "Searching", kind: "loop" },
+  { id: "gaze-working", label: "Working", kind: "loop" },
+  { id: "gaze-curious", label: "Curious", kind: "loop" },
+  { id: "gaze-confused", label: "Confused", kind: "loop" },
+  { id: "gaze-suspicious", label: "Suspicious", kind: "loop" },
+  { id: "gaze-excited", label: "Excited", kind: "loop" },
+  { id: "gaze-happy", label: "Happy", kind: "loop" },
+  { id: "gaze-laughing", label: "Laughing", kind: "loop" },
+  { id: "gaze-playful", label: "Playful", kind: "loop" },
+  { id: "gaze-celebrate", label: "Celebrating", kind: "loop" },
+  { id: "gaze-proud", label: "Proud", kind: "loop" },
+  { id: "gaze-shy", label: "Shy", kind: "loop" },
+  { id: "gaze-surprised", label: "Surprised", kind: "loop" },
+  { id: "gaze-scared", label: "Scared", kind: "loop" },
+  { id: "gaze-angry", label: "Angry", kind: "loop" },
+  { id: "gaze-sad", label: "Sad", kind: "loop" },
+  { id: "gaze-bored", label: "Bored", kind: "loop" },
+  { id: "gaze-drowsy", label: "Drowsy", kind: "loop" },
+  { id: "gaze-sleeping", label: "Sleeping", kind: "loop" },
+  { id: "gaze-waking", label: "Waking", kind: "loop" },
+  { id: "neutral", label: "Neutral", kind: "feeling" },
+  { id: "curious", label: "Curious", kind: "feeling" },
+  { id: "attentive", label: "Attentive", kind: "feeling" },
+  { id: "happy", label: "Happy", kind: "feeling" },
+  { id: "proud", label: "Proud", kind: "feeling" },
+  { id: "surprised", label: "Surprised", kind: "feeling" },
+  { id: "shy", label: "Shy", kind: "feeling" },
+  { id: "sleepy", label: "Sleepy", kind: "feeling" },
+  { id: "suspicious", label: "Suspicious", kind: "feeling" },
+  { id: "confused", label: "Confused", kind: "feeling" },
+  { id: "excited", label: "Excited", kind: "feeling" },
+  { id: "laughing", label: "Laughing", kind: "feeling" },
+  { id: "unimpressed", label: "Unimpressed", kind: "feeling" },
+  { id: "sad", label: "Sad", kind: "feeling" },
+  { id: "angry", label: "Angry", kind: "feeling" },
+  { id: "scared", label: "Scared", kind: "feeling" },
 ];
 
 /**
- * The resting faces, in the catalogue's own order.
+ * The default set: the twenty-six the owner ticked on the model sheet, 2026-08-27.
  *
- * 🔴 FOURTEEN OF THE SIXTEEN, AND THE TWO LEFT OUT ARE NAMED RATHER THAN QUIETLY DROPPED. Rule
- * three is *feelings point at itself, never at the learner*. `angry` and `scared` are the only two
- * a person sitting in front of the screen can read as being about THEM, because at rest there is
- * nothing else happening for them to be about. The front page cycles all sixteen and is right to:
- * it is a showcase, with no learner in a session and nothing at stake.
+ * 🔴🔴 `angry` AND `scared` ARE IN IT NOW, AND THAT REVERSES A RULE THIS FILE USED TO ENFORCE.
+ * The old default left them out under rule three — *a feeling points at itself, never at the
+ * learner* — on the reasoning that at rest there is nothing else for a face to be about. The owner
+ * ticked both, from a page that showed all thirty-nine running and named every one. An informed
+ * choice by the person whose product it is beats a rule I wrote; the rule is kept in
+ * `features.ts` because it still governs everything the SCHEDULE plays, which is the part that
+ * makes a claim about the learner's work. Nothing here claims anything.
+ *
+ * 🔴 THE ORDER IS THEIRS AS SENT, NOT SORTED. The montage walks this list in order, so sorting it
+ * would quietly rearrange the character's behaviour on a whim of mine.
  */
 export const MONTAGE: readonly string[] = [
-  "neutral",
-  "curious",
+  "gaze-thinking",
+  "gaze-searching",
+  "gaze-idle",
+  "gaze-sleeping",
+  "gaze-listening",
+  "gaze-working",
+  "gaze-excited",
+  "gaze-bored",
+  "gaze-angry",
+  "gaze-suspicious",
+  "gaze-drowsy",
+  "gaze-confused",
+  "gaze-happy",
+  "gaze-curious",
   "attentive",
-  "happy",
-  "proud",
   "surprised",
-  "shy",
-  "sleepy",
-  "suspicious",
-  "confused",
+  "neutral",
   "excited",
-  "laughing",
+  "scared",
+  "angry",
   "unimpressed",
-  "sad",
+  "shy",
+  "curious",
+  "confused",
+  "suspicious",
+  "gaze-waking",
 ];
 
-/** Named so the choice can be argued with rather than assumed an oversight. */
-export const MONTAGE_LEFT_OUT: readonly string[] = ["angry", "scared"];
+/**
+ * The thirteen offered and not taken, so the choice can be argued with rather than assumed an
+ * oversight.
+ *
+ * 🔴 REPOINTED 2026-08-27. This used to be `["angry", "scared"]` and carried an argument of mine
+ * about what a resting face may say to a learner. It is now simply the remainder — whatever is on
+ * the choice list and not in the default — because the default is no longer my reasoning, it is
+ * the owner's ticks. Derived rather than typed, so the two can never disagree.
+ */
+export const MONTAGE_LEFT_OUT: readonly string[] = MONTAGE_CHOICES.map((c) => c.id).filter(
+  (id) => !MONTAGE.includes(id),
+);
 
 /**
- * How long one face is held before the next.
+ * How long a HELD FACE stays on, before the next entry.
  *
  * 🔴 9s → 5s ON REPORT (owner 2026-08-27: *"its still not doing the expression montage i want"*).
  * The first number came from the doze threshold's reasoning — the commonest thing a learner does
  * here is read, and a face changing every couple of seconds in the corner of their eye pulls at
  * attention they are trying to spend elsewhere. That reasoning holds and nine seconds overshot it:
- * an expression here moves the EYES ONLY, on a 76px character, so it is a quiet change to begin
- * with and at nine seconds most people never catch two in a row.
+ * a feeling moves the EYES ONLY, on a 76px character, so it is a quiet change to begin with and at
+ * nine seconds most people never catch two in a row.
+ *
+ * 🔴🔴 IT IS A FLOOR NOW, NOT THE ANSWER — see `holdFor`. It was the only number when every entry
+ * was one held face.
  */
 export const MONTAGE_HOLD_MS = 5_000;
+
+/**
+ * How long one entry gets: its own full cycle, or the held-face floor, whichever is longer.
+ *
+ * 🔴🔴 A FIXED FIVE SECONDS WOULD HAVE CUT EVERY LOOP OFF PART-WAY, AND THAT IS NOT A ROUNDING
+ * ERROR — IT IS THE FEATURE NOT HAPPENING. `gaze-searching` is a playlist of six poses running
+ * **16.8 seconds**; five seconds of it is two poses and then a cut to something else. The movement
+ * a loop exists for is the movement BETWEEN its poses, so an entry that never reaches its third
+ * pose is, on screen, indistinguishable from the held face this whole change is replacing.
+ *
+ * An unknown id falls back to the floor rather than throwing: `resolveMontage` has already dropped
+ * anything unknown, so reaching here means the catalogue moved under a stored list, and a face
+ * held slightly too long beats a character that does not draw.
+ */
+export function holdFor(id: string): number {
+  const a = ANIMATION_BY_ID.get(id);
+  return a ? Math.max(MONTAGE_HOLD_MS, animationDuration(a)) : MONTAGE_HOLD_MS;
+}
 
 /**
  * A chosen list, made safe to draw.
@@ -110,18 +202,23 @@ export function resolveMontage(chosen: readonly string[] | null | undefined): re
 }
 
 /**
- * Which face is worn `ms` into a rest, or null when the character is not resting.
+ * Which entry is playing `ms` into a rest, or null when the character is not resting.
  *
  * 🔴 ADDRESSED FROM THE CLOCK, NOT ADVANCED BY A TIMER, which is the same construction the blink
  * schedule uses and for the same reason: asking about a moment an hour in costs the same as asking
- * about the first second, and two characters mounted at the same time do not march in step.
+ * about the first second, and two characters mounted at the same time do not march in step. That
+ * survives the move to uneven holds because the walk below is over a list, not over elapsed ticks.
+ *
+ * 🔴 `seed` SHIFTS THE STARTING ENTRY, NOT THE CLOCK. Offsetting the time would put a character
+ * mid-way through some loop on its first frame; offsetting the index starts it cleanly on a
+ * different one, which is all the seed was ever for.
  */
 export function montageFace(input: {
   readonly restingMs: number;
   readonly atRest: boolean;
   /** Anything the character is doing that owns its face: a poke, a doze, a turn in flight. */
   readonly busy: boolean;
-  /** Varies the starting face per character so two on one page are never in step. */
+  /** Varies the starting entry per character so two on one page are never in step. */
   readonly seed?: number;
   /** The learner's own choice, or nothing for the default set. */
   readonly chosen?: readonly string[] | null;
@@ -129,6 +226,17 @@ export function montageFace(input: {
   const { restingMs, atRest, busy, seed = 0, chosen } = input;
   if (!atRest || busy || restingMs < 0) return null;
   const faces = resolveMontage(chosen);
-  const step = Math.floor(restingMs / MONTAGE_HOLD_MS) + seed;
-  return faces[((step % faces.length) + faces.length) % faces.length] ?? null;
+  const n = faces.length;
+  if (n === 0) return null;
+
+  const holds = faces.map(holdFor);
+  const round = holds.reduce((a, b) => a + b, 0);
+  let left = restingMs % round;
+  let step = 0;
+  // A walk rather than arithmetic, because the holds are uneven. At most 39 entries, once a second.
+  while (step < n - 1 && left >= holds[(step + seed) % n]!) {
+    left -= holds[(step + seed) % n]!;
+    step += 1;
+  }
+  return faces[(step + seed) % n] ?? null;
 }

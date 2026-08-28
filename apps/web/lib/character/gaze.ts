@@ -218,3 +218,64 @@ export function gazeTarget(input: GazeInput): AimPoint | null {
   // Still pointer: rest on whatever they are typing into, else on the composer.
   return focused ?? resting;
 }
+
+// ── How far the head may end up pointing ────────────────────────────────────────────────────
+
+/**
+ * The widest the head may point sideways, pose and tracking together, in degrees.
+ *
+ * 🔴🔴 THIS IS THE SAFETY RAIL FOR `facing="free"`, AND IT EXISTS BECAUSE THE DEFECT IT PREVENTS
+ * HAS ALREADY SHIPPED ONCE. Owner, 2026-08-27, having watched both settings side by side on the
+ * model sheet and left the toggle on *Head free*: the measured poses keep their own angles again.
+ * That undoes the levelling asked for on 2026-08-26 — deliberately, on the owner's own second
+ * look — but it does NOT undo the thing levelling was fixing underneath, which was never the pose
+ * on its own: tracking ADDS to it. `farRightGlance`, which `gaze-searching` and `gaze-proud` both
+ * wear, is authored at 35.3°; `TRACK_YAW` is 26; the sum is **61.3°**, and at 61° the far eye is
+ * drawn at **4%** of its size. That is the black ball with one sliver of eye at the rim.
+ *
+ * Measured on the squircle, sweeping the total yaw and reading the far eye's drawn scale:
+ *
+ * | total yaw | 26° | 35° | **42°** | 48° | 55° | 61° |
+ * |---|---|---|---|---|---|---|
+ * | far eye, as drawn | 76% | 58% | **43%** | 30% | 16% | 4% |
+ *
+ * 42 is where the far eye is still unmistakably an eye. It is also above every authored pose the
+ * montage plays (the widest is 35.3), so a pose is NEVER clipped by this on its own — only the
+ * tracking on top of it is, which is the correct thing to give up.
+ */
+export const CAP_YAW = 42;
+
+/**
+ * 🔴 THERE IS NO PITCH CAP, AND THAT IS A MEASUREMENT RATHER THAN AN OVERSIGHT. Yaw hides an eye
+ * because the face is wrapped round a solid and one eye goes to the far side; pitch tilts both
+ * eyes together and hides neither. Measured on the same body, both eyes are drawn at 116% at 15°
+ * of pitch and still 113% at 43° — the widest the product can reach (28.6 authored + 15 tracked).
+ * A cap here would be a number that never fires, which is worse than no number: it reads as a
+ * limit somebody chose.
+ */
+export const CAP_PITCH: number | null = null;
+
+/**
+ * The tracking turn to hand the renderer, given where the pose already points.
+ *
+ * 🔴 THE TOTAL IS CLAMPED, NOT THE TRACKING, and the difference is what the character does when
+ * the pointer is on its far side. Clamping the tracking to a leftover budget would make a
+ * wide-posed character nearly unable to follow the pointer in EITHER direction. Clamping the
+ * total lets tracking pull a turned head back toward the middle at full strength and only refuses
+ * to push it further out — so the pointer always does something, and the something is always
+ * legible.
+ *
+ * 🔴 SPIN IS NOT PASSED THROUGH HERE. A poke is a full 360° turn of the head; anything that
+ * clamped it would stop the spin dead at 42° and the poke would read as a twitch. The caller adds
+ * it after — see `nemesis-avatar.tsx`.
+ */
+export function cappedTurn(
+  head: { readonly x: number; readonly y: number },
+  track: { readonly x: number; readonly y: number },
+): { x: number; y: number } {
+  const clamp = (v: number, cap: number | null) => (cap === null ? v : Math.min(cap, Math.max(-cap, v)));
+  return {
+    x: clamp(head.x + track.x, CAP_PITCH) - head.x,
+    y: clamp(head.y + track.y, CAP_YAW) - head.y,
+  };
+}

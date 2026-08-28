@@ -62,7 +62,7 @@ import {
   ringPath,
   type FeatureFace,
 } from "@/lib/avatar/features";
-import { trackReach } from "@/lib/character/gaze";
+import { cappedTurn, trackReach } from "@/lib/character/gaze";
 
 export interface NemesisAvatarProps {
   /** Which of the animations to play. Any of the forty-nine; see `lib/avatar/catalogue.ts`. */
@@ -145,8 +145,19 @@ export interface NemesisAvatarProps {
    * fifteen degrees, and `expressions.ts` says outright that curiosity is carried by the roll and
    * not by the eyes. Levelling that would delete the expression rather than aim it. `turn` has only
    * ever carried yaw and pitch for the same reason.
+   *
+   * 🔴🔴 `"free"` IS THE OWNER'S 2026-08-27 REVERSAL, AND IT KEEPS THE HALF OF `"forward"` THAT WAS
+   * NOT ABOUT TASTE. Shown both settings running side by side on the model sheet, with the measured
+   * cost of each printed under every character, they left the toggle on *Head free*. Levelling
+   * flattens a loop's thirty pixels of movement down to six, and movement was the whole complaint.
+   * So `"free"` restores the authored pose — and then caps the TOTAL, because the eye that
+   * disappeared round the back was never the pose's doing on its own but the pose plus the
+   * tracking. See `CAP_YAW` in `lib/character/gaze.ts` for the measurement and the number.
+   *
+   * 🔴 `"forward"` IS KEPT, NOT DELETED. The reversal is a product call and the owner has moved
+   * this three times in two days; the mode it replaces stays available and stays tested.
    */
-  facing?: "authored" | "forward";
+  facing?: "authored" | "forward" | "free";
   /**
    * The body's outline at rest — the shape the character IS, when the pose does not say.
    *
@@ -656,9 +667,14 @@ export function NemesisAvatar({
       // look around occasionally" half of the same report. Roll keeps its own wander either way,
       // because `turn` has never carried roll.
       const level = state.facing === "forward" ? played.face.head : null;
+      // 🔴 SPIN IS ADDED LAST, AND NEVER GOES THROUGH THE CAP. A poke turns the head a full 360°;
+      // a cap that saw it would stop it at 42° and the spin would read as a twitch.
+      const free = state.facing === "free" ? cappedTurn(played.face.head, { x: a.atX, y: a.atY }) : null;
       const turn = level
         ? { x: a.atX - level.x, y: a.atY + spin - level.y }
-        : { x: a.atX, y: a.atY + spin };
+        : free
+          ? { x: free.x, y: free.y + spin }
+          : { x: a.atX, y: a.atY + spin };
       const opts = { blink: played.blink, eyeDrift: played.eyeDrift, turn, rest: state.silhouette, sparkScale: sparkScaleFor(size) };
       const from = waggleFrom.current;
       paint(

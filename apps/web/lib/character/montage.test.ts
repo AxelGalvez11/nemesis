@@ -7,29 +7,78 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { FACE_BY_ID } from "@/lib/avatar";
+import { ANIMATION_BY_ID, animationDuration, FACE_BY_ID } from "@/lib/avatar";
+import { ANIMATIONS as GAZE_ANIMATIONS } from "@/lib/avatar/animations";
 import { EXPRESSION_IDS } from "@/lib/avatar/expressions";
 
-import { MONTAGE, MONTAGE_CHOICES, MONTAGE_HOLD_MS, MONTAGE_LEFT_OUT, montageFace, resolveMontage } from "./montage";
+import { holdFor, MONTAGE, MONTAGE_CHOICES, MONTAGE_HOLD_MS, MONTAGE_LEFT_OUT, montageFace, resolveMontage } from "./montage";
 
 const resting = { restingMs: 0, atRest: true, busy: false };
 
-test("🔴 every face in the montage exists and is one of the sixteen", () => {
-  // The same mistake this caught once already, in the schedule proposal: `playful` is a GAZE LOOP,
-  // not a feeling, and a montage naming it would draw a blank frame nobody could attribute.
+test("🔴 everything the montage can play is a real animation", () => {
+  // 🔴 REPOINTED 2026-08-27. This used to assert every entry was one of the SIXTEEN FEELINGS, and
+  // that assertion was the bug wearing a green tick: the twenty-three gaze loops were in the
+  // catalogue the whole time, `resolveMontage` silently dropped them, and a test said that was
+  // correct. The invariant that actually matters has not changed — the montage names things the
+  // engine can play — so it is asked of ANIMATIONS rather than of one hand-picked subset.
   for (const id of [...MONTAGE, ...MONTAGE_LEFT_OUT]) {
-    assert.ok(FACE_BY_ID.has(id), `${id} is not a drawable face`);
-    assert.ok(EXPRESSION_IDS.includes(id), `${id} is not one of the sixteen feelings`);
+    assert.ok(ANIMATION_BY_ID.has(id), `${id} is not a playable animation`);
   }
-  assert.equal(MONTAGE.length + MONTAGE_LEFT_OUT.length, EXPRESSION_IDS.length, "the sixteen are not all accounted for");
+  const both = MONTAGE.length + MONTAGE_LEFT_OUT.length;
+  assert.equal(both, MONTAGE_CHOICES.length, "the choices are not all accounted for");
+  assert.equal(both, GAZE_ANIMATIONS.length + EXPRESSION_IDS.length, "the 23 loops and 16 feelings are not all offered");
 });
 
-test("🔴🔴 angry and scared are left out, because at rest they read as being about the learner", () => {
-  // Rule three: a feeling points at itself, never at the learner. At rest there is nothing else
-  // happening for a face to be about, so those two are the only ones a person can take personally.
-  // The front page cycles all sixteen and is right to — it is a showcase with nothing at stake.
-  assert.deepEqual([...MONTAGE_LEFT_OUT].sort(), ["angry", "scared"]);
+test("🔴🔴 the loops are offered, and they are the half that moves", () => {
+  // Owner 2026-08-27: *"there are still some expressions missing, check the github, because the
+  // website doesnt just show them forward facing but also moving around"*. Measured on a 76px
+  // character, a loop travels 13-30px over its cycle and a held feeling travels under a pixel, so
+  // a picker with only the feelings on it offers no movement at all.
+  const loops = MONTAGE_CHOICES.filter((c) => c.kind === "loop");
+  assert.equal(loops.length, GAZE_ANIMATIONS.length, "the picker does not offer every gaze loop");
+  for (const loop of loops) {
+    const a = ANIMATION_BY_ID.get(loop.id)!;
+    assert.ok(a.steps.length >= 1, `${loop.id} has no steps`);
+  }
+  // A loop is a PLAYLIST: all but the one-step `gaze-waking` change face on their own.
+  const many = loops.filter((l) => (ANIMATION_BY_ID.get(l.id)?.steps.length ?? 0) > 1);
+  assert.ok(many.length >= 20, `only ${many.length} of the offered loops cycle more than one pose`);
+  // And every one of them is in the montage's own vocabulary, not a second mechanism.
+  assert.ok(MONTAGE.some((id) => id.startsWith("gaze-")), "the default set plays no loops at all");
+  assert.deepEqual(resolveMontage(["gaze-searching"]), ["gaze-searching"], "a chosen loop is dropped on the floor");
+});
+
+test("🔴🔴 a loop gets its whole cycle, not the held-face floor", () => {
+  // 🔴 A FIXED FIVE SECONDS IS THE FEATURE NOT HAPPENING. `gaze-searching` is six poses over 16.8s;
+  // five seconds of it is two poses and a cut, which on screen is the held face this replaces.
+  const searching = animationDuration(ANIMATION_BY_ID.get("gaze-searching")!);
+  assert.ok(searching > MONTAGE_HOLD_MS, "the fixture is no longer longer than the floor");
+  assert.equal(holdFor("gaze-searching"), searching, "a loop is cut off before it finishes");
+  assert.equal(holdFor("neutral"), MONTAGE_HOLD_MS, "a held face lost its floor");
+  assert.equal(holdFor("not-a-thing"), MONTAGE_HOLD_MS, "an id the catalogue lost should fall back, not throw");
+  // Walked end to end, every entry is reached and each one lasts exactly its own hold.
+  const one = ["gaze-searching", "neutral"];
+  const at = (ms: number) => montageFace({ ...resting, restingMs: ms, chosen: one });
+  assert.equal(at(0), "gaze-searching");
+  assert.equal(at(searching - 1), "gaze-searching", "the loop was cut short");
+  assert.equal(at(searching), "neutral", "the montage never moves off the loop");
+  assert.equal(at(searching + MONTAGE_HOLD_MS - 1), "neutral");
+  assert.equal(at(searching + MONTAGE_HOLD_MS), "gaze-searching", "the round does not come back to the start");
+});
+
+test("🔴🔴 what is left out is named rather than quietly dropped", () => {
+  // 🔴 REPOINTED 2026-08-27, AND THE HISTORY IS THE POINT. This used to assert the left-out set was
+  // exactly `["angry", "scared"]`, under rule three — *a feeling points at itself, never at the
+  // learner* — because at rest there is nothing else for a face to be about. The owner then ticked
+  // both, from a model sheet that showed all thirty-nine running and named every one. An informed
+  // choice by the person whose product it is beats a rule I wrote, so the assertion moves to the
+  // invariant underneath: the two lists partition the choices, and neither is silently short.
+  assert.ok(MONTAGE.includes("angry") && MONTAGE.includes("scared"), "the owner's own picks were dropped");
   for (const id of MONTAGE_LEFT_OUT) assert.ok(!MONTAGE.includes(id), `${id} is both in and out`);
+  const all = new Set([...MONTAGE, ...MONTAGE_LEFT_OUT]);
+  assert.equal(all.size, MONTAGE_CHOICES.length, "a choice is neither in nor out");
+  // Rule three still governs the SCHEDULE, which is the half that makes a claim about the work.
+  assert.ok(MONTAGE.length >= 20, "the default set shrank back to a handful");
 });
 
 test("🔴🔴 it runs ONLY at rest, and never over something the character is doing", () => {
@@ -38,11 +87,19 @@ test("🔴🔴 it runs ONLY at rest, and never over something the character is d
   assert.notEqual(montageFace(resting), null, "the montage never runs at all");
 });
 
-test("it changes face on its own schedule and comes back round", () => {
+test("it moves on at its own schedule and comes back round", () => {
+  // 🔴 REPOINTED 2026-08-27 FROM A FIXED HOLD. Every entry used to last exactly `MONTAGE_HOLD_MS`,
+  // so the old assertions could name that number directly. They now ask each entry for its own
+  // hold, which is the same question against the shape the montage actually has.
   const at = (ms: number) => montageFace({ ...resting, restingMs: ms });
-  assert.equal(at(0), at(MONTAGE_HOLD_MS - 1), "the face changed inside one hold");
-  assert.notEqual(at(0), at(MONTAGE_HOLD_MS), "the face never changes");
-  assert.equal(at(0), at(MONTAGE_HOLD_MS * MONTAGE.length), "the cycle does not return to where it started");
+  const first = holdFor(MONTAGE[0]!);
+  const round = MONTAGE.reduce((sum, id) => sum + holdFor(id), 0);
+  assert.equal(at(0), MONTAGE[0], "it does not start at the start");
+  assert.equal(at(first - 1), at(0), "an entry was cut short inside its own hold");
+  assert.notEqual(at(first), at(0), "it never moves on");
+  assert.equal(at(first), MONTAGE[1], "it moved on to something that is not the next entry");
+  assert.equal(at(round), at(0), "the round does not return to where it started");
+  assert.equal(at(round * 3 + 17), at(17), "the round is not the same every time");
 });
 
 test("🔴 unhurried, but not so slow that nobody ever catches two", () => {
@@ -69,18 +126,25 @@ test("🔴🔴 the learner's own list is used, and a bad one never leaves the ch
   assert.deepEqual(resolveMontage(null), MONTAGE, "null is 'not read from storage yet'");
 });
 
-test("🔴 every face the picker offers is real, and it offers ALL sixteen", () => {
+test("🔴 every entry the picker offers is real, and it offers all thirty-nine", () => {
   // The card draws each one with the live engine, so a bad id is a blank tile the owner would be
-  // asked to choose from. And the default is a recommendation, not a cage: `angry` and `scared` are
-  // off by default and still offered, because someone who wants a grumpy character may have one.
+  // asked to choose from. The default is a recommendation, not a cage: everything is offered.
   for (const choice of MONTAGE_CHOICES) {
-    assert.ok(FACE_BY_ID.has(choice.id), `the picker offers ${choice.id}, which is not a drawable face`);
+    assert.ok(ANIMATION_BY_ID.has(choice.id), `the picker offers ${choice.id}, which is not playable`);
     assert.ok(choice.label.trim().length > 0, `${choice.id} has no label for the card`);
+    assert.ok(choice.kind === "loop" || choice.kind === "feeling", `${choice.id} has no kind`);
+    // A feeling is a single held face, so it must also exist as a face; a loop names several.
+    if (choice.kind === "feeling") assert.ok(FACE_BY_ID.has(choice.id), `${choice.id} is not a drawable face`);
   }
-  assert.equal(MONTAGE_CHOICES.length, EXPRESSION_IDS.length, "the picker does not offer all sixteen");
+  assert.equal(new Set(MONTAGE_CHOICES.map((c) => c.id)).size, MONTAGE_CHOICES.length, "the picker offers the same id twice");
+  assert.equal(MONTAGE_CHOICES.filter((c) => c.kind === "feeling").length, EXPRESSION_IDS.length, "a feeling is missing from the picker");
   for (const id of [...MONTAGE, ...MONTAGE_LEFT_OUT]) {
     assert.ok(MONTAGE_CHOICES.some((c) => c.id === id), `${id} is in the default set but not offered`);
   }
+  // 🔴 THE CARD MUST SEPARATE THEM. An undifferentiated wall of thirty-nine words is how the
+  // moving half went missing the first time.
+  const card = readFileSync(new URL("../../components/SettingsSurface.tsx", import.meta.url), "utf8");
+  assert.match(card, /c\.kind === kind/, "the settings card stopped grouping the two kinds");
 });
 
 test("🔴🔴 BOTH surfaces run the montage, not just the canvas", () => {
@@ -103,6 +167,19 @@ test("🔴 the montage is addressed from a clock, not advanced by a timer", () =
   // Same construction as the blink schedule: asking about a moment an hour in costs the same as
   // the first second, and it cannot drift. A counter would also make every character on a page
   // march in step, which is what `seed` exists to prevent.
+  // 🔴 REPOINTED 2026-08-27: the holds became uneven, so the arithmetic became a walk over a list
+  // of holds. The invariant is unchanged and is what is asserted — `restingMs` is the only clock,
+  // and nothing in this file counts ticks.
   const src = readFileSync(new URL("./montage.ts", import.meta.url), "utf8");
-  assert.match(src, /Math\.floor\(restingMs \/ MONTAGE_HOLD_MS\)/, "the montage advances by counting rather than by asking the clock");
+  assert.match(src, /restingMs % round/, "the montage stopped addressing its round from the clock");
+  assert.ok(!/setInterval|setTimeout|Date\.now/.test(src), "the montage grew a clock of its own");
+  // Asked about a moment an hour in, it answers, and it answers the same as one round earlier.
+  const round = MONTAGE.reduce((sum, id) => sum + holdFor(id), 0);
+  const hour = 60 * 60 * 1000;
+  assert.notEqual(montageFace({ ...resting, restingMs: hour }), null, "it gives up after long enough");
+  assert.equal(
+    montageFace({ ...resting, restingMs: hour }),
+    montageFace({ ...resting, restingMs: hour + round }),
+    "one full round does not return to the same entry",
+  );
 });
