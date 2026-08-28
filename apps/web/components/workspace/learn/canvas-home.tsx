@@ -412,9 +412,15 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               composer's beat, to the exact point the dock is about to occupy — so the swap
               between the two components has nothing left to show. See `handoff`.
 
-              This is also the one place the entrance turn belongs — the eyes go right round the
-              body and come back, which is a real arrival and costs a beat. It is off everywhere
-              else precisely because it would then happen on every appearance. */}
+              🔴🔴 AND IT ARRIVES FACING YOU. This used to pass `entrance`, which turns the head a
+              full 360° on the way in — the eyes go right round the body and come back. It was the
+              one place that was defensible, and it is gone on the owner's 2026-08-28 instruction:
+              *"remove the spinning animation."* That sentence is about the click (see `use-poke.ts`)
+              and this is the only other thing in the app that spins, so leaving it would have
+              answered half a sentence. It also sat badly beside every other ruling made about this
+              character in the same week: the entrance is a full second with NO FACE, on the first
+              character anyone ever sees, and the standing complaint has been that it looks away.
+              🔴 One prop to restore. `entrance` still exists and is still off by default. */}
           {/* 🔴 THE HOP GETS ITS OWN ELEMENT HERE TOO, AND FOR THE SAME REASON AS IN `CharacterDock`:
               the wrapper above already carries the greeting's own margin and its departure, so a
               jump written onto it would have to share a transform with the transition. Nested
@@ -446,7 +452,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   `character-place.test.ts` pins that they agree. See the prop's own note. */}
               <NemesisAvatar
                 accent={accent}
-                entrance
                 face={greeter.face}
                 onPoke={greeter.poke}
                 size={GREETER_SIZE}

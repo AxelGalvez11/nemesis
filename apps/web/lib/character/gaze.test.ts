@@ -15,10 +15,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { ANIMATION_BY_ID, FACE_BY_ID } from "@/lib/avatar";
+import { ANIMATION_BY_ID, DEFAULT_AVATAR, FACE_BY_ID, eyeFrames } from "@/lib/avatar";
 
 import { MONTAGE } from "./montage";
 import {
+  ABSORBED_MS,
+  ATTENTION_CYCLE_MS,
   CAP_PITCH,
   CAP_YAW,
   GLANCE_EVERY_MS,
@@ -26,12 +28,15 @@ import {
   GLANCE_PITCH,
   GLANCE_YAW,
   POINTER_MEMORY_MS,
+  absorbedAt,
   cappedTurn,
   gazeTarget,
   glanceAt,
   trackReach,
   glanceOffset,
+  trackTurn,
 } from "./gaze";
+import { isMontageLoop } from "./montage";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
@@ -104,6 +109,57 @@ test("the glance is expressed in the avatar's own reach, not in guessed pixels",
   const big = glanceOffset(GLANCE_MS / 2, 80);
   assert.ok(Math.abs(big.x - small.x * 2) < 1e-6, "the glance does not scale with the character");
   assert.ok(Math.abs(small.x) <= 40 * 2.5 * GLANCE_YAW + 1e-9);
+});
+
+// ── Which way the head turns when the pointer moves ──────────────────────────
+//
+// Owner, 2026-08-28: *"it seems to have an inverted following because whenever my mouse goes up, the
+// eyes go down, whenever the mouse goes down, the eyes go up"*, and then, so it could not be misread
+// as a request for an inversion: *"I'm saying that it's already inverted, and I need it to be fixed
+// because it's not tracking the mouse movement."*
+//
+// 🔴 THESE ARE MEASURED OFF THE DRAWN EYES, NOT OFF THE SIGN. Asserting `trackTurn(...).x < 0`
+// restates the implementation and would have passed just as happily before the fix if the
+// convention had been written down the other way round. `eyeFrames` returns where the pupils
+// actually land in the SVG, where y runs DOWNWARD — so "the eyes went up" is a smaller number, and
+// the test says the same thing the owner said.
+
+/** The average height of the two drawn pupils, aiming at a normalised point. Smaller is higher. */
+const eyeHeight = (aim: { x: number; y: number }): number => {
+  const face = FACE_BY_ID.get("neutral")!;
+  const [left, right] = eyeFrames(DEFAULT_AVATAR.surface, face, { turn: trackTurn(aim) });
+  return (left.y + right.y) / 2;
+};
+/** The average side-to-side position of the two drawn pupils. Larger is further right. */
+const eyeSide = (aim: { x: number; y: number }): number => {
+  const face = FACE_BY_ID.get("neutral")!;
+  const [left, right] = eyeFrames(DEFAULT_AVATAR.surface, face, { turn: trackTurn(aim) });
+  return (left.x + right.x) / 2;
+};
+
+test("🔴🔴🔴 the mouse goes up and the eyes go UP — the inversion the owner reported", () => {
+  const above = eyeHeight({ x: 0, y: -1 });
+  const level = eyeHeight({ x: 0, y: 0 });
+  const below = eyeHeight({ x: 0, y: 1 });
+  assert.ok(above < level, `pointer above, eyes at ${above.toFixed(1)} against ${level.toFixed(1)} level`);
+  assert.ok(level < below, `pointer below, eyes at ${below.toFixed(1)} against ${level.toFixed(1)} level`);
+  // Calibration: drop the negation in `trackTurn` and both of these reverse. It is one character of
+  // code, and for as long as it was two multiplies inside a rAF tick there was nothing to assert.
+  assert.ok(below - above > 8, `the whole vertical range is ${(below - above).toFixed(1)}px, which is not tracking`);
+});
+
+test("🔴 and sideways is NOT negated, which is why this was only ever half a bug", () => {
+  // Screen x and head yaw both run to the right, so the horizontal never had a conflict — and the
+  // owner's report was only ever about the vertical. Negating both to "make it symmetrical" is the
+  // obvious wrong fix and this is what refuses it.
+  assert.ok(eyeSide({ x: -1, y: 0 }) < eyeSide({ x: 0, y: 0 }), "pointer left, eyes right");
+  assert.ok(eyeSide({ x: 0, y: 0 }) < eyeSide({ x: 1, y: 0 }), "pointer right, eyes left");
+});
+
+test("🔴 a still pointer means a level head, not a turned one", () => {
+  // `+ 0` normalises the negative zero out of `-0 * 15` — a real value, not a real angle.
+  const t = trackTurn({ x: 0, y: 0 });
+  assert.deepEqual({ pitch: t.x + 0, yaw: t.y + 0 }, { pitch: 0, yaw: 0 });
 });
 
 test("🔴🔴 the measured poses were NOT edited — the character is aimed, not redrawn", () => {
@@ -186,33 +242,28 @@ test("the dock does not re-render eight times a second to follow something that 
 const HERE = { x: 100, y: 100 };
 const THERE = { x: 900, y: 400 };
 const COMPOSER = { x: 500, y: 800 };
+const CALM = { declared: null, focused: null, resting: COMPOSER, pointerAgeMs: 0, working: null, absorbed: false } as const;
 
 test("🔴🔴 a moving pointer beats a focused text field — the report this rule was written for", () => {
-  assert.equal(
-    gazeTarget({ declared: null, focused: HERE, resting: COMPOSER, pointerAgeMs: 0, working: null }),
-    null,
+  assert.deepEqual(
+    gazeTarget({ ...CALM, focused: HERE }),
+    { kind: "pointer" },
     "a focused field still freezes the gaze; the character will not follow the mouse",
   );
 });
 
 test("🔴 an explicit lookAt() still beats the pointer, because a surface asked", () => {
   // The one thing that outranks the cursor: Nemesis pointing at something it just drew.
-  assert.deepEqual(
-    gazeTarget({ declared: THERE, focused: HERE, resting: COMPOSER, pointerAgeMs: 0, working: null }),
-    THERE,
-  );
+  assert.deepEqual(gazeTarget({ ...CALM, declared: THERE, focused: HERE }), { kind: "at", point: THERE });
 });
 
 test("🔴 working outranks the pointer too, but not a declared target", () => {
   // Thinking eyes search, they do not follow (owner 2026-08-25).
   const sweep = { x: 300, y: 200 };
+  assert.deepEqual(gazeTarget({ ...CALM, focused: HERE, working: sweep }), { kind: "at", point: sweep });
   assert.deepEqual(
-    gazeTarget({ declared: null, focused: HERE, resting: COMPOSER, pointerAgeMs: 0, working: sweep }),
-    sweep,
-  );
-  assert.deepEqual(
-    gazeTarget({ declared: THERE, focused: null, resting: COMPOSER, pointerAgeMs: 0, working: sweep }),
-    THERE,
+    gazeTarget({ ...CALM, declared: THERE, working: sweep }),
+    { kind: "at", point: THERE },
     "a drawing Nemesis just made lost to its own thinking sweep",
   );
 });
@@ -220,35 +271,100 @@ test("🔴 working outranks the pointer too, but not a declared target", () => {
 test("a pointer that has stopped rests on the focused field, then on the composer", () => {
   const still = POINTER_MEMORY_MS + 1;
   assert.deepEqual(
-    gazeTarget({ declared: null, focused: HERE, resting: COMPOSER, pointerAgeMs: still, working: null }),
-    HERE,
+    gazeTarget({ ...CALM, focused: HERE, pointerAgeMs: still }),
+    { kind: "at", point: HERE },
     "a focused field is not merely demoted, it is dropped",
   );
-  assert.deepEqual(
-    gazeTarget({ declared: null, focused: null, resting: COMPOSER, pointerAgeMs: still, working: null }),
-    COMPOSER,
-  );
+  assert.deepEqual(gazeTarget({ ...CALM, pointerAgeMs: still }), { kind: "at", point: COMPOSER });
 });
 
 test("a pointer that has never moved does not leave the character staring ahead", () => {
   // Touch devices, and a page opened without the mouse being touched. Before the composer
   // fall-back existed the head released to `turn = 0`, which is the authored three-quarter pose —
   // so the commonest state was the one that looked away. See the note at the top of this file.
+  assert.deepEqual(gazeTarget({ ...CALM, pointerAgeMs: Infinity }), { kind: "at", point: COMPOSER });
   assert.deepEqual(
-    gazeTarget({ declared: null, focused: null, resting: COMPOSER, pointerAgeMs: Infinity, working: null }),
-    COMPOSER,
-  );
-  assert.equal(
-    gazeTarget({ declared: null, focused: null, resting: null, pointerAgeMs: Infinity, working: null }),
-    null,
+    gazeTarget({ ...CALM, resting: null, pointerAgeMs: Infinity }),
+    { kind: "pointer" },
     "with nothing to rest on, the honest answer is to hand the pointer back",
   );
 });
 
 test("🔴 the boundary is POINTER_MEMORY_MS exactly, and it is inclusive of 'still moving'", () => {
-  const args = { declared: null, focused: HERE, resting: COMPOSER, working: null } as const;
-  assert.equal(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS - 1 }), null, "still counts as moving");
-  assert.deepEqual(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS }), HERE, "the memory never expires");
+  const args = { ...CALM, focused: HERE } as const;
+  assert.deepEqual(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS - 1 }), { kind: "pointer" }, "still counts as moving");
+  assert.deepEqual(gazeTarget({ ...args, pointerAgeMs: POINTER_MEMORY_MS }), { kind: "at", point: HERE }, "the memory never expires");
+});
+
+// ── Following, and being absorbed ────────────────────────────────────────────
+//
+// Owner, 2026-08-28: *"make sure that there are moments where it's tracking mouse movement, but
+// other moments where it's just doing its own thing, own expressions."* Asked twice before, on
+// 2026-08-26 and 2026-08-27, and answered both times by changing the montage — which changed the
+// FACE and never the head. Tracking was laid over every frame of every movement loop, so there were
+// no other moments to see.
+
+test("🔴🔴 being absorbed beats a moving pointer, or it could never happen at all", () => {
+  // Ranked below the pointer this would only fire while the learner's hand was off the mouse — and
+  // a learner with a hand on the mouse is the only person who was ever going to notice.
+  assert.deepEqual(gazeTarget({ ...CALM, focused: HERE, absorbed: true }), { kind: "self" });
+  assert.deepEqual(gazeTarget({ ...CALM, pointerAgeMs: Infinity, absorbed: true }), { kind: "self" });
+});
+
+test("🔴 but a surface that asked, and thinking, both still outrank it", () => {
+  // A drawing Nemesis has just made is a fact about the lesson; being lost in thought is not.
+  const sweep = { x: 300, y: 200 };
+  assert.deepEqual(gazeTarget({ ...CALM, declared: THERE, absorbed: true }), { kind: "at", point: THERE });
+  assert.deepEqual(gazeTarget({ ...CALM, working: sweep, absorbed: true }), { kind: "at", point: sweep });
+});
+
+test("🔴 following is the clear majority of every cycle", () => {
+  // The single most repeated report about this character is that it does NOT follow the mouse —
+  // three times, and twice I replied that it did. A stretch of not following has to stay a minority
+  // or this fix becomes that report.
+  assert.ok(ABSORBED_MS / ATTENTION_CYCLE_MS <= 0.3, "the character is absorbed for more than a third of its life");
+  let away = 0;
+  const step = 50;
+  const span = ATTENTION_CYCLE_MS * 6;
+  for (let ms = 0; ms < span; ms += step) if (absorbedAt(ms)) away += 1;
+  const share = away / (span / step);
+  assert.ok(Math.abs(share - ABSORBED_MS / ATTENTION_CYCLE_MS) < 0.02, `absorbed ${(share * 100).toFixed(0)}% of the time`);
+});
+
+test("🔴 a freshly mounted character FOLLOWS — the window sits at the end of the cycle", () => {
+  // Whatever a learner sees in the first seconds of a page is the character watching them.
+  assert.equal(absorbedAt(0), false);
+  assert.equal(absorbedAt(ATTENTION_CYCLE_MS - ABSORBED_MS - 1), false);
+  assert.equal(absorbedAt(ATTENTION_CYCLE_MS - ABSORBED_MS), true, "the window does not open where it says it does");
+  assert.equal(absorbedAt(ATTENTION_CYCLE_MS - 1), true);
+  assert.equal(absorbedAt(ATTENTION_CYCLE_MS), false, "the window does not close");
+  // `performance.now()` before the first frame, and a clock that has not started, are both real.
+  assert.equal(absorbedAt(-1), false);
+  assert.equal(absorbedAt(Number.POSITIVE_INFINITY), false);
+});
+
+test("🔴🔴 the character is only ever absorbed in something that MOVES", () => {
+  // A held feeling shifts the eyes 0.8px. Take the pointer away during one and the character stops
+  // following and then does nothing, which is exactly the complaint, manufactured deliberately.
+  assert.equal(isMontageLoop("gaze-searching"), true);
+  assert.equal(isMontageLoop("neutral"), false, "a held feeling counts as business of its own");
+  assert.equal(isMontageLoop("idle"), false, "the plain resting animation counts as business of its own");
+  assert.equal(isMontageLoop(null), false);
+  assert.equal(isMontageLoop("nothing-by-this-name"), false);
+  // And the dock asks BOTH questions before it drops the cursor.
+  assert.match(DOCK, /absorbed: absorbableRef\.current && absorbedAt\(now\)/, "the dock stopped requiring both halves");
+  assert.match(DOCK, /absorbableRef\.current = atRest && !poking && isMontageLoop\(shown\)/);
+});
+
+test("🔴🔴 'self' is the ONLY answer that turns tracking off, and it really turns it off", () => {
+  // Every other answer is a PLACE, and handing the avatar any place at all is still a stare. This
+  // is the line that makes "doing its own thing" different from "watching something else".
+  assert.match(DOCK, /if \(want\.kind === "self"\) \{\s+setTracking\(false\);/, "being absorbed no longer releases the pointer");
+  assert.match(DOCK, /setTracking\(true\);/, "tracking is never turned back on");
+  assert.match(DOCK, /track=\{tracking\}/, "the dock hard-codes tracking on again");
+  // With tracking off the renderer eases its turn back to zero rather than freezing mid-follow.
+  assert.match(AVATAR, /const want = looking \? trackTurn\(a\) : \{ x: 0, y: 0 \};/);
+  assert.match(AVATAR, /a\.atX \+= \(want\.x - a\.atX\) \* TRACK_EASE;/, "the head snaps instead of easing");
 });
 
 // ── How far the pointer has to be before the head stops responding ───────────

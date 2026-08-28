@@ -22,6 +22,8 @@
 // PURE. No React, no DOM, no clock of its own — every function takes the time it should answer
 // for, so a test can ask what the character is doing at any instant.
 
+import { TRACK_PITCH, TRACK_YAW } from "@/lib/avatar";
+
 /** One glance every this often. */
 export const GLANCE_EVERY_MS = 8200;
 
@@ -57,6 +59,53 @@ export const GLANCE_PITCH = 0.3;
  * page's own content gets it back.
  */
 export const POINTER_MEMORY_MS = 2600;
+
+// ── Which way the head turns when the pointer moves ──────────────────────────
+//
+// 🔴🔴 THE PITCH WAS INVERTED FOR AS LONG AS THIS ENGINE HAS TRACKED A POINTER, AND NOTHING IN THE
+// PRODUCT COULD HAVE CAUGHT IT. Owner, 2026-08-28: *"it seems to have an inverted following because
+// whenever my mouse goes up, the eyes go down, whenever the mouse goes down, the eyes go up"*, and
+// then, so it could not be misread as a request: *"I'm saying that it's already inverted, and I
+// need it to be fixed because it's not tracking the mouse movement."*
+//
+// The two axes do not have the same sign, and that is the trap:
+//
+//   • **Screen y runs DOWNWARD.** A pointer below the character has a positive normalised `y`.
+//   • **Head pitch runs UPWARD.** `quatFromTurn` rotates about X, so a positive `turn.x` carries the
+//     face toward the top of the screen — which is why `neutral` is written as 28.62 and described
+//     everywhere in this codebase as looking 28.6° *up*.
+//
+// Multiply one by the other and the character looks up when you go down. Yaw has no such conflict:
+// screen x and head yaw both run to the right, so `wantY` was correct and only the vertical was
+// wrong, which is exactly the half of the report the owner could see.
+//
+// 🔴 THE VENDORED ENGINE GETS THIS RIGHT AND SAYS SO IN ITS OWN COMMENT. `landing/lib/bloub/gaze.ts`,
+// which is the upstream this renderer was measured against, writes `pitch: PITCH - ny * PITCH_MAX`
+// beside the note *"tangage positif = regard vers le haut, alors que le y de l'ecran descend"* —
+// positive pitch is looking up, while the screen's y goes down. Our renderer wrote the multiply
+// inline without the negation, so there was no line anywhere saying what the sign meant.
+//
+// 🔴 SO IT IS A NAMED FUNCTION NOW, RATHER THAN TWO MULTIPLIES INSIDE AN ANIMATION FRAME. A sign
+// buried in a rAF tick is unaskable; a sign in a pure function is one assertion. The test that
+// pins it is written in the owner's own words.
+
+/** Where the pointer is, relative to the character, normalised to -1..1 and clamped. */
+export interface TrackAim {
+  /** Positive to the RIGHT of the character. */
+  readonly x: number;
+  /** Positive BELOW the character — screen y, which runs downward. */
+  readonly y: number;
+}
+
+/**
+ * The head angles that aim at `aim`, in degrees: `x` is pitch, `y` is yaw.
+ *
+ * 🔴 THE PITCH IS NEGATED AND THE YAW IS NOT. See the note above; this is the whole of the
+ * 2026-08-28 fix and it is one character of code, which is why it needs the paragraph.
+ */
+export function trackTurn(aim: TrackAim): { x: number; y: number } {
+  return { x: -aim.y * TRACK_PITCH, y: aim.x * TRACK_YAW };
+}
 
 /** A stable pseudo-random number in -1..1 for cycle `n`. Deterministic: no clock, no seed. */
 function spread(n: number): number {
@@ -165,11 +214,81 @@ export function glanceOffset(ms: number, reach: number): { x: number; y: number 
 // **+58.9 with the pointer far LEFT and +58.4 with it far RIGHT** — pinned, ignoring the mouse
 // completely. With nothing focused the identical sweep runs **-56.9 to +56.2**.
 
+// ── Following, and being absorbed ────────────────────────────────────────────
+//
+// 🔴🔴 THE THIRD TIME THIS REPORT HAS BEEN MADE, AND THE FIRST TIME THE MECHANISM CHANGES. Owner,
+// 2026-08-26: *"it should follow the mouse … but also have moments where it does its own animations
+// and expressions."* Answered with `montage.ts` — a different FACE every few seconds. Owner,
+// 2026-08-27: *"it still does not do expressions after a while of following the mouse."* Answered by
+// widening the montage to the movement loops and shortening its hold. Owner, 2026-08-28: *"make sure
+// that there are moments where it's tracking mouse movement, but other moments where it's just doing
+// its own thing, own expressions."*
+//
+// 🔴 EVERY ANSWER SO FAR CHANGED WHAT THE FACE WAS DOING AND NONE OF THEM CHANGED WHERE THE HEAD WAS
+// POINTING, which is the whole of what "doing its own thing" looks like from across a room. A gaze
+// loop like `gaze-searching` is six measured poses that carry the head 30px on their own — and the
+// renderer was adding pointer tracking ON TOP of every frame of it, so the loop's movement was
+// permanently overwritten by the cursor's. The character was following the mouse 100% of the time it
+// was awake. There was no "other moments" to see.
+//
+// 🔴 THIS IS THE PATTERN FROM [[character-signals-are-dead]], RUNNING THE OTHER WAY. Four narrowings
+// of the `?` mark were each a true statement about when it was wrong and none was why it was wrong.
+// Three widenings of the montage have been the same shape. So this stops adjusting the montage and
+// takes the pointer away instead, for a bounded stretch, on a clock.
+
+/**
+ * One full round of the character's attention: it follows, then it is absorbed, then it follows.
+ *
+ * 🔴 FOLLOWING IS THE MAJORITY AND HAS TO BE. The single most repeated report about this character
+ * is *"the mascot is not following the mouse at all"* — three times, and twice I replied that it
+ * did. A design that stops following has to make it obvious that the stopping is deliberate, so the
+ * absorbed share is a quarter, not a half, and the cycle OPENS on following: whatever the learner
+ * sees in the first seconds after a page loads is the character watching them.
+ */
+export const ATTENTION_CYCLE_MS = 20_000;
+
+/**
+ * How long one absorbed stretch lasts.
+ *
+ * Long enough for a montage loop to reach its second and third pose, which is where a loop's
+ * movement lives (`montage.ts` measures the busiest at 30px of eye travel over a cycle, against
+ * 0.8px for a held feeling). Much shorter and being absorbed is indistinguishable from a glance,
+ * which this product already has and which is not what was asked for.
+ */
+export const ABSORBED_MS = 5_000;
+
+/**
+ * Is the character absorbed in its own business at `ms`?
+ *
+ * 🔴 THE WINDOW SITS AT THE END OF THE CYCLE, so a character that has just mounted follows first.
+ */
+export function absorbedAt(ms: number): boolean {
+  if (!Number.isFinite(ms) || ms < 0) return false;
+  return ms % ATTENTION_CYCLE_MS >= ATTENTION_CYCLE_MS - ABSORBED_MS;
+}
+
 /** A point in client coordinates. */
 export interface AimPoint {
   readonly x: number;
   readonly y: number;
 }
+
+/**
+ * What the character's eyes are doing.
+ *
+ * 🔴 THREE ANSWERS, NOT TWO, AND THE THIRD IS THE 2026-08-28 CHANGE. This used to be `AimPoint |
+ * null`, where `null` meant "the avatar follows the cursor by itself" — so there was no way to say
+ * *look at nothing in particular, you are busy*. Expressing that as an aim point would have been
+ * wrong in a way that is easy to reach for and hard to see: any point at all is still a target, and
+ * a character staring fixedly at a computed spot reads as broken rather than as occupied.
+ */
+export type Gaze =
+  /** Watch this exact place. */
+  | { readonly kind: "at"; readonly point: AimPoint }
+  /** Follow the cursor. The avatar already knows where it is; nothing needs to be measured. */
+  | { readonly kind: "pointer" }
+  /** Neither. Let the animation's own authored head do the moving. */
+  | { readonly kind: "self" };
 
 export interface GazeInput {
   /**
@@ -200,23 +319,40 @@ export interface GazeInput {
    * has just drawn something still gets to point at it.
    */
   readonly working: AimPoint | null;
+  /**
+   * The character is in an absorbed stretch AND has something of its own to be absorbed IN.
+   *
+   * 🔴 BOTH HALVES, MEASURED BY THE CALLER. A clock alone would take the pointer away while the
+   * character happened to be wearing a held feeling, and a held feeling moves the eyes 0.8px — so
+   * the learner would see it stop following and then do nothing, which is the exact complaint this
+   * is answering, produced deliberately. See the dock.
+   */
+  readonly absorbed: boolean;
 }
 
 /**
- * Where to aim, or `null` for "let the avatar follow the cursor itself".
+ * What the character should be looking at.
  *
- * 🔴 `null` IS AN ANSWER, NOT AN ABSENCE. `NemesisAvatar` tracks the pointer on its own; handing it
- * an aim point is how a surface takes that over. So "follow the mouse" is expressed by giving it
- * nothing, and every branch below that returns a point is a branch that stops it.
+ * 🔴 THE WHOLE PRECEDENCE IS HERE AND NOWHERE ELSE. It used to be a run of early returns inside the
+ * dock's 120ms interval, which is why "does a moving mouse beat a focused text box?" could only be
+ * answered by opening a browser and staring at a character's eyes — and why the answer was wrong for
+ * weeks. Every caller MEASURES; this decides.
  */
-export function gazeTarget(input: GazeInput): AimPoint | null {
-  const { declared, focused, resting, pointerAgeMs, working } = input;
-  if (declared) return declared;
-  if (working) return working;
-  // A pointer that is genuinely moving wins. This is the line the owner's report was about.
-  if (pointerAgeMs < POINTER_MEMORY_MS) return null;
+export function gazeTarget(input: GazeInput): Gaze {
+  const { declared, focused, resting, pointerAgeMs, working, absorbed } = input;
+  // A surface that asked outranks everything, including the character's own business: a drawing
+  // Nemesis has just made is a fact about the lesson, and being lost in thought is not.
+  if (declared) return { kind: "at", point: declared };
+  if (working) return { kind: "at", point: working };
+  // 🔴 ABOVE THE POINTER, WHICH IS THE POINT OF IT. Ranked below, it could never fire while the
+  // learner had a hand on the mouse — and a learner with a hand on the mouse is the only person who
+  // was ever going to notice whether the character has moments of its own.
+  if (absorbed) return { kind: "self" };
+  // A pointer that is genuinely moving wins. This is the line the 2026-08-26 report was about.
+  if (pointerAgeMs < POINTER_MEMORY_MS) return { kind: "pointer" };
   // Still pointer: rest on whatever they are typing into, else on the composer.
-  return focused ?? resting;
+  const rest = focused ?? resting;
+  return rest ? { kind: "at", point: rest } : { kind: "pointer" };
 }
 
 // ── How far the head may end up pointing ────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import {
 } from "@/lib/avatar";
 
 import { ACTIVITY_STATE, speedOf, stationOf } from "./stations";
+import { trackTurn } from "./gaze";
 
 const ALL: string[] = ANIMATIONS.map((a) => a.id);
 
@@ -306,12 +307,26 @@ test("🔴 the character looks straight ahead when the pointer is centred", asyn
   // ±16° of tracking on top — the pointer could never bring it back past -10°, so it read as
   // stuck facing the wall. Owner: "he seems stuck staring to the left".
   //
-  // The rule is now a plain multiplication with no resting offset, so this reads the renderer
-  // rather than a helper: the head turns by the pointer's own displacement and nothing else.
-  const { readFile } = await import("node:fs/promises");
-  const source = await readFile(new URL("../../components/avatar/nemesis-avatar.tsx", import.meta.url), "utf8");
-  assert.match(source, /wantY = looking \? a\.x \* TRACK_YAW : 0/, "the yaw rule has grown a resting offset");
-  assert.match(source, /wantX = looking \? a\.y \* TRACK_PITCH : 0/, "the pitch rule has grown a resting offset");
+  // The rule is a plain multiplication with no resting offset: the head turns by the pointer's own
+  // displacement and nothing else.
+  //
+  // 🔴 REPOINTED 2026-08-28, FROM READING THE RENDERER'S SOURCE TO ASKING THE RULE. It used to match
+  // the two multiplies where they sat, inline in an animation frame — and matching them is precisely
+  // what could not catch that they had OPPOSITE correct signs and carried the same one. See the
+  // inversion report at the top of `gaze.test.ts`. Now that the rule is a pure function, "has it
+  // grown a resting offset" is a question rather than a line to recognise.
+  //
+  // `+ 0` normalises the negative zero that falls out of `-0 * 15`, which is a real value and not a
+  // real angle.
+  const turn = (x: number, y: number) => {
+    const t = trackTurn({ x, y });
+    return { pitch: t.x + 0, yaw: t.y + 0 };
+  };
+  assert.deepEqual(turn(0, 0), { pitch: 0, yaw: 0 }, "the look rule has grown a resting offset");
+  assert.deepEqual(turn(1, 0), { pitch: 0, yaw: TRACK_YAW }, "the yaw is not the pointer's own displacement");
+  assert.deepEqual(turn(-1, 0), { pitch: 0, yaw: -TRACK_YAW }, "the yaw is not symmetrical");
+  assert.deepEqual(turn(0, -1), { pitch: TRACK_PITCH, yaw: 0 }, "a pointer above does not raise the head");
+  assert.deepEqual(turn(0, 1), { pitch: -TRACK_PITCH, yaw: 0 }, "a pointer below does not lower the head");
   // Small, and smaller vertically: the character sits beside dense reading material, and a
   // head that swings the engine's whole range reads as a toy watching you.
   assert.ok(TRACK_YAW > 0 && TRACK_YAW <= 30, `a yaw range of ${TRACK_YAW}° is not attention, it is a swivel`);
@@ -358,9 +373,13 @@ test("🔴 a click reaches the character", async () => {
   // 🔴 `notify` WAS IN THIS LIST FOR ONE DAY. The owner added it on the morning of 2026-08-27 and
   // removed it the same evening (*"remove the 'notification' animation"*), which also closes the
   // named exception to the one-shape rule that it needed. The routine stays in the catalogue.
-  for (const wanted of ["burst", "spin"]) {
-    assert.ok(new RegExp(`"${wanted}"`).test(poke), `a poke no longer draws ${wanted}`);
-  }
+  assert.ok(/\{ state: "burst"/.test(poke), "a poke no longer draws burst");
+  // 🔴🔴 AND NOTHING SCHEDULES THE SPIN (owner 2026-08-28: *"remove the spinning animation. It
+  // should only burst whenever it's clicked on."*). Written against the ROWS rather than the file,
+  // because the file still documents the spin at length, still exports `SPIN_MS`, and everything
+  // below still guards the CSS: it is unscheduled, not deleted, and one row from returning. The
+  // marketing site's spin is a separate character on a separate engine and is untouched.
+  assert.equal(/motion: "spin"/.test(poke), false, "a click spins again");
   // 🔴🔴 THE COUNT HAS BEEN 5 → 1 → 3 IN TWENTY-FOUR HOURS, SO THE COUNT IS NOT THE RULE. This
   // pinned "exactly one reaction" on 2026-08-26 (*"clicking on the mascot should just make him
   // just jump or do burst animation"*); on 2026-08-27 the owner asked for the walk back, naming
@@ -381,9 +400,10 @@ test("🔴 a click reaches the character", async () => {
   }
 
   // 🔴 THE SPIN IS PARKED, NOT DELETED, AND ITS SMOOTHING STAYS GUARDED BELOW. It was the click for
-  // a few hours on 2026-08-26 and the work that made it smooth (no wind-up, no overshoot, no scale,
-  // centred origin) is real and cheap to keep. The assertions that follow still hold whether or not
-  // anything schedules it — which is the point of keeping them.
+  // a few hours on 2026-08-26, all of 2026-08-27, and is unscheduled again since 2026-08-28; the
+  // work that made it smooth (no wind-up, no overshoot, no scale, centred origin) is real and cheap
+  // to keep. The assertions that follow still hold whether or not anything schedules it — which is
+  // the point of keeping them, and this is the fourth time in three days that has paid off.
 
   // 🔴 THE HOLD AND THE ANIMATION ARE TWO COPIES OF ONE DURATION, in two languages, and nothing
   // else can notice when they part company: the character either stops mid-turn (hold shorter) or
