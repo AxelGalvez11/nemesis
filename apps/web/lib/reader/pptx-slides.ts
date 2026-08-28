@@ -14,8 +14,7 @@
 // sorts before `slide2.xml` alphabetically, and a deck whose slides were
 // reordered after creation has filenames that no longer match its order at all.
 
-import { textSpansIn } from "./ooxml-edit";
-import { allNamed, childrenNamed, firstNamed, isElement, parseXml, textOf, type Span, type XmlElement } from "./xml-tree";
+import { allNamed, childrenNamed, firstNamed, isElement, parseXml, textOf, type XmlElement } from "./xml-tree";
 
 export interface SlideParagraph {
   text: string;
@@ -23,12 +22,6 @@ export interface SlideParagraph {
   level: number;
   /** True for the slide's title placeholder. */
   title: boolean;
-  /**
-   * Where this line's words physically sit in the slide part, so an edit can be a splice rather
-   * than a rewrite. See `ooxml-edit.ts`. Empty for a line with nothing replaceable in it — a line
-   * built entirely from field codes or from empty runs — which is what makes it uneditable.
-   */
-  runs: readonly Span[];
 }
 
 export interface SlidePicture {
@@ -42,13 +35,7 @@ export interface SlidePicture {
 export interface ParsedSlide {
   /** 1-based, in presentation order. */
   index: number;
-  /** The zip entry this slide was read from, e.g. `ppt/slides/slide4.xml`. An edit needs to know
-   *  which part to splice, and the filenames do NOT follow the order (see the note at the top). */
-  part: string;
   title: string | null;
-  /** Where the title's words sit in the part. Flattened across the title's paragraphs: a title
-   *  written on two lines edits as the one line it reads as. Empty when there is no title. */
-  titleRuns: readonly Span[];
   paragraphs: SlideParagraph[];
   pictures: SlidePicture[];
   notes: string | null;
@@ -73,24 +60,16 @@ function paragraphsOf(shape: XmlElement, title: boolean): SlideParagraph[] {
   return childrenNamed(body, "a:p")
     .map((paragraph) => {
       let text = "";
-      const runs: Span[] = [];
       for (const node of paragraph.children) {
         if (!isElement(node)) continue;
-        if (node.name === "a:r") {
-          const value = firstNamed(node, "a:t");
-          text += textOf(value ?? node);
-          // 🔴 ONLY `a:r` IS EDITABLE, AND `a:fld` DELIBERATELY IS NOT. A field is a slide number or
-          // a date that PowerPoint recomputes; its `a:t` holds the last value it happened to render,
-          // so writing over it produces a change that vanishes the next time the deck is opened.
-          if (value) runs.push(...textSpansIn(value));
-        } else if (node.name === "a:br") text += "\n";
+        if (node.name === "a:r") text += textOf(firstNamed(node, "a:t") ?? node);
+        else if (node.name === "a:br") text += "\n";
         else if (node.name === "a:fld") text += textOf(firstNamed(node, "a:t") ?? node);
       }
       const level = Number.parseInt(childrenNamed(paragraph, "a:pPr")[0]?.attrs["lvl"] ?? "0", 10);
       return {
         text: text.replace(/[ \t]+/g, " ").trim(),
         level: Number.isInteger(level) && level > 0 ? Math.min(level, 4) : 0,
-        runs,
         title,
       };
     })
@@ -169,13 +148,13 @@ export function parseSlide(
   notesXml: string | null,
 ): ParsedSlide {
   const root = parseXml(slideXml);
-  if (!root) return { index, part: slidePath, title: null, titleRuns: [], paragraphs: [], pictures: [], notes: null };
+  if (!root) return { index, title: null, paragraphs: [], pictures: [], notes: null };
 
   const shapes = allNamed(root, "p:sp");
   const titleShape = shapes.find(isTitleShape) ?? null;
-  const titleParagraphs = titleShape ? paragraphsOf(titleShape, true) : [];
-  const title = titleParagraphs.map((paragraph) => paragraph.text).join(" ").trim() || null;
-  const titleRuns = titleParagraphs.flatMap((paragraph) => paragraph.runs);
+  const title = titleShape
+    ? paragraphsOf(titleShape, true).map((paragraph) => paragraph.text).join(" ").trim() || null
+    : null;
 
   const paragraphs = shapes
     .filter((shape) => shape !== titleShape)
@@ -186,10 +165,7 @@ export function parseSlide(
     for (const row of childrenNamed(table, "a:tr")) {
       const cells = childrenNamed(row, "a:tc").map((cell) => textOf(cell).replace(/\s+/g, " ").trim());
       const line = cells.filter(Boolean).join(" · ");
-      // 🔴 NO RUNS, SO NOT EDITABLE. A table row is several cells joined with a separator for
-      // READING; splicing that joined string back would need to know which cell each word came
-      // from, and guessing would put a whole row into one cell.
-      if (line) paragraphs.push({ text: line, level: 0, runs: [], title: false });
+      if (line) paragraphs.push({ text: line, level: 0, title: false });
     }
   }
 
@@ -211,7 +187,7 @@ export function parseSlide(
     }
   }
 
-  return { index, part: slidePath, title, titleRuns, paragraphs, pictures, notes };
+  return { index, title, paragraphs, pictures, notes };
 }
 
 /** The notes part that belongs to a slide, via the slide's own relationships —
