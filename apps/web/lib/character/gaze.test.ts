@@ -15,12 +15,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { ANIMATION_BY_ID, FACE_BY_ID } from "@/lib/avatar";
+
+import { MONTAGE } from "./montage";
 import {
+  CAP_PITCH,
+  CAP_YAW,
   GLANCE_EVERY_MS,
   GLANCE_MS,
   GLANCE_PITCH,
   GLANCE_YAW,
   POINTER_MEMORY_MS,
+  cappedTurn,
   gazeTarget,
   glanceAt,
   trackReach,
@@ -113,9 +119,13 @@ test("🔴🔴 the measured poses were NOT edited — the character is aimed, no
   );
 });
 
-test("🔴 forward is a prop, it defaults to authored, and the app opts in everywhere", () => {
-  assert.match(AVATAR, /facing\?: "authored" \| "forward";/, "the facing prop is gone");
-  assert.match(AVATAR, /facing = "authored",/, "forward became the default, which would move the landing character");
+test("🔴 facing is a prop, it defaults to authored, and the app opts in everywhere", () => {
+  // 🔴 REPOINTED 2026-08-27. The product moved from `"forward"` to `"free"` on the owner's choice;
+  // `"forward"` is KEPT and still asserted here, because the owner has moved this three times in
+  // two days and the mode that gets deleted is the one that cannot be gone back to. Which mode the
+  // SURFACES pass is asserted separately, and moves when the owner moves.
+  assert.match(AVATAR, /facing\?: "authored" \| "forward" \| "free";/, "a facing mode was dropped");
+  assert.match(AVATAR, /facing = "authored",/, "the default moved, which would move the landing character");
   // The correction is taken off the DRAWN head, so a handover between two animations cannot swing.
   assert.match(AVATAR, /const level = state\.facing === "forward" \? played\.face\.head : null;/);
   assert.match(AVATAR, /\{ x: a\.atX - level\.x, y: a\.atY \+ spin - level\.y \}/);
@@ -123,8 +133,12 @@ test("🔴 forward is a prop, it defaults to authored, and the app opts in every
   // `expressions.ts` says outright that curiosity is carried by the roll; levelling it would delete
   // the expression rather than aim it.
   assert.equal(/level\.z/.test(AVATAR), false, "the roll is being cancelled, which flattens curious");
+  // 🔴 AND `"free"` GOES THROUGH THE CAP, WITH THE SPIN ADDED AFTER IT. A cap that saw the spin
+  // would stop a poke dead at 42° and the poke would read as a twitch.
+  assert.match(AVATAR, /cappedTurn\(played\.face\.head, \{ x: a\.atX, y: a\.atY \}\)/, "free facing stopped being capped");
+  assert.match(AVATAR, /\{ x: free\.x, y: free\.y \+ spin \}/, "the spin is going through the cap");
   for (const [name, src] of [["dock", DOCK], ["greeter", HOME], ["thinking", THINKING]] as const) {
-    assert.match(src, /facing="forward"/, `the ${name} character is not levelled`);
+    assert.match(src, /facing="free"/, `the ${name} character does not face the way the owner chose`);
   }
 });
 
@@ -288,4 +302,54 @@ test("🔴 the glance is a FRACTION of full deflection, so it moved with the rea
   );
   assert.ok(biggest > reach * 0.2, `the largest glance is ${Math.round(biggest)}px against a ${Math.round(reach)}px reach`);
   assert.ok(biggest < reach, "a glance reaches full deflection, which is a stare rather than a glance");
+});
+
+test("🔴🔴 the head is free again, and capped so an eye is never lost round the back", () => {
+  // Owner 2026-08-27, having watched both settings side by side with the measured cost of each
+  // printed under every character, left the model sheet's toggle on *Head free*. That reverses the
+  // 2026-08-26 levelling. It does NOT reverse what levelling was fixing underneath: tracking ADDS
+  // to the pose, and `farRightGlance` (35.3°, worn by `gaze-searching` and `gaze-proud`) plus
+  // `TRACK_YAW` (26) is 61.3°, where the far eye is drawn at 4% of its size.
+  const at = (poseYaw: number, track: number) => poseYaw + cappedTurn({ x: 0, y: poseYaw }, { x: 0, y: track }).y;
+
+  assert.equal(at(0, 26), 26, "tracking from a level head is throttled for no reason");
+  assert.equal(at(35.3, 26), CAP_YAW, "the pose plus full tracking is not capped");
+  assert.ok(at(35.3, 26) < 61.3 - 15, "the cap does not actually bite where the defect was");
+
+  // 🔴 THE TOTAL IS CAPPED, NOT THE TRACKING, and this is the case that proves the difference: the
+  // pointer on the far side must still pull a turned head all the way back at full strength.
+  assert.ok(Math.abs(at(35.3, -26) - 9.3) < 1e-9, "tracking back toward the middle was throttled");
+  assert.equal(at(-35.3, -26), -CAP_YAW, "the cap is one-sided");
+
+  // Every pose the montage plays is inside the cap on its own, so a pose is never clipped alone.
+  for (const id of MONTAGE) {
+    const a = ANIMATION_BY_ID.get(id);
+    assert.ok(a, `${id} is not playable`);
+    for (const step of a!.steps) {
+      const face = FACE_BY_ID.get(step.face)!;
+      assert.ok(Math.abs(face.head.y) <= CAP_YAW, `${step.face} is authored at ${face.head.y}°, past the cap`);
+      assert.equal(cappedTurn(face.head, { x: 0, y: 0 }).y, 0, `${step.face} is bent by the cap with no tracking at all`);
+    }
+  }
+
+  // 🔴 PITCH IS UNCAPPED ON PURPOSE. Yaw hides an eye because the face wraps round a solid and one
+  // eye goes to the far side; pitch tilts both together and hides neither — measured, both eyes are
+  // drawn at 116% of size at 15° of pitch and 113% at 43°, the widest the product can reach.
+  assert.equal(CAP_PITCH, null, "a pitch cap was added; measure it before believing it does anything");
+  assert.equal(cappedTurn({ x: 28.6, y: 0 }, { x: 15, y: 0 }).x, 15, "pitch tracking is being clipped");
+});
+
+test("🔴 every product surface faces the same way, or the hand-off swings", () => {
+  // The front door's character flies into the canvas and BECOMES the dock's. If the two ends
+  // disagreed about facing, the head would jump ~28° on the frame of the route swap.
+  const files = ["../../components/character/character-dock.tsx", "../../components/workspace/learn/canvas-home.tsx", "../../components/workspace/learn/canvas-thinking.tsx"];
+  for (const f of files) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    // 🔴 THE PROP, NOT THE WORD. Two of these files discuss `facing="forward"` in a comment, as the
+    // record of what this used to be and why it moved; a test that banned the string outright
+    // would be asking the code to forget its own history.
+    const passed = [...src.matchAll(/^\s*facing="(\w+)"/gm)].map((m) => m[1]);
+    assert.ok(passed.length > 0, `${f} passes no facing at all`);
+    assert.deepEqual([...new Set(passed)], ["free"], `${f} does not face the way the owner chose`);
+  }
 });

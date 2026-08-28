@@ -320,47 +320,66 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
               {/* 🔴🔴 A PICKER, AND IT IS THE ONE CONTROL THIS CARD WAS BUILT TO REFUSE. The note at
                   the top explains why the character has no colour and no shape of its own: those
                   are decisions about what the product's character IS, and two controls that both
-                  change "the colour" can disagree. This is a different kind of choice — WHICH of
-                  the sixteen faces it pulls while it is waiting for you — and the owner asked for
-                  it by name (2026-08-27: *"allow me to pick the expressions for the montage"*).
-                  Nothing here can put the character in a state it could not already reach. */}
+                  change "the colour" can disagree. This is a different kind of choice — WHAT it
+                  does while it is waiting for you — and the owner asked for it by name
+                  (2026-08-27: *"allow me to pick the expressions for the montage"*). Nothing here
+                  can put the character in a state it could not already reach. */}
               <div className="mt-5 border-t border-(--ui-stroke-secondary) pt-4">
-                <p className="text-xs font-medium text-(--ui-text-primary)">Faces it pulls while it waits</p>
+                <p className="text-xs font-medium text-(--ui-text-primary)">What it does while it waits</p>
                 <p className="mt-1 text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
-                  It wears one of these for a few seconds at a time, and only when nothing is
-                  running. Tap to turn one off or on. Each one below is the real face, not a picture
-                  of it.
+                  It plays one of these at a time, and only when nothing is running. Tap to turn one
+                  off or on.
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {MONTAGE_CHOICES.map((choice) => {
-                    const on = montageChosen.includes(choice.id);
-                    return (
-                      <button
-                        aria-pressed={on}
-                        className={cn(
-                          "flex w-[76px] flex-col items-center gap-1 rounded-xl border border-(--ui-stroke-secondary) bg-background px-1 py-2 text-[0.65rem] hover:bg-(--ui-control-hover-background)",
-                          on ? "border-(--theme-primary) ring-1 ring-(--theme-primary)" : "opacity-45",
-                        )}
-                        key={choice.id}
-                        onClick={() => setMontage(on ? montageChosen.filter((id) => id !== choice.id) : [...montageChosen, choice.id])}
-                        title={choice.label}
-                        type="button"
-                      >
-                        {/* 🔴 FROZEN, NOT LIVE. Sixteen running avatars on one card is sixteen
-                            animation loops and sixteen engines; the faces are held poses anyway, so
-                            a frozen frame IS the face. `frozenAt` past the morph so it has settled. */}
-                        <NemesisAvatar
-                          accent={accent}
-                          animation={choice.id}
-                          frozenAt={2400}
-                          silhouette={CHARACTER_SILHOUETTE}
-                          size={44}
-                        />
-                        <span className="text-(--ui-text-secondary)">{choice.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* 🔴🔴 SPLIT BY KIND, BECAUSE THE TWO ARE NOT INTERCHANGEABLE AND THE DIFFERENCE IS
+                    THE WHOLE POINT (owner 2026-08-27: the sixteen held faces were what made the
+                    character look switched off). A loop cycles several poses and travels 13-30px on
+                    a 76px character; a held face travels under a pixel. Offering them in one
+                    undifferentiated wall of thirty-nine words is how the first version of this
+                    control shipped with the moving half missing. */}
+                {(["loop", "feeling"] as const).map((kind) => {
+                  const group = MONTAGE_CHOICES.filter((c) => c.kind === kind);
+                  return (
+                    <div className="mt-4" key={kind}>
+                      <p className="text-[0.7rem] font-medium text-(--ui-text-secondary)">
+                        {kind === "loop" ? "Sequences, which move" : "Single faces, which hold still"}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {group.map((choice, i) => {
+                          const on = montageChosen.includes(choice.id);
+                          return (
+                            <button
+                              aria-pressed={on}
+                              className={cn(
+                                "flex w-[76px] flex-col items-center gap-1 rounded-xl border border-(--ui-stroke-secondary) bg-background px-1 py-2 text-[0.65rem] hover:bg-(--ui-control-hover-background)",
+                                on ? "border-(--theme-primary) ring-1 ring-(--theme-primary)" : "opacity-45",
+                              )}
+                              key={choice.id}
+                              onClick={() => setMontage(on ? montageChosen.filter((id) => id !== choice.id) : [...montageChosen, choice.id])}
+                              title={choice.label}
+                              type="button"
+                            >
+                              {/* 🔴 FROZEN, NOT LIVE. Thirty-nine running avatars on one card is
+                                  thirty-nine animation loops and thirty-nine engines.
+                                  🔴 AND EACH LOOP IS FROZEN AT A DIFFERENT MOMENT OF ITS OWN CYCLE:
+                                  every loop shares the same pool of measured poses, so freezing
+                                  them all at 2400ms drew several tiles the same face and the row
+                                  read as a rendering fault. A held face has one pose and does not
+                                  need it. */}
+                              <NemesisAvatar
+                                accent={accent}
+                                animation={choice.id}
+                                frozenAt={kind === "loop" ? 2400 + i * 1700 : 2400}
+                                silhouette={CHARACTER_SILHOUETTE}
+                                size={44}
+                              />
+                              <span className="text-(--ui-text-secondary)">{choice.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
                 <p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">
                   {montageChosen.length} of {MONTAGE_CHOICES.length} on.{" "}
                   <button
