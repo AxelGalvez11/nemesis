@@ -107,19 +107,29 @@ export const MONTAGE_CHOICES: readonly MontageChoice[] = [
  *
  * 🔴 THE ORDER IS THEIRS AS SENT, NOT SORTED. The montage walks this list in order, so sorting it
  * would quietly rearrange the character's behaviour on a whim of mine.
+ *
+ * 🔴 `gaze-sleeping` AND `gaze-drowsy` CUT 2026-08-28 (owner: *"remove sleeping and drowsy"*).
+ * Both spend 100% of their time with BOTH eyes shut, and a character asleep beside someone who is
+ * reading looks broken rather than restful — `useDoze` already owns actually falling asleep, and it
+ * only does so after the learner has been away. Measured over one full round of this list, time
+ * with both eyes shut goes 22% → 12%.
+ *
+ * 🔴 TWO PICKS STILL CARRY THAT LOOK AND ARE KEPT BECAUSE THE OWNER TICKED THEM: `gaze-waking` is a
+ * SINGLE held `eyesClosed` face with no second pose and 0px of travel, so in a montage it is simply
+ * eyes shut for five seconds; and `gaze-bored` spends two of its three poses on `sleepySquint` and
+ * `drowsyClosed`, the same two `gaze-drowsy` was made of. Named here rather than removed on my own
+ * judgement — see the report of 2026-08-28.
  */
 export const MONTAGE: readonly string[] = [
   "gaze-thinking",
   "gaze-searching",
   "gaze-idle",
-  "gaze-sleeping",
   "gaze-listening",
   "gaze-working",
   "gaze-excited",
   "gaze-bored",
   "gaze-angry",
   "gaze-suspicious",
-  "gaze-drowsy",
   "gaze-confused",
   "gaze-happy",
   "gaze-curious",

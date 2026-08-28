@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { ANIMATION_BY_ID, animationDuration, FACE_BY_ID } from "@/lib/avatar";
+import { ANIMATION_BY_ID, animationDuration, FACE_BY_ID, RADIUS } from "@/lib/avatar";
 import { ANIMATIONS as GAZE_ANIMATIONS } from "@/lib/avatar/animations";
 import { EXPRESSION_IDS } from "@/lib/avatar/expressions";
 
@@ -182,4 +182,36 @@ test("🔴 the montage is addressed from a clock, not advanced by a timer", () =
     montageFace({ ...resting, restingMs: hour + round }),
     "one full round does not return to the same entry",
   );
+});
+
+test("🔴 nothing in the default set sleeps through a learner's session", () => {
+  // Owner 2026-08-28: *"remove sleeping and drowsy"*. `useDoze` owns actually falling asleep and
+  // only does it once the learner has been away; a resting montage that plays sleep while someone
+  // is reading looks broken rather than restful.
+  assert.ok(!MONTAGE.includes("gaze-sleeping"), "gaze-sleeping is back in the resting montage");
+  assert.ok(!MONTAGE.includes("gaze-drowsy"), "gaze-drowsy is back in the resting montage");
+  // Still OFFERED, because the default is a recommendation and not a cage.
+  for (const id of ["gaze-sleeping", "gaze-drowsy"]) {
+    assert.ok(MONTAGE_CHOICES.some((c) => c.id === id), `${id} was removed from the picker as well`);
+    assert.ok(MONTAGE_LEFT_OUT.includes(id), `${id} is neither in the set nor named as left out`);
+  }
+
+  // 🔴 MEASURED, NOT ASSUMED: how much of one round has BOTH eyes shut. One narrow eye is a squint,
+  // which is an expression; two is sleep. Was 22% of the round, now 12%.
+  const shutShare = (ids: readonly string[]) => {
+    let total = 0, shut = 0;
+    for (const id of ids) {
+      const a = ANIMATION_BY_ID.get(id);
+      if (!a) continue;
+      const hold = holdFor(id), per = hold / a.steps.length;
+      for (const s of a.steps) {
+        const f = FACE_BY_ID.get(s.face)!;
+        if (Math.max(f.left.height, f.right.height) / RADIUS <= 0.2) shut += per;
+      }
+      total += hold;
+    }
+    return shut / total;
+  };
+  assert.ok(shutShare(MONTAGE) < 0.15, `${(shutShare(MONTAGE) * 100).toFixed(0)}% of the round is spent with both eyes shut`);
+  assert.ok(shutShare([...MONTAGE, "gaze-sleeping", "gaze-drowsy"]) > 0.19, "the fixture no longer shows what was removed");
 });
