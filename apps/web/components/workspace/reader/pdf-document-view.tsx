@@ -18,6 +18,7 @@ import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import type { SearchMatch } from "@/lib/reader/reader-search";
 
 import { PdfPageView, type PageHighlight } from "./pdf-page-view";
+import type { RegionAnchor, RegionBox } from "./use-region-drag";
 import {
   classifyPage,
   maxImageCoverage,
@@ -55,10 +56,14 @@ interface PdfDocumentViewProps {
   /** The opened document, so the sidebar can draw thumbnails from it. Called
    *  with null when it closes, because a destroyed document renders nothing. */
   onDocumentOpen: (document: PdfDocument | null) => void;
+  /** Drag a box on a page instead of selecting text. See `PdfPageView`'s own note for why this is
+   *  a mode and cannot be anything else. */
+  marking?: boolean;
+  onRegion?: (pageNumber: number, region: RegionBox, cropDataUrl: string | null, anchor: RegionAnchor) => void;
 }
 
 export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps>(function PdfDocumentView(
-  { bytes, zoom, matches, currentMatch, onReady, onUnitChange, onError, onScaleChange, onDocumentOpen },
+  { bytes, zoom, matches, currentMatch, onReady, onUnitChange, onError, onScaleChange, onDocumentOpen, marking = false, onRegion },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -258,6 +263,8 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
               document={pdf}
               highlights={highlightsByPage.get(pageNumber) ?? EMPTY}
               key={pageNumber}
+              marking={marking}
+              onRegion={onRegion}
               onVisible={onUnitChange}
               isImageOnly={imageOnlyPages.has(pageNumber)}
               pageNumber={pageNumber}

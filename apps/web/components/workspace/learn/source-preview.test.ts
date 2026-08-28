@@ -46,7 +46,12 @@ test("🔴🔴 the preview shows the ORIGINAL document, whatever kind it is — 
   // instead of two.
   assert.match(PREVIEW, /loadLibrarySource\(/, "the preview does not resolve the library row");
   assert.match(PREVIEW, /readerSourceFromLibrary\(row\)/, "the preview builds its own idea of the file's kind instead of the Library's");
-  assert.match(PREVIEW, /<DocumentReader source=\{state\.source\} variant="dialog" \/>/, "the preview no longer mounts the real reader");
+  // Repointed 2026-08-28 when the mount grew props (`grounded`, `onSendToChat`). The property is
+  // WHICH component renders the file and in which shape, not the exact prop list — pinning the
+  // literal JSX made every later prop a false failure.
+  assert.match(PREVIEW, /<DocumentReader\b/, "the preview no longer mounts the real reader");
+  assert.match(PREVIEW, /source=\{state\.source\}/, "the reader is handed something other than the resolved library row");
+  assert.match(PREVIEW, /variant="dialog"/, "the reader is mounted with the full page chrome inside a panel");
   // 🔴 AND IT MUST NOT GO BACK TO RENDERING PAGES ITSELF, which is the shape that excluded docx.
   assert.ok(!/openPdf\(/.test(PREVIEW), "the panel is opening PDF bytes itself again — that path cannot show a docx");
   assert.ok(!/<PdfThumbnail/.test(PREVIEW), "the panel is drawing its own thumbnails again");
@@ -55,15 +60,37 @@ test("🔴🔴 the preview shows the ORIGINAL document, whatever kind it is — 
   assert.ok(!/excerpts/.test(PREVIEW), "the preview reaches for the extraction");
 });
 
-test("🔴🔴 no highlight toolbar with nowhere to send", () => {
-  // `DocumentReader`'s selection actions send a prompt and the document into a chat lane. This
-  // panel has none — it exists to SHOW the file — so the prop is omitted and the reader hides the
-  // toolbar rather than offering a control that does nothing, which is this codebase's
-  // most-repeated defect. Calibration: pass an empty function and this reddens.
-  assert.ok(!/onSendToChat/.test(PREVIEW), "the panel hands the reader a chat lane it does not have");
+test("🔴🔴 the panel HAS a chat lane now, and the reader still hides its toolbar without one", () => {
+  // 🔴🔴 DELIBERATELY INVERTED, 2026-08-28. This used to assert the OPPOSITE — that the panel omits
+  // `onSendToChat` — and the reason it gave was true when it was written: the panel existed only to
+  // SHOW the file, so a toolbar here would have been a control that does nothing. Owner then asked
+  // for the thing that changes the premise: *"you can select a piece of the document on the sidebar
+  // ... and send it to nemesis."* The canvas IS the chat lane. So the panel passes a route and the
+  // toolbar lights up.
+  //
+  // What must NOT be lost is the property the old guard was really protecting, which is about the
+  // READER and not about this panel: no action bar where there is nowhere to send. Both halves are
+  // asserted below, because the Library's attachment popup still mounts the reader without a route.
+  assert.match(PREVIEW, /onSendToChat=\{onSendToChat\}/, "the panel no longer forwards a way to ask about a selection");
   const reader = strip(readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8"));
-  assert.match(reader, /onSendToChat\?: \(prompt: string, files: File\[\]\) => void;/, "the reader requires a chat lane again, which forces a dead toolbar here");
-  assert.match(reader, /\{selection && onSendToChat && <SelectionActions/, "the toolbar mounts without somewhere to send");
+  assert.match(reader, /onSendToChat\?: \(prompt: string, files: File\[\]\) => void;/, "the reader requires a chat lane again, which forces a dead toolbar wherever there is none");
+  assert.match(reader, /\{onSendToChat && \(selection \?\? region\) && \(/, "the toolbar mounts without somewhere to send");
+});
+
+test("🔴🔴 the panel never files the same document into the same canvas twice", () => {
+  // `DocumentReader` attaches its own extracted text to every action, and that is right in the
+  // LIBRARY: that chat has never read the file being asked about, so naming it in the prompt would
+  // ground nothing. The canvas is the opposite case by construction — this panel can only open a
+  // source the canvas already holds — so the same behaviour here files a whole document a second
+  // time on every "Explain this".
+  //
+  // Calibration: drop `grounded` and this reddens.
+  assert.match(PREVIEW, /grounded/, "the reader is left free to re-attach a document the canvas already grounds");
+  const reader = strip(readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8"));
+  assert.match(reader, /if \(grounded\) return \[\];/, "grounded no longer suppresses the reader's text dump");
+  // 🔴 AND ONLY THE TEXT DUMP. A cut-out of a marked area exists nowhere else, so it travels even
+  // here — suppressing it would send a question about a picture with no picture attached.
+  assert.match(reader, /\.\.\.documentAttachment\(\), \.\.\.\(cropped \? \[cropped\] : \[\]\)/, "the marked-area cut-out stopped travelling with the question");
 });
 
 test("🔴 a source with no kept bytes gets a sentence, not a blank card", () => {

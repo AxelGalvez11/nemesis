@@ -9,18 +9,20 @@
 // only one that survives a zoom, a rotation or a different-sized window. The
 // crop itself is cut from the natural-size image on a canvas, so what the model
 // receives is the real pixels, not a scaled-down screenshot of them.
+//
+// 🔴 THE DRAG ITSELF LIVES IN `use-region-drag.ts` NOW, because PDF pages grew
+// the same gesture. Two copies of "which corner does a fast drag end at" is
+// exactly how one of them silently stops working.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 
-export interface ImageRegion {
-  /** All four are fractions of the natural image size. */
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+import { cropFrom, useRegionDrag, type RegionAnchor, type RegionBox } from "./use-region-drag";
+
+/** Kept as its own name because it is part of this view's published contract and
+ *  `document-reader.tsx` imports it; structurally it is a `RegionBox`. */
+export type ImageRegion = RegionBox;
 
 interface ImageDocumentViewProps {
   url: string;
@@ -28,119 +30,32 @@ interface ImageDocumentViewProps {
   scale: number;
   rotation: number;
   onNaturalSize: (size: { width: number; height: number }) => void;
-  onRegion: (region: ImageRegion, cropDataUrl: string | null) => void;
+  onRegion: (region: ImageRegion, cropDataUrl: string | null, anchor: RegionAnchor) => void;
 }
 
 export function ImageDocumentView({ url, fileName, scale, rotation, onNaturalSize, onRegion }: ImageDocumentViewProps) {
   const imageRef = useRef<HTMLImageElement>(null);
-  const frameRef = useRef<HTMLDivElement>(null);
-  const [drag, setDrag] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const [dragging, setDragging] = useState(false);
-
-  const naturalSize = useCallback(() => {
-    const image = imageRef.current;
-    return image ? { width: image.naturalWidth, height: image.naturalHeight } : null;
-  }, []);
 
   // A region is only meaningful while the picture is the right way up: a
   // rotated crop would need the box rotated with it, and reporting a fraction
   // of a rotated frame as a fraction of the file would be quietly wrong.
   const canSelect = rotation % 360 === 0;
 
-  const pointFrom = useCallback((event: React.PointerEvent | PointerEvent) => {
-    const box = imageRef.current?.getBoundingClientRect();
-    if (!box || box.width === 0 || box.height === 0) return null;
-    return {
-      x: Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - box.top) / box.height)),
-    };
-  }, []);
+  const picked = useCallback(
+    (region: RegionBox, anchor: RegionAnchor) => {
+      const image = imageRef.current;
+      const crop = image ? cropFrom(image, region, { height: image.naturalHeight, width: image.naturalWidth }) : null;
+      onRegion(region, crop, anchor);
+    },
+    [onRegion],
+  );
 
-  const finish = useCallback((release: { x: number; y: number } | null) => {
-    setDragging(false);
-    if (!drag) return;
-    const x2 = release?.x ?? drag.x2;
-    const y2 = release?.y ?? drag.y2;
-    const region: ImageRegion = {
-      x: Math.min(drag.x1, x2),
-      y: Math.min(drag.y1, y2),
-      width: Math.abs(x2 - drag.x1),
-      height: Math.abs(y2 - drag.y1),
-    };
-    // A stray click is not a selection. Below ~1.5% in either direction there
-    // is nothing to ask about, and reporting it would clear the panel for no
-    // reason.
-    if (region.width < 0.015 || region.height < 0.015) {
-      setDrag(null);
-      return;
-    }
-    const size = naturalSize();
-    const image = imageRef.current;
-    let crop: string | null = null;
-    if (size && image) {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(region.width * size.width));
-        canvas.height = Math.max(1, Math.round(region.height * size.height));
-        const context = canvas.getContext("2d");
-        if (context) {
-          context.drawImage(
-            image,
-            region.x * size.width,
-            region.y * size.height,
-            region.width * size.width,
-            region.height * size.height,
-            0,
-            0,
-            canvas.width,
-            canvas.height,
-          );
-          crop = canvas.toDataURL("image/png");
-        }
-      } catch {
-        // A cross-origin image taints the canvas and toDataURL throws. The
-        // region is still reported — the panel just cannot show a preview of it.
-        crop = null;
-      }
-    }
-    onRegion(region, crop);
-  }, [drag, naturalSize, onRegion]);
-
-  useEffect(() => {
-    if (!dragging) return;
-    const move = (event: PointerEvent) => {
-      const point = pointFrom(event);
-      if (point) setDrag((current) => (current ? { ...current, x2: point.x, y2: point.y } : current));
-    };
-    // The release position is taken from the pointerup itself, not from the
-    // last move. A quick drag can finish with very few move events (and an
-    // automated one with none at all), and reading the corner off the last
-    // move would then throw the selection away as a stray click.
-    const up = (event: PointerEvent) => {
-      const point = pointFrom(event);
-      finish(point ? { x: point.x, y: point.y } : null);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-  }, [dragging, finish, pointFrom]);
-
-  const box = drag
-    ? {
-        left: `${Math.min(drag.x1, drag.x2) * 100}%`,
-        top: `${Math.min(drag.y1, drag.y2) * 100}%`,
-        width: `${Math.abs(drag.x2 - drag.x1) * 100}%`,
-        height: `${Math.abs(drag.y2 - drag.y1) * 100}%`,
-      }
-    : null;
+  const { box, onPointerDown } = useRegionDrag({ enabled: canSelect, onPicked: picked, target: imageRef });
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-auto overscroll-contain p-6" data-testid="reader-image-scroll">
       <div className="m-auto flex flex-col items-center gap-3">
-        <div className="nemesis-reader-canvas relative" ref={frameRef}>
+        <div className="nemesis-reader-canvas relative">
           {/* eslint-disable-next-line @next/next/no-img-element -- a private, short-lived signed URL; next/image cannot optimize it */}
           <img
             alt={fileName}
@@ -150,14 +65,7 @@ export function ImageDocumentView({ url, fileName, scale, rotation, onNaturalSiz
               const image = event.currentTarget;
               onNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
             }}
-            onPointerDown={(event) => {
-              if (!canSelect || event.button !== 0) return;
-              const point = pointFrom(event);
-              if (!point) return;
-              event.preventDefault();
-              setDrag({ x1: point.x, y1: point.y, x2: point.x, y2: point.y });
-              setDragging(true);
-            }}
+            onPointerDown={onPointerDown}
             ref={imageRef}
             src={url}
             style={{

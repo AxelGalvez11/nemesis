@@ -317,11 +317,15 @@ export function LearningCanvas({
    * this exists to end. If ingest fails, `session.error` already says so on the same screen.
    */
   const [recentAttachments, setRecentAttachments] = useState<readonly { id: string; title: string }[]>([]);
+  // 🔴 IT RETURNS THE INGEST NOW, AND CALLERS MAY IGNORE IT. Every existing caller is an event
+  // handler that fires and forgets, which is still correct — the chip is the feedback. `askFromReader`
+  // is the one caller that has to WAIT: it sends a question about a picture in the same gesture that
+  // attaches it, and a turn that starts beside the upload races the model against the material.
   const attachWithChips = useCallback(
     (files: FileList | File[]) => {
       const picked = Array.from(files).map((file) => ({ id: crypto.randomUUID(), title: file.name }));
       if (picked.length > 0) setRecentAttachments((current) => [...current, ...picked]);
-      void session.attachFiles(files);
+      return session.attachFiles(files);
     },
     [session],
   );
@@ -1600,6 +1604,38 @@ export function LearningCanvas({
     sink,
   });
 
+  /**
+   * A question fired from inside the docked document reader: a highlighted passage or a marked area,
+   * carrying one of the reader's five actions.
+   *
+   * 🔴 THE ORDINARY ASK ROUTE, AND THE SAME `intent` THE COMPOSER READS DECIDES IT. Highlighting a
+   * paragraph and pressing "Explain" is a NEW question, never an answer to what is on screen and
+   * never a clarification, so those two arms are unreachable from here by design. What is NOT
+   * optional is `start`: on a canvas that has not begun, routing this through `submit` would ask a
+   * question of a surface with nowhere to put the answer. Re-deriving that branch is how two routes
+   * drift, so the discriminator is read, not guessed.
+   *
+   * 🔴 THE PICTURE LANDS BEFORE THE QUESTION IS ASKED. `attachFiles` is a real upload and ingest;
+   * firing the turn beside it races the model against the very thing it is being asked to look at,
+   * and the loser is silent — an answer about a cut-out nobody could see. The chip appears on the
+   * pick, so the wait is visible rather than a dead moment after a click.
+   *
+   * 🔴 ONLY GENUINELY NEW MATERIAL ARRIVES HERE. The panel opens sources this canvas already holds,
+   * so the reader is mounted `grounded` and sends no text dump — see `source-preview.tsx`.
+   */
+  // 🔴 A PLAIN FUNCTION, NOT A `useCallback`, AND THAT IS FORCED. Everything from here down sits
+  // BELOW the not-ready gate at `if (!session.ready)`, where a hook may not go: the render after
+  // the canvas's first database read would call one more hook than the render before it, which is
+  // the crash `send-is-acknowledged.test.ts` holds the line on. It needs `intent`, which is
+  // computed below that gate, so the choice is a fresh identity per render or a ref. Nothing
+  // downstream is memoised on it, so the identity is free.
+  const askFromReader = async (asked: string, files: File[]) => {
+    if (files.length > 0) await attachWithChips(files);
+    acknowledgeAttachments();
+    if (intent.kind === "start") beginOrAnswer(asked, null);
+    else void submit(asked, null);
+  };
+
   // 🔴 THE COMPOSER IS NOW PRESENT BEFORE THE CANVAS HAS BEGUN, AND THAT IS THE WHOLE OF §15.
   //
   // This line used to read `!["empty", "complete"].includes(canvas.state)`, and the comment above
@@ -1724,6 +1760,7 @@ export function LearningCanvas({
         making={session.making}
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
         onMakeDeliverable={(kind) => void session.makeDeliverable(kind)}
+        onSendToChat={askFromReader}
         replyAudio={voice.replyAudio}
         transcript={transcript}
         voice={voice.header}

@@ -142,6 +142,7 @@ export function SourcesControl({
   onFiles,
   onMakeDeliverable,
   making = null,
+  onSendToChat,
 }: {
   canvas: LearningCanvas;
   /** Whether this canvas holds knowledge that provably came from the model rather than from
@@ -153,6 +154,10 @@ export function SourcesControl({
   onMakeDeliverable?: (kind: DeliverableKind) => void;
   /** Which deliverable is being made, for the busy row. */
   making?: DeliverableKind | null;
+  /** A question asked FROM the open document: a highlighted passage or a marked area, with one of
+   *  the reader's actions on it. Absent means the reader shows no action bar at all — see
+   *  `SourcePreview`. */
+  onSendToChat?: (prompt: string, files: File[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"sources" | "outputs">("sources");
@@ -328,7 +333,7 @@ export function SourcesControl({
           learner's dragged width and the inset the canvas is pushed by; both live in hooks, and
           hooks cannot run in a component that only exists while it is open. It returns null when
           `source` is null and declares a zero inset, so a closed panel costs nothing. */}
-      <SourcePreview onClose={() => setPreviewing(null)} source={previewing} uid={session?.user.id ?? null} />
+      <SourcePreview onClose={() => setPreviewing(null)} onSendToChat={onSendToChat} source={previewing} uid={session?.user.id ?? null} />
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
       {openedOutput && <OutputPreview canvasId={canvas.id} onClose={() => setOpenedOutput(null)} output={openedOutput} />}
     </div>

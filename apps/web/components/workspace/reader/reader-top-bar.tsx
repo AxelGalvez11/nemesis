@@ -69,6 +69,11 @@ export interface ReaderTopBarProps {
    *  have nothing to list (a single image). */
   railOpen: boolean;
   onToggleRail?: () => void;
+  /** Marking mode: drag a box on the page instead of selecting text. Absent for documents where a
+   *  box cannot be cut out — a slide is a RECONSTRUCTION, so a crop of one would be a picture of
+   *  our layout rather than of the deck. */
+  marking?: boolean;
+  onToggleMarking?: () => void;
   /** What an AI action would act on right now, in words. */
   actionScope: string;
   onAction: (action: ReaderActionId) => void;
@@ -108,6 +113,8 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     onBack,
     railOpen,
     onToggleRail,
+    marking = false,
+    onToggleMarking,
     actionScope,
     onAction,
     actionsDisabled,
@@ -262,6 +269,23 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
             <Codicon name="screen-normal" size="0.85rem" />
           </button>
         </div>
+      )}
+
+      {onToggleMarking && (
+        <button
+          aria-label={marking ? "Stop marking areas" : "Mark an area"}
+          aria-pressed={marking}
+          className={cn(
+            "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
+            marking ? "bg-(--ui-action) text-(--ui-action-glyph)" : "text-(--ui-text-tertiary) hover:text-foreground",
+          )}
+          data-testid="reader-mark-area"
+          onClick={onToggleMarking}
+          title={marking ? "Marking an area: drag a box on the page. Turn off to select text again." : "Mark an area to ask about"}
+          type="button"
+        >
+          <Codicon name="screen-full" size="0.85rem" />
+        </button>
       )}
 
       {onToggleRail && (
