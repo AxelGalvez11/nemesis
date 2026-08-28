@@ -20,7 +20,8 @@
 //     They are machinery, not prose, and they are exactly what leaks into the
 //     regex extractor's output today.
 
-import { allNamed, childrenNamed, firstNamed, isElement, parseXml, textOf, type XmlElement } from "./xml-tree";
+import { textSpansIn } from "./ooxml-edit";
+import { allNamed, childrenNamed, firstNamed, isElement, parseXml, textOf, type Span, type XmlElement } from "./xml-tree";
 
 export interface DocxRun {
   text: string;
@@ -35,10 +36,15 @@ export interface DocxTableCell {
   header: boolean;
 }
 
+/**
+ * Where a paragraph's words physically sit in `word/document.xml`, so an edit can be a splice
+ * rather than a rewrite. See `ooxml-edit.ts`. Empty means the line has nothing replaceable in it,
+ * which is what makes it uneditable.
+ */
 export type DocxBlock =
-  | { kind: "heading"; level: number; runs: DocxRun[] }
-  | { kind: "paragraph"; runs: DocxRun[]; quote: boolean }
-  | { kind: "list-item"; level: number; ordered: boolean; runs: DocxRun[] }
+  | { kind: "heading"; level: number; runs: DocxRun[]; spans: readonly Span[] }
+  | { kind: "paragraph"; runs: DocxRun[]; quote: boolean; spans: readonly Span[] }
+  | { kind: "list-item"; level: number; ordered: boolean; runs: DocxRun[]; spans: readonly Span[] }
   | { kind: "table"; rows: DocxTableCell[][] }
   | { kind: "image"; relId: string; alt: string }
   | { kind: "section-break" };
@@ -139,6 +145,32 @@ function runsOf(container: XmlElement): DocxRun[] {
   return runs.filter((run) => run.text.length > 0);
 }
 
+/**
+ * The `w:t` spans of one paragraph, skipping exactly what `runsOf` skips.
+ *
+ * 🔴 THE EXCLUSIONS ARE NOT COSMETIC HERE, THEY ARE CORRECTNESS. `w:del` is text the author deleted
+ * with track-changes on and `w:instrText` is a field instruction; neither is on screen, so writing
+ * a replacement line across them would put the learner's words into machinery they never saw. A
+ * nested table is emitted as its own block and is not part of this line.
+ */
+function paragraphSpans(paragraph: XmlElement): Span[] {
+  const spans: Span[] = [];
+  const walk = (node: XmlElement): void => {
+    for (const child of node.children) {
+      if (!isElement(child)) continue;
+      if (child.name === "w:del" || child.name === "w:instrText" || child.name === "w:delText") continue;
+      if (child.name === "w:tbl") continue;
+      if (child.name === "w:t") {
+        spans.push(...textSpansIn(child));
+        continue;
+      }
+      walk(child);
+    }
+  };
+  walk(paragraph);
+  return spans;
+}
+
 function imageIn(paragraph: XmlElement): { relId: string; alt: string } | null {
   const blip = firstNamed(paragraph, "a:blip");
   const relId = blip?.attrs["r:embed"] ?? blip?.attrs["r:link"];
@@ -221,17 +253,18 @@ export function docxBlocks(documentXml: string, numberingXml: string | null = nu
       continue;
     }
 
+    const spans = paragraphSpans(node);
     const level = headingLevel(node);
     if (level !== null) {
-      blocks.push({ kind: "heading", level: Math.min(level, 6), runs });
+      blocks.push({ kind: "heading", level: Math.min(level, 6), runs, spans });
       continue;
     }
     const list = listInfo(node, orderedIds);
     if (list) {
-      blocks.push({ kind: "list-item", level: list.level, ordered: list.ordered, runs });
+      blocks.push({ kind: "list-item", level: list.level, ordered: list.ordered, runs, spans });
       continue;
     }
-    blocks.push({ kind: "paragraph", runs, quote: isQuote(node) });
+    blocks.push({ kind: "paragraph", runs, quote: isQuote(node), spans });
   }
 
   return blocks;
