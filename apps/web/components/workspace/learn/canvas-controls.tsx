@@ -66,7 +66,7 @@ import {
 /** Close on outside click and Escape. Shared so the three panels cannot drift apart in how they
  *  dismiss — an overlay that only closes one of the two ways feels broken in a way people
  *  rarely report and always notice. */
-function useDismiss(open: boolean, close: () => void) {
+export function useDismiss(open: boolean, close: () => void) {
   const holder = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -122,11 +122,17 @@ function useDismiss(open: boolean, close: () => void) {
 // 🔴 FIXED IN THE SHARED CONSTANT RATHER THAN AT THE CALL SITE, because the call site is exactly
 // what forgot. A control added to this row tomorrow inherits a working one instead of inheriting
 // the bug; `canvas-conversation-view.test.ts` holds the property by name.
-const CONTROL =
+// 🔴🔴 EXPORTED SINCE 2026-08-29, BECAUSE A SECOND FILE DRAWS ONE OF THESE BOXES NOW. The owner, on
+// the course map: *"I would like it to be similar to source panel that is a squarish circlish type
+// of box component."* `course-map.tsx` is that box, and it imports these rather than restating
+// them — a second copy of `rounded-2xl … shadow … ring-1` is two panels that look alike today and
+// drift the first time either is adjusted, which is the failure this file already records for
+// Objectives vs Territory and for the plan tree.
+export const CONTROL =
   "pointer-events-auto flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
-const PANEL =
+export const PANEL =
   "absolute -right-2 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
   "p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)";
 
@@ -508,7 +514,7 @@ function PanelSection({
  *  fits all three shelves plus the Add row on one screen at this panel's height. */
 const SECTION_ROWS = 6;
 
-const PANEL_ROW = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)";
+export const PANEL_ROW = "block w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)";
 
 /** What kind of thing an output row is, as the icon rather than as a second line of text.
  *  🔴 `?? "file"` IS THE POINT OF THE LOOKUP. `CanvasOutput.kind` is deliberately a string so a new
@@ -818,7 +824,6 @@ export function MinimapControl({
   outcome,
   coverage,
   evidence,
-  onOpenCourseMap,
 }: {
   territories: readonly Territory[];
   /**
@@ -847,8 +852,6 @@ export function MinimapControl({
   outcome: ExtractionOutcome | "no-durable-source";
   coverage: CanvasCoverage;
   evidence: readonly LearnerEvidence[];
-  /** Opens the docked course map. Absent on a canvas that has no course. */
-  onOpenCourseMap?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -1026,27 +1029,13 @@ export function MinimapControl({
             rows.map((territory) => renderTerritory(territory))
           )}
 
-          {/* 🔴🔴 ONE DOOR TO THE COURSE, NOT A SECOND COPY OF IT (owner 2026-08-29: *"Let's go
-              mastery outline"*). The whole plan tree used to render here, inside a popover, as
-              `Course · <title>` over a run of `renderPlanRow`s. The owner picked a full mastery
-              outline for the course, and drawing the same chapters in two places would let the two
-              disagree about the subject the first time either was adjusted.
-              🔴 THE ROW ONLY APPEARS WHEN THERE IS A COURSE, so nothing here is a dead control on the
-              ordinary canvas — which is the same condition that gated the tree it replaces. */}
-          {plan && plan.length > 0 && onOpenCourseMap && (
-            <button
-              className="mt-2 flex w-full items-center gap-2.5 rounded-lg border-t border-(--ui-stroke-tertiary) px-2 pb-1.5 pt-3 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:text-(--ui-text-primary)"
-              onClick={() => {
-                setOpen(false);
-                onOpenCourseMap();
-              }}
-              type="button"
-            >
-              <Codicon name="list-tree" size="13px" />
-              <span className="min-w-0 flex-1 truncate">Course map{planTitle ? ` · ${planTitle}` : ""}</span>
-              <Codicon name="chevron-right" size="11px" />
-            </button>
-          )}
+          {/* 🔴🔴 THE COURSE IS NOT DRAWN HERE AND HAS NO DOOR HERE EITHER. It rendered in this
+              popover as `Course · <title>` over a run of plan rows until 2026-08-29, then briefly as
+              a row that opened a docked panel. It is now its own control beside this one — see
+              `course-map.tsx` — because the two answer different questions from different data, and
+              this file's own note says so: a plan is an AUTHOR'S claim about the subject, territory
+              is evidence-backed grouping, and *"a plan is a third thing in that corner, and it stays
+              third"*. `plan` is still taken as a prop and still gates nothing else here. */}
         </div>
       )}
     </div>

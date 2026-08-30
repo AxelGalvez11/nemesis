@@ -1,11 +1,11 @@
 // The course map tells the truth about what the learner model actually knows.
 //
-// 🔴🔴 HALF OF THIS SUITE EXISTS TO KEEP A NUMBER OUT. The owner chose the mastery outline from four
-// designs on 2026-08-29, and the mock they chose from showed chapters at 100 / 62 / 25 percent —
-// a continuous mastery score the model does not have and cannot produce. `territoryMark` returns
-// `established`, `developing`, or `null`, and its own note refuses to round either way. So the bar
-// is filled by a COUNT of sections and the label is a fraction, and the guards below redden if a
-// percent ever appears in the panel.
+// 🔴🔴 HALF OF THIS SUITE EXISTS TO KEEP NUMBERS OUT, AND THAT TIGHTENED IN TWO STEPS ON ONE DAY.
+// The mock the owner picked from showed chapters at 100 / 62 / 25 percent — a score the model does
+// not have. The first build replaced it with an honest COUNT ("1/4"); shown that, the owner asked
+// the right question: *"So if it can't track mastery then can we just remove the numbers? And
+// instead do the outline way?"* So there are no digits at all now, and the guards below hold that
+// rather than merely holding out percentages.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import { test } from "node:test";
 import type { EvidenceVerdict, LearnerEvidence } from "@/lib/learn/learner-evidence";
 import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
 
-import { barWidths, buildCourseMap, courseProgress } from "./course-map";
+import { buildCourseMap } from "./course-map";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const PANEL = read("../../components/workspace/learn/course-map.tsx");
@@ -70,7 +70,7 @@ test("🔴 a deeper tree is FLATTENED into sections, never dropped", () => {
 test("🔴 a chapter with no sections is still pickable, so its row is not a dead control", () => {
   const flat = [node("Standalone", ["only"])];
   const map = buildCourseMap(flat, []);
-  assert.equal(map[0]!.total, 0);
+  assert.equal(map[0]!.sections.length, 0);
   assert.deepEqual(map[0]!.identityKeys, ["only"], "a flat chapter carries no keys, so clicking it would do nothing");
 });
 
@@ -80,64 +80,40 @@ test("🔴🔴 untouched is null — it is NOT zero, and NOT developing", () => 
   const map = buildCourseMap(PLAN, []);
   assert.equal(map[0]!.mark, null);
   assert.deepEqual(map[0]!.sections.map((s) => s.mark), [null, null]);
-  assert.equal(map[0]!.established, 0);
-  assert.equal(map[0]!.developing, 0, "an untouched chapter is being counted as underway");
 });
 
-test("🔴 a chapter is only counted established when every section is", () => {
+test("🔴 a chapter is only established when every section beneath it is", () => {
   const half = buildCourseMap(PLAN, [done("offer")]);
-  assert.equal(half[0]!.established, 1);
-  assert.equal(half[0]!.total, 2);
   assert.equal(half[0]!.mark, "developing", "one section done read as the whole chapter established");
-
   const whole = buildCourseMap(PLAN, [done("offer"), done("acceptance")]);
-  assert.equal(whole[0]!.established, 2);
   assert.equal(whole[0]!.mark, "established");
 });
 
-test("a section that was engaged and got it wrong reads developing, and is counted as such", () => {
+test("a section that was engaged and got it wrong reads developing", () => {
   const map = buildCourseMap(PLAN, [tried("offer")]);
-  assert.equal(map[0]!.established, 0);
-  assert.equal(map[0]!.developing, 1);
+  assert.deepEqual(map[0]!.sections.map((x) => x.mark), ["developing", null]);
 });
 
-// ── the bar is geometry, not a score ─────────────────────────────────────────
+// ── the guards that keep every number out ────────────────────────────────────
 
-test("🔴🔴 an untouched chapter's bar is EMPTY, not a zero-valued score", () => {
-  const map = buildCourseMap(PLAN, []);
-  assert.deepEqual(barWidths(map[0]!), { established: 0, developing: 0 });
-});
-
-test("the two segments are drawn from the counts and never exceed the track", () => {
-  const map = buildCourseMap(PLAN, [done("offer"), tried("acceptance")]);
-  const w = barWidths(map[0]!);
-  assert.equal(w.established, 50);
-  assert.equal(w.developing, 50);
-  assert.ok(w.established + w.developing <= 100, "the two segments overflow the bar");
-});
-
-test("a sectionless chapter's bar comes from its own mark", () => {
-  const flat = [node("Standalone", ["only"])];
-  assert.deepEqual(barWidths(buildCourseMap(flat, [])[0]!), { established: 0, developing: 0 });
-  assert.deepEqual(barWidths(buildCourseMap(flat, [done("only")])[0]!), { established: 100, developing: 0 });
-});
-
-test("🔴 the course total counts a sectionless chapter as one thing to know", () => {
-  const mixed = [node("A", [], [node("A1", ["a1"])]), node("B", ["b"])];
-  const p = courseProgress(buildCourseMap(mixed, [done("a1"), done("b")]));
-  assert.deepEqual(p, { developing: 0, established: 2, total: 2 });
-});
-
-// ── the guards that keep the invented number out ─────────────────────────────
-
-test("🔴🔴🔴 the panel never prints a percent, because there is no percent to print", () => {
-  // Calibration: put `{Math.round(pct)}%` back beside a chapter title and this reddens. The `%`
-  // characters the panel legitimately contains are CSS widths — geometry, inside a style object —
-  // so the check is on what reaches the reader as text.
-  const text = [...PANEL.matchAll(/>\{[^}]*\}%|\}%</g)].map((m) => m[0]);
-  assert.deepEqual(text, [], `the course map is printing a score: ${text.join(", ")}`);
-  assert.ok(/`\$\{chapter\.established\}\/\$\{chapter\.total\}`/.test(PANEL), "the chapter label is no longer a fraction");
-  assert.ok(/established\}\s*of\s*\{progress\.total\} established/.test(PANEL.replace(/\s+/g, " ")) || /of \{progress\.total\} established/.test(PANEL), "the header no longer states a checkable count");
+test("🔴🔴🔴 the panel prints no number of any kind", () => {
+  // Owner: *"can we just remove the numbers?"* — so not a percent, and not the fraction that
+  // replaced it either. Calibration: put `{chapter.sections.length}` beside a chapter title and
+  // this reddens.
+  //
+  // 🔴 THE MODEL CANNOT SUPPLY ONE EITHER, which is the deeper reason and the one that outlives the
+  // instruction: `courseProgress` and `barWidths` are DELETED rather than left unused, so there is
+  // no arithmetic sitting in the tree for somebody to conclude a score exists.
+  // 🔴 ONLY WHAT RENDERS. The first version of this matched any expression containing `.length`
+  // and reddened on `chapter.sections.length > 0 ? …`, which is a CONDITION deciding whether a row
+  // folds — nothing the reader ever sees. A guard that cannot tell a branch from a printed value
+  // makes the honest version of this file unwritable.
+  const printed = [...PANEL.matchAll(/>\s*\{([^{}]+)\}\s*</g)].map((m) => m[1]!.trim());
+  const counts = printed.filter((e) => /\.(length|total|established|developing)\b|\bcount\b/.test(e));
+  assert.deepEqual(counts, [], `the course map is printing a count: ${counts.join(", ")}`);
+  assert.ok(!/%`|\}%/.test(PANEL), "the course map is printing a percentage");
+  const model = read("./course-map.ts");
+  assert.ok(!/export function (courseProgress|barWidths)/.test(model), "the progress arithmetic is back");
 });
 
 test("🔴🔴 progress is carried by fill, never by a second colour", () => {
@@ -167,23 +143,30 @@ test("🔴 there is ONE drawing of the course, not two", () => {
   // 🔴 THE DEFINITION OR A CALL, NOT THE NAME. The file keeps a note saying the function was
   // removed and why; banning the string outright would ask the code to forget its own history.
   assert.ok(!/const renderPlanRow|renderPlanRow\(/.test(CONTROLS), "the popover draws its own copy of the course again");
-  assert.ok(/onOpenCourseMap/.test(CONTROLS), "the popover has no door to the map");
+  // 🔴 REPOINTED: the map is its own control on the header now, so the popover has no door and
+  // needs none — what still matters is that it does not draw the course a second time.
+  assert.ok(!/CourseMapControl/.test(CONTROLS), "the popover renders the map inside itself");
+  const HEADER = read("../../components/workspace/learn/canvas-header.tsx");
+  assert.ok(/<CourseMapControl/.test(HEADER), "nothing renders the course map");
+  assert.ok(/minimap\.planTitle !== null && minimap\.plan/.test(HEADER), "the map shows on a canvas with no course");
 });
 
-test("🔴 the map docks, so the history rail can get out of its way", () => {
-  // Both want the right edge. `CanvasHistoryRail` already returns null while a panel is docked, so
-  // claiming the side panel is what keeps them from stacking — and it is also what pushes the
-  // canvas instead of covering it.
+test("🔴🔴 it is a BOX on the header, not a sidebar, and it shares the sources panel's own chrome", () => {
+  // Owner 2026-08-29: *"I don't want it to be exactly a full on sidebar, I would like it to be
+  // similar to source panel that is a squarish circlish type of box component."* The first build
+  // docked a 296px column down the right edge of the window.
+  //
+  // 🔴 IMPORTED, NOT RESTATED. A second copy of `rounded-2xl … shadow … ring-1` is two panels that
+  // look alike today and drift the first time either is adjusted.
   // \u{1f534} REPOINTED: the map has its OWN fixed width now rather than the reader's dragged one.
   // `useDockWidth` opened it at 980 of 1470 — two thirds of the window for an outline — and tied it
   // to whatever width the learner had dragged a document to.
-  assert.ok(/useDeclareSidePanel\(COURSE_MAP_WIDTH\)/.test(PANEL), "the map floats over the canvas instead of docking");
-  assert.ok(/const COURSE_MAP_WIDTH = 296;/.test(PANEL), "the map is not the width the owner approved");
-  // \u{1f534} THE IMPORT OR A CALL, NOT THE NAME \u2014 the same correction this file already made for
-  // `renderPlanRow`. The panel keeps a note explaining why it does NOT use that hook, and a guard
-  // that forbids naming the thing it guards is one nobody can work beside.
-  assert.ok(
-    !/from "\.\/use-dock-width"|useDockWidth\(\)/.test(PANEL),
-    "the map borrows the document reader's width again",
-  );
+  assert.ok(/import \{ CONTROL, PANEL, useDismiss \} from "\.\/canvas-controls"/.test(PANEL), "the map draws its own box instead of the shared one");
+  assert.ok(/cn\(PANEL, "w-\[21rem\]"\)/.test(PANEL), "the map is not the sources panel's box");
+  // 🔴 THE IMPORT OR A CALL, NOT THE NAME — the same correction this file already made for
+  // `renderPlanRow`. The panel keeps notes explaining what it does NOT use, and a guard that forbids
+  // naming the thing it guards is one nobody can work beside.
+  for (const gone of ["useDeclareSidePanel", "createPortal", "useDockWidth"]) {
+    assert.ok(!new RegExp(`${gone}\\(`).test(PANEL), `the map is a docked panel again (${gone})`);
+  }
 });

@@ -23,6 +23,7 @@ import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
 import { ConversationControl, MinimapControl, OptionsControl, SourcesControl } from "./canvas-controls";
+import { CourseMapControl } from "./course-map";
 import type { CanvasView } from "@/lib/learn/canvas-view";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -52,8 +53,8 @@ interface CanvasHeaderProps {
     /** The course, projected — see MinimapControl's own prop comment. Null on most canvases. */
     plan: readonly PlanTerritory[] | null;
     planTitle: string | null;
-    /** Opens the docked course map — the one door to it (2026-08-29). */
-    onOpenCourseMap: () => void;
+    /** Focus the canvas on one part of the course, from the map. */
+    onPickCourseScope: (scope: { label: string; identityKeys: readonly string[] }) => void;
   };
   /** Whether this canvas holds knowledge that provably came from the model rather than from
    *  attached material — disclosed in the Sources panel so a sourceless canvas does not report
@@ -185,9 +186,24 @@ export function CanvasHeader({
               outcome={minimap.outcome}
               plan={minimap.plan}
               planTitle={minimap.planTitle}
-              onOpenCourseMap={minimap.onOpenCourseMap}
               setFocus={minimap.setFocus}
               territories={minimap.territories}
+            />
+          )}
+          {/* 🔴🔴 ITS OWN GLYPH, BESIDE PROGRESS RATHER THAN INSIDE IT (owner 2026-08-29, on the
+              shape: *"similar to source panel that is a squarish circlish type of box component"*).
+              The two boxes answer different questions from different data — Progress reads the
+              learner model, the map reads the AUTHOR'S plan — and `canvas-controls.tsx` states the
+              rule this obeys: *"a plan is a third thing in that corner, and it stays third"*.
+              🔴 SAME CONDITION AS THE MAP GLYPH ABOVE. `planTitle` is set only once a course has
+              actually been applied, so neither control exists on an ordinary conversation. */}
+          {minimap.planTitle !== null && minimap.plan && minimap.plan.length > 0 && (
+            <CourseMapControl
+              activeLabel={minimap.focus.kind === "selection" ? minimap.focus.label : null}
+              evidence={minimap.evidence}
+              onPick={minimap.onPickCourseScope}
+              plan={minimap.plan}
+              title={minimap.planTitle}
             />
           )}
           <OptionsControl voice={voice} />
