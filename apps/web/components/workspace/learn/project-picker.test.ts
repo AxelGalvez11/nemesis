@@ -63,5 +63,8 @@ test("🔴 the row is the composer's width, not the page's", () => {
   // It sits in the centred column BELOW the composer, which is far wider. Left unbounded it began
   // 151px left of the composer's edge instead of 20px inside it — measured on the preview build.
   assert.match(PICKER, /max-w-\[var\(--composer-max-width\)\]/, "the row is no longer bounded by the composer's own width");
-  assert.match(PICKER, /px-\[20px\]/, "the row lost the reference's 20px inset");
+  assert.match(PICKER, /px-\[24px\]/, "the row lost the reference's inset");
+  // 🔴 THE LIST MUST NOT COVER THE WORDS IT IS FILING. Opening upward hides the composer, which is
+  // where the learner just typed the thing they are choosing a project for. Seen on the preview.
+  assert.match(PICKER, /absolute top-\[40px\]/, "the project list opens over the composer again");
 });

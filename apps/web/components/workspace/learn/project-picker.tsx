@@ -42,7 +42,11 @@ import { ADD_MENU } from "./add-menu-row";
 // composer, which is far wider; left as `w-full` it started 151px LEFT of the composer's edge
 // instead of 20px inside it. The reference insets the row 20px from the composer's own left edge,
 // so the row has to be bounded by the same token the composer is.
-const BAR = "mt-0 flex h-[44px] w-full max-w-[var(--composer-max-width)] items-center gap-[12px] px-[20px]";
+//
+// 🔴 24px, NOT 20. The reference insets its BAR by 20 and then its button by another 4 inside that;
+// what a learner sees is the control 24px from the composer's left edge. One padding here says the
+// same thing with one number instead of two.
+const BAR = "mt-0 flex h-[44px] w-full max-w-[var(--composer-max-width)] items-center gap-[12px] px-[24px]";
 const CONTROL =
   "flex h-[36px] items-center gap-[6px] rounded-[12px] pl-[9px] pr-[12px] " +
   "text-[length:var(--canvas-text-small)] leading-[20px] transition-colors";
@@ -127,9 +131,11 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown }: Pro
         </button>
 
         {open && (
-          // Opens UPWARD: the row is already near the bottom of the block, and a list dropping
-          // below it would run off a short viewport with no room to flip.
-          <div className={cn("absolute bottom-[44px] left-0", ADD_MENU)} role="menu">
+          // 🔴 OPENS DOWNWARD, AND MY FIRST ANSWER WAS WRONG. It opened upward on the reasoning that
+          // the row sits low in the block — but seen on the preview build, an upward list covers the
+          // composer, which means it covers the words the learner just typed and is choosing a
+          // project FOR. Below it there is only the hint line and open space.
+          <div className={cn("absolute top-[40px] left-0", ADD_MENU)} role="menu">
             {folders.length === 0 && !naming && (
               <p className="px-3 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
                 No projects yet.
