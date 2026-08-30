@@ -58,3 +58,10 @@ test("🔴 a new project can be made without leaving the surface", () => {
   assert.match(HOME, /const made = await createFolder\(userId, name\);/, "nothing creates the project");
   assert.match(HOME, /setFolders\(\(rows\) => \[\.\.\.rows, made\]\)/, "a new project does not join the list it was made from");
 });
+
+test("🔴 the row is the composer's width, not the page's", () => {
+  // It sits in the centred column BELOW the composer, which is far wider. Left unbounded it began
+  // 151px left of the composer's edge instead of 20px inside it — measured on the preview build.
+  assert.match(PICKER, /max-w-\[var\(--composer-max-width\)\]/, "the row is no longer bounded by the composer's own width");
+  assert.match(PICKER, /px-\[20px\]/, "the row lost the reference's 20px inset");
+});

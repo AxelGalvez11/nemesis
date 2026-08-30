@@ -38,7 +38,11 @@ import { ADD_MENU } from "./add-menu-row";
  * renders 12.5% larger than its name — the trap `docs/chatgpt-reference.md` records four separate
  * pages falling into.
  */
-const BAR = "mt-0 flex h-[44px] w-full items-center gap-[12px] px-[20px]";
+// 🔴 THE BAR IS THE COMPOSER'S WIDTH, NOT THE PAGE'S. It lives in the centred column below the
+// composer, which is far wider; left as `w-full` it started 151px LEFT of the composer's edge
+// instead of 20px inside it. The reference insets the row 20px from the composer's own left edge,
+// so the row has to be bounded by the same token the composer is.
+const BAR = "mt-0 flex h-[44px] w-full max-w-[var(--composer-max-width)] items-center gap-[12px] px-[20px]";
 const CONTROL =
   "flex h-[36px] items-center gap-[6px] rounded-[12px] pl-[9px] pr-[12px] " +
   "text-[length:var(--canvas-text-small)] leading-[20px] transition-colors";
