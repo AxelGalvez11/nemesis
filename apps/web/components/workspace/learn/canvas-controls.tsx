@@ -818,6 +818,7 @@ export function MinimapControl({
   outcome,
   coverage,
   evidence,
+  onOpenCourseMap,
 }: {
   territories: readonly Territory[];
   /**
@@ -846,6 +847,8 @@ export function MinimapControl({
   outcome: ExtractionOutcome | "no-durable-source";
   coverage: CanvasCoverage;
   evidence: readonly LearnerEvidence[];
+  /** Opens the docked course map. Absent on a canvas that has no course. */
+  onOpenCourseMap?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -939,83 +942,13 @@ export function MinimapControl({
    * 🔴 EXPANSION PATHS ARE NAMESPACED `course/…` so a plan node and a knowledge territory sharing
    * a label cannot toggle each other's chevrons.
    */
-  const renderPlanRow = (entry: PlanTerritory, depth = 0, path = `course/${entry.label}`): React.ReactNode => {
-    const mark = territoryMark(entry.identityKeys, evidence);
-    const current = focus.kind === "selection" && focus.label === entry.label;
-    const hasChildren = Boolean(entry.children?.length);
-    const isExpanded = expanded.has(path);
-    return (
-      <div key={path}>
-        <div className="flex items-center">
-          {hasChildren ? (
-            <button
-              aria-expanded={isExpanded}
-              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${entry.label}`}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
-              onClick={() => setExpanded((currentSet) => {
-                const next = new Set(currentSet);
-                if (next.has(path)) next.delete(path);
-                else next.add(path);
-                return next;
-              })}
-              type="button"
-            >
-              <Codicon name={isExpanded ? "chevron-down" : "chevron-right"} size="0.6875rem" />
-            </button>
-          ) : (
-            <span aria-hidden className="h-7 w-7 shrink-0" />
-          )}
-          {entry.reachable ? (
-            <button
-              className={cn(
-                "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
-                current && "bg-(--ui-bg-tertiary)",
-              )}
-              onClick={() => {
-                setFocus({ identityKeys: entry.identityKeys, kind: "selection", label: entry.label });
-                setOpen(false);
-              }}
-              style={{ paddingLeft: `${8 + depth * 12}px` }}
-              title={mark ? TERRITORY_MEANING[mark] : undefined}
-              type="button"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "h-[7px] w-[7px] shrink-0 rounded-full",
-                  current && "ring-2 ring-(--ui-text-primary)/25",
-                  mark ? TERRITORY_DOT[mark] : "bg-transparent",
-                )}
-              />
-              <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-                {entry.label}
-                <span className="sr-only">
-                  {mark ? `. ${TERRITORY_MEANING[mark]}` : ""}
-                  {current ? ". Currently focused here." : ""}
-                </span>
-              </span>
-            </button>
-          ) : (
-            <div
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left"
-              style={{ paddingLeft: `${8 + depth * 12}px` }}
-            >
-              <span aria-hidden className="h-[7px] w-[7px] shrink-0 rounded-full bg-transparent" />
-              <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-                {entry.label}
-              </span>
-              <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-                No material yet
-              </span>
-            </div>
-          )}
-        </div>
-        {hasChildren && isExpanded && (
-          <div>{entry.children!.map((child) => renderPlanRow(child, depth + 1, `${path}/${child.label}`))}</div>
-        )}
-      </div>
-    );
-  };
+  // 🔴🔴 `renderPlanRow` IS GONE, NOT COMMENTED OUT (2026-08-29). It drew the whole plan tree
+  // inside this popover; the course now has its own docked map (`course-map.tsx`) and the row above
+  // is the only way to it. Keeping a second renderer for the same chapters "in case" is how two
+  // drawings of one thing come to disagree — the file's own note about Objectives vs Territory
+  // provenance is the same argument. Restoring it means restoring one function; the shape it read,
+  // `PlanTerritory`, is unchanged.
+
 
   return (
     <div className="pointer-events-auto relative shrink-0" ref={holder}>
@@ -1093,13 +1026,26 @@ export function MinimapControl({
             rows.map((territory) => renderTerritory(territory))
           )}
 
-          {plan && plan.length > 0 && (
-            <>
-              <p className="px-2 pb-1 pt-3 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
-                Course{planTitle ? ` · ${planTitle}` : ""}
-              </p>
-              {plan.map((entry) => renderPlanRow(entry))}
-            </>
+          {/* 🔴🔴 ONE DOOR TO THE COURSE, NOT A SECOND COPY OF IT (owner 2026-08-29: *"Let's go
+              mastery outline"*). The whole plan tree used to render here, inside a popover, as
+              `Course · <title>` over a run of `renderPlanRow`s. The owner picked a full mastery
+              outline for the course, and drawing the same chapters in two places would let the two
+              disagree about the subject the first time either was adjusted.
+              🔴 THE ROW ONLY APPEARS WHEN THERE IS A COURSE, so nothing here is a dead control on the
+              ordinary canvas — which is the same condition that gated the tree it replaces. */}
+          {plan && plan.length > 0 && onOpenCourseMap && (
+            <button
+              className="mt-2 flex w-full items-center gap-2.5 rounded-lg border-t border-(--ui-stroke-tertiary) px-2 pb-1.5 pt-3 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) transition-colors hover:text-(--ui-text-primary)"
+              onClick={() => {
+                setOpen(false);
+                onOpenCourseMap();
+              }}
+              type="button"
+            >
+              <Codicon name="list-tree" size="13px" />
+              <span className="min-w-0 flex-1 truncate">Course map{planTitle ? ` · ${planTitle}` : ""}</span>
+              <Codicon name="chevron-right" size="11px" />
+            </button>
           )}
         </div>
       )}
