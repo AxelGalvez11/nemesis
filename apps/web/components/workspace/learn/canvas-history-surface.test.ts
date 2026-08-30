@@ -35,7 +35,11 @@ test("🔴🔴 the rail is mounted exactly once, and not inside anything that re
 
   // 🔴 THE SAME SHAPE `reply-actions.test.ts` USES: find the repeating region, assert the mount is
   // outside it. Anything cleverer with a regex is a guess about JSX nesting.
-  const scroller = CANVAS_CODE.indexOf('className="relative h-full overflow-y-auto');
+  // 🔴 MATCHED WITHOUT THE `className="` PREFIX ON PURPOSE. The scroller's width now depends on
+  // whether the source pane is open, so the attribute is a template literal rather than a plain
+  // string. What this check needs is the scroller's POSITION, which the quoting style does not
+  // change; pinning the quotes made this redden for a reason it does not care about.
+  const scroller = CANVAS_CODE.indexOf('relative h-full overflow-y-auto');
   assert.ok(scroller > 0, "the Canvas scroller moved; re-point this check");
   assert.ok(
     CANVAS_CODE.indexOf("<CanvasHistoryRail") < scroller,
