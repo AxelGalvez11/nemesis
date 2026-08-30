@@ -989,6 +989,13 @@ const DECISION_CONTRACT = [
   + ' "wantsReport": "the question to research" | null,'
   + ' "webFreshness": "pd" | "pw" | "pm" | "py" | null, "question": {...} | null,'
   + ' "wantsTest": true | false, "wantsCards": true | false, "check": [{"prompt": "...", "options": [{"text": "...", "correct": true}, {"text": "..."}]}],'
+  // 🔴🔴 `curriculumFor` FELL OUT OF THIS SHAPE ONCE, AND THE COURSE CHIP DIED OF IT. Found
+  // 2026-08-30, on production, exactly the way `figure` was found: the prose paragraph described
+  // the field at length, the shape never showed it, and the model sends what the shape shows —
+  // chip attached, learner answering "Comprehensive" to the course question, and curriculumFor
+  // null every time, so no course was ever built. Reproduced offline through this very packet
+  // before the fix, emitted after it; turn-router.test.ts now pins the field INTO the shape.
+  + ' "curriculumFor": "organic chemistry" | null,'
   // 🔴 SHOWN FILLED IN, for the same reason `visuals` is one line below: a field displayed as
   // `null` in the contract's highest-signal position is a field the model sends as null forever.
   + ' "checkFigure": "nephron" | null,'

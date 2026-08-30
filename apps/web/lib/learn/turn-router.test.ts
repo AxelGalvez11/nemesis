@@ -977,3 +977,18 @@ test("🔴🔴 the contract forbids inference, and asks for the learner's own wo
   assert.match(contract, /Leave this an empty list on almost every turn/);
   assert.match(contract, /they will be shown these sentences and can delete any of them/);
 });
+
+// ── the decision SHAPE carries every actionable field ───────────────────────────────────────────
+
+test("🔴🔴 curriculumFor is IN the JSON shape, not only in the prose — the field the model copies", () => {
+  // Found 2026-08-30, on production: the paragraph described curriculumFor at length, the shape
+  // never showed it, and the model sends what the shape shows — chip attached, subject clarified,
+  // curriculumFor null every time, no course ever built. `figure` died the identical death before
+  // it (its own comment names it), so the shape is pinned field by field here.
+  // The contract rides the LAST user message, so the whole packet is scanned rather than one slot.
+  const packet = turnRouterMessages({ context: EMPTY, utterance: "hello" }).map((m) => m.content).join("\n");
+  assert.match(packet, /"curriculumFor": "organic chemistry" \| null/, "curriculumFor left the decision shape");
+  // The two precedents that established the shown-filled-in rule stay shown filled in.
+  assert.match(packet, /"checkFigure": "nephron" \| null/, "checkFigure left the decision shape");
+  assert.match(packet, /"visuals": \[\{"kind"/, "visuals is no longer shown filled in");
+});
