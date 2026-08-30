@@ -47,4 +47,12 @@ export const MARKS: Readonly<Record<string, BrandMark>> = {
  * A letter tile is never blank and never wrong. A logo drawn from memory is wrong in a way nobody
  * can name and everybody sees.
  */
-export const AWAITING_MARK: readonly string[] = ["one_drive", "outlook", "googlesheets", "notion", "zoom"];
+export const AWAITING_MARK: readonly string[] = [
+  "canvas",
+  "google_classroom",
+  "one_drive",
+  "outlook",
+  "googlesheets",
+  "notion",
+  "zoom",
+];

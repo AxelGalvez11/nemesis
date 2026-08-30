@@ -21,7 +21,7 @@
 // PURE. No React, no I/O, no network.
 
 /** What a learner is reaching for. Groups the settings screen so nine rows read as four ideas. */
-export type AppGroup = "files" | "mail" | "notes" | "lectures";
+export type AppGroup = "coursework" | "files" | "mail" | "notes" | "lectures";
 
 export interface ConnectableApp {
   /** Composio's toolkit slug, verbatim. Also derives `COMPOSIO_AUTH_<KEY>`. */
@@ -41,6 +41,28 @@ export interface ConnectableApp {
 }
 
 export const CONNECTABLE_APPS: readonly ConnectableApp[] = [
+  // ── Coursework ─────────────────────────────────────────────────────────────────────────────
+  //
+  // 🔴 THIS GROUP IS FIRST BECAUSE IT IS THE ONLY ONE THAT REACHES SCHOOL ITSELF. Every other row
+  // reaches a place a student happens to keep things. A learning management system holds the
+  // assignments, the due dates, the rubric a piece of work will actually be marked against, and
+  // the announcement that changed the deadline. Nemesis could read a student's whole drive and
+  // still not know what was due on Friday.
+  //
+  // 🔴 LABELLED "Canvas LMS", NOT "Canvas", AND THAT IS NOT FUSSINESS. This product calls its own
+  // workspace a canvas: the sidebar says "New canvas", the code says `learning-canvas`, and the
+  // owner's vocabulary for the core object is that word. An app row reading plain "Canvas" would
+  // collide with the product's most-used noun in the one screen where a learner is deciding what
+  // to hand over access to. The slug stays `canvas` because that is Composio's name for it.
+  //
+  // 🔴 AND CONNECTING IT IS NOT AN "ALLOW" BUTTON. Canvas has no Composio-managed OAuth, so this
+  // uses its API-key mode: the learner is asked for their own school's Canvas address and an
+  // access token they generate in Canvas themselves. That is a form, not a one-click consent, so
+  // the row says so rather than letting the form arrive as a surprise. Verified on the real
+  // consent page 2026-08-30: it asks for exactly those two things and explains where to find both.
+  { detail: "Your assignments, due dates and rubrics. Asks for your school's Canvas address and an access token you make in Canvas.", group: "coursework", key: "canvas", label: "Canvas LMS" },
+  { detail: "Coursework, materials and announcements from your classes.", group: "coursework", key: "google_classroom", label: "Google Classroom" },
+
   // ── Files ──────────────────────────────────────────────────────────────────────────────────
   { detail: "Read lecture slides and notes you already keep there.", group: "files", key: "googledrive", label: "Google Drive" },
   // 🔴 THE GAP THIS CLOSES IS HALF THE WORLD, NOT AN EXTRA. Every app offered before this line is
@@ -78,6 +100,7 @@ export const CONNECTABLE_APPS: readonly ConnectableApp[] = [
 
 /** Group headings, in the order the settings screen shows them. */
 export const APP_GROUPS: readonly { id: AppGroup; label: string }[] = [
+  { id: "coursework", label: "Coursework" },
   { id: "files", label: "Files" },
   { id: "mail", label: "Mail and dates" },
   { id: "notes", label: "Notes and documents" },
