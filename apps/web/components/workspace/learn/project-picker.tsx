@@ -72,10 +72,15 @@ const TRAY_ROW = "flex h-[44px] items-center gap-[8px] px-[4px]";
  * restated. 🔴 NO `ring-1` ON TOP: the token's first layer IS the hairline, and drawing a ring
  * over it is the doubled-edge defect #872 fixed on the composer itself.
  */
+// 🔴 RE-MEASURED IN THE OWNER'S OWN CHROME, 2026-08-30 EVENING ("did you even go into Chrome?").
+// The reference panel: 224 wide, radius 20, `10px 0` pad, bottom sitting 12px above the chip (the
+// earlier 4px was a mismeasure), rows 36px tall at 14px text with a 20px icon inset 20 and an 8px
+// gap to the label — and every project row wears ITS OWN icon and colour, which is the half the
+// first pass missed entirely. Ours measured 32px rows and plain folders before this.
 const PANEL =
-  "absolute bottom-[40px] left-0 z-50 overflow-hidden rounded-[20px] bg-(--ui-bg-elevated) py-[10px] shadow-[var(--composer-edge)]";
+  "absolute bottom-[48px] left-0 z-50 overflow-hidden rounded-[20px] bg-(--ui-bg-elevated) py-[10px] shadow-[var(--composer-edge)]";
 const PANEL_ITEM =
-  "flex w-full items-center gap-[8px] rounded-[12px] py-[6px] pl-[10px] pr-[10px] text-left " +
+  "flex w-full items-center gap-[8px] rounded-[12px] py-[8px] pl-[10px] pr-[10px] text-left " +
   "text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-primary) transition-colors hover:bg-(--ui-bg-tertiary)";
 const PANEL_SEARCH =
   "mx-[6px] mb-[4px] flex h-[38px] items-center rounded-[10px] px-[10px]";
@@ -309,7 +314,13 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
           onClick={() => { setOpen((was) => !was); setNaming(false); setSearch(""); }}
           type="button"
         >
-          <Codicon className="shrink-0" name={chosen ? "folder-opened" : "folder"} size="1rem" />
+          {/* The chosen project's OWN mark rides the chip, exactly as it rides its picker row. */}
+          <Codicon
+            className="shrink-0"
+            name={chosen ? (chosen.icon ?? "folder-opened") : "folder"}
+            size="1rem"
+            style={chosen?.color ? { color: chosen.color } : undefined}
+          />
           <span className="max-w-[220px] truncate">{chosen ? chosen.name : "Choose project"}</span>
           {chosen && (
             // 🔴 A REAL BUTTON WOULD NEST INSIDE THIS ONE, WHICH IS INVALID AND UNCLICKABLE IN
@@ -341,8 +352,10 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
             <div className={PANEL_SEARCH}>
               <input
                 autoFocus
-                // §46.3-exempt: 16px is the iOS-zoom threshold every composer input carries.
-                className="min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                // §46.3-exempt: 16px is the iOS-zoom threshold, but only on small screens now — desktop
+                // drops to the small canvas step, the reference's measured 14 (owner's Chrome,
+                // 2026-08-30). iOS zoom only bites where iOS is.
+                className="min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary) md:text-[length:var(--canvas-text-small)]"
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search projects…"
                 value={search}
@@ -361,7 +374,18 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
                 role="menuitem"
                 type="button"
               >
-                <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="folder" size="1rem" />
+                {/* 🔴 THE PROJECT'S OWN ICON AND COLOUR, the reference's defining detail here:
+                    its picker paints "school" as a blue mortar-board, not a generic folder. The
+                    colour tints only the glyph (an identity mark, never a second theme), and a
+                    project that never chose keeps the plain folder. 20px, the reference's size —
+                    "1rem" here is 18 because the root font is 18, the rem trap this file already
+                    knows. */}
+                <Codicon
+                  className={cn("shrink-0", !folder.color && "text-(--ui-text-tertiary)")}
+                  name={folder.icon ?? "folder"}
+                  size="20px"
+                  style={folder.color ? { color: folder.color } : undefined}
+                />
                 <span className="min-w-0 truncate">{folder.name}</span>
                 {folder.id === value && <Codicon className="ml-auto shrink-0 text-(--ui-action)" name="check" size="0.875rem" />}
               </button>
@@ -372,8 +396,10 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
                 <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="new-folder" size="1rem" />
                 <input
                   autoFocus
-                  // §46.3-exempt: 16px is the iOS-zoom threshold every composer input carries.
-                  className="min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                  // §46.3-exempt: 16px is the iOS-zoom threshold, but only on small screens now — desktop
+                // drops to the small canvas step, the reference's measured 14 (owner's Chrome,
+                // 2026-08-30). iOS zoom only bites where iOS is.
+                  className="min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary) md:text-[length:var(--canvas-text-small)]"
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") { event.preventDefault(); void create(); }

@@ -488,7 +488,15 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 : undefined
             }
           >
-            <div className={greeter.motion === "jump" ? "character-jump" : greeter.motion === "spin" ? "character-spin" : undefined}>
+            {/* 🔴 THE CHARACTER STEPS ASIDE WHILE THE `+` MENU IS OPEN — owner, 2026-08-30:
+                "opening the plus icon ... should not go behind the mascot because it kinda looks
+                messy." The menu rises over the greeter's corner and the character half-peeked
+                from behind its edge. Faded, not moved: motion would race the handoff transform
+                above, and the menu closes on any choice, so this is a blink, not a scene. */}
+            <div
+              className={greeter.motion === "jump" ? "character-jump" : greeter.motion === "spin" ? "character-spin" : undefined}
+              style={{ opacity: addOpen ? 0 : 1, pointerEvents: addOpen ? "none" : undefined, transition: "opacity 160ms ease-out" }}
+            >
               {/* 🔴 `facing` MUST MATCH THE DOCK'S, AND THE HAND-OFF IS WHY IT IS NOT OPTIONAL.
                   This character flies into the canvas and BECOMES the dock's character; if the two
                   ends disagreed about facing, the head would swing about 28° at the exact frame of

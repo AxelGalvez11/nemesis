@@ -1003,6 +1003,14 @@ test("🔴 the contract offers the mermaid fence for prose diagrams, and keeps t
   assert.match(packet, /```mermaid/, "the fence left the contract — the model has no idea chat can draw it");
   assert.match(packet, /flowchart TD/, "the fence guidance lost its diagram families");
   assert.match(packet, /visuals" array is unchanged and still preferred/, "the typed visuals lost their preference over the fence");
+  // 🔴 THE UNPROMPTED HALF (owner: "shouldn't DeepSeek be able to know when a diagram ...
+  // would be most useful?"). Probed through this packet 2026-08-30: with the judgement only in
+  // the mid-contract paragraph the model drew NOTHING unprompted; on the format line it drew a
+  // flowchart for a process question and still nothing for a plain fact. Both sentences are
+  // load-bearing, and the format-line one is the one that works.
+  assert.match(packet, /Judge for yourself when one would/, "the model lost its own diagram judgement");
+  assert.match(packet, /unprompted, beside the prose/, "the format-line nudge is gone — measured: the paragraph alone draws nothing");
+  assert.match(packet, /Never decorate: a plain fact/, "the brake against diagram spam is gone");
 });
 
 test("🔴 project instructions ride the packet as the learner's standing orders, never above the rules", () => {

@@ -99,6 +99,23 @@ test("🔴 the choice rides the URL, because there is no canvas yet to write it 
   assert.match(ROUTE, /openingFolder=\{entry\.folder\}/, "the route drops the chosen project");
 });
 
+test("🔴 the picker wears each project's own icon and colour, at the reference's measured sizes", () => {
+  // Re-measured in the owner's own Chrome, 2026-08-30 evening: rows 36px (py-8 on a 20px line),
+  // icons 20px tinted per project, panel bottom 12px above the chip (bottom-48 against the 36px
+  // chip in the 44px row). The first pass shipped 32px rows and plain folders for every project.
+  assert.match(PICKER, /name=\{folder\.icon \?\? "folder"\}/, "the rows ignore the project's own icon");
+  assert.match(PICKER, /folder\.color \? \{ color: folder\.color \}/, "the rows ignore the project's own colour");
+  assert.match(PICKER, /name=\{chosen \? \(chosen\.icon \?\? "folder-opened"\) : "folder"\}/, "the chip ignores the chosen project's icon");
+  assert.match(PICKER, /bottom-\[48px\]/, "the panel gap drifted from the measured 12px");
+  assert.match(PICKER, /py-\[8px\]/, "the rows drifted from the measured 36px");
+});
+
+test("🔴 the character steps aside while the + menu is open (owner: 'should not go behind the mascot')", () => {
+  const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
+  assert.match(home, /opacity: addOpen \? 0 : 1/, "the + menu covers the character again");
+  assert.match(home, /pointerEvents: addOpen \? "none"/, "a hidden character still takes pokes");
+});
+
 test("🔴🔴 a stray ?folder= never decides the surface", () => {
   // The same rule `cap` carries: a filing instruction is a fact ABOUT a submission. With nothing
   // asked there is nothing to file, so it must open the front door like any unknown parameter.
@@ -150,10 +167,13 @@ test("🔴 the row is the composer's width, and it sits on the reference's grey 
 test("🔴🔴 both menus open upward and are built to the reference's own panel", () => {
   // 🔴 THE THIRD ANSWER ON DIRECTION, AND THIS ONE IS THE OWNER'S — the history is in the
   // component. The old assertion here (`absolute top-[40px]`, downward) was my own taste written
-  // down as a rule; the reference, re-measured with the menu actually open, anchors its panel's
-  // BOTTOM 4px above the button, left-aligned, 224 wide (projects) and 240 (apps), radius 20,
-  // `10px 0` padding — and its shadow is the composer's exact three layers, reused not restated.
-  assert.match(PICKER, /absolute bottom-\[40px\] left-0/, "the menus stopped opening upward");
+  // down as a rule; the reference anchors its panel's BOTTOM above the button, left-aligned,
+  // 224 wide (projects) and 240 (apps), radius 20, `10px 0` padding — and its shadow is the
+  // composer's exact three layers, reused not restated.
+  // 🔴 THE GAP RE-MEASURED AGAIN 2026-08-30 EVENING, in the owner's own Chrome with
+  // getBoundingClientRect: panel bottom sits 12px above the chip, not the 4px pinned earlier —
+  // bottom-48 against the 36px chip in the 44px row.
+  assert.match(PICKER, /absolute bottom-\[48px\] left-0/, "the menus stopped opening upward at the measured gap");
   assert.ok(!/absolute top-\[40px\]/.test(PICKER), "the downward form is back");
   assert.match(PICKER, /rounded-\[20px\] bg-\(--ui-bg-elevated\) py-\[10px\] shadow-\[var\(--composer-edge\)\]/, "the panel left the measured recipe");
   // 🔴 NO ring OVER the shadow: the token's first layer IS the hairline (#872's doubled-edge).
