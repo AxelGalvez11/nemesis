@@ -7,7 +7,6 @@ import {
   DEFAULT_CANVAS_VIEW,
   canvasViewAction,
   otherCanvasView,
-  readCanvasView,
 } from "@/lib/learn/canvas-view";
 
 // 🔴🔴🔴 NEMESIS IS A CHATBOT, AND THE CANVAS IS A WAY OF LOOKING AT IT.
@@ -195,38 +194,51 @@ test("🔴🔴 the newest stored turn is held back ONLY when the session put it 
   assert.match(CANVAS, /const liveShowsLast = canvas\.blocks\.length === 0;/, "the hold-back is unconditional again");
 });
 
-// ── the preference is about the learner, not about the canvas ───────────────────────────────
+// ── the choice lasts while you look, and nothing else ───────────────────────────────────────
+//
+// 🔴🔴🔴 THE STORED VIEW IS DEAD, AND THESE TESTS ARE WRITTEN SO RESTORING IT REDDENS THEM.
+// Persisting the toggle produced the same owner report three times over four days ("chat mode not
+// showing conversation history"): one click of "Focus on the latest output" pinned `answer` for
+// every canvas on every visit, invisibly, while the thread worked the whole time. Reproduced on
+// screen 2026-08-30 — four recorded turns, none drawn. The account lives on
+// `CANVAS_VIEW_STORAGE_KEY`'s doc; what follows is the enforcement.
 
-test("🔴🔴 the choice is never written to the canvas", () => {
+test("🔴🔴🔴 every canvas opens on the conversation, because nothing stored can say otherwise", () => {
+  // Both halves matter. The default IS the conversation — and the hook has no way to start
+  // anywhere else, because its state initialises from the constant and nothing reads storage.
+  assert.equal(DEFAULT_CANVAS_VIEW, "conversation");
+  assert.match(HOOK, /useState<CanvasView>\(DEFAULT_CANVAS_VIEW\)/, "the view no longer starts on the default");
+  assert.ok(!/getItem/.test(HOOK), "the hook is reading a stored view again — the invisible pin is back");
+  assert.ok(!/readCanvasView/.test(HOOK) && !MODEL.includes("readCanvasView"), "the stored-view reader has been rebuilt");
+});
+
+test("🔴🔴 the toggle is never persisted, anywhere", () => {
+  // To the browser: one click must not outlive the visit. To the canvas: merely looking at a
+  // canvas must not modify it (the History Rail's own rule for `rewound`).
+  assert.ok(!/setItem/.test(HOOK), "the toggle writes to storage again — one click will outlive the visit");
   assert.ok(!/update\(\{[^}]*view/.test(CANVAS), "the view is being written into the canvas document");
   assert.ok(!MODEL.includes("canvas.document"), "the view model reaches into the canvas document");
-  assert.match(HOOK, /window\.localStorage/, "the preference is not kept in the browser");
-  assert.match(MODEL, new RegExp(`"${CANVAS_VIEW_STORAGE_KEY.replace(/\./g, "\\.")}"`), "the storage key moved");
 });
 
-test("🔴🔴 every storage access is guarded, because localStorage THROWS", () => {
+test("🔴🔴 the old pin is deleted on mount, and that is the ONE storage access left", () => {
+  // Browsers that ran the persisting build still hold `answer` under the key. Leaving it there
+  // invites some future reader to trust it; removal heals every one of them, including the three
+  // reports' own browser.
+  assert.match(HOOK, /removeItem\(CANVAS_VIEW_STORAGE_KEY\)/, "the healer is gone and stale pins live for ever");
+  assert.equal((HOOK.match(/window\.localStorage/g) ?? []).length, 1, "a second storage access appeared — this feature is allowed exactly one, the healer");
+  assert.match(MODEL, new RegExp(`"${CANVAS_VIEW_STORAGE_KEY.replace(/\./g, "\\.")}"`), "the key moved, so the healer deletes the wrong thing");
+});
+
+test("🔴🔴 the one storage access is guarded, because localStorage THROWS", () => {
   // Not "returns null" — throws, in a private window, with site data blocked, and inside a
-  // cross-origin frame. An unguarded read takes out the product's front door.
-  const reads = (HOOK.match(/window\.localStorage/g) ?? []).length;
+  // cross-origin frame. An unguarded touch takes out the product's front door to tidy a dead key.
+  const touches = (HOOK.match(/window\.localStorage/g) ?? []).length;
   const guards = (HOOK.match(/\btry \{/g) ?? []).length;
-  assert.ok(reads > 0, "the hook no longer touches storage");
-  assert.equal(guards, reads, `${reads} storage accesses, ${guards} guards — one can take the Canvas down`);
-});
-
-test("🔴 the stored value is adopted in an effect, not read during render", () => {
-  assert.match(HOOK, /useState<CanvasView>\(DEFAULT_CANVAS_VIEW\)/, "the initial view can differ from the server's");
-  assert.match(HOOK, /useEffect\(\(\) => \{\s*try \{\s*setStateView\(readCanvasView\(window\.localStorage/, "the stored view is not adopted after mount");
+  assert.ok(touches > 0, "the healer no longer touches storage");
+  assert.equal(guards, touches, `${touches} storage accesses, ${guards} guards — one can take the Canvas down`);
 });
 
 // ── the model, as a pure function ───────────────────────────────────────────────────────────
-
-test("🔴 an unknown stored value falls back to the default", () => {
-  assert.equal(readCanvasView("conversation"), "conversation");
-  assert.equal(readCanvasView("answer"), "answer");
-  for (const junk of [null, undefined, "", "chat", "Conversation", "{}", "1"]) {
-    assert.equal(readCanvasView(junk), DEFAULT_CANVAS_VIEW, `\`${String(junk)}\` did not fall back`);
-  }
-});
 
 test("the switch is symmetric", () => {
   assert.equal(otherCanvasView("answer"), "conversation");
