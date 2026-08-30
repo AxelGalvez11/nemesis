@@ -102,7 +102,9 @@ export function NavRail({ accountEmail, onExpand }: NavRailProps) {
               label={item.label}
               onClick={() => destination && router.push(destination)}
             >
-              <Codicon name={item.codicon} size={`${NAV_ICON_PX}px`} />
+              {/* 🔴 SAME TILT AS THE EXPANDED ROWS. The rail is a SECOND render path for the same nav —
+                  #921 dressed only chat-sidebar's and production showed a still icon here. */}
+              <Codicon className="nav-icon-tilt" name={item.codicon} size={`${NAV_ICON_PX}px`} />
             </RailButton>
           );
         })}

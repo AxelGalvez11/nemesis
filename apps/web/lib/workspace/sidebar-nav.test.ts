@@ -15,8 +15,13 @@ test("🔴 the plugins row wears the puzzle piece, and the rail icons carry the 
   const nav = SIDEBAR_NAV.find((item) => item.id === "plugins");
   assert.equal(nav?.codicon, "extensions", "the plugins row lost the owner's pick");
   assert.ok(!SIDEBAR_NAV.some((item) => item.codicon === "plug"), "the plug crept back into the rail");
-  const sidebar = readFileSync(new URL("../../components/workspace/shell/chat-sidebar.tsx", import.meta.url), "utf8");
-  assert.match(sidebar, /nav-icon-tilt/, "the rail icons lost the tilt class");
+  // 🔴 BOTH RENDER PATHS. The nav draws twice — chat-sidebar's expanded rows and nav-rail's
+  // collapsed rail. #921 dressed only the first; production then showed a still icon on the rail,
+  // which is the state the owner actually looks at most.
+  for (const file of ["chat-sidebar.tsx", "nav-rail.tsx"]) {
+    const src = readFileSync(new URL(`../../components/workspace/shell/${file}`, import.meta.url), "utf8");
+    assert.match(src, /nav-icon-tilt/, `${file} lost the tilt class`);
+  }
   const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
   // 🔴 THE TILT LIVES INSIDE THE REDUCED-MOTION GATE. Someone who asked the system to stop moving
   // gets a still icon and keeps the hover background. The slice runs gate-start → keyframes, so a
