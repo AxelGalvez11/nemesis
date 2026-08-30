@@ -130,3 +130,42 @@ test("unusable rows are filtered out of a mixed result rather than failing the w
   assert.equal(out.length, 1, "only the usable row should survive");
   assert.equal(out[0]?.licence?.licence, "CC-BY-4.0");
 });
+
+// ── the stored-block bounds, applied where trimming is still possible ───────────────────────────
+// `figureAsset` (canvas-visual.ts) re-validates stored figures with hard caps — caption 300,
+// attribution 200, source 80 — and a field over a cap there refuses the WHOLE figure. Measured on
+// the shelf: 1,840 captions and 588 attributions run longer, because textbook authors write real
+// sentences. Untrimmed, such a figure renders once and then vanishes from the stored lesson.
+
+test("🔴 a long caption is trimmed inside the validator's cap, not carried over it", () => {
+  const candidate = candidateFrom(hit({ caption: "word ".repeat(120) }));
+  assert.ok(candidate?.caption);
+  assert.ok(candidate!.caption!.length <= 300, `caption is ${candidate!.caption!.length} chars`);
+  assert.ok(candidate!.caption!.endsWith("…"), "a trimmed caption must say it was trimmed");
+});
+
+test("🔴 attribution and source are trimmed to their own caps", () => {
+  const candidate = candidateFrom(hit({ attribution: "a".repeat(600), bookTitle: "t".repeat(114) }));
+  assert.ok(candidate);
+  assert.ok(candidate!.licence!.attribution!.length <= 200);
+  assert.ok(candidate!.licence!.source.length <= 80);
+});
+
+test("a caption at the cap is untouched, and an empty one is omitted rather than blanked", () => {
+  const exact = "x".repeat(300);
+  assert.equal(candidateFrom(hit({ caption: exact }))?.caption, exact);
+  const empty = candidateFrom(hit({ caption: "  " }));
+  assert.ok(empty && !("caption" in empty), "an empty caption must be absent, not present-and-empty");
+});
+
+test("a row that cannot become a valid stored figure is dropped, not weakened", () => {
+  assert.equal(candidateFrom(hit({ bookTitle: " " })), null, "no source repository, no candidate");
+  assert.equal(candidateFrom(hit({ imageUrl: `https://x.test/${"a".repeat(500)}` })), null, "an over-long asset URL would refuse downstream");
+});
+
+test("a book URL that is not https survives as a candidate without a licence url", () => {
+  const candidate = candidateFrom(hit({ bookUrl: "http://insecure.example/book" }));
+  assert.ok(candidate);
+  assert.equal(candidate!.licence!.url, undefined);
+  assert.equal(candidate!.url, undefined);
+});

@@ -20,6 +20,7 @@ import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { ComposerCapability } from "@/lib/learn/composer-capability";
 import { applyCurriculumPlan, applyResearchedPlan, courseRefusalLine, loadCurriculumPlan } from "@/lib/learn/curriculum-course";
 import { researchCurriculum, researchRefusalLine } from "@/lib/learn/curriculum-research";
+import { scaffoldCurriculum } from "@/lib/learn/scaffold-course";
 import type { CurriculumPlan } from "@/lib/learn/curriculum-plan";
 import { courseGate, type TurnDecision } from "@/lib/learn/turn-router";
 import { rememberLine } from "@/lib/learn/learner-memory";
@@ -1772,16 +1773,33 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // caption machinery as the turn's own search, and every label below is emitted by a
           // step genuinely running (thinking-phases.ts's rule). Only research FAILING is a
           // refusal now, and it says so beside the reply like every other one.
-          const researched = await researchCurriculum(id, decision.curriculumFor, {
+          // 🔴 THE SHELF BEFORE THE WEB — owner direction, 2026-08-30: "DeepSeek can pull
+          // from already made course scaffolds." The chapter orders of the shelf's published
+          // books sit in `course_scaffolds`; when the model judges one of them to BE the course
+          // asked for, its structure is used as is — the CC BY grant permits that and prices it
+          // at the credit the course map renders — and the web pass never runs. Every scaffold
+          // failure falls through to research silently: the learner sees a slower build, never
+          // a dead end, and research's own refusals still speak.
+          const shelfed = await scaffoldCurriculum(id, decision.curriculumFor, {
             onStep: (label) => setBusy({ blockIds: [], kind: "command", label }),
           });
-          setBusy({ kind: null });
-          if (researched.ok) {
+          if (shelfed.ok) {
+            setBusy({ kind: null });
             setCoursePlan(
-              await applyResearchedPlan(id, latest.current, researched.skeleton, researched.sources, new Date().toISOString()),
+              await applyResearchedPlan(id, latest.current, shelfed.skeleton, shelfed.sources, new Date().toISOString()),
             );
           } else {
-            courseNote = researchRefusalLine(researched.refusal, decision.curriculumFor);
+            const researched = await researchCurriculum(id, decision.curriculumFor, {
+              onStep: (label) => setBusy({ blockIds: [], kind: "command", label }),
+            });
+            setBusy({ kind: null });
+            if (researched.ok) {
+              setCoursePlan(
+                await applyResearchedPlan(id, latest.current, researched.skeleton, researched.sources, new Date().toISOString()),
+              );
+            } else {
+              courseNote = researchRefusalLine(researched.refusal, decision.curriculumFor);
+            }
           }
         } else courseNote = courseRefusalLine(applied.refusal, decision.curriculumFor);
       }

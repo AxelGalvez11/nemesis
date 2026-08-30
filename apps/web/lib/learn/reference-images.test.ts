@@ -255,3 +255,68 @@ test("🔴 one shared word cannot win a multi-word request — the live provider
   // And a single-word query still matches its word outright.
   assert.equal(searchCurated({ concept: "bathtub" }, rows).length, 1);
 });
+
+// ── the textbook shelf as the middle provider ───────────────────────────────────────────────────
+
+import { REFERENCE_ASSET_HOSTS } from "./reference-images";
+import type { FigureHit } from "./textbook-figures";
+
+const SHELF_HIT: FigureHit = {
+  alt: "",
+  attribution: "Environmental Biology by Matthew R. Fisher, CC BY 4.0",
+  bookTitle: "Environmental Biology",
+  bookUrl: "https://openoregon.pressbooks.pub/envirobiology",
+  caption: "Energy flow through an ecosystem.",
+  chapterTitle: "3.1 Energy Flow",
+  id: "shelf-1",
+  imageUrl: "https://openoregon.pressbooks.pub/app/uploads/energy.png",
+  licence: "https://creativecommons.org/licenses/by/4.0/",
+  similarity: 0.7,
+};
+
+test("🔴 the pool orders curated, then the shelf, then the live repository", async () => {
+  const registry: CuratedEntry[] = [
+    {
+      assetPath: "https://upload.wikimedia.org/curated.png",
+      attribution: "A. Human",
+      caption: "Energy flow, hand-checked.",
+      concepts: ["energy flow ecosystem"],
+      licence: "CC-BY-4.0",
+      source: "Wikimedia Commons",
+    },
+  ];
+  const found = await findReferenceImages(
+    { concept: "energy flow ecosystem" },
+    {
+      fetch: async () => ({ json: async () => commonsResponse([{ LicenseShortName: { value: "CC BY 4.0" } }]), ok: true, status: 200 }),
+      registry,
+      shelfSearch: async () => [SHELF_HIT],
+    },
+  );
+  assert.deepEqual(
+    found.map((candidate) => candidate.providerId),
+    ["curated", "textbook-shelf", "wikimedia-commons"],
+    "the order IS the preference, and chooseAsset keeps it",
+  );
+});
+
+test("without a shelfSearch dep the shelf is simply not consulted", async () => {
+  const found = await findReferenceImages(
+    { concept: "energy flow" },
+    { fetch: async () => ({ json: async () => commonsResponse([]), ok: true, status: 200 }) },
+  );
+  assert.equal(found.length, 0);
+});
+
+test("🔴 the host allow list still refuses what nobody vouched for", () => {
+  // The list grew from one host to the shelf's own publisher hosts; growing is not loosening.
+  assert.ok(REFERENCE_ASSET_HOSTS.includes("upload.wikimedia.org"));
+  assert.ok(allowedAssetUrl("https://openoregon.pressbooks.pub/app/uploads/energy.png"), "a shelf publisher host must serve");
+  assert.ok(!allowedAssetUrl("https://cdn.kastatic.org/x.png"), "Khan Academy's CDN is CC BY-NC upstream and must not serve");
+  assert.ok(!allowedAssetUrl("https://smarthistory.org/x.jpg"), "Smarthistory is CC BY-NC-SA and must not serve");
+  assert.ok(!allowedAssetUrl("https://dr282zn36sxxg.cloudfront.net/x.png"), "CK-12's CDN is CC BY-NC upstream and must not serve");
+  for (const host of REFERENCE_ASSET_HOSTS) {
+    assert.equal(host, host.toLowerCase().trim(), `${host} must be a bare lowercase hostname`);
+    assert.ok(!host.includes("/") && !host.includes(":"), `${host} must carry no scheme, port or path`);
+  }
+});

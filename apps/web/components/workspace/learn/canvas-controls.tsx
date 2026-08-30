@@ -30,6 +30,14 @@
 
 import { Children, useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  DEFAULT_LEARNING_STYLE,
+  LEARNING_STYLES,
+  LEARNING_STYLE_STORAGE_KEY,
+  readLearningStyle,
+  type LearningStyle,
+} from "@nemesis/shared";
+
 import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
@@ -1299,6 +1307,94 @@ export function OptionsControl({
     >
       <Codicon name={voice.speaking ? "unmute" : voiceOn ? "unmute" : "mute"} size="20px" />
     </button>
+  );
+}
+
+// ---------------------------------------------------------------- teaching style
+
+/**
+ * The teaching-style picker: Direct, Guided or Socratic, from `@nemesis/shared`'s
+ * `learning-style.ts` — which also owns why this is a learner-chosen preference and never a mode
+ * the canvas infers.
+ *
+ * 🔴 THE `⋯` RETURNS BECAUSE IT HAS A MENU AGAIN. The owner asked for this glyph by name
+ * (2026-08-19: "add a '⋯' for options"), and it was removed on 2026-08-25 only because everything
+ * had moved out and ONE row was left behind it — this file's own rule, "a one-item menu is a
+ * second click charged for nothing". A three-way preference is a real menu, so the glyph earns
+ * its place back. Read-aloud stays where the removal put it: its glyph reports live state, which
+ * a menu row cannot.
+ *
+ * 🔴 THE PREFERENCE IS THE STORAGE KEY, NOT THIS COMPONENT'S STATE. `canvas-chat.ts` reads
+ * `LEARNING_STYLE_STORAGE_KEY` fresh on every send, so the localStorage write IS the feature and
+ * the state here only paints the check mark. That is also why the check moves ONLY after a write
+ * succeeds: storage can be denied wholesale, `canvas-chat` would then keep teaching Direct, and a
+ * check mark on a row that changes nothing is the dead control this codebase keeps re-filing.
+ * The header unmounting during a retrieval costs nothing for the same reason — the choice never
+ * lived here.
+ *
+ * 🔴 THE GLYPH TINTS WHEN A NON-DEFAULT STYLE IS ON, the same signal read-aloud uses: a learner
+ * who switched Socratic on yesterday deserves to see that without opening anything, because it
+ * changes every answer they get today.
+ */
+export function StyleControl() {
+  const [open, setOpen] = useState(false);
+  const [style, setStyle] = useState<LearningStyle>(DEFAULT_LEARNING_STYLE);
+  const holder = useDismiss(open, () => setOpen(false));
+
+  // Read once on mount, client-side only — a server render must not touch localStorage, and the
+  // first paint showing Direct for a beat is invisible behind a closed menu.
+  useEffect(() => {
+    try {
+      setStyle(readLearningStyle(window.localStorage.getItem(LEARNING_STYLE_STORAGE_KEY)));
+    } catch {
+      // Storage denied: the default stands, which is also what canvas-chat will read.
+    }
+  }, []);
+
+  const choose = (next: LearningStyle) => {
+    try {
+      window.localStorage.setItem(LEARNING_STYLE_STORAGE_KEY, next);
+      setStyle(next);
+    } catch {
+      // See the header: an unpersisted choice would not change any answer, so the UI does not
+      // pretend it did.
+    }
+    setOpen(false);
+  };
+
+  return (
+    <div className="pointer-events-auto shrink-0" ref={holder}>
+      <button
+        aria-expanded={open}
+        aria-label="Options"
+        className={cn(
+          CONTROL,
+          style !== DEFAULT_LEARNING_STYLE && "text-(--ui-action) hover:text-(--ui-action)",
+        )}
+        onClick={() => setOpen((current) => !current)}
+        title="Options"
+        type="button"
+      >
+        <Codicon name="ellipsis" size="20px" />
+      </button>
+
+      {open && (
+        <div className={cn(PANEL, "w-[17rem]")}>
+          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+            Teaching style
+          </p>
+          {LEARNING_STYLES.map((option) => (
+            <ToggleItem
+              checked={style === option.id}
+              hint={option.hint}
+              key={option.id}
+              label={option.label}
+              onClick={() => choose(option.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

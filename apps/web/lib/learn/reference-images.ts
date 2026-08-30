@@ -19,6 +19,7 @@
 // recorded once beats a licence parsed out of a wiki template on every request.
 
 import { matchableConcepts, readableCaption } from "./figure-caption";
+import { textbookFigures, type FigureHit } from "./textbook-figures";
 import type { CandidateAsset } from "./visual-provenance";
 
 /** What a caller wants a picture of. Plain text — the concept, not a query language. */
@@ -47,8 +48,78 @@ export type ReferenceProviderId = "curated" | "textbook-shelf" | "wikimedia-comm
  * host nobody chose refuses rather than renders. Curated rows point at the Commons file store too,
  * so one entry covers both providers; `openi.nlm.nih.gov` is deliberately absent — evaluated
  * 2026-08-23 and rejected, because its API hides per-image licences and answers only browsers.
+ *
+ * 🔴 THE PUBLISHER HOSTS ARE THE SHELF'S OWN BOOK HOSTS, AND ONLY THOSE. A CC BY book may embed
+ * an image its author used under permission or local fair dealing — measured in the shelf:
+ * Khan Academy and CK-12 CDN images (both CC BY-NC upstream) and smarthistory.org (CC BY-NC-SA)
+ * ride inside CC BY books, and the book's grant does not transfer to them. Pixels are trusted
+ * only where book and image are one CC-licensed publication: the host that publishes the book.
+ * Wikimedia's file store stays because non-free licences are banned there by site policy.
+ * Generated from `select distinct split_part(book_url,'/',3) from textbook_figures` on
+ * 2026-08-30; the SQL mirror of this rule is the `figure_serving_host_gate` migration on
+ * `match_textbook_figures`, and the two must move together.
  */
-export const REFERENCE_ASSET_HOSTS: readonly string[] = ["upload.wikimedia.org"];
+export const REFERENCE_ASSET_HOSTS: readonly string[] = [
+  "adelaideuniversity.pressbooks.pub",
+  "boisestate.pressbooks.pub",
+  "canberra.pressbooks.pub",
+  // 🔴 NOT `commons.wikimedia.org` — that is the wiki PAGE host, which some shelf books carry as
+  // their book_url; pixels live on `upload.wikimedia.org` and only the file store serves.
+  "courses.lumenlearning.com",
+  "cwi.pressbooks.pub",
+  "ecampusontario.pressbooks.pub",
+  "fhsu.pressbooks.pub",
+  "iastate.pressbooks.pub",
+  "kpu.pressbooks.pub",
+  "lmu.pressbooks.pub",
+  "louis.pressbooks.pub",
+  "milnepublishing.geneseo.edu",
+  "minnstate.pressbooks.pub",
+  "nic.pressbooks.pub",
+  "oercollective.caul.edu.au",
+  "ohiostate.pressbooks.pub",
+  "open.lib.umn.edu",
+  "open.library.okstate.edu",
+  "open.ocolearnok.org",
+  "open.oregonstate.education",
+  "openbooks.library.umass.edu",
+  "openoregon.pressbooks.pub",
+  "openpress.sussex.ac.uk",
+  "opentext.uoregon.edu",
+  "opentextbc.ca",
+  "opentextbooks.library.arizona.edu",
+  "pdx.pressbooks.pub",
+  "press.rebus.community",
+  "pressbooks.bccampus.ca",
+  "pressbooks.lib.jmu.edu",
+  "pressbooks.lib.vt.edu",
+  "pressbooks.oer.hawaii.edu",
+  "pressbooks.openedmb.ca",
+  "pressbooks.openeducationalberta.ca",
+  "pressbooks.palni.org",
+  "pressbooks.uiowa.edu",
+  "pressbooks.uwf.edu",
+  "psu.pb.unizin.org",
+  "restoryingeducation.pressbooks.sunycreate.cloud",
+  "rotel.pressbooks.pub",
+  "rwu.pressbooks.pub",
+  "sheffield.pressbooks.pub",
+  "theatreappreciation.pressbooks.sunycreate.cloud",
+  "uark.pressbooks.pub",
+  "uen.pressbooks.pub",
+  "umsystem.pressbooks.pub",
+  "una.pressbooks.pub",
+  "upload.wikimedia.org",
+  "usq.pressbooks.pub",
+  "uta.pressbooks.pub",
+  "uw.pressbooks.pub",
+  "viva.pressbooks.pub",
+  "wisc.pb.unizin.org",
+  "wisconsin.pressbooks.pub",
+  "wsu.pressbooks.pub",
+  "wtcs.pressbooks.pub",
+  "www.saskoer.ca",
+];
 
 /** Does this URL name a host the reference lane may serve pixels from? */
 export function allowedAssetUrl(raw: string): boolean {
@@ -101,6 +172,9 @@ export interface ReferenceDeps {
   readonly fetch?: (url: string) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
   /** The curated rows. Injected so a test states its own registry rather than depending on the shipped one. */
   readonly registry?: readonly CuratedEntry[];
+  /** The textbook shelf's search. Server callers pass `searchShelf` from `figure-shelf-server.ts`;
+   *  absent means the shelf is not consulted, which is what a browser or an offline test wants. */
+  readonly shelfSearch?: (concept: string, limit: number) => Promise<FigureHit[]>;
 }
 
 /**
@@ -307,20 +381,27 @@ export function searchCurated(query: ReferenceQuery, registry: readonly CuratedE
 }
 
 /**
- * Every candidate any provider offers, curated first.
+ * Every candidate any provider offers: curated, then the textbook shelf, then live Commons.
  *
- * 🔴 THE ORDER IS THE PREFERENCE, AND `chooseAsset` KEEPS IT. Both kinds of provider return
+ * 🔴 THE ORDER IS THE PREFERENCE, AND `chooseAsset` KEEPS IT. All three providers return
  * `reference_image`, so the ladder cannot separate them — it ranks by provenance and these share
- * one. Curated rows are listed first so a licence a human checked once wins over a licence parsed
- * out of a wiki template on every request.
+ * one. Curated rows go first because a licence a human checked once beats everything; the shelf
+ * goes second because its match is semantic and its licence was checked three ways at harvest,
+ * where a live answer is a token overlap and a wiki template parsed on every request.
  */
 export async function findReferenceImages(
   query: ReferenceQuery,
   deps: ReferenceDeps,
 ): Promise<ReferenceCandidate[]> {
   const curated = searchCurated(query, deps.registry ?? []);
-  const live = await searchCommons(query, deps);
-  return [...curated, ...live];
+  // Independent repositories; neither waits for the other.
+  const [shelf, live] = await Promise.all([
+    deps.shelfSearch
+      ? textbookFigures(query.concept, query.limit ?? 4, { search: deps.shelfSearch })
+      : Promise.resolve([]),
+    searchCommons(query, deps),
+  ]);
+  return [...curated, ...shelf, ...live];
 }
 
 function commonsPages(payload: unknown): Array<{ imageinfo?: unknown; title?: unknown }> {

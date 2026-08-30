@@ -22,12 +22,12 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
-import { ConversationControl, MinimapControl, OptionsControl, SourcesControl } from "./canvas-controls";
+import { ConversationControl, MinimapControl, OptionsControl, SourcesControl, StyleControl } from "./canvas-controls";
 import { CourseMapControl } from "./course-map";
 import type { CanvasView } from "@/lib/learn/canvas-view";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
-import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
+import type { PlanSource, PlanTerritory } from "@/lib/learn/curriculum-plan";
 import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 
 interface CanvasHeaderProps {
@@ -53,6 +53,8 @@ interface CanvasHeaderProps {
     /** The course, projected — see MinimapControl's own prop comment. Null on most canvases. */
     plan: readonly PlanTerritory[] | null;
     planTitle: string | null;
+    /** The one source a scaffold-built plan owes its credit to, or null. See learning-canvas. */
+    planCredit: PlanSource | null;
     /** Focus the canvas on one part of the course, from the map. */
     onPickCourseScope: (scope: { label: string; identityKeys: readonly string[] }) => void;
   };
@@ -210,6 +212,7 @@ export function CanvasHeader({
           {minimap.planTitle !== null && minimap.plan && minimap.plan.length > 0 && (
             <CourseMapControl
               activeLabel={minimap.focus.kind === "selection" ? minimap.focus.label : null}
+              credit={minimap.planCredit}
               evidence={minimap.evidence}
               onPick={minimap.onPickCourseScope}
               plan={minimap.plan}
@@ -217,6 +220,10 @@ export function CanvasHeader({
             />
           )}
           <OptionsControl voice={voice} />
+          {/* 🔴 THE `⋯` RETURNS, WITH A MENU BEHIND IT AGAIN — see StyleControl's own header
+              for why its 2026-08-25 removal does not apply to a three-way preference. Last on the
+              row: it is about how the product behaves, not about this page. */}
+          <StyleControl />
       </div>
     </>
   );

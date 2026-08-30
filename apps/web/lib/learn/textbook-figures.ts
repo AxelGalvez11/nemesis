@@ -80,26 +80,41 @@ export function candidateFrom(hit: FigureHit): ReferenceCandidate | null {
   const licence = licenceFromCcUrl(hit.licence);
   if (!licence) return null;
   if (!hit.attribution.trim()) return null;
-  if (!hit.imageUrl.trim()) return null;
+  if (!hit.bookTitle.trim()) return null;
+  if (!hit.imageUrl.trim() || hit.imageUrl.length > 500) return null;
 
+  // 🔴 EVERY BOUND BELOW IS `figureAsset`'s (canvas-visual.ts), APPLIED WHERE TRIMMING IS STILL
+  // POSSIBLE. Stored figure blocks are re-validated with hard caps — caption 300, attribution 200,
+  // source 80 — and a field over the cap there refuses the WHOLE figure. Measured on the shelf:
+  // 1,840 captions and 588 attributions run longer than the caps, because textbook authors write
+  // real sentences. Trimmed here, the figure survives with a shortened line; untrimmed, it renders
+  // once and then vanishes from the stored lesson, which reads as the canvas losing pictures.
+  const caption = bounded(hit.caption.trim(), 300);
+  const bookUrl = /^https:\/\//.test(hit.bookUrl) && hit.bookUrl.length <= 400 ? hit.bookUrl : null;
   const assetLicence: AssetLicence = {
-    attribution: hit.attribution.trim(),
+    attribution: bounded(hit.attribution.trim(), 200),
     licence,
-    source: hit.bookTitle,
-    url: hit.bookUrl,
+    source: bounded(hit.bookTitle.trim(), 80),
+    ...(bookUrl ? { url: bookUrl } : {}),
   };
 
   return {
     assetPath: hit.imageUrl,
     // The author's sentence, which is both what was indexed and what a learner reads.
-    caption: hit.caption,
+    ...(caption ? { caption } : {}),
     licence: assetLicence,
     providerId: "textbook-shelf",
     provenance: "reference_image",
     // Where in the book it sits. Reporting only: never a licence decision.
     tags: [hit.bookTitle, hit.chapterTitle].filter((tag) => tag.trim().length > 0),
-    url: hit.bookUrl,
+    ...(bookUrl ? { url: bookUrl } : {}),
   };
+}
+
+/** Word-safe cut to a validator's cap. The ellipsis is inside the cap, so the result always fits. */
+function bounded(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}\u2026`;
 }
 
 /** Injected so every rule above is testable without a network. */

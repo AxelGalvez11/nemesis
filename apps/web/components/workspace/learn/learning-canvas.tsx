@@ -1829,6 +1829,12 @@ export function LearningCanvas({
           onPickCourseScope: (scope) => policy.setFocus({ kind: "selection", ...scope }),
           plan: planRows,
           planTitle: session.coursePlan?.title ?? null,
+          // 🔴 A CREDIT ONLY WHEN THE PLAN HAS EXACTLY ONE SOURCE. A course cut from one
+          // licensed book owes its attribution wherever the map appears (the CC BY price);
+          // a researched plan's many consulted pages are provenance, not a credit, and stay off
+          // the panel.
+          planCredit:
+            session.coursePlan?.sources?.length === 1 ? (session.coursePlan.sources[0] ?? null) : null,
           setFocus: policy.setFocus,
           territories: policy.territories,
         }}

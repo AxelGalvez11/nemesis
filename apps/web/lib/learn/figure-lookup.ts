@@ -23,9 +23,23 @@ export const REFERENCE_IMAGE_TIMEOUT_MS = 10000;
 export interface FigureLookupDeps {
   readonly fetch: typeof globalThis.fetch;
   readonly timeoutMs?: number;
+  /** The session's bearer token, or null when there is none. The route requires a signed-in
+   *  caller (a shelf lookup costs an embedding); tokenless degrades to no pictures, never a throw. */
+  readonly token?: () => Promise<string | null>;
 }
 
-const REAL: FigureLookupDeps = { fetch: (...args) => globalThis.fetch(...args) };
+const REAL: FigureLookupDeps = {
+  fetch: (...args) => globalThis.fetch(...args),
+  token: async () => {
+    try {
+      const { supabase } = await import("@/lib/supabase");
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    } catch {
+      return null;
+    }
+  },
+};
 
 /**
  * The same answer, with every figure request stamped with what the reference lane chose.
@@ -73,9 +87,13 @@ async function lookUp(
   signal?.addEventListener("abort", onAbort);
 
   try {
+    const token = deps.token ? await deps.token().catch(() => null) : null;
     const response = await deps.fetch(REFERENCE_IMAGE_ROUTE, {
       body: JSON.stringify({ subjects }),
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       method: "POST",
       signal: timeout.signal,
     });

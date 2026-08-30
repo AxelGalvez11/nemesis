@@ -28,7 +28,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { CONTROL, PANEL, useDismiss } from "./canvas-controls";
 
 import { buildCourseMap, type CourseMapSection } from "@/lib/learn/course-map";
-import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
+import type { PlanSource, PlanTerritory } from "@/lib/learn/curriculum-plan";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 
 /**
@@ -66,6 +66,7 @@ function markWords(mark: CourseMapSection["mark"]): string {
 
 export function CourseMapControl({
   activeLabel = null,
+  credit = null,
   evidence,
   onPick,
   plan,
@@ -73,6 +74,10 @@ export function CourseMapControl({
 }: {
   /** The section the canvas is working on, so the map can say where you are. */
   activeLabel?: string | null;
+  /** The one book a scaffold-built course came from. The CC BY family requires the credit
+   *  wherever the work appears, and the map IS where this course appears — so it renders here,
+   *  in the smallest text the panel has, which is the owner's standing rule for attribution. */
+  credit?: PlanSource | null;
   evidence: readonly LearnerEvidence[];
   /** Focus the canvas on one part of the course. */
   onPick: (scope: { label: string; identityKeys: readonly string[] }) => void;
@@ -188,6 +193,19 @@ export function CourseMapControl({
               </div>
             );
           })}
+
+          {credit && (
+            <p className="mt-1 border-t border-(--ui-stroke-tertiary) px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">
+              <a
+                className="underline-offset-2 hover:text-(--ui-text-secondary) hover:underline"
+                href={credit.url}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                {credit.title}
+              </a>
+            </p>
+          )}
         </div>
       )}
     </div>
