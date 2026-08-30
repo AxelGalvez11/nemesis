@@ -24,9 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/lib/learn/canvas-store";
-import type { ConnectableApp } from "@/lib/workspace/composio-client";
-
-import { ADD_MENU } from "./add-menu-row";
+import { beginConnect, type ConnectableApp } from "@/lib/workspace/composio-client";
 
 /**
  * How the reference draws it, measured at 1176px on 2026-08-29.
@@ -43,11 +41,44 @@ import { ADD_MENU } from "./add-menu-row";
 // composer, which is far wider; left as `w-full` it started 151px LEFT of the composer's edge
 // instead of 20px inside it. The reference insets the row 20px from the composer's own left edge,
 // so the row has to be bounded by the same token the composer is.
-//
-// 🔴 24px, NOT 20. The reference insets its BAR by 20 and then its button by another 4 inside that;
-// what a learner sees is the control 24px from the composer's left edge. One padding here says the
-// same thing with one number instead of two.
-const BAR = "mt-0 flex h-[44px] w-full max-w-[var(--composer-max-width)] items-center gap-[8px] px-[24px]";
+const BAR = "mt-0 w-full max-w-[var(--composer-max-width)]";
+
+/**
+ * The grey tray the row sits on — the "lower thing" (owner 2026-08-30: *"still missing that
+ * grayish bottom thing below the chat composer"*).
+ *
+ * The reference's own class list, read off the live element: `mx-5 -mt-5 pt-5 rounded-b-2xl
+ * bg-black/3 dark:bg-white/8` — inset 20px each side (728 inside 768), tucked 20px UNDER the pill
+ * with the same 20px of top padding pushing its content back out, bottom corners 16px.
+ *
+ * 🔴 THE TUCK IS NOT DECORATION. The pill's corner radius is 28; a tray that merely touched the
+ * pill's bottom edge would show a sliver of page between its own square top corners and the pill's
+ * curve. Twenty pixels of overlap put the seam behind the pill, where no gap can show. The pill
+ * wears `relative z-[1]` (see canvas-home) so it paints over the tucked strip — the reference lets
+ * its translucent grey wash the pill's bottom edge instead, which at 8% white in dark would tint
+ * ours visibly.
+ *
+ * 🔴 CONTROLS INSET 4px, SO THEY LAND AT 24 AND 175 ABSOLUTE — the same two numbers the row had
+ * when it was a transparent full-width strip with `px-[24px]`. The geometry the learner sees did
+ * not move; only the surface under it appeared.
+ */
+const TRAY = "mx-[20px] -mt-[20px] rounded-b-[16px] bg-(--composer-tray) pt-[20px]";
+const TRAY_ROW = "flex h-[44px] items-center gap-[8px] px-[4px]";
+
+/**
+ * One panel recipe for both menus, measured off the reference's own (project menu 224 wide, apps
+ * menu 240, everything else shared): white/elevated, radius 20, `10px 0` padding — and its shadow
+ * is EXACTLY the composer's three measured layers, so `--composer-edge` is reused rather than
+ * restated. 🔴 NO `ring-1` ON TOP: the token's first layer IS the hairline, and drawing a ring
+ * over it is the doubled-edge defect #872 fixed on the composer itself.
+ */
+const PANEL =
+  "absolute bottom-[40px] left-0 z-50 overflow-hidden rounded-[20px] bg-(--ui-bg-elevated) py-[10px] shadow-[var(--composer-edge)]";
+const PANEL_ITEM =
+  "flex w-full items-center gap-[8px] rounded-[12px] py-[6px] pl-[10px] pr-[10px] text-left " +
+  "text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-primary) transition-colors hover:bg-(--ui-bg-tertiary)";
+const PANEL_SEARCH =
+  "mx-[6px] mb-[4px] flex h-[38px] items-center rounded-[10px] px-[10px]";
 const CONTROL =
   "flex h-[36px] items-center gap-[6px] rounded-[12px] pl-[9px] pr-[12px] " +
   "text-[length:var(--canvas-text-small)] leading-[20px] transition-colors";
@@ -104,36 +135,114 @@ const APP_LOGO: Record<string, string> = {
 };
 
 function ConnectedApps({ apps, connected, onOpen }: { apps: readonly ConnectableApp[]; connected: readonly string[]; onOpen: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   const on = apps.filter((a) => connected.includes(a.key));
+  const off = apps.filter((a) => !connected.includes(a.key));
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => { if (!wrap.current?.contains(event.target as Node)) setOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", escape); };
+  }, [open]);
+
+  /**
+   * 🔴 CONNECTING STARTS HERE, ON GOOGLE'S OWN PAGE, IN A NEW TAB. `beginConnect` returns the
+   * broker's consent URL and Nemesis never sees a password — the identical flow the Settings panel
+   * runs, reached from where the learner already is (owner 2026-08-30: *"clicking on the projects
+   * or the plug ins doesn't really work like it does in ChatGPT"*). `noopener` because the consent
+   * page must not hold a handle back into the app.
+   */
+  const connect = async (key: string) => {
+    if (busy) return;
+    setBusy(key);
+    const url = await beginConnect(key);
+    setBusy(null);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   return (
-    <button
-      className={cn(CONTROL, "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)")}
-      onClick={onOpen}
-      // The marks carry `alt=""` because this title, and the visible label, already name them; a
-      // screen reader announcing "Google Drive Gmail" twice is worse than once.
-      title={on.length > 0 ? `Connected: ${on.map((a) => a.label).join(", ")}` : "Connect your apps"}
-      type="button"
-    >
-      {/* 🔴 THE GLYPH IS THE EMPTY STATE'S ONLY MARK, AND IT GOES ONCE THERE ARE LOGOS. Measured on
-          the reference: its `Plugins` control is the WORD followed by the connector marks, with no
-          leading icon of its own — 132px wide, the label running 155→223 and the logos 223→279. A
-          plug in front of four product logos is a fifth mark saying what the four already say. */}
-      {on.length === 0 && <Codicon className="shrink-0" name="plug" size="1rem" />}
-      <span>{on.length > 0 ? "Apps" : "Connect apps"}</span>
-      {on.length > 0 && (
-        // 🔴 SPACED, NOT STACKED. The reference overlaps its logos by 8px, which reads as a pile of
-        // distinct brand colours; the same overlap on four monochrome glyphs is a smudge.
-        <span className="ml-[2px] flex shrink-0 items-center gap-[5px]">
-          {on.map((a) => APP_LOGO[a.key]).filter(Boolean).slice(0, 4).map((src, i) => (
-            // 🔴 EXPLICIT `width`/`height` ATTRIBUTES AS WELL AS THE CLASS. Without intrinsic
-            // dimensions the row reflows the instant the icons decode, which on a slow connection
-            // is a visible jump in a control the learner may already be reaching for.
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img alt="" className="size-[20px] shrink-0" height={20} key={src} src={src} width={20} />
+    <div className="relative" ref={wrap}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className={cn(CONTROL, "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)", open && "bg-(--ui-bg-tertiary) text-(--ui-text-primary)")}
+        // 🔴 AN UNCONFIGURED SERVER SKIPS THE MENU AND GOES TO SETTINGS. `apps` is empty exactly
+        // when `/api/composio` reports `configured: false`; a menu over an empty list would be a
+        // panel with one row pointing at Settings, which is the long way of just going there.
+        onClick={() => { if (apps.length === 0) { onOpen(); return; } setOpen((was) => !was); }}
+        // The marks carry `alt=""` because this title, and the visible label, already name them; a
+        // screen reader announcing "Google Drive Gmail" twice is worse than once.
+        title={on.length > 0 ? `Connected: ${on.map((a) => a.label).join(", ")}` : "Connect your apps"}
+        type="button"
+      >
+        {/* 🔴 THE GLYPH IS THE EMPTY STATE'S ONLY MARK, AND IT GOES ONCE THERE ARE LOGOS. Measured on
+            the reference: its `Plugins` control is the WORD followed by the connector marks, with no
+            leading icon of its own — 132px wide, the label running 155→223 and the logos 223→279. A
+            plug in front of four product logos is a fifth mark saying what the four already say. */}
+        {on.length === 0 && <Codicon className="shrink-0" name="plug" size="1rem" />}
+        <span>{on.length > 0 ? "Apps" : "Connect apps"}</span>
+        {on.length > 0 && (
+          // 🔴 SPACED, NOT STACKED. The reference overlaps its logos by 8px, which reads as a pile of
+          // distinct brand colours; the same overlap on four monochrome glyphs is a smudge.
+          <span className="ml-[2px] flex shrink-0 items-center gap-[5px]">
+            {on.map((a) => APP_LOGO[a.key]).filter(Boolean).slice(0, 4).map((src) => (
+              // 🔴 EXPLICIT `width`/`height` ATTRIBUTES AS WELL AS THE CLASS. Without intrinsic
+              // dimensions the row reflows the instant the icons decode, which on a slow connection
+              // is a visible jump in a control the learner may already be reaching for.
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img alt="" className="size-[20px] shrink-0" height={20} key={src} src={src} width={20} />
+            ))}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        // The reference's apps menu: 240 wide, opening upward, rows of logo + name, a divider, and
+        // one action at the bottom. Its search field is deliberately not copied — it filters a list
+        // of dozens of connectors; ours has four fixed rows, and a filter over four rows is theater.
+        <div className={cn(PANEL, "w-[240px]")} role="menu">
+          {/* 🔴 A CONNECTED ROW IS STATUS, NOT A CONTROL. There is nothing per-conversation to
+              toggle — a connection is account-wide — so drawing it as a button would be a control
+              that does nothing, which §38 exists to ban. The check says "already yours". */}
+          {on.map((a) => (
+            <div className={cn(PANEL_ITEM, "mx-[6px] w-auto cursor-default hover:bg-transparent")} key={a.key}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="" className="size-[20px] shrink-0" height={20} src={APP_LOGO[a.key] ?? ""} width={20} />
+              <span className="min-w-0 truncate">{a.label}</span>
+              <Codicon className="ml-auto shrink-0 text-(--ui-action)" name="check" size="0.875rem" />
+            </div>
           ))}
-        </span>
+          {off.map((a) => (
+            <button
+              className={cn(PANEL_ITEM, "mx-[6px] w-auto disabled:opacity-60")}
+              disabled={busy === a.key}
+              key={a.key}
+              onClick={() => void connect(a.key)}
+              role="menuitem"
+              type="button"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="" className="size-[20px] shrink-0" height={20} src={APP_LOGO[a.key] ?? ""} width={20} />
+              <span className="min-w-0 truncate">{a.label}</span>
+              <span className="ml-auto shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                {busy === a.key ? "Opening…" : "Connect"}
+              </span>
+            </button>
+          ))}
+          <div className="mx-[10px] my-[6px] h-px bg-(--ui-stroke-tertiary)" />
+          <button className={cn(PANEL_ITEM, "mx-[6px] w-auto")} onClick={() => { setOpen(false); onOpen(); }} role="menuitem" type="button">
+            <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="plug" size="1rem" />
+            <span>Manage connections</span>
+            <Codicon className="ml-auto shrink-0 text-(--ui-text-tertiary)" name="chevron-right" size="0.875rem" />
+          </button>
+        </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -141,8 +250,11 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState("");
+  const [search, setSearch] = useState("");
   const wrap = useRef<HTMLDivElement>(null);
   const chosen = folders.find((f) => f.id === value) ?? null;
+  const q = search.trim().toLowerCase();
+  const listed = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : folders;
 
   // 🔴 CLOSED BY A POINTER ANYWHERE ELSE, INCLUDING INSIDE THE COMPOSER. A menu that survives a
   // click into the text field is a menu covering the thing the learner just went back to.
@@ -173,6 +285,8 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
 
   return (
     <div className={BAR} ref={wrap}>
+      <div className={TRAY}>
+      <div className={TRAY_ROW}>
       <div className="relative">
         <button
           aria-expanded={open}
@@ -183,7 +297,7 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
               ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
               : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
           )}
-          onClick={() => { setOpen((was) => !was); setNaming(false); }}
+          onClick={() => { setOpen((was) => !was); setNaming(false); setSearch(""); }}
           type="button"
         >
           <Codicon className="shrink-0" name={chosen ? "folder-opened" : "folder"} size="1rem" />
@@ -205,19 +319,34 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
         </button>
 
         {open && (
-          // 🔴 OPENS DOWNWARD, AND MY FIRST ANSWER WAS WRONG. It opened upward on the reasoning that
-          // the row sits low in the block — but seen on the preview build, an upward list covers the
-          // composer, which means it covers the words the learner just typed and is choosing a
-          // project FOR. Below it there is only the hint line and open space.
-          <div className={cn("absolute top-[40px] left-0", ADD_MENU)} role="menu">
-            {folders.length === 0 && !naming && (
-              <p className="px-3 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
-                No projects yet.
+          // 🔴🔴 OPENS UPWARD — THE THIRD ANSWER, AND THIS ONE IS THE OWNER'S. First built upward on
+          // a guess, moved downward on my own reasoning that an upward list covers the words being
+          // filed, then the owner ruled (2026-08-30: *"clicking on the projects ... doesn't really
+          // work like it does in ChatGPT. I needed to work like it does"*) and the reference was
+          // re-measured to settle it: its panel opens UPWARD, bottom anchored 4px above the button,
+          // left-aligned — and yes, it covers its own composer while open. A menu is modal enough
+          // that nothing under it is being read; my reasoning was taste, and taste loses to the
+          // measured reference the owner named twice. Panel: 224 wide, radius 20, `10px 0` pad,
+          // search on top, 36px rows at 12px radius, divider, New project last.
+          <div className={cn(PANEL, "w-[224px]")} role="menu">
+            <div className={PANEL_SEARCH}>
+              <input
+                autoFocus
+                // §46.3-exempt: 16px is the iOS-zoom threshold every composer input carries.
+                className="min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search projects…"
+                value={search}
+              />
+            </div>
+            {listed.length === 0 && !naming && (
+              <p className="px-[16px] py-[6px] text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
+                {q ? "No matches." : "No projects yet."}
               </p>
             )}
-            {folders.map((folder) => (
+            {listed.map((folder) => (
               <button
-                className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) transition-colors hover:bg-(--ui-bg-tertiary)"
+                className={cn(PANEL_ITEM, "mx-[10px] w-auto whitespace-nowrap")}
                 key={folder.id}
                 onClick={() => { onChange(folder.id); setOpen(false); }}
                 role="menuitem"
@@ -228,9 +357,9 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
                 {folder.id === value && <Codicon className="ml-auto shrink-0 text-(--ui-action)" name="check" size="0.875rem" />}
               </button>
             ))}
-            <div className="my-1 h-px bg-(--ui-stroke-tertiary)" />
+            <div className="mx-[10px] my-[6px] h-px bg-(--ui-stroke-tertiary)" />
             {naming ? (
-              <div className="flex items-center gap-2 px-2 py-1">
+              <div className="mx-[10px] flex items-center gap-2 py-[4px]">
                 <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="new-folder" size="1rem" />
                 <input
                   autoFocus
@@ -247,7 +376,7 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
               </div>
             ) : (
               <button
-                className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[length:var(--canvas-text-small)] text-(--ui-text-primary) transition-colors hover:bg-(--ui-bg-tertiary)"
+                className={cn(PANEL_ITEM, "mx-[10px] w-auto whitespace-nowrap")}
                 onClick={() => setNaming(true)}
                 role="menuitem"
                 type="button"
@@ -263,6 +392,8 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
           Plugins control starts at 155. Ours is a flex gap rather than a fixed x, because our
           project label grows with the chosen name and theirs does not. */}
       <ConnectedApps apps={apps} connected={connected} onOpen={onOpenApps} />
+      </div>
+      </div>
     </div>
   );
 }

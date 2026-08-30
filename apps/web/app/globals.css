@@ -265,6 +265,10 @@
      (chatgpt.com, 2026-08-29), so this is a colour rather than a transparency. */
   --sidebar-heading: rgb(143, 143, 143);
   --composer-fill: #ffffff;
+  /* The grey tray tucked under the start screen's composer, carrying Choose project and the apps.
+     The reference's own classes, read off chatgpt.com 2026-08-30: `bg-black/3 dark:bg-white/8` —
+     a translucent ink, not a solid, so it sits on the page colour the way theirs does. */
+  --composer-tray: rgba(0, 0, 0, 0.03);
   /* The composer's controls are the SAME hit target and glyph as the sidebar header's, because
      they are the same kind of object — a bare icon button on a surface. They were 28px boxes
      holding 0.875rem (15.75px) glyphs against the reference's 36 and 20: the identical
@@ -1243,6 +1247,8 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
      dark override has silently gone missing before. A new line above it is a broken guard. */
   --sidebar-heading: rgb(138, 138, 138);
   --composer-fill: #212121;
+  /* `dark:bg-white/8`, from the reference's own class list. */
+  --composer-tray: rgba(255, 255, 255, 0.08);
 }
 
 /* The docked reader sliding in from the right edge.
