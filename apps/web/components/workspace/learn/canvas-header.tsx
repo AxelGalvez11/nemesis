@@ -34,6 +34,7 @@ interface CanvasHeaderProps {
   canvas: LearningCanvas;
   onFiles: (files: FileList | File[]) => void;
   /** Threaded straight to SourcesControl — see its own prop comments. */
+  outputTools?: import("./canvas-controls").OutputTools;
   onMakeDeliverable?: (kind: DeliverableKind) => void;
   making?: DeliverableKind | null;
   /** A question asked from inside the open document. Threaded through rather than resolved here:
@@ -111,6 +112,7 @@ export function CanvasHeader({
   onMakeDeliverable,
   making,
   onSendToChat,
+  outputTools,
   onRename,
   onDelete,
   activeTaskId,
@@ -182,7 +184,7 @@ export function CanvasHeader({
               read-aloud all open onto something BESIDE the canvas; this one changes what the canvas
               is showing, which makes it the one closest to the content. */}
           {view && onToggleView && <ConversationControl onToggle={onToggleView} view={view} />}
-          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onSendToChat={onSendToChat} />
+          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onSendToChat={onSendToChat} outputTools={outputTools} />
           {/* 🔴🔴 THE MAP APPEARS ONLY WHERE THERE IS SOMETHING TO MAP — owner, 2026-08-24: "the map
               icon should only appear if there is a course active." On an ordinary conversation there
               is no plan, no territory worth narrowing and nothing to recommend from, so the panel

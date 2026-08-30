@@ -16,14 +16,25 @@
 // would see a table this shows and the .docx drops, and only find out after opening Word. One
 // parser means what is on screen is what is in the file, including its limitations.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { CHROME } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { CommentLayer } from "@/components/workspace/reader/comment-layer";
+import {
+  addDocumentComment,
+  deleteDocumentComment,
+  listDocumentComments,
+  setCommentResolved,
+  type CommentAnchor,
+  type DocumentComment,
+} from "@/lib/workspace/document-comments";
+import type { ReviseAsk } from "@/lib/learn/revise-output";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { docBlocks } from "@/lib/export/doc-blocks";
 import { downloadDeck } from "@/lib/export/deck-download";
 import { downloadDocx, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
@@ -62,6 +73,9 @@ export function OutputPreview({
   initialMode = "docked",
   onClose,
   output,
+  comments,
+  onRevise,
+  onUndo,
 }: {
   /** Needed only by a deck, whose full-page view is addressed by canvas. */
   canvasId?: string;
@@ -77,6 +91,19 @@ export function OutputPreview({
   initialMode?: "docked" | "full";
   onClose: () => void;
   output: CanvasOutput;
+  /**
+   * The annotate layer's environment, when the host wants comments on this output at all.
+   * Absent = no comment mode, not an inert one — the same rule the source reader follows.
+   */
+  comments?: { uid: string | null; preview: boolean };
+  /**
+   * Nemesis revising its own work: the note is applied to the document and the panel re-renders
+   * with the result. Returns an error sentence, or null on success. Absent = the note box offers
+   * "Add comment" only — a send with nowhere to land is a control that does nothing.
+   */
+  onRevise?: (output: CanvasOutput, ask: ReviseAsk) => Promise<string | null>;
+  /** Restore the state before Nemesis's last change. Offered only while `revisions` holds one. */
+  onUndo?: (output: CanvasOutput) => void;
 }) {
   const card = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"docked" | "full">(initialMode);
@@ -132,6 +159,125 @@ export function OutputPreview({
 
   const markdown = output.markdown ?? fetched ?? "";
   const deck = output.kind === "slides" ? output.deck : undefined;
+
+  // ── The annotate layer ────────────────────────────────────────────────────
+  // Same store, same layer, same rules as the source reader — what differs on an output is only
+  // what "Send to Nemesis" DOES: here it is an instruction, and Nemesis revises its own work.
+  const [commenting, setCommenting] = useState(false);
+  // 🔴 THE HARNESS MAKES NO NETWORK CALLS, and it signs a mock session, so a host's uid alone
+  // cannot decide the lane — the same trap `source-preview.tsx` documents. Signed-out is the
+  // in-memory lane too.
+  const inPreviewHarness = useWorkspacePreview() !== null;
+  const commentEnv = comments ? { preview: comments.preview || inPreviewHarness || comments.uid === null, uid: comments.uid } : undefined;
+  const [commentRows, setCommentRows] = useState<readonly DocumentComment[]>([]);
+  const [units, setUnits] = useState<ReadonlyMap<number, HTMLElement>>(new Map());
+  const [revising, setRevising] = useState(false);
+  const [reviseError, setReviseError] = useState<string | null>(null);
+  // 🔴 THE LEDGER ID WHEN THERE IS ONE. The canvas-local output id and the Library's asset row
+  // would otherwise key the SAME document's comments two different ways, and a note left in the
+  // canvas would be invisible from the Library. `assetId` is the durable name (§12); the fallback
+  // covers outputs whose ledger write failed, which are canvas-local anyway.
+  const commentRef = useMemo(() => ({ id: output.assetId ?? output.id, kind: "output" as const }), [output.assetId, output.id]);
+
+  const blocks = useMemo(() => (markdown ? docBlocks(markdown) : []), [markdown]);
+  // Comment mode exists where there is something to pin to, and revising needs the content to be
+  // HELD (a fetched note's home is its own editor; a sheet and a built PDF are not blocks).
+  const canComment = Boolean(comments) && (blocks.length > 0 || Boolean(deck)) && output.kind !== "pdf" && !output.sheet;
+  const revisable = Boolean(onRevise) && Boolean(output.markdown || deck);
+
+  useEffect(() => {
+    if (!commentEnv || !canComment) return;
+    let live = true;
+    void listDocumentComments(commentEnv.uid, commentRef, { preview: commentEnv.preview }).then((rows) => {
+      if (live) setCommentRows(rows);
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the doc, not object identity
+  }, [commentRef.id, canComment]);
+
+  const registerUnit = useCallback((unit: number, element: HTMLElement | null) => {
+    setUnits((current) => {
+      if (element ? current.get(unit) === element : !current.has(unit)) return current;
+      const next = new Map(current);
+      if (element) next.set(unit, element);
+      else next.delete(unit);
+      return next;
+    });
+  }, []);
+
+  const keepComment = useCallback(
+    async (draft: { unit: number; anchor: CommentAnchor; body: string }) => {
+      if (!commentEnv) return false;
+      const made = await addDocumentComment(commentEnv.uid, commentRef, { anchor: draft.anchor, body: draft.body, unit: draft.unit }, { preview: commentEnv.preview });
+      if (!made) return false;
+      setCommentRows((current) => [...current, made]);
+      return true;
+    },
+    [commentRef, commentEnv],
+  );
+
+  /** Where the note points, in prose, plus the pointed-at words themselves. */
+  const askFromDraft = useCallback(
+    (draft: { unit: number; anchor: CommentAnchor; body: string }): ReviseAsk => {
+      if (deck) {
+        const slide = deck.slides[draft.unit - 1];
+        return { body: draft.body, spot: `slide ${draft.unit}`, spotText: slide?.title ?? "" };
+      }
+      const block = draft.anchor.block !== undefined ? blocks[draft.anchor.block] : undefined;
+      const spotText = block ? ("text" in block ? block.text : "") : "";
+      return { body: draft.body, spot: draft.anchor.block !== undefined ? `paragraph ${draft.anchor.block + 1}` : "", spotText };
+    },
+    [blocks, deck],
+  );
+
+  /**
+   * Send = keep + apply. The comment resolves ITSELF on success — it was an instruction and it was
+   * executed; the changed document is the reply. On failure it stays open with the error said out
+   * loud, and the document is exactly what it was.
+   */
+  const sendToNemesis = useCallback(
+    (draft: { unit: number; anchor: CommentAnchor; body: string }) => {
+      if (!onRevise || !commentEnv) return;
+      setReviseError(null);
+      setRevising(true);
+      void (async () => {
+        const made = await addDocumentComment(commentEnv.uid, commentRef, { anchor: draft.anchor, body: draft.body, unit: draft.unit }, { preview: commentEnv.preview });
+        if (made) setCommentRows((current) => [...current, made]);
+        const failure = await onRevise(output, askFromDraft(draft));
+        setRevising(false);
+        if (failure) {
+          setReviseError(failure);
+          return;
+        }
+        if (made) {
+          setCommentRows((current) => current.map((row) => (row.id === made.id ? { ...row, resolvedAt: new Date().toISOString() } : row)));
+          void setCommentResolved(commentEnv.uid, commentRef, made.id, true, { preview: commentEnv.preview });
+        }
+      })();
+    },
+    [askFromDraft, commentRef, commentEnv, onRevise, output],
+  );
+
+  const resolveComment = useCallback(
+    (comment: DocumentComment) => {
+      if (!commentEnv) return;
+      const resolved = comment.resolvedAt === null;
+      setCommentRows((current) => current.map((row) => (row.id === comment.id ? { ...row, resolvedAt: resolved ? new Date().toISOString() : null } : row)));
+      void setCommentResolved(commentEnv.uid, commentRef, comment.id, resolved, { preview: commentEnv.preview });
+    },
+    [commentRef, commentEnv],
+  );
+
+  const removeComment = useCallback(
+    (comment: DocumentComment) => {
+      if (!commentEnv) return;
+      setCommentRows((current) => current.filter((row) => row.id !== comment.id));
+      void deleteDocumentComment(commentEnv.uid, commentRef, comment.id, { preview: commentEnv.preview });
+    },
+    [commentRef, commentEnv],
+  );
 
   /**
    * A PDF artifact is rendered AS A PDF, from the same bytes the download hands over.
@@ -235,6 +381,31 @@ export function OutputPreview({
           <span className="text-(--ui-text-quaternary)">Library&nbsp;/&nbsp;</span>
           {output.title}
         </span>
+        {canComment && (
+          <button
+            aria-label={commenting ? "Stop commenting" : "Comment on this document"}
+            aria-pressed={commenting}
+            className={cn(CHROME.button, commenting && "bg-(--ui-action) text-(--ui-action-glyph)")}
+            data-testid="output-comment-mode"
+            onClick={() => setCommenting((current) => !current)}
+            title={commenting ? "Commenting: click a spot to pin a note." : "Comment on this document"}
+            type="button"
+          >
+            <Codicon name="comment" size={CHROME.icon} />
+          </button>
+        )}
+        {onUndo && (output.revisions?.length ?? 0) > 0 && (
+          <button
+            aria-label="Undo Nemesis's last change"
+            className={CHROME.button}
+            data-testid="output-undo-revision"
+            onClick={() => onUndo(output)}
+            title="Undo Nemesis's last change"
+            type="button"
+          >
+            <Codicon name="discard" size={CHROME.icon} />
+          </button>
+        )}
         <button
           aria-label={DOWNLOAD_LABEL[output.kind] ?? "Download"}
           className={cn(CHROME.button, "disabled:opacity-40")}
@@ -264,13 +435,31 @@ export function OutputPreview({
         )}
       </div>
 
+      {commenting && !revising && (
+        <p className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-secondary) shadow-md" data-testid="output-comment-hint">
+          {deck ? "Click a slide to comment, drag to mark part of it" : "Click a paragraph to comment"}
+        </p>
+      )}
+      {revising && (
+        // 🔴 THE WAIT IS SAID, AND THE DOCUMENT UNDERNEATH IS THE OLD ONE UNTIL THE NEW ONE LANDS —
+        // never a blank, never a spinner over nothing.
+        <p className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-secondary) shadow-md" data-testid="output-revising">
+          Nemesis is revising this document…
+        </p>
+      )}
+      {reviseError && (
+        <p className="absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-danger)/40 bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-danger) shadow-md">
+          {reviseError}
+        </p>
+      )}
+
       {/* 🔴 THE SHEET IS INSET 24px AND CARRIES THE REFERENCE'S OWN SHADOW, measured: 931 wide
           inside 980, `0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)`. It is a page on a
           desk, not a panel with padding. */}
       <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] pt-[25px]">
         <div className="mx-auto w-full bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-primary)">
           {deck ? (
-            <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} />
+            <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} registerElement={canComment ? registerUnit : undefined} />
           ) : output.sheet ? (
             <SheetTable sheet={output.sheet as SheetData} />
           ) : output.kind === "pdf" ? (
@@ -286,23 +475,43 @@ export function OutputPreview({
               Couldn&apos;t open this one. It may have been deleted.
             </p>
           ) : (
-            <DocBody markdown={markdown} />
+            <DocBody markdown={markdown} registerElement={canComment ? registerUnit : undefined} />
           )}
         </div>
       </div>
+
+      {canComment && (
+        <CommentLayer
+          blockSnap={!deck}
+          boxesDrawable={Boolean(deck)}
+          commenting={commenting && !revising}
+          comments={commentRows}
+          onDelete={removeComment}
+          onKeep={keepComment}
+          onResolve={resolveComment}
+          onSend={revisable ? sendToNemesis : null}
+          unitLabel={deck ? "slide" : "section"}
+          units={units}
+        />
+      )}
     </div>,
     host,
   );
 }
 
 /** The document, in the shapes the file will actually contain. */
-function DocBody({ markdown }: { markdown: string }) {
+function DocBody({ markdown, registerElement }: { markdown: string; registerElement?: (unit: number, element: HTMLElement | null) => void }) {
   const blocks = docBlocks(markdown);
+  // Stable, for the crash-shaped reason the docx article's ref is — see comment-layer's guards.
+  const registerPage = useCallback((element: HTMLElement | null) => registerElement?.(1, element), [registerElement]);
   if (!blocks.length) {
     return <p className="m-0 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">This document is empty.</p>;
   }
   return (
-    <div className="grid gap-2">
+    // 🔴 EVERY BLOCK BELOW CARRIES data-comment-block AND `relative`, the flowing-document anchor
+    // contract the Word reader set: the page reflows with the panel width, so the stable address
+    // is WHICH BLOCK and the pin lives inside that block's own box.
+    <div className="relative grid gap-2" ref={registerPage}>
       {blocks.map((block, index) => {
         // 🔴 KEYED ON POSITION, WHICH IS CORRECT HERE AND USUALLY IS NOT. The list is derived from
         // one immutable string and is never reordered, inserted into or filtered, so position IS
@@ -311,26 +520,31 @@ function DocBody({ markdown }: { markdown: string }) {
         if (block.kind === "heading") {
           const size = block.level === 1 ? "--canvas-text-lead" : block.level === 2 ? "--canvas-text-body" : "--canvas-text-small";
           return (
-            <p className={`m-0 mt-2 font-semibold text-[length:var(${size})] text-(--ui-text-primary)`} key={key}>
+            <p className={`relative m-0 mt-2 font-semibold text-[length:var(${size})] text-(--ui-text-primary)`} data-comment-block={index} key={key}>
               {block.text}
             </p>
           );
         }
         if (block.kind === "table") {
           // 🔴 THE SAME COMPONENT THE SPREADSHEET USES. A document's table and a spreadsheet are
-          // the same object on screen, and two renderers would drift.
-          return <SheetTable key={key} sheet={{ columns: block.header, rows: block.rows }} />;
+          // the same object on screen, and two renderers would drift. Wrapped rather than edited:
+          // the stamp is this surface's concern, not the table's.
+          return (
+            <div className="relative" data-comment-block={index} key={key}>
+              <SheetTable sheet={{ columns: block.header, rows: block.rows }} />
+            </div>
+          );
         }
         if (block.kind === "bullet" || block.kind === "number") {
           return (
-            <p className="m-0 flex gap-2 pl-2 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" key={key}>
+            <p className="relative m-0 flex gap-2 pl-2 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" data-comment-block={index} key={key}>
               <span className="shrink-0 text-(--ui-text-quaternary)">{block.kind === "bullet" ? "•" : `${block.index}.`}</span>
               <span>{block.text}</span>
             </p>
           );
         }
         return (
-          <p className="m-0 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" key={key}>
+          <p className="relative m-0 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" data-comment-block={index} key={key}>
             {block.text}
           </p>
         );
