@@ -84,7 +84,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           registry: CURATED,
           // A shelf outage reads as an empty shelf here: the turn cannot use a 503, only a picture
           // or the ladder's honest refusal. The search route keeps the distinction for monitoring.
-          shelfSearch: async (concept, limit) => (await searchShelf(concept, limit)) ?? [],
+          shelfSearch: async (concept, limit) =>
+            (await searchShelf(concept, limit, request.headers.get("authorization"))) ?? [],
         },
       );
       const choice = chooseAsset({ accuracyBearing: false, candidates });

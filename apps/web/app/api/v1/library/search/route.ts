@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { supabaseAnonKey, supabaseUrl, serviceRoleKey } from "@/lib/env";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 import { verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";
@@ -22,16 +22,17 @@ const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 20;
 const MATCH_THRESHOLD = 0.35; // tuned in Task 9 Step 2 against real notes
 
-async function embedQuery(query: string): Promise<number[] | null> {
-  if (!supabaseUrl || !serviceRoleKey) return null;
-  const res = await fetch(`${supabaseUrl}/functions/v1/library-index/embed-query`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as { embedding?: unknown };
-  return Array.isArray(json.embedding) ? (json.embedding as number[]) : null;
+// 🔴 THE EMBEDDING COMES THROUGH THE DATABASE, NOT THROUGH A PRIVILEGED KEY. Measured live
+// 2026-08-30: every direct `embed-query` call with SUPABASE_SERVICE_ROLE_KEY answers 403 — the
+// Vercel env still holds a legacy JWT the gateway stopped honouring when the project moved to
+// sb_secret keys, so this route had been quietly 503ing into its substring fallback.
+// `embed_teaching_query` (security definer) holds the working key in Vault and is granted to
+// authenticated callers only; the same client that runs the match runs the embed.
+// It returns the vector's "[…]" text form, which the match RPCs accept back verbatim.
+async function embedQuery(client: SupabaseClient, query: string): Promise<string | null> {
+  const { data, error } = await client.rpc("embed_teaching_query", { q: query });
+  if (error) return null;
+  return typeof data === "string" && data.startsWith("[") ? data : null;
 }
 
 export async function POST(req: NextRequest) {
@@ -43,21 +44,21 @@ export async function POST(req: NextRequest) {
   if (!query) return NextResponse.json({ error: "empty query" }, { status: 400 });
   const limit = Math.min(Math.max(Number(body.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
 
-  // Any failure below returns 503, never 500: the caller degrades to substring
-  // search, and an agent turn must not die because the index is unavailable.
-  let embedding: number[] | null = null;
-  try {
-    embedding = await embedQuery(query);
-  } catch {
-    embedding = null;
-  }
-  if (!embedding) return NextResponse.json({ error: "semantic search unavailable" }, { status: 503 });
-
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const scoped = createClient(supabaseUrl, supabaseAnonKey, {
     auth: { persistSession: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
+
+  // Any failure below returns 503, never 500: the caller degrades to substring
+  // search, and an agent turn must not die because the index is unavailable.
+  let embedding: string | null = null;
+  try {
+    embedding = await embedQuery(scoped, query);
+  } catch {
+    embedding = null;
+  }
+  if (!embedding) return NextResponse.json({ error: "semantic search unavailable" }, { status: 503 });
 
   // 🔴 SEARCHES THE ORIGINALS AND THE NOTES, PREFERRING THE ORIGINAL.
   // `match_library_chunks` filtered to `origin_type = 'note'` AND inner-joined

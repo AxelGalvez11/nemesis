@@ -7,17 +7,23 @@
 // apart — a mismatched vector space "does not fail as an error, it fails as quietly bad results",
 // as the search route's own header puts it. So the pass lives here and both routes call it.
 //
-// 🔴 SERVER ONLY. It reads the service-role key, which must never reach a client bundle. The
-// browser's path to the shelf is `textbookFigures()` with its default search, which crosses an
-// authenticated route rather than touching a key.
+// 🔴🔴 NO PRIVILEGED KEY IS HELD HERE, AND THAT IS THE LESSON OF 2026-08-30. The first version
+// called `library-index/embed-query` with `SUPABASE_SERVICE_ROLE_KEY`, the way Library search
+// always had — and measured live, EVERY such call returns 403, because the Vercel env still
+// carries a legacy JWT key the gateway stopped honouring when the project moved to sb_secret
+// keys. Library search had been quietly 503ing behind its substring fallback the whole time. The
+// embed hop now runs inside Postgres (`embed_teaching_query`, security definer, key from Vault),
+// and this module calls it with the LEARNER'S OWN session token — the one credential the app is
+// known to hold and keep fresh. Rotating the Vercel env would also have fixed it; removing the
+// dependency fixes it and removes the class of failure.
 //
-// EMBEDDING: delegated to `library-index/embed-query`, exactly as Library search does, so a
-// question goes through the SAME `embedCoreTexts` path that produced the stored caption vectors.
-// Never call an embedding provider directly from here — two clients drift.
+// EMBEDDING: `embed_teaching_query` posts to the SAME `library-index/embed-query` the stored
+// caption vectors came through. Never call an embedding provider directly from here — two clients
+// drift, and a mismatched vector space fails as quietly bad results.
 
 import { createClient } from "@supabase/supabase-js";
 
-import { serviceRoleKey, supabaseUrl } from "@/lib/env";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 import type { FigureHit } from "./textbook-figures";
 
 /** 🔴 HIGHER THAN LIBRARY SEARCH'S 0.35 BECAUSE A WRONG PICTURE IS WORSE THAN NO PICTURE. A weak
@@ -25,24 +31,8 @@ import type { FigureHit } from "./textbook-figures";
  *  diagram of the wrong thing on screen under a caption that sounds right. */
 export const SHELF_MATCH_THRESHOLD = 0.45;
 
-/** How long the embed hop gets. A slow embedding costs one picture, never the prose around it. */
-const EMBED_TIMEOUT_MS = 8000;
-
-async function embedConcept(concept: string): Promise<number[] | null> {
-  if (!supabaseUrl || !serviceRoleKey) return null;
-  const res = await fetch(`${supabaseUrl}/functions/v1/library-index/embed-query`, {
-    body: JSON.stringify({ query: concept }),
-    headers: { Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" },
-    method: "POST",
-    signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as { embedding?: unknown };
-  return Array.isArray(json.embedding) ? (json.embedding as number[]) : null;
-}
-
 /**
- * Ask the shelf for figures about a concept.
+ * Ask the shelf for figures about a concept, as the signed-in caller.
  *
  * 🔴 null MEANS THE SHELF COULD NOT BE ASKED, [] MEANS IT ANSWERED "NOTHING". The search route
  * turns null into a 503 so a monitoring eye can tell an outage from an empty subject; a teaching
@@ -51,28 +41,35 @@ async function embedConcept(concept: string): Promise<number[] | null> {
  * 🔴 THE RPC IS WHERE THE SERVING-HOST GATE LIVES (`figure_serving_host_gate` migration): a row
  * whose pixels sit on a third-party host the book's licence does not cover never comes back, so
  * similarity ranking fills the result with rows that can actually be shown.
+ *
+ * `authorization` is the caller's own header, verbatim ("Bearer <jwt>"). Both callers sit behind
+ * `verifyBearer`, so it is present and valid by the time this runs.
  */
-export async function searchShelf(concept: string, limit: number): Promise<FigureHit[] | null> {
+export async function searchShelf(
+  concept: string,
+  limit: number,
+  authorization: string | null,
+): Promise<FigureHit[] | null> {
   const trimmed = concept.trim();
   if (!trimmed) return [];
-  if (!supabaseUrl || !serviceRoleKey) return null;
+  if (!supabaseUrl || !supabaseAnonKey || !authorization) return null;
 
-  let embedding: number[] | null = null;
-  try {
-    embedding = await embedConcept(trimmed);
-  } catch {
-    return null;
-  }
-  if (!embedding) return null;
+  const client = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: authorization } },
+  });
 
-  // The service role, because this runs on our server for published, licence-gated content that
-  // is identical for every learner. The FUNCTION is security definer either way; what the key
-  // buys is independence from any caller's session shape.
-  const client = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+  // PostgREST serialises a vector as its "[0.1,0.2,…]" text form, which the match RPC's own
+  // parameter parsing accepts back verbatim — the embedding never needs to exist as numbers here.
+  const embedded = await client.rpc("embed_teaching_query", { q: trimmed });
+  if (embedded.error) return null;
+  const embedding = embedded.data;
+  if (typeof embedding !== "string" || !embedding.startsWith("[")) return null;
+
   const { data, error } = await client.rpc("match_textbook_figures", {
     match_count: Math.min(Math.max(limit, 1), 12),
     match_threshold: SHELF_MATCH_THRESHOLD,
-    query_embedding: embedding as unknown as string,
+    query_embedding: embedding,
   });
   if (error) return null;
 
