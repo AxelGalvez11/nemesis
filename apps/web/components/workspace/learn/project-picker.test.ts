@@ -14,14 +14,42 @@ const CANVAS = read("./learning-canvas.tsx");
 const ENTRY = read("../../../lib/learn/learn-entry.ts");
 const ROUTE = read("../../../app/(workspace)/learn/page.tsx");
 
-test("🔴🔴 the row says nothing until there is something to send", () => {
-  // Measured on chatgpt.com 2026-08-29: an empty composer has no row at all; it appears the moment
-  // you type. A control offering to file a chat that does not exist yet, beside an empty box, is a
-  // question about nothing — and this surface's whole rule is that it asks ONE question.
-  assert.match(HOME, /shown=\{!departing && !recording && \(text\.trim\(\)\.length > 0 \|\| staged\.length > 0\)\}/,
-    "the picker no longer waits for something to send");
+test("🔴🔴 the row is always under the composer, not only once you type", () => {
+  // 🔴 REPOINTED 2026-08-30, AND THE OLD ASSERTION WAS MY ERROR WRITTEN DOWN AS A RULE. It read
+  // "an empty composer has no row at all; it appears the moment you type", measured on 2026-08-29 —
+  // but I checked before the reference's own draft had loaded, so what I saw was a page mid-restore.
+  // Re-checked with the composer genuinely emptied: the row is there, placeholder still showing,
+  // carrying Choose project, Plugins and Open desktop app. Owner the same day: *"ChatGPT has that
+  // lower thing below the composer and ours doesn't"*. A control that hides until you type is a
+  // control nobody finds.
+  assert.match(HOME, /shown=\{!departing && !recording\}/, "the row went back to waiting for text");
+  assert.ok(!/text\.trim\(\)\.length > 0 \|\| staged\.length > 0/.test(HOME.slice(HOME.indexOf("<ProjectPicker"), HOME.indexOf("<ProjectPicker") + 600)),
+    "the row is gated on having something to send again");
   // 🔴 UNMOUNTED, NOT HIDDEN. An open menu that outlives its row floats over nothing.
-  assert.match(PICKER, /if \(!shown\) return null;/, "the picker hides instead of leaving");
+  assert.match(PICKER, /if \(!shown\) return null;/, "the row hides instead of leaving");
+});
+
+test("🔴 the row carries the connected apps beside the project, as the reference does", () => {
+  // Measured 2026-08-30: their bar is 728 x 44, flush under the composer and inset 20 from its left
+  // edge, holding "Choose project" (143 x 36 at 4,4) then "Plugins" (132 x 36 at 155,4) — an 8px
+  // gap — with a right-hand "Open desktop app" we deliberately do not have (owner's call: leave the
+  // right end empty).
+  assert.match(PICKER, /h-\[44px\]/, "the row left the reference's height");
+  assert.match(PICKER, /gap-\[8px\]/, "the two controls lost the reference's 8px gap");
+  assert.match(PICKER, /function ConnectedApps\(/, "the connected-apps control is gone");
+  assert.match(HOME, /apps=\{connections\.apps\}/, "the row is not told what can be connected");
+  assert.match(HOME, /connected=\{connections\.connected\}/, "the row is not told what IS connected");
+  // 🔴 A FAILED READ IS "NOTHING CONNECTED", NOT AN ERROR. Without a key on the server the status
+  // reports `configured: false`, which is normal on a fresh deployment.
+  assert.match(HOME, /useState\(NOT_CONFIGURED\)/, "an unconfigured server is no longer a normal state");
+  // 🔴 OUR OWN MARKS, NOT BRAND LOGOS. The connection data carries a key, a label and a sentence and
+  // no artwork; four invented Google logos would be shipping someone else's assets to match a
+  // screenshot.
+  assert.match(PICKER, /const APP_MARK: Record<string, string> = \{/, "the app marks are gone");
+  // 🔴 CHECKED ON THE CODE, NOT THE PROSE. The first version banned the word "brand" and failed on
+  // the comment above explaining why brand logos are not used.
+  const code = PICKER.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/<img|https?:\/\//.test(code), "artwork or a remote asset crept into the row");
 });
 
 test("🔴 the choice rides the URL, because there is no canvas yet to write it on", () => {
