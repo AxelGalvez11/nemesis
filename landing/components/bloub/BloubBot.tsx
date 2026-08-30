@@ -108,7 +108,24 @@ export interface BloubBotProps {
    * reappears inside the eyes.
    */
   paper?: string;
-  /** The eyes follow the pointer. Off for frozen thumbnails, which have no loop. */
+  /**
+   * The eyes follow the pointer.
+   *
+   * 🔴 OFF IS NOT "STILL", IT IS THE OPPOSITE. Following costs the character every scrap of
+   * movement he has of his own: the vendored `lookTarget` sets `wander: 0` whenever a pointer is
+   * known, so the resting drift — up to ±7° of yaw and ±5.5° of pitch, on periods that never line
+   * up — is switched off for the whole time he is watching you. Turning this off hands the eyes
+   * back to the pose's own gaze and turns that drift back on, which is why it is the right switch
+   * for "let him move on his own" and not merely for frozen thumbnails.
+   *
+   * 🔴 AND IT IS WHAT MAKES AN EXPRESSION VISIBLE AS AN EXPRESSION. Each of the sixteen faces
+   * carries its own gaze direction, and `Look.mix` blends that away in favour of the cursor's.
+   * With this on, every face looks wherever the mouse is and only the eye SHAPE survives; the
+   * upstream project ran into the same thing and answered it by shipping a shortlist of six
+   * moods safe to wear while tracking. This page answers it by not doing both at once.
+   *
+   * A poke still turns him with this off — a turn is an offset, not a gaze. See `release`.
+   */
   track?: boolean;
   /**
    * Look HERE instead of at the pointer — client coordinates, or null for the pointer.

@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BloubBot } from "@/components/bloub/BloubBot";
-import { BEATS, CYCLE, REST, SHAPE, keepsItsShape } from "@/lib/character/body";
+import { CYCLE, REST, SHAPE, keepsItsShape } from "@/lib/character/body";
 import { BURST_PACE, BURST_TIME, POKE } from "@/lib/character/poke";
+import { HOLD_SECONDS, beatAt } from "@/lib/character/rhythm";
 import { SPIN_TIME } from "@/lib/character/spin";
 import { clampDuration, makeBlock } from "@/lib/bloub/cycles";
-import type { StateId } from "@/lib/bloub/states";
 
 /**
  * The character, running its own animation cycle.
@@ -55,52 +55,39 @@ import type { StateId } from "@/lib/bloub/states";
  * ANIMATIONS — it is in the sixteen resting faces, all of which he kept, and all of which are
  * still here.
  *
- * ── THE RHYTHM: REST, BEAT, REST, BEAT ────────────────────────────────────────
+ * ── THE RHYTHM: WATCH YOU, BEAT, BE ELSEWHERE, BEAT ───────────────────────────
  *
  * The cycle alternates rather than running the list end to end. Between every animation it
- * returns to `idle` and wears a different face.
+ * returns to `idle`, and the two rests it returns to are DIFFERENT KINDS of rest.
  *
  * That structure is also the only way the expressions are visible at all: the vendored
  * `expression` prop is resolved through the RESTING face, so it changes nothing during a beat.
  * With a flat list of animations, all sixteen faces would be dead code.
  *
+ * 🔴 OWNER, 2026-08-30: *"when it's following the mouse, it should not be doing the expressions.
+ * So when he's doing expressions, he should be moving on its own, not tracking the mouse"*.
+ *
+ * Before this the two ran on top of each other and the tracking won every time, which is worse
+ * than it sounds — see `WATCHING` for what the cursor was actually costing. So the rest splits:
+ *
+ *   watch    neutral face, follows your cursor, no drift of its own
+ *   beat     `wink` or `wide`, which never followed anything (`baseFace: false`)
+ *   feel     one of the fifteen faces, cursor ignored, moving on his own
+ *   beat
+ *
  * Rests are long and beats are short. A rest holds `HOLD_SECONDS`, which the owner set by feel
  * after 2.8s read as "moving between animations a little bit too quickly"; a beat holds the
  * duration `makeBlock` reports, which is the length that state was measured at in the original
- * video.
- */
-
-/**
- * All sixteen resting faces, in the gallery's own reading order. None were crossed out, and
- * none are affected by the circle rule: an expression moves the eyes, never the body.
+ * video. Both kinds of rest hold the same length: he is not more interested in you than in
+ * himself.
  *
- * The ids are French because the vendored table is French, and renaming them here would mean
- * editing a vendored file — see the note about copying it unedited.
+ * The rotation itself — the sixteen faces, the split, and which step is which — lives in
+ * `lib/character/rhythm.ts`, next to the other rules about this character, and for the same
+ * reason: it is a pure function of one integer, and a rule nobody can check is not a rule.
  */
-const FACES: readonly string[] = [
-  "neutre", // Neutral
-  "attentif", // Attentive
-  "surpris", // Surprised
-  "excite", // Excited
-  "heureux", // Happy
-  "hilare", // Laughing
-  "colere", // Angry
-  "triste", // Sad
-  "effraye", // Scared
-  "mefiant", // Suspicious
-  "confus", // Confused
-  "curieux", // Curious
-  "fier", // Proud
-  "timide", // Shy
-  "blase", // Unimpressed
-  "somnolent", // Sleepy
-];
-
-/** How long the character rests between beats. Owner's pacing, not a default. */
-const HOLD_SECONDS = 6;
 
 /**
- * 🔴 A GUARD, NOT DECORATION. `circle.test.ts` is the durable check, but the landing app's tests
+ * 🔴 A GUARD, NOT DECORATION. `body.test.ts` is the durable check, but the landing app's tests
  * are not in CI today — so this is what actually stops a reshaping state, by breaking the page in
  * `next dev` the moment one is added. Unlike the hand-written cut list it replaces, it cannot
  * itself be wrong about which states reshape: it reads the same table they come from.
@@ -145,28 +132,13 @@ if (process.env.NODE_ENV !== "production") {
  */
 const INK = "#0E1116";
 
-/**
- * Where the cycle is up to, as one number.
- *
- * Even steps rest and odd steps beat, so step `n` resolves without any stored pairing between
- * the two lists. The two run at different lengths on purpose — sixteen faces against two beats —
- * so the pair only repeats after thirty-two steps, several minutes in. Nobody watches that long,
- * which is the point: any two visits to the top of the page see a different pair.
- */
-function beatAt(step: number): { state: StateId; face: string } {
-  if (step % 2 === 0) {
-    return { state: REST, face: FACES[(step / 2) % FACES.length]! };
-  }
-  return { state: BEATS[((step - 1) / 2) % BEATS.length]!, face: "neutre" };
-}
-
 export function Mascot({ size = 168 }: { size?: number }) {
   const [step, setStep] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [bursting, setBursting] = useState(false);
   const timer = useRef<number | null>(null);
 
-  const { state, face } = beatAt(step);
+  const { state, face, watching } = beatAt(step);
   /**
    * What is actually on screen: the cycle's own state, unless a poke is overriding it.
    *
@@ -253,7 +225,7 @@ export function Mascot({ size = 168 }: { size?: number }) {
         size={size}
         color={INK}
         shape={SHAPE}
-        track
+        track={watching}
         entrance
         spin={spinning}
         pace={bursting ? BURST_PACE : 1}
