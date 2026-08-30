@@ -235,17 +235,18 @@ test("🔴 the control's words name the DESTINATION, never where you already are
   assert.notEqual(canvasViewAction("answer"), canvasViewAction("conversation"));
 });
 
-test("🔴 the control says the same thing to a screen reader, a mouse and a test", () => {
+test("🔴 the view switch survives inside the options menu, wording intact", () => {
+  // 2026-08-30: the switch moved into the `⋯` — its own shipped comment prescribed exactly this
+  // ("if the row is now too busy, this is the icon to move, not the feature to cut"), and the
+  // owner's "only show up when they are actually needed" made the row too busy. What must not
+  // move: `canvasViewAction` still writes the words, so the row names the DESTINATION.
   const controls = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
-  const at = controls.indexOf("export function ConversationControl");
-  assert.ok(at > 0, "the view switch is gone");
-  const body = controls.slice(at, controls.indexOf("export function", at + 20));
-  assert.match(body, /const action = canvasViewAction\(view\);/, "the control writes its own wording");
-  assert.match(body, /aria-label=\{action\}/);
-  assert.match(body, /title=\{action\}/);
-  assert.match(body, /aria-pressed=\{showingConversation\}/, "the control does not report which view is on");
-  assert.match(body, /className=\{cn\(CONTROL,/, "the switch does not use the shared control box");
-  assert.match(body, /size="20px"/, "the switch's glyph is not the reference size");
+  const at = controls.indexOf("export function OptionsMenu");
+  assert.ok(at > 0, "the options menu is gone");
+  const body = controls.slice(at);
+  assert.match(body, /canvasViewAction\(view\)/, "the row no longer writes its wording through canvasViewAction");
+  assert.match(body, /label=\{action\}/, "the row's label is not the action's own words");
+  assert.match(body, /onToggleView\(\)/, "the row does not actually switch the view");
 });
 
 test("🔴🔴 every control in the floating strip can actually be clicked", () => {
@@ -263,7 +264,7 @@ test("🔴🔴 every control in the floating strip can actually be clicked", () 
 test("🔴 the glyph exists in the icon font", () => {
   // A `Codicon` whose name is not in the font still measures, still takes clicks, and draws nothing.
   const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
-  const at = controls.indexOf("export function ConversationControl");
+  const at = controls.indexOf("export function OptionsMenu");
   const named = /<Codicon name="([a-z-]+)"/.exec(controls.slice(at));
   assert.ok(named, "the switch draws no glyph");
   const css = readFileSync(new URL("../../../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url), "utf8");

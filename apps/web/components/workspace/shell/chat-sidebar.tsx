@@ -51,7 +51,8 @@ import {
 } from "./sidebar-primitives";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { SidebarCanvases } from "./sidebar-canvases";
-import { navigationRootFor, navItemActive, SIDEBAR_NAV, NAV_ICON_PX } from "@/lib/workspace/sidebar-nav";
+import { navigationRootFor, navItemActive, SIDEBAR_NAV, NAV_ICON_PX, visibleNav } from "@/lib/workspace/sidebar-nav";
+import { useConnectedApps } from "./use-connected-apps";
 
 
 // 🔴 THE SIDEBAR IS DESTINATIONS **PLUS THE LEARNER'S OWN CANVASES** (owner 2026-08-25:
@@ -115,6 +116,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
   const navigationRoot = navigationRootFor(pathname);
+  const connectedApps = useConnectedApps();
 
   const navigate = (destination: string) => {
     router.push(destination);
@@ -170,7 +172,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
             {/* Rows stack flush. `gap-px` made the pitch 37px against a 36px row, so a column of
                 five drifted a clean 5px away from the reference's rhythm. */}
             <SidebarMenu className="gap-0">
-              {SIDEBAR_NAV.map((item) => {
+              {visibleNav(SIDEBAR_NAV, connectedApps).map((item) => {
                 const destination = item.route ? `${navigationRoot}${item.route}` : null;
                 const active = navItemActive(pathname, destination);
 
