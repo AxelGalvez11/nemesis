@@ -548,7 +548,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         ) : (
         // Was 770 × 54 at radius 27, hand-tuned within 2px of the reference's 768 × 52 at 28.
         // Reading the tokens instead is what keeps it aligned with the Library frame below it.
-        <div className="pointer-events-auto flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--composer-fill) shadow-[var(--composer-edge)]">
+        //
+        // 🔴 `relative z-[1]`: the project/apps tray tucks 20px UNDER this pill (see TRAY in
+        // project-picker.tsx); without a stacking order the tray, a later sibling, would wash the
+        // pill's bottom edge with its translucent grey — 8% white in dark, visibly.
+        <div className="pointer-events-auto relative z-[1] flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--composer-fill) shadow-[var(--composer-edge)]">
           {/* 🔴🔴 INSIDE THE BOX, LIKE THE CANVAS COMPOSER AND LIKE THE REFERENCE. These were a row
               of detached pills floating ABOVE the composer — which is both what the owner said he
               did not want on 2026-08-20 and what does not match. The pill became a card because a

@@ -113,12 +113,54 @@ test("🔴 a new project can be made without leaving the surface", () => {
   assert.match(HOME, /setFolders\(\(rows\) => \[\.\.\.rows, made\]\)/, "a new project does not join the list it was made from");
 });
 
-test("🔴 the row is the composer's width, not the page's", () => {
+test("🔴 the row is the composer's width, and it sits on the reference's grey tray", () => {
   // It sits in the centred column BELOW the composer, which is far wider. Left unbounded it began
   // 151px left of the composer's edge instead of 20px inside it — measured on the preview build.
   assert.match(PICKER, /max-w-\[var\(--composer-max-width\)\]/, "the row is no longer bounded by the composer's own width");
-  assert.match(PICKER, /px-\[24px\]/, "the row lost the reference's inset");
-  // 🔴 THE LIST MUST NOT COVER THE WORDS IT IS FILING. Opening upward hides the composer, which is
-  // where the learner just typed the thing they are choosing a project for. Seen on the preview.
-  assert.match(PICKER, /absolute top-\[40px\]/, "the project list opens over the composer again");
+  // 🔴 REPOINTED 2026-08-30 FROM `px-[24px]`: the transparent strip became the reference's grey
+  // tray (owner: *"still missing that grayish bottom thing below the chat composer"*). Its recipe
+  // is the reference's own class list — `mx-5 -mt-5 pt-5 rounded-b-2xl bg-black/3 dark:bg-white/8` —
+  // and the controls still land at 24 and 175 absolute: 20px tray inset + 4px row padding.
+  assert.match(PICKER, /mx-\[20px\] -mt-\[20px\] rounded-b-\[16px\] bg-\(--composer-tray\) pt-\[20px\]/, "the tray lost the reference's own recipe");
+  assert.match(PICKER, /h-\[44px\] items-center gap-\[8px\] px-\[4px\]/, "the row inside the tray moved off the measured geometry");
+  // 🔴 THE TUCK NEEDS THE PILL ABOVE IT. The tray overlaps the pill's bottom 20px so no sliver of
+  // page shows beside the pill's 28px corner curve; without `relative z-[1]` on the pill, the
+  // tray — a later sibling — washes the pill's bottom edge with 8% white in dark.
+  assert.match(HOME, /relative z-\[1\][^"]*rounded-\[var\(--composer-radius\)\]/, "the pill no longer paints over the tucked tray");
+  // And the token exists in BOTH themes — a light-only tray is invisible-in-dark, the classic bug.
+  const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /--composer-tray: rgba\(0, 0, 0, 0\.03\);/, "the light tray ink is gone");
+  assert.match(css, /:root\[data-theme='dark'\][\s\S]*?--composer-tray: rgba\(255, 255, 255, 0\.08\);/, "the tray has no dark ink");
+});
+
+test("🔴🔴 both menus open upward and are built to the reference's own panel", () => {
+  // 🔴 THE THIRD ANSWER ON DIRECTION, AND THIS ONE IS THE OWNER'S — the history is in the
+  // component. The old assertion here (`absolute top-[40px]`, downward) was my own taste written
+  // down as a rule; the reference, re-measured with the menu actually open, anchors its panel's
+  // BOTTOM 4px above the button, left-aligned, 224 wide (projects) and 240 (apps), radius 20,
+  // `10px 0` padding — and its shadow is the composer's exact three layers, reused not restated.
+  assert.match(PICKER, /absolute bottom-\[40px\] left-0/, "the menus stopped opening upward");
+  assert.ok(!/absolute top-\[40px\]/.test(PICKER), "the downward form is back");
+  assert.match(PICKER, /rounded-\[20px\] bg-\(--ui-bg-elevated\) py-\[10px\] shadow-\[var\(--composer-edge\)\]/, "the panel left the measured recipe");
+  // 🔴 NO ring OVER the shadow: the token's first layer IS the hairline (#872's doubled-edge).
+  assert.ok(!/PANEL[\s\S]{0,200}ring-1/.test(PICKER.slice(PICKER.indexOf("const PANEL"))), "a ring is drawn over the panel's own hairline");
+  assert.match(PICKER, /w-\[224px\]/, "the project panel lost its measured width");
+  assert.match(PICKER, /w-\[240px\]/, "the apps panel lost its measured width");
+  assert.match(PICKER, /Search projects…/, "the project search is gone");
+});
+
+test("🔴 the apps menu connects for real, and a connected row is status rather than a control", () => {
+  // Owner 2026-08-30: *"clicking on the projects or the plug ins doesn't really work like it does
+  // in ChatGPT"*. The control now opens a menu; a not-yet-connected app row starts the broker's
+  // own consent flow in a new tab — the identical `beginConnect` the Settings panel runs — and
+  // `noopener` so the consent page holds no handle back into the app.
+  assert.match(PICKER, /beginConnect\(key\)/, "the menu no longer starts the real connect flow");
+  assert.match(PICKER, /window\.open\(url, "_blank", "noopener,noreferrer"\)/, "the consent page keeps a handle into the app");
+  // A CONNECTION IS ACCOUNT-WIDE: there is nothing per-conversation to toggle, so a connected row
+  // is a div with a check, not a button that does nothing (§38 bans dead controls).
+  assert.match(PICKER, /cursor-default hover:bg-transparent/, "a connected row became a control again");
+  assert.match(PICKER, /Manage connections/, "the door to Settings is gone from the menu");
+  // An unconfigured server skips the menu: `apps` is empty exactly then, and a panel whose only
+  // row points at Settings is the long way of just going there.
+  assert.match(PICKER, /if \(apps\.length === 0\) \{ onOpen\(\); return; \}/, "an unconfigured server no longer falls back to Settings");
 });
