@@ -38,6 +38,7 @@ const EMPTY: TurnContext = {
   lessonInProgress: false,
   materialContext: "",
   memory: "",
+  projectInstructions: "",
   objectives: 0,
   passages: 0,
   searchesLeft: 0,

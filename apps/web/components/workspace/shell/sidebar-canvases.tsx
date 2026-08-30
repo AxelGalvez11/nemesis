@@ -15,10 +15,11 @@
 // broadcasts, so a rename made inside the canvas shows up here without polling. The refresh
 // is debounced because saveCanvas fires on every autosave while an answer is streaming.
 //
-// 🔴 A COURSE-BEARING CANVAS IS MARKED, NOT COLOURED (owner 2026-08-25: course canvases
-// "should be distinguished on the sidebar"). The mark is a mortar-board glyph in the lead
-// slot ordinary rows leave empty, read from `CanvasSummary.courseTitle` — which the SELECT
-// pulls out of the territory jsonb, because a course deliberately has no column of its own.
+// 🔴 A COURSE-BEARING CANVAS IS KNOWN, AND ONLY WHISPERS IT. The 2026-08-25 ruling ("course
+// canvases should be distinguished on the sidebar") put a lead glyph on those rows; the
+// 2026-08-30 ruling ("the canvases shouldnt have icons, only the projects") outranks it, so the
+// fact moved into the row's tooltip. `CanvasSummary.courseTitle` still rides the SELECT — pulled
+// from the territory jsonb, because a course deliberately has no column of its own.
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { ProjectCustomizeDialog } from "./project-customize-dialog";
 import { useAuth } from "@/components/AuthProvider";
 import {
   CANVASES_CHANGED_EVENT,
@@ -97,6 +99,8 @@ export function SidebarCanvases({
   );
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ kind: "canvas" | "folder"; id: string; value: string } | null>(null);
+  /** The project whose look and instructions are being edited, or null. */
+  const [customizing, setCustomizing] = useState<Folder | null>(null);
   const debounceRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
@@ -251,19 +255,14 @@ export function SidebarCanvases({
               )}
               onClick={() => open(canvas.id)}
               style={{ paddingLeft: `calc(var(--nav-row-pad-x) - 1px + ${depth * 14}px)` }}
+              // 🔴 A CANVAS ROW WEARS NO ICON, EVER — owner 2026-08-30: "the canvases shouldnt
+              // have icons, only the projects should be allowed to have icons", matching the
+              // reference, where a chat is always a bare title. The course mark that used to sit
+              // here (#900-era) survives as this tooltip, so "which of these is my course" still
+              // has an answer without the list becoming an icon column.
+              title={canvas.courseTitle ? `Course: ${canvas.courseTitle}` : undefined}
               type="button"
             >
-              {/* The course mark: the one visual difference the owner asked for. Ordinary
-                  canvases carry no icon at all, so the mortar-board alone says "this one
-                  holds a course" without turning the list into an icon column. */}
-              {canvas.courseTitle ? (
-                <Codicon
-                  className="shrink-0 text-(--ui-text-secondary)"
-                  name="mortar-board"
-                  size="0.875rem"
-                  title={`Course: ${canvas.courseTitle}`}
-                />
-              ) : null}
               <span className="min-w-0 flex-1 truncate">{canvas.title || "Untitled"}</span>
             </button>
             <DropdownMenu>
@@ -361,7 +360,15 @@ export function SidebarCanvases({
                 type="button"
               >
                 <Codicon className="shrink-0" name={isOpen ? "chevron-down" : "chevron-right"} size="0.8rem" />
-                <Codicon className="shrink-0" name={isOpen ? "folder-opened" : "folder"} size="0.875rem" />
+                {/* 🔴 THE PROJECT'S OWN LOOK (owner 2026-08-30, the reference's model): a custom
+                    glyph holds steady open or closed — the chevron already says which — and the
+                    colour tints ONLY this glyph, an identity mark, never a second theme. */}
+                <Codicon
+                  className="shrink-0"
+                  name={folder.icon ?? (isOpen ? "folder-opened" : "folder")}
+                  size="0.875rem"
+                  style={folder.color ? { color: folder.color } : undefined}
+                />
                 <span className="min-w-0 flex-1 truncate">{folder.name}</span>
               </button>
               <DropdownMenu>
@@ -378,6 +385,7 @@ export function SidebarCanvases({
                   <DropdownMenuItem onClick={() => setEditing({ kind: "folder", id: folder.id, value: folder.name })}>
                     Rename
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setCustomizing(folder)}>Customize</DropdownMenuItem>
                   {depth === 0 ? (
                     <DropdownMenuItem onClick={() => void newFolder(folder.id)}>New sub-project</DropdownMenuItem>
                   ) : null}
@@ -489,6 +497,12 @@ export function SidebarCanvases({
           </>
         )}
       </div>
+      <ProjectCustomizeDialog
+        folder={customizing}
+        onClose={() => setCustomizing(null)}
+        onSaved={() => void refresh()}
+        userId={userId}
+      />
     </SidebarGroup>
   );
 }

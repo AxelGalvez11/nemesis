@@ -37,16 +37,26 @@ test("the sidebar subscribes to the broadcast and coalesces the autosave storm",
   assert.match(SIDEBAR, /REFRESH_DEBOUNCE_MS/, "un-debounced refresh re-reads the list on every autosave");
 });
 
-test("a course canvas is marked in both lists, from the territory's own plan title", () => {
-  // The mark must come from the SELECT (territory->plan->>title): a course deliberately has
+test("a course canvas is KNOWN in both lists, but the sidebar row wears no icon for it", () => {
+  // The fact still comes from the SELECT (territory->plan->>title): a course deliberately has
   // no column, no table and no flag of its own — see curriculum-plan.ts.
   assert.match(STORE, /territory->plan->>title/, "listCanvases no longer selects the course title");
-  assert.match(SIDEBAR, /courseTitle\s*\?/, "the sidebar row ignores courseTitle");
-  assert.ok(SIDEBAR.includes("mortar-board"), "the sidebar course mark is gone");
+  // 🔴 THE MORTAR-BOARD LEFT THE SIDEBAR ON 2026-08-30 — owner: "the canvases shouldnt have
+  // icons, only the projects should be allowed to have icons", matching the reference where a
+  // chat is always a bare title. The course fact survives as the row's tooltip.
+  assert.ok(!SIDEBAR.includes("mortar-board"), "a canvas row grew an icon again");
+  assert.match(SIDEBAR, /title=\{canvas\.courseTitle \? `Course: /, "the course fact lost its tooltip");
   const manager = readFileSync(new URL("../library/canvas-manager.tsx", import.meta.url), "utf8");
   assert.match(manager, /courseTitle \? GraduationCap/, "the Library row ignores courseTitle");
   const index = readFileSync(new URL("../../../lib/library/canvas-index.ts", import.meta.url), "utf8");
   assert.match(index, /territory->plan->>title/, "the Library search no longer selects the course title");
+});
+
+test("🔴 projects wear the learner's icon and colour, and canvases never do (owner 2026-08-30)", () => {
+  assert.match(SIDEBAR, /folder\.icon \?\? \(isOpen/, "the folder row ignores the custom icon");
+  assert.match(SIDEBAR, /folder\.color \? \{ color: folder\.color \}/, "the folder row ignores the custom colour");
+  assert.ok(SIDEBAR.includes(">Customize</DropdownMenuItem>"), "the Customize door left the project menu");
+  assert.ok(SIDEBAR.includes("ProjectCustomizeDialog"), "the customize dialog is not mounted");
 });
 
 test("destructive actions ask first, and rows open by canvas id", () => {

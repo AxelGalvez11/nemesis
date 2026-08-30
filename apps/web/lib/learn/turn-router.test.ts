@@ -32,6 +32,7 @@ const EMPTY: TurnContext = {
   lessonInProgress: false,
   materialContext: "",
   memory: "",
+  projectInstructions: "",
   objectives: 0,
   passages: 0,
   searchesLeft: 0,
@@ -1002,4 +1003,20 @@ test("🔴 the contract offers the mermaid fence for prose diagrams, and keeps t
   assert.match(packet, /```mermaid/, "the fence left the contract — the model has no idea chat can draw it");
   assert.match(packet, /flowchart TD/, "the fence guidance lost its diagram families");
   assert.match(packet, /visuals" array is unchanged and still preferred/, "the typed visuals lost their preference over the fence");
+});
+
+test("🔴 project instructions ride the packet as the learner's standing orders, never above the rules", () => {
+  // Owner 2026-08-30, the reference's model: a project's "special instructions" reach every
+  // canvas filed in it. They are the learner's own preferences, so they are framed as such, and
+  // the block says plainly that the teaching rules still win — instructions that ordered Nemesis
+  // to stop verifying would be the yes-man the stance exists to refuse.
+  const packet = turnRouterMessages({
+    context: { ...EMPTY, projectInstructions: 'The project is called "Bar prep".\nAlways cite the Restatement.' },
+    utterance: "hello",
+  }).map((m) => m.content).join("\n");
+  assert.match(packet, /PROJECT INSTRUCTIONS\./, "the block lost its name");
+  assert.match(packet, /Always cite the Restatement\./, "the learner's own lines do not ride");
+  assert.match(packet, /your rules above still win/, "the stance lost its precedence over project instructions");
+  const bare = turnRouterMessages({ context: EMPTY, utterance: "hello" }).map((m) => m.content).join("\n");
+  assert.ok(!bare.includes("PROJECT INSTRUCTIONS"), "an unfiled canvas grew an empty instructions block");
 });

@@ -67,6 +67,7 @@ import {
   type PendingConfirmation,
 } from "@/lib/learn/canvas-tools";
 import { loadMemory, memoryBlock } from "@/lib/learn/learner-memory";
+import { loadProjectInstructions } from "@/lib/learn/canvas-store";
 
 /** The non-thinking model, same choice `lib/learn/canvas-api.ts`'s own `ask()` makes for every
  *  other canvas call: a plain reply is a writing job, not a reasoning job, and `searchWeb` here is
@@ -345,6 +346,14 @@ export async function askCanvasChat(
   // memory rather than not answering at all.
   const memory = memoryBlock(await loadMemory(uid));
 
+  // The standing instructions of the project this canvas is filed in (owner 2026-08-30, the
+  // reference's model). Same contract as memory: one read per turn, and every failure is an
+  // empty block — a turn is never lost to the folders table.
+  const project = await loadProjectInstructions(uid, canvas.id);
+  const projectInstructions = project
+    ? `The project is called "${project.name}".\n${project.instructions}`
+    : "";
+
   /** One round of the envelope. `webContext` carries everything found so far; empty on the first. */
   // 🔴 ONE LOOKUP FOR THE WHOLE TURN, AND IT CANNOT FAIL THE TURN. `composioTools()` returns an
   // empty catalogue for every problem — no key, nothing connected, a network blip — and an empty
@@ -369,6 +378,7 @@ export async function askCanvasChat(
         today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
         lessonInProgress: surroundings.lessonInProgress,
         courseRequested,
+        projectInstructions,
         searchesLeft,
         pinnedComments,
         stagedPassage,

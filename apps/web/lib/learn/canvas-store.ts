@@ -279,6 +279,13 @@ export interface Folder {
   /** When the folder was made. Optional only because callers that seed folders by hand (the dev
    *  preview) have no reason to invent one; `folders.created_at` is `not null default now()`. */
   createdAt?: string;
+  /** The learner's own look for the project (owner 2026-08-30, matching the reference: "chatgpt
+   *  allows users to customise projects with special instructions and icon and color"). A codicon
+   *  name from PROJECT_ICONS and a preset hex; null means the plain folder. */
+  icon?: string | null;
+  color?: string | null;
+  /** Standing instructions that ride every turn of every canvas filed here. */
+  instructions?: string | null;
 }
 
 /** The learner's sessions, pinned first and then most recently worked.
@@ -347,14 +354,65 @@ export async function setCanvasFolder(userId: string | null, id: string, folderI
 
 export async function listFolders(userId: string | null): Promise<Folder[]> {
   if (!userId) return [];
-  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at").order("name");
+  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at,icon,color,instructions").order("name");
   if (error || !data) return [];
-  return (data as { id: string; name: string; parent_id: string | null; created_at: string }[]).map((row) => ({
+  return (data as { id: string; name: string; parent_id: string | null; created_at: string; icon: string | null; color: string | null; instructions: string | null }[]).map((row) => ({
+    color: row.color,
     createdAt: row.created_at,
+    icon: row.icon,
     id: row.id,
+    instructions: row.instructions,
     name: row.name,
     parentId: row.parent_id,
   }));
+}
+
+/** Save a project's look and standing instructions. Nulls put the plain folder back. */
+export async function customizeFolder(
+  userId: string | null,
+  id: string,
+  custom: { icon: string | null; color: string | null; instructions: string | null },
+): Promise<boolean> {
+  if (!userId) return false;
+  const { error } = await supabase
+    .from("folders")
+    .update({
+      color: custom.color,
+      icon: custom.icon,
+      instructions: custom.instructions ? custom.instructions.slice(0, 4000) : null,
+    })
+    .eq("id", id);
+  if (error) {
+    console.warn("[learn] project customize failed", error.message);
+    return false;
+  }
+  emitCanvasesChanged();
+  return true;
+}
+
+/**
+ * The standing instructions for the project a canvas is filed in, or null.
+ *
+ * 🔴 TWO TINY READS, ONCE PER TURN, AND NEITHER CAN FAIL THE TURN — the same contract as
+ * `loadMemory`: every problem (no folder, no row, table not migrated, network) returns null and
+ * the turn proceeds exactly as it did before projects had instructions.
+ */
+export async function loadProjectInstructions(
+  userId: string | null,
+  canvasId: string,
+): Promise<{ name: string; instructions: string } | null> {
+  if (!userId) return null;
+  try {
+    const { data: canvasRow } = await supabase.from(TABLE).select("folder_id").eq("id", canvasId).maybeSingle();
+    const folderId = (canvasRow as { folder_id?: string | null } | null)?.folder_id;
+    if (!folderId) return null;
+    const { data: folder } = await supabase.from("folders").select("name,instructions").eq("id", folderId).maybeSingle();
+    const row = folder as { name?: string | null; instructions?: string | null } | null;
+    if (!row?.instructions?.trim()) return null;
+    return { instructions: row.instructions.trim(), name: row.name?.trim() || "this project" };
+  } catch {
+    return null;
+  }
 }
 
 export async function createFolder(userId: string | null, name: string, parentId?: string | null): Promise<Folder | null> {
