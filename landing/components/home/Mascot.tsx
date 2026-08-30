@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BloubBot } from "@/components/bloub/BloubBot";
 import { BEATS, CYCLE, REST, SHAPE, keepsItsShape } from "@/lib/character/body";
+import { BURST_PACE, BURST_TIME, POKE } from "@/lib/character/poke";
 import { SPIN_TIME } from "@/lib/character/spin";
 import { clampDuration, makeBlock } from "@/lib/bloub/cycles";
 import type { StateId } from "@/lib/bloub/states";
@@ -21,7 +22,7 @@ import type { StateId } from "@/lib/bloub/states";
  * engine is therefore COPIED here rather than imported, and it is copied unedited so
  * the three renderers stay in agreement about what a frame means.
  *
- * ── THE BODY IS A SQUIRCLE AND NEVER CHANGES SHAPE ────────────────────────────
+ * ── THE BODY IS A SQUIRCLE AND NEVER CHANGES SHAPE ON ITS OWN ─────────────────
  *
  * Two instructions, a day apart, and the second is easy to misread as cancelling the first:
  *
@@ -42,6 +43,13 @@ import type { StateId } from "@/lib/bloub/states";
  * THE RULE IS CHECKABLE, AND `lib/character/body.ts` CHECKS IT by reading the vendored state
  * table rather than carrying a second hand-written list beside this one. Run that rule over all
  * fifteen states and exactly three survive: `idle`, `wink`, `wide`.
+ *
+ * 🔴 AND ON 2026-08-30 THE OWNER OPENED A SECOND DOOR BESIDE THE CYCLE, for one state, reached
+ * only by clicking: *"yes, the mascot bursts"*. That is a scoping of the rule, not a repeal of
+ * it — what he objected to was the body reshaping unprompted while he watched, and a click is
+ * not unprompted. The cycle below is still checked and still refuses all six. `lib/character/
+ * poke.ts` owns the exception and says why it is one; do not resolve the tension by moving
+ * `burst` into `BEATS`, which would delete the distinction that makes it allowed.
  *
  * That is not as thin as it sounds, because the VARIETY ON THIS PAGE WAS NEVER IN THE
  * ANIMATIONS — it is in the sixteen resting faces, all of which he kept, and all of which are
@@ -155,9 +163,19 @@ function beatAt(step: number): { state: StateId; face: string } {
 export function Mascot({ size = 168 }: { size?: number }) {
   const [step, setStep] = useState(0);
   const [spinning, setSpinning] = useState(false);
+  const [bursting, setBursting] = useState(false);
   const timer = useRef<number | null>(null);
 
   const { state, face } = beatAt(step);
+  /**
+   * What is actually on screen: the cycle's own state, unless a poke is overriding it.
+   *
+   * 🔴 THE CYCLE IS NOT RE-POINTED, IT IS COVERED. `state` and `step` keep advancing underneath —
+   * or rather keep being held, since the effect below pauses for the gesture — so when the burst
+   * ends the character returns to exactly the face and beat it was on. A poke is an interruption,
+   * not a jump to somewhere new in the rotation.
+   */
+  const shown = bursting ? POKE : state;
 
   useEffect(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
@@ -167,7 +185,12 @@ export function Mascot({ size = 168 }: { size?: number }) {
     // swap between those two treatments and jump the gaze. Holding whatever he is wearing keeps
     // one treatment for the whole revolution — and holding is safe because both beats are static
     // poses, so a held wink is simply a wink.
-    if (spinning) return;
+    //
+    // 🔴 BOTH GESTURES ARE NAMED, EVEN THOUGH THE TURN OUTLASTS THE BURST TODAY. Leaning on that
+    // would make this line quietly wrong the first time either duration is tuned, and the way it
+    // would fail — the cycle stepping out from under a half-exploded body — is not something a
+    // test catches by accident. `poke.test.ts` pins the ordering as well; this does not rely on it.
+    if (spinning || bursting) return;
 
     const hold =
       state === REST ? clampDuration(state, HOLD_SECONDS) : makeBlock(state).duration;
@@ -175,19 +198,27 @@ export function Mascot({ size = 168 }: { size?: number }) {
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
     };
-  }, [spinning, state, step]);
+  }, [bursting, spinning, state, step]);
 
   /**
-   * A poke turns him all the way round.
+   * A poke bursts him apart and turns him all the way round, twice, from the same frame.
    *
-   * 🔴 OWNER, 2026-08-26: *"make him just spin around smoothly, remove the eye waggle"*. The brow
-   * waggle this replaces was itself a replacement — `burst` was the original reply and the circle
-   * rule cost us it, because bursting works by blowing the body apart.
+   * 🔴 THE REPLY TO A CLICK HAS NOW BEEN FOUR THINGS, AND THE FOURTH IS THE FIRST ONE BACK.
+   * `burst` was the original, and the shape rule of 2026-08-25 cost us it; a brow waggle replaced
+   * it and lasted a morning (*"make him just spin around smoothly, remove the eye waggle"*); the
+   * turn replaced that. On 2026-08-30 the owner asked for the burst back — *"yes, the mascot
+   * bursts"* — WITHOUT asking for the turn to go, so both run. `lib/character/poke.ts` carries the
+   * exception to the shape rule that lets the first one back in.
    *
-   * 🔴 THE TURN IS THE ONE REPLY THAT NEEDS NOTHING NEW. It is the arrival's own gaze sweep
-   * replayed: the eyes travel a full circuit of the sphere and land exactly where they started,
-   * and the silhouette is never involved. `lib/character/spin.ts` owns the pacing and says why the
-   * curve is not the arrival's.
+   * 🔴 THEY START TOGETHER AND ARE NOT CHAINED, which is the specific thing he warned against:
+   * *"when you click on the mascot it's going to lag before it actually does the burst"*. A burst
+   * queued behind a 2.4s turn would be exactly that. The burst also plays faster than its measured
+   * pace, so it finishes first and the character is whole again with the last of the turn to run.
+   *
+   * 🔴 THE TURN NEEDS NOTHING NEW, AND THAT IS STILL WHY IT SURVIVED THE SHAPE RULE. It is the
+   * arrival's own gaze sweep replayed: the eyes travel a full circuit of the sphere and land
+   * exactly where they started, and the silhouette is never involved. `lib/character/spin.ts` owns
+   * the pacing and says why the curve is not the arrival's.
    *
    * 🔴 IT TURNS TWICE, AND IN WHATEVER FACE HE IS WEARING (owner, 2026-08-26: *"actually just make
    * him double spin"*, and *"the spin should work regardless of its expression state"*). The turn
@@ -201,6 +232,14 @@ export function Mascot({ size = 168 }: { size?: number }) {
   const onPoke = useCallback(() => {
     setSpinning(true);
     window.setTimeout(() => setSpinning(false), SPIN_TIME * 1000);
+    // 🔴 THE BURST IS THE ONE GESTURE HERE THAT REDUCED MOTION SHOULD REFUSE, and the turn is not.
+    // A setting that means "do not throw large moving objects at me" is aimed squarely at a body
+    // that collapses and sprays particles; a gaze crossing a face is the sort of small, contained
+    // movement it exists to leave alone. So a click still turns him, and simply does not blow him
+    // apart — which is also why this guard is here and not around the whole handler.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    setBursting(true);
+    window.setTimeout(() => setBursting(false), BURST_TIME * 1000);
   }, []);
 
   return (
@@ -209,7 +248,7 @@ export function Mascot({ size = 168 }: { size?: number }) {
           UPSTREAM TABLE. See `lib/character/body.ts` for the id and why it is not a literal
           here: a string typed in place would be a fourth copy that nothing can check. */}
       <BloubBot
-        state={state}
+        state={shown}
         expression={face}
         size={size}
         color={INK}
@@ -217,6 +256,7 @@ export function Mascot({ size = 168 }: { size?: number }) {
         track
         entrance
         spin={spinning}
+        pace={bursting ? BURST_PACE : 1}
         onPoke={onPoke}
         label="Nemesis, the character. Click to poke it."
       />
