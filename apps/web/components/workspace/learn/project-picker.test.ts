@@ -42,14 +42,36 @@ test("🔴 the row carries the connected apps beside the project, as the referen
   // 🔴 A FAILED READ IS "NOTHING CONNECTED", NOT AN ERROR. Without a key on the server the status
   // reports `configured: false`, which is normal on a fresh deployment.
   assert.match(HOME, /useState\(NOT_CONFIGURED\)/, "an unconfigured server is no longer a normal state");
-  // 🔴 OUR OWN MARKS, NOT BRAND LOGOS. The connection data carries a key, a label and a sentence and
-  // no artwork; four invented Google logos would be shipping someone else's assets to match a
-  // screenshot.
-  assert.match(PICKER, /const APP_MARK: Record<string, string> = \{/, "the app marks are gone");
-  // 🔴 CHECKED ON THE CODE, NOT THE PROSE. The first version banned the word "brand" and failed on
-  // the comment above explaining why brand logos are not used.
+  // 🔴 REPOINTED 2026-08-30. This used to ban `<img>` outright, because the previous pass drew our
+  // own codicons rather than invent Google's marks. The owner then asked for the real ones — *"Yes
+  // add them"* — so the answer was to go and GET the artwork, not to approximate it. What the guard
+  // protects now is the part that was never about taste: the files are OURS to serve and are
+  // UNMODIFIED.
+  assert.match(PICKER, /const APP_LOGO: Record<string, string> = \{/, "the app logos are gone");
   const code = PICKER.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.ok(!/<img|https?:\/\//.test(code), "artwork or a remote asset crept into the row");
+  // 🔴 SELF-HOSTED, NEVER HOT-LINKED. A gstatic URL would put Google on the request path for every
+  // page view and break silently the day they re-cut the set.
+  assert.ok(!/https?:\/\//.test(code), "the row loads a logo from someone else's server");
+  for (const app of ["drive", "gmail", "calendar", "docs"]) {
+    assert.match(code, new RegExp(`/brand/google/${app}\\.svg`), `the ${app} logo is not wired`);
+    const file = new URL(`../../../public/brand/google/${app}.svg`, import.meta.url);
+    const svg = readFileSync(file, "utf8");
+    assert.match(svg, /^<svg/, `${app}.svg is not an svg`);
+    assert.ok(svg.length > 400, `${app}.svg looks truncated`);
+  }
+  // 🔴🔴 `<img>`, NEVER INLINED, AND IT IS NOT A STYLE PREFERENCE. All four SVGs define internal ids
+  // and TWO OF THEM USE `a` (`<mask id="a">`, `fill="url(#a)"`). Inlined together those ids collide
+  // and the browser resolves every `url(#a)` to whichever came first: Gmail would paint itself with
+  // Drive's gradient. Verified below rather than asserted from memory.
+  const clash = ["drive", "gmail", "calendar", "docs"].flatMap((app) =>
+    [...readFileSync(new URL(`../../../public/brand/google/${app}.svg`, import.meta.url), "utf8").matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
+  assert.notEqual(new Set(clash).size, clash.length, "the logos no longer share an id — re-check whether inlining is now safe before relaxing this");
+  assert.match(code, /<img/, "the logos stopped being drawn as images, which cross-wires their gradients");
+  // The provenance is part of the asset, not a nicety: it records the source URL and the rule that
+  // these files are never edited.
+  const prov = readFileSync(new URL("../../../public/brand/google/PROVENANCE.md", import.meta.url), "utf8");
+  assert.match(prov, /gstatic\.com/, "the provenance no longer says where the marks came from");
+  assert.match(prov, /[Uu]nmodified/, "the provenance lost the rule that these are never edited");
 });
 
 test("🔴 the choice rides the URL, because there is no canvas yet to write it on", () => {
