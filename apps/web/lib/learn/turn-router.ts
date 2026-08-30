@@ -39,6 +39,8 @@
 // was wanted hijacks somebody who said hello. The old file said that too, and then defaulted the
 // unrecognised case to TEACH. Here an unparseable or empty decision falls back to conversation.
 
+import { learningStyleInstruction, learningStyleReminder, THINKING_STANCE, type LearningStyle } from "@nemesis/shared";
+
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { readChatCheck } from "./chat-check";
@@ -946,6 +948,12 @@ const NEMESIS_SYSTEM = [
   "No closing offer to help further, no restating the question back, no unearned enthusiasm, no "
   + "summary of what you are about to say. Never use an em dash. That punctuation mark must not "
   + "appear anywhere in your output. Use a comma, a colon, or a new sentence instead.",
+
+  // 🔴 THE STANCE RIDES LAST, AFTER EVERYTHING ABOUT WHAT THIS SURFACE DOES. It is the block most
+  // easily crowded out by the paragraphs above it. Shared with the chat lane and the phone
+  // (packages/shared) so one product does not grow two characters: this is the surface where a
+  // learner argues back, so it is the surface where folding costs the most.
+  THINKING_STANCE,
 ].join("\n\n");
 
 /**
@@ -1689,10 +1697,27 @@ export function turnRouterMessages(input: {
   context: TurnContext;
   /** Extra rules the caller owns, e.g. which source wins when they disagree. */
   sourceRule?: string;
+  /**
+   * How much the learner wants handed to them. Their own setting, from the options menu.
+   *
+   * 🔴 OPTIONAL AND DEFAULTING TO NOTHING, so a canvas that has never opened the picker sends a
+   * packet byte-identical to what shipped before this existed. `learningStyleInstruction` returns
+   * the empty string for `direct`, which `filter(Boolean)` then drops entirely.
+   */
+  learningStyle?: LearningStyle;
 }): WireMsg[] {
   const { context, utterance } = input;
   return [
-    { content: [NEMESIS_SYSTEM, input.sourceRule].filter(Boolean).join("\n\n"), role: "system" },
+    // 🔴 THE STYLE GOES LAST AND `NEMESIS_SYSTEM` STAYS FIRST. The cache argument canvas-prompts.ts
+    // makes: the identity is the common prefix across every canvas turn. And the instruction one:
+    // the style OVERRIDES the stance's "answer the question" default, so the model has to read the
+    // default before it reads the thing that overrides it.
+    {
+      content: [NEMESIS_SYSTEM, input.sourceRule, learningStyleInstruction(input.learningStyle ?? "direct")]
+        .filter(Boolean)
+        .join("\n\n"),
+      role: "system",
+    },
     {
       content: "NEMESIS STATE. These are facts about the canvas, not something the learner said.\n\n"
         + stateBlock(context),
@@ -1776,7 +1801,17 @@ export function turnRouterMessages(input: {
       { content: exchange.said, role: "user" },
       ...(exchange.replied.trim() ? [{ content: exchange.replied, role: "assistant" as const }] : []),
     ]),
-    { content: `${utterance}\n\n---\n${DECISION_CONTRACT}`, role: "user" },
+    // 🔴🔴 THE STYLE REMINDER RIDES LAST, AND WITHOUT IT THE SETTING DOES NOT WORK. Measured
+    // 2026-08-28: the full instruction in the system prompt alone left Guided and Socratic producing
+    // near-identical answers three turns in, with Socratic handing over the very derivation its own
+    // rule forbids. A rule two thousand characters back loses to the exchange in front of the model.
+    // Claude Code's output styles solve it the same way. Empty for `direct`.
+    {
+      content: [`${utterance}\n\n---\n${DECISION_CONTRACT}`, learningStyleReminder(input.learningStyle ?? "direct")]
+        .filter(Boolean)
+        .join("\n\n"),
+      role: "user",
+    },
   ];
 }
 

@@ -6,6 +6,8 @@
 // too — the network half (Supabase calls, the nemesis-llm device-key transport) lives in
 // api/notebooks.ts.
 
+import { THINKING_STANCE } from "@nemesis/shared";
+
 import { trimHistory, type WireMsg } from "./chat-thread.ts";
 import { routeInstruction, type ChatRouteDecision } from "./chat-routing.ts";
 
@@ -241,7 +243,10 @@ export const NOTEBOOK_SYSTEM_PROMPT =
   "Point to the relevant source by name when it helps, and distinguish the source's claims from your inference. " +
   "If the sources don't cover the question, say so plainly and suggest attaching a relevant source — " +
   "do not answer from outside knowledge, do not search the web, and never invent facts or citations. " +
-  "Basic conversational replies (greetings, clarifying what's in this notebook) are fine without sources.";
+  "Basic conversational replies (greetings, clarifying what's in this notebook) are fine without sources. " +
+  // Grounded mode narrows where the ANSWER may come from; it does not change what happens when the
+  // student disagrees with one. A notebook chat is still a conversation.
+  THINKING_STANCE;
 
 /** Total characters of source text injected into the system prompt. Bounds the request (the
  *  valve caps too); once sources exceed this, later ones are dropped with a note. */

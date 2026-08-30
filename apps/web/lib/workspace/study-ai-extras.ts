@@ -3,6 +3,8 @@
 // (same pattern as study-generate.ts); preview mode uses the deterministic
 // helpers here so /dev-preview can exercise both flows without auth.
 
+import { THINKING_STANCE } from "@nemesis/shared";
+
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { jsonSlice } from "./study-artifact-content";
@@ -43,7 +45,13 @@ const EXPLAIN_SYSTEM =
   "Write in simple technical English: KEEP the technical terms, since those are what the student is tested on, but define each one in plain words the first time it appears. " +
   "Be brief — usually under 150 words, shorter for follow-ups. Plain paragraphs; a list only when it truly helps. Never use emojis. " +
   "Work only from the item shown and well-established textbook knowledge — never invent a fact, a number, or a citation. If the item is too thin to explain properly, say what is missing. " +
-  "Answer follow-up questions directly, like a tutor sitting beside them.";
+  // 🔴 THE STANCE'S "ask what they think once" RULE MUST NOT FIRE HERE, and this sentence stops it.
+  // The student reached this chat by pressing a button labelled Explain: they have already asked to
+  // be told, so asking them back is the Socratic-tutor failure the owner capped that rule to avoid.
+  "Answer follow-up questions directly, like a tutor sitting beside them. The student pressed Explain, so explain rather than asking them what they think first. " +
+  // The other half of the stance does apply, and this is where it matters most: a student who says
+  // "no, I think it is B" about a card they got wrong is the exact moment not to fold.
+  THINKING_STANCE;
 
 /** The seeded opening of an explain chat: system + the item as the first ask.
  *  Follow-up turns are appended after these by the caller. */
