@@ -52,6 +52,8 @@ interface CanvasHeaderProps {
     /** The course, projected — see MinimapControl's own prop comment. Null on most canvases. */
     plan: readonly PlanTerritory[] | null;
     planTitle: string | null;
+    /** Opens the docked course map — the one door to it (2026-08-29). */
+    onOpenCourseMap: () => void;
   };
   /** Whether this canvas holds knowledge that provably came from the model rather than from
    *  attached material — disclosed in the Sources panel so a sourceless canvas does not report
@@ -183,6 +185,7 @@ export function CanvasHeader({
               outcome={minimap.outcome}
               plan={minimap.plan}
               planTitle={minimap.planTitle}
+              onOpenCourseMap={minimap.onOpenCourseMap}
               setFocus={minimap.setFocus}
               territories={minimap.territories}
             />

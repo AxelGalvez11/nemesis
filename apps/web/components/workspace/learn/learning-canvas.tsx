@@ -67,6 +67,7 @@ import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
 import { CanvasThreadTurnView } from "./canvas-thread-turn";
 import { CanvasHistoryRail } from "./canvas-history-rail";
+import { CourseMap } from "./course-map";
 import { CanvasHistoryView } from "./canvas-history-view";
 import { fileTurn, turnHasContent, type CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { LearnerUtterance } from "./learner-utterance";
@@ -1253,6 +1254,15 @@ export function LearningCanvas({
    * being read.
    */
   const [rewound, setRewound] = useState<string | null>(null);
+  /**
+   * Whether the course map is docked open.
+   *
+   * 🔴 NOT PERSISTED, AND NOT PART OF THE CANVAS. Like `rewound` above and unlike the view
+   * preference, this is a thing the learner is doing right now rather than a fact about how they
+   * read — and a map that reopened itself on every visit would take a third of the surface from
+   * somebody who opened it once. `useDeclareSidePanel` already makes the canvas reflow around it.
+   */
+  const [courseMapOpen, setCourseMapOpen] = useState(false);
 
   /**
    * WHICH OF THE TWO VIEWS IS ON SCREEN — owner, 2026-08-26: *"a different view, a different way to
@@ -1797,6 +1807,7 @@ export function LearningCanvas({
           outcome: policy.outcome,
           // 🔴 THE COURSE, RESOLVED AGAINST WHAT THIS CANVAS ACTUALLY HOLDS — see `planRows` above.
           // Null on the ordinary canvas, in which case the panel is exactly what it was yesterday.
+          onOpenCourseMap: () => setCourseMapOpen(true),
           plan: planRows,
           planTitle: session.coursePlan?.title ?? null,
           setFocus: policy.setFocus,
@@ -1861,6 +1872,25 @@ export function LearningCanvas({
           exchange"*), and the rail's own "Now" mark had already gone on 2026-08-25 — so pressing the
           marker you are already standing on had to mean something, and "leave" is the only thing it
           can sensibly mean. Selecting a DIFFERENT moment still just moves there. */}
+      {/* ── the course map ─────────────────────────────────────────────────────────────────
+          🔴🔴 IT DOCKS, AND THE HISTORY RAIL GETS OUT OF ITS WAY BY ITSELF. Both want the right
+          edge; `CourseMap` claims the side panel and `CanvasHistoryRail` already returns null while
+          one is docked (`inset > 0`, owner 2026-08-27: *"hide the rail when sidebar is open"*), so
+          the two never had to learn about each other. Rendered ABOVE the rail here for the same
+          reason it is drawn above in the tree — reading order matching paint order.
+          🔴 GUARDED ON THE PLAN, NOT ONLY ON THE FLAG: a canvas whose course was removed while the
+          map was open must not keep an empty panel docked and the surface pushed. */}
+      {courseMapOpen && planRows && planRows.length > 0 && (
+        <CourseMap
+          activeLabel={policy.focus.kind === "selection" ? policy.focus.label : null}
+          evidence={policy.evidence}
+          onClose={() => setCourseMapOpen(false)}
+          onPick={(scope) => policy.setFocus({ kind: "selection", ...scope })}
+          plan={planRows}
+          title={session.coursePlan?.title ?? "Course"}
+        />
+      )}
+
       <CanvasHistoryRail
         activeMomentId={rewound}
         entries={history}
