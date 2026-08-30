@@ -99,8 +99,10 @@ export function CourseMapControl({
     [activeLabel, chapters],
   );
 
+  // 🔴 THE WRAPPER IS NOT `relative`. The panel is positioned against the glyph ROW, so every box on
+  // this header shares one right edge — see the note on `PANEL` in `canvas-controls.tsx`.
   return (
-    <div className="relative" ref={holder}>
+    <div className="pointer-events-auto shrink-0" ref={holder}>
       <button
         aria-expanded={open}
         aria-label="Course map"

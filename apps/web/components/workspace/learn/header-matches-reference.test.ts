@@ -64,3 +64,48 @@ test("🔴 the colour is UNCHANGED, and that is a finding rather than an omissio
   assert.match(controls, /text-\(--ui-text-tertiary\)[\s\S]{0,160}?hover:text-\(--ui-text-primary\)/);
   assert.match(surface, /text-\(--ui-text-tertiary\)[\s\S]{0,200}?hover:text-\(--ui-text-primary\)/);
 });
+
+// ── every panel on this row shares one right edge ────────────────────────────
+//
+// Owner, 2026-08-30: *"Can you make sure source panel and map are both right side aligned?"*
+//
+// 🔴🔴 THEY DID NOT, AND THE CAUSE WAS INVISIBLE IN EITHER FILE ON ITS OWN. `PANEL` is `absolute`,
+// so its inset resolves against the nearest POSITIONED ancestor. Each control's wrapper was
+// `relative`, which made every control its own ancestor — so a panel's right edge was its own
+// BUTTON's right edge, and the buttons sit at different places in the row. Measured at 1470px on a
+// canvas with a course: Sources' button ends at 1338 and the map's at 1418, so the two boxes opened
+// **80px apart** and jumped sideways as you moved between them.
+//
+// Nothing about that is visible in `canvas-controls.tsx`, where the panels look identical, or in
+// `canvas-header.tsx`, where the row looks fine. It is a fact about which element is positioned,
+// which is why it is asserted here rather than left to be noticed.
+
+test("🔴🔴 the glyph row is the positioning context, so no panel hangs off its own button", () => {
+  const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
+  const header = readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8");
+  const map = readFileSync(new URL("./course-map.tsx", import.meta.url), "utf8");
+
+  // The row, right-anchored with the header, is the one positioned ancestor.
+  assert.match(header, /<div className="relative flex h-full shrink-0 items-center gap-1">/, "the glyph row is not a positioning context");
+
+  // 🔴 AND NO CONTROL MAY BE ONE. This is the half that actually broke; calibration: put `relative`
+  // back on any wrapper and that control's panel goes back to tracking its own glyph.
+  for (const [name, src] of [["canvas-controls", controls], ["course-map", map]] as const) {
+    const wrappers = [...src.matchAll(/ref=\{holder\}/g)];
+    assert.ok(wrappers.length > 0, `${name} has no dismissable wrapper to check`);
+    assert.ok(
+      !/className="[^"]*\brelative\b[^"]*"[^>]*ref=\{holder\}/.test(src),
+      `${name} makes a control its own positioning context again, so its panel will track its glyph`,
+    );
+  }
+
+  // 🔴 THE BADGE HAD TO MOVE WITH IT. Two glyphs carry a 5px dot at their own top-right; it used to
+  // land correctly only because the wrapper was `relative` AND exactly button-sized. Without this
+  // the dots fly to the corner of the whole row.
+  assert.match(controls, /export const CONTROL =[\s\S]{0,600}?"pointer-events-auto relative flex/, "the badge lost its anchor");
+
+  // 🔴 `right-0`, NOT A NEGATIVE INSET. Against a 36px button `-right-2` let a panel overhang that
+  // button's padding; against the row it pushed every box 9px past the header, to 3px from the edge
+  // of the window (measured 1467 of 1470).
+  assert.match(controls, /export const PANEL =\s*\n\s*"absolute right-0 top-full/, "the panels no longer align with the row's edge");
+});

@@ -116,7 +116,10 @@ export default function CourseMapPreviewPage() {
               </button>
             </div>
           </div>
-          <div className="mt-6 flex justify-end">
+          {/* 🔴 `relative` HERE STANDS IN FOR THE CANVAS HEADER'S GLYPH ROW, which is what the panel
+              is positioned against in the real app (see `PANEL` in canvas-controls.tsx). Without a
+              positioned ancestor the box would resolve against whatever happened to be one. */}
+          <div className="relative mt-6 flex justify-end">
             {/* The control draws its own glyph; press it to open the box. */}
             <CourseMapControl
               activeLabel={focused}
