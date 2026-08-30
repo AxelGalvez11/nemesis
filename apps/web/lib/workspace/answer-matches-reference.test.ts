@@ -164,3 +164,26 @@ test("🔴🔴 the start screen's composer is the tall one, the canvas keeps the
   assert.ok(fold < measure, "the composer is measured before it folds, so the travel aims 76px too low");
   assert.match(send, /requestAnimationFrame\(/, "the fold is not given a frame to take effect before measuring");
 });
+
+test("🔴🔴 the start composer matches the reference INSIDE, not just at its edges", () => {
+  // Owner 2026-08-29: *"Why doesn't the composer look exactly like the ChatGPT work? I need it
+  // pixel matched and actually measured not just estimated"*. The first pass matched the outer box
+  // — 768 x 128, radius 28, the three shadow layers, all three 36px controls at 8 / 680 / 724 and
+  // their 20px glyphs at 16,91 / 688,91 / 732,91. Re-measured element by element on chatgpt.com in
+  // Work mode, two things inside did not match, and both made ours read tighter:
+  //
+  //   the text column   theirs 732 wide (18px in from BOTH edges) | ours 742 (18 left, 8 right)
+  //   the field itself  theirs 26px line + 16px BELOW it, 42 tall | ours a bare 26
+  //
+  // 🔴 THE ICONS WERE NOT ONE OF THEM, AND CHECKING SAVED A WRONG FIX. A first dump read
+  // `font-size` off the BUTTONS (14.625px — the rem trap) and looked like proof the glyphs were
+  // small. Measured on the glyph elements themselves they are 20 x 20 at exactly the reference's
+  // coordinates. Measure the thing, never its parent.
+  assert.match(HOME, /mx-\[10px\] self-start \[grid-area:text\]/, "the text column lost its matching right inset");
+  assert.match(HOME, /h-\[42px\] pb-\[16px\] leading-\[26px\]/, "the field lost the 16px the reference keeps below its line");
+  assert.match(GLOBALS, /--composer-icon: 20px;/, "the control glyphs left the reference's 20px");
+  assert.match(GLOBALS, /--composer-control: 36px;/, "the controls left the reference's 36px");
+  // 🔴 NAMED, NOT FAKED: the reference also carries a model pill (134 x 36 at x 542) between the
+  // text and the mic. We have no model picker, so there is nothing there — an empty 134px gap
+  // would be matching a screenshot rather than the product.
+});

@@ -696,7 +696,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               <div
                 className={cn(
                   "flex min-w-0 flex-1 items-center",
-                  departing ? "" : "ml-[10px] self-start [grid-area:text]",
+                  // 🔴 10px EACH SIDE, ON TOP OF THE BOX'S OWN 8. The reference insets its text
+                  // column 18px from BOTH edges (its field measures 732 inside a 768 box); ours
+                  // had the left inset only, so the caret line ran 10px wider than theirs and the
+                  // last character sat closer to the corner than the first. Measured 2026-08-29.
+                  departing ? "" : "mx-[10px] self-start [grid-area:text]",
                 )}
               >
               {capability && (
@@ -730,7 +734,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   "min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
                   // 🔴 10px, NOT 8. The control row is inset by `--composer-pad-x` (8px) because
                   // that is where the reference puts its buttons; its TEXT is 18px in. 8 + 10 = 18.
-                  departing ? "ml-[var(--composer-pad-x)]" : "h-[26px] leading-[26px]",
+                  // 🔴 42 TALL WITH 16 OF IT BELOW THE LINE, WHICH IS THE REFERENCE'S OWN FIELD.
+                  // Theirs is a 26px line with `padding-bottom: 16` inside a 42px box; ours was a
+                  // bare 26px box, so the words sat 16px closer to the controls than theirs and the
+                  // composer read as tighter even though its outer height matched to the pixel.
+                  departing ? "ml-[var(--composer-pad-x)]" : "h-[42px] pb-[16px] leading-[26px]",
                 )}
                 onChange={(event) => {
                   setText(event.target.value);
