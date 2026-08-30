@@ -119,6 +119,7 @@ function LearnSurface() {
       canvasId={canvasId}
       openingAsk={ask}
       openingCapability={openingCapability}
+      openingFolder={entry.folder}
       policyOverride={policyOverride}
       strategyOverride={strategyOverride}
     />
