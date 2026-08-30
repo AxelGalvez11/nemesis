@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   // than taking a teaching turn down with it. The embed-then-match pass lives in
   // `figure-shelf-server.ts`, shared with the reference-image route so two thresholds and two row
   // mappings cannot drift apart; null from it means the shelf could not be asked, which is the 503.
-  const figures = await searchShelf(concept, limit);
+  const figures = await searchShelf(concept, limit, req.headers.get("authorization"));
   if (figures === null) {
     return NextResponse.json({ error: "figure search unavailable", figures: [] }, { status: 503 });
   }
