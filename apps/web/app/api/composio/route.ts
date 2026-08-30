@@ -28,37 +28,19 @@
 import type { NextRequest } from "next/server";
 
 import { heldForApproval, pendingActionResult, riskOf, summarise } from "@/lib/workspace/composio-actions";
+import { CONNECTABLE_APPS as APPS, isOffered, labelFor } from "@/lib/workspace/composio-apps";
 import { verifyBearer } from "@/lib/server";
 
 const COMPOSIO_BASE = "https://backend.composio.dev/api/v3";
 const TIMEOUT_MS = 20_000;
 
-/**
- * The apps a learner may connect, and what each is FOR.
- *
- * 🔴 A CLOSED LIST, AND THAT IS DELIBERATE. Composio brokers hundreds of apps; offering all of
- * them turns a study tool into an integrations directory, and every extra app is another OAuth
- * consent screen a student clicks through without reading. Owner's pick for the first three:
- * "my lectures, my school mail, my deadlines", which is one Google sign-in for all three.
- */
-const APPS = [
-  { detail: "Read lecture slides and notes you already keep there.", key: "googledrive", label: "Google Drive" },
-  { detail: "Read your school mail, including the syllabus nobody forwards twice.", key: "gmail", label: "Gmail" },
-  { detail: "See what is due, and put dates you mention on the calendar.", key: "googlecalendar", label: "Google Calendar" },
-  // Added 2026-08-24 at the owner's request, after they created its auth config. Reading a shared
-  // set of class notes is the same act as reading a lecture slide, so it costs no new safety
-  // thinking — `riskOf` classifies by verb and has never known which app it was looking at.
-  { detail: "Read notes and essays you keep there, including ones shared with you.", key: "googledocs", label: "Google Docs" },
-] as const;
-
-type AppKey = (typeof APPS)[number]["key"];
+// 🔴 THE OFFERED LIST MOVED TO `lib/workspace/composio-apps.ts` AND DID NOT GROW LOOSER. It is
+// still closed and `connectTo` still refuses anything outside it; what changed is that the
+// sidebar needs the same facts to decide whether a learner has a calendar, and two copies of that
+// answer drift. See the header of that file for why a slug substring could not carry it.
 
 function apiKey(): string {
   return process.env.COMPOSIO_API_KEY ?? "";
-}
-
-function labelFor(key: string): string {
-  return APPS.find((app) => app.key === key)?.label ?? key;
 }
 
 async function composio(path: string, init: RequestInit = {}): Promise<Response> {
@@ -128,10 +110,28 @@ async function statusFor(uid: string): Promise<Response> {
  * names are accepted, and ANY failure at any level yields an empty list. An empty list means the
  * model is offered no Composio tools and the chat behaves exactly as it did before this existed.
  *
- * 🔴 READS ARE PREFERRED WHEN THE LIST IS TRIMMED. A toolkit can carry fifty actions; offering all
- * of them to the model on every turn is a context cost paid forever and makes every other tool
- * harder to pick. The cap keeps reads first because those are the ones that run without
- * interrupting the learner for a confirmation.
+ * ── HOW THE BUDGET IS SPENT, AND THE TWO WAYS IT USED TO BE SPENT WRONGLY ──────────────────────
+ *
+ * A toolkit carries dozens of actions and offering all of them on every turn is a context cost
+ * paid forever, so there is a cap. Both of the following were live defects, found by reading real
+ * catalogue responses rather than by reasoning about the code:
+ *
+ * 🔴🔴 THE PER-APP LIMIT USED TO TRUNCATE **BEFORE** THE READS-FIRST SORT, SO IT CUT
+ * ALPHABETICALLY. It asked each app for 12 rows and sorted afterwards, and Composio returns rows
+ * in slug order. Notion has 13 read actions; that request returned three of them, all beginning
+ * `NOTION_FETCH_B…`, and `NOTION_SEARCH_NOTION_PAGE` never reached the model at all. The single
+ * most useful thing a student can do with their notes was unreachable, and nothing looked broken:
+ * the model simply never knew the action existed and said it could not search Notion.
+ *
+ * So the whole toolkit is fetched and ranked HERE. Measured: the largest offered app returns 51
+ * rows and every one of the nine fits in a single page, so this costs one request either way.
+ *
+ * 🔴🔴 AND THE TOTAL USED TO BE A GLOBAL CUT, WHICH STARVED WHOEVER SORTED LAST. Reads from every
+ * app went into one list, sorted, and sliced at 24. Drive alone offers 19 reads and Gmail 11, so
+ * two apps could fill the budget outright and a learner with four apps connected would find that
+ * Nemesis could not see their calendar. It was not that the calendar failed; it was never offered.
+ * Round-robin instead: each app contributes its best action, then its second, and so on. With the
+ * total set so every offered app fits, each connected app is guaranteed a real share.
  */
 async function toolsFor(uid: string): Promise<Response> {
   try {
@@ -143,29 +143,76 @@ async function toolsFor(uid: string): Promise<Response> {
       .map((item) => item.toolkit?.slug ?? "")
       .filter((slug) => APPS.some((app) => app.key === slug));
 
-    const tools: ComposioTool[] = [];
-    for (const slug of connected) {
-      const listed = await composio(`/tools?toolkit_slug=${encodeURIComponent(slug)}&limit=${PER_APP_LIMIT}`);
-      if (!listed.ok) continue;
-      const body = (await listed.json()) as { items?: unknown[]; data?: unknown[] };
-      const rows = Array.isArray(body.items) ? body.items : Array.isArray(body.data) ? body.data : [];
-      for (const row of rows) {
-        const tool = readTool(row, slug);
-        if (tool) tools.push(tool);
-      }
-    }
-
-    // Reads first, then writes, then cut. See the header.
-    tools.sort((a, b) => Number(riskOf(a.action) === "write") - Number(riskOf(b.action) === "write"));
-    return Response.json({ tools: tools.slice(0, TOTAL_TOOL_LIMIT) });
+    // 🔴 IN PARALLEL, AND EACH ONE CATCHES ITS OWN FAILURE. Sequentially this was one round trip
+    // per connected app in front of the first model call of every canvas turn, which is a latency
+    // tax that grows with each app offered. And a single unreachable app must not silence the
+    // rest: `Promise.all` over throwing calls would turn one provider's outage into "Nemesis
+    // cannot see any of your apps", so the failure is contained to the app that had it.
+    const perApp = await Promise.all(connected.map((slug) => catalogueFor(slug)));
+    return Response.json({ tools: roundRobin(perApp, TOTAL_TOOL_LIMIT) });
   } catch {
     return Response.json({ tools: [] });
   }
 }
 
-/** The most actions offered from any one app, and in total. Both are context budget, not policy. */
-const PER_APP_LIMIT = 12;
-const TOTAL_TOOL_LIMIT = 24;
+/** One app's actions, best first. Empty when that app cannot be reached, never a throw. */
+async function catalogueFor(slug: string): Promise<ComposioTool[]> {
+  try {
+    const listed = await composio(`/tools?toolkit_slug=${encodeURIComponent(slug)}&limit=${CATALOGUE_LIMIT}`);
+    if (!listed.ok) return [];
+    const body = (await listed.json()) as { items?: unknown[]; data?: unknown[] };
+    const rows = Array.isArray(body.items) ? body.items : Array.isArray(body.data) ? body.data : [];
+    const tools: ComposioTool[] = [];
+    for (const row of rows) {
+      const tool = readTool(row, slug);
+      if (tool) tools.push(tool);
+    }
+    // 🔴 READS FIRST, AND WITHIN THE APP RATHER THAN ACROSS ALL OF THEM. A read is the action that
+    // runs without interrupting the learner for a confirmation, so it is the one worth spending
+    // budget on. Ranking here is what makes the cut below a cut of the LEAST useful actions.
+    tools.sort((a, b) => Number(riskOf(a.action) === "write") - Number(riskOf(b.action) === "write"));
+    return tools;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Take from every app in turn until the budget is spent.
+ *
+ * 🔴 THE POINT IS THE FLOOR, NOT THE ORDER. Any app with `n` actions to offer contributes at
+ * least `min(n, floor(limit / apps))` of them, so no connected app can be squeezed out by a
+ * larger one sitting earlier in the list.
+ */
+function roundRobin(perApp: readonly (readonly ComposioTool[])[], limit: number): ComposioTool[] {
+  const out: ComposioTool[] = [];
+  const deepest = perApp.reduce((most, list) => Math.max(most, list.length), 0);
+  for (let rank = 0; rank < deepest && out.length < limit; rank += 1) {
+    for (const list of perApp) {
+      if (out.length >= limit) break;
+      const tool = list[rank];
+      if (tool) out.push(tool);
+    }
+  }
+  return out;
+}
+
+/**
+ * How many rows to ask one app for, and how many actions may be offered in total.
+ *
+ * 🔴 `CATALOGUE_LIMIT` IS NOT A BUDGET, IT IS "THE WHOLE TOOLKIT". Ranking cannot be done on a
+ * truncated list, which is the defect described above. Measured against the live catalogue on
+ * 2026-08-30: the nine offered apps return 51, 43, 36, 35, 32, 28, 28, 23 and 17 rows, every one
+ * of them a single page.
+ *
+ * 🔴 `TOTAL_TOOL_LIMIT` IS SET SO EVERY OFFERED APP CONNECTED AT ONCE STILL CLEARS FOUR ACTIONS
+ * EACH. Nine apps × 4 = 36, which fits in 40. That relationship is the whole reason for the
+ * number, so `composio-door.test.ts` asserts it rather than leaving it as a comment: offering a
+ * tenth app without raising this would quietly drop the floor to three, and nothing on screen
+ * would say so.
+ */
+const CATALOGUE_LIMIT = 100;
+const TOTAL_TOOL_LIMIT = 40;
 
 interface ComposioTool {
   readonly action: string;
@@ -194,18 +241,88 @@ function readTool(row: unknown, app: string): ComposioTool | null {
   return { action, app, description: description.slice(0, 400), parameters: schema as Record<string, unknown> };
 }
 
-/** Start an OAuth connection. Returns the URL the learner is sent to. */
+/**
+ * The auth config that lets a learner connect one app.
+ *
+ * 🔴🔴 IT IS LOOKED UP, NOT REQUIRED AS NINE ENVIRONMENT VARIABLES, AND THAT IS THE SECOND HALF OF
+ * WHY NOTHING WAS EVER CONNECTED. `connectTo` read `COMPOSIO_AUTH_<APP>` and sent whatever it
+ * found, which was the empty string, because not one of those variables has ever been set in this
+ * repo's environment. Combined with the retired endpoint above, connecting could not have worked
+ * for any app on any day. Nine hand-copied ids across two environments is nine chances to ship a
+ * dead button, and the button gives no sign which one is missing.
+ *
+ * Composio already knows the answer, so it is asked. The environment variable still wins when it
+ * is set, so a deployment can pin a specific config without editing code.
+ *
+ * 🔴🔴🔴 THE RETURNED ROW'S TOOLKIT IS CHECKED, AND THIS IS NOT DEFENSIVE PADDING. An unknown query
+ * parameter is IGNORED by this API rather than rejected: `?toolkit=notion` returns the account's
+ * first five auth configs, beginning with Zoom's. So a one-word slip in the parameter name would
+ * hand back a different app's config, and the learner who clicked Connect on Notion would be sent
+ * to Zoom's consent screen and would connect Zoom. Verified against the live API on 2026-08-30.
+ *
+ * Cached per instance. An auth config is created once and lives for the life of the account; if
+ * one is ever deleted and recreated, a warm instance keeps the old id until it recycles.
+ */
+const authConfigIds = new Map<string, string>();
+
+async function authConfigFor(app: string): Promise<string> {
+  const pinned = process.env[`COMPOSIO_AUTH_${app.toUpperCase()}`] ?? "";
+  if (pinned) return pinned;
+  const cached = authConfigIds.get(app);
+  if (cached) return cached;
+  try {
+    const res = await composio(`/auth_configs?toolkit_slug=${encodeURIComponent(app)}&limit=10`);
+    if (!res.ok) return "";
+    const payload = (await res.json()) as { items?: { id?: string; toolkit?: { slug?: string } }[] };
+    const match = (payload.items ?? []).find((item) => typeof item.id === "string" && item.toolkit?.slug === app);
+    const id = match?.id ?? "";
+    if (id) authConfigIds.set(app, id);
+    return id;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Start an OAuth connection. Returns the URL the learner is sent to.
+ *
+ * 🔴🔴🔴 THIS WAS POINTED AT A RETIRED ENDPOINT AND EVERY Connect BUTTON IN THE PRODUCT WAS DEAD.
+ * It posted to `/connected_accounts`, which Composio now refuses for Composio-managed OAuth with:
+ * *"Creating connections on this endpoint for Composio-managed OAuth auth configs is no longer
+ * supported. Use POST /api/v3/connected_accounts/link instead."* Every one of the offered apps
+ * uses managed OAuth, so this covered all of them, Gmail and Drive included.
+ *
+ * 🔴 IT FAILED AS SILENTLY AS THIS CODE COULD MANAGE, WHICH IS THE PART WORTH REMEMBERING. The
+ * 400 became `{ error: "Could not start the connection." }`, the browser showed "Could not start
+ * that connection. Try again in a moment." — a sentence that describes a passing glitch — and the
+ * learner tried again tomorrow. Nothing logged, nothing alerted, and the connected-apps count
+ * simply stayed at zero, which reads exactly like nobody having chosen to connect anything.
+ *
+ * 🔴 THE PAYLOAD IS FLAT NOW, NOT NESTED. `{ auth_config_id, user_id }`, verified against the live
+ * API on 2026-08-30: the nested `{ auth_config: { id }, connection: { user_id } }` shape this used
+ * to send is rejected by `/link` as a validation error on both fields.
+ */
 async function connectTo(uid: string, app: string): Promise<Response> {
-  if (!APPS.some((entry) => entry.key === app)) {
+  if (!isOffered(app)) {
     return Response.json({ error: "That app is not offered." }, { status: 400 });
   }
-  const res = await composio("/connected_accounts", {
-    body: JSON.stringify({ auth_config: { id: process.env[`COMPOSIO_AUTH_${app.toUpperCase()}`] ?? "" }, connection: { user_id: uid } }),
+  const authConfigId = await authConfigFor(app);
+  // 🔴 A DISTINCT MESSAGE FROM THE ONE BELOW, ON PURPOSE. "Could not start the connection" is what
+  // a transient upstream failure says; this one is permanent until somebody creates the auth
+  // config, and the whole lesson of the retired-endpoint bug above is that one vague sentence hid
+  // a permanent failure for weeks by sounding like a passing glitch.
+  if (!authConfigId) return Response.json({ error: "That app is not set up for connecting yet." }, { status: 502 });
+  const res = await composio("/connected_accounts/link", {
+    body: JSON.stringify({ auth_config_id: authConfigId, user_id: uid }),
     method: "POST",
   });
   if (!res.ok) return Response.json({ error: "Could not start the connection." }, { status: 502 });
+  // 🔴 BOTH SHAPES ARE STILL READ. `/link` answers `{ link_token, redirect_url, expires_at,
+  // connected_account_id }`, so `redirect_url` is the live one; the older `connectionData.val`
+  // path is kept because reading a field that is absent costs nothing and a broker that changes
+  // its response shape again should degrade to "could not start" rather than to a wrong URL.
   const payload = (await res.json()) as { connectionData?: { val?: { redirectUrl?: string } }; redirect_url?: string };
-  const url = payload.connectionData?.val?.redirectUrl ?? payload.redirect_url ?? "";
+  const url = payload.redirect_url ?? payload.connectionData?.val?.redirectUrl ?? "";
   if (!url) return Response.json({ error: "Could not start the connection." }, { status: 502 });
   return Response.json({ url });
 }

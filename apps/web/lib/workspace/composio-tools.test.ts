@@ -94,10 +94,17 @@ test("🔴 the catalogue is asked for, never hardcoded", () => {
 test("🔴 the offered set is capped, and reads come first", () => {
   // A toolkit can carry fifty actions. Offering all of them is a context cost paid on every turn,
   // and it makes every other tool harder for the model to pick.
-  assert.match(ROUTE, /const PER_APP_LIMIT = \d+;/);
+  //
+  // 🔴 THE CAP MOVED FROM A PER-APP FETCH LIMIT TO A PER-APP SHARE, because the old shape cut the
+  // list BEFORE ranking it and therefore cut alphabetically. `PER_APP_LIMIT` was 12 and the
+  // reads-first sort ran afterwards, so Notion's thirteen read actions came back as three and
+  // NOTION_SEARCH_NOTION_PAGE never reached the model. The whole toolkit is now fetched, ranked
+  // within the app, then shared out round-robin. `composio-door.test.ts` guards both halves.
+  assert.match(ROUTE, /const CATALOGUE_LIMIT = \d+;/);
   assert.match(ROUTE, /const TOTAL_TOOL_LIMIT = \d+;/);
-  assert.match(ROUTE, /tools\.slice\(0, TOTAL_TOOL_LIMIT\)/, "the total cap is not applied");
+  assert.match(ROUTE, /roundRobin\(perApp, TOTAL_TOOL_LIMIT\)/, "the total cap is not applied");
   assert.match(ROUTE, /riskOf\(a\.action\) === "write"/, "reads are no longer preferred when the list is trimmed");
+  assert.ok(!/PER_APP_LIMIT/.test(ROUTE), "the cut-before-ranking per-app limit came back");
 });
 
 test("🔴 only connected, offered apps contribute tools", () => {

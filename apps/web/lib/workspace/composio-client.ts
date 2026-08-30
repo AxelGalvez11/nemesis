@@ -16,12 +16,15 @@
 import { supabase } from "@/lib/supabase";
 
 import { heldForApproval, pendingActionResult, summarise, type PendingAction } from "./composio-actions";
+import type { ConnectableApp } from "./composio-apps";
 
-export interface ConnectableApp {
-  readonly key: string;
-  readonly label: string;
-  readonly detail: string;
-}
+// 🔴 ONE DEFINITION, RE-EXPORTED. This interface used to be declared here as well as in the
+// route's app list, so the two described the same wire object and only agreed by hand. When the
+// list gained a `group` (the settings screen needs it to stop reading as a directory) the copy
+// here would have kept describing the older shape, and the screen would have grouped nothing
+// while the server dutifully sent the field.
+// (imported at the top of the file, re-exported here so callers keep one import site.)
+export type { ConnectableApp };
 
 export interface ConnectionStatus {
   readonly configured: boolean;

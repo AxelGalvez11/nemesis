@@ -15,6 +15,8 @@
 // "eventually the sidebar becomes a giant chronological dump. Nemesis users aren't primarily
 // trying to recover a conversation from three weeks ago. They're managing BODIES OF KNOWLEDGE."
 
+import { hasCalendar } from "./composio-apps";
+
 export interface NavItem {
   readonly id: string;
   readonly label: string;
@@ -61,9 +63,13 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
  * door with no other way in is this codebase's most-repeated defect, so the other rows are not
  * gated: New canvas, Library and Projects are the product itself.
  *
- * 🔴 THE CALENDAR TEST READS THE SLUG, AND THAT IS STRUCTURAL, NOT A KEYWORD LIST. The row IS
- * the calendar destination; "does any connected app identify itself as a calendar" is the exact
- * question, asked of an identifier chosen by the integration platform, not of subject matter.
+ * 🔴 THE CALENDAR TEST ASKS THE APP CATALOGUE, AND IT USED TO ASK THE SLUG STRING. The old form
+ * was `slug.toLowerCase().includes("calendar")`, defended here as structural rather than a keyword
+ * list, and it reads that way: the row IS the calendar destination, and the identifier is the
+ * integration platform's, not ours. It was still wrong. Outlook is one toolkit carrying mail AND
+ * nine calendar actions, so a student whose whole timetable was connected got `false` and never
+ * saw the destination that shows it. A string test cannot know a product fact, so the fact is
+ * declared on the app itself and `hasCalendar` reads it. See `composio-apps.ts`.
  */
 export function visibleNav(
   nav: readonly NavItem[],
@@ -71,9 +77,7 @@ export function visibleNav(
 ): readonly NavItem[] {
   return nav.filter((item) => {
     if (item.id === "plugins") return connected.length > 0;
-    if (item.id === "calendar") {
-      return connected.some((slug) => slug.toLowerCase().includes("calendar"));
-    }
+    if (item.id === "calendar") return hasCalendar(connected);
     return true;
   });
 }

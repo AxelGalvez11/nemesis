@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { beginConnect, connectionStatus, disconnect, NOT_CONFIGURED, type ConnectionStatus } from "@/lib/workspace/composio-client";
+import { groupApps } from "@/lib/workspace/composio-apps";
 import { forgetToolCatalogue } from "@/lib/learn/canvas-tools";
 
 export function ConnectionsSettings() {
@@ -83,34 +84,44 @@ export function ConnectionsSettings() {
         <p className="text-[0.7rem] text-(--ui-text-quaternary)">Loading…</p>
       ) : !status.configured ? (
         <p className="text-[0.7rem] leading-relaxed text-(--ui-text-quaternary)">
-          Connections are not set up on this server yet. Once the app keys are in place, Drive, Gmail and
-          Calendar will appear here.
+          Connections are not set up on this server yet. Once the app keys are in place, the places you
+          keep your files, mail, notes and lectures will appear here.
         </p>
       ) : (
-        <ul className="flex list-none flex-col gap-1 p-0">
-          {status.apps.map((app) => {
-            const on = status.connected.includes(app.key);
-            return (
-              <li
-                className="flex items-start justify-between gap-3 rounded-lg border border-(--ui-stroke-tertiary) px-3 py-2.5"
-                key={app.key}
-              >
-                <div className="min-w-0">
-                  <p className="text-[0.7rem] font-medium text-foreground">{app.label}</p>
-                  <p className="mt-0.5 text-[0.65rem] leading-relaxed text-(--ui-text-tertiary)">{app.detail}</p>
-                </div>
-                <button
-                  className="shrink-0 rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.7rem] text-foreground transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-60"
-                  disabled={busy === app.key}
-                  onClick={() => void (on ? remove(app.key) : connect(app.key))}
-                  type="button"
-                >
-                  {busy === app.key ? "Working…" : on ? "Disconnect" : "Connect"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        // 🔴 GROUPED, BECAUSE NINE ROWS IN A COLUMN IS THE INTEGRATIONS DIRECTORY THE CLOSED
+        // LIST EXISTS TO AVOID. Four headings say what a learner is reaching for, so the list is
+        // read as "my files, my mail, my notes, my lectures" rather than scanned for a brand.
+        <div className="flex flex-col gap-4">
+          {groupApps(status.apps).map(({ apps, label }) => (
+            <div key={label}>
+              <p className="mb-1.5 text-[0.6rem] font-semibold tracking-wide text-(--ui-text-quaternary) uppercase">{label}</p>
+              <ul className="flex list-none flex-col gap-1 p-0">
+                {apps.map((app) => {
+                  const on = status.connected.includes(app.key);
+                  return (
+                    <li
+                      className="flex items-start justify-between gap-3 rounded-lg border border-(--ui-stroke-tertiary) px-3 py-2.5"
+                      key={app.key}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[0.7rem] font-medium text-foreground">{app.label}</p>
+                        <p className="mt-0.5 text-[0.65rem] leading-relaxed text-(--ui-text-tertiary)">{app.detail}</p>
+                      </div>
+                      <button
+                        className="shrink-0 rounded-md border border-(--ui-stroke-secondary) px-2 py-1 text-[0.7rem] text-foreground transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-60"
+                        disabled={busy === app.key}
+                        onClick={() => void (on ? remove(app.key) : connect(app.key))}
+                        type="button"
+                      >
+                        {busy === app.key ? "Working…" : on ? "Disconnect" : "Connect"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
       )}
 
       {notice && (
