@@ -41,7 +41,7 @@
 // brief rules that out by name. The rail shows the most recent `RAIL_MARKERS` around wherever the
 // learner is.
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 
 import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
 
@@ -65,9 +65,35 @@ import { TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-history";
 //
 // `canvas-history-surface.test.ts` holds the absence, next to the ban on a second history surface.
 
-/** One component owns the interaction — the brief's own rule, and the reason this type is here.
- *  🔴 TWO STATES, NOT THREE: "expanded" left with the drawer it named (owner cut, 2026-08-23). */
-export type HistoryRailDisplay = "collapsed" | "peek";
+// 🔴🔴 THERE IS NO DISPLAY STATE ANY MORE, AND THAT IS THE WHOLE OF THE 2026-08-29 REPORT.
+//
+// Owner: *"Fix the Canvas rail pop up because it's… I don't want it to have that. It just moves a
+// lot."* Then, on which rail: *"im talking about the right side rail in the canvas for viewing
+// previous chats."* And on what to replace it with: *"the rail when hovering over it should work
+// like in ChatGPT (pull up actually ChatGPT session for this too see the numbers and measure it)."*
+//
+// 🔴 WHAT IT USED TO DO, IN NUMBERS, BECAUSE THE NUMBERS ARE THE COMPLAINT. There were two
+// geometries and hovering swapped between them:
+//
+//   | | row | gap | pitch | 24 markers |
+//   |---|---|---|---|---|
+//   | resting | 9px | 3px | 12px | ~288px |
+//   | hovered | 36px | 0 | 36px | **~864px** |
+//
+// Three times taller, on a column that is vertically CENTRED — so every marker slid away from the
+// middle, including the one the pointer was resting on. A hover target that leaves under the cursor
+// is the defect; the panel, the shadow, the ring and the blur that faded in with it were the "pop
+// up". Both halves are gone.
+//
+// 🔴 MEASURED IN THE OWNER'S OWN SIGNED-IN CHATGPT, 2026-08-29, which is what they asked for. Its
+// collapsed rail (`#stage-sidebar-tiny-bar`) is 52px and NEVER changes size; hovering a control
+// swaps its glyph and floats a tooltip 20px clear of the strip. Nothing resizes, nothing reflows,
+// and the full list arrives only on a deliberate click. So: one geometry, and the label is a
+// tooltip rather than a row the column has to make room for.
+//
+// 🔴 THE COST, STATED RATHER THAN GLOSSED. A tooltip shows ONE label at a time, where the peek
+// panel let you read the whole column at once. That is the trade the owner asked for, and it is the
+// same one the reference makes: you scan a chat list by opening it, not by hovering it.
 
 /**
  * How many markers the rail draws.
@@ -82,8 +108,9 @@ export type HistoryRailDisplay = "collapsed" | "peek";
  */
 export const RAIL_MARKERS = 24;
 
-/** How long the peek waits before closing, so crossing the rail's own gap does not collapse it. */
-const PEEK_GRACE_MS = 120;
+/** How far the tooltip stands clear of the strip. Measured off the reference: its rail ends at 52
+ *  and its tooltip starts at 72. */
+const TOOLTIP_GAP_PX = 20;
 
 export function CanvasHistoryRail({
   activeMomentId,
@@ -96,23 +123,6 @@ export function CanvasHistoryRail({
   entries: readonly CanvasHistoryEntry[];
   onSelect: (momentId: string | null) => void;
 }) {
-  const [display, setDisplay] = useState<HistoryRailDisplay>("collapsed");
-  const closing = useRef<number | null>(null);
-
-  const open = useCallback(() => {
-    if (closing.current !== null) window.clearTimeout(closing.current);
-    closing.current = null;
-    setDisplay("peek");
-  }, []);
-
-  const leave = useCallback(() => {
-    if (closing.current !== null) window.clearTimeout(closing.current);
-    closing.current = window.setTimeout(() => {
-      setDisplay("collapsed");
-      closing.current = null;
-    }, PEEK_GRACE_MS);
-  }, []);
-
   /**
    * The markers, oldest at the top and the most recent at the bottom.
    *
@@ -136,8 +146,6 @@ export function CanvasHistoryRail({
     const start = Math.min(Math.max(0, at - Math.floor(RAIL_MARKERS / 2)), rows.length - RAIL_MARKERS);
     return rows.slice(start, start + RAIL_MARKERS);
   }, [activeMomentId, entries]);
-
-  const peeking = display === "peek";
 
   // 🔴🔴 NO RAIL WHILE A READER IS DOCKED — owner, 2026-08-27: *"hide the rail when sidebar is
   // open."* The rail is pinned to the RIGHT EDGE of the window and the panel now covers that edge,
@@ -166,37 +174,31 @@ export function CanvasHistoryRail({
           layout read on mount and nothing to get wrong during hydration. (The small-screen
           button itself left with the drawer it opened — see the file header.) */}
       <div className="pointer-events-none absolute inset-y-0 right-0 z-30 hidden items-center md:flex">
-        <div
-          className="pointer-events-auto flex max-h-[70vh] items-center py-4 pl-6 pr-2"
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) leave();
-          }}
-          onFocus={open}
-          onMouseEnter={open}
-          onMouseLeave={leave}
-        >
+        {/* 🔴 NO HOVER HANDLERS LEFT ON THIS BOX. They existed to open and close the peek panel,
+            with a 120ms grace so crossing the strip's own gaps did not collapse it — machinery for a
+            state that no longer exists. Each marker now owns its own hover, and a tooltip cannot
+            move the column it is anchored in. */}
+        <div className="pointer-events-auto flex max-h-[70vh] items-center py-4 pl-6 pr-2">
           <nav
             aria-label="Canvas history"
             className={cn(
-              "flex flex-col items-stretch rounded-lg py-2 transition-[background-color,box-shadow,padding,gap] duration-200 ease-out",
-              // 🔴 THE STRIP ONLY GETS A SURFACE WHILE IT IS BEING READ. Collapsed it is bare
-              // marks on the sheet — "nearly disappear until needed".
+              // 🔴 ONE GEOMETRY, AND NOTHING HERE TRANSITIONS. The transition list used to name
+              // background-color, box-shadow, padding and gap — the four properties the pop-up
+              // animated. With one state there is nothing for them to animate between, and a
+              // transition on a value that never changes is a promise nothing keeps.
+              "flex flex-col items-stretch gap-[3px] rounded-lg py-2",
+              // 🔴🔴 BARE MARKS ON THE SHEET, ALWAYS — "nearly disappear until needed". The strip
+              // used to grow a surface while it was being read (`bg-(--ui-bg-elevated)/95`, a
+              // shadow, a ring and a backdrop blur) and that surface is the "pop up" the owner
+              // reported on 2026-08-29. See the file header for the measurement.
               //
-              // 🔴🔴 TWO PITCHES, OPENED ONE STEP ON OWNER ORDER. The first pitches were 9px
-              // collapsed (8px row + 1px gap) and 5px of peeked gap; the owner, reading the live
-              // rail: *"just increase the spacing a bit."* So collapsed gap is 3px (11px pitch —
-              // the ladder still reads as one object) and the peeked gap is 8px. Arithmetic at
-              // the cap (25 marks): collapsed ≈322px, peeked ≈545px, both inside 70vh of an
-              // 800px viewport — but the previous cap in this comment was ESTIMATED too and was
-              // 2.2× wrong; measure after changing any metric here. `h-2` is 9px in this app
-              // (`html { font-size: 112.5% }`), not 8.
-              // 🔴 OPEN, THE ROWS TOUCH: the air lives inside each row now (see RailMarker), which
-              // is how the reference list is built and why it reads as places rather than as a
-              // ladder. The panel keeps 6px of its own padding so the first and last rows are not
-              // flush against the ring.
-              peeking
-                ? "gap-0 bg-(--ui-bg-elevated)/95 p-[6px] shadow-lg ring-1 ring-(--ui-stroke-secondary) backdrop-blur-sm"
-                : "gap-[3px] px-0",
+              // 🔴 THE 3px GAP IS THE OWNER'S OWN NUMBER AND IS UNCHANGED. Reading the live rail on
+              // 2026-08-23: *"just increase the spacing a bit."* That moved the collapsed gap from
+              // 1px to 3px, an 12px pitch with the 9px row. It was never the thing that moved.
+              // 🔴 `h-2` IS 9px IN THIS APP (`html { font-size: 112.5% }`), not 8. At the 24-marker
+              // cap the column is ~288px, comfortably inside 70vh of an 800px viewport — and it is
+              // now that height in every state, which is the point. Measure after changing any
+              // metric here; the estimate in the note this replaces was 2.2x wrong.
             )}
           >
             {shown.map((entry) => (
@@ -205,7 +207,6 @@ export function CanvasHistoryRail({
                 key={entry.id}
                 label={shortTitle(entry.title, TITLE_LIMIT)}
                 onSelect={() => onSelect(entry.momentId)}
-                peeking={peeking}
               />
             ))}
           </nav>
@@ -216,58 +217,49 @@ export function CanvasHistoryRail({
 }
 
 /**
- * One marker: a thin rule collapsed, a labelled row while peeking.
+ * One marker: a thin rule, and its title as a tooltip beside it.
+ *
+ * 🔴🔴 ONE HEIGHT, IN EVERY STATE. This used to be `h-2` resting and `h-[36px]` while the column
+ * was being read, which is what made 24 markers grow from ~288px to ~864px on hover and slide out
+ * from under the pointer. The row no longer changes size at all, so the strip is the same object
+ * whether or not anybody is looking at it.
  *
  * 🔴 THE ACTIVE ONE IS LONGER *AND* BRIGHTER, NOT ONE OR THE OTHER. Length survives a monochrome
- * surface at low opacity where a brightness step alone can be invisible; brightness survives a
- * viewport where every marker is the same length because they are all labelled. Together they
- * carry it in both states, which is what "clearly active marker" has to mean on a rail that
- * changes shape.
+ * surface at low opacity where a brightness step alone can be invisible; brightness survives the
+ * case where the active mark is beside a hovered one, which is also widened. Together they carry it
+ * in both, which is what "clearly active marker" has to mean on a strip this quiet.
+ *
+ * 🔴 THE TOOLTIP IS ABSOLUTELY POSITIONED, AND THAT IS THE ENTIRE FIX RATHER THAN A DETAIL. Out of
+ * flow, it cannot change the row's height, the column's height, or where any other marker is — so
+ * the thing you are pointing at stays where you pointed. A label that reserved space, in any form,
+ * would reintroduce the report.
  */
 function RailMarker({
   active,
   label,
   onSelect,
-  peeking,
 }: {
   active: boolean;
   label: string;
   onSelect: () => void;
-  peeking: boolean;
 }) {
   return (
     <button
       aria-current={active ? "true" : undefined}
-      // 🔴 THE ACCESSIBLE NAME IS THE LABEL EVEN WHILE THE LABEL IS NOT PAINTED. Collapsed, this
+      // 🔴 THE ACCESSIBLE NAME IS THE LABEL EVEN THOUGH THE LABEL IS ONLY PAINTED ON HOVER. This
       // is a 16px rule with no text in it; without this a screen reader reads a column of empty
       // buttons, which is exactly as useful as it sounds.
       aria-label={label}
       className={cn(
-        "group flex shrink-0 items-center transition-[height] duration-200 ease-out focus-visible:outline-none",
-        // 🔴 THE MARK LEADS WHEN OPEN AND TRAILS WHEN CLOSED, WHICH IS ONE DOM ORDER AND TWO
-        // ALIGNMENTS RATHER THAN TWO LAYOUTS. Closed, the label is clipped to zero width, so
-        // `justify-end` leaves the mark alone against the right edge of the screen — the quiet
-        // ladder the owner kept on 2026-08-23. Open, `justify-start` puts the mark at the head of
-        // the row with the label beside it, which is the arrangement in his reference picture.
-        // 🔴 A HIT TARGET, NOT A HAIRLINE. The rule itself is 1px; a 1px button cannot be clicked,
-        // so the collapsed row is 8px of transparent space around it. With the nav's 3px gap the
+        // 🔴 A HIT TARGET, NOT A HAIRLINE. The rule itself is 1px; a 1px button cannot be
+        // clicked, so the row is 9px of transparent space around it. With the nav's 3px gap the
         // column has no dead pixels — every point on the strip belongs to a marker or the gap
         // beside it.
         //
-        // 🔴 EXPLICIT, BECAUSE THE HIDDEN LABEL IS NOT A RELIABLE ZERO. `max-w-0` clips the text
-        // to nothing horizontally but leaves a full 12px line box behind, which is what made the
-        // collapsed rail 2.2× taller than its own comment claimed. Height is stated here rather
-        // than inherited from something invisible.
-        // 🔴🔴 36px OPEN, MEASURED OFF ChatGPT'S OWN SIDEBAR LIST IN THE OWNER'S BROWSER on
-        // 2026-08-26 at his instruction ("if you need actual numbers for the spacing, open up
-        // ChatGPT"): rows 36px tall and CONTIGUOUS, label 14px on a 20px line, padding 6px 10px,
-        // radius 10px, hover a soft pill. `h-auto` was a 12px line with an 8px gap around it — the
-        // same air, but between the rows instead of inside them, which is what made it read as a
-        // tight ladder rather than a list. Owner: *"the spacing… I feel like that's better than
-        // what's current."*
-        peeking
-          ? "h-[36px] justify-start gap-[10px] rounded-[10px] px-[10px] hover:bg-(--ui-bg-tertiary)"
-          : "h-2 justify-end gap-2",
+        // 🔴 `relative` IS LOAD-BEARING: it is what the tooltip below is positioned against.
+        // 🔴 `group` DRIVES BOTH the mark's widening and the tooltip's appearance from one hover,
+        // so the two can never disagree about whether this row is the one being pointed at.
+        "group relative flex h-2 shrink-0 items-center justify-end gap-2 focus-visible:outline-none",
       )}
       onClick={onSelect}
       type="button"
@@ -281,25 +273,34 @@ function RailMarker({
             : "h-px w-2.5 bg-(--ui-text-tertiary) opacity-50 group-hover:w-4 group-hover:opacity-90",
         )}
       />
-      {/* 🔴 14px ON A 20px LINE, NOT 12px ON `leading-none` — the reference's list type, measured.
-          🔴 THROUGH THE TOKEN, NEVER AS A BARE LENGTH. `--canvas-text-small` IS 14px, and §46.3's
-          guard in canvas-shell.test.ts refuses a raw size precisely so a sixth type step cannot be
-          introduced by whoever happened to measure one. It caught this line — twice: once for the
-          size itself, and once for an earlier version of THIS COMMENT, which spelled the banned
-          utility out. That is not the guard being clumsy. Its own note records a literal utility
-          written in prose being emitted as a real CSS rule and breaking the build, so the class
-          name must not appear here even to explain its absence.
-          🔴 `max-w-[200px]`: ChatGPT's sidebar is 260px wide with 10px of row padding a side, so
-          200 keeps the same share of the label readable before it truncates.
-          🔴 THE HIDDEN LABEL'S LINE BOX IS NOW 20px, NOT 12px, AND THE ROW'S EXPLICIT `h-2` IS WHAT
-          KEEPS THAT HARMLESS. The note above already records what an inherited height cost here:
-          the collapsed rail measured 2.2× its own comment. Do not replace `h-2` with `h-auto`. */}
+      {/* 🔴 THE LABEL, AS A TOOLTIP RATHER THAN A ROW — the 2026-08-29 change. It stands
+          `TOOLTIP_GAP_PX` clear of the strip on the LEFT, because this rail is pinned to the right
+          edge of the window and a tooltip to its right would be off screen. The reference floats
+          its own 20px clear of a rail on the opposite edge; the number is theirs, the side is ours.
+
+          🔴 `pointer-events-none`, SO IT CANNOT EAT THE CLICK IT DESCRIBES. It overlaps the reading
+          column, and a learner aiming at the marker must not have the label intercept the press.
+
+          🔴 14px THROUGH THE TOKEN, NEVER AS A BARE LENGTH. `--canvas-text-small` IS 14px, which is
+          the reference's own list type, measured. §46.3's guard in canvas-shell.test.ts refuses a
+          raw size precisely so a sixth type step cannot be introduced by whoever happened to
+          measure one; it has caught this line twice, once for the size and once for a comment that
+          spelled the banned utility out. Do not name that form here even to explain its absence.
+
+          🔴 `max-w-[200px]` AND `truncate` ARE KEPT FROM THE ROW THIS REPLACES: the reference's
+          sidebar is 260px with 10px of row padding a side, so 200 keeps the same share of a title
+          readable before it clips. A tooltip that grew to fit any title would run across the whole
+          answer. */}
       <span
         className={cn(
-          "min-w-0 truncate text-left text-[length:var(--canvas-text-small)] leading-[20px] transition-[max-width,opacity] duration-200 ease-out",
-          peeking ? "max-w-[200px] opacity-100" : "max-w-0 opacity-0",
-          active ? "text-(--ui-text-primary)" : "text-(--ui-text-tertiary) group-hover:text-(--ui-text-secondary)",
+          "pointer-events-none absolute right-full top-1/2 z-10 -translate-y-1/2 truncate rounded-[8px]",
+          "bg-(--ui-bg-elevated) px-[10px] py-[5px] text-left text-[length:var(--canvas-text-small)] leading-[20px]",
+          "shadow-lg ring-1 ring-(--ui-stroke-secondary)",
+          "max-w-[200px] opacity-0 transition-opacity duration-150 ease-out",
+          "group-hover:opacity-100 group-focus-visible:opacity-100",
+          active ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
         )}
+        style={{ marginRight: TOOLTIP_GAP_PX }}
       >
         {label}
       </span>

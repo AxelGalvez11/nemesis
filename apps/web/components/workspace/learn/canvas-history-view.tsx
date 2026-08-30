@@ -43,12 +43,15 @@
 // Owner, 2026-08-26: *"a different view, a different way to view outputs"* — which added a SECOND
 // surface that draws a recorded moment, the whole conversation read end to end. The paragraph above
 // is precisely the argument against letting the two style it independently, so the drawing moved to
-// one component the day the second caller existed. What is left here is the only thing that is
-// true of a REWIND and not of the conversation: this surface can be mistaken for the live Canvas,
-// so it carries a banner saying it is not, and a way back.
+// one component the day the second caller existed.
+//
+// 🔴🔴 AND SINCE 2026-08-29 NOTHING IS LEFT BUT THAT COMPONENT. This file used to add a banner —
+// the one thing that was true of a REWIND and not of the conversation, because this surface can be
+// mistaken for the live Canvas. The owner weighed exactly that and chose *"Nothing but the
+// exchange"*. The mistaking risk is real and is now carried by the rail's active marker instead of
+// by a line of type on the surface; the ways back are listed in the component below.
 
 import type { HistoricalMoment } from "@/lib/learn/canvas-history";
-import { momentClock } from "@/lib/learn/canvas-history";
 
 import { CanvasMomentBody } from "./canvas-moment-body";
 
@@ -59,30 +62,28 @@ export function CanvasHistoryView({
   moment: HistoricalMoment;
   onReturn: () => void;
 }) {
+  // 🔴🔴 THE BANNER IS GONE, ON THE OWNER'S EXPLICIT CHOICE (2026-08-29). Asked whether to keep the
+  // "Viewing earlier moment · 14:32 / Return to now" line, they picked *"Nothing but the exchange"*,
+  // which is the rest of the same instruction: *"if they're in the Canvas mode, it should show the
+  // chat bubble, like, in chat mode and the output only, not like the old version where it says [a
+  // labelled scaffold], etcetera."*
+  //
+  // 🔴 SO THE WAY BACK MOVED, IT WAS NOT DELETED, AND THAT MATTERED MORE THAN THE BANNER DID. The
+  // rail's own "Now" marker was removed on 2026-08-25 (*"could you remove the 'now' since thats not
+  // really needed?"*) and the note recording that removal justified it by pointing HERE, at the
+  // button this commit takes away. Removing both would have left a learner who rewinds with no way
+  // back at all, which is the dead end `navigationReachable` exists to refuse. Three ways out now,
+  // none of them chrome on the surface: Escape, clicking the marker you are already on, and sending
+  // anything at all (`learning-canvas.tsx` has returned the learner to now on a new turn since the
+  // feature shipped).
+  //
+  // 🔴 `onReturn` IS STILL THE PROP AND IS NOT DEAD: the Escape handler is wired to it.
   return (
     <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8">
-      {/* ── the banner ──────────────────────────────────────────────────────────────────── */}
-      <div className="mb-6 flex items-center justify-between gap-4 border-b border-(--ui-stroke-secondary) pb-3">
-        <span className="min-w-0 truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-          Viewing earlier moment
-          {momentClock(moment.occurredAt) && ` · ${momentClock(moment.occurredAt)}`}
-        </span>
-        <button
-          className="shrink-0 rounded-md px-2 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) transition-colors duration-150 hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--ui-stroke-primary)"
-          onClick={onReturn}
-          type="button"
-        >
-          Return to now
-        </button>
-      </div>
-
-      {/* ── what happened ───────────────────────────────────────────────────────────────── */}
-      {/* 🔴🔴 THE SAME COMPONENT THE CONVERSATION VIEW DRAWS, AND THAT IS WHY THIS FILE IS SHORT
-          NOW. Both surfaces show one recorded moment; the only thing this one adds is the banner
-          above, because it is the one that can be mistaken for the live Canvas. The bubble, the
-          labels, the "Attached" list and the truncation notice all moved to
-          `canvas-moment-body.tsx` the day a second surface needed them — see that file's header for
-          the rule (§46.2: the learner's words must look the same every time they appear). */}
+      {/* 🔴 DRAWN AS THE EXCHANGE IT WAS AND NOTHING ELSE. `CanvasMomentBody` already uses
+          `LearnerUtterance` for the learner's words and the live answer's own renderer for the
+          reply, which are the two components chat mode draws a turn with, so matching chat mode was
+          a matter of taking things away rather than building a third rendering. */}
       <div className="canvas-swap">
         <CanvasMomentBody moment={moment} />
       </div>

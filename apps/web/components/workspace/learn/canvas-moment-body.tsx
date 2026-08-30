@@ -84,9 +84,14 @@ export function CanvasMomentBody({
       {moment.answer && said(<LearnerUtterance via={null}>{moment.answer}</LearnerUtterance>)}
       {moment.feedback && <MomentBody label="Correction" text={moment.feedback} />}
 
+      {/* 🔴 NO "ATTACHED" HEADING SINCE 2026-08-29. `CanvasThreadTurnView` draws the same list as a
+          plain run of titles with nothing over it, and the owner's instruction for this surface is
+          that it match chat mode: *"it should show the chat bubble, like, in chat mode and the
+          output only, not like the old version where it says [the labels], etcetera."* An uppercase
+          heading over two filenames is the scaffolding that phrase is about.
+          🔴 `Question` AND `Correction` KEEP THEIRS, deliberately — see `MomentLabel` below. */}
       {moment.sourceTitles?.length && (
         <div>
-          <MomentLabel>Attached</MomentLabel>
           <ul className="space-y-1">
             {moment.sourceTitles.map((title) => (
               <li
@@ -111,6 +116,14 @@ export function CanvasMomentBody({
   );
 }
 
+/**
+ * 🔴🔴 TWO CALLERS LEFT, AND THEY ARE THE EXCEPTION THE 2026-08-29 INSTRUCTION DOES NOT REACH.
+ * "Attached" lost its heading with that change; `Question` and `Correction` keep theirs because
+ * they are POLICY-LANE objects rather than chat, and this file's header already states the cost of
+ * dropping them: *"an unlabelled correction reads as a second answer."* A learner who was marked
+ * wrong and reads the marking as Nemesis simply saying more is a worse outcome than an uppercase
+ * word, so the label stays until the owner has seen one and asked for it to go.
+ */
 export function MomentLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="mb-1 block text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-tertiary)">

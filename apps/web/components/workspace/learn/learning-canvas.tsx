@@ -1410,6 +1410,27 @@ export function LearningCanvas({
     if (turnInFlight) setRewound(null);
   }, [turnInFlight]);
 
+  /**
+   * 🔴🔴 ESCAPE LEAVES A REWIND, AND IT IS LOAD-BEARING NOW RATHER THAN A CONVENIENCE. The
+   * rewound surface carried a "Return to now" button until 2026-08-29, when the owner chose
+   * *"Nothing but the exchange"*; the rail's own "Now" mark went on 2026-08-25 with a note
+   * justifying the removal by pointing at that button. With both gone this is the keyboard half of
+   * the way out, beside the marker toggle on the rail and sending anything at all.
+   *
+   * 🔴 BOUND ONLY WHILE REWOUND, so Escape keeps meaning whatever it means everywhere else — a
+   * listener that swallowed it on the live canvas would close a menu somebody else owns.
+   */
+  useEffect(() => {
+    if (rewound === null) return;
+    const leave = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setRewound(null);
+    };
+    window.addEventListener("keydown", leave);
+    return () => window.removeEventListener("keydown", leave);
+  }, [rewound]);
+
   // 🔴 IT READS ITS OWN ANSWER (owner 2026-08-24: when it is "reading off the output", it
   // should "look at the words that are on screen"). A fresh reply sends the eyes to the
   // words for a beat — through the same attention channel a focused field uses — then the
@@ -1835,10 +1856,15 @@ export function LearningCanvas({
           answering "where am I in what I'm learning" from the learner model; this answers "what
           happened here, and how did I get here" from a moment log that provably cannot state
           anything about knowledge. See canvas-history-rail.tsx. */}
+      {/* 🔴🔴 THE MARKER TOGGLES, AND IT IS ONE OF THE THREE WAYS BACK THAT REPLACED A BUTTON.
+          `canvas-history-view.tsx` lost its "Return to now" on 2026-08-29 (owner: *"Nothing but the
+          exchange"*), and the rail's own "Now" mark had already gone on 2026-08-25 — so pressing the
+          marker you are already standing on had to mean something, and "leave" is the only thing it
+          can sensibly mean. Selecting a DIFFERENT moment still just moves there. */}
       <CanvasHistoryRail
         activeMomentId={rewound}
         entries={history}
-        onSelect={setRewound}
+        onSelect={(id) => setRewound((was) => (was === id ? null : id))}
       />
 
       {/* ── the rewound Canvas ─────────────────────────────────────────────────────────────
