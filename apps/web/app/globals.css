@@ -208,6 +208,15 @@
   --composer-max-width: 768px;     /* same frame, so they align exactly */
   --composer-radius: 28px;
   --composer-min-height: 52px;
+  /* The start screen's composer, measured off chatgpt.com's Work mode 2026-08-29: 768 x 128, the
+     text on its own line at the top and the controls on a second row underneath. Owner the same
+     day: *"I want our composer to look better. I mean, bigger like that one."* The canvas keeps
+     `--composer-min-height` — the reference is short there too, and 128px inside a conversation
+     costs 76px of the answer on every screen. */
+  --composer-tall-height: 128px;
+  --composer-tall-pad-top: 15px;
+  --composer-tall-pad-x: 18px;
+  --composer-tall-pad-bottom: 9px;
   /* 🔴🔴 THE PILL'S WHOLE EDGE, IN ONE TOKEN, AND EVERY LAYER IS MEASURED. Read off the reference's
      composer while signed in, 2026-08-26, at a 1470px viewport:
 
@@ -250,6 +259,11 @@
      and both composers are theme-aware. Dark is `#212121`, which is BOTH the reference's own
      `--bg-primary` in dark (see docs/chatgpt-reference.md) and what `--ui-bg-elevated` already
      computed to here — so dark is unchanged and light is corrected. */
+  /* 🔴 THE HEADING GREY IS MEASURED, NOT AN ALPHA. `--ui-text-tertiary` is #0d0d0d at 45%, which
+     composites to rgb(147,147,147) on white and to something else entirely on any other ground —
+     the sidebar's ground is not white. The reference's sidebar headings are a flat rgb(143,143,143)
+     (chatgpt.com, 2026-08-29), so this is a colour rather than a transparency. */
+  --sidebar-heading: rgb(143, 143, 143);
   --composer-fill: #ffffff;
   /* The composer's controls are the SAME hit target and glyph as the sidebar header's, because
      they are the same kind of object — a bare icon button on a surface. They were 28px boxes
@@ -1223,6 +1237,11 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
    single inset hairline. */
 :root[data-theme='dark'] {
   --composer-edge: inset 0 0 1px 0 rgba(255, 255, 255, 0.2);
+  /* Same reading in dark: scaffolding grey that neither disappears nor competes with the titles.
+     🔴 DECLARED AFTER `--composer-edge`, NOT BEFORE IT. `answer-matches-reference.test.ts` anchors
+     on `:root[data-theme='dark'] {` followed immediately by the edge, because that seam is where a
+     dark override has silently gone missing before. A new line above it is a broken guard. */
+  --sidebar-heading: rgb(138, 138, 138);
   --composer-fill: #212121;
 }
 

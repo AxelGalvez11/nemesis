@@ -331,6 +331,12 @@ export function SidebarCanvases({
     const children = childFolders(folder.id);
     const isOpen = openFolders.has(folder.id);
     const isEditing = editing?.kind === "folder" && editing.id === folder.id;
+    // 🔴 A FOLDER ROW LOOKS EXACTLY LIKE A CANVAS ROW, AND ONLY THE ICON SAYS WHICH IS WHICH.
+    // Owner 2026-08-29: *"the sidebar kinda just looks like it's too bolded, especially the
+    // pages"*. This row carried `font-medium` AND `--ui-text-secondary` — heavier than the canvases
+    // under it and simultaneously faded, which is the two ways of standing out fighting each other.
+    // Measured on chatgpt.com the same day: a project row and a chat row are both 14px / weight
+    // 400 / rgb(13,13,13), identical, told apart by the glyph alone.
     return (
       <li className="min-w-0" key={folder.id}>
         <div className="group/row relative flex min-w-0 items-center">
@@ -349,7 +355,7 @@ export function SidebarCanvases({
           ) : (
             <>
               <button
-                className="flex h-8 min-w-0 flex-1 items-center gap-[var(--nav-icon-gap)] rounded-[var(--nav-row-radius)] border border-transparent pr-7 text-left text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
+                className="flex h-8 min-w-0 flex-1 items-center gap-[var(--nav-icon-gap)] rounded-[var(--nav-row-radius)] border border-transparent pr-7 text-left text-[length:var(--canvas-text-small)] text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none"
                 onClick={() => toggleFolder(folder.id)}
                 style={{ paddingLeft: `calc(var(--nav-row-pad-x) - 1px + ${depth * 14}px)` }}
                 type="button"
