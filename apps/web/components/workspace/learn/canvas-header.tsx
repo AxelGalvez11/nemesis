@@ -152,7 +152,17 @@ export function CanvasHeader({
           canvas-home's SessionRow, which already has pin/move/delete, a rename affordance too) —
           an accepted, named cost, not a silent one. Delete is unaffected: canvas-home's own
           per-row delete already reaches the same `deleteCanvas` this control called. */}
-      <>
+      {/* 🔴🔴 ONE POSITIONING CONTEXT FOR EVERY PANEL ON THIS ROW (owner 2026-08-30: *"Can you make
+          sure source panel and map are both right side aligned?"*). This was a bare fragment, so
+          each control positioned its own panel against ITSELF and the boxes opened wherever their
+          glyph happened to sit — measured 80px apart on a canvas with a course, because two more
+          glyphs stand between Sources and the map. One `relative` here, right-anchored with the
+          row, and they share an edge whatever is on screen.
+          🔴 THE CONTROLS' OWN WRAPPERS ARE NO LONGER `relative`, which is what makes this the
+          ancestor they resolve against — see the note on `PANEL` in canvas-controls.tsx.
+          🔴 `shrink-0` BECAUSE THE TITLE BESIDE IT IS `flex-1`: without it a long canvas name
+          squeezes the glyphs instead of truncating itself. */}
+      <div className="relative flex h-full shrink-0 items-center gap-1">
           {/* 🔴 THREE GLYPHS AND A MENU — owner call, 2026-08-19: "i only want icons for 'x' on
               left, 'source and outputs' and 'progress' for the minimap of objectives", then "add a
               '⋯' for options". The `×` is `canvas-surface.tsx`'s and is not in this row.
@@ -207,7 +217,7 @@ export function CanvasHeader({
             />
           )}
           <OptionsControl voice={voice} />
-      </>
+      </div>
     </>
   );
 }

@@ -129,11 +129,33 @@ export function useDismiss(open: boolean, close: () => void) {
 // drift the first time either is adjusted, which is the failure this file already records for
 // Objectives vs Territory and for the plan tree.
 export const CONTROL =
-  "pointer-events-auto flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
+  // 🔴 `relative` IS FOR THE BADGE, AND IT MOVED HERE ON 2026-08-30 SO THE PANELS COULD LINE UP.
+  // Two of these buttons carry a 5px dot at their own top-right. It used to resolve against the
+  // control's WRAPPER, which was `relative` and exactly button-sized, so it landed correctly by
+  // coincidence. The wrappers are no longer positioned (see the note on `PANEL`), and without this
+  // the dots would fly to the corner of the whole glyph row. A badge belongs to its button.
+  "pointer-events-auto relative flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
+// 🔴🔴 EVERY PANEL HANGS OFF THE ROW, NOT OFF ITS OWN GLYPH (owner 2026-08-30: *"Can you make sure
+// source panel and map are both right side aligned?"*).
+//
+// `-right-2` resolves against the nearest positioned ancestor. Each control used to be that
+// ancestor, so a panel's right edge was ITS OWN BUTTON's right edge + 8 — and the buttons sit at
+// different places in the row. Measured at 1470px on a canvas with a course: Sources' button ends
+// at 1338 and the course map's at 1418, so the two boxes opened **80px apart**, jumping sideways as
+// you moved between them.
+//
+// The positioned ancestor is now the glyph row itself (`canvas-header.tsx` wraps it), which is
+// right-anchored at 12px, so every panel shares one right edge whatever glyphs happen to be on
+// screen. 🔴 The control wrappers must therefore NOT be `relative` — that is what this depends on,
+// and it is why the badge moved onto `CONTROL` above.
+// 🔴 `right-0`, NOT `-right-2`. The negative inset was right while a panel hung off a 36px BUTTON —
+// it let the box overhang that button's own padding. Against the row it just pushed every panel 9px
+// past the header, leaving the box 3px from the edge of the window (measured 1467 of 1470). At
+// `right-0` the panels line up with the glyph row and keep the canvas's own 12px margin.
 export const PANEL =
-  "absolute -right-2 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
+  "absolute right-0 top-full z-40 mt-1.5 max-h-[70vh] overflow-y-auto rounded-2xl bg-(--ui-bg-elevated) " +
   "p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-(--ui-stroke-tertiary)";
 
 // ---------------------------------------------------------------- sources + outputs
@@ -230,7 +252,7 @@ export function SourcesControl({
   const documents = canvas.sources.filter((source) => hostnameOf(source.sourceUrl) === null);
 
   return (
-    <div className="pointer-events-auto relative shrink-0" ref={holder}>
+    <div className="pointer-events-auto shrink-0" ref={holder}>
       <button
         aria-expanded={open}
         aria-label="Sources and outputs"
@@ -954,7 +976,7 @@ export function MinimapControl({
 
 
   return (
-    <div className="pointer-events-auto relative shrink-0" ref={holder}>
+    <div className="pointer-events-auto shrink-0" ref={holder}>
       <button
         aria-expanded={open}
         aria-label="Progress"
@@ -1072,7 +1094,7 @@ export function SessionControl({
   };
 
   return (
-    <div className="pointer-events-auto relative shrink-0" ref={holder}>
+    <div className="pointer-events-auto shrink-0" ref={holder}>
       <button
         aria-expanded={open}
         aria-label="Session options"
