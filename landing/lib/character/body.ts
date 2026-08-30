@@ -14,6 +14,18 @@
 // shape and says nothing about states that reshape, so the rule survives its own rename intact:
 // **the body is one shape and stays that shape.** Every state this file refused, it still refuses.
 //
+// 🔴 AND ON 2026-08-30 IT ACQUIRED ITS SCOPE, WHICH IS THE THIRD THING THAT IS EASY TO MISREAD.
+// The owner asked for `burst` back as the reply to a click (*"yes, the mascot bursts"*), and
+// `burst` is the state this file refuses hardest. Nothing here changed: what changed is that
+// there is now a door BESIDE the cycle. Re-read the objection above and the line is already in
+// it — he was objecting to the body reshaping WHILE IT PLAYED, unasked. A click is asked for.
+//
+// So: **the cycle keeps one shape; a poke may break it.** This file governs the cycle, `CYCLE`
+// below is still checked, and the exception lives in one place with its own reasoning and its own
+// test — `lib/character/poke.ts`. Do not fold it back in here by adding a shape-breaking state to
+// `BEATS`: the whole content of the exception is the difference between "it does this on its own"
+// and "it does this when you click", and that difference is invisible once the state is in a list.
+//
 // So `keepsTheCircle` is `keepsItsShape` and the checks inside it are untouched, to the line. If
 // a future instruction really does mean "let it morph again", that is a change to the RULE and
 // the whole of this file should go, rather than a shape being quietly added to `CYCLE`.

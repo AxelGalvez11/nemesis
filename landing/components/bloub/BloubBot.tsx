@@ -168,6 +168,25 @@ export interface BloubBotProps {
    * be resting while it runs — see `Mascot.tsx`, which holds `idle` for the duration.
    */
   spin?: boolean;
+  /**
+   * Play `state` at this multiple of its own measured pace. 1 plays it as the table has it.
+   *
+   * 🔴 IT TAKES EFFECT AFTER THE STATE'S CROSS-FADE, NOT AT THE CLICK. A state's time is
+   * `now - tCur`, so the only way to run it on another clock is to keep re-stamping when it
+   * started, and re-stamping drops the state being left behind — you cannot cross-fade into
+   * something whose start keeps moving. The fade is worth more than the frames it costs, so the
+   * loop lets it finish first. See the note in the loop for what the alternative looked like.
+   *
+   * 🔴 IT SCALES THE STATE'S OWN ANIMATION AND NOTHING ELSE. The scene clock, the gaze, the shape
+   * morph and the expression morph all stay on real time — only the pose function is read on a
+   * stretched one. That is the difference between this and `speed`, which slows the whole
+   * character including the turn it is doing.
+   *
+   * 🔴 AND THE VENDORED TABLE IS NOT TOUCHED. Upstream's pose function is upstream's; re-timing
+   * an animation by editing its measured durations would be the first divergence in a folder
+   * that is copied whole precisely so three renderers agree about what a frame means.
+   */
+  pace?: number;
   /** Freeze at this many seconds into the state. Reproducible; no loop is started. */
   frozenAt?: number;
   /** Playback rate. 0 pauses the scene clock. */
@@ -205,6 +224,7 @@ export function BloubBot({
   onPoke,
   waggle = false,
   spin = false,
+  pace = 1,
   frozenAt,
   speed = 1,
   reducedMotion,
@@ -429,6 +449,18 @@ export function BloubBot({
     spinFromRef.current = spin ? clockRef.current : null;
   }
   /**
+   * Scene-clock instant the re-paced state was asked for, or null when the state plays as
+   * measured. Stamped during render for the same first-frame reason as the two above — and here
+   * that reason is the whole feature, because the complaint this answers was a click that took
+   * too long to show anything.
+   */
+  const paceFromRef = useRef<number | null>(null);
+  const pacedRef = useRef(1);
+  if (pace !== pacedRef.current) {
+    pacedRef.current = pace;
+    paceFromRef.current = pace === 1 ? null : clockRef.current;
+  }
+  /**
    * 🔴 THE GAZE'S BOOKKEEPING OUTLIVES THE LOOP, AND THAT IS THE WHOLE POINT.
    *
    * Aiming opens with a full turn around the sphere — the eyes pass behind the body and
@@ -631,6 +663,31 @@ export function BloubBot({
       // start in the effect that watches the prop would put it on a different timebase from the
       // one the gesture is drawn against, and the two drift apart the moment `speed` is not 1.
       const from = waggleFromRef.current;
+      // 🔴 THE RE-PACED STATE'S START IS MOVED EVERY FRAME, WHICH IS HOW IT RUNS ON ANOTHER CLOCK.
+      // The engine reads a state at `now - tCur`, so holding `tCur` a widening distance behind
+      // `now` reads it further along than the wall clock has actually travelled. `reset` is the
+      // vendored setter for that — the sequence player uses it to start a state with no history.
+      //
+      // 🔴🔴 AND IT WAITS FOR THE CROSS-FADE, WHICH IS THE ONE NON-OBVIOUS LINE IN THIS FILE.
+      // `reset` drops the state being left behind, so re-stamping from frame one would turn the
+      // arrival into a hard cut — and measured on the page that cut costs a frame in which the
+      // body has already changed shape while the face has not yet begun to fade, which is to say
+      // a full-size character with no eyes. It bought 68ms and read as a glitch. Waiting the
+      // state's own `morph` before taking over means the fade plays exactly as the engine
+      // intended, and the hand-over lands where both clocks agree: the silhouette is deep into
+      // its collapse and nearly flat by then, so the two readings differ by about a fiftieth of
+      // the body's width. `poke.test.ts` pins that, which is what stops a future faster pace from
+      // moving the seam back onto the steep part of the curve.
+      //
+      // 🔴 IT HAS TO BE IN THE LOOP, NOT IN THE `state` EFFECT. An effect fires once, so it could
+      // move a start but could not keep moving it, which is the whole mechanism.
+      const rushing = paceFromRef.current;
+      if (rushing !== null) {
+        const since = clockRef.current - rushing;
+        if (since >= (STATE_BY_ID.get(stateRef.current)?.morph ?? 0)) {
+          engine.reset(stateRef.current, clockRef.current - since * pacedRef.current);
+        }
+      }
       paint(
         engine.sample(clockRef.current),
         resolvedInk(),
