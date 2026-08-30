@@ -40,6 +40,7 @@ import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 // `parse-document.ts`. It now imports one function. A route that cannot see the
 // extractors cannot quietly disagree with the worker about what a page is.
 import { singleUnitCoverage } from "@/lib/notebooks/extract-coverage";
+import { needsFigureEnrichment, requestFigureEnrichment } from "@/lib/notebooks/parse-enqueue";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
 import { reuseStoredParse } from "@/lib/notebooks/parse-reuse";
@@ -314,6 +315,39 @@ export async function POST(req: Request): Promise<Response> {
         ...(parsed.model ? { model: parsed.model } : {}),
       });
       if (saved.ok) parsedDocumentId = saved.parsedDocumentId;
+    }
+
+    // 🔴 THE FIGURE PASS THIS PARSE COULD NOT AFFORD, ASKED FOR ANYWAY — JUST NOT ON THIS REQUEST.
+    // This lane never sets `lookAtFigures` (see `parseDocument`'s own doc comment on that option):
+    // up to 40 vision calls is latency a student should not wait through here. That used to be
+    // where the story ended — the only thing that ever set `lookAtFigures: true` is the background
+    // worker, and the only thing that ever asked the worker for THIS source was a person clicking a
+    // control that, measured, nothing in the product renders for a source in this state. The owner
+    // decided (2026-08-20): uploading means everything gets read, not "everything the synchronous
+    // request could afford". So a document that still owes the student a described picture gets one
+    // ask, here, for the SAME background pass a manual reprocess already triggers today — not a new
+    // mechanism, the existing one, reached automatically instead of by a button that did not exist.
+    //
+    // Scoped to a source that just received its OWN first durable parse: `parsedDocumentId` is only
+    // set above on the by-reference lane, and only once `persistParse` actually wrote a row. A
+    // REUSED parse (the early `if (reusable)` return above) never reaches here at all — reuse is
+    // keyed on `(user, content hash)`, not on this placement, so the very first parse of these bytes
+    // is the only one that ever asks, and re-attaching the same file elsewhere costs nothing more.
+    //
+    // One extra awaited round trip (a Supabase read, then a write) on the request the student is
+    // already waiting on — no HTTP call to the worker, no nudge: `pg_cron` claims an enqueued row
+    // within a minute on its own, and nobody is watching for this one the way a person who clicked
+    // "read again" is. Never allowed to fail the upload: `requestFigureEnrichment` cannot throw, and
+    // its result is logged, not surfaced — the student already has their document either way.
+    if (sourceId && parsedDocumentId && needsFigureEnrichment(coverage)) {
+      const enrichment = await requestFigureEnrichment(sourceId, check.userId);
+      console.info(JSON.stringify({
+        event: "figure_enrichment_requested",
+        decision: enrichment.ok ? enrichment.decision.action : null,
+        reason: enrichment.ok ? null : enrichment.reason,
+        requestId,
+        sourceId,
+      }));
     }
 
     if (!text) {

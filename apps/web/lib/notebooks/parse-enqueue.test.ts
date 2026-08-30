@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { decideEnqueue, writesRow, type EnqueueCandidate } from "./parse-enqueue";
+import type { ExtractionCoverage, FigureCoverage } from "@nemesis/shared";
+
+import { decideEnqueue, needsFigureEnrichment, writesRow, type EnqueueCandidate } from "./parse-enqueue";
 
 const src = (over: Partial<EnqueueCandidate> = {}): EnqueueCandidate => ({
   contentHash: null,
@@ -215,4 +217,69 @@ test("🔴 and a reprocess still IN FLIGHT is still idempotent — the failure c
   });
   assert.equal(decideEnqueue(inFlight, NOW).action, "already-reprocessing");
   assert.equal(writesRow(decideEnqueue(inFlight, NOW)), false);
+});
+
+// ── needsFigureEnrichment ────────────────────────────────────────────────────
+
+const figures = (over: Partial<FigureCoverage> = {}): FigureCoverage => ({
+  described: 0,
+  found: 0,
+  reasons: {},
+  skipped: 0,
+  ...over,
+});
+
+const coverageWith = (f: FigureCoverage): ExtractionCoverage => ({
+  figures: f,
+  parserVersion: "extract-2026-08-16",
+  state: "partial",
+  truncation: [],
+  unitKind: "page",
+  units: 10,
+  unitsBoth: 0,
+  unitsNative: 10,
+  unitsUnread: 0,
+  unitsVision: 0,
+  version: 1,
+});
+
+test("🔴 a document with an unexamined figure needs enrichment", () => {
+  const cov = coverageWith(figures({ found: 8, reasons: { "not-examined": 8 }, skipped: 8 }));
+  assert.equal(needsFigureEnrichment(cov), true);
+});
+
+test("a document with no figures at all needs nothing", () => {
+  assert.equal(needsFigureEnrichment(coverageWith(figures())), false);
+});
+
+test("a document whose figures are all already described needs nothing", () => {
+  const cov = coverageWith(figures({ described: 3, found: 3, skipped: 0 }));
+  assert.equal(needsFigureEnrichment(cov), false);
+});
+
+test("🔴 a figure lost to a real attempt is NOT the same as one nobody looked at", () => {
+  // `over-cap`, `vision-unavailable`, `unreadable-format`, `examined-empty` and `decorative` are
+  // all real outcomes of a vision pass that already ran. Re-asking spends the same budget to
+  // rediscover the same limit — this is the PPTX case named in the function's own doc comment,
+  // where vision DOES run synchronously and can already produce these before this gate is ever
+  // reached. Only `not-examined` means the enrichment pass has anything to gain by running again.
+  for (const reason of ["over-cap", "vision-unavailable", "unreadable-format", "examined-empty"] as const) {
+    const cov = coverageWith(figures({ found: 2, reasons: { [reason]: 2 }, skipped: 2 }));
+    assert.equal(needsFigureEnrichment(cov), false, `${reason} alone must not trigger enrichment`);
+  }
+});
+
+test("a mix of not-examined and an already-attempted reason still triggers — there is still something to gain", () => {
+  const cov = coverageWith(
+    figures({ found: 5, reasons: { "not-examined": 3, "over-cap": 2 }, skipped: 5 }),
+  );
+  assert.equal(needsFigureEnrichment(cov), true);
+});
+
+test("🔴 a described figure and a decorative one together read as nothing owed — calibrates the described/skipped split", () => {
+  // Every figure accounted for one way or another: 2 described, 1 decorative (free, not a loss).
+  // If `needsFigureEnrichment` were reading `found > described` instead of the reason map, this
+  // would wrongly say "yes" (3 found, 2 described) — this is the case that tells the two apart.
+  const cov = coverageWith(figures({ described: 2, found: 3, reasons: { decorative: 1 }, skipped: 1 }));
+  assert.equal(needsFigureEnrichment(cov), false);
 });
