@@ -34,6 +34,8 @@
 // in it — and it may ask again, until it says it has enough. Only web turns pay, and on those the
 // search is most of the wait anyway.
 
+import { LEARNING_STYLE_STORAGE_KEY, readLearningStyle } from "@nemesis/shared";
+
 import { postChatCompletion, searchLiteratureContext, searchWebContext } from "@/lib/workspace/chat-api";
 import {
   citedWebResults,
@@ -329,6 +331,12 @@ export async function askCanvasChat(
         toolRoundsLeft,
         webContext,
       },
+      // Read here rather than inside the packet builder, for the reason `today` is: the builder
+      // stays pure and its tests stay deterministic. 🔴 READ AT THE MOMENT OF USE, never latched at
+      // mount, so switching style in the options menu takes effect on the very next message.
+      learningStyle: readLearningStyle(
+        typeof window === "undefined" ? null : window.localStorage.getItem(LEARNING_STYLE_STORAGE_KEY),
+      ),
       sourceRule: sourceDisagreementInstruction({
         hasAttachedMaterial: materialContext.trim().length > 0,
         hasExternalEvidence: webContext.trim().length > 0,

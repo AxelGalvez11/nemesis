@@ -28,7 +28,15 @@ export interface ReferenceQuery {
   readonly limit?: number;
 }
 
-export type ReferenceProviderId = "curated" | "wikimedia-commons";
+/**
+ * Where a licensed picture can come from.
+ *
+ * 🔴 `textbook-shelf` IS A THIRD KIND, not a second live provider. Curated rows are checked by a
+ * person; a live repository is believed about a licence on every request. The shelf is neither: its
+ * licence was verified twice at harvest (the catalogue AND the book's own metadata endpoint) and a
+ * database constraint refuses any row outside four licence families. See `textbook-figures.ts`.
+ */
+export type ReferenceProviderId = "curated" | "textbook-shelf" | "wikimedia-commons";
 
 /**
  * The only hosts a reference asset may be served from.

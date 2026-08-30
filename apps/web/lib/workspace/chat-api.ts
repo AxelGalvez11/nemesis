@@ -12,6 +12,7 @@ import {
   formatBrainContext,
   shouldRecallBrain,
   studyCreationKindFromPreferencePrompt,
+  THINKING_STANCE,
   WRITING_VOICE,
 } from "@nemesis/shared";
 
@@ -177,7 +178,7 @@ export function chatSystemPrompt(toolsEnabled: boolean): string {
   // hedge-heavy prose the voice rules exist to prevent — so they need to be read
   // in that order. Shared with the phone (packages/shared) so the two surfaces
   // cannot drift.
-  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL} ${WRITING_VOICE}`;
+  return `${CHAT_PROMPT_HEAD}${toolsEnabled ? CHAT_TOOLS_PROMPT : CHAT_NO_TOOLS_PROMPT}${CHAT_PROMPT_TAIL} ${THINKING_STANCE} ${WRITING_VOICE}`;
 }
 
 /** The tools-on prompt, kept as a named export for callers and tests that want

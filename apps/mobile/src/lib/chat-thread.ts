@@ -9,6 +9,7 @@ import {
   ARTIFACT_REFERENCE_RULE,
   expandArtifactContext,
   UNTRUSTED_CONTENT_RULE,
+  THINKING_STANCE,
   WRITING_VOICE,
   wrapUntrusted,
 } from "@nemesis/shared";
@@ -181,6 +182,9 @@ export const CHAT_SYSTEM_PROMPT =
   // The SAME voice rules the web prompt carries, from packages/shared, so the
   // phone and the browser cannot answer in two different registers. Appended
   // last for the same reason as on web — see chatSystemPrompt in chat-api.ts.
+  // The stance the browser carries, from packages/shared, so the phone does not fold under pushback
+  // on a turn the browser would have held. Ahead of the voice: what to say, then how to say it.
+  THINKING_STANCE + " " +
   WRITING_VOICE;
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
