@@ -345,11 +345,21 @@ export async function setCanvasPinned(userId: string | null, id: string, pinned:
   emitCanvasesChanged();
 }
 
-export async function setCanvasFolder(userId: string | null, id: string, folderId: string | null): Promise<void> {
-  if (!userId) return;
-  const { error } = await supabase.from(TABLE).update({ folder_id: folderId }).eq("id", id);
+/**
+ * File a canvas into a project (or back out of one, with null).
+ *
+ * 🔴 RETURNS WHETHER THE WRITE FOUND A ROW, AND THE FALSE CASE IS REAL. This is an UPDATE, and a
+ * front-door canvas is filed by an effect that can run BEFORE the first save has inserted the
+ * row — measured live 2026-08-30: the update matched nothing, said nothing, and the canvas stayed
+ * loose while its project's instructions never rode a single turn. The sidebar's drag callers may
+ * ignore the return (their rows exist by definition); the front-door effect retries on false.
+ */
+export async function setCanvasFolder(userId: string | null, id: string, folderId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const { data, error } = await supabase.from(TABLE).update({ folder_id: folderId }).eq("id", id).select("id");
   if (error && !isMissingTableError(error)) console.warn("[learn] move failed", error.message);
   emitCanvasesChanged();
+  return Array.isArray(data) && data.length > 0;
 }
 
 export async function listFolders(userId: string | null): Promise<Folder[]> {
@@ -397,6 +407,16 @@ export async function customizeFolder(
  * `loadMemory`: every problem (no folder, no row, table not migrated, network) returns null and
  * the turn proceeds exactly as it did before projects had instructions.
  */
+/** The `?folder=` riding the address bar, or null — browser only, and never a throw. */
+function folderFromLocation(): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return new URL(window.location.href).searchParams.get("folder");
+  } catch {
+    return null;
+  }
+}
+
 export async function loadProjectInstructions(
   userId: string | null,
   canvasId: string,
@@ -404,7 +424,14 @@ export async function loadProjectInstructions(
   if (!userId) return null;
   try {
     const { data: canvasRow } = await supabase.from(TABLE).select("folder_id").eq("id", canvasId).maybeSingle();
-    const folderId = (canvasRow as { folder_id?: string | null } | null)?.folder_id;
+    // 🔴 THE URL IS THE FALLBACK, FOR THE FIRST TURNS OF A FRONT-DOOR CANVAS. The row's own
+    // folder_id is the truth once the filing write lands, but that write races the first save
+    // (see the retry in learning-canvas.tsx), and the learner chose the project BEFORE the canvas
+    // existed — the choice rides the address bar as `?folder=`. Reading it here means the very
+    // first answer already follows the project's instructions. Same precedent as
+    // use-policy-runtime.ts, which also reads its own URL.
+    const folderId =
+      (canvasRow as { folder_id?: string | null } | null)?.folder_id ?? folderFromLocation();
     if (!folderId) return null;
     const { data: folder } = await supabase.from("folders").select("name,instructions").eq("id", folderId).maybeSingle();
     const row = folder as { name?: string | null; instructions?: string | null } | null;

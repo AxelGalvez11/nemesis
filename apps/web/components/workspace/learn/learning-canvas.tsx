@@ -828,15 +828,31 @@ export function LearningCanvas({
   //
   // 🔴 LATCHED ON THE ID, NOT ON A BOOLEAN. The canvas can be minted after this effect first runs,
   // so the latch has to say WHICH canvas was filed; a `true` would refuse to file the real one.
+  //
+  // 🔴🔴 AND IT RETRIES, BECAUSE THE WRITE IS AN UPDATE RACING THE FIRST INSERT. Measured live,
+  // 2026-08-30: a front-door canvas starts its first turn before its first save, so the filing
+  // update matched zero rows, reported nothing, and the canvas stayed loose — which also meant
+  // the project's standing instructions never rode a single turn. `setCanvasFolder` now says
+  // whether it found the row; a miss retries on a short backoff until the first save lands, and
+  // gives up quietly after ~30s, at which point the canvas is simply loose and draggable, which
+  // was always the failure trade this comment promised.
   const filedInto = useRef<string | null>(null);
   useEffect(() => {
     if (!openingFolder || !session.ready) return;
     if (!canvas.id || filedInto.current === canvas.id) return;
     filedInto.current = canvas.id;
-    // 🔴 NOT AWAITED AND NOT SURFACED. A canvas that opens is worth more than its filing; if the
-    // write fails the lesson still runs and the canvas is simply loose, which the learner can fix
-    // by dragging it. Blocking the opening on a filing write would be the wrong trade.
-    void setCanvasFolder(uid, canvas.id, openingFolder);
+    const id = canvas.id;
+    let cancelled = false;
+    const tryFile = (attempt: number) => {
+      void setCanvasFolder(uid, id, openingFolder).then((filed) => {
+        if (filed || cancelled || attempt >= 6) return;
+        window.setTimeout(() => tryFile(attempt + 1), 500 * 2 ** attempt);
+      });
+    };
+    tryFile(0);
+    return () => {
+      cancelled = true;
+    };
   }, [canvas.id, openingFolder, session.ready, uid]);
 
   converseRef.current = converse;

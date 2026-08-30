@@ -36,3 +36,25 @@ test("🔴 a turn is never lost to the folders table", () => {
   const fn = store.slice(store.indexOf("export async function loadProjectInstructions"));
   assert.match(fn, /catch \{\s*\n\s*return null;/, "a folders failure would throw into the turn");
 });
+
+// ── filing actually lands (the race measured live, 2026-08-30) ──────────────────────────────────
+
+test("🔴🔴 the filing write says whether it found a row, and the front door retries on a miss", () => {
+  // A front-door canvas starts its first turn before its first save, so a bare UPDATE matched
+  // zero rows, said nothing, and the canvas stayed loose — the project's instructions never rode.
+  const store = readFileSync(new URL("../../../lib/learn/canvas-store.ts", import.meta.url), "utf8");
+  const setter = store.slice(store.indexOf("export async function setCanvasFolder"));
+  assert.match(setter, /\.select\("id"\)/, "the filing write can no longer tell a miss from a landing");
+  assert.match(setter, /Promise<boolean>/, "the filing write stopped reporting whether it landed");
+  const canvas = readFileSync(new URL("../learn/learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(canvas, /if \(filed \|\| cancelled \|\| attempt >= 6\) return;/, "the front-door filing lost its retry");
+  assert.match(canvas, /500 \* 2 \*\* attempt/, "the retry lost its backoff");
+});
+
+test("🔴 the first turn reads the URL's folder as the fallback, so instructions ride from word one", () => {
+  const store = readFileSync(new URL("../../../lib/learn/canvas-store.ts", import.meta.url), "utf8");
+  assert.match(store, /\?\? folderFromLocation\(\)/, "the row read lost its URL fallback");
+  const helper = store.slice(store.indexOf("function folderFromLocation"));
+  assert.match(helper, /typeof window === "undefined"/, "the fallback would throw off the browser");
+  assert.match(helper, /searchParams\.get\("folder"\)/, "the fallback stopped reading ?folder=");
+});

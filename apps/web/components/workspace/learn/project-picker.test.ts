@@ -107,7 +107,10 @@ test("🔴🔴 a stray ?folder= never decides the surface", () => {
 });
 
 test("🔴 the canvas files itself once, through the same door dragging uses", () => {
-  assert.match(CANVAS, /setCanvasFolder\(uid, canvas\.id, openingFolder\)/, "the opening project is never applied");
+  // 2026-08-30: the call captures the id and RETRIES — the write is an update racing the first
+  // save, and a single fire-and-forget matched zero rows on a fresh canvas (measured live). The
+  // door is unchanged: still setCanvasFolder, the same write dragging uses.
+  assert.match(CANVAS, /setCanvasFolder\(uid, id, openingFolder\)/, "the opening project is never applied");
   // 🔴 LATCHED ON THE ID, NOT A BOOLEAN. The canvas can be minted after this effect first runs, so
   // a `true` latch would refuse to file the real one.
   assert.match(CANVAS, /const filedInto = useRef<string \| null>\(null\);/, "the latch stopped naming which canvas it filed");
