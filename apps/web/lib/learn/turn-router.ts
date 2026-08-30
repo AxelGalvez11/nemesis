@@ -510,6 +510,15 @@ export interface TurnContext {
    * model make it.
    */
   stagedPassage: string;
+  /**
+   * The learner's own open comments on the material, one line each, or empty.
+   *
+   * 🔴 THEIR WORDS VERBATIM, WITH THE SPOT NAMED. "Comment on four slides, then ask 'sort these
+   * out'" only works if the model can see what was said WHERE — a summary of the comments would
+   * be the model paraphrasing the learner to itself. Built by `commentsContextBlock`; resolved
+   * comments never appear, because a dealt-with note re-litigated on every turn is noise.
+   */
+  pinnedComments: string;
   /** Formatted live web results, when a search ran. Empty when it did not. */
   webContext: string;
   /**
@@ -1680,6 +1689,13 @@ export function stateBlock(context: TurnContext): string {
     lines.push(
       "The learner has highlighted this passage, so anything they say now is most likely about it:\n"
       + context.stagedPassage.trim(),
+    );
+  }
+  if (context.pinnedComments.trim()) {
+    lines.push(
+      "The learner has pinned comments on the material. When they mention their comments, notes or "
+      + "marks, these are what they mean — address the exact spots named:\n"
+      + context.pinnedComments.trim(),
     );
   }
   if (context.objectives > 0) {

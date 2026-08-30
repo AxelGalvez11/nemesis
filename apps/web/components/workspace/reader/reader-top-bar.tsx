@@ -72,8 +72,8 @@ export interface ReaderTopBarProps {
   /** Marking mode: drag a box on the page instead of selecting text. Absent for documents where a
    *  box cannot be cut out — a slide is a RECONSTRUCTION, so a crop of one would be a picture of
    *  our layout rather than of the deck. */
-  marking?: boolean;
-  onToggleMarking?: () => void;
+  commenting?: boolean;
+  onToggleCommenting?: () => void;
   /** What an AI action would act on right now, in words. */
   actionScope: string;
   onAction: (action: ReaderActionId) => void;
@@ -113,8 +113,8 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     onBack,
     railOpen,
     onToggleRail,
-    marking = false,
-    onToggleMarking,
+    commenting = false,
+    onToggleCommenting,
     actionScope,
     onAction,
     actionsDisabled,
@@ -271,20 +271,23 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </div>
       )}
 
-      {onToggleMarking && (
+      {onToggleCommenting && (
+        // 🔴 A MODE, NOT A MODIFIER KEY. The document's drag already means text selection; a comment
+        // needs the same drag. One drag cannot mean two things, so the learner chooses which the
+        // page is doing — the same argument the old mark-an-area toggle made, absorbed here.
         <button
-          aria-label={marking ? "Stop marking areas" : "Mark an area"}
-          aria-pressed={marking}
+          aria-label={commenting ? "Stop commenting" : "Comment on the document"}
+          aria-pressed={commenting}
           className={cn(
             "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
-            marking ? "bg-(--ui-action) text-(--ui-action-glyph)" : "text-(--ui-text-tertiary) hover:text-foreground",
+            commenting ? "bg-(--ui-action) text-(--ui-action-glyph)" : "text-(--ui-text-tertiary) hover:text-foreground",
           )}
-          data-testid="reader-mark-area"
-          onClick={onToggleMarking}
-          title={marking ? "Marking an area: drag a box on the page. Turn off to select text again." : "Mark an area to ask about"}
+          data-testid="reader-comment-mode"
+          onClick={onToggleCommenting}
+          title={commenting ? "Commenting: click a spot or drag a box. Turn off to select text again." : "Comment on the document"}
           type="button"
         >
-          <Codicon name="screen-full" size="0.85rem" />
+          <Codicon name="comment" size="0.85rem" />
         </button>
       )}
 

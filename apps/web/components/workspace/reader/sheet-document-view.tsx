@@ -156,7 +156,10 @@ function SheetGrid({
   const shown = rows.slice(0, limit);
 
   return (
-    <section className="flex min-w-0 flex-col gap-2" data-testid={`reader-sheet-${index}`} ref={setElement}>
+    // Comment anchors here are fractions of this section, which GROWS when "show more" draws more
+    // rows — a pin below the fold drifts with it. Stated rather than solved: the stable alternative
+    // (anchoring to a cell) can come when someone actually comments on row 4,000.
+    <section className="relative flex min-w-0 flex-col gap-2" data-testid={`reader-sheet-${index}`} ref={setElement}>
       <header className="flex items-baseline gap-2">
         <h3 className="text-sm font-semibold text-foreground">{sheet.name}</h3>
         <span className="text-[0.6875rem] text-(--ui-text-tertiary)">

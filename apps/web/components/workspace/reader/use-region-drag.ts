@@ -36,10 +36,20 @@ const MIN_SIDE = 0.015;
 export function useRegionDrag({
   enabled,
   onPicked,
+  onPoint,
   target,
 }: {
   enabled: boolean;
   onPicked: (region: RegionBox, anchor: RegionAnchor) => void;
+  /**
+   * A release too small to be a box, as the point it was.
+   *
+   * 🔴 ABSENT MEANS DISCARDED, which is what every box-only caller has always wanted — a stray
+   * click is not a selection. The comment layer is the caller that wants both: there, a click IS
+   * the gesture ("click to comment, drag to draw a box"), and swallowing it would make the
+   * advertised gesture do nothing.
+   */
+  onPoint?: (point: { x: number; y: number }, anchor: RegionAnchor) => void;
   /** The element the box is measured against and drawn over. */
   target: RefObject<HTMLElement | null>;
 }) {
@@ -72,6 +82,16 @@ export function useRegionDrag({
       };
       if (region.width < MIN_SIDE || region.height < MIN_SIDE) {
         setDrag(null);
+        if (onPoint) {
+          const frame = target.current?.getBoundingClientRect();
+          const at = { x: x2, y: y2 };
+          onPoint(
+            at,
+            frame
+              ? { left: frame.left + at.x * frame.width, top: frame.top + at.y * frame.height, width: 0 }
+              : { left: 0, top: 0, width: 0 },
+          );
+        }
         return;
       }
       const frame = target.current?.getBoundingClientRect();
@@ -80,7 +100,7 @@ export function useRegionDrag({
         : { left: 0, top: 0, width: 0 };
       onPicked(region, anchor);
     },
-    [drag, onPicked, target],
+    [drag, onPicked, onPoint, target],
   );
 
   useEffect(() => {
