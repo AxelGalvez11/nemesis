@@ -115,8 +115,10 @@ test("the control sits alongside its siblings in the one control row", async () 
   // 🔴 `[\s\S]*?` BETWEEN THE CONTROLS, NOT `\s*`. `stripComments` here removes `//` lines but leaves
   // `{/* ... */}` blocks, and the row is documented with one — so a whitespace-only gap asserted a
   // formatting detail rather than the ordering, and failed on correct code.
-  const row = /<SourcesControl[\s\S]*?<MinimapControl[\s\S]*?<OptionsControl/.exec(header);
-  assert.ok(row, "MinimapControl is not in the header's control row beside Sources and Options");
+  // 2026-08-30: the row's tail is the one `⋯` (OptionsMenu) — view switch and read-aloud
+  // live inside it now, and Sources is conditional, but the ORDER of what renders is unchanged.
+  const row = /<SourcesControl[\s\S]*?<MinimapControl[\s\S]*?<OptionsMenu/.exec(header);
+  assert.ok(row, "MinimapControl is not in the header's control row beside Sources and the options menu");
 });
 
 test("MinimapControl receives a narrow slice, not the whole PolicyRuntime, through CanvasHeader", async () => {

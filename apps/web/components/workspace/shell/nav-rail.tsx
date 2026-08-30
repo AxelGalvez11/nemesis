@@ -25,7 +25,8 @@ import { PanelLeft } from "lucide-react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { NAV_ICON_PX } from "@/lib/workspace/sidebar-nav";
 import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
-import { navigationRootFor, navItemActive, SIDEBAR_NAV } from "@/lib/workspace/sidebar-nav";
+import { navigationRootFor, navItemActive, SIDEBAR_NAV, visibleNav } from "@/lib/workspace/sidebar-nav";
+import { useConnectedApps } from "./use-connected-apps";
 import { cn } from "@/lib/utils";
 
 /**
@@ -61,6 +62,10 @@ export function NavRail({ accountEmail, onExpand }: NavRailProps) {
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const navigationRoot = navigationRootFor(pathname);
+  // 🔴 THE SAME FILTER THE EXPANDED SIDEBAR APPLIES — owner 2026-08-30, "only show up when
+  // they are actually needed". See `visibleNav` for which rows are gated and why nothing
+  // becomes unreachable.
+  const connected = useConnectedApps();
 
   return (
     <nav
@@ -84,7 +89,7 @@ export function NavRail({ accountEmail, onExpand }: NavRailProps) {
       </RailButton>
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col items-center">
-        {SIDEBAR_NAV.map((item) => {
+        {visibleNav(SIDEBAR_NAV, connected).map((item) => {
           const destination = item.route ? `${navigationRoot}${item.route}` : null;
           const active = navItemActive(pathname, destination);
           return (

@@ -45,6 +45,39 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
 ];
 
+/**
+ * The destinations a given learner actually sees.
+ *
+ * 🔴 OWNER RULING, 2026-08-30: "Why are there so many icons in the top left? ... they should
+ * only show up when they are actually needed." Plugins and Calendar are the two rows that joined
+ * after the sidebar's shape was set, and they are the two that mean nothing until something is
+ * connected: a Plugins page with no connections is a settings screen wearing a destination's
+ * clothes, and a Calendar with no calendar behind it is an empty grid. So they appear WITH the
+ * first connection rather than before it.
+ *
+ * 🔴 NOTHING BECOMES UNREACHABLE, WHICH IS THE CONDITION FOR HIDING ANYTHING. The front
+ * door's "Connect apps" row is always present (#909) and is where a first connection is made;
+ * Plugins then appears for managing it, and Calendar once a calendar is among them. Hiding a
+ * door with no other way in is this codebase's most-repeated defect, so the other rows are not
+ * gated: New canvas, Library and Projects are the product itself.
+ *
+ * 🔴 THE CALENDAR TEST READS THE SLUG, AND THAT IS STRUCTURAL, NOT A KEYWORD LIST. The row IS
+ * the calendar destination; "does any connected app identify itself as a calendar" is the exact
+ * question, asked of an identifier chosen by the integration platform, not of subject matter.
+ */
+export function visibleNav(
+  nav: readonly NavItem[],
+  connected: readonly string[],
+): readonly NavItem[] {
+  return nav.filter((item) => {
+    if (item.id === "plugins") return connected.length > 0;
+    if (item.id === "calendar") {
+      return connected.some((slug) => slug.toLowerCase().includes("calendar"));
+    }
+    return true;
+  });
+}
+
 /** Dev-preview mounts the whole workspace under a prefix; a rail row must not navigate out of it. */
 export function navigationRootFor(pathname: string): string {
   return pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";

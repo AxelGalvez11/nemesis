@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { SIDEBAR_NAV } from "./sidebar-nav";
+import { SIDEBAR_NAV, visibleNav } from "./sidebar-nav";
 
 test("🔴 the plugins row wears the puzzle piece, and the rail icons carry the owner's tilt", () => {
   // Owner 2026-08-30, picking from four candidates drawn on the real row: `extensions`, with the
@@ -24,4 +24,35 @@ test("🔴 the plugins row wears the puzzle piece, and the rail icons carry the 
   const gate = css.slice(css.indexOf("@media (prefers-reduced-motion: no-preference)"), css.indexOf("@keyframes nav-icon-tilt"));
   assert.match(gate, /\.nav-icon-tilt[\s\S]*?animation: nav-icon-tilt/, "the tilt fires outside the reduced-motion gate, or not at all");
   assert.match(css, /@keyframes nav-icon-tilt/, "the tilt keyframes are gone");
+});
+
+// 🔴🔴 WHAT THIS FILE GUARDS — owner ruling, 2026-08-30: "Why are there so many icons in the top
+// left? ... they should only show up when they are actually needed." The two connection-borne
+// rows appear WITH the first connection; the product's own destinations are never gated, because
+// a hidden door with no other way in is this codebase's most-repeated defect.
+
+test("🔴 with nothing connected, Plugins and Calendar are not offered", () => {
+  const ids = visibleNav(SIDEBAR_NAV, []).map((item) => item.id);
+  assert.ok(!ids.includes("plugins"), "a Plugins page with no connections is a settings screen in a destination's clothes");
+  assert.ok(!ids.includes("calendar"), "a Calendar with nothing behind it is an empty grid");
+});
+
+test("🔴 the product's own destinations are NEVER gated", () => {
+  const ids = visibleNav(SIDEBAR_NAV, []).map((item) => item.id);
+  for (const core of ["new-canvas", "library", "projects"]) {
+    assert.ok(ids.includes(core), `${core} must be reachable before anything is connected`);
+  }
+});
+
+test("the first connection brings Plugins; a calendar brings Calendar", () => {
+  const drive = visibleNav(SIDEBAR_NAV, ["googledrive"]).map((item) => item.id);
+  assert.ok(drive.includes("plugins"), "a connected app has nowhere to be managed");
+  assert.ok(!drive.includes("calendar"), "Drive is not a calendar");
+  const both = visibleNav(SIDEBAR_NAV, ["googledrive", "GOOGLECALENDAR"]).map((item) => item.id);
+  assert.ok(both.includes("calendar"), "the slug test must be case-insensitive");
+});
+
+test("🔴 the filter passes rows through, never reorders or rewrites them", () => {
+  const all = visibleNav(SIDEBAR_NAV, ["googlecalendar"]);
+  assert.deepEqual(all, SIDEBAR_NAV, "with a calendar connected every row shows, in the shared order");
 });

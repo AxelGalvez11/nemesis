@@ -22,7 +22,7 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
-import { ConversationControl, MinimapControl, OptionsControl, SourcesControl, StyleControl } from "./canvas-controls";
+import { MinimapControl, OptionsMenu, SourcesControl } from "./canvas-controls";
 import { CourseMapControl } from "./course-map";
 import type { CanvasView } from "@/lib/learn/canvas-view";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
@@ -99,8 +99,8 @@ interface CanvasHeaderProps {
    * that something else has to read back out of it.
    *
    * 🔴 OPTIONAL, AND ABSENT MEANS NO CONTROL. A canvas with nothing recorded yet passes neither,
-   * and the row is then exactly what it is today — see `ConversationControl`'s own note on why an
-   * empty control is worse than none.
+   * and the menu simply has no view row — a row whose only message is that it has nothing to
+   * switch would be an empty control, which is worse than none.
    */
   view?: CanvasView;
   onToggleView?: () => void;
@@ -180,11 +180,18 @@ export function CanvasHeader({
               `grid-cols-[0fr]` note in canvas-audio-bar.tsx — so the canvas title keeps every pixel
               it has today and this row does not reflow when the audio ends. */}
           {replyAudio && <CanvasAudioBar audio={replyAudio} />}
-          {/* 🔴 FIRST OF THE GLYPHS, BECAUSE IT IS ABOUT THE PAGE ITSELF. Sources, the Minimap and
-              read-aloud all open onto something BESIDE the canvas; this one changes what the canvas
-              is showing, which makes it the one closest to the content. */}
-          {view && onToggleView && <ConversationControl onToggle={onToggleView} view={view} />}
-          <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onSendToChat={onSendToChat} outputTools={outputTools} />
+          {/* 🔴🔴 EVERY GLYPH ON THIS ROW NOW EARNS ITS PLACE — owner, 2026-08-30: "Why are
+              there so many icons? ... they should only show up when they are actually needed."
+              Sources appears once the panel has anything to say: an attached source, a made
+              output, or the model-knowledge disclosure a sourceless canvas owes (N10). A brand
+              new canvas shows a bare title and the `⋯`, and controls ARRIVE AND STAY as the
+              session earns them — appearing once is the Minimap's own precedent; what the owner
+              banned on 2026-08-19 was chrome that comes AND GOES. The view switch and read-aloud
+              moved INTO the `⋯` (see OptionsMenu), which is where his 2026-08-19 row kept
+              options in the first place. */}
+          {(canvas.sources.length > 0 || (canvas.outputs ?? []).length > 0 || modelKnowledge) && (
+            <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onSendToChat={onSendToChat} outputTools={outputTools} />
+          )}
           {/* 🔴🔴 THE MAP APPEARS ONLY WHERE THERE IS SOMETHING TO MAP — owner, 2026-08-24: "the map
               icon should only appear if there is a course active." On an ordinary conversation there
               is no plan, no territory worth narrowing and nothing to recommend from, so the panel
@@ -221,11 +228,10 @@ export function CanvasHeader({
               title={minimap.planTitle}
             />
           )}
-          <OptionsControl voice={voice} />
-          {/* 🔴 THE `⋯` RETURNS, WITH A MENU BEHIND IT AGAIN — see StyleControl's own header
-              for why its 2026-08-25 removal does not apply to a three-way preference. Last on the
-              row: it is about how the product behaves, not about this page. */}
-          <StyleControl />
+          {/* Last on the row: it is about how the product behaves, not about this page. The view
+              switch and read-aloud live inside it now — see OptionsMenu's own header for the
+              owner rulings that shaped this. */}
+          <OptionsMenu onToggleView={onToggleView} view={view} voice={voice} />
       </div>
     </>
   );

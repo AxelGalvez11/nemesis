@@ -120,7 +120,7 @@ export function useDismiss(open: boolean, close: () => void) {
 // scrolling underneath it. Every child therefore has to switch clicks back ON for itself, and the
 // exit `×` does so explicitly.
 //
-// This constant did not, and `OptionsControl` applies it directly — so the READ-ALOUD TOGGLE in the
+// This constant did not, and the read-aloud control applied it directly — so that toggle in the
 // canvas header could not be clicked at all. Measured in a browser on 2026-08-26: computed
 // `pointer-events: none`, `elementFromPoint` at its centre returning the strip instead of the
 // button. It looked correct, it hovered nothing, and it did nothing. `SourcesControl` and
@@ -1257,109 +1257,49 @@ function MenuItem({
  * its own, afterwards — a learner who left it on deserves to see that without opening anything.
  * Speaking, on-but-quiet and off are three distinct marks.
  */
+
+// ---------------------------------------------------------------- the options menu
+
 /**
- * The view switch: one answer at a time, or the whole conversation.
+ * The `⋯`: everything about HOW the canvas behaves, in one menu — the view switch, read-aloud,
+ * and the teaching style (Direct, Guided or Socratic, from `@nemesis/shared`'s
+ * `learning-style.ts`, which owns why style is a learner-chosen preference and never a mode).
  *
- * Owner, 2026-08-26: *"it shouldn't be a different mode. It should just be, like, a different view,
- * a different way to view outputs."*
+ * 🔴🔴 OWNER RULING, 2026-08-30: "Why are there so many icons? ... they should only show up
+ * when they are actually needed." The row had grown to six glyphs, and two of the six had
+ * prescribed their own removal: the view switch shipped saying "if the row is now too busy, THIS
+ * is the icon to move, not the feature to cut", and read-aloud only became its own glyph on
+ * 2026-08-25 because the menu behind the `⋯` had emptied to one row. The menu is a real menu
+ * again (the style picker gave it three rows on 2026-08-30), so both move IN, and the row
+ * returns to the shape the owner set on 2026-08-19: sources and outputs, progress, and a `⋯`
+ * for options — each of the first three appearing only when it has something to show.
  *
- * 🔴🔴 A FOURTH GLYPH IN A ROW THE OWNER HAD FIXED AT THREE, AND THAT IS A DELIBERATE, NAMED COST.
- * On 2026-08-19 he set this row himself — *"i only want icons for 'x' on left, 'source and outputs'
- * and 'progress' for the minimap"*, then *"add a '⋯' for options"*. A switch needs a control and a
- * control needs somewhere to live, so the later instruction wins over the earlier count; if the row
- * is now too busy, this is the icon to move, not the feature to cut.
+ * 🔴 WHAT THE GLYPH LOST BY MOVING IN, AND WHY THAT IS PAID FOR: the read-aloud button showed
+ * on/off without a click. Now the `⋯` TINTS whenever anything non-default is on (voice on, or a
+ * non-Direct style), the transport bar still appears whenever audio actually plays, and every
+ * answer keeps its own play button — so the states that matter stay visible, and only the
+ * quiet-idle distinction costs a click.
  *
- * 🔴 IT IS ABSENT UNTIL THERE IS A CONVERSATION TO READ, which is what keeps a fresh canvas exactly
- * as busy as it is today. The Minimap already sets this precedent for the same reason (owner: *"the
- * map icon should only appear if there is a course active"*) — a control whose only message is that
- * it has nothing to show is this codebase's most-repeated defect.
+ * 🔴 THE VIEW ROW'S WORDS NAME THE DESTINATION, never where you already are —
+ * `canvasViewAction` owns that wording, exactly as it did when the switch was a glyph.
  *
- * 🔴 ONE GLYPH, NOT TWO, AND `aria-pressed` CARRIES THE STATE. The label says what the NEXT CLICK
- * does; a button labelled with where you already are is indistinguishable from one labelled with
- * where it will take you. `canvasViewAction` owns that wording so the title and the accessible
- * name cannot drift apart.
- *
- * 🔴 THE ON STATE IS `--ui-action`, THE SAME TINT THE READ-ALOUD TOGGLE USES. Two toggles in one
- * row that signalled "on" differently would each have to be learned separately.
+ * 🔴 THE STYLE PREFERENCE IS THE STORAGE KEY, NOT THIS COMPONENT'S STATE. `canvas-chat.ts`
+ * reads `LEARNING_STYLE_STORAGE_KEY` fresh on every send, so the localStorage write IS the
+ * feature and the state here only paints the check mark — which moves ONLY after a write
+ * succeeds, because a check on a row that changed nothing is the dead control this codebase
+ * keeps re-filing.
  */
-export function ConversationControl({
-  onToggle,
+export function OptionsMenu({
+  onToggleView,
   view,
-}: {
-  onToggle: () => void;
-  view: CanvasView;
-}) {
-  const showingConversation = view === "conversation";
-  const action = canvasViewAction(view);
-
-  return (
-    <button
-      aria-label={action}
-      aria-pressed={showingConversation}
-      className={cn(CONTROL, showingConversation && "text-(--ui-action) hover:text-(--ui-action)")}
-      onClick={onToggle}
-      title={action}
-      type="button"
-    >
-      <Codicon name="comment-discussion" size="20px" />
-    </button>
-  );
-}
-
-export function OptionsControl({
   voice,
 }: {
-  /**
-   * 🔴 THE HOOK'S OWN TYPE, NOT A THIRD COPY OF IT. This shape was written out by hand here AND in
-   * the sibling that passes it through, so `useCanvasVoice` gaining a field left two hand-written
-   * copies to update and no compiler complaint when only one of them was.
-   */
+  /** Swap the one-answer view for the whole conversation. Absent until there is one to show. */
+  onToggleView?: () => void;
+  view?: CanvasView;
+  /** 🔴 THE HOOK'S OWN TYPE, NOT A COPY — see CanvasHeader's prop comment. */
   voice?: CanvasVoiceState["header"];
 }) {
-  if (!voice) return null;
-  const voiceOn = voice.mode === "on";
-
-  return (
-    <button
-      aria-label={voiceOn ? "Stop reading responses aloud" : "Read responses aloud"}
-      aria-pressed={voiceOn}
-      className={cn(CONTROL, voiceOn && "text-(--ui-action) hover:text-(--ui-action)")}
-      onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
-      title={voiceOn ? "Stop reading responses aloud" : "Read responses aloud"}
-      type="button"
-    >
-      <Codicon name={voice.speaking ? "unmute" : voiceOn ? "unmute" : "mute"} size="20px" />
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------- teaching style
-
-/**
- * The teaching-style picker: Direct, Guided or Socratic, from `@nemesis/shared`'s
- * `learning-style.ts` — which also owns why this is a learner-chosen preference and never a mode
- * the canvas infers.
- *
- * 🔴 THE `⋯` RETURNS BECAUSE IT HAS A MENU AGAIN. The owner asked for this glyph by name
- * (2026-08-19: "add a '⋯' for options"), and it was removed on 2026-08-25 only because everything
- * had moved out and ONE row was left behind it — this file's own rule, "a one-item menu is a
- * second click charged for nothing". A three-way preference is a real menu, so the glyph earns
- * its place back. Read-aloud stays where the removal put it: its glyph reports live state, which
- * a menu row cannot.
- *
- * 🔴 THE PREFERENCE IS THE STORAGE KEY, NOT THIS COMPONENT'S STATE. `canvas-chat.ts` reads
- * `LEARNING_STYLE_STORAGE_KEY` fresh on every send, so the localStorage write IS the feature and
- * the state here only paints the check mark. That is also why the check moves ONLY after a write
- * succeeds: storage can be denied wholesale, `canvas-chat` would then keep teaching Direct, and a
- * check mark on a row that changes nothing is the dead control this codebase keeps re-filing.
- * The header unmounting during a retrieval costs nothing for the same reason — the choice never
- * lived here.
- *
- * 🔴 THE GLYPH TINTS WHEN A NON-DEFAULT STYLE IS ON, the same signal read-aloud uses: a learner
- * who switched Socratic on yesterday deserves to see that without opening anything, because it
- * changes every answer they get today.
- */
-export function StyleControl() {
   const [open, setOpen] = useState(false);
   const [style, setStyle] = useState<LearningStyle>(DEFAULT_LEARNING_STYLE);
   const holder = useDismiss(open, () => setOpen(false));
@@ -1385,6 +1325,11 @@ export function StyleControl() {
     setOpen(false);
   };
 
+  const voiceOn = voice?.mode === "on";
+  // The row's words name the DESTINATION, never where you already are — `canvasViewAction` owns
+  // the wording so the label, the tooltip and a screen reader cannot drift apart.
+  const action = view && onToggleView ? canvasViewAction(view) : null;
+
   return (
     <div className="pointer-events-auto shrink-0" ref={holder}>
       <button
@@ -1392,7 +1337,7 @@ export function StyleControl() {
         aria-label="Options"
         className={cn(
           CONTROL,
-          style !== DEFAULT_LEARNING_STYLE && "text-(--ui-action) hover:text-(--ui-action)",
+          (voiceOn || style !== DEFAULT_LEARNING_STYLE) && "text-(--ui-action) hover:text-(--ui-action)",
         )}
         onClick={() => setOpen((current) => !current)}
         title="Options"
@@ -1403,7 +1348,27 @@ export function StyleControl() {
 
       {open && (
         <div className={cn(PANEL, "w-[17rem]")}>
-          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+          {action && onToggleView && (
+            <MenuItem
+              icon="comment-discussion"
+              label={action}
+              onClick={() => {
+                setOpen(false);
+                onToggleView();
+              }}
+            />
+          )}
+          {/* 🔴 A TOGGLE ROW STAYS OPEN ON CLICK: flipping a checkbox and having the menu
+              vanish reads as the menu misfiring, and the learner reopens it to check what
+              happened. Choosing a style CLOSES, because a radio choice is a completed errand. */}
+          {voice && (
+            <ToggleItem
+              checked={voiceOn}
+              label="Read responses aloud"
+              onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
+            />
+          )}
+          <p className="px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
             Teaching style
           </p>
           {LEARNING_STYLES.map((option) => (

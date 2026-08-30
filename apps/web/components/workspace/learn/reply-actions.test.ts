@@ -182,19 +182,18 @@ test("🔴🔴 the Canvas no longer asks which voice, and no longer asks how fas
 
 test("🔴🔴 the ONE voice decision left on the Canvas is autoplay", () => {
   // Owner: *"Canvas should have a simple option for: Automatically read responses aloud."*
-  // 🔴 THE ROW BECAME THE BUTTON (2026-08-25). Owner circled the `⋮` and asked for it gone; what
-  // the click revealed was this single toggle, so the toggle moved out and the menu went. The
-  // invariant is unchanged — autoplay is offered on the canvas — only its shape moved, so this
-  // matches the control rather than the menu row it used to be.
-  assert.match(CONTROLS, /aria-pressed=\{voiceOn\}/, "autoplay is not offered on the canvas");
-  assert.match(CONTROLS, /"Read responses aloud"/, "the control no longer says what it does");
-  // 🔴 SCOPED TO THE COMPONENT, because the canvas has a SECOND `⋮` — Session options, by the
-  // title — which the owner did not ask about and which is still a real menu. A file-wide search
-  // for the glyph reddens on that one, which my first version of this line did.
-  const control = CONTROLS.slice(CONTROLS.indexOf("export function OptionsControl"));
-  const body = control.slice(0, control.indexOf("\n}"));
-  assert.ok(!/kebab-vertical/.test(body), "the `⋮` is back on the read-aloud control");
-  assert.ok(!/useState/.test(body), "the read-aloud control grew a menu again");
+  // 🔴 THE BUTTON BECAME A ROW AGAIN (2026-08-30) — owner: "so many icons ... only show up
+  // when they are actually needed." It left the `⋯` menu on 2026-08-25 only because that menu
+  // had emptied to one row; the menu is real again (teaching style gave it three rows), so the
+  // toggle moved back in. The invariant is unchanged across BOTH moves — autoplay is offered on
+  // the canvas — only its shape moved, so this matches the menu row inside `OptionsMenu`.
+  const menu = CONTROLS.slice(CONTROLS.indexOf("export function OptionsMenu"));
+  assert.match(menu, /checked=\{voiceOn\}/, "autoplay is not offered on the canvas");
+  assert.match(menu, /"Read responses aloud"/, "the row no longer says what it does");
+  assert.match(menu, /voice\.onToggle\(voiceOn \? "off" : "on"\)/, "the row does not flip the mode");
+  // 🔴 AND THE ON STATE STAYS VISIBLE WITHOUT A CLICK: the `⋯` glyph tints when voice is on,
+  // which is what the standalone button's aria-pressed used to say from the row.
+  assert.match(menu, /voiceOn \|\| style !== DEFAULT_LEARNING_STYLE/, "an on state no longer lights the glyph");
   assert.match(VOICE_HOOK, /if \(mode !== "on"\) return;\n    replyAudio\.start\(reply\.text\)/, "autoplay does not start the audio");
 });
 
