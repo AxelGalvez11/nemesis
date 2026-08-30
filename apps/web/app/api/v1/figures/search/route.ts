@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
-import { supabaseAnonKey, supabaseUrl, serviceRoleKey } from "@/lib/env";
+import { searchShelf } from "@/lib/learn/figure-shelf-server";
+import type { FigureHit } from "@/lib/learn/textbook-figures";
 import { verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";
@@ -33,37 +33,7 @@ export const runtime = "nodejs";
 const DEFAULT_LIMIT = 4;
 const MAX_LIMIT = 12;
 
-/** 🔴 HIGHER THAN LIBRARY SEARCH'S 0.35 BECAUSE A WRONG PICTURE IS WORSE THAN NO PICTURE. A weak
- *  text match returns a paragraph the learner can judge and dismiss; a weak figure match puts a
- *  diagram of the wrong thing on screen under a caption that sounds right. §42's whole argument is
- *  that no picture beats a misleading one, so this errs toward returning nothing. */
-const MATCH_THRESHOLD = 0.45;
-
-export interface FigureHit {
-  id: string;
-  imageUrl: string;
-  caption: string;
-  alt: string;
-  bookTitle: string;
-  bookUrl: string;
-  /** Rendered under the image, verbatim. CC BY requires it wherever the picture appears. */
-  attribution: string;
-  licence: string;
-  chapterTitle: string;
-  similarity: number;
-}
-
-async function embedQuery(query: string): Promise<number[] | null> {
-  if (!supabaseUrl || !serviceRoleKey) return null;
-  const res = await fetch(`${supabaseUrl}/functions/v1/library-index/embed-query`, {
-    body: JSON.stringify({ query }),
-    headers: { Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" },
-    method: "POST",
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as { embedding?: unknown };
-  return Array.isArray(json.embedding) ? (json.embedding as number[]) : null;
-}
+export type { FigureHit };
 
 export async function POST(req: NextRequest) {
   const auth = await verifyBearer(req);
@@ -76,42 +46,13 @@ export async function POST(req: NextRequest) {
 
   // 🔴 EVERY FAILURE IS A 503 AND AN EMPTY SHELF, NEVER A 500. A canvas asking for a picture must
   // degrade to "no trustworthy figure exists" — which the ladder already renders honestly — rather
-  // than taking a teaching turn down with it.
-  let embedding: number[] | null = null;
-  try {
-    embedding = await embedQuery(concept);
-  } catch {
-    embedding = null;
-  }
-  if (!embedding) return NextResponse.json({ error: "figure search unavailable", figures: [] }, { status: 503 });
-
-  const client = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: req.headers.get("authorization") ?? "" } },
-  });
-
-  const { data, error } = await client.rpc("match_textbook_figures", {
-    match_count: limit,
-    match_threshold: MATCH_THRESHOLD,
-    query_embedding: embedding as unknown as string,
-  });
-
-  if (error) {
+  // than taking a teaching turn down with it. The embed-then-match pass lives in
+  // `figure-shelf-server.ts`, shared with the reference-image route so two thresholds and two row
+  // mappings cannot drift apart; null from it means the shelf could not be asked, which is the 503.
+  const figures = await searchShelf(concept, limit);
+  if (figures === null) {
     return NextResponse.json({ error: "figure search unavailable", figures: [] }, { status: 503 });
   }
-
-  const rows = (data ?? []) as Record<string, unknown>[];
-  const figures: FigureHit[] = rows.map((row) => ({
-    alt: String(row.alt ?? ""),
-    attribution: String(row.attribution ?? ""),
-    bookTitle: String(row.book_title ?? ""),
-    bookUrl: String(row.book_url ?? ""),
-    caption: String(row.caption ?? ""),
-    chapterTitle: String(row.chapter_title ?? ""),
-    id: String(row.id ?? ""),
-    imageUrl: String(row.image_url ?? ""),
-    licence: String(row.licence ?? ""),
-    similarity: Number(row.similarity ?? 0),
-  }));
 
   return NextResponse.json({ figures });
 }

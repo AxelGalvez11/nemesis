@@ -61,7 +61,18 @@ export async function GET(req: NextRequest) {
     .select("id,book_title,book_url,attribution,chapter_count,parts")
     .eq("book_url", book)
     .limit(1);
-  else if (search) query = query.ilike("book_title", `%${search}%`);
+  else if (search) {
+    // 🔴 WORD-WISE, BECAUSE A SUBJECT IS NOT A TITLE. "cell biology" as one phrase misses
+    // "Cell and Molecular Biology"; each word alone finds it, and the model ballot downstream is
+    // what filters the extra matches this lets in. Words are letters and digits only, so nothing a
+    // caller types can smuggle PostgREST filter syntax into the .or() expression; course-shaped
+    // filler words are dropped so "intro to biology" searches for biology, not for every
+    // introduction on the shelf.
+    const FILLER = new Set(["course", "courses", "class", "intro", "introduction", "basics", "beginner", "beginners", "learn", "learning", "the", "and", "for"]);
+    const words = (search.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).filter((word) => !FILLER.has(word)).slice(0, 6);
+    if (words.length === 0) query = query.ilike("book_title", `%${search}%`);
+    else query = query.or(words.map((word) => `book_title.ilike.%${word}%`).join(","));
+  }
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ courses: [], error: "course list unavailable" }, { status: 503 });

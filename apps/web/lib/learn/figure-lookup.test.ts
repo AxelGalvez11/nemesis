@@ -95,3 +95,31 @@ test("a refused subject strips any model-written asset even though nothing repla
   ) as { blocks: Array<{ visual: Record<string, unknown> }> };
   assert.equal("asset" in out.blocks[0]!.visual, false);
 });
+
+// ── the token, since the route stopped being an open door ───────────────────────────────────────
+
+function capturingRoute(token: (() => Promise<string | null>) | undefined) {
+  const seen: { authorization?: string } = {};
+  const deps: FigureLookupDeps = {
+    fetch: (async (_url: unknown, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      seen.authorization = headers.Authorization;
+      return { json: async () => ({ results: [{ detail: "", ok: false, reason: "no-candidates" }] }), ok: true, status: 200 } as unknown as Response;
+    }) as unknown as typeof globalThis.fetch,
+    ...(token ? { token } : {}),
+  };
+  return { deps, seen };
+}
+
+test("🔴 the session's token rides the request, because the route now requires one", async () => {
+  const { deps, seen } = capturingRoute(async () => "session-token-1");
+  await resolveFigures(LESSON, deps);
+  assert.equal(seen.authorization, "Bearer session-token-1");
+});
+
+test("no token degrades to a plain request, never a throw — the route answers 401 and the prose survives", async () => {
+  const { deps, seen } = capturingRoute(async () => null);
+  const out = await resolveFigures(LESSON, deps);
+  assert.equal(seen.authorization, undefined);
+  assert.equal(typeof out, "string");
+});

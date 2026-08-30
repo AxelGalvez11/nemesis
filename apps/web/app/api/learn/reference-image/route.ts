@@ -9,12 +9,14 @@
 // 🔴 THE LICENCE DECISION IS MADE HERE, ONCE, BY `chooseAsset`. What crosses back is the chosen
 // candidate with its licence and credit attached — or a named refusal. A caller cannot ask this
 // route for an arbitrary URL, and no repository response reaches a client unfiltered.
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
+import { searchShelf } from "@/lib/learn/figure-shelf-server";
 import { findReferenceImages } from "@/lib/learn/reference-images";
 import { REFERENCE_REGISTRY } from "@/lib/learn/reference-registry";
 import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
 import { chooseAsset } from "@/lib/learn/visual-provenance";
+import { verifyBearer } from "@/lib/server";
 
 /**
  * Hand-picked rows first, then the harvested shelf — `searchCurated` sorts by match score and
@@ -46,7 +48,14 @@ async function repositoryFetch(url: string) {
   return { json: () => response.json() as Promise<unknown>, ok: response.ok, status: response.status };
 }
 
-export async function POST(request: Request): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  // 🔴 SIGNED-IN CALLERS ONLY, SINCE THE SHELF JOINED THE POOL. This route used to cost two
+  // free repository queries; a shelf lookup costs a paid embedding per subject, and an open route
+  // that spends money per request is a bill somebody else decides the size of. `figure-lookup.ts`
+  // sends the session's own token; a caller without one loses the pictures, never the prose.
+  const auth = await verifyBearer(request);
+  if (!auth) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   let body: unknown;
   try {
     body = await request.json();
@@ -70,7 +79,13 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
       const candidates = await findReferenceImages(
         { concept: subject.trim(), limit: 4 },
-        { fetch: repositoryFetch, registry: CURATED },
+        {
+          fetch: repositoryFetch,
+          registry: CURATED,
+          // A shelf outage reads as an empty shelf here: the turn cannot use a 503, only a picture
+          // or the ladder's honest refusal. The search route keeps the distinction for monitoring.
+          shelfSearch: async (concept, limit) => (await searchShelf(concept, limit)) ?? [],
+        },
       );
       const choice = chooseAsset({ accuracyBearing: false, candidates });
       // 🔴 ONLY THE FIELDS THE SPEC CARRIES CROSS BACK. The provider objects hold tags and provider
