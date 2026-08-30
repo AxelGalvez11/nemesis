@@ -18,7 +18,19 @@ test("🔴🔴 every key is Composio's toolkit slug, verbatim", () => {
   const keys = CONNECTABLE_APPS.map((app) => app.key);
   assert.deepEqual(
     keys,
-    ["googledrive", "one_drive", "gmail", "googlecalendar", "outlook", "googledocs", "googlesheets", "notion", "zoom"],
+    [
+      "canvas",
+      "google_classroom",
+      "googledrive",
+      "one_drive",
+      "gmail",
+      "googlecalendar",
+      "outlook",
+      "googledocs",
+      "googlesheets",
+      "notion",
+      "zoom",
+    ],
     "an app key changed; re-check it against Composio's toolkit slug before editing this",
   );
   // A slug is lowercase with underscores. An uppercase or hyphenated key never matches.
@@ -29,6 +41,8 @@ test("🔴🔴 every offered app has an auth config id under a derived env name"
   // `connectTo` reads `COMPOSIO_AUTH_${key.toUpperCase()}`. This asserts the derivation is what
   // deployment is told to set, so a new app cannot ship with its variable named by guesswork.
   const expected = [
+    "COMPOSIO_AUTH_CANVAS",
+    "COMPOSIO_AUTH_GOOGLE_CLASSROOM",
     "COMPOSIO_AUTH_GOOGLEDRIVE",
     "COMPOSIO_AUTH_ONE_DRIVE",
     "COMPOSIO_AUTH_GMAIL",
@@ -49,6 +63,9 @@ test("🔴 Outlook carries a calendar and Google splits it in two", () => {
   assert.ok(hasCalendar(["googlecalendar"]), "Google Calendar stopped counting as a calendar");
   assert.ok(!hasCalendar(["gmail"]), "Gmail is not a calendar");
   assert.ok(!hasCalendar(["googledrive", "notion", "zoom"]), "a file store is not a calendar");
+  // 🔴 AND AN LMS IS NOT ONE EITHER, however many due dates it knows about. The Calendar row is a
+  // destination showing a calendar; coursework dates reach the learner through the canvas.
+  assert.ok(!hasCalendar(["canvas", "google_classroom"]), "an LMS now claims to be a calendar");
   assert.ok(!hasCalendar([]), "nothing connected cannot be a calendar");
 });
 
@@ -62,6 +79,7 @@ test("🔴🔴 the offered list is closed", () => {
   // arbitrary slug cannot be turned into an OAuth redirect.
   assert.ok(isOffered("gmail"));
   assert.ok(isOffered("one_drive"));
+  assert.ok(isOffered("canvas") && isOffered("google_classroom"));
   assert.ok(!isOffered("stripe"), "an unoffered app can now be connected");
   assert.ok(!isOffered(""), "an empty slug is offered");
   // 🔴 STRICT ABOUT CASE, DELIBERATELY, AND UNLIKE `hasCalendar`. This one authorises; the other
@@ -117,7 +135,7 @@ test("🔴 every app appears exactly once, under its own heading", () => {
   assert.equal(new Set(shown).size, shown.length, "an app is listed under two headings");
   assert.deepEqual(
     grouped.map((section) => section.label),
-    ["Files", "Mail and dates", "Notes and documents", "Lectures"],
+    ["Coursework", "Files", "Mail and dates", "Notes and documents", "Lectures"],
     "the headings or their order changed",
   );
 });

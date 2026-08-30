@@ -202,17 +202,18 @@ function roundRobin(perApp: readonly (readonly ComposioTool[])[], limit: number)
  *
  * 🔴 `CATALOGUE_LIMIT` IS NOT A BUDGET, IT IS "THE WHOLE TOOLKIT". Ranking cannot be done on a
  * truncated list, which is the defect described above. Measured against the live catalogue on
- * 2026-08-30: the nine offered apps return 51, 43, 36, 35, 32, 28, 28, 23 and 17 rows, every one
- * of them a single page.
+ * 2026-08-30: the eleven offered apps return 87, 51, 43, 36, 35, 32, 31, 28, 28, 23 and 17 rows,
+ * every one of them a single page. Canvas at 87 is the closest to this number; an app that needs
+ * more than one page would be ranked on a truncated list, which is the whole defect again.
  *
  * 🔴 `TOTAL_TOOL_LIMIT` IS SET SO EVERY OFFERED APP CONNECTED AT ONCE STILL CLEARS FOUR ACTIONS
- * EACH. Nine apps × 4 = 36, which fits in 40. That relationship is the whole reason for the
- * number, so `composio-door.test.ts` asserts it rather than leaving it as a comment: offering a
- * tenth app without raising this would quietly drop the floor to three, and nothing on screen
- * would say so.
+ * EACH. Eleven apps × 4 = 44, which fits in 48. That relationship is the whole reason for the
+ * number, so `composio-door.test.ts` asserts it rather than leaving it as a comment, and it has
+ * already done its job once: adding the two coursework apps reddened that test at 40, which is
+ * exactly the "quietly drop everyone's share to three" it was written to catch.
  */
 const CATALOGUE_LIMIT = 100;
-const TOTAL_TOOL_LIMIT = 40;
+const TOTAL_TOOL_LIMIT = 48;
 
 interface ComposioTool {
   readonly action: string;
