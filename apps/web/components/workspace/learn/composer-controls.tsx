@@ -35,9 +35,12 @@ export function ComposerSend({
   disabled = false,
   label,
   onClick,
+  className,
 }: {
   /** A send already in flight. Shows the spinner and refuses a second press. */
   busy?: boolean;
+  /** Extra placement classes. The start screen puts this control on a grid; nothing else needs it. */
+  className?: string;
   /** Nothing to send yet. */
   disabled?: boolean;
   /** "Send", "Start", or "Submit answer" — what pressing it does HERE, for a screen reader. */
@@ -50,6 +53,7 @@ export function ComposerSend({
       className={cn(
         "ml-[8px] flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full",
         "bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90 disabled:opacity-40",
+        className,
       )}
       disabled={busy || disabled}
       onClick={onClick}

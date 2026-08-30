@@ -133,3 +133,29 @@ test("the measurements are committed, not just applied", () => {
   assert.match(DOC, /paragraph → paragraph \| \*\*16\*\*/);
   assert.match(DOC, /The width already matched exactly/);
 });
+
+test("🔴🔴 the start screen's composer is the tall one, the canvas keeps the short one", () => {
+  // Owner 2026-08-29, pointing at ChatGPT's Work mode: *"I want our composer to look better. I mean,
+  // bigger like that one."* Measured there the same day at 1176px: 768 x 128, radius 28, the words
+  // on their own line 15px down and 18px in, the controls on a 36px row along the bottom. Ours was
+  // already 768 x 52 at radius 28 with the identical three shadow layers — the ONLY difference was
+  // one row against two.
+  assert.match(GLOBALS, /--composer-tall-height: 128px;/, "the measured tall height is gone");
+  assert.match(GLOBALS, /--composer-min-height: 52px;/, "the short composer lost its measured height");
+  assert.match(HOME, /min-h-\[var\(--composer-tall-height\)\]/, "the start screen stopped using the tall composer");
+  assert.match(HOME, /\[grid-template-areas:'chip_text_text_text''add_\._mic_send'\]/, "the two-row placement is gone");
+  // 🔴 THE CANVAS IS DELIBERATELY NOT TALL. The reference is short inside a conversation too, and
+  // 128px there costs 76px of the answer on every screen. Owner's own choice, 2026-08-29.
+  assert.ok(!/--composer-tall-height/.test(COMPOSER), "the canvas composer went tall, which eats the answer");
+  assert.match(COMPOSER, /min-h-\[var\(--composer-min-height\)\]/, "the canvas composer lost its height");
+
+  // 🔴🔴 AND IT FOLDS BEFORE IT IS MEASURED. The pill travels down and the route swaps under it; a
+  // 128px pill measured, then replaced by the canvas's 52px one, lands 76px low and pops on the one
+  // seam the whole handoff exists to hide. `setDeparting` must come BEFORE the rectangle is read.
+  const send = HOME.slice(HOME.indexOf("const still = window.matchMedia"), HOME.indexOf("DOCK_MS);"));
+  const fold = send.indexOf("setDeparting(true)");
+  const measure = send.indexOf("box.getBoundingClientRect()");
+  assert.ok(fold >= 0 && measure >= 0, "the send routine no longer folds or no longer measures");
+  assert.ok(fold < measure, "the composer is measured before it folds, so the travel aims 76px too low");
+  assert.match(send, /requestAnimationFrame\(/, "the fold is not given a frame to take effect before measuring");
+});

@@ -263,6 +263,17 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
       router.push(href);
       return;
     }
+    // 🔴🔴 FOLD FIRST, THEN MEASURE. The start screen's pill is two rows and 128px tall; the canvas
+    // composer it becomes is one row and 52px. Measuring before the fold aims the travel with a
+    // rectangle 76px taller than the one that actually lands, so the pill would stop 76px low and
+    // the swap would show it jump. Setting `departing` collapses it to the one-row form, and the
+    // rectangle read on the next frame is the one it will arrive with.
+    //
+    // 🔴 THE TRANSFORM IS APPLIED ON THIS SAME COMMIT WITH `travel` STILL AT ZERO, WHICH IS WHY THE
+    // FOLD IS FREE. `translate3d(0,0,0)` is where the pill already is, so the frame that changes
+    // its shape moves it nowhere; the journey starts on the frame after, when `travel` lands.
+    setDeparting(true);
+    requestAnimationFrame(() => {
     const rect = box.getBoundingClientRect();
     // 🔴🔴 THE SURFACE, NOT THE VIEWPORT, AND THAT DISTINCTION WAS THE WHOLE GLITCH. Both halves of
     // this handoff aim at a centre, and they were aiming at two different ones. This page measured
@@ -296,8 +307,8 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         k: (DOCK_SIZE * DOCK_CENTRE_SCALE) / GREETER_SIZE,
       });
     }
-    setDeparting(true);
     window.setTimeout(() => router.push(href), DOCK_MS);
+    });
   };
 
   /**
@@ -536,7 +547,37 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               ))}
             </AttachmentRow>
           )}
-          <div className="flex min-h-[var(--composer-min-height)] items-center gap-0 px-[var(--composer-pad-x)]">
+          {/* 🔴🔴 TWO ROWS ON THE START SCREEN, ONE ROW EVERYWHERE ELSE (owner 2026-08-29: *"I want
+              our composer to look better. I mean, bigger like that one"*, pointing at ChatGPT's
+              Work mode). Measured there the same day: 768 x 128, the words on their own line 15px
+              down and 18px in, the controls on a 36px row along the bottom. The canvas keeps the
+              52px row — the reference is short there too, and 128px inside a conversation costs
+              76px of the answer on every screen.
+
+              🔴 IT FOLDS BACK TO ONE ROW THE INSTANT THE SEND STARTS, AND THAT IS LOAD-BEARING.
+              This pill travels down and the route swaps under it; the canvas's own composer is
+              52px. A 128px pill replaced by a 52px one at the end of the journey is a 76px pop on
+              the one seam the whole handoff sequence exists to make invisible. Folding at the START
+              of the 320ms travel, while the greeting is fading and everything is already moving,
+              is the same change made where nobody is looking — and it lets `start()` measure the
+              rectangle it will actually land with. See `start`.
+
+              🔴 GRID, NOT REORDERED JSX. The children are unchanged and in the same order; only
+              their placement moves. `grid-area` is inert inside a flex container, so the one-row
+              form needs no undoing and the two forms cannot drift apart. */}
+          <div
+            className={cn(
+              "gap-0 px-[var(--composer-pad-x)]",
+              departing
+                ? "flex min-h-[var(--composer-min-height)] items-center"
+                : cn(
+                    "grid min-h-[var(--composer-tall-height)]",
+                    "grid-cols-[auto_1fr_auto_auto] grid-rows-[1fr_var(--composer-control)]",
+                    "[grid-template-areas:'chip_text_text_text''add_._mic_send']",
+                    "pt-[var(--composer-tall-pad-top)] pb-[var(--composer-tall-pad-bottom)]",
+                  ),
+            )}
+          >
           {/* 🔴 A REAL FILE INPUT, NOT A BUTTON THAT ROUTES. `sr-only`, never `hidden`: a hidden
               input leaves the tab order and the accessibility tree, which makes the label wrapping
               it unreachable by keyboard — the same rule the session composer's attach control
@@ -568,7 +609,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
               The capability row STAGES and starts nothing — §38's rule that a capability is a
               declaration, never a mode. */}
-          <div className="relative shrink-0" ref={addMenu}>
+          <div className="relative shrink-0 self-end [grid-area:add]" ref={addMenu}>
             <button
               aria-expanded={addOpen}
               aria-haspopup="menu"
@@ -631,7 +672,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   the session composer's chip uses, because it is the same declaration one screen
                   earlier. Always-visible ×: a hover-only dismiss does not exist on touch. */}
               {capability && (
-                <div className="ml-[var(--composer-pad-x)] flex shrink-0 items-center gap-[6px] text-(--ui-action)">
+                <div className="ml-[10px] flex shrink-0 items-center gap-[6px] self-start text-(--ui-action) [grid-area:chip]">
                   <Codicon className="shrink-0" name={CAPABILITY_COPY[capability].icon} size="1rem" />
                   {/* §46.3-exempt: shares the input's own line — 16px is the iOS-zoom threshold
                       the input itself documents, and the label must not drift from it. */}
@@ -657,7 +698,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 // literal for the same reason.
                 // 8px after the control, matching the reference's gap — it was 12, which pushed the
                 // caret 4px further from the `+` than the `+` sits from the pill's own edge.
-                className="ml-[var(--composer-pad-x)] min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                className={cn(
+                  "min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
+                  // 🔴 10px, NOT 8. The control row is inset by `--composer-pad-x` (8px) because
+                  // that is where the reference puts its buttons; its TEXT is 18px in. 8 + 10 = 18.
+                  departing ? "ml-[var(--composer-pad-x)]" : "ml-[10px] h-[26px] self-start leading-[26px] [grid-area:text]",
+                )}
                 onChange={(event) => {
                   setText(event.target.value);
                   typedBefore.current = event.target.value;
@@ -674,7 +720,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               {dictation.supported && (
                 <button
                   aria-label="Dictate"
-                  className="flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+                  className="flex size-[var(--composer-control)] shrink-0 items-center justify-center self-end rounded-full text-(--ui-text-primary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) [grid-area:mic]"
                   onClick={startDictation}
                   title="Dictate"
                   type="button"
@@ -692,6 +738,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   session composer's own rule, held here so the `&cap=` can only ever ride beside
                   a real `?ask=`. */}
               <ComposerSend
+                className="self-end [grid-area:send]"
                 disabled={capability ? !text.trim() : !text.trim() && staged.length === 0}
                 label="Start"
                 onClick={start}

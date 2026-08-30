@@ -122,8 +122,8 @@ export function SidebarPanelLabel({ children }: { children: React.ReactNode }) {
     // scaffolding by colour and weight alone. This was 12px, which is a size below anything else
     // in the rail and read as fine print rather than as a quiet heading. Keeping the tertiary
     // grey is what stops 14px from competing with the titles.
-    <span className="flex min-w-0 items-center gap-2 pl-2 text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-tertiary)">
-      <span className="min-w-0 truncate leading-none">{children}</span>
+    <span className="flex min-w-0 items-center gap-2 pl-[16px] text-[length:var(--canvas-text-small)] leading-[20px] font-medium text-(--sidebar-heading)">
+      <span className="min-w-0 truncate leading-[20px]">{children}</span>
     </span>
   );
 }
@@ -148,7 +148,11 @@ const rowInset = cn(rowPadX, rowGap, "flex h-full min-w-0 items-center self-stre
 /* Session titles read at full text color (owner 2026-08-05: "the text on
    sidebar is gray") — hierarchy comes from the quiet section labels, not
    from dimming every row. */
-const rowLabel = "min-w-0 truncate text-[length:var(--canvas-text-small)] leading-none text-foreground";
+/* 🔴 AN EXPLICIT 20px LINE, NOT `leading-none`. The reference sets 14/400/20 on every sidebar row;
+   `leading-none` computes to 14px here, and a 14px line inside a 36px row leaves the text sitting
+   a pixel high against the icon beside it. Explicit px because one rem is 18px in this app — see
+   the rem note in globals.css. Measured on chatgpt.com 2026-08-29. */
+const rowLabel = "min-w-0 truncate text-[length:var(--canvas-text-small)] leading-[20px] text-foreground";
 
 /** Codicon size in sidebar row leads. */
 export const SIDEBAR_LEAD_ICON_SIZE = "0.875rem" as const;
@@ -226,7 +230,7 @@ export function SidebarSectionHeader({
   );
 
   return (
-    <div className={cn("group/section flex shrink-0 items-center justify-between gap-1 pb-1 pt-1.5", className)}>
+    <div className={cn("group/section flex h-[32px] shrink-0 items-center justify-between gap-1 py-[6px]", className)}>
       {collapsible ? (
         <button
           className="group/section-label flex w-fit items-center gap-1 bg-transparent text-left leading-none"

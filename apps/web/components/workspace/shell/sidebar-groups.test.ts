@@ -111,6 +111,62 @@ test("🔴 the section label is 14px — the size measured off the reference, no
   // comments before any of these guards run, so a comment anchor always slices from nothing.
   const label = PRIMITIVES.slice(at(PRIMITIVES, "export function SidebarPanelLabel"), at(PRIMITIVES, "export const countLabel"));
   assert.match(label, /text-\[length:var\(--canvas-text-small\)\]/, "the section label left the measured size");
-  assert.match(label, /text-\(--ui-text-tertiary\)/, "the label lost the grey that keeps 14px from competing with the row titles");
+  // 🔴 REPOINTED 2026-08-29 FROM `--ui-text-tertiary` TO `--sidebar-heading`, AND THE REASON IS THE
+  // GROUND. `--ui-text-tertiary` is #0d0d0d at 45% ALPHA, which composites to rgb(147,147,147) on
+  // white and to something else on every other surface — and the sidebar's ground is not white. The
+  // reference's headings are a flat rgb(143,143,143), so the measured value is a COLOUR, not a
+  // transparency. The invariant is unchanged and is what is still asserted: the label is the same
+  // size as the rows and is held back to scaffolding by colour and weight alone.
+  assert.match(label, /text-\(--sidebar-heading\)/, "the label lost the grey that keeps 14px from competing with the row titles");
+  assert.match(label, /font-medium/, "the label lost the weight that pairs with the grey");
   assert.ok(!/uppercase|tracking-/.test(label), "the label went back to shouting");
+  // 🔴 AND IT IS A REAL COLOUR IN BOTH THEMES. A token declared once, in light only, is the classic
+  // unreadable-in-dark defect: the light grey would simply carry over onto the dark ground.
+  const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /--sidebar-heading: rgb\(143, 143, 143\);/, "the measured light grey is gone");
+  assert.match(css, /:root\[data-theme='dark'\][\s\S]*?--sidebar-heading: rgb\(/, "the heading grey has no dark value");
+});
+
+test("🔴🔴 a folder row is drawn exactly like a canvas row — only the icon tells them apart", () => {
+  // Owner 2026-08-29: *"the sidebar kinda just looks like it's too bolded, especially the pages"*.
+  // The folder row carried `font-medium` AND `--ui-text-secondary`: heavier than the canvases under
+  // it and faded at the same time, which is the two ways of standing out cancelling each other out.
+  // Measured on chatgpt.com the same day: a project row and a chat row are both 14px / weight 400 /
+  // rgb(13,13,13), identical, told apart by the glyph alone.
+  // 🔴 THE TWO ROWS ARE COMPARED TO EACH OTHER, NOT TO A REMEMBERED CLASS LIST. "Folders look like
+  // canvases" is the invariant; naming the classes would pass the day someone restyled both.
+  // 🔴 `canvasRow` IS DEFINED FIRST IN THE FILE. The first version of this guard sliced folderRow →
+  // canvasRow and got an empty string, which made every negative assertion pass for free.
+  const canvases = readFileSync(new URL("./sidebar-canvases.tsx", import.meta.url), "utf8");
+  const rowClass = (name: string) => {
+    const from = canvases.indexOf(`const ${name} =`);
+    assert.ok(from >= 0, `${name} is gone`);
+    const body = canvases.slice(from, from + 4000);
+    // The literal itself, wherever it sits: the canvas row's is inside a `cn(...)` on its own line
+    // while the folder row's is a bare `className=`, so anchoring on `className=` reads only one.
+    const m = body.match(/"[^"]*rounded-\[var\(--nav-row-radius\)\] border border-transparent[^"]*"/);
+    assert.ok(m, `${name} no longer has a row class this guard can read`);
+    return m![0];
+  };
+  const folder = rowClass("folderRow"), canvas = rowClass("canvasRow");
+  // Hover variants are excluded: they are behaviour, not the resting typography this is about.
+  const typography = (c: string) =>
+    c.split(/\s+/).filter((k) => !k.startsWith("hover:"))
+      .filter((k) => /^(font-\w+|text-\(--[\w-]+\)|text-foreground|text-\[length:var\([^)]*\)\])$/.test(k)).sort();
+  assert.deepEqual(typography(folder), typography(canvas), "a folder row is drawn differently from a canvas row");
+  assert.ok(!/font-medium/.test(folder), "a folder row is bolder than the canvases under it again");
+  assert.ok(!/text-\(--ui-text-secondary\)/.test(folder), "a folder row is faded again, which is the other half of the same fault");
+  assert.match(folder, /text-foreground/, "a folder row lost the full-strength ink the canvases use");
+});
+
+test("🔴 the sidebar's rows and headings carry the reference's own line height, in pixels", () => {
+  // 🔴 EXPLICIT px, NEVER A REM UTILITY. One rem is 18px in this app (`html { font-size: 112.5% }`),
+  // so `leading-5` renders 22.5px and every rem-named class is 12.5% larger than its name. The
+  // reference sets 14/400/20 on rows and 14/500/20 on headings; `leading-none` computed to 14px,
+  // which sat the text a pixel high against the icon beside it inside a 36px row.
+  assert.match(PRIMITIVES, /const rowLabel = "[^"]*leading-\[20px\]/, "the row label left the measured 20px line");
+  assert.ok(!/const rowLabel = "[^"]*leading-none/.test(PRIMITIVES), "the row label went back to leading-none");
+  const label = PRIMITIVES.slice(at(PRIMITIVES, "export function SidebarPanelLabel"), at(PRIMITIVES, "export const countLabel"));
+  assert.match(label, /leading-\[20px\]/, "the section heading left the measured 20px line");
+  assert.match(label, /pl-\[16px\]/, "the heading no longer aligns with the row text at 16px in");
 });
