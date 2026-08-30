@@ -31,6 +31,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
+import { connectionStatus, NOT_CONFIGURED } from "@/lib/workspace/composio-client";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
@@ -206,6 +207,16 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     void listFolders(userId).then((rows) => { if (alive) setFolders(rows); });
     return () => { alive = false; };
   }, [userId]);
+  /** What the row below the composer shows about connected apps. Read once, same as the folders. */
+  const [connections, setConnections] = useState(NOT_CONFIGURED);
+  useEffect(() => {
+    let alive = true;
+    // 🔴 A FAILED READ IS "NOTHING CONNECTED", NOT AN ERROR. Without a key on the server this
+    // reports `configured: false`, which is a normal state for a fresh deployment — see
+    // `composio-client.ts`. The row simply offers to connect.
+    void connectionStatus().then((status) => { if (alive) setConnections(status); }, () => {});
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     if (!addOpen) return;
     const onPointer = (event: PointerEvent) => {
@@ -830,7 +841,10 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               if (made) setFolders((rows) => [...rows, made]);
               return made?.id ?? null;
             }}
-            shown={!departing && !recording && (text.trim().length > 0 || staged.length > 0)}
+            apps={connections.apps}
+            connected={connections.connected}
+            onOpenApps={() => router.push("/settings?panel=connections")}
+            shown={!departing && !recording}
             value={project}
           />
           <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">

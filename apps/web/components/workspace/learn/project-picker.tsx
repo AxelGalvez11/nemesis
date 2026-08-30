@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/lib/learn/canvas-store";
+import type { ConnectableApp } from "@/lib/workspace/composio-client";
 
 import { ADD_MENU } from "./add-menu-row";
 
@@ -46,7 +47,7 @@ import { ADD_MENU } from "./add-menu-row";
 // 🔴 24px, NOT 20. The reference insets its BAR by 20 and then its button by another 4 inside that;
 // what a learner sees is the control 24px from the composer's left edge. One padding here says the
 // same thing with one number instead of two.
-const BAR = "mt-0 flex h-[44px] w-full max-w-[var(--composer-max-width)] items-center gap-[12px] px-[24px]";
+const BAR = "mt-0 flex h-[44px] w-full max-w-[var(--composer-max-width)] items-center gap-[8px] px-[24px]";
 const CONTROL =
   "flex h-[36px] items-center gap-[6px] rounded-[12px] pl-[9px] pr-[12px] " +
   "text-[length:var(--canvas-text-small)] leading-[20px] transition-colors";
@@ -59,11 +60,66 @@ export interface ProjectPickerProps {
   onChange: (folderId: string | null) => void;
   /** Make a new project and file into it. Resolves to its id, or null if it could not be made. */
   onCreate: (name: string) => Promise<string | null>;
-  /** Hidden until the learner has something to send — the reference does the same. */
+  /** Every app the server offers, and which of them this learner has connected. */
+  apps: readonly ConnectableApp[];
+  connected: readonly string[];
+  /** Where "Connect apps" goes — Settings owns connecting; this row only reports the state. */
+  onOpenApps: () => void;
+  /**
+   * Hidden only while the composer is doing something else — flying out on a send, or replaced by
+   * the recorder.
+   *
+   * 🔴 IT USED TO WAIT FOR TYPED TEXT, AND THAT WAS MY ERROR, NOT A CHOICE. I checked the reference
+   * before its draft had loaded, concluded the row appears only once you type, and built that.
+   * Re-checked 2026-08-30 with the composer genuinely empty: the row is there, with the placeholder
+   * still showing. Owner the same day: *"ChatGPT has that lower thing below the composer and ours
+   * doesn't"*. A control that hides until you type is a control nobody discovers.
+   */
   shown: boolean;
 }
 
-export function ProjectPicker({ folders, value, onChange, onCreate, shown }: ProjectPickerProps) {
+/**
+ * The marks for the four apps a learner can connect.
+ *
+ * 🔴 OUR OWN ICON VOCABULARY, NOT BRAND LOGOS. The reference stacks the real Google marks here; our
+ * connection data (`/api/composio`) carries a key, a label and a sentence and no artwork at all, and
+ * inventing four brand logos would mean shipping someone else's assets to match a screenshot. The
+ * codicon set is what every other mark in this product is drawn from, so these read as part of the
+ * app rather than as a pasted-in row.
+ */
+const APP_MARK: Record<string, string> = {
+  googledrive: "cloud",
+  gmail: "mail",
+  googlecalendar: "calendar",
+  googledocs: "file",
+};
+const FALLBACK_MARK = "plug";
+
+function ConnectedApps({ apps, connected, onOpen }: { apps: readonly ConnectableApp[]; connected: readonly string[]; onOpen: () => void }) {
+  const on = apps.filter((a) => connected.includes(a.key));
+  return (
+    <button
+      className={cn(CONTROL, "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)")}
+      onClick={onOpen}
+      title={on.length > 0 ? `Connected: ${on.map((a) => a.label).join(", ")}` : "Connect your apps"}
+      type="button"
+    >
+      <Codicon className="shrink-0" name="plug" size="1rem" />
+      <span>{on.length > 0 ? "Apps" : "Connect apps"}</span>
+      {on.length > 0 && (
+        // 🔴 SPACED, NOT STACKED. The reference overlaps its logos by 8px, which reads as a pile of
+        // distinct brand colours; the same overlap on four monochrome glyphs is a smudge.
+        <span className="ml-[2px] flex shrink-0 items-center gap-[5px]">
+          {on.slice(0, 4).map((a) => (
+            <Codicon className="text-(--ui-text-secondary)" key={a.key} name={APP_MARK[a.key] ?? FALLBACK_MARK} size="1.125rem" />
+          ))}
+        </span>
+      )}
+    </button>
+  );
+}
+
+export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps, connected, onOpenApps }: ProjectPickerProps) {
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState("");
@@ -185,6 +241,10 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown }: Pro
           </div>
         )}
       </div>
+      {/* 🔴 8px APART, WHICH IS THE REFERENCE'S OWN GAP. Its project control ends at 147 and its
+          Plugins control starts at 155. Ours is a flex gap rather than a fixed x, because our
+          project label grows with the chosen name and theirs does not. */}
+      <ConnectedApps apps={apps} connected={connected} onOpen={onOpenApps} />
     </div>
   );
 }
