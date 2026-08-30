@@ -1032,6 +1032,23 @@ const DECISION_CONTRACT = [
   + "\"for $0 < r < \\pi/2$, $z$ rises to $1$\", not one pair of $ around the whole sentence. "
   + "A sentence inside $ … $ typesets as one run of italics with every word jammed together.",
   "",
+  // 🔴 THE FENCE IS THE OWNER'S OWN ORDER, 2026-08-30: "flow charts, diagrams, graphs, mind maps
+  // in chat. Like, that's literally all I want." It rides the PROSE, not the visuals array —
+  // canvas-visual.ts still refuses Mermaid inside a typed payload, because there it would be
+  // renderer syntax where a validator expects meaning. In prose it is rendered, parse-gated, and
+  // a fence that fails to parse simply shows as code, so the worst a bad diagram costs is its own
+  // text. The size cap and the plain-quoted-labels rule are what keep the drawings readable: a
+  // forty-node mermaid graph lays out as spaghetti, and HTML in a label is stripped by the
+  // renderer's strict mode anyway.
+  "The canvas also draws fenced mermaid blocks in your answer. When structure reads better drawn "
+  + "than said, write a ```mermaid fence: flowchart TD for steps and decisions, mindmap for how "
+  + "a subject branches, sequenceDiagram for exchanges over time, stateDiagram-v2 for states, "
+  + "pie for shares of a whole. Always use one when the learner asks for a flow chart, diagram, "
+  + "mind map or similar. Keep a diagram under about fifteen nodes, write labels as short plain "
+  + 'text in double quotes (no HTML, no LaTeX inside labels), and let the prose still carry the '
+  + "explanation. The typed \"visuals\" array is unchanged and still preferred for everything it "
+  + "covers: plots and bar charts with real numbers, mechanisms, structures, anatomy, figures.",
+  "",
   '"then" is what happens to the canvas:',
   // 🔴🔴 "reply" IS NOW THE TEACHING LANE, ON THE OWNER'S ORDER (2026-08-24), AND THE SENTENCE
   // ABOVE USED TO SAY THE OPPOSITE. It read "ordinary questions the learner just wants answered",

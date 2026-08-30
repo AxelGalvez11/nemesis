@@ -993,3 +993,13 @@ test("🔴🔴 curriculumFor is IN the JSON shape, not only in the prose — the
   assert.match(packet, /"checkFigure": "nephron" \| null/, "checkFigure left the decision shape");
   assert.match(packet, /"visuals": \[\{"kind"/, "visuals is no longer shown filled in");
 });
+
+test("🔴 the contract offers the mermaid fence for prose diagrams, and keeps the visuals array preferred", () => {
+  // Owner, 2026-08-30: "flow charts, diagrams, graphs, mind maps in chat." The fence is prose-side
+  // and parse-gated; the typed visuals stay the lane for anything with numbers or accuracy behind
+  // it, and the contract must keep SAYING so or the fence will eat the validated kinds.
+  const packet = turnRouterMessages({ context: EMPTY, utterance: "hello" }).map((m) => m.content).join("\n");
+  assert.match(packet, /```mermaid/, "the fence left the contract — the model has no idea chat can draw it");
+  assert.match(packet, /flowchart TD/, "the fence guidance lost its diagram families");
+  assert.match(packet, /visuals" array is unchanged and still preferred/, "the typed visuals lost their preference over the fence");
+});
