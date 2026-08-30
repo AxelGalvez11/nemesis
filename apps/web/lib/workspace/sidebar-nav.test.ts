@@ -49,6 +49,24 @@ test("🔴 the product's own destinations are NEVER gated", () => {
   }
 });
 
+test("🔴 Outlook is a calendar, and the slug does not say so", () => {
+  // The defect: the gate was `slug.toLowerCase().includes("calendar")`. Outlook is ONE toolkit
+  // carrying mail and nine event actions, so a student whose entire timetable was connected got
+  // false and never saw the destination that shows it. Half the universities in the world put
+  // their students on Microsoft, so this was not an edge case.
+  const ids = visibleNav(SIDEBAR_NAV, ["outlook"]).map((item) => item.id);
+  assert.ok(ids.includes("calendar"), "a Microsoft student's timetable no longer reveals the Calendar row");
+  assert.ok(ids.includes("plugins"), "a connection no longer reveals Plugins");
+});
+
+test("🔴 a file store is still not a calendar", () => {
+  // The fix must not have become "anything connected shows the Calendar row", which would put an
+  // empty grid behind a destination again.
+  const ids = visibleNav(SIDEBAR_NAV, ["one_drive", "notion", "zoom"]).map((item) => item.id);
+  assert.ok(!ids.includes("calendar"), "an app with no calendar now reveals the Calendar row");
+  assert.ok(ids.includes("plugins"), "three connections did not reveal Plugins");
+});
+
 test("the first connection brings Plugins; a calendar brings Calendar", () => {
   const drive = visibleNav(SIDEBAR_NAV, ["googledrive"]).map((item) => item.id);
   assert.ok(drive.includes("plugins"), "a connected app has nowhere to be managed");

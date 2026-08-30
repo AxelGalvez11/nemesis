@@ -28,37 +28,19 @@
 import type { NextRequest } from "next/server";
 
 import { heldForApproval, pendingActionResult, riskOf, summarise } from "@/lib/workspace/composio-actions";
+import { CONNECTABLE_APPS as APPS, isOffered, labelFor } from "@/lib/workspace/composio-apps";
 import { verifyBearer } from "@/lib/server";
 
 const COMPOSIO_BASE = "https://backend.composio.dev/api/v3";
 const TIMEOUT_MS = 20_000;
 
-/**
- * The apps a learner may connect, and what each is FOR.
- *
- * 🔴 A CLOSED LIST, AND THAT IS DELIBERATE. Composio brokers hundreds of apps; offering all of
- * them turns a study tool into an integrations directory, and every extra app is another OAuth
- * consent screen a student clicks through without reading. Owner's pick for the first three:
- * "my lectures, my school mail, my deadlines", which is one Google sign-in for all three.
- */
-const APPS = [
-  { detail: "Read lecture slides and notes you already keep there.", key: "googledrive", label: "Google Drive" },
-  { detail: "Read your school mail, including the syllabus nobody forwards twice.", key: "gmail", label: "Gmail" },
-  { detail: "See what is due, and put dates you mention on the calendar.", key: "googlecalendar", label: "Google Calendar" },
-  // Added 2026-08-24 at the owner's request, after they created its auth config. Reading a shared
-  // set of class notes is the same act as reading a lecture slide, so it costs no new safety
-  // thinking — `riskOf` classifies by verb and has never known which app it was looking at.
-  { detail: "Read notes and essays you keep there, including ones shared with you.", key: "googledocs", label: "Google Docs" },
-] as const;
-
-type AppKey = (typeof APPS)[number]["key"];
+// 🔴 THE OFFERED LIST MOVED TO `lib/workspace/composio-apps.ts` AND DID NOT GROW LOOSER. It is
+// still closed and `connectTo` still refuses anything outside it; what changed is that the
+// sidebar needs the same facts to decide whether a learner has a calendar, and two copies of that
+// answer drift. See the header of that file for why a slug substring could not carry it.
 
 function apiKey(): string {
   return process.env.COMPOSIO_API_KEY ?? "";
-}
-
-function labelFor(key: string): string {
-  return APPS.find((app) => app.key === key)?.label ?? key;
 }
 
 async function composio(path: string, init: RequestInit = {}): Promise<Response> {
@@ -128,10 +110,28 @@ async function statusFor(uid: string): Promise<Response> {
  * names are accepted, and ANY failure at any level yields an empty list. An empty list means the
  * model is offered no Composio tools and the chat behaves exactly as it did before this existed.
  *
- * 🔴 READS ARE PREFERRED WHEN THE LIST IS TRIMMED. A toolkit can carry fifty actions; offering all
- * of them to the model on every turn is a context cost paid forever and makes every other tool
- * harder to pick. The cap keeps reads first because those are the ones that run without
- * interrupting the learner for a confirmation.
+ * ── HOW THE BUDGET IS SPENT, AND THE TWO WAYS IT USED TO BE SPENT WRONGLY ──────────────────────
+ *
+ * A toolkit carries dozens of actions and offering all of them on every turn is a context cost
+ * paid forever, so there is a cap. Both of the following were live defects, found by reading real
+ * catalogue responses rather than by reasoning about the code:
+ *
+ * 🔴🔴 THE PER-APP LIMIT USED TO TRUNCATE **BEFORE** THE READS-FIRST SORT, SO IT CUT
+ * ALPHABETICALLY. It asked each app for 12 rows and sorted afterwards, and Composio returns rows
+ * in slug order. Notion has 13 read actions; that request returned three of them, all beginning
+ * `NOTION_FETCH_B…`, and `NOTION_SEARCH_NOTION_PAGE` never reached the model at all. The single
+ * most useful thing a student can do with their notes was unreachable, and nothing looked broken:
+ * the model simply never knew the action existed and said it could not search Notion.
+ *
+ * So the whole toolkit is fetched and ranked HERE. Measured: the largest offered app returns 51
+ * rows and every one of the nine fits in a single page, so this costs one request either way.
+ *
+ * 🔴🔴 AND THE TOTAL USED TO BE A GLOBAL CUT, WHICH STARVED WHOEVER SORTED LAST. Reads from every
+ * app went into one list, sorted, and sliced at 24. Drive alone offers 19 reads and Gmail 11, so
+ * two apps could fill the budget outright and a learner with four apps connected would find that
+ * Nemesis could not see their calendar. It was not that the calendar failed; it was never offered.
+ * Round-robin instead: each app contributes its best action, then its second, and so on. With the
+ * total set so every offered app fits, each connected app is guaranteed a real share.
  */
 async function toolsFor(uid: string): Promise<Response> {
   try {
@@ -143,29 +143,76 @@ async function toolsFor(uid: string): Promise<Response> {
       .map((item) => item.toolkit?.slug ?? "")
       .filter((slug) => APPS.some((app) => app.key === slug));
 
-    const tools: ComposioTool[] = [];
-    for (const slug of connected) {
-      const listed = await composio(`/tools?toolkit_slug=${encodeURIComponent(slug)}&limit=${PER_APP_LIMIT}`);
-      if (!listed.ok) continue;
-      const body = (await listed.json()) as { items?: unknown[]; data?: unknown[] };
-      const rows = Array.isArray(body.items) ? body.items : Array.isArray(body.data) ? body.data : [];
-      for (const row of rows) {
-        const tool = readTool(row, slug);
-        if (tool) tools.push(tool);
-      }
-    }
-
-    // Reads first, then writes, then cut. See the header.
-    tools.sort((a, b) => Number(riskOf(a.action) === "write") - Number(riskOf(b.action) === "write"));
-    return Response.json({ tools: tools.slice(0, TOTAL_TOOL_LIMIT) });
+    // 🔴 IN PARALLEL, AND EACH ONE CATCHES ITS OWN FAILURE. Sequentially this was one round trip
+    // per connected app in front of the first model call of every canvas turn, which is a latency
+    // tax that grows with each app offered. And a single unreachable app must not silence the
+    // rest: `Promise.all` over throwing calls would turn one provider's outage into "Nemesis
+    // cannot see any of your apps", so the failure is contained to the app that had it.
+    const perApp = await Promise.all(connected.map((slug) => catalogueFor(slug)));
+    return Response.json({ tools: roundRobin(perApp, TOTAL_TOOL_LIMIT) });
   } catch {
     return Response.json({ tools: [] });
   }
 }
 
-/** The most actions offered from any one app, and in total. Both are context budget, not policy. */
-const PER_APP_LIMIT = 12;
-const TOTAL_TOOL_LIMIT = 24;
+/** One app's actions, best first. Empty when that app cannot be reached, never a throw. */
+async function catalogueFor(slug: string): Promise<ComposioTool[]> {
+  try {
+    const listed = await composio(`/tools?toolkit_slug=${encodeURIComponent(slug)}&limit=${CATALOGUE_LIMIT}`);
+    if (!listed.ok) return [];
+    const body = (await listed.json()) as { items?: unknown[]; data?: unknown[] };
+    const rows = Array.isArray(body.items) ? body.items : Array.isArray(body.data) ? body.data : [];
+    const tools: ComposioTool[] = [];
+    for (const row of rows) {
+      const tool = readTool(row, slug);
+      if (tool) tools.push(tool);
+    }
+    // 🔴 READS FIRST, AND WITHIN THE APP RATHER THAN ACROSS ALL OF THEM. A read is the action that
+    // runs without interrupting the learner for a confirmation, so it is the one worth spending
+    // budget on. Ranking here is what makes the cut below a cut of the LEAST useful actions.
+    tools.sort((a, b) => Number(riskOf(a.action) === "write") - Number(riskOf(b.action) === "write"));
+    return tools;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Take from every app in turn until the budget is spent.
+ *
+ * 🔴 THE POINT IS THE FLOOR, NOT THE ORDER. Any app with `n` actions to offer contributes at
+ * least `min(n, floor(limit / apps))` of them, so no connected app can be squeezed out by a
+ * larger one sitting earlier in the list.
+ */
+function roundRobin(perApp: readonly (readonly ComposioTool[])[], limit: number): ComposioTool[] {
+  const out: ComposioTool[] = [];
+  const deepest = perApp.reduce((most, list) => Math.max(most, list.length), 0);
+  for (let rank = 0; rank < deepest && out.length < limit; rank += 1) {
+    for (const list of perApp) {
+      if (out.length >= limit) break;
+      const tool = list[rank];
+      if (tool) out.push(tool);
+    }
+  }
+  return out;
+}
+
+/**
+ * How many rows to ask one app for, and how many actions may be offered in total.
+ *
+ * 🔴 `CATALOGUE_LIMIT` IS NOT A BUDGET, IT IS "THE WHOLE TOOLKIT". Ranking cannot be done on a
+ * truncated list, which is the defect described above. Measured against the live catalogue on
+ * 2026-08-30: the nine offered apps return 51, 43, 36, 35, 32, 28, 28, 23 and 17 rows, every one
+ * of them a single page.
+ *
+ * 🔴 `TOTAL_TOOL_LIMIT` IS SET SO EVERY OFFERED APP CONNECTED AT ONCE STILL CLEARS FOUR ACTIONS
+ * EACH. Nine apps × 4 = 36, which fits in 40. That relationship is the whole reason for the
+ * number, so `composio-door.test.ts` asserts it rather than leaving it as a comment: offering a
+ * tenth app without raising this would quietly drop the floor to three, and nothing on screen
+ * would say so.
+ */
+const CATALOGUE_LIMIT = 100;
+const TOTAL_TOOL_LIMIT = 40;
 
 interface ComposioTool {
   readonly action: string;
@@ -196,7 +243,7 @@ function readTool(row: unknown, app: string): ComposioTool | null {
 
 /** Start an OAuth connection. Returns the URL the learner is sent to. */
 async function connectTo(uid: string, app: string): Promise<Response> {
-  if (!APPS.some((entry) => entry.key === app)) {
+  if (!isOffered(app)) {
     return Response.json({ error: "That app is not offered." }, { status: 400 });
   }
   const res = await composio("/connected_accounts", {

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { CONNECTABLE_APPS } from "@/lib/workspace/composio-apps";
+
+import { AWAITING_MARK } from "./marks";
+
 // The icon lane, guarded the way `plugins-page.test.ts` guards layout: by reading source rather
 // than rendering it (this app has no DOM test harness; see that file's own header for why). This
 // file is the counterpart for `plugin-icon.tsx` and `marks/`, the module that replaced the old
@@ -56,18 +60,33 @@ test("the icon guard is reading real files", () => {
 
 // ── One: every app the route offers has a drawn mark ─────────────────────────────────────────────
 
-test("🔴 every app slug in the composio route's closed list has a real mark", () => {
-  const slugs = [...ROUTE.matchAll(/key:\s*"([a-z0-9]+)"/g)]
-    .map((match) => match[1])
-    .filter((slug): slug is string => Boolean(slug));
-  assert.ok(slugs.length >= 4, `expected at least 4 app slugs in the route, found ${slugs.length}`);
+test("🔴 every offered app is accounted for: a real mark, or a listed decision to wait", () => {
+  // 🔴 THE SLUGS ARE IMPORTED, NOT SCRAPED OUT OF THE ROUTE'S TEXT. This read
+  // `/key:\s*"([a-z0-9]+)"/` over route.ts, which broke twice over in one change: the list moved
+  // to `composio-apps.ts`, so it matched nothing and the guard passed vacuously until the
+  // length check caught it; and that character class has no underscore, so `one_drive` would
+  // never have matched even in place. A guard that reads the real export cannot drift from it.
+  const slugs = CONNECTABLE_APPS.map((app) => app.key);
+  assert.ok(slugs.length >= 4, `expected at least 4 offered apps, found ${slugs.length}`);
+
+  // 🔴 THE REQUIREMENT IS A DECISION, NOT A DRAWING. An app may ship on the letter tile, but it
+  // has to be named in `AWAITING_MARK` to do so, so a new app cannot land on the fallback because
+  // nobody looked. See that constant for why hand-drawing the missing ones is the wrong answer.
   for (const slug of slugs) {
-    assert.match(
-      marksIndexCode,
-      new RegExp(`\\b${slug}:\\s*\\w+Mark\\b`),
-      `"${slug}" is offered by /api/composio but marks/index.ts gives it no mark`,
+    const drawn = new RegExp(`\\b${slug}:\\s*\\w+Mark\\b`).test(marksIndexCode);
+    const waiting = AWAITING_MARK.includes(slug);
+    assert.ok(
+      drawn || waiting,
+      `"${slug}" is offered by /api/composio but has no mark and is not listed in AWAITING_MARK. ` +
+        "Add a real mark, or add it to that list and say why.",
     );
-    assert.ok(slug in MARK_FILES, `"${slug}" has no marks/*-mark.tsx source file loaded by this test`);
+    assert.ok(!(drawn && waiting), `"${slug}" both has a mark and claims to be waiting for one`);
+    if (drawn) assert.ok(slug in MARK_FILES, `"${slug}" has no marks/*-mark.tsx source file loaded by this test`);
+  }
+
+  // And nothing lingers on the waiting list after it stops being offered.
+  for (const slug of AWAITING_MARK) {
+    assert.ok(slugs.includes(slug), `"${slug}" is waiting for a mark but is no longer offered`);
   }
 });
 

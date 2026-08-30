@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { CONNECTABLE_APPS, isOffered } from "./composio-apps";
+
 // ── the door between the browser and a learner's real accounts (workstream E) ────────────────
 //
 // 🔴🔴🔴 EVERYTHING HERE IS A CLAIM ABOUT WHAT CANNOT HAPPEN. Composio brokers access to a
@@ -76,12 +78,63 @@ test("🔴 a write is held before any request leaves the machine", () => {
 });
 
 test("🔴🔴 the offered apps are a closed list", () => {
-  // Composio brokers hundreds of apps. Offering all of them turns a study tool into an
-  // integrations directory, and every extra app is another consent screen clicked unread.
-  assert.match(ROUTE, /if \(!APPS\.some\(\(entry\) => entry\.key === app\)\)/, "any app slug can now be connected");
+  // Composio brokers 1,431 toolkits. Offering all of them turns a study tool into an integrations
+  // directory, and every extra app is another consent screen clicked unread.
+  //
+  // 🔴 THE LIST MOVED TO `composio-apps.ts` AND THIS GUARD FOLLOWED IT RATHER THAN THINNING. The
+  // membership check is still pinned in the route, where the refusal happens; the CONTENTS are now
+  // asserted against the imported module, which is stronger than the old substring scan of the
+  // route text (that would have passed on the word "gmail" appearing in any comment).
+  assert.match(ROUTE, /if \(!isOffered\(app\)\) \{/, "the route stopped refusing unoffered apps");
+  assert.match(ROUTE, /return Response\.json\(\{ error: "That app is not offered\." \}, \{ status: 400 \}\)/);
   for (const app of ["googledrive", "gmail", "googlecalendar", "googledocs"]) {
-    assert.ok(ROUTE.includes(`"${app}"`), `${app} is no longer offered`);
+    assert.ok(isOffered(app), `${app} is no longer offered`);
   }
+  // And `isOffered` is a membership test over the list, not something that grew a wildcard.
+  assert.ok(!isOffered("stripe") && !isOffered("slack"), "the closed list stopped being closed");
+});
+
+test("🔴🔴 every connected app is guaranteed a real share of the tool budget", () => {
+  // The defect: reads from every app went into ONE list, sorted, and sliced at 24. Drive alone
+  // offers 19 reads and Gmail 11, so two apps could fill the budget and a learner with four
+  // connected would find Nemesis could not see their calendar. Nothing looked broken; the calendar
+  // tools were simply never offered to the model.
+  assert.match(ROUTE, /function roundRobin\(/, "the round-robin share was removed");
+  assert.match(ROUTE, /roundRobin\(perApp, TOTAL_TOOL_LIMIT\)/, "the tools are no longer shared out per app");
+  // 🔴 AND THE OLD GLOBAL CUT MUST NOT COME BACK. A sort across all apps followed by one slice is
+  // precisely the shape that starves whoever sorts last.
+  const tools = ROUTE.slice(ROUTE.indexOf("async function toolsFor"), ROUTE.indexOf("function readTool"));
+  assert.ok(!/tools\.slice\(0, TOTAL_TOOL_LIMIT\)/.test(tools), "the global cut came back");
+
+  // The floor is arithmetic, so it is checked as arithmetic: nine apps must still clear four each.
+  const limit = Number(/const TOTAL_TOOL_LIMIT = (\d+)/.exec(ROUTE)?.[1] ?? 0);
+  assert.ok(limit > 0, "TOTAL_TOOL_LIMIT is gone or unreadable");
+  assert.ok(
+    limit >= CONNECTABLE_APPS.length * 4,
+    `${CONNECTABLE_APPS.length} apps need a budget of at least ${CONNECTABLE_APPS.length * 4}, but it is ${limit}. ` +
+      "Adding an app without raising this quietly drops every app's share.",
+  );
+});
+
+test("🔴🔴 an app's actions are ranked before they are cut, never after", () => {
+  // The defect this pins shut: the per-app limit was 12 and the reads-first sort ran AFTERWARDS,
+  // so the cut was alphabetical. Notion has 13 read actions; that request returned three, all
+  // beginning NOTION_FETCH_B…, and NOTION_SEARCH_NOTION_PAGE never reached the model at all.
+  // Measured 2026-08-30 against the live catalogue.
+  const perApp = ROUTE.slice(ROUTE.indexOf("async function catalogueFor"), ROUTE.indexOf("function roundRobin"));
+  const fetchAt = perApp.indexOf("CATALOGUE_LIMIT");
+  const sortAt = perApp.indexOf(".sort(");
+  assert.ok(fetchAt > 0 && sortAt > fetchAt, "the ranking no longer happens after the whole toolkit is fetched");
+  // The fetch must ask for the whole toolkit, not a budget's worth. Largest offered app: 51 rows.
+  const limit = Number(/const CATALOGUE_LIMIT = (\d+)/.exec(ROUTE)?.[1] ?? 0);
+  assert.ok(limit >= 60, `CATALOGUE_LIMIT is ${limit}, which truncates the largest toolkit before it is ranked`);
+});
+
+test("🔴 one unreachable app does not silence the others", () => {
+  // `Promise.all` over throwing calls turns a single provider's outage into "Nemesis cannot see
+  // any of your apps". Each app's fetch contains its own failure and returns an empty list.
+  const perApp = ROUTE.slice(ROUTE.indexOf("async function catalogueFor"), ROUTE.indexOf("function roundRobin"));
+  assert.match(perApp, /catch \{\s*return \[\];\s*\}/, "an app's failure is no longer contained");
 });
 
 test("🔴 unconfigured answers 200 with a state, not an error", () => {

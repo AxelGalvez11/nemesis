@@ -134,6 +134,34 @@ const APP_LOGO: Record<string, string> = {
   googledocs: "/brand/google/docs.svg",
 };
 
+/**
+ * One app's 20px mark: its real logo where we have the file, its initial where we do not.
+ *
+ * 🔴🔴 THE FALLBACK EXISTS BECAUSE THE ROWS USED TO RENDER `src=""`, WHICH IS NOT "NO IMAGE". An
+ * `<img>` with an empty `src` resolves against the current document, so the browser re-requests
+ * the PAGE, decodes the HTML as an image, fails, and draws a broken-image glyph. It was invisible
+ * while every offered app happened to have a file; the moment one did not, every row without one
+ * would have shown a broken icon and issued a pointless full-page request.
+ *
+ * 🔴 THE STRIP ABOVE WAS ALREADY SAFE and is left alone: it maps to `APP_LOGO[a.key]` and then
+ * `.filter(Boolean)`, so an app with no file simply does not appear among the four. That is right
+ * for a decorative strip and wrong for a menu row, where the app must still be listed and
+ * connectable. Two different correct answers to the same missing file.
+ */
+function AppLogo({ app }: { app: ConnectableApp }) {
+  const src = APP_LOGO[app.key];
+  // eslint-disable-next-line @next/next/no-img-element
+  if (src) return <img alt="" className="size-[20px] shrink-0" height={20} src={src} width={20} />;
+  return (
+    <span
+      aria-hidden
+      className="flex size-[20px] shrink-0 items-center justify-center rounded-[5px] bg-(--ui-bg-tertiary) text-[length:var(--canvas-text-meta)] font-semibold text-(--ui-text-secondary)"
+    >
+      {app.label.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
 function ConnectedApps({ apps, connected, onOpen }: { apps: readonly ConnectableApp[]; connected: readonly string[]; onOpen: () => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -208,15 +236,14 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
       {open && (
         // The reference's apps menu: 240 wide, opening upward, rows of logo + name, a divider, and
         // one action at the bottom. Its search field is deliberately not copied — it filters a list
-        // of dozens of connectors; ours has four fixed rows, and a filter over four rows is theater.
+        // of dozens of connectors; ours has nine fixed rows, and a filter over nine rows is theater.
         <div className={cn(PANEL, "w-[240px]")} role="menu">
           {/* 🔴 A CONNECTED ROW IS STATUS, NOT A CONTROL. There is nothing per-conversation to
               toggle — a connection is account-wide — so drawing it as a button would be a control
               that does nothing, which §38 exists to ban. The check says "already yours". */}
           {on.map((a) => (
             <div className={cn(PANEL_ITEM, "mx-[6px] w-auto cursor-default hover:bg-transparent")} key={a.key}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img alt="" className="size-[20px] shrink-0" height={20} src={APP_LOGO[a.key] ?? ""} width={20} />
+              <AppLogo app={a} />
               <span className="min-w-0 truncate">{a.label}</span>
               <Codicon className="ml-auto shrink-0 text-(--ui-action)" name="check" size="0.875rem" />
             </div>
@@ -230,8 +257,7 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
               role="menuitem"
               type="button"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img alt="" className="size-[20px] shrink-0" height={20} src={APP_LOGO[a.key] ?? ""} width={20} />
+              <AppLogo app={a} />
               <span className="min-w-0 truncate">{a.label}</span>
               <span className="ml-auto shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
                 {busy === a.key ? "Opening…" : "Connect"}

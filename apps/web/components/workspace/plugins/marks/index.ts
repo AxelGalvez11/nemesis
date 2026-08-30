@@ -26,3 +26,25 @@ export const MARKS: Readonly<Record<string, BrandMark>> = {
   googledocs: GoogleDocsMark,
   googledrive: GoogleDriveMark,
 };
+
+/**
+ * Offered apps that are knowingly on the letter tile, and why each is still there.
+ *
+ * 🔴🔴 THIS LIST EXISTS SO THE GAP IS A DECISION RATHER THAN AN OVERSIGHT. `plugin-icon.test.ts`
+ * requires every app `/api/composio` offers to appear either here or in `MARKS`, so a tenth app
+ * cannot quietly ship on a letter tile because nobody looked. Being on this list is a statement
+ * that someone chose it.
+ *
+ * 🔴🔴 AND THE REASON IS NOT "NOBODY GOT AROUND TO IT". Drawing these by hand is the one approach
+ * this surface has already ruled out. The four marks above went through THREE rounds of redrawing
+ * by eye, each an honest improvement, all three rejected, and the resolution recorded in
+ * `plugin-icon.test.ts` was to stop approximating and reproduce the published geometry. The four
+ * Google files in `public/brand/google` came from Google's own CDN byte-for-byte under written
+ * provenance rules. Microsoft, Notion and Zoom publish their marks under their own brand terms,
+ * and each needs fetching and licence-checking the same way, which is the owner's call to make
+ * rather than something to approximate in the meantime.
+ *
+ * A letter tile is never blank and never wrong. A logo drawn from memory is wrong in a way nobody
+ * can name and everybody sees.
+ */
+export const AWAITING_MARK: readonly string[] = ["one_drive", "outlook", "googlesheets", "notion", "zoom"];
