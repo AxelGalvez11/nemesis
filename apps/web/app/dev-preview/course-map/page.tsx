@@ -2,9 +2,12 @@
 
 // DEV-ONLY PREVIEW — the course map, mounted for real.
 //
-// 🔴 THE REAL COMPONENT, REAL EVIDENCE, REAL DOCKING. `CourseMap` claims the side panel here exactly
-// as it does on a canvas, so what this page shows is the surface reflowing around it rather than a
-// picture of a panel. The plan and the evidence rows are fixtures; every class on them is shipped.
+// 🔴 THE REAL CONTROL, REAL EVIDENCE. `CourseMapControl` is the same component the canvas header
+// renders — glyph, box and all — so what this page shows is the panel as it ships rather than a
+// picture of one. The plan and the evidence rows are fixtures; every class on them is shipped.
+//
+// 🔴 REPOINTED 2026-08-29: it docked a 296px column down the right edge until the owner asked for
+// *"similar to source panel that is a squarish circlish type of box component"*.
 //
 // 🔴 WHY THIS PAGE EXISTS AT ALL: `session.coursePlan` comes from the session hook rather than from
 // the stored canvas, so a course canvas cannot be seeded through `localStorage` the way
@@ -16,7 +19,7 @@
 
 import { useState } from "react";
 
-import { CourseMap } from "@/components/workspace/learn/course-map";
+import { CourseMapControl } from "@/components/workspace/learn/course-map";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
@@ -86,7 +89,6 @@ const EVIDENCE: readonly LearnerEvidence[] = [
 
 export default function CourseMapPreviewPage() {
   const [field, setField] = useState<"thermo" | "law">("thermo");
-  const [open, setOpen] = useState(true);
   const [focused, setFocused] = useState<string | null>("Work and heat");
 
   const plan = field === "thermo" ? THERMO : LAW;
@@ -101,8 +103,8 @@ export default function CourseMapPreviewPage() {
               {title}
             </h1>
             <p className="text-[length:var(--canvas-text-body)] text-(--ui-text-secondary)">
-              The surface reflows around the docked map rather than being covered by it. Focused
-              section: {focused ?? "none"}.
+              The map is a box hanging off its own glyph, like the sources panel. Focused section:{" "}
+              {focused ?? "none"}.
             </p>
             <div className="flex flex-wrap gap-2">
               <button
@@ -112,25 +114,18 @@ export default function CourseMapPreviewPage() {
               >
                 Switch field
               </button>
-              <button
-                className="rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-[length:var(--canvas-text-small)] text-(--ui-text-primary)"
-                onClick={() => setOpen((was) => !was)}
-                type="button"
-              >
-                {open ? "Close the map" : "Open the map"}
-              </button>
             </div>
           </div>
-          {open && (
-            <CourseMap
+          <div className="mt-6 flex justify-end">
+            {/* The control draws its own glyph; press it to open the box. */}
+            <CourseMapControl
               activeLabel={focused}
               evidence={EVIDENCE}
-              onClose={() => setOpen(false)}
-              onPick={(scope) => setFocused(scope.label)}
+              onPick={(scope: { label: string; identityKeys: readonly string[] }) => setFocused(scope.label)}
               plan={plan}
               title={title}
             />
-          )}
+          </div>
         </div>
       </WorkspaceShell>
     </WorkspacePreviewProvider>

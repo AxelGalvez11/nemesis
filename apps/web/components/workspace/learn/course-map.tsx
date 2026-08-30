@@ -1,63 +1,49 @@
 "use client";
 
-// The course map: chapters, their sections, and how each one stands.
+// The course map: every chapter, and the sections inside it.
 //
-// 🔴🔴 THE DESIGN IS THE OWNER'S PICK FROM FOUR, 2026-08-29 — *"Let's go mastery outline."* Its
-// distinguishing move is that every chapter carries a thin bar, so "where should I go next" is
-// answerable at a glance without reading a word. The three rejected options are recorded in the
-// artifact that was published with them; the reason this one won is the bar.
+// 🔴🔴 IT IS A BOX, NOT A SIDEBAR, AND THAT IS THE OWNER'S SECOND CORRECTION (2026-08-29): *"I don't
+// want it to be exactly a full on sidebar, I would like it to be similar to source panel that is a
+// squarish circlish type of box component."* The first build docked a 296px column down the right
+// edge of the window. This one hangs off its own header glyph as the same rounded panel the sources
+// control uses — `CONTROL` and `PANEL` are imported from `canvas-controls.tsx` rather than restated,
+// so the two boxes cannot drift apart.
 //
-// 🔴🔴 THE BAR IS FILLED BY A COUNT, NOT BY A SCORE, AND THAT CORRECTS THE MOCK. The mock showed
-// chapters at 100 / 62 / 25 percent. `territoryMark` has three values and no number — see the long
-// note in `lib/learn/course-map.ts`. A percentage would have to be invented, so the bar is drawn
-// from how many SECTIONS are established and how many are underway, and the label beside it is a
-// fraction. Nothing in this file prints a percent.
+// 🔴🔴 AND THERE ARE NO NUMBERS, WHICH IS THE FIRST CORRECTION (same day): *"So if it can't track
+// mastery then can we just remove the numbers? And instead do the outline way?"* The chapter bars
+// and the "1/4" fractions are gone. What is left is the outline and one small mark per section,
+// which is the only claim the learner model can actually make about a row. See `lib/learn/
+// course-map.ts` for why there is no percentage to print.
 //
-// 🔴 IT DOCKS, IT DOES NOT FLOAT, AND THE MACHINERY FOR THAT ALREADY EXISTED. `useDeclareSidePanel`
-// pushes the canvas by exactly this width, collapses the left sidebar to its rail without touching
-// the learner's stored preference, and — the part that matters here — `CanvasHistoryRail` already
-// hides itself while a panel is docked (`inset > 0`). So the map and the history rail never fight
-// for the right edge, and neither had to learn about the other.
-//
-// 🔴 PORTALLED TO THE BODY, WITH `data-workspace` RESTAMPED. `position: fixed` inside the canvas
-// resolves against the canvas's own transformed ancestor rather than the viewport; and leaving the
-// workspace scope hands every button in here to `globals.css`'s acid-green fallback. Both are
-// recorded in `output-preview.tsx`, which hit them first.
+// 🔴 SO A CHAPTER'S HEADING SAYS NOTHING ABOUT PROGRESS AT ALL. That is deliberate rather than an
+// omission: a chapter mark could only be a fold of its sections, and folding three-valued marks into
+// one produces exactly the summary-that-looks-like-a-score this pair of instructions removed. The
+// sections carry the state; the chapter carries its name.
 
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useMemo, useState } from "react";
 
-import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { cn } from "@/lib/utils";
 
-import { barWidths, buildCourseMap, courseProgress, type CourseMapChapter } from "@/lib/learn/course-map";
+import { Codicon } from "@/components/desktop-ui/codicon";
+import { CONTROL, PANEL, useDismiss } from "./canvas-controls";
+
+import { buildCourseMap, type CourseMapSection } from "@/lib/learn/course-map";
 import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
 import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 
 /**
- * How wide the map stands.
+ * One section's standing: a short rule, solid / half / hollow.
  *
- * 🔴🔴 A FIXED WIDTH, NOT `useDockWidth`, AND THE FIRST VERSION GOT THIS WRONG. Reusing the
- * reader's hook opened the map at **980 of 1470** — two thirds of the window for an outline — and
- * tied it to whatever width the learner had dragged a DOCUMENT to. That hook's own note explains
- * why it is shared ("two docked readers that resized differently would be two objects"), and the
- * reasoning is sound for two readers; a course outline is not a reader. Its floor is 0.3 of the
- * viewport besides, so a map could never have been narrow enough anyway.
+ * 🔴 FILL AND LENGTH, NEVER A SECOND COLOUR. The product's rule is that the character is the accent
+ * and nothing else may disagree with it, so a green/amber/red legend is out — and a red row against
+ * everything a learner has not started would be the wrong message anyway.
  *
- * 296 is the number the owner approved on the model sheet, and it is within a few pixels of what
- * the reference gives its own chapter list. Truncated titles carry their full text in a tooltip, so
- * the width does not have to grow to stay readable, which is why there is no drag handle here.
+ * 🔴 AND NOT `--ui-action` EITHER, WHICH IS THE TRAP THIS PANEL ALREADY FELL INTO ONCE. That token IS
+ * the product's accent, but `desktop-ui.css` says what it is for: a filled send button, a focus
+ * outline, a ring — places where it carries a dark GLYPH. Its dark value is `#f2f2f4`, so as text it
+ * measured `rgb(242,242,244)` against body white. Invisible.
  */
-const COURSE_MAP_WIDTH = 296;
-
-/**
- * How a section's standing is drawn: a short tick, solid / half / hollow.
- *
- * 🔴 FILL AND LENGTH, NEVER A SECOND COLOUR. The product's standing rule is that the character is
- * the accent and nothing else may disagree with it (#28fb2c8), so a green/amber/red legend is out —
- * and a red row against everything a learner has not started yet would be the wrong message anyway.
- */
-function Tick({ mark }: { mark: "established" | "developing" | null }) {
+function Mark({ mark }: { mark: CourseMapSection["mark"] }) {
   return (
     <i
       aria-hidden
@@ -71,98 +57,16 @@ function Tick({ mark }: { mark: "established" | "developing" | null }) {
   );
 }
 
-/** What a mark means, in words, for the row's accessible name and its tooltip. */
-function markWords(mark: "established" | "developing" | null): string {
+/** What a mark means in words, for the row's tooltip. Screen readers get it through the label. */
+function markWords(mark: CourseMapSection["mark"]): string {
   if (mark === "established") return "established";
   if (mark === "developing") return "still developing";
   return "not started";
 }
 
-function Chapter({
-  chapter,
-  onPick,
-  open,
-  onToggle,
-  activeLabel,
-}: {
-  chapter: CourseMapChapter;
-  onPick: (section: { label: string; identityKeys: readonly string[] }) => void;
-  open: boolean;
-  onToggle: () => void;
-  activeLabel: string | null;
-}) {
-  const width = barWidths(chapter);
-  return (
-    <div className="mb-[2px]">
-      <button
-        aria-expanded={chapter.sections.length > 0 ? open : undefined}
-        className="grid w-full grid-cols-[1fr_auto] items-center gap-x-[10px] gap-y-[4px] rounded-[7px] px-[8px] py-[7px] text-left transition-colors hover:bg-(--ui-bg-tertiary) focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--ui-stroke-primary)"
-        onClick={() => (chapter.sections.length > 0 ? onToggle() : onPick(chapter))}
-        type="button"
-      >
-        <span className="min-w-0 truncate text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-primary)">
-          {chapter.label}
-        </span>
-        {/* 🔴 A FRACTION, NEVER A PERCENT — see the file header and `course-map.ts`. */}
-        <span className="mono shrink-0 text-[length:var(--canvas-text-meta)] tabular-nums text-(--ui-text-tertiary)">
-          {chapter.total > 0 ? `${chapter.established}/${chapter.total}` : markWords(chapter.mark)}
-        </span>
-        {/* Two segments in one track: what is established, then what is underway. */}
-        <span className="col-span-2 flex h-[3px] overflow-hidden rounded-full bg-(--ui-stroke-tertiary)">
-          {/* 🔴 THE BAR MEANS PROGRESS, NOT LOCATION. It briefly swapped to the accent for the
-              chapter you are in, which put two unrelated facts in one mark. Where you are is said by
-              the row below being filled and set in the primary ink. */}
-          <i className="block h-full rounded-full bg-(--ui-text-primary)" style={{ width: `${width.established}%` }} />
-          <i className="block h-full bg-(--ui-text-tertiary) opacity-40" style={{ width: `${width.developing}%` }} />
-        </span>
-      </button>
-
-      {open && chapter.sections.length > 0 && (
-        <ul className="mt-[4px] mb-[10px] grid gap-[1px] pl-[8px]">
-          {chapter.sections.map((section) => {
-            const current = section.label === activeLabel;
-            return (
-              <li key={section.label}>
-                <button
-                  aria-current={current ? "true" : undefined}
-                  className={cn(
-                    "flex w-full items-center gap-[8px] rounded-[6px] px-[8px] py-[5px] text-left text-[length:var(--canvas-text-meta)] leading-[18px] transition-colors",
-                    "hover:bg-(--ui-bg-tertiary) focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--ui-stroke-primary)",
-                    // 🔴🔴 NO COLOUR MARKS THE CURRENT ROW, AND `--ui-action` WAS THE WRONG READ OF THE
-                    // RULE. That token IS the product's accent, but `desktop-ui.css` says what it is
-                    // FOR: a filled send button, a focus outline, a ring — places where it carries a
-                    // dark glyph. Its dark value is `#f2f2f4`, so as TEXT it measured
-                    // `rgb(242,242,244)` against body white: invisible, and only visible in light
-                    // mode by accident. Fill and weight say "here" in both themes, and they leave the
-                    // panel with no second colour system at all, which is the standing rule.
-                    current
-                      ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
-                      : "text-(--ui-text-secondary)",
-                    // 🔴 AN UNREACHABLE SECTION IS DIMMED, NOT HIDDEN. The plan carries `reachable`
-                    // as "the canvas holds no material for this node" — an honest source gap. Hiding
-                    // it would make the course look shorter than it is.
-                    !section.reachable && "opacity-55",
-                  )}
-                  onClick={() => onPick(section)}
-                  title={`${section.label}: ${markWords(section.mark)}${section.reachable ? "" : ", no material yet"}`}
-                  type="button"
-                >
-                  <Tick mark={section.mark} />
-                  <span className="min-w-0 truncate">{section.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-export function CourseMap({
+export function CourseMapControl({
   activeLabel = null,
   evidence,
-  onClose,
   onPick,
   plan,
   title,
@@ -170,117 +74,120 @@ export function CourseMap({
   /** The section the canvas is working on, so the map can say where you are. */
   activeLabel?: string | null;
   evidence: readonly LearnerEvidence[];
-  onClose: () => void;
   /** Focus the canvas on one part of the course. */
   onPick: (scope: { label: string; identityKeys: readonly string[] }) => void;
   plan: readonly PlanTerritory[];
   title: string;
 }) {
-  useDeclareSidePanel(COURSE_MAP_WIDTH);
-
+  const [open, setOpen] = useState(false);
+  const holder = useDismiss(open, () => setOpen(false));
   const chapters = useMemo(() => buildCourseMap(plan, evidence), [evidence, plan]);
-  const progress = useMemo(() => courseProgress(chapters), [chapters]);
 
-  // 🔴 OPEN CHAPTERS ARE DERIVED, NOT REMEMBERED. The one you are working in is open and the rest
-  // are shut, which is what a documentation map does — and it means arriving at the map never
-  // requires a press to see where you are. A learner opening others is transient state below.
-  const initiallyOpen = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of chapters) {
-      if (c.label === activeLabel || c.sections.some((s) => s.label === activeLabel)) set.add(c.label);
-    }
-    // Nothing active yet: open the first chapter that is not finished, so the map opens on work.
-    if (set.size === 0) {
-      const next = chapters.find((c) => c.established < (c.total || 1)) ?? chapters[0];
-      if (next) set.add(next.label);
-    }
-    return set;
-  }, [activeLabel, chapters]);
+  /**
+   * Which chapters are open.
+   *
+   * 🔴 THE PANEL IS TRANSIENT, SO THIS IS SEEDED EVERY TIME IT OPENS rather than remembered. A map
+   * that reopened on whatever the learner last unfolded, three sessions ago, is a map they have to
+   * re-read; opening on where they are is the behaviour a documentation outline has.
+   */
+  const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set());
+  const here = useMemo(
+    () =>
+      chapters.find((c) => c.label === activeLabel || c.sections.some((s) => s.label === activeLabel))?.label ??
+      chapters[0]?.label ??
+      null,
+    [activeLabel, chapters],
+  );
 
-  // 🔴 A LEARNER'S OWN OPENING SURVIVES, AND THE MAP STILL FOLLOWS THE CANVAS. Seeded once, then
-  // the active chapter is MERGED IN whenever the canvas moves — never replaced. Replacing would
-  // shut a chapter the learner had deliberately opened; not merging at all would leave them looking
-  // at a closed chapter with the active row hidden inside it.
-  const [opened, setOpened] = useState<Set<string>>(initiallyOpen);
-  useEffect(() => {
-    if (!activeLabel) return;
-    const chapter = chapters.find((c) => c.label === activeLabel || c.sections.some((s) => s.label === activeLabel));
-    if (!chapter) return;
-    setOpened((was) => (was.has(chapter.label) ? was : new Set(was).add(chapter.label)));
-  }, [activeLabel, chapters]);
+  return (
+    <div className="relative" ref={holder}>
+      <button
+        aria-expanded={open}
+        aria-label="Course map"
+        className={CONTROL}
+        onClick={() => setOpen((current) => !current)}
+        title="Course map"
+        type="button"
+      >
+        <Codicon name="list-tree" size="20px" />
+      </button>
 
-  // Escape closes, same as every transient surface on the canvas.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // 🔴 THE SERVER HAS NO `document` TO PORTAL INTO. `OutputPreview` gets away without this guard
-  // only because it can never be in the first render — it opens on a click; a surface that opened
-  // the map by default would hit a hydration mismatch instead.
-  //
-  // 🔴 AND THE WIDTH IS KNOWN AT RENDER NOW, which it was not while this used `useDockWidth`. That
-  // hook starts at `viewport: 0` deliberately (the server has no window width), so the panel's
-  // first frame was genuinely 0px and jumped to its width one frame later — a docked panel that
-  // pops, which is the exact complaint this week has been about. A constant has no such frame.
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <div
-      aria-label={`Course map: ${title}`}
-      className={cn(
-        "fixed inset-y-0 right-0 z-50 flex flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)",
-        "reader-dock-in",
-      )}
-      data-course-map=""
-      data-workspace
-      role="dialog"
-      style={{ width: COURSE_MAP_WIDTH }}
-    >
-      <header className="flex items-start justify-between gap-3 border-b border-(--ui-stroke-tertiary) px-[18px] py-[14px]">
-        <div className="min-w-0">
-          <h2 className="truncate text-[length:var(--canvas-text-body)] font-medium text-(--ui-text-primary)">{title}</h2>
-          {/* 🔴 A SENTENCE SOMEBODY CAN CHECK AGAINST THE ROWS BELOW IT, which a percentage is not. */}
-          <p className="mt-[2px] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-            {progress.established} of {progress.total} established
-            {progress.developing > 0 ? ` · ${progress.developing} underway` : ""}
+      {open && (
+        <div className={cn(PANEL, "w-[21rem]")} data-course-map="">
+          <p className="truncate px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+            {title}
           </p>
-        </div>
-        <button
-          aria-label="Close the course map"
-          className="-mr-[6px] -mt-[2px] flex size-[28px] shrink-0 items-center justify-center rounded-md text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-          onClick={onClose}
-          type="button"
-        >
-          <svg aria-hidden="true" fill="none" height={14} viewBox="0 0 14 14" width={14}>
-            <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeLinecap="round" strokeWidth={1.6} />
-          </svg>
-        </button>
-      </header>
 
-      <div className="scrollbar-dt min-h-0 flex-1 overflow-y-auto px-[10px] py-[12px]">
-        {chapters.map((chapter) => (
-          <Chapter
-            activeLabel={activeLabel}
-            chapter={chapter}
-            key={chapter.label}
-            onPick={onPick}
-            onToggle={() =>
-              setOpened((was) => {
+          {chapters.map((chapter) => {
+            const isOpen = chapter.label === here ? !shut.has(chapter.label) : shut.has(chapter.label);
+            const toggle = () =>
+              setShut((was) => {
                 const next = new Set(was);
                 if (next.has(chapter.label)) next.delete(chapter.label);
                 else next.add(chapter.label);
                 return next;
-              })
-            }
-            open={opened.has(chapter.label)}
-          />
-        ))}
-      </div>
-    </div>,
-    document.body,
+              });
+            return (
+              <div className="pb-1" key={chapter.label}>
+                {/* 🔴 THE CHAPTER IS A HEADING THAT FOLDS, NOT A ROW THAT DOES TWO THINGS. A chapter
+                    with no sections of its own is the exception and is pickable, because otherwise a
+                    flat plan would be a column of dead controls. */}
+                <button
+                  aria-expanded={chapter.sections.length > 0 ? isOpen : undefined}
+                  className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)"
+                  onClick={() => (chapter.sections.length > 0 ? toggle() : onPick(chapter))}
+                  type="button"
+                >
+                  {chapter.sections.length > 0 ? (
+                    <Codicon
+                      name={isOpen ? "chevron-down" : "chevron-right"}
+                      size="11px"
+                    />
+                  ) : (
+                    <Mark mark={chapter.mark} />
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] font-medium text-(--ui-text-primary)">
+                    {chapter.label}
+                  </span>
+                </button>
+
+                {isOpen && chapter.sections.length > 0 && (
+                  <ul className="grid gap-[1px]">
+                    {chapter.sections.map((section) => {
+                      const current = section.label === activeLabel;
+                      return (
+                        <li key={section.label}>
+                          <button
+                            aria-current={current ? "true" : undefined}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-lg py-1.5 pl-[30px] pr-2 text-left transition-colors",
+                              "text-[length:var(--canvas-text-meta)] leading-[18px] hover:bg-(--ui-bg-tertiary)",
+                              // 🔴 FILL AND WEIGHT SAY "HERE", NOT A COLOUR. See `Mark` above.
+                              current
+                                ? "bg-(--ui-bg-tertiary) font-medium text-(--ui-text-primary)"
+                                : "text-(--ui-text-secondary)",
+                              // 🔴 AN UNREACHABLE SECTION IS DIMMED, NOT HIDDEN. The plan carries
+                              // `reachable` as "the canvas holds no material for this node" — an
+                              // honest source gap. Hiding it makes the course look shorter than it is.
+                              !section.reachable && "opacity-55",
+                            )}
+                            onClick={() => onPick(section)}
+                            title={`${section.label}: ${markWords(section.mark)}${section.reachable ? "" : ", no material yet"}`}
+                            type="button"
+                          >
+                            <Mark mark={section.mark} />
+                            <span className="min-w-0 truncate">{section.label}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
