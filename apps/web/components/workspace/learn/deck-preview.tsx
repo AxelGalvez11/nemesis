@@ -17,13 +17,25 @@
 // function of plan + design, so nothing was uploaded and there is nothing to fetch: the same plan
 // the download builds from is the plan on screen.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { structurePng } from "@/lib/export/structure-image";
 import type { DeckPlan, DeckStructure } from "@/lib/export/deck-plan";
 
-export function DeckPreview({ canvasId, outputId, plan }: { canvasId: string; outputId: string; plan: DeckPlan }) {
+export function DeckPreview({
+  canvasId,
+  outputId,
+  plan,
+  registerElement,
+}: {
+  canvasId: string;
+  outputId: string;
+  plan: DeckPlan;
+  /** The output panel's comment layer pins to slide cards, 1-based. Optional: the full-page deck
+   *  view mounts this too and has no layer. */
+  registerElement?: (unit: number, element: HTMLElement | null) => void;
+}) {
   return (
     <div className="grid gap-3">
       <a
@@ -37,10 +49,7 @@ export function DeckPreview({ canvasId, outputId, plan }: { canvasId: string; ou
         // 🔴 KEYED ON POSITION, WHICH IS CORRECT HERE AND USUALLY IS NOT: the list comes from one
         // stored plan and is never reordered, filtered or inserted into, so position IS identity.
         // Two slides may legitimately share a title.
-        <section
-          className="grid gap-1.5 rounded-xl px-3.5 py-3 ring-1 ring-(--ui-stroke-tertiary)"
-          key={index}
-        >
+        <SlideCard index={index} key={index} registerElement={registerElement}>
           <p className="m-0 flex items-baseline gap-2">
             <span className="shrink-0 text-[length:var(--canvas-text-meta)] tabular-nums text-(--ui-text-quaternary)">
               {index + 1}
@@ -78,9 +87,21 @@ export function DeckPreview({ canvasId, outputId, plan }: { canvasId: string; ou
               Figure {slide.figure}
             </p>
           )}
-        </section>
+        </SlideCard>
       ))}
     </div>
+  );
+}
+
+/** One slide's card, owning a STABLE ref callback — an inline arrow ref detaches and reattaches on
+ *  every render, and with a registry that renders on registration that is an update-depth crash
+ *  (found on screen when the docx article did exactly this). */
+function SlideCard({ children, index, registerElement }: { children: React.ReactNode; index: number; registerElement?: (unit: number, element: HTMLElement | null) => void }) {
+  const register = useCallback((element: HTMLElement | null) => registerElement?.(index + 1, element), [index, registerElement]);
+  return (
+    <section className="relative grid gap-1.5 rounded-xl px-3.5 py-3 ring-1 ring-(--ui-stroke-tertiary)" ref={register}>
+      {children}
+    </section>
   );
 }
 

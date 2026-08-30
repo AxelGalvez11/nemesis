@@ -94,7 +94,7 @@ test("🔴🔴 a made file is an ARTIFACT you open, not a download the row fires
   //
   // Calibration: put `downloadDocx` back on the row's onClick and this reddens.
   assert.match(CONTROLS, /onClick=\{\(\) => onOpen\(output\)\}/, "the row does not open the artifact");
-  assert.match(CONTROLS, /<OutputPreview /, "the artifact card is never mounted");
+  assert.match(CONTROLS, /<OutputPreview[\s\n]/, "the artifact card is never mounted");
   assert.ok(!/downloadDocx|downloadPdf|downloadSheet/.test(CONTROLS), "🔴 the outputs panel downloads on click again");
 
   // …and the download is still reachable, one click further in. A preview with no way out would be

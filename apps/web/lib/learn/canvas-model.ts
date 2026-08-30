@@ -666,6 +666,15 @@ export interface CanvasOutput {
   markdown?: string;
   /** A spreadsheet output carries its table, for the same reason. */
   sheet?: import("../export/doc-file").SheetData;
+  /**
+   * The states this output held BEFORE each revision Nemesis applied, oldest first.
+   *
+   * 🔴 AN EDIT THAT CANNOT BE UNDONE IS AN EDIT A LEARNER RIGHTLY FEARS. Nemesis revises its own
+   * outputs on request (owner 2026-08-28: the panel's second job); every apply pushes the
+   * outgoing content here, and Undo pops it. Bounded by UNDO_DEPTH at the write site — a document
+   * revised forty times must not carry forty copies of itself through every save.
+   */
+  revisions?: { at: string; markdown?: string; deck?: import("../export/deck-plan").DeckPlan }[];
 }
 
 export interface LearningCanvas {

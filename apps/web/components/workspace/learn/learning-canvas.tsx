@@ -19,6 +19,7 @@ import { CanvasClarification } from "./canvas-clarification";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { ArtifactCard } from "./artifact-card";
 import { OutputPreview } from "./output-preview";
+import { applyRevision, reviseOutputDeck, reviseOutputMarkdown, undoRevision, type ReviseAsk } from "@/lib/learn/revise-output";
 import { ResearchPlanCard } from "./research-plan-card";
 import { useAuth } from "@/components/AuthProvider";
 import { setCanvasFolder } from "@/lib/learn/canvas-store";
@@ -1679,6 +1680,25 @@ export function LearningCanvas({
   // the crash `send-is-acknowledged.test.ts` holds the line on. It needs `intent`, which is
   // computed below that gate, so the choice is a fresh identity per render or a ref. Nothing
   // downstream is memoised on it, so the identity is free.
+  /**
+   * Nemesis revising ITS OWN output, from a pinned note (owner 2026-08-28: the panel's second
+   * job). The outgoing state is kept — Undo pops it — and a failure changes nothing but the
+   * sentence shown. The learner's own files are never candidates for this; sources have no
+   * revise door anywhere.
+   */
+  const reviseOutput = async (output: CanvasOutput, ask: ReviseAsk): Promise<string | null> => {
+    if (!uid) return "Sign in to ask for changes.";
+    const result = output.deck
+      ? await reviseOutputDeck(uid, output.deck, ask)
+      : output.markdown
+        ? await reviseOutputMarkdown(uid, { markdown: output.markdown, title: output.title }, ask)
+        : ({ error: "This kind of output can't be revised yet." } as const);
+    if ("error" in result) return result.error;
+    session.updateOutput(output.id, (current) => applyRevision(current, result));
+    return null;
+  };
+  const undoOutput = (output: CanvasOutput) => session.updateOutput(output.id, undoRevision);
+
   const askFromReader = async (asked: string, files: File[]) => {
     if (files.length > 0) await attachWithChips(files);
     acknowledgeAttachments();
@@ -1811,6 +1831,7 @@ export function LearningCanvas({
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
         onMakeDeliverable={(kind) => void session.makeDeliverable(kind)}
         onSendToChat={askFromReader}
+        outputTools={{ onRevise: reviseOutput, onUndo: undoOutput, uid }}
         replyAudio={voice.replyAudio}
         transcript={transcript}
         voice={voice.header}
@@ -2311,7 +2332,19 @@ export function LearningCanvas({
           </div>
         )}
 {/* The reader, docked to the right. Mounted at canvas level so it outlives the card. */}
-        {openArtifact && <OutputPreview canvasId={canvas.id} onClose={() => setOpenArtifact(null)} output={openArtifact} />}
+        {openArtifact && (
+          <OutputPreview
+            canvasId={canvas.id}
+            comments={{ preview: false, uid }}
+            onClose={() => setOpenArtifact(null)}
+            onRevise={reviseOutput}
+            onUndo={undoOutput}
+            // 🔴 THE FRESH ROW, NOT THE STATE COPY. A revision lands in `canvas.outputs`; the
+            // object captured at open time predates it, and a panel rendering that copy would
+            // show the old document under a "revised" answer.
+            output={canvas.outputs.find((row) => row.id === openArtifact.id) ?? openArtifact}
+          />
+        )}
         {/* 🔴 THE ONE ARTIFACT THAT IS NOT A READER. `ReviewSession` is already `h-[100dvh] w-screen`
             with a close button — full screen with an `x`, which is what the owner asked flashcards
             to be. Mounting it here rather than teaching the reader a third mode keeps "a deck is

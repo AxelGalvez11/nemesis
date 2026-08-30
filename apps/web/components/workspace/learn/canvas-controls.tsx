@@ -172,6 +172,13 @@ export const PANEL =
  *  at the learner's request. They belong to the same session and are emphatically not the same
  *  kind of thing, so the distinction is preserved in the panel even while outputs is empty —
  *  merging them now would be the hard thing to undo later. */
+/** The verbs an open output needs, built where the canvas session lives (learning-canvas). */
+export interface OutputTools {
+  onRevise: (output: CanvasOutput, ask: import("@/lib/learn/revise-output").ReviseAsk) => Promise<string | null>;
+  onUndo: (output: CanvasOutput) => void;
+  uid: string | null;
+}
+
 export function SourcesControl({
   canvas,
   modelKnowledge = false,
@@ -179,6 +186,7 @@ export function SourcesControl({
   onMakeDeliverable,
   making = null,
   onSendToChat,
+  outputTools,
 }: {
   canvas: LearningCanvas;
   /** Whether this canvas holds knowledge that provably came from the model rather than from
@@ -194,6 +202,7 @@ export function SourcesControl({
    *  the reader's actions on it. Absent means the reader shows no action bar at all — see
    *  `SourcePreview`. */
   onSendToChat?: (prompt: string, files: File[]) => void;
+  outputTools?: OutputTools;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"sources" | "outputs">("sources");
@@ -404,7 +413,21 @@ export function SourcesControl({
         uid={session?.user.id ?? null}
       />
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
-      {openedOutput && <OutputPreview canvasId={canvas.id} onClose={() => setOpenedOutput(null)} output={openedOutput} />}
+      {openedOutput && (
+        <OutputPreview
+          canvasId={canvas.id}
+          // 🔴 COMMENTS DO NOT WAIT FOR THE REVISE WIRING. A host that cannot revise (the dev
+          // harness, a surface that has no canvas session) still lets the learner pin notes;
+          // only the send button follows `onRevise`. `session` here is the auth session.
+          comments={{ preview: false, uid: outputTools?.uid ?? session?.user.id ?? null }}
+          onClose={() => setOpenedOutput(null)}
+          onRevise={outputTools?.onRevise}
+          onUndo={outputTools?.onUndo}
+          // 🔴 THE FRESH ROW, NOT THE STATE COPY — a revision lands in `canvas.outputs`, and the
+          // object captured at open time predates it. Same rule as the canvas-level mount.
+          output={(canvas.outputs ?? []).find((row) => row.id === openedOutput.id) ?? openedOutput}
+        />
+      )}
     </div>
   );
 }

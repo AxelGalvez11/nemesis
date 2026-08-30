@@ -196,13 +196,22 @@ const COMMENT_UNIT_LABEL: Record<string, string> = { pdf: "page", pptx: "slide",
  * their own.
  */
 async function pinnedCommentsBlock(uid: string, canvas: LearningCanvas): Promise<string> {
-  const docs = canvas.sources
-    .filter((source) => source.librarySourceId)
-    .map((source) => ({
-      ref: { id: source.librarySourceId!, kind: "source" as const },
-      title: source.title,
-      unitLabel: COMMENT_UNIT_LABEL[source.kind] ?? "part",
-    }));
+  const docs = [
+    ...canvas.sources
+      .filter((source) => source.librarySourceId)
+      .map((source) => ({
+        ref: { id: source.librarySourceId!, kind: "source" as const },
+        title: source.title,
+        unitLabel: COMMENT_UNIT_LABEL[source.kind] ?? "part",
+      })),
+    // The things Nemesis MADE carry comments too — keyed by the ledger id, the same durable name
+    // the panel keys them under (see output-preview.tsx's commentRef).
+    ...(canvas.outputs ?? []).map((output) => ({
+      ref: { id: output.assetId ?? output.id, kind: "output" as const },
+      title: output.title,
+      unitLabel: output.kind === "slides" ? "slide" : "section",
+    })),
+  ];
   if (docs.length === 0) return "";
   const open = await openCommentsForDocs(uid, docs.map((doc) => doc.ref));
   if (open.length === 0) return "";

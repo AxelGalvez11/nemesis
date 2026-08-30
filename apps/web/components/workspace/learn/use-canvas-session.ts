@@ -446,6 +446,8 @@ export interface CanvasSession {
   rename: (title: string) => void;
   /** Record a thing Nemesis made (a deck, a note); appends to `outputs` and persists. */
   addOutput: (output: CanvasOutput) => void;
+  /** Replace a made output's content in place (a revision or an undo). No-op on an unknown id. */
+  updateOutput: (id: string, revise: (output: CanvasOutput) => CanvasOutput) => void;
   /** Make a deliverable from what the canvas holds and file it in the library — owner
    *  2026-08-25. The deck/note lands in the library's own tables AND on `outputs`.
    *
@@ -2806,6 +2808,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
      *  persists; the Outputs tab and the Library both read what this writes. */
     addOutput: (output: CanvasOutput) =>
       update((current) => ({ ...current, outputs: [...(current.outputs ?? []), output] })),
+    updateOutput: (id: string, revise: (output: CanvasOutput) => CanvasOutput) =>
+      update((current) => ({
+        ...current,
+        outputs: (current.outputs ?? []).map((output) => (output.id === id ? revise(output) : output)),
+      })),
     makeDeliverable,
     making,
     remove: async () => {
