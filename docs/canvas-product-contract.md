@@ -1192,7 +1192,7 @@ keep deciding which engine to invoke, and an arm picker is exactly that.
 
 # 41. 🔴 THE VISUALIZATION LAYER — a router, not a graphics library (owner, 2026-08-14)
 
-## STATUS: FIRST TRUSTED ROUTES SHIPPED — source figure, equation, relationship and quantitative, behind a router. THE COMPUTED SURFACE (2026-08-24) TOOK THE FIRST SELECTIVE-3D SLOT — three.js drawing numbers our own evaluator produced, never model code. OTHER ADVANCED ROUTES REMAIN PLANNED.
+## STATUS: FIRST TRUSTED ROUTES SHIPPED — source figure, equation, relationship and quantitative, behind a router. THE COMPUTED SURFACE (2026-08-24) TOOK THE FIRST SELECTIVE-3D SLOT — three.js drawing numbers our own evaluator produced, never model code. MERMAID SHIPPED 2026-08-30 BY OWNER ORDER, AS PROSE FENCES IN CHAT rather than a router route — see the table row. OTHER ADVANCED ROUTES REMAIN PLANNED.
 
 🔴 **The router exists** — `routeVisual()` in `apps/web/lib/learn/visual-route.ts`. It is a pure
 function taking a knowledge object, the cognitive operation in flight, and an untrusted model
@@ -1200,8 +1200,10 @@ request, and it returns one of three decisions: **render** a named representatio
 visual, which is the common and correct answer), or **refused** with a named reason. Canvas accepts
 a bounded semantic `visual` request on a teaching block; trusted code routes equations to KaTeX and
 renders simple conceptual relationships and quantitative series with deterministic SVG. The model
-cannot supply HTML, SVG, JavaScript, React, Mermaid, or renderer configuration. Geometry, advanced
-charting, and true 3D remain planned.
+cannot supply HTML, SVG, JavaScript, React, Mermaid, or renderer configuration — inside the
+semantic `visual` request. (A ```` ```mermaid ```` fence in answer PROSE is the one exception,
+owner-ordered 2026-08-30; it is rendered rather than trusted, and the boundary above is about the
+typed payloads.) Geometry, advanced charting, and true 3D remain planned.
 
 🔴 **The source-figure path is absorbed, not parallel.** The four conditions that used to decide
 occlusion inside `canvas-policy-view.tsx` — a figure exists, its pixels were kept, it names enough
@@ -1240,7 +1242,7 @@ Text is a renderer too, and often the right one. The question is never "which li
 |---|---|
 | **KaTeX** | equations and mathematical notation |
 | **JSXGraph** | interactive 2D math — geometry, coordinate planes, functions, calculus, vectors, sliders, transformations, tangent/secant lines |
-| **Mermaid** | conceptual diagrams — pathways, mechanisms, causal chains, flowcharts, hierarchies, timelines, state and sequence relationships |
+| **Mermaid** | conceptual diagrams — pathways, mechanisms, causal chains, flowcharts, hierarchies, timelines, state and sequence relationships. **Shipped 2026-08-30** (owner: "flow charts, diagrams, graphs, mind maps in chat, that's literally all I want") — as ```` ```mermaid ```` fences in answer PROSE, rendered by `lib/workspace/mermaid-diagram.tsx`: parse-gated, `securityLevel: "strict"`, lazy-loaded, falling back to a plain code block. Deliberately NOT a router route: the fence carries no accuracy claim, the typed `visuals` array stays preferred for anything with numbers or grading behind it, and the router's own Mermaid slot stays open for the day a conceptual route needs validation. |
 | **Vega-Lite** | quantitative data — bar, line, scatter, histogram, distribution, box plot, heatmap, area, pie/donut, dose–response, time series |
 | **React Three Fiber / Three.js** | genuine 3D — molecules, stereochemistry, anatomy, geometric solids, spatial physics, 3D vectors |
 | **D3 / custom SVG / React** | escape hatch for bespoke interactive teaching objects the above cannot express cleanly |
@@ -1685,7 +1687,8 @@ while they were not: a `macromolecule` representation carrying an accession, res
 module shaped like `chem-resolver.ts` (`macromolecule-resolver.ts` — RCSB search plus the entry's
 own title), drawn by an embedded viewer behind the same constrained interface
 (`macromolecule-viewer.tsx`, Mol* — its own engine, loaded in its own chunk only when a structure
-appears; the §41 planned stack of graphing and diagram renderers remains untouched and unadopted).
+appears; of the §41 planned stack of graphing and diagram renderers, only Mermaid has since been
+adopted — 2026-08-30, as prose fences, not as a route).
 2D stays the default whenever it teaches the concept adequately — §41's 3D rule still holds: depth
 must be part of what has to be understood, not a way to look sophisticated, and the prompt tells
 the model to prefer `structure` for anything small enough to read flat. **Nothing is ever simulated

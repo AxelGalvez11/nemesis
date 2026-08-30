@@ -1,0 +1,124 @@
+"use client";
+
+// A fenced ```mermaid block, drawn — flow charts, mind maps, sequence and state diagrams in chat.
+//
+// 🔴🔴 OWNER ORDER, 2026-08-30: *"I'm talking about mermaid JS so that I can do flow charts,
+// diagrams, graphs, mind maps in chat. Like, that's literally all I want."* The renderer's own
+// header had deferred this ("the streaming/Shiki/mermaid machinery is out of scope for the
+// non-streaming v1"); this is that machinery arriving. The semantic-visuals boundary is untouched:
+// `canvas-visual.ts` still refuses Mermaid INSIDE the visuals array, where payloads are typed and
+// validated. A fence in prose is the other lane, and it is rendered, not trusted — see below.
+//
+// 🔴 PARSE IS THE GATE, AND THE FALLBACK IS EXACTLY TODAY'S CODE BLOCK. `mermaid.parse` runs
+// before any render; a fence that does not parse draws the same bordered mono block every fence
+// drew before this file existed. That one rule covers three cases at once: a model that wrote
+// broken syntax (the learner sees the text, never an error box), a HALF-STREAMED fence (it stands
+// as code while tokens arrive and becomes the diagram the moment it completes), and a fence in
+// some dialect our mermaid version does not speak.
+//
+// 🔴 `securityLevel: "strict"` AND NOTHING INTERACTIVE. Strict mode makes mermaid sanitise label
+// text and refuse script/click directives — the fence's contents are model output riding learner
+// context, so they are rendered as a PICTURE with exactly zero ability to run anything. The SVG
+// still lands via innerHTML because that is how mermaid hands it over; strict mode is what makes
+// that acceptable.
+//
+// 🔴 THE LIBRARY LOADS ON FIRST USE, NOT IN THE BUNDLE. Mermaid is over a megabyte; most answers
+// carry no diagram. The dynamic import keys off the first fence actually rendered, and the module
+// promise is shared so ten diagrams in one conversation initialise once.
+//
+// 🔴 THE THEME IS CHOSEN BY MEASURING THE PAGE, NOT BY PARSING A TOKEN — the lesson
+// `theme-tokens-break-webgl` recorded: a CSS variable can compute to `color-mix(...)` forms a
+// library reads as garbage, so the page background is read as computed rgb and its luminance
+// decides dark or light. Failure of any step falls back to the light theme.
+
+import { useEffect, useId, useRef, useState } from "react";
+
+import { cn } from "@/lib/utils";
+
+type MermaidModule = typeof import("mermaid").default;
+
+let engine: Promise<MermaidModule> | null = null;
+
+function darkPage(): boolean {
+  try {
+    const raw = getComputedStyle(document.body).backgroundColor;
+    const parts = raw.match(/\d+(\.\d+)?/g);
+    if (!parts || parts.length < 3) return false;
+    const [r, g, b] = parts.map(Number);
+    return 0.299 * r! + 0.587 * g! + 0.114 * b! < 128;
+  } catch {
+    return false;
+  }
+}
+
+function loadEngine(): Promise<MermaidModule> {
+  engine ??= import("mermaid").then((mod) => {
+    const mermaid = mod.default;
+    mermaid.initialize({
+      fontFamily: "inherit",
+      securityLevel: "strict",
+      startOnLoad: false,
+      theme: darkPage() ? "dark" : "neutral",
+    });
+    return mermaid;
+  });
+  return engine;
+}
+
+/** The exact classes the plain fenced block wears in chat-markdown.tsx, so the fallback (and the
+ *  half-streamed state) is indistinguishable from the block every fence drew before this existed. */
+const FALLBACK_PRE =
+  "aui-md-code-block my-2 overflow-x-auto rounded-[0.375rem] border border-border bg-muted/35 p-2.5 text-foreground";
+
+export function MermaidDiagram({ chart }: { chart: string }) {
+  const [svg, setSvg] = useState<string | null>(null);
+  const reactId = useId();
+  // Mermaid wants a DOM-safe element id; useId's colons are not one.
+  const domId = useRef(`mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`);
+
+  useEffect(() => {
+    let alive = true;
+    const text = chart.trim();
+    if (!text) {
+      setSvg(null);
+      return;
+    }
+    void loadEngine()
+      .then(async (mermaid) => {
+        // 🔴 parse first, render second. `suppressErrors` turns "invalid" into a clean false
+        // instead of a throw, and an invalid fence simply stays a code block.
+        const valid = await mermaid.parse(text, { suppressErrors: true });
+        if (!alive || !valid) {
+          if (alive) setSvg(null);
+          return;
+        }
+        const rendered = await mermaid.render(domId.current, text);
+        if (alive) setSvg(rendered.svg);
+      })
+      .catch(() => {
+        if (alive) setSvg(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [chart]);
+
+  if (!svg) {
+    return (
+      <pre className={FALLBACK_PRE}>
+        <code className="block overflow-x-auto whitespace-pre font-mono text-[0.8em]">{chart}</code>
+      </pre>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "my-2 flex justify-center overflow-x-auto",
+        "[&_svg]:h-auto [&_svg]:max-w-full",
+      )}
+      // Sanitised by mermaid under securityLevel "strict" — see the header.
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}

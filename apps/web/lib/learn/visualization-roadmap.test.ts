@@ -74,9 +74,11 @@ const ROUTE = readFileSync(new URL("../../app/api/learn/plot/route.ts", import.m
 // the moment the surface renderer's dependency landed, and §41's status line moved in the same
 // commit — which is the entire mechanism. The surface guard below now holds the shipped route to
 // its own rules instead.
+// 🔴 "mermaid" LEFT THIS LIST ON 2026-08-30, the day it shipped by owner order as prose fences in
+// chat (see §41's table row). The guard's job is unchanged for the rest: an installed renderer
+// with a "planned" status line is a doc telling the next reader a lie.
 const PLANNED_RENDERERS: readonly string[] = [
   "jsxgraph",
-  "mermaid",
   "vega-lite",
   "vega-embed",
   "@react-three/fiber",

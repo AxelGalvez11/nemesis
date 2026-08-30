@@ -26,7 +26,7 @@ test("🔴🔴 the components map is memoised, not rebuilt on every render", () 
   // globals.css) each time. The learner saw that as the text blinking on and off.
   assert.match(
     SOURCE,
-    /import \{ Children, useMemo \} from "react";/,
+    /import \{ Children, isValidElement, useMemo \} from "react";/,
     "useMemo is no longer imported — the components map cannot be memoised without it",
   );
   assert.match(
@@ -49,4 +49,24 @@ test("🔴🔴 the components map is memoised, not rebuilt on every render", () 
     "markdownComponents(...) is being called inline in the components prop again — every custom " +
       "renderer gets a new identity on every render, and ReactMarkdown remounts the whole answer",
   );
+});
+
+// ── the mermaid fence, 2026-08-30 ───────────────────────────────────────────────────────────────
+
+test("🔴 a ```mermaid fence routes to the diagram component, every other fence stays a code block", () => {
+  // Owner order: "flow charts, diagrams, graphs, mind maps in chat. Like, that's literally all I
+  // want." The routing lives in the `pre` override so the diagram replaces the WHOLE block.
+  assert.match(SOURCE, /import \{ MermaidDiagram \} from "@\/lib\/workspace\/mermaid-diagram";/, "the diagram component is not imported");
+  assert.match(SOURCE, /language-mermaid/, "nothing detects the mermaid fence");
+  assert.match(SOURCE, /<MermaidDiagram chart=/, "the fence does not reach the diagram component");
+});
+
+test("🔴 the diagram is parse-gated, strict, lazy, and falls back to the exact plain block", () => {
+  const diagram = readFileSync(new URL("./mermaid-diagram.tsx", import.meta.url), "utf8");
+  assert.match(diagram, /securityLevel: "strict"/, "strict mode left the initializer — model text could run things");
+  assert.match(diagram, /mermaid\.parse\(text, \{ suppressErrors: true \}\)/, "render is no longer parse-gated; a half-streamed fence would show an error box");
+  assert.match(diagram, /import\("mermaid"\)/, "mermaid is statically imported — a megabyte in every learner's bundle");
+  // The fallback wears the SAME classes as chat-markdown's plain block, so an invalid or
+  // still-streaming fence is indistinguishable from what every fence drew before this existed.
+  assert.match(diagram, /aui-md-code-block my-2 overflow-x-auto rounded-\[0\.375rem\] border border-border bg-muted\/35 p-2\.5 text-foreground/, "the fallback no longer matches the plain code block");
 });

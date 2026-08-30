@@ -1,10 +1,13 @@
 // Assistant prose renderer — desktop src/components/assistant-ui/markdown-text.tsx
 // (shell spec §B6), ported onto react-markdown + remark-gfm + remark-math +
-// rehype-katex (the streaming/Shiki/mermaid machinery is out of scope for the
-// non-streaming v1 wire recipe — fenced code renders as a plain mono block).
+// rehype-katex. Fenced code renders as a plain mono block, with ONE exception the
+// owner ordered on 2026-08-30: a ```mermaid fence renders as the diagram it
+// describes — flow charts, mind maps, sequence and state diagrams, in chat.
+// See mermaid-diagram.tsx for the gate (parse-first, strict security, and a
+// fallback that is byte-identical to the plain block every fence drew before).
 
 import type { Components } from "react-markdown";
-import { Children, useMemo } from "react";
+import { Children, isValidElement, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 // 🔴🔴🔴 CHEMICAL EQUATIONS. `\ce{2H2 + O2 -> 2H2O}` is how anybody writes a reaction in LaTeX, and
 // KaTeX only understands it once this extension has registered itself. It sat unimported in
@@ -25,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { citationsToMarkdown, groupCitationRuns } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { escapeCurrencyDollars, normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
+import { MermaidDiagram } from "@/lib/workspace/mermaid-diagram";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
   "aui-md prose w-full max-w-none overflow-hidden text-[length:var(--conversation-text-font-size)] " +
@@ -266,14 +270,27 @@ function markdownComponents(
       </ol>
     ),
     p: ({ children }) => <p className="wrap-anywhere leading-(--conversation-line-height)">{children}</p>,
-    pre: ({ children }) => (
-      // text-foreground: typography's default pre-code color is a light gray
-      // meant for dark code backgrounds — on this light bg-muted/35 box it
-      // rendered plain (language-less) code blocks near-invisible.
-      <pre className="aui-md-code-block my-2 overflow-x-auto rounded-[0.375rem] border border-border bg-muted/35 p-2.5 text-foreground">
-        {children}
-      </pre>
-    ),
+    pre: ({ children }) => {
+      // 🔴 A ```mermaid FENCE IS A DIAGRAM, NOT A CODE BLOCK (owner, 2026-08-30: "flow charts,
+      // diagrams, graphs, mind maps in chat"). Routed here rather than in `code` because the
+      // diagram must replace the WHOLE block — a drawing inside the mono box would wear a border
+      // and a code background it never asked for. Every other fence renders exactly as before.
+      const only = Children.toArray(children)[0];
+      if (isValidElement(only)) {
+        const fence = only.props as { className?: string; children?: unknown };
+        if (/language-mermaid/.test(fence.className ?? "")) {
+          return <MermaidDiagram chart={typeof fence.children === "string" ? fence.children : String(fence.children ?? "")} />;
+        }
+      }
+      return (
+        // text-foreground: typography's default pre-code color is a light gray
+        // meant for dark code backgrounds — on this light bg-muted/35 box it
+        // rendered plain (language-less) code blocks near-invisible.
+        <pre className="aui-md-code-block my-2 overflow-x-auto rounded-[0.375rem] border border-border bg-muted/35 p-2.5 text-foreground">
+          {children}
+        </pre>
+      );
+    },
     table: ({ children }) => (
       <div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-[0.375rem] border border-border">
         {/* !m-0: typography's table margin survives a bare m-0 here and drew
