@@ -46,9 +46,19 @@ interface SourceTabsApi {
 
 const SourceTabsContext = createContext<SourceTabsApi | null>(null);
 
-export function SourceTabsProvider({ children }: { children: React.ReactNode }) {
+/**
+ * Owns the open tabs. Called by the canvas itself, NOT by a wrapper component.
+ *
+ * 🔴 THE PROVIDER USED TO OWN THIS AND WRAP `LearningCanvas`, AND THAT BROKE A REAL GUARD.
+ * `learn-entry.test.ts` requires every branch of the canvas to return a `CanvasSurface`, because
+ * `CanvasSurface` is what renders the exit — a branch returning anything else is a canvas a learner
+ * can enter and not leave. A provider wrapped around the outside made `LearningCanvas` return
+ * `<SourceTabsProvider>`, so the state moved here and the provider became a plain value carrier
+ * that lives INSIDE the surface.
+ */
+export function useSourceTabsState(): SourceTabsApi {
   const [state, setState] = useState<SourceTabState>(NO_TABS);
-  const api = useMemo<SourceTabsApi>(
+  return useMemo<SourceTabsApi>(
     () => ({
       state,
       open: (pill) => setState((s) => openTabIn(s, pill)),
@@ -58,7 +68,16 @@ export function SourceTabsProvider({ children }: { children: React.ReactNode }) 
     }),
     [state],
   );
-  return <SourceTabsContext.Provider value={api}>{children}</SourceTabsContext.Provider>;
+}
+
+export function SourceTabsProvider({
+  value,
+  children,
+}: {
+  value: SourceTabsApi;
+  children: React.ReactNode;
+}) {
+  return <SourceTabsContext.Provider value={value}>{children}</SourceTabsContext.Provider>;
 }
 
 /** For the pills. Returns null outside a provider, which is how the pill knows to fall back to its

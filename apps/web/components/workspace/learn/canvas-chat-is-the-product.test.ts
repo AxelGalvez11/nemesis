@@ -56,7 +56,11 @@ test("🔴🔴 the thread is in the SAME scroller as the live answer, not an ove
   // have to redraw each turn from something; sharing the scroller means the newest turn simply IS
   // the canvas, and the history sits above it. Calibration: wrap the thread in `absolute inset-0`
   // and this reddens.
-  const scroller = CANVAS.indexOf('<div className="relative h-full overflow-y-auto');
+  // 🔴 MATCHED WITHOUT THE `className="` PREFIX ON PURPOSE. The scroller's width now depends on
+  // whether the source pane is open, so the attribute is a template literal rather than a plain
+  // string. What this check needs is the scroller's POSITION, which the quoting style does not
+  // change; pinning the quotes made this redden for a reason it does not care about.
+  const scroller = CANVAS.indexOf('relative h-full overflow-y-auto');
   assert.ok(scroller > 0, "the canvas scroller moved; re-point this check");
   const thread = CANVAS.indexOf("{threadOpen && thread.length > 0 && (");
   assert.ok(thread > scroller, "the thread is not inside the canvas scroller");

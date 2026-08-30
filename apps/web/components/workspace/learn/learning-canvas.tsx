@@ -98,7 +98,7 @@ import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
-import { SourceTabPane, SourceTabsProvider, useSourceTabs } from "./source-tab-viewer";
+import { SourceTabPane, SourceTabsProvider, useSourceTabsState } from "./source-tab-viewer";
 
 /**
  * Where the `×` puts the learner down.
@@ -161,18 +161,7 @@ function ContinueHotkey({ onContinue }: { onContinue: (() => void) | null }): nu
   return null;
 }
 
-// 🔴 A WRAPPER, SO THE CANVAS ITSELF CAN READ THE READING PANE'S STATE. A provider has to sit
-// ABOVE everything that consumes it, and this component both hosts the pane and has to shrink for
-// it, so it cannot be its own provider.
-export function LearningCanvas(props: React.ComponentProps<typeof LearningCanvasInner>) {
-  return (
-    <SourceTabsProvider>
-      <LearningCanvasInner {...props} />
-    </SourceTabsProvider>
-  );
-}
-
-function LearningCanvasInner({
+export function LearningCanvas({
   canvasId,
   openingAsk = null,
   openingCapability = null,
@@ -216,7 +205,7 @@ function LearningCanvasInner({
   // that the composer and the bottom gradient — both absolute to `CanvasSurface` — did not have to
   // be restructured; they take the same offset instead. Below `xl` the pane floats over the canvas
   // and none of these offsets apply.
-  const sourceTabs = useSourceTabs();
+  const sourceTabs = useSourceTabsState();
   const paneOpen = (sourceTabs?.state.tabs.length ?? 0) > 0;
   const paneInset = paneOpen ? " xl:right-[360px]" : "";
   const paneWidth = paneOpen ? " xl:w-[calc(100%-360px)]" : "";
@@ -1882,6 +1871,14 @@ function LearningCanvasInner({
       />
       }
     >
+      {/* 🔴 INSIDE THE SURFACE, NOT AROUND IT. Wrapping `LearningCanvas` in the provider made
+          this branch return `<SourceTabsProvider>`, and `learn-entry.test.ts` requires every
+          branch to return a `CanvasSurface` — that is the guard standing between a learner and a
+          canvas with no exit in it. The state lives in `useSourceTabsState` above; this only
+          carries it down to the pills, which sit far below inside the policy view.
+          The children are deliberately NOT re-indented: nine hundred untouched lines moving one
+          level right would bury the actual change in the diff. */}
+      <SourceTabsProvider value={sourceTabs}>
       {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (12px inset + 28px control + 24px breathing room,
@@ -2838,6 +2835,7 @@ function LearningCanvasInner({
           onCapability={setCapability}
         />
       )}
+      </SourceTabsProvider>
     </CanvasSurface>
   );
 }
