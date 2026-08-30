@@ -240,9 +240,13 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
           ))}
           <div className="mx-[10px] my-[6px] h-px bg-(--ui-stroke-tertiary)" />
           <button className={cn(PANEL_ITEM, "mx-[6px] w-auto")} onClick={() => { setOpen(false); onOpen(); }} role="menuitem" type="button">
-            {/* settings-gear, not plug: the owner retired the plug from this feature entirely. */}
-            <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="settings-gear" size="1rem" />
-            <span>Manage connections</span>
+            {/* 🔴 THE ROW SAYS WHERE IT GOES. "Manage connections" opened Settings; it opens the
+                Plugins page now (owner 2026-08-30), and it is named in the destination's own word —
+                the rail row this leads to is labelled Plugins. The puzzle piece is that page's mark
+                (#921); a settings gear promised Settings, which is exactly the wrong turn removed.
+                The plug stays retired (#915). */}
+            <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="extensions" size="1rem" />
+            <span>Manage plugins</span>
             <Codicon className="ml-auto shrink-0 text-(--ui-text-tertiary)" name="chevron-right" size="0.875rem" />
           </button>
         </div>
