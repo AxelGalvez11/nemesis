@@ -40,7 +40,23 @@ export type SourcePill =
    * reparse still names a real document the learner recognises; refusing the pill there would take
    * away the provenance to protect the preview. The renderer says so instead.
    */
-  | { kind: "document"; label: string; title: string; section: string | null; excerpt: string };
+  | {
+      kind: "document";
+      label: string;
+      title: string;
+      section: string | null;
+      excerpt: string;
+      /**
+       * The durable `library_sources.id`, when this document was filed.
+       *
+       * 🔴 ADDED SO THE PILL CAN OPEN THE REAL READER, AND NULL IS A REAL STATE. The excerpt alone
+       * was the only honest destination while there was no source viewer; there is one now, and it
+       * needs the id `CanvasSource.librarySourceId` carries. That field is ABSENT for every
+       * ephemeral attachment and for anything uploaded before filing existed, so null here means
+       * "this document was never filed, show the passage" — never "the id has not loaded yet".
+       */
+      librarySourceId: string | null;
+    };
 
 /** Leading host labels that name a mirror or a language rather than the source. Kept in step with
  *  `lib/favicon.ts`, which does the same job for the chat surface. */
@@ -83,18 +99,24 @@ export function sourcePill(
   // 🔴 THE PAGE'S OWN ADDRESS, NOT `librarySourceId`. That field names a row in OUR storage and is
   // not a page anywhere; a pill built on it would link the learner into nothing. `canvas-model.ts`
   // states the distinction on the field itself.
+  const quoted = quotedExcerpt(sources, citation.ref);
+  const excerpt = (quoted?.excerpt.text ?? "").trim();
+
   const url = (source.sourceUrl ?? "").trim();
   if (url) {
     const site = siteName(url);
     if (site) {
+      // 🔴 A PAGE OPENS. IT DOES NOT COME INTO THE READING PANE. Owner reversed the earlier call
+      // on 2026-08-30: the pane is for documents. A page already has a home — the browser — and
+      // pulling it into a 360px column gives a worse read than the site it came from.
       return { host: site.host, kind: "web", label: site.label, title: section ? `${title} · ${section}` : title, url };
     }
   }
 
-  const quoted = quotedExcerpt(sources, citation.ref);
   return {
-    excerpt: (quoted?.excerpt.text ?? "").trim(),
+    excerpt,
     kind: "document",
+    librarySourceId: source.librarySourceId ?? null,
     // 🔴 THE DOCUMENT'S OWN NAME IS THE LABEL. A learner recognises "PHCY 2119 Lecture 4"; they do
     // not recognise a section heading out of context, which is why the section rides in the preview
     // rather than on the face of the pill.

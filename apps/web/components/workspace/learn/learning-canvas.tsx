@@ -98,6 +98,7 @@ import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
+import { SourceTabPane, SourceTabsProvider, useSourceTabs } from "./source-tab-viewer";
 
 /**
  * Where the `×` puts the learner down.
@@ -160,7 +161,18 @@ function ContinueHotkey({ onContinue }: { onContinue: (() => void) | null }): nu
   return null;
 }
 
-export function LearningCanvas({
+// 🔴 A WRAPPER, SO THE CANVAS ITSELF CAN READ THE READING PANE'S STATE. A provider has to sit
+// ABOVE everything that consumes it, and this component both hosts the pane and has to shrink for
+// it, so it cannot be its own provider.
+export function LearningCanvas(props: React.ComponentProps<typeof LearningCanvasInner>) {
+  return (
+    <SourceTabsProvider>
+      <LearningCanvasInner {...props} />
+    </SourceTabsProvider>
+  );
+}
+
+function LearningCanvasInner({
   canvasId,
   openingAsk = null,
   openingCapability = null,
@@ -200,6 +212,15 @@ export function LearningCanvas({
    *  the `/learn` page, where the rules live. */
   strategyOverride?: TeachingStrategyId | null;
 }) {
+  // How wide the canvas may be. The pane is absolutely positioned rather than a flex sibling so
+  // that the composer and the bottom gradient — both absolute to `CanvasSurface` — did not have to
+  // be restructured; they take the same offset instead. Below `xl` the pane floats over the canvas
+  // and none of these offsets apply.
+  const sourceTabs = useSourceTabs();
+  const paneOpen = (sourceTabs?.state.tabs.length ?? 0) > 0;
+  const paneInset = paneOpen ? " xl:right-[360px]" : "";
+  const paneWidth = paneOpen ? " xl:w-[calc(100%-360px)]" : "";
+
   const router = useRouter();
   // 🔴 DEFINED BEFORE THE EARLY RETURN, so both render branches use the same one. The processing
   // branch below returns before most of this component exists; anything the exit needs has to be
@@ -1916,7 +1937,8 @@ export function LearningCanvas({
         </div>
       )}
 
-      <div className="relative h-full overflow-y-auto pb-[160px] pt-[64px]">
+      <SourceTabPane />
+      <div className={`relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
@@ -2528,7 +2550,7 @@ export function LearningCanvas({
           error at once — a failed judge and a failed lesson generation are different events — and
           showing the invisible one would report a failure the learner cannot place. */}
       {(regions.policy ? policy.error ?? error : error) && (
-        <div className="absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
+        <div className={`absolute inset-x-0 bottom-24 z-30 flex justify-center px-4${paneInset}`}>
           <div className="flex max-w-[38rem] items-start gap-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-4 py-3 shadow-lg">
             <p className="text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">
               {regions.policy ? policy.error ?? error : error}
@@ -2707,7 +2729,7 @@ export function LearningCanvas({
           recording panel offers a second one. Same position, same width — the surface transforms,
           it does not gain a layer. */}
       {showComposer && recording && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4 pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent">
+        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4 pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent${paneInset}`}>
           <div className="pointer-events-auto w-full">
             <CanvasRecorder
               // The canvas's ordinary attach path — the identical one a dropped file takes, which is
