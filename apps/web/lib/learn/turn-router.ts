@@ -1029,8 +1029,15 @@ const DECISION_CONTRACT = [
   ' "visuals": [{"kind": "quantitative", "learningGoal": "…", "xLabel": "x", "yLabel": "y",',
   '   "series": [{"label": "y = x²", "points": [{"x":0,"y":0},{"x":1,"y":1},{"x":2,"y":4}]}]}]}',
   "```",
+  // 🔴 THE FENCE NUDGE LIVES ON THE FORMAT LINE ITSELF, because the paragraph further down
+  // was not enough: probed through this very packet (2026-08-30, three unprompted process
+  // questions, temperature 0.3), the model drew zero diagrams with the rule only there. The
+  // contract's own lesson, third time now: what sits in the highest-signal position is what the
+  // model does; prose elsewhere is what it agrees with.
   "Then the answer itself, in plain markdown. Everything outside the block is what Nemesis says out "
-  + "loud, so always write something, even when you also act.",
+  + "loud, so always write something, even when you also act. When the answer explains a process, "
+  + "a branching decision, a cycle, or a hierarchy, include a ```mermaid fence drawing it, "
+  + "unprompted, beside the prose.",
   "",
   // 🔴 THE PAYOFF, STATED WHERE THE MODEL WILL SEE IT. Outside the JSON there is no escaping to get
   // wrong, so this instruction is finally safe — it was removed twice for breaking whole turns.
@@ -1048,13 +1055,24 @@ const DECISION_CONTRACT = [
   // text. The size cap and the plain-quoted-labels rule are what keep the drawings readable: a
   // forty-node mermaid graph lays out as spaghetti, and HTML in a label is stripped by the
   // renderer's strict mode anyway.
-  "The canvas also draws fenced mermaid blocks in your answer. When structure reads better drawn "
-  + "than said, write a ```mermaid fence: flowchart TD for steps and decisions, mindmap for how "
-  + "a subject branches, sequenceDiagram for exchanges over time, stateDiagram-v2 for states, "
-  + "pie for shares of a whole. Always use one when the learner asks for a flow chart, diagram, "
-  + "mind map or similar. Keep a diagram under about fifteen nodes, write labels as short plain "
+  // 🔴 THE JUDGEMENT IS THE MODEL'S, NOT ONLY THE LEARNER'S — owner, 2026-08-30: "shouldn't
+  // DeepSeek be able to know when a diagram or flow chart or mermaid would be most useful?" The
+  // first draft of this paragraph led with on-request use, and the model behaved accordingly:
+  // asked to teach meiosis it wrote prose, asked to "show" it drew. The signs below name the
+  // shapes of answer that want a drawing, so reaching for one unprompted is instructed rather
+  // than permitted; the never-decorate sentence is the brake that keeps a definition from
+  // arriving as art.
+  "The canvas also draws fenced mermaid blocks in your answer: flowchart TD for steps and "
+  + "decisions, mindmap for how a subject branches, sequenceDiagram for exchanges over time, "
+  + "stateDiagram-v2 for states, pie for shares of a whole. Judge for yourself when one would "
+  + "genuinely help, without being asked: an answer that IS a process with stages, a branching "
+  + "decision, a cycle, a hierarchy, or several parts relating to each other lands better drawn, "
+  + 'and if you find yourself writing "first... then... which leads to...", draw that answer '
+  + "beside the prose. Always use one when the learner asks for a flow chart, diagram, mind map "
+  + "or similar. Keep a diagram under about fifteen nodes, write labels as short plain "
   + 'text in double quotes (no HTML, no LaTeX inside labels), and let the prose still carry the '
-  + "explanation. The typed \"visuals\" array is unchanged and still preferred for everything it "
+  + "explanation. Never decorate: a plain fact, a definition, or a feeling needs no diagram. The "
+  + 'typed "visuals" array is unchanged and still preferred for everything it '
   + "covers: plots and bar charts with real numbers, mechanisms, structures, anatomy, figures.",
   "",
   '"then" is what happens to the canvas:',
