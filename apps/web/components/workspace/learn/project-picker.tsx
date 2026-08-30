@@ -114,7 +114,11 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
       title={on.length > 0 ? `Connected: ${on.map((a) => a.label).join(", ")}` : "Connect your apps"}
       type="button"
     >
-      <Codicon className="shrink-0" name="plug" size="1rem" />
+      {/* 🔴 THE GLYPH IS THE EMPTY STATE'S ONLY MARK, AND IT GOES ONCE THERE ARE LOGOS. Measured on
+          the reference: its `Plugins` control is the WORD followed by the connector marks, with no
+          leading icon of its own — 132px wide, the label running 155→223 and the logos 223→279. A
+          plug in front of four product logos is a fifth mark saying what the four already say. */}
+      {on.length === 0 && <Codicon className="shrink-0" name="plug" size="1rem" />}
       <span>{on.length > 0 ? "Apps" : "Connect apps"}</span>
       {on.length > 0 && (
         // 🔴 SPACED, NOT STACKED. The reference overlaps its logos by 8px, which reads as a pile of

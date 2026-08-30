@@ -67,6 +67,10 @@ test("🔴 the row carries the connected apps beside the project, as the referen
     [...readFileSync(new URL(`../../../public/brand/google/${app}.svg`, import.meta.url), "utf8").matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
   assert.notEqual(new Set(clash).size, clash.length, "the logos no longer share an id — re-check whether inlining is now safe before relaxing this");
   assert.match(code, /<img/, "the logos stopped being drawn as images, which cross-wires their gradients");
+  // 🔴 THE LEADING GLYPH BELONGS TO THE EMPTY STATE ONLY. The reference's control is the word
+  // followed by the connector marks with no icon of its own; a plug in front of four product logos
+  // is a fifth mark saying what the four already say.
+  assert.match(code, /\{on\.length === 0 && <Codicon[^}]*name="plug"/, "the plug glyph is drawn beside the logos again");
   // The provenance is part of the asset, not a nicety: it records the source URL and the rule that
   // these files are never edited.
   const prov = readFileSync(new URL("../../../public/brand/google/PROVENANCE.md", import.meta.url), "utf8");
