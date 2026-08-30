@@ -854,7 +854,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             }}
             apps={connections.apps}
             connected={connections.connected}
-            onOpenApps={() => router.push("/settings?panel=connections")}
+            // 🔴 THE PLUGINS PAGE, NOT SETTINGS (owner 2026-08-30: *"when clicking on manage plugins, it
+            // should take users to the plugin page, not to the settings"*). When this was wired the
+            // only surface for connections WAS a card buried in Settings; /plugins has since become
+            // a real destination with a rail row of its own, and a menu that dumps a learner into
+            // Settings for a thing that has a page is a wrong turn.
+            onOpenApps={() => router.push("/plugins")}
             shown={!departing && !recording}
             value={project}
           />

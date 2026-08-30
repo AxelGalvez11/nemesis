@@ -77,7 +77,11 @@ test("🔴 the row carries the connected apps beside the project, as the referen
   // matching it anywhere let a broken strip condition pass — caught by calibration, the break did
   // not redden. The strip must RENDER on the available apps, not merely mention them.
   assert.match(code, /\{\(on\.length > 0 \? on : apps\)\.length > 0 && \(/, "the logo strip no longer renders for the empty state");
-  assert.match(code, /name="settings-gear"/, "the Manage connections row lost its mark");
+  // 🔴 REPOINTED 2026-08-30 (same day, owner): the row leads to the PLUGINS PAGE now, not
+  // Settings, so it wears that page's own mark — the puzzle piece (#921) — and its word. The
+  // settings gear promised Settings, which was exactly the wrong turn being removed.
+  assert.match(code, /name="extensions"/, "the Manage plugins row lost the destination's mark");
+  assert.ok(!/name="settings-gear"/.test(code), "the settings gear is back, promising the wrong destination");
   // The provenance is part of the asset, not a nicety: it records the source URL and the rule that
   // these files are never edited.
   const prov = readFileSync(new URL("../../../public/brand/google/PROVENANCE.md", import.meta.url), "utf8");
@@ -166,7 +170,12 @@ test("🔴 the apps menu connects for real, and a connected row is status rather
   // A CONNECTION IS ACCOUNT-WIDE: there is nothing per-conversation to toggle, so a connected row
   // is a div with a check, not a button that does nothing (§38 bans dead controls).
   assert.match(PICKER, /cursor-default hover:bg-transparent/, "a connected row became a control again");
-  assert.match(PICKER, /Manage connections/, "the door to Settings is gone from the menu");
+  assert.match(PICKER, /Manage plugins/, "the door to the plugins page is gone from the menu");
+  // 🔴 AND IT OPENS THE PLUGINS PAGE. It routed to a card buried in Settings when Settings was the
+  // only surface; /plugins is a destination with a rail row of its own now (owner 2026-08-30:
+  // *"it should take users to the plugin page, not to the settings"*).
+  assert.match(HOME, /onOpenApps=\{\(\) => router\.push\("\/plugins"\)\}/, "the menu dumps learners into Settings again");
+  assert.ok(!/onOpenApps=\{\(\) => router\.push\("\/settings/.test(HOME), "a second wiring still points at Settings");
   // An unconfigured server skips the menu: `apps` is empty exactly then, and a panel whose only
   // row points at Settings is the long way of just going there.
   assert.match(PICKER, /if \(apps\.length === 0\) \{ onOpen\(\); return; \}/, "an unconfigured server no longer falls back to Settings");
