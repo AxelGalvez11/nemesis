@@ -239,13 +239,18 @@ export function glanceOffset(ms: number, reach: number): { x: number; y: number 
 /**
  * One full round of the character's attention: it follows, then it is absorbed, then it follows.
  *
- * 🔴 FOLLOWING IS THE MAJORITY AND HAS TO BE. The single most repeated report about this character
- * is *"the mascot is not following the mouse at all"* — three times, and twice I replied that it
- * did. A design that stops following has to make it obvious that the stopping is deliberate, so the
- * absorbed share is a quarter, not a half, and the cycle OPENS on following: whatever the learner
- * sees in the first seconds after a page loads is the character watching them.
+ * 🔴 FOLLOWING IS STILL THE MAJORITY. The most repeated report about this character used to be
+ * *"the mascot is not following the mouse at all"* — three times, and twice I replied that it did.
+ * The cycle OPENS on following, so whatever the learner sees in the first seconds after a page
+ * loads is the character watching them.
+ *
+ * 🔴🔴 20s/5s → 18s/6s ON THE FOURTH REPORT OF THE OPPOSITE (owner 2026-08-30: *"the mascot is
+ * still following the mouse, and it should follow the mouse at times, but at times, it just should
+ * just move independently of the mouse"*). A quarter was already the intent and the learner was not
+ * getting a quarter — see the gate that used to stand in front of this, described in
+ * `montageLoop`. With that gate gone the share is real, and a third is what reads as *sometimes*.
  */
-export const ATTENTION_CYCLE_MS = 20_000;
+export const ATTENTION_CYCLE_MS = 18_000;
 
 /**
  * How long one absorbed stretch lasts.
@@ -255,7 +260,7 @@ export const ATTENTION_CYCLE_MS = 20_000;
  * 0.8px for a held feeling). Much shorter and being absorbed is indistinguishable from a glance,
  * which this product already has and which is not what was asked for.
  */
-export const ABSORBED_MS = 5_000;
+export const ABSORBED_MS = 6_000;
 
 /**
  * Is the character absorbed in its own business at `ms`?
@@ -265,6 +270,19 @@ export const ABSORBED_MS = 5_000;
 export function absorbedAt(ms: number): boolean {
   if (!Number.isFinite(ms) || ms < 0) return false;
   return ms % ATTENTION_CYCLE_MS >= ATTENTION_CYCLE_MS - ABSORBED_MS;
+}
+
+/**
+ * Which absorbed stretch this is, counting from the clock's start — or null while following.
+ *
+ * 🔴 IT EXISTS SO THE STRETCH CAN CHOOSE WHAT TO DO WITH ITSELF. The montage picks a different
+ * movement loop per cycle from this number, so two absorbed stretches in a row are not the same
+ * performance; see `montageLoop`. Deterministic, like everything else in this file — no clock of
+ * its own, no randomness that a test cannot ask about.
+ */
+export function absorbedCycleAt(ms: number): number | null {
+  if (!absorbedAt(ms)) return null;
+  return Math.floor(ms / ATTENTION_CYCLE_MS);
 }
 
 /** A point in client coordinates. */

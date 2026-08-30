@@ -137,7 +137,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // 🔴 THE GREETER IS NOT THE DOCK. It renders `NemesisAvatar` directly, so every layer the dock
   // composes has to be repeated here or it does not apply. That is a real seam and this is the
   // second thing to fall through it; `montage.test.ts` now pins both surfaces.
-  const greeterFace = useMontage(greeter.state, !departing && !listening, greeter.poking);
+  const greeterFace = useMontage(
+    greeter.state, !departing && !listening, greeter.poking,
+    // 🔴 THE GREETER NEVER GOES ABSORBED, AND THAT IS THE FRONT DOOR'S JOB RATHER THAN AN OVERSIGHT.
+    // The attention cycle exists so a character parked beside a page of text for minutes at a time
+    // has moments of its own. This one is on screen for the few seconds between arriving and typing
+    // the first sentence, and every one of them should be it looking at you.
+    null,
+  );
   /**
    * Where the composer travels, in px. Measured at the moment of the send; see `start`.
    *

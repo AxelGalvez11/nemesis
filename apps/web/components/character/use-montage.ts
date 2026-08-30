@@ -8,14 +8,30 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { MONTAGE_HOLD_MS, montageFace } from "@/lib/character/montage";
+import { MONTAGE_HOLD_MS, montageFace, montageLoop } from "@/lib/character/montage";
 import { useTheme } from "@/components/theme-provider";
 import type { StateId } from "@/lib/character/stations";
 
 /** Checked more often than the hold, so a face changes near its own moment rather than late. */
 const TICK_MS = 1_000;
 
-export function useMontage(base: StateId, atRest: boolean, busy: boolean): StateId {
+export function useMontage(
+  base: StateId,
+  atRest: boolean,
+  busy: boolean,
+  /**
+   * Which absorbed stretch is running, or null while the character is following the pointer.
+   *
+   * 🔴🔴 THE CLOCK REACHES THE FACE HERE, AND THAT DIRECTION IS THE 2026-08-30 FIX. The dock used to
+   * ask the montage what it was doing and only let go of the pointer if the answer happened to be a
+   * loop — which meant 55 seconds of every 193 could never qualify. Now an absorbed stretch simply
+   * takes the face: the character is GIVEN something to be absorbed in. See `montageLoop`.
+   *
+   * 🔴 IT STILL LOSES TO EVERYTHING ABOVE IT. `usePoke` is applied before this and `useDoze` after,
+   * so a click still wins and a sleeping character is not pulled into a loop.
+   */
+  absorbedCycle: number | null,
+): StateId {
   // 🔴 THE LEARNER'S OWN LIST, OR NULL FOR THE DEFAULT SET. Read here rather than passed down,
   // because every caller would otherwise have to remember to thread it and forgetting one gives a
   // character that ignores the setting on exactly one surface.
@@ -56,6 +72,9 @@ export function useMontage(base: StateId, atRest: boolean, busy: boolean): State
     return () => window.clearInterval(timer);
   }, [atRest, busy, chosen]);
 
+  // 🔴 ONLY AT REST, AND ONLY WHEN NOTHING ELSE OWNS THE FACE — the same two conditions the
+  // scheduled montage obeys, so being absorbed can never paint over a turn in flight.
+  if (absorbedCycle !== null && atRest && !busy) return montageLoop({ chosen, cycle: absorbedCycle });
   return face ?? base;
 }
 

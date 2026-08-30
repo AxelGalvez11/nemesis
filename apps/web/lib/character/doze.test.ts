@@ -59,7 +59,11 @@ test("🔴🔴 the three layers compose in the order that makes a click land", (
   // Source-text, because the order lives in three lines and no test can reach a hook chain.
   const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(dock, /const \{ state: poked[^}]*\} = usePoke\(state\);/, "usePoke stopped taking the surface's own state");
-  assert.match(dock, /const varied = useMontage\(poked, atRest, poking\);/, "the montage no longer wraps the poke, so a click is overwritten by a resting face");
+  // 🔴 REPOINTED 2026-08-30: the montage takes a fourth argument now, the absorbed stretch. That
+  // stretch chooses a MOVEMENT LOOP rather than letting the scheduled face stand, which is how the
+  // character gets moments genuinely independent of the pointer — see `montageLoop`. It changes
+  // nothing about the order this test is actually about: a poke still goes in, a doze still wraps.
+  assert.match(dock, /const varied = useMontage\(poked, atRest, poking, absorbedCycle\);/, "the montage no longer wraps the poke, so a click is overwritten by a resting face");
   assert.match(dock, /const shown = useDoze\(varied, hidden, !atRest\);/, "the doze layer no longer wraps the montage, or is deriving `working` from a layered state");
 
   // 🔴🔴 AND `atRest` COMES FROM THE SURFACE'S OWN STATE, NEVER FROM A LAYERED ONE. Derived from

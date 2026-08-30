@@ -161,14 +161,45 @@ export const MONTAGE_LEFT_OUT: readonly string[] = MONTAGE_CHOICES.map((c) => c.
 );
 
 /**
+ * A movement loop for one absorbed stretch, chosen from the learner's own list.
+ *
+ * 🔴🔴 THIS REPLACES A GATE, AND THE GATE IS WHY THE FEATURE WAS INVISIBLE FOR TWO DAYS. The dock
+ * used to ask `isMontageLoop(shown)` before it would let go of the pointer — a safeguard, and a
+ * correct one on its face: dropping the cursor while a HELD feeling is on gives a character that
+ * stops following and then does nothing, which is worse than not stopping at all.
+ *
+ * But the montage's own list is 12 loops, then 11 held feelings, then one more loop. Measured over
+ * a real ten-minute session at rest: **55 seconds of every 193 is an unbroken stretch in which the
+ * window could never open**, and the share the learner actually got was 18.1% against the 25% the
+ * clock was set to. So the character followed the mouse solidly for nearly a minute at a time,
+ * which is exactly what the owner reported, four times.
+ *
+ * 🔴 SO THE CLOCK DRIVES THE FACE NOW, INSTEAD OF THE FACE GATING THE CLOCK. When a stretch opens,
+ * the character is GIVEN something to be absorbed in. The safeguard's reasoning is fully honoured —
+ * a stretch still always contains real movement — but by construction rather than by luck.
+ *
+ * 🔴 FROM THE LEARNER'S OWN CHOICES, falling back to the defaults' loops and finally to `gaze-idle`,
+ * so a learner who has ticked only held feelings still gets movement here rather than a frozen
+ * character. `cycle` varies the pick so two stretches running are not the same performance.
+ */
+export function montageLoop(input: { readonly cycle: number; readonly chosen?: readonly string[] | null }): string {
+  const { cycle, chosen } = input;
+  const loops = resolveMontage(chosen).filter(isMontageLoop);
+  const pool = loops.length > 0 ? loops : MONTAGE.filter(isMontageLoop);
+  if (pool.length === 0) return "gaze-idle";
+  // A non-negative index whatever the clock hands over.
+  return pool[((cycle % pool.length) + pool.length) % pool.length]!;
+}
+
+/**
  * Is `id` one of the entries that MOVES, rather than a face that is merely held?
  *
  * 🔴 THE DIFFERENCE IS 30px AGAINST 0.8px, WHICH IS THE DIFFERENCE BETWEEN "DOING ITS OWN THING"
- * AND "STANDING STILL" (the table at the top of this file has the measurements). The dock uses this
- * to decide when the character has something of its own worth taking the pointer away for — see
- * `absorbedAt` in `gaze.ts`. Dropping the cursor while a held feeling is on would produce, exactly,
- * the complaint that change exists to answer: a character that stopped following and then did
- * nothing.
+ * AND "STANDING STILL" (the table at the top of this file has the measurements).
+ *
+ * 🔴 THE DOCK NO LONGER ASKS THIS BEFORE LETTING GO OF THE POINTER — that was the gate `montageLoop`
+ * replaces, and the reason is written there. What still reads it is `montageLoop` itself, choosing
+ * what to play, and the settings card, saying which entries are which.
  *
  * Unknown ids are not loops. `resolveMontage` has already dropped anything unknown, so reaching
  * here with one means the catalogue moved under a stored list, and the safe answer is to keep
