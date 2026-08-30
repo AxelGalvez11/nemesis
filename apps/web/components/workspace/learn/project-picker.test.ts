@@ -67,10 +67,17 @@ test("🔴 the row carries the connected apps beside the project, as the referen
     [...readFileSync(new URL(`../../../public/brand/google/${app}.svg`, import.meta.url), "utf8").matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
   assert.notEqual(new Set(clash).size, clash.length, "the logos no longer share an id — re-check whether inlining is now safe before relaxing this");
   assert.match(code, /<img/, "the logos stopped being drawn as images, which cross-wires their gradients");
-  // 🔴 THE LEADING GLYPH BELONGS TO THE EMPTY STATE ONLY. The reference's control is the word
-  // followed by the connector marks with no icon of its own; a plug in front of four product logos
-  // is a fifth mark saying what the four already say.
-  assert.match(code, /\{on\.length === 0 && <Codicon[^}]*name="plug"/, "the plug glyph is drawn beside the logos again");
+  // 🔴🔴 REPOINTED 2026-08-30: THE PLUG IS RETIRED FROM THIS FEATURE ENTIRELY. The old assertion
+  // kept it as the empty state's one mark; the owner, shown seven treatments drawn on the real
+  // tray, chose the logos themselves as the icon — the empty state now wears the AVAILABLE apps'
+  // logos beside "Connect apps", the connected state wears the connected ones beside "Apps", and
+  // only an unconfigured server (no apps to show) is bare words.
+  assert.ok(!/name="plug"/.test(code), "the plug glyph is back somewhere in this feature");
+  // 🔴 THE CONDITIONAL ITSELF, NOT THE EXPRESSION: the same ternary also appears inside the map, so
+  // matching it anywhere let a broken strip condition pass — caught by calibration, the break did
+  // not redden. The strip must RENDER on the available apps, not merely mention them.
+  assert.match(code, /\{\(on\.length > 0 \? on : apps\)\.length > 0 && \(/, "the logo strip no longer renders for the empty state");
+  assert.match(code, /name="settings-gear"/, "the Manage connections row lost its mark");
   // The provenance is part of the asset, not a nicety: it records the source URL and the rule that
   // these files are never edited.
   const prov = readFileSync(new URL("../../../public/brand/google/PROVENANCE.md", import.meta.url), "utf8");

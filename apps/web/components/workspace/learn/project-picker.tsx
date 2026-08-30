@@ -180,17 +180,21 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
         title={on.length > 0 ? `Connected: ${on.map((a) => a.label).join(", ")}` : "Connect your apps"}
         type="button"
       >
-        {/* 🔴 THE GLYPH IS THE EMPTY STATE'S ONLY MARK, AND IT GOES ONCE THERE ARE LOGOS. Measured on
-            the reference: its `Plugins` control is the WORD followed by the connector marks, with no
-            leading icon of its own — 132px wide, the label running 155→223 and the logos 223→279. A
-            plug in front of four product logos is a fifth mark saying what the four already say. */}
-        {on.length === 0 && <Codicon className="shrink-0" name="plug" size="1rem" />}
+        {/* 🔴🔴 NO GLYPH, EVER — THE LOGOS ARE THE ICON (owner 2026-08-30, shown seven treatments on
+            the tray and choosing A: *"do something like chatgpt where it shows a favicon slash logo
+            of the actual app"*). The plug codicon this replaces was the one mark on the empty state;
+            now the empty state shows the logos of what CAN be connected, and the connected state
+            shows what IS. The strip is the four available apps until one is yours, then only yours —
+            so the control never claims a connection that does not exist: "Connect apps" beside a
+            logo reads as an offer, "Apps" beside it reads as a fact.
+            🔴 THE UNCONFIGURED SERVER SHOWS THE BARE WORDS. `apps` is empty exactly then; there are
+            no logos to show and inventing a glyph for that one state is how the plug got in. */}
         <span>{on.length > 0 ? "Apps" : "Connect apps"}</span>
-        {on.length > 0 && (
+        {(on.length > 0 ? on : apps).length > 0 && (
           // 🔴 SPACED, NOT STACKED. The reference overlaps its logos by 8px, which reads as a pile of
-          // distinct brand colours; the same overlap on four monochrome glyphs is a smudge.
+          // distinct brand colours; spaced at 20px each stays legible at this size.
           <span className="ml-[2px] flex shrink-0 items-center gap-[5px]">
-            {on.map((a) => APP_LOGO[a.key]).filter(Boolean).slice(0, 4).map((src) => (
+            {(on.length > 0 ? on : apps).map((a) => APP_LOGO[a.key]).filter(Boolean).slice(0, 4).map((src) => (
               // 🔴 EXPLICIT `width`/`height` ATTRIBUTES AS WELL AS THE CLASS. Without intrinsic
               // dimensions the row reflows the instant the icons decode, which on a slow connection
               // is a visible jump in a control the learner may already be reaching for.
@@ -236,7 +240,8 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
           ))}
           <div className="mx-[10px] my-[6px] h-px bg-(--ui-stroke-tertiary)" />
           <button className={cn(PANEL_ITEM, "mx-[6px] w-auto")} onClick={() => { setOpen(false); onOpen(); }} role="menuitem" type="button">
-            <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="plug" size="1rem" />
+            {/* settings-gear, not plug: the owner retired the plug from this feature entirely. */}
+            <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="settings-gear" size="1rem" />
             <span>Manage connections</span>
             <Codicon className="ml-auto shrink-0 text-(--ui-text-tertiary)" name="chevron-right" size="0.875rem" />
           </button>
