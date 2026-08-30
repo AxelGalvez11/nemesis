@@ -21,6 +21,7 @@ import { ArtifactCard } from "./artifact-card";
 import { OutputPreview } from "./output-preview";
 import { ResearchPlanCard } from "./research-plan-card";
 import { useAuth } from "@/components/AuthProvider";
+import { setCanvasFolder } from "@/lib/learn/canvas-store";
 import { CanvasCheck } from "./canvas-check";
 // 🔴 `ensureCanvasDeck` / `writeRecallCards` / `cardsFromMisses` LEFT WITH THE RESULTS SCREEN
 // (owner, 2026-08-24). They existed for one caller: the "Make cards from what I missed" button on
@@ -164,6 +165,7 @@ export function LearningCanvas({
   canvasId,
   openingAsk = null,
   openingCapability = null,
+  openingFolder = null,
   policyOverride = null,
   strategyOverride = null,
 }: {
@@ -179,6 +181,12 @@ export function LearningCanvas({
    *  Rides the same URL, consumed by the same effect, and meaningless without `openingAsk`:
    *  a capability is a declaration about a submission, and the ask IS the submission here. */
   openingCapability?: ComposerCapability | null;
+  /** The project chosen on the front door, before this canvas existed.
+   *
+   *  Owner 2026-08-29, pointing at ChatGPT's Work start screen: the chat you are about to start can
+   *  be filed into a project before it exists. There is nothing to file yet on that surface, so the
+   *  choice rides the URL beside the instruction and is spent here, once. */
+  openingFolder?: string | null;
   /** What the URL asked for, if anything — a stop, or a deliberate bypass of ownership.
    *
    *  🔴 THE DEFAULT IS THE POINT, AND IT IS `null`. Whether the policy takes this canvas is decided
@@ -800,6 +808,27 @@ export function LearningCanvas({
     // composer's own chip has, one navigation later.
     beginOrAnswer(openingAsk, openingCapability);
   }, [beginOrAnswer, canvas.state, openingAsk, openingCapability, session.ready]);
+
+  // File the canvas into the project chosen on the front door — once, as soon as it has an id.
+  //
+  // 🔴 AFTER THE CANVAS EXISTS, NOT AS PART OF MINTING IT. `setCanvasFolder` is the one door the
+  // sidebar's drag-and-drop already uses, so filing from here and filing by dragging are the same
+  // write with the same ownership check. Threading a folder through `useCanvasSession`'s creation
+  // path would be a second way to set the same column, and the two would drift.
+  //
+  // 🔴 LATCHED ON THE ID, NOT ON A BOOLEAN. The canvas can be minted after this effect first runs,
+  // so the latch has to say WHICH canvas was filed; a `true` would refuse to file the real one.
+  const filedInto = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openingFolder || !session.ready) return;
+    if (!canvas.id || filedInto.current === canvas.id) return;
+    filedInto.current = canvas.id;
+    // 🔴 NOT AWAITED AND NOT SURFACED. A canvas that opens is worth more than its filing; if the
+    // write fails the lesson still runs and the canvas is simply loose, which the learner can fix
+    // by dragging it. Blocking the opening on a filing write would be the wrong trade.
+    void setCanvasFolder(uid, canvas.id, openingFolder);
+  }, [canvas.id, openingFolder, session.ready, uid]);
+
   converseRef.current = converse;
 
   // Material chosen on the landing page, before this canvas existed. Same shape as the opening

@@ -30,11 +30,13 @@ import { usePoke } from "@/components/character/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
 import { AttachmentCard, AttachmentRow } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
+import { ProjectPicker } from "./project-picker";
 import { FileDropOverlay } from "./file-drop-overlay";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
@@ -194,6 +196,16 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    *  composer's chip (§38: cleared by the send, never a persistent mode). It rides to the canvas
    *  as `&cap=` beside `?ask=`, and the canvas's opening effect consumes both at once. */
   const [capability, setCapability] = useState<ComposerCapability | null>(null);
+  /** The project this chat will be filed into, chosen before the canvas exists. Rides as `&folder=`. */
+  const [project, setProject] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  // 🔴 READ ONCE, NOT SUBSCRIBED. The front door is a surface a learner passes through in seconds;
+  // the sidebar owns the live list. A stale name here costs nothing — the id is what travels.
+  useEffect(() => {
+    let alive = true;
+    void listFolders(userId).then((rows) => { if (alive) setFolders(rows); });
+    return () => { alive = false; };
+  }, [userId]);
   useEffect(() => {
     if (!addOpen) return;
     const onPointer = (event: PointerEvent) => {
@@ -250,10 +262,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     // 🔴 THE CAPABILITY RIDES ONLY BESIDE A TOPIC. Send is disabled while a capability is staged
     // with nothing typed (the session composer's own §3 rule, same reason), so the `?new=1` and
     // bare branches never have one to carry — a declaration about words needs the words.
+    // 🔴 IT RIDES BOTH DOORS. A chat started from typed words and one started from dropped material
+    // are the same new canvas, so a project chosen before either must file either. Only the bare
+    // `/learn` — nothing typed, nothing staged — has nothing to file.
+    const filing = project ? `&folder=${encodeURIComponent(project)}` : "";
     const href = topic
-      ? `/learn?ask=${encodeURIComponent(topic)}${capability ? `&cap=${capability}` : ""}`
+      ? `/learn?ask=${encodeURIComponent(topic)}${capability ? `&cap=${capability}` : ""}${filing}`
       : staged.length > 0
-        ? "/learn?new=1"
+        ? `/learn?new=1${filing}`
         : "/learn";
     const box = composerBox.current;
     // 🔴 REDUCED MOTION SKIPS THE TRAVEL, NOT THE SEND. Someone who asked the system to stop moving
@@ -791,6 +807,24 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               transition: `opacity ${Math.round(DOCK_MS * 0.55)}ms ease-out`,
             }}
           >
+          {/* 🔴🔴 THE ONE THING THAT MAY SIT UNDER THE COMPOSER, AND THE STANDING RULE BELOW STILL
+              HOLDS. The owner cut a whole strip from this position on 2026-08-26 — cards due, dates
+              coming, rows for half-finished canvases. That was CONTENT competing with the single
+              question this page asks. This is a CONTROL belonging to the composer: it says nothing
+              until there is something to send, and the owner asked for it here by name on
+              2026-08-29, pointing at the same position on ChatGPT's Work start screen. See
+              `project-picker.tsx`, and the note further down that keeps the strip deleted. */}
+          <ProjectPicker
+            folders={folders}
+            onChange={setProject}
+            onCreate={async (name) => {
+              const made = await createFolder(userId, name);
+              if (made) setFolders((rows) => [...rows, made]);
+              return made?.id ?? null;
+            }}
+            shown={!departing && !recording && (text.trim().length > 0 || staged.length > 0)}
+            value={project}
+          />
           <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
             {/* 🔴 THIS NO LONGER PROMISES RECORDING, BECAUSE THIS SURFACE CANNOT DO IT. The line
                 used to read "Type it, drop a file in, or record a lecture." Recording is started by

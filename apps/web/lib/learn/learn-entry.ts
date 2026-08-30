@@ -44,12 +44,29 @@ export interface LearnEntry {
    * no submission there is nothing for it to be about.
    */
   readonly cap: string | null;
+  /**
+   * `?folder=<id>` — the project chosen on the front door before the canvas existed.
+   *
+   * Owner 2026-08-29: *"could you allow the user to add the landing page chat into a project like
+   * in the ChatGPT landing page for the work mode?"* On the reference a row appears under the
+   * composer the moment you type, carrying **Choose project**; picking one files the chat that is
+   * about to be created. There is no canvas yet to file, so the choice travels in the URL exactly
+   * as `ask` and `cap` do.
+   *
+   * 🔴 IT NEVER DECIDES THE SURFACE, for the same reason `cap` does not. A stray `?folder=` with
+   * nothing asked opens the front door: a filing instruction is a fact ABOUT a submission, and with
+   * no submission there is nothing to file.
+   *
+   * Raw here. Whether the id names a folder the learner actually owns is the store's question,
+   * answered when the canvas is filed — not this file's.
+   */
+  readonly folder: string | null;
 }
 
 export function learnEntryFrom(params: {
   get(name: string): string | null;
 }): LearnEntry {
-  return { ask: params.get("ask"), c: params.get("c"), cap: params.get("cap"), isNew: params.get("new") };
+  return { ask: params.get("ask"), c: params.get("c"), cap: params.get("cap"), folder: params.get("folder"), isNew: params.get("new") };
 }
 
 export function learnSurface({ ask, c, isNew }: LearnEntry): LearnSurface {

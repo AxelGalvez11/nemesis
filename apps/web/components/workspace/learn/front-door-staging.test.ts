@@ -54,7 +54,15 @@ test("🔴 only Start hands the files over", () => {
 // would have been silently lost on the next visit. `?new=1` is what mounts the canvas surface.
 test("🔴 material with no topic still opens a canvas", () => {
   const start = bodyOf("start");
-  assert.match(start, /staged\.length > 0\s*\?\s*"\/learn\?new=1"/);
+  // 🔴 REPOINTED 2026-08-29: the href now carries `${filing}` — the project chosen before the canvas
+  // existed. The invariant is unchanged and is what is asserted: material with no words still opens
+  // a canvas, through `?new=1`.
+  assert.match(start, /staged\.length > 0\s*\?\s*`\/learn\?new=1\$\{filing\}`/);
+  // 🔴 AND THE FILING RIDES BOTH DOORS. A chat started from typed words and one started from
+  // dropped material are the same new canvas; a project chosen before either must file either.
+  const askLine = start.split("\n").find((l) => l.includes("?ask=")) ?? "";
+  assert.ok(askLine.includes("${filing}"), "a typed topic does not carry the chosen project");
+  assert.match(start, /const filing = project \? `&folder=\$\{encodeURIComponent\(project\)\}` : "";/, "the filing parameter is gone");
 });
 
 test("🔴 material alone is enough to send — except under a staged capability, which needs words", () => {

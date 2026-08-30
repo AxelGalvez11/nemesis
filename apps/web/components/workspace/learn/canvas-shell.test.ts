@@ -386,9 +386,16 @@ test("🔴 §46.5: the front door is the composer, and nothing is filed below it
   // different name, which is precisely how it would come back.
   for (const [pattern, why] of [
     [/\blistCanvases\b/, "the front door fetches the canvas list again"],
-    [/\blistFolders\b/, "the front door fetches folders again — folders exist to organise a list"],
     [/\.map\(\s*\(?\s*session/, "the front door renders a row per canvas again"],
     [/\bpinnedAt\b/, "pinning is a property of a list, and there is no list here"],
+    // 🔴 REPOINTED 2026-08-29, AND THE LINE IT REPLACES MATTERED. `listFolders` used to be banned
+    // outright, reasoning "folders exist to organise a list, and there is no list here". That
+    // reasoning was right about the SURFACE and wrong about the call: the owner asked for a
+    // "Choose project" control under the composer, copied from ChatGPT's Work start screen, and a
+    // picker has to know the projects' names. So folders may now be READ. What must never come
+    // back is folders RENDERED on the surface — a browsable list of projects here is the canvas
+    // list wearing one more layer, which is exactly how it would return.
+    [/folders\.map\(/, "the front door renders the folders on the surface — the picker is a menu behind a click, not a list"],
   ] as const) {
     assert.equal(
       pattern.test(copy),
