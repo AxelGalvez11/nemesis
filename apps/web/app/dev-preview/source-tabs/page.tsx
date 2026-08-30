@@ -12,7 +12,11 @@
 
 import { CanvasSourcePills } from "@/components/workspace/learn/canvas-source-pills";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
-import { SourceTabPane, SourceTabsProvider } from "@/components/workspace/learn/source-tab-viewer";
+import {
+  SourceTabPane,
+  SourceTabsProvider,
+  useSourceTabsState,
+} from "@/components/workspace/learn/source-tab-viewer";
 import type { SourcePill } from "@/lib/learn/source-pill";
 
 const PILLS: SourcePill[] = [
@@ -44,9 +48,11 @@ const PILLS: SourcePill[] = [
 ];
 
 export default function SourceTabsPreviewPage() {
+  // Owns the tabs exactly as the canvas does. The provider only carries the value down.
+  const tabs = useSourceTabsState();
   return (
     <WorkspacePreviewProvider value={{ email: "student@preview.dev" }}>
-    <SourceTabsProvider>
+    <SourceTabsProvider value={tabs}>
       {/* 🔴 `data-workspace` OR THE CHROME LAYER DOES NOT APPLY. The desktop token and chrome
           rules are scoped to this attribute, which `WorkspaceShell` normally stamps. Without it a
           preview renders with fallback colours and every pill comes out looking like a button from
