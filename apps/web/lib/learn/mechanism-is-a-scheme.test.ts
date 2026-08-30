@@ -48,6 +48,7 @@ const EMPTY: TurnContext = {
   passages: 0,
   searchesLeft: 0,
   sources: 0,
+  pinnedComments: "",
   stagedPassage: "",
   toolCatalogue: "",
   toolContext: "",

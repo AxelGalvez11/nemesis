@@ -56,14 +56,13 @@ interface PdfDocumentViewProps {
   /** The opened document, so the sidebar can draw thumbnails from it. Called
    *  with null when it closes, because a destroyed document renders nothing. */
   onDocumentOpen: (document: PdfDocument | null) => void;
-  /** Drag a box on a page instead of selecting text. See `PdfPageView`'s own note for why this is
-   *  a mode and cannot be anything else. */
-  marking?: boolean;
-  onRegion?: (pageNumber: number, region: RegionBox, cropDataUrl: string | null, anchor: RegionAnchor) => void;
+  /** Also reported upward, so the reader's comment layer can pin to the same page boxes this
+   *  view scrolls and observes. Optional because the Library's plain page has no layer. */
+  registerUnitElement?: (pageNumber: number, element: HTMLElement | null) => void;
 }
 
 export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps>(function PdfDocumentView(
-  { bytes, zoom, matches, currentMatch, onReady, onUnitChange, onError, onScaleChange, onDocumentOpen, marking = false, onRegion },
+  { bytes, zoom, matches, currentMatch, onReady, onUnitChange, onError, onScaleChange, onDocumentOpen, registerUnitElement },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -247,8 +246,9 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
     () => (pageNumber: number, element: HTMLDivElement | null) => {
       if (element) pageElements.current.set(pageNumber, element);
       else pageElements.current.delete(pageNumber);
+      registerUnitElement?.(pageNumber, element);
     },
-    [],
+    [registerUnitElement],
   );
 
   const EMPTY: PageHighlight[] = useMemo(() => [], []);
@@ -263,8 +263,6 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
               document={pdf}
               highlights={highlightsByPage.get(pageNumber) ?? EMPTY}
               key={pageNumber}
-              marking={marking}
-              onRegion={onRegion}
               onVisible={onUnitChange}
               isImageOnly={imageOnlyPages.has(pageNumber)}
               pageNumber={pageNumber}

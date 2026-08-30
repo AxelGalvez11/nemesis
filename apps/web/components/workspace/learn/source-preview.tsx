@@ -283,6 +283,14 @@ export function SourcePreview({
         {state.kind === "ready" && (
           <DocumentReader
             anchor={{ query: null, unit: lastUnit[active.id] ?? null }}
+            // 🔴 THE DURABLE ID, NOT THE CANVAS-LOCAL ONE. Comments must survive this canvas and be
+            // findable from the Library page, and "s1" means nothing outside this session —
+            // `canvas-model.ts` says so in as many words.
+            commentsDoc={
+              active.librarySourceId
+                ? { preview: preview || uid === null, ref: { id: active.librarySourceId, kind: "source" }, uid }
+                : undefined
+            }
             grounded
             key={active.id}
             onSendToChat={onSendToChat}

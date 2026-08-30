@@ -31,6 +31,16 @@ import type { OutlineEntry } from "@/lib/reader/pdf-outline";
 import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { readerActionPrompt, type ReaderActionId } from "@/lib/reader/reader-actions";
 import { cropFileName, fileFromDataUrl } from "@/lib/reader/region-crop";
+import {
+  addDocumentComment,
+  commentAskPrompt,
+  deleteDocumentComment,
+  listDocumentComments,
+  setCommentResolved,
+  type CommentAnchor,
+  type CommentDocRef,
+  type DocumentComment,
+} from "@/lib/workspace/document-comments";
 import { parseReaderAnchor, resolveAnchorUnit, type ReaderAnchor } from "@/lib/reader/reader-anchor";
 import { findInDocument, stepMatch, type SearchMatch } from "@/lib/reader/reader-search";
 import { describeCoverage } from "@nemesis/shared";
@@ -38,6 +48,8 @@ import { describeCoverage } from "@nemesis/shared";
 import { courseOf, describeSource, type ReaderSource } from "@/lib/reader/reader-source";
 import { FIT_WIDTH, zoomIn, zoomOut, type ZoomMode } from "@/lib/reader/reader-zoom";
 
+import { CommentLayer } from "./comment-layer";
+import { cropFrom } from "./use-region-drag";
 import { DocxDocumentView } from "./docx-document-view";
 import { ImageDocumentView, type ImageRegion } from "./image-document-view";
 import { PdfDocumentView, type PdfReadyPayload, type ReaderViewHandle } from "./pdf-document-view";
@@ -86,11 +98,19 @@ export interface DocumentReaderProps {
   /** The page/slide the reader is on, as it changes. A host that unmounts this to show another
    *  document (see the canvas's document tabs) uses it to reopen where the learner left off. */
   onUnitChange?: (unit: number) => void;
+  /**
+   * Where this document's comments live, when the host wants the annotate layer at all.
+   *
+   * 🔴 ABSENT MEANS NO COMMENT MODE, not an inert one — the toolbar toggle is simply not there,
+   * the same absent-not-inert rule the action bar follows. `uid`/`preview` ride along because the
+   * store has a real lane and an in-memory one and only the host knows which this surface is on.
+   */
+  commentsDoc?: { ref: CommentDocRef; uid: string | null; preview: boolean };
 }
 
 export function DocumentReader({
   source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page", grounded = false,
-  onUnitChange,
+  onUnitChange, commentsDoc,
 }: DocumentReaderProps) {
   const isDialog = variant === "dialog";
   const unitLabel = UNIT_LABELS[source.kind] ?? "part";
@@ -125,15 +145,21 @@ export function DocumentReader({
    *  `unit` is null on a single picture, where "image 1" would be furniture rather than a location. */
   const [region, setRegion] = useState<{ region: ImageRegion; preview: string | null; unit: number | null; anchor: SelectionAnchor } | null>(null);
   /**
-   * Marking mode, for documents where a drag has to choose between text and area.
-   *
-   * 🔴 OFFERED ON PDFs ONLY, and the omissions are each for their own reason. A picture has no text
-   * layer to compete with, so its drag is always a box and a toggle there would be a control that
-   * does nothing. A SLIDE is a reconstruction rather than a render (see `pptx-slides.ts`), so a
-   * crop of one would be a picture of our own layout — truthful about the words, wrong about the
-   * thing, and passed to a vision model as though it were the deck.
+   * Comment mode: clicks pin a note, drags draw a box, and text selection is handed back the
+   * moment it is off. One drag cannot mean two things, which is why it is a mode at all — the
+   * argument the old mark-an-area toggle made, absorbed into this one (owner 2026-08-28: the
+   * panel annotates; it never edits).
    */
-  const [marking, setMarking] = useState(false);
+  const [commenting, setCommenting] = useState(false);
+  const [comments, setComments] = useState<readonly DocumentComment[]>([]);
+  /**
+   * unit -> the element that IS that page/slide/sheet, as the views register them.
+   *
+   * 🔴 STATE, NOT A REF, unlike `slideElements` below: the comment layer renders portals INTO
+   * these elements, so their arrival has to cause a render. A ref would leave every pin waiting
+   * for an unrelated state change to appear.
+   */
+  const [unitElements, setUnitElements] = useState<ReadonlyMap<number, HTMLElement>>(new Map());
 
   const viewRef = useRef<ReaderViewHandle>(null);
   const slideElements = useRef(new Map<number, HTMLElement>());
@@ -388,7 +414,118 @@ export function DocumentReader({
   const registerSlide = useCallback((index: number, element: HTMLElement | null) => {
     if (element) slideElements.current.set(index, element);
     else slideElements.current.delete(index);
+    setUnitElements((current) => {
+      if (element ? current.get(index) === element : !current.has(index)) return current;
+      const next = new Map(current);
+      if (element) next.set(index, element);
+      else next.delete(index);
+      return next;
+    });
   }, []);
+
+  // ── Comments ──────────────────────────────────────────────────────────────
+  const commentsRef = commentsDoc?.ref ?? null;
+  const commentsKey = commentsRef ? `${commentsRef.kind}:${commentsRef.id}` : null;
+  useEffect(() => {
+    if (!commentsDoc) return;
+    let live = true;
+    void listDocumentComments(commentsDoc.uid, commentsDoc.ref, { preview: commentsDoc.preview }).then((list) => {
+      if (live) setComments(list);
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the doc, not the object identity a host may rebuild per render
+  }, [commentsKey]);
+
+  /**
+   * The cut-out for a box comment, where a real picture exists to cut.
+   *
+   * 🔴 SCOPED BY KIND, NOT BY DISCOVERY. A slide's section contains <img>s — the deck's embedded
+   * pictures — and "find an image and crop it" would cut a region of the WRONG picture with the
+   * box's fractions. Only a PDF page's canvas and the image view's picture are the thing itself;
+   * a slide stays uncroppable because what renders is our reconstruction (`pptx-slides.ts`).
+   */
+  const cropForComment = useCallback(
+    (unit: number, anchorBox: NonNullable<CommentAnchor["box"]>): string | null => {
+      const element = unitElements.get(unit);
+      if (!element) return null;
+      if (source.kind === "pdf") {
+        const canvas = element.querySelector("canvas");
+        // An unrendered canvas is not empty, it is 300x150 of nothing — the same invariant the
+        // page view stamps on the element for exactly this reader (see `data-painted`).
+        if (canvas instanceof HTMLCanvasElement && canvas.dataset.painted === "true") {
+          return cropFrom(canvas, anchorBox, { height: canvas.height, width: canvas.width });
+        }
+        return null;
+      }
+      if (source.kind === "image") {
+        const image = element.querySelector("img");
+        if (image instanceof HTMLImageElement && image.naturalWidth > 0) {
+          return cropFrom(image, anchorBox, { height: image.naturalHeight, width: image.naturalWidth });
+        }
+      }
+      return null;
+    },
+    [source.kind, unitElements],
+  );
+
+  const keepComment = useCallback(
+    async (draft: { unit: number; anchor: CommentAnchor; body: string }) => {
+      if (!commentsDoc) return false;
+      const made = await addDocumentComment(
+        commentsDoc.uid,
+        commentsDoc.ref,
+        { anchor: draft.anchor, body: draft.body, unit: draft.unit },
+        { preview: commentsDoc.preview },
+      );
+      if (!made) return false;
+      setComments((current) => [...current, made]);
+      return true;
+    },
+    [commentsDoc],
+  );
+
+  /** "Send to Nemesis": the note is KEPT and handed over — one gesture, both destinations, which
+   *  is how the reference behaves (docs/claude-design-reference.md). */
+  const sendComment = useCallback(
+    (draft: { unit: number; anchor: CommentAnchor; body: string }) => {
+      void keepComment(draft);
+      const crop = draft.anchor.box ? cropForComment(draft.unit, draft.anchor.box) : null;
+      const cropped = crop ? fileFromDataUrl(crop, cropFileName(source.fileName, unitLabel, draft.unit)) : null;
+      const prompt = commentAskPrompt({
+        anchor: draft.anchor,
+        body: draft.body,
+        cropAttached: cropped !== null,
+        fileName: source.fileName,
+        unit: draft.unit,
+        unitLabel,
+      });
+      onSendToChat?.(prompt, [...documentAttachment(), ...(cropped ? [cropped] : [])]);
+    },
+    [cropForComment, documentAttachment, keepComment, onSendToChat, source.fileName, unitLabel],
+  );
+
+  const resolveComment = useCallback(
+    (comment: DocumentComment) => {
+      if (!commentsDoc) return;
+      const resolved = comment.resolvedAt === null;
+      setComments((current) =>
+        current.map((row) => (row.id === comment.id ? { ...row, resolvedAt: resolved ? new Date().toISOString() : null } : row)),
+      );
+      void setCommentResolved(commentsDoc.uid, commentsDoc.ref, comment.id, resolved, { preview: commentsDoc.preview });
+    },
+    [commentsDoc],
+  );
+
+  const removeComment = useCallback(
+    (comment: DocumentComment) => {
+      if (!commentsDoc) return;
+      setComments((current) => current.filter((row) => row.id !== comment.id));
+      void deleteDocumentComment(commentsDoc.uid, commentsDoc.ref, comment.id, { preview: commentsDoc.preview });
+    },
+    [commentsDoc],
+  );
 
   const meta = describeSource(source, KIND_LABELS[source.kind] ?? "File");
   // 🔴 SAID ON THE SCREEN THE STUDENT IS LOOKING AT THE DOCUMENT FROM. A page
@@ -404,6 +541,13 @@ export function DocumentReader({
     : region
       ? `the area you marked${region.unit === null ? "" : ` on ${unitLabel} ${region.unit}`}`
       : "this whole document";
+  /**
+   * Comment mode is offered wherever there is a surface to pin to. Audio has no page; "file" has
+   * no view at all. Boxes are drawable only where geometry is fixed — a flowing document reflows
+   * with the panel width, so there a click snaps to the paragraph instead.
+   */
+  const canComment = Boolean(commentsDoc) && ["pdf", "slides", "sheet", "image", "document"].includes(source.kind);
+  const boxesDrawable = source.kind === "pdf" || source.kind === "slides" || source.kind === "image";
   /** Only some documents have anything to list in a contents rail. */
   const hasContents = source.kind === "pdf" || source.kind === "slides" || source.kind === "document" || source.kind === "sheet";
   const readingAvailable = source.kind === "pdf" && blocks.length > 0;
@@ -425,7 +569,7 @@ export function DocumentReader({
     // and the difference between "still loading" and "loaded but blank" is the
     // difference between two completely different bugs.
     <div
-      className="nemesis-reader flex h-full min-h-0 flex-col bg-(--reader-room)"
+      className="nemesis-reader relative flex h-full min-h-0 flex-col bg-(--reader-room)"
       data-load-state={loadState}
       data-variant={variant}
       data-testid="document-reader"
@@ -449,13 +593,8 @@ export function DocumentReader({
         onRotate={source.kind === "image" ? () => setRotation((current) => (current + 90) % 360) : undefined}
         onStepMatch={stepToMatch}
         onToggleRail={hasContents ? () => setRailOpen((open) => !open) : undefined}
-        marking={marking}
-        onToggleMarking={
-          // 🔴 AND ONLY WHERE THE ACTION BAR HAS SOMEWHERE TO SEND. Marking an area whose only
-          // outcome is a message nobody receives is a control that does nothing, which is the same
-          // rule the highlight bar already follows two hundred lines below.
-          source.kind === "pdf" && onSendToChat ? () => setMarking((current) => !current) : undefined
-        }
+        commenting={commenting}
+        onToggleCommenting={canComment && loadState === "ready" ? () => setCommenting((current) => !current) : undefined}
         onUnitChange={goToUnit}
         onZoomIn={() => setZoom({ kind: "fixed", scale: zoomIn(scale) })}
         onZoomOut={() => setZoom({ kind: "fixed", scale: zoomOut(scale) })}
@@ -504,6 +643,14 @@ export function DocumentReader({
         </div>
       )}
 
+      {commenting && (
+        // 🔴 SAID OUT LOUD, because neither gesture is discoverable — the reference floats the same
+        // pill for the same reason ("Click to comment, drag to draw").
+        <p className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[0.6875rem] font-medium text-(--ui-text-secondary) shadow-md" data-testid="reader-comment-hint">
+          {boxesDrawable ? "Click to comment, drag to draw a box" : source.kind === "document" ? "Click a paragraph to comment" : "Click to comment"}
+        </p>
+      )}
+
       {anchorMissed && (
         <p className="shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-4 py-1.5 text-[0.6875rem] text-(--ui-text-secondary)">
           That link points at {unitLabel} {anchor?.unit}, but this document has {unitCount}. Showing it from the start.
@@ -537,15 +684,14 @@ export function DocumentReader({
             <PdfDocumentView
               bytes={bytes}
               currentMatch={matchIndex}
-              marking={marking}
               matches={matches}
               onDocumentOpen={setPdfDocument}
               onError={onViewError}
               onReady={onPdfReady}
-              onRegion={(page, picked, preview, anchor) => takeRegion(picked, preview, anchor, page)}
               onScaleChange={setScale}
               onUnitChange={noteUnit}
               ref={viewRef}
+              registerUnitElement={registerSlide}
               zoom={zoom}
             />
           ) : source.kind === "slides" && bytes ? (
@@ -570,12 +716,13 @@ export function DocumentReader({
               registerElement={registerSlide}
             />
           ) : source.kind === "document" && bytes ? (
-            <DocxDocumentView bytes={bytes} onError={onViewError} onReady={onDocxReady} query={trimmedQuery} />
+            <DocxDocumentView bytes={bytes} onError={onViewError} onReady={onDocxReady} query={trimmedQuery} registerElement={registerSlide} />
           ) : source.kind === "image" && url ? (
             <ImageDocumentView
               fileName={source.fileName}
               onNaturalSize={() => setUnitCount(1)}
               onRegion={(picked, preview, anchor) => takeRegion(picked, preview, anchor, null)}
+              registerElement={registerSlide}
               rotation={rotation}
               scale={zoom.kind === "fixed" ? zoom.scale : 1}
               url={url}
@@ -598,12 +745,17 @@ export function DocumentReader({
 
         {railOpen && hasContents && (
           <ReaderSidebar
+            comments={canComment ? comments : undefined}
             document={pdfDocument}
+            onDeleteComment={removeComment}
             onGoToUnit={goToUnit}
+            onResolveComment={resolveComment}
             onTabChange={setSidebarTab}
             outline={outline}
             outlineIsAuthored={outlineIsAuthored}
-            tab={source.kind === "pdf" ? sidebarTab : "outline"}
+            // Pages-as-pictures exist only on PDFs; the comments tab exists wherever commenting
+            // does. Everything else falls back to the outline.
+            tab={sidebarTab === "pages" && source.kind !== "pdf" ? "outline" : sidebarTab === "comments" && !canComment ? "outline" : sidebarTab}
             unit={unit}
             unitCount={unitCount}
             unitLabel={unitLabel}
@@ -618,6 +770,21 @@ export function DocumentReader({
           and the text one wins — `setRegion(null)` runs on every selection change. */}
       {onSendToChat && (selection ?? region) && (
         <SelectionActions anchor={(selection ?? region)!.anchor} onAction={runAction} />
+      )}
+
+      {canComment && (
+        <CommentLayer
+          blockSnap={source.kind === "document"}
+          boxesDrawable={boxesDrawable}
+          commenting={commenting}
+          comments={comments}
+          onDelete={removeComment}
+          onKeep={keepComment}
+          onResolve={resolveComment}
+          onSend={onSendToChat ? sendComment : null}
+          unitLabel={unitLabel}
+          units={unitElements}
+        />
       )}
     </div>
   );

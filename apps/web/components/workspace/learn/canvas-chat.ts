@@ -46,6 +46,7 @@ import {
 } from "@/lib/workspace/chat-web-search";
 import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
+import { commentsContextBlock, openCommentsForDocs } from "@/lib/workspace/document-comments";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { prepareAnswer } from "@/lib/learn/answer-prepare";
@@ -183,6 +184,37 @@ export function searchedDomains(sources: readonly { url: string }[]): readonly s
   return domains;
 }
 
+
+/** What a unit is called in each source kind the extractor reports. */
+const COMMENT_UNIT_LABEL: Record<string, string> = { pdf: "page", pptx: "slide", ppt: "slide", docx: "section", text: "section", image: "image", xlsx: "sheet" };
+
+/**
+ * Every OPEN comment on this canvas's durable material, as one packet block.
+ *
+ * 🔴 DURABLE SOURCES ONLY (`librarySourceId`) — a comment can only exist on a filed document,
+ * because the reader panel can only open one. Outputs join here when they grow comments of
+ * their own.
+ */
+async function pinnedCommentsBlock(uid: string, canvas: LearningCanvas): Promise<string> {
+  const docs = canvas.sources
+    .filter((source) => source.librarySourceId)
+    .map((source) => ({
+      ref: { id: source.librarySourceId!, kind: "source" as const },
+      title: source.title,
+      unitLabel: COMMENT_UNIT_LABEL[source.kind] ?? "part",
+    }));
+  if (docs.length === 0) return "";
+  const open = await openCommentsForDocs(uid, docs.map((doc) => doc.ref));
+  if (open.length === 0) return "";
+  return commentsContextBlock(
+    docs.map((doc) => ({
+      comments: open.filter((comment) => comment.docId === doc.ref.id),
+      title: doc.title,
+      unitLabel: doc.unitLabel,
+    })),
+  );
+}
+
 export async function askCanvasChat(
   uid: string,
   canvas: LearningCanvas,
@@ -291,6 +323,10 @@ export async function askCanvasChat(
   forceWeb = false,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
+
+  // The learner's own margin notes, riding every turn the way the material does. One read, and a
+  // failure means an empty block — a turn must never be lost to the comments table being slow.
+  const pinnedComments = await pinnedCommentsBlock(uid, canvas);
   // 🔴 LOADED ONCE PER TURN, NOT ONCE PER ROUND. `ask` runs again when a web search comes back,
   // and re-reading the learner's memory for the second round would be a second query for an
   // answer that cannot have changed in the intervening seconds.
@@ -325,6 +361,7 @@ export async function askCanvasChat(
         lessonInProgress: surroundings.lessonInProgress,
         courseRequested,
         searchesLeft,
+        pinnedComments,
         stagedPassage,
         toolCatalogue: catalogue.block,
         toolContext,

@@ -53,6 +53,7 @@ const EMPTY: TurnContext = {
   passages: 0,
   searchesLeft: 0,
   sources: 0,
+  pinnedComments: "",
   stagedPassage: "",
   today: "Tuesday, 25 August 2026",
   toolCatalogue: "",

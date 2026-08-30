@@ -13,12 +13,13 @@
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { OutlineEntry } from "@/lib/reader/pdf-outline";
+import { describeCommentSpot, type DocumentComment } from "@/lib/workspace/document-comments";
 import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { cn } from "@/lib/utils";
 
 import { PdfThumbnail } from "./pdf-thumbnail";
 
-export type SidebarTab = "outline" | "pages";
+export type SidebarTab = "outline" | "pages" | "comments";
 
 interface ReaderSidebarProps {
   tab: SidebarTab;
@@ -31,11 +32,17 @@ interface ReaderSidebarProps {
   unit: number;
   unitLabel: string;
   onGoToUnit: (unit: number) => void;
+  /** Absent = this surface has no annotate layer, and no Comments tab is drawn at all. */
+  comments?: readonly DocumentComment[];
+  onResolveComment?: (comment: DocumentComment) => void;
+  onDeleteComment?: (comment: DocumentComment) => void;
 }
 
 export function ReaderSidebar({
   tab, onTabChange, outline, outlineIsAuthored, document: pdf, unitCount, unit, unitLabel, onGoToUnit,
+  comments, onResolveComment, onDeleteComment,
 }: ReaderSidebarProps) {
+  const openComments = comments?.filter((comment) => comment.resolvedAt === null) ?? [];
   const pagesTabLabel = unitLabel === "slide" ? "Slides" : unitLabel === "sheet" ? "Sheets" : "Pages";
   // A Word file is one flowing document: it has no pages to show as pictures,
   // and every outline entry would carry a meaningless "1".
@@ -44,13 +51,13 @@ export function ReaderSidebar({
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-sidebar)" data-testid="reader-sidebar">
       <div className="flex shrink-0 gap-0.5 border-b border-(--ui-stroke-quaternary) p-1.5">
-        {(hasUnits
-          ? [
-              { id: "outline" as const, label: "Outline" },
-              { id: "pages" as const, label: pagesTabLabel },
-            ]
-          : [{ id: "outline" as const, label: "Outline" }]
-        ).map((option) => (
+        {[
+          { id: "outline" as const, label: "Outline" },
+          ...(hasUnits ? [{ id: "pages" as const, label: pagesTabLabel }] : []),
+          // The count is OPEN comments: the tab answers "is anything still pinned here?",
+          // and resolved rows are history, not a number to carry in the chrome.
+          ...(comments ? [{ id: "comments" as const, label: openComments.length > 0 ? `Comments · ${openComments.length}` : "Comments" }] : []),
+        ].map((option) => (
           <button
             aria-pressed={tab === option.id}
             className={cn(
@@ -67,7 +74,61 @@ export function ReaderSidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
-        {tab === "outline" || !hasUnits ? (
+        {tab === "comments" && comments ? (
+          comments.length === 0 ? (
+            <p className="px-2 py-6 text-center text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">
+              Nothing pinned yet. Turn on comment mode in the toolbar, then click a spot or drag a box.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1" data-testid="reader-comment-list">
+              {comments.map((comment, index) => {
+                const spot = describeCommentSpot(comment, unitLabel);
+                const resolved = comment.resolvedAt !== null;
+                return (
+                  <li
+                    className={cn(
+                      "group/comment rounded-lg border border-(--ui-stroke-quaternary) px-2 py-1.5",
+                      resolved && "opacity-55",
+                    )}
+                    key={comment.id}
+                  >
+                    <button
+                      className="flex w-full items-start gap-1.5 text-left"
+                      onClick={() => comment.unit !== null && onGoToUnit(comment.unit)}
+                      type="button"
+                    >
+                      <span className="mt-px grid size-[15px] shrink-0 place-items-center rounded-full bg-(--ui-action) text-[0.5625rem] font-semibold text-(--ui-action-glyph)">
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0">
+                        {spot && <span className="block text-[0.625rem] text-(--ui-text-quaternary)">{spot}</span>}
+                        <span className={cn("block text-[0.75rem] leading-snug text-(--ui-text-secondary)", resolved && "line-through")}>
+                          {comment.body}
+                        </span>
+                      </span>
+                    </button>
+                    <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover/comment:opacity-100">
+                      <button
+                        className="rounded px-1.5 py-0.5 text-[0.625rem] text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground"
+                        onClick={() => onResolveComment?.(comment)}
+                        type="button"
+                      >
+                        {resolved ? "Reopen" : "Resolve"}
+                      </button>
+                      <button
+                        className="rounded px-1.5 py-0.5 text-[0.625rem] text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-danger)"
+                        onClick={() => onDeleteComment?.(comment)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )
+        ) : tab === "outline" || !hasUnits ? (
           outline.length === 0 ? (
             <p className="px-2 py-6 text-center text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">
               This document has no headings Nemesis could find.

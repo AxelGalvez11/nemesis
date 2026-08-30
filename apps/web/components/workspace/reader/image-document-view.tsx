@@ -30,10 +30,11 @@ interface ImageDocumentViewProps {
   scale: number;
   rotation: number;
   onNaturalSize: (size: { width: number; height: number }) => void;
+  registerElement?: (unit: number, element: HTMLElement | null) => void;
   onRegion: (region: ImageRegion, cropDataUrl: string | null, anchor: RegionAnchor) => void;
 }
 
-export function ImageDocumentView({ url, fileName, scale, rotation, onNaturalSize, onRegion }: ImageDocumentViewProps) {
+export function ImageDocumentView({ url, fileName, scale, rotation, onNaturalSize, onRegion, registerElement }: ImageDocumentViewProps) {
   const imageRef = useRef<HTMLImageElement>(null);
 
   // A region is only meaningful while the picture is the right way up: a
@@ -50,12 +51,15 @@ export function ImageDocumentView({ url, fileName, scale, rotation, onNaturalSiz
     [onRegion],
   );
 
+  // Stable for the same crash-shaped reason as the docx article — see its note.
+  const registerFrame = useCallback((element: HTMLElement | null) => registerElement?.(1, element), [registerElement]);
+
   const { box, onPointerDown } = useRegionDrag({ enabled: canSelect, onPicked: picked, target: imageRef });
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-auto overscroll-contain p-6" data-testid="reader-image-scroll">
       <div className="m-auto flex flex-col items-center gap-3">
-        <div className="nemesis-reader-canvas relative">
+        <div className="nemesis-reader-canvas relative" ref={registerFrame}>
           {/* eslint-disable-next-line @next/next/no-img-element -- a private, short-lived signed URL; next/image cannot optimize it */}
           <img
             alt={fileName}

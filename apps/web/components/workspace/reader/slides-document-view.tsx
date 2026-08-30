@@ -374,10 +374,14 @@ function SlideCanvas({
   }, [element, onNeedsPictures, onVisible, registerElement, slide, slide.index]);
 
   return (
-    <figure className="flex flex-col items-center gap-1.5" ref={setElement}>
+    // 🔴 THE SLIDE BOX IS WHAT REGISTERS, not the figure around it. A comment anchor is fractions
+    // of the registered element, and the figure's height includes the caption below the slide —
+    // so a pin at y=0.9 of the figure would sit on the caption, not on the slide.
+    <figure className="flex flex-col items-center gap-1.5">
       <div
-        className="nemesis-reader-canvas flex flex-col gap-3 p-7"
+        className="nemesis-reader-canvas relative flex flex-col gap-3 p-7"
         data-testid={`reader-slide-${slide.index}`}
+        ref={setElement}
         style={{ width: Math.round(SLIDE_WIDTH * scale), aspectRatio: "16 / 9", color: "#111318" }}
       >
         {slide.title && (

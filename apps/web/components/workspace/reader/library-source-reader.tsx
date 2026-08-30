@@ -118,6 +118,7 @@ export function LibrarySourceReader({ sourceId, className, onBack, onOpenNote }:
         />
       )}
       <DocumentReader
+        commentsDoc={{ preview: preview || uid === null, ref: { id: readerSource.id, kind: "source" }, uid }}
         anchor={anchor}
         linkedNotes={linkedNotes}
         onBack={onBack}

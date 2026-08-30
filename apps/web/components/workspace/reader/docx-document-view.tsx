@@ -11,7 +11,7 @@
 // are harder to read than short ones, and a document has no fixed width of its
 // own once it leaves paper.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { docxBlocks, docxBlockText, type DocxBlock, type DocxRun } from "@/lib/reader/docx-blocks";
 import { officeImageUrl, openOfficeArchive } from "@/lib/reader/office-zip";
@@ -38,11 +38,14 @@ export function DocxDocumentView({
   query,
   onReady,
   onError,
+  registerElement,
 }: {
   bytes: ArrayBuffer;
   query: string | null;
   onReady: (payload: DocxReadyPayload) => void;
   onError: (message: string) => void;
+  /** The reader's comment layer pins to the article (the document's one unit). */
+  registerElement?: (unit: number, element: HTMLElement | null) => void;
 }) {
   const [blocks, setBlocks] = useState<DocxBlock[] | null>(null);
   const [images, setImages] = useState<Map<string, string>>(new Map());
@@ -84,17 +87,28 @@ export function DocxDocumentView({
   // numbered list actually counts 1, 2, 3 instead of restarting at every item.
   const grouped = useMemo(() => groupBlocks(blocks ?? []), [blocks]);
 
+  // 🔴 A STABLE REF CALLBACK, NOT AN INLINE ARROW — found as a CRASH, not a review note. An inline
+  // `ref={(el) => register(1, el)}` is a new function every render, so React detaches (null) and
+  // reattaches (element) each time; the host's registry write causes a render, which re-creates
+  // the arrow, which detaches again — "Maximum update depth exceeded" on every Word file.
+  const registerArticle = useCallback((element: HTMLElement | null) => registerElement?.(1, element), [registerElement]);
+
   if (blocks === null) return <div className="grid h-full place-items-center text-xs text-(--ui-text-tertiary)">Opening…</div>;
 
   return (
     <div className="h-full min-h-0 overflow-auto overscroll-contain px-8 py-8" data-testid="reader-docx-scroll">
-      <article className="nemesis-reading-view mx-auto text-(--ui-text-secondary)">
+      {/* 🔴 EVERY GROUP WRAPPER BELOW CARRIES data-comment-block AND `relative`. A flowing
+          document reflows with the panel width, so a pixel anchor is a lie by the first resize —
+          the stable thing to hold on to is WHICH BLOCK, and the pin renders inside that block's
+          own box. The index is the grouped index, which only changes if the document does. */}
+      <article className="nemesis-reading-view relative mx-auto text-(--ui-text-secondary)" ref={registerArticle}>
         {grouped.map((group, index) => {
           if (group.kind === "list") {
             const List = group.ordered ? "ol" : "ul";
             return (
               <List
-                className={cn("mt-3 flex flex-col gap-1", group.ordered ? "list-decimal" : "list-disc")}
+                className={cn("relative mt-3 flex flex-col gap-1", group.ordered ? "list-decimal" : "list-disc")}
+                data-comment-block={index}
                 key={index}
                 style={{ paddingInlineStart: `${1.25 + group.level * 1.1}rem` }}
               >
@@ -111,23 +125,23 @@ export function DocxDocumentView({
           switch (block.kind) {
             case "heading":
               return (
-                <h2 className={cn(HEADING_CLASS[block.level] ?? HEADING_CLASS[3], "text-foreground")} key={index}>
+                <h2 className={cn(HEADING_CLASS[block.level] ?? HEADING_CLASS[3], "relative text-foreground")} data-comment-block={index} key={index}>
                   <Runs query={query} runs={block.runs} />
                 </h2>
               );
             case "paragraph":
               return block.quote ? (
-                <blockquote className="mt-4 border-l-2 border-(--ui-stroke-secondary) pl-4 italic" key={index}>
+                <blockquote className="relative mt-4 border-l-2 border-(--ui-stroke-secondary) pl-4 italic" data-comment-block={index} key={index}>
                   <Runs query={query} runs={block.runs} />
                 </blockquote>
               ) : (
-                <p className="mt-4" key={index}>
+                <p className="relative mt-4" data-comment-block={index} key={index}>
                   <Runs query={query} runs={block.runs} />
                 </p>
               );
             case "table":
               return (
-                <div className="mt-5 overflow-x-auto rounded-lg border border-(--ui-stroke-tertiary)" key={index}>
+                <div className="relative mt-5 overflow-x-auto rounded-lg border border-(--ui-stroke-tertiary)" data-comment-block={index} key={index}>
                   <table className="w-full border-collapse text-[0.8125rem]">
                     <tbody>
                       {block.rows.map((row, rowIndex) => (
