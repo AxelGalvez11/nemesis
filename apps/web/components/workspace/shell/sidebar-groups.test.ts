@@ -168,5 +168,5 @@ test("🔴 the sidebar's rows and headings carry the reference's own line height
   assert.ok(!/const rowLabel = "[^"]*leading-none/.test(PRIMITIVES), "the row label went back to leading-none");
   const label = PRIMITIVES.slice(at(PRIMITIVES, "export function SidebarPanelLabel"), at(PRIMITIVES, "export const countLabel"));
   assert.match(label, /leading-\[20px\]/, "the section heading left the measured 20px line");
-  assert.match(label, /pl-\[16px\]/, "the heading no longer aligns with the row text at 16px in");
+  assert.match(label, /pl-\[10px\]/, "the heading no longer aligns with the row text");
 });

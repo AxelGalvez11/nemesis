@@ -143,7 +143,12 @@ test("🔴🔴 the start screen's composer is the tall one, the canvas keeps the
   assert.match(GLOBALS, /--composer-tall-height: 128px;/, "the measured tall height is gone");
   assert.match(GLOBALS, /--composer-min-height: 52px;/, "the short composer lost its measured height");
   assert.match(HOME, /min-h-\[var\(--composer-tall-height\)\]/, "the start screen stopped using the tall composer");
-  assert.match(HOME, /\[grid-template-areas:'chip_text_text_text''add_\._mic_send'\]/, "the two-row placement is gone");
+  // 🔴 REPOINTED THE SAME DAY: the first template gave the `+` its own `auto` column, which the
+  // text line above then started AFTER — 54px in against the reference's 18. The words span every
+  // column now. The invariant is the shape, so it is asserted as the shape: a text row over a
+  // controls row, with the controls at the two ends.
+  assert.match(HOME, /\[grid-template-areas:'text_text_text''add_mic_send'\]/, "the two-row placement is gone");
+  assert.match(HOME, /grid-cols-\[1fr_auto_auto\] grid-rows-\[1fr_var\(--composer-control\)\]/, "the row tracks changed shape");
   // 🔴 THE CANVAS IS DELIBERATELY NOT TALL. The reference is short inside a conversation too, and
   // 128px there costs 76px of the answer on every screen. Owner's own choice, 2026-08-29.
   assert.ok(!/--composer-tall-height/.test(COMPOSER), "the canvas composer went tall, which eats the answer");

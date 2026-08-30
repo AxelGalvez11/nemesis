@@ -572,8 +572,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 ? "flex min-h-[var(--composer-min-height)] items-center"
                 : cn(
                     "grid min-h-[var(--composer-tall-height)]",
-                    "grid-cols-[auto_1fr_auto_auto] grid-rows-[1fr_var(--composer-control)]",
-                    "[grid-template-areas:'chip_text_text_text''add_._mic_send']",
+                    // 🔴 THE WORDS SPAN EVERY COLUMN. Placed after an `auto` column that the `+`
+                    // sizes, the text line started 54px in against the reference's 18 — the button
+                    // below it was reserving a track on the line above.
+                    "grid-cols-[1fr_auto_auto] grid-rows-[1fr_var(--composer-control)]",
+                    "[grid-template-areas:'text_text_text''add_mic_send']",
                     "pt-[var(--composer-tall-pad-top)] pb-[var(--composer-tall-pad-bottom)]",
                   ),
             )}
@@ -609,7 +612,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
               The capability row STAGES and starts nothing — §38's rule that a capability is a
               declaration, never a mode. */}
-          <div className="relative shrink-0 self-end [grid-area:add]" ref={addMenu}>
+          <div className="relative shrink-0 justify-self-start self-end [grid-area:add]" ref={addMenu}>
             <button
               aria-expanded={addOpen}
               aria-haspopup="menu"
@@ -671,8 +674,17 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               {/* The staged capability, inline where the words will start — the same composition
                   the session composer's chip uses, because it is the same declaration one screen
                   earlier. Always-visible ×: a hover-only dismiss does not exist on touch. */}
+              {/* 🔴 ONE CELL FOR THE WHOLE TEXT LINE. The staged capability and the words share a
+                  line; two grid items cannot share one area, so they share a wrapper instead. It is
+                  a flex row in both forms, so the one-row composer is unchanged by it. */}
+              <div
+                className={cn(
+                  "flex min-w-0 flex-1 items-center",
+                  departing ? "" : "ml-[10px] self-start [grid-area:text]",
+                )}
+              >
               {capability && (
-                <div className="ml-[10px] flex shrink-0 items-center gap-[6px] self-start text-(--ui-action) [grid-area:chip]">
+                <div className="flex shrink-0 items-center gap-[6px] text-(--ui-action)">
                   <Codicon className="shrink-0" name={CAPABILITY_COPY[capability].icon} size="1rem" />
                   {/* §46.3-exempt: shares the input's own line — 16px is the iOS-zoom threshold
                       the input itself documents, and the label must not drift from it. */}
@@ -702,7 +714,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   "min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)",
                   // 🔴 10px, NOT 8. The control row is inset by `--composer-pad-x` (8px) because
                   // that is where the reference puts its buttons; its TEXT is 18px in. 8 + 10 = 18.
-                  departing ? "ml-[var(--composer-pad-x)]" : "ml-[10px] h-[26px] self-start leading-[26px] [grid-area:text]",
+                  departing ? "ml-[var(--composer-pad-x)]" : "h-[26px] leading-[26px]",
                 )}
                 onChange={(event) => {
                   setText(event.target.value);
@@ -717,6 +729,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 placeholder={capability ? CAPABILITY_COPY[capability].prompt : "Ask Nemesis…"}
                 value={text}
               />
+              </div>
               {dictation.supported && (
                 <button
                   aria-label="Dictate"

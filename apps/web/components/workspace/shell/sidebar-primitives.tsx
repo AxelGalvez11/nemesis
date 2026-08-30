@@ -122,7 +122,7 @@ export function SidebarPanelLabel({ children }: { children: React.ReactNode }) {
     // scaffolding by colour and weight alone. This was 12px, which is a size below anything else
     // in the rail and read as fine print rather than as a quiet heading. Keeping the tertiary
     // grey is what stops 14px from competing with the titles.
-    <span className="flex min-w-0 items-center gap-2 pl-[16px] text-[length:var(--canvas-text-small)] leading-[20px] font-medium text-(--sidebar-heading)">
+    <span className="flex min-w-0 items-center gap-2 pl-[10px] text-[length:var(--canvas-text-small)] leading-[20px] font-medium text-(--sidebar-heading)">
       <span className="min-w-0 truncate leading-[20px]">{children}</span>
     </span>
   );
