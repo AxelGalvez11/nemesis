@@ -38,7 +38,10 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   { id: "projects", label: "Projects", codicon: "folder", route: "/projects" },
   // Where connected apps live. The Composio door already existed (`/api/composio`) with its only
   // surface a card buried in Settings; this promotes it to a destination.
-  { id: "plugins", label: "Plugins", codicon: "plug", route: "/plugins" },
+  // 🔴 `extensions` (the puzzle piece), BY THE OWNER'S OWN PICK — 2026-08-30, from a fitting page
+  // that drew four candidates on the real row; the plug was offered and passed over, the same day
+  // it was retired from the composer's apps control (#915). Do not bring the plug back here.
+  { id: "plugins", label: "Plugins", codicon: "extensions", route: "/plugins" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
 ];
 

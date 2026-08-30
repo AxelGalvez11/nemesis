@@ -1251,6 +1251,30 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   --composer-tray: rgba(255, 255, 255, 0.08);
 }
 
+/* The sidebar icons' hover motion — "Tilt", the owner's pick (2026-08-30) from three candidates
+   felt live on a fitting page. A quick lean of the glyph alone: rotate to -10° with a whisper of
+   scale at 40%, back to rest by 320ms, on a spring-ish curve. The ROW's hover background is
+   untouched; only the icon moves.
+
+   🔴 THE WEB CHATGPT HAS NO SUCH ANIMATION — measured 2026-08-30: its sidebar sprite is static and
+   its stylesheets carry zero hover-transform rules. The animation the owner knows is the DESKTOP
+   app's, which cannot be inspected, so this motion is designed, not copied — the owner chose it by
+   feel, which outranks a number nobody can read.
+
+   🔴 INSIDE the reduced-motion gate: someone who asked the system to stop moving gets a still icon
+   and keeps the hover background. */
+@media (prefers-reduced-motion: no-preference) {
+  a:hover > .nav-icon-tilt,
+  button:hover > .nav-icon-tilt {
+    animation: nav-icon-tilt 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+@keyframes nav-icon-tilt {
+  0% { transform: rotate(0); }
+  40% { transform: rotate(-10deg) scale(1.08); }
+  100% { transform: rotate(0); }
+}
+
 /* The docked reader sliding in from the right edge.
  *
  * Owner, 2026-08-27: *"make sure to add smooth animation to the sidebar when sources are open."*
