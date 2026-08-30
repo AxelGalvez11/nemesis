@@ -241,18 +241,88 @@ function readTool(row: unknown, app: string): ComposioTool | null {
   return { action, app, description: description.slice(0, 400), parameters: schema as Record<string, unknown> };
 }
 
-/** Start an OAuth connection. Returns the URL the learner is sent to. */
+/**
+ * The auth config that lets a learner connect one app.
+ *
+ * 🔴🔴 IT IS LOOKED UP, NOT REQUIRED AS NINE ENVIRONMENT VARIABLES, AND THAT IS THE SECOND HALF OF
+ * WHY NOTHING WAS EVER CONNECTED. `connectTo` read `COMPOSIO_AUTH_<APP>` and sent whatever it
+ * found, which was the empty string, because not one of those variables has ever been set in this
+ * repo's environment. Combined with the retired endpoint above, connecting could not have worked
+ * for any app on any day. Nine hand-copied ids across two environments is nine chances to ship a
+ * dead button, and the button gives no sign which one is missing.
+ *
+ * Composio already knows the answer, so it is asked. The environment variable still wins when it
+ * is set, so a deployment can pin a specific config without editing code.
+ *
+ * 🔴🔴🔴 THE RETURNED ROW'S TOOLKIT IS CHECKED, AND THIS IS NOT DEFENSIVE PADDING. An unknown query
+ * parameter is IGNORED by this API rather than rejected: `?toolkit=notion` returns the account's
+ * first five auth configs, beginning with Zoom's. So a one-word slip in the parameter name would
+ * hand back a different app's config, and the learner who clicked Connect on Notion would be sent
+ * to Zoom's consent screen and would connect Zoom. Verified against the live API on 2026-08-30.
+ *
+ * Cached per instance. An auth config is created once and lives for the life of the account; if
+ * one is ever deleted and recreated, a warm instance keeps the old id until it recycles.
+ */
+const authConfigIds = new Map<string, string>();
+
+async function authConfigFor(app: string): Promise<string> {
+  const pinned = process.env[`COMPOSIO_AUTH_${app.toUpperCase()}`] ?? "";
+  if (pinned) return pinned;
+  const cached = authConfigIds.get(app);
+  if (cached) return cached;
+  try {
+    const res = await composio(`/auth_configs?toolkit_slug=${encodeURIComponent(app)}&limit=10`);
+    if (!res.ok) return "";
+    const payload = (await res.json()) as { items?: { id?: string; toolkit?: { slug?: string } }[] };
+    const match = (payload.items ?? []).find((item) => typeof item.id === "string" && item.toolkit?.slug === app);
+    const id = match?.id ?? "";
+    if (id) authConfigIds.set(app, id);
+    return id;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Start an OAuth connection. Returns the URL the learner is sent to.
+ *
+ * 🔴🔴🔴 THIS WAS POINTED AT A RETIRED ENDPOINT AND EVERY Connect BUTTON IN THE PRODUCT WAS DEAD.
+ * It posted to `/connected_accounts`, which Composio now refuses for Composio-managed OAuth with:
+ * *"Creating connections on this endpoint for Composio-managed OAuth auth configs is no longer
+ * supported. Use POST /api/v3/connected_accounts/link instead."* Every one of the offered apps
+ * uses managed OAuth, so this covered all of them, Gmail and Drive included.
+ *
+ * 🔴 IT FAILED AS SILENTLY AS THIS CODE COULD MANAGE, WHICH IS THE PART WORTH REMEMBERING. The
+ * 400 became `{ error: "Could not start the connection." }`, the browser showed "Could not start
+ * that connection. Try again in a moment." — a sentence that describes a passing glitch — and the
+ * learner tried again tomorrow. Nothing logged, nothing alerted, and the connected-apps count
+ * simply stayed at zero, which reads exactly like nobody having chosen to connect anything.
+ *
+ * 🔴 THE PAYLOAD IS FLAT NOW, NOT NESTED. `{ auth_config_id, user_id }`, verified against the live
+ * API on 2026-08-30: the nested `{ auth_config: { id }, connection: { user_id } }` shape this used
+ * to send is rejected by `/link` as a validation error on both fields.
+ */
 async function connectTo(uid: string, app: string): Promise<Response> {
   if (!isOffered(app)) {
     return Response.json({ error: "That app is not offered." }, { status: 400 });
   }
-  const res = await composio("/connected_accounts", {
-    body: JSON.stringify({ auth_config: { id: process.env[`COMPOSIO_AUTH_${app.toUpperCase()}`] ?? "" }, connection: { user_id: uid } }),
+  const authConfigId = await authConfigFor(app);
+  // 🔴 A DISTINCT MESSAGE FROM THE ONE BELOW, ON PURPOSE. "Could not start the connection" is what
+  // a transient upstream failure says; this one is permanent until somebody creates the auth
+  // config, and the whole lesson of the retired-endpoint bug above is that one vague sentence hid
+  // a permanent failure for weeks by sounding like a passing glitch.
+  if (!authConfigId) return Response.json({ error: "That app is not set up for connecting yet." }, { status: 502 });
+  const res = await composio("/connected_accounts/link", {
+    body: JSON.stringify({ auth_config_id: authConfigId, user_id: uid }),
     method: "POST",
   });
   if (!res.ok) return Response.json({ error: "Could not start the connection." }, { status: 502 });
+  // 🔴 BOTH SHAPES ARE STILL READ. `/link` answers `{ link_token, redirect_url, expires_at,
+  // connected_account_id }`, so `redirect_url` is the live one; the older `connectionData.val`
+  // path is kept because reading a field that is absent costs nothing and a broker that changes
+  // its response shape again should degrade to "could not start" rather than to a wrong URL.
   const payload = (await res.json()) as { connectionData?: { val?: { redirectUrl?: string } }; redirect_url?: string };
-  const url = payload.connectionData?.val?.redirectUrl ?? payload.redirect_url ?? "";
+  const url = payload.redirect_url ?? payload.connectionData?.val?.redirectUrl ?? "";
   if (!url) return Response.json({ error: "Could not start the connection." }, { status: 502 });
   return Response.json({ url });
 }
