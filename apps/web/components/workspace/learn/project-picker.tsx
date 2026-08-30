@@ -79,21 +79,29 @@ export interface ProjectPickerProps {
 }
 
 /**
- * The marks for the four apps a learner can connect.
+ * The real marks for the four apps a learner can connect.
  *
- * 🔴 OUR OWN ICON VOCABULARY, NOT BRAND LOGOS. The reference stacks the real Google marks here; our
- * connection data (`/api/composio`) carries a key, a label and a sentence and no artwork at all, and
- * inventing four brand logos would mean shipping someone else's assets to match a screenshot. The
- * codicon set is what every other mark in this product is drawn from, so these read as part of the
- * app rather than as a pasted-in row.
+ * 🔴 THESE ARE GOOGLE'S OWN FILES, FETCHED FROM GOOGLE'S OWN CDN AND SERVED FROM OUR `public/`.
+ * Owner 2026-08-30, asked whether to use the real logos or our icon set: *"Yes add them"*. The
+ * previous pass drew codicons here because our connection data carries a key, a label and a
+ * sentence and no artwork; the answer was to go and get the artwork, not to approximate it. See
+ * `public/brand/google/PROVENANCE.md` for where each file came from and the rules that apply to it.
+ *
+ * 🔴🔴 DRAWN WITH `<img>`, NEVER INLINED, AND THIS IS NOT A STYLE PREFERENCE. All four SVGs define
+ * internal ids and TWO OF THEM USE THE ID `a` (`<mask id="a">`, `fill="url(#a)"`). Inlined side by
+ * side in one document those ids collide and the browser resolves every `url(#a)` to whichever
+ * element came first — Gmail would paint itself with Drive's gradient. An `<img>` keeps each SVG
+ * its own document, so the ids cannot see each other.
+ *
+ * 🔴 NOT HOT-LINKED. Serving them from `www.gstatic.com` would put Google on the request path for
+ * every page view and break silently the day they re-cut the set.
  */
-const APP_MARK: Record<string, string> = {
-  googledrive: "cloud",
-  gmail: "mail",
-  googlecalendar: "calendar",
-  googledocs: "file",
+const APP_LOGO: Record<string, string> = {
+  googledrive: "/brand/google/drive.svg",
+  gmail: "/brand/google/gmail.svg",
+  googlecalendar: "/brand/google/calendar.svg",
+  googledocs: "/brand/google/docs.svg",
 };
-const FALLBACK_MARK = "plug";
 
 function ConnectedApps({ apps, connected, onOpen }: { apps: readonly ConnectableApp[]; connected: readonly string[]; onOpen: () => void }) {
   const on = apps.filter((a) => connected.includes(a.key));
@@ -101,17 +109,27 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
     <button
       className={cn(CONTROL, "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)")}
       onClick={onOpen}
+      // The marks carry `alt=""` because this title, and the visible label, already name them; a
+      // screen reader announcing "Google Drive Gmail" twice is worse than once.
       title={on.length > 0 ? `Connected: ${on.map((a) => a.label).join(", ")}` : "Connect your apps"}
       type="button"
     >
-      <Codicon className="shrink-0" name="plug" size="1rem" />
+      {/* 🔴 THE GLYPH IS THE EMPTY STATE'S ONLY MARK, AND IT GOES ONCE THERE ARE LOGOS. Measured on
+          the reference: its `Plugins` control is the WORD followed by the connector marks, with no
+          leading icon of its own — 132px wide, the label running 155→223 and the logos 223→279. A
+          plug in front of four product logos is a fifth mark saying what the four already say. */}
+      {on.length === 0 && <Codicon className="shrink-0" name="plug" size="1rem" />}
       <span>{on.length > 0 ? "Apps" : "Connect apps"}</span>
       {on.length > 0 && (
         // 🔴 SPACED, NOT STACKED. The reference overlaps its logos by 8px, which reads as a pile of
         // distinct brand colours; the same overlap on four monochrome glyphs is a smudge.
         <span className="ml-[2px] flex shrink-0 items-center gap-[5px]">
-          {on.slice(0, 4).map((a) => (
-            <Codicon className="text-(--ui-text-secondary)" key={a.key} name={APP_MARK[a.key] ?? FALLBACK_MARK} size="1.125rem" />
+          {on.map((a) => APP_LOGO[a.key]).filter(Boolean).slice(0, 4).map((src, i) => (
+            // 🔴 EXPLICIT `width`/`height` ATTRIBUTES AS WELL AS THE CLASS. Without intrinsic
+            // dimensions the row reflows the instant the icons decode, which on a slow connection
+            // is a visible jump in a control the learner may already be reaching for.
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img alt="" className="size-[20px] shrink-0" height={20} key={src} src={src} width={20} />
           ))}
         </span>
       )}
