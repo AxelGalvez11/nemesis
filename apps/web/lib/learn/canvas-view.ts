@@ -44,31 +44,31 @@ export type CanvasView = "answer" | "conversation";
 export const DEFAULT_CANVAS_VIEW: CanvasView = "conversation";
 
 /**
- * Where the choice is kept.
+ * The key the browser USED to keep the choice under. Nothing reads it and nothing writes it any
+ * more; it exists so `use-canvas-view.ts` can delete what old builds left behind.
  *
- * 🔴🔴 THE BROWSER, NOT THE CANVAS DOCUMENT, AND THAT IS A CLAIM ABOUT WHAT KIND OF FACT THIS IS.
- * How you like to read is about YOU; it is not a property of the thing being read. Writing it to
- * `canvas.document` would make it travel on every autosave, would make two people opening one
- * shared canvas fight over it, and — worst — would make merely LOOKING at a canvas modify it. The
- * History Rail already made this exact call for `rewound` ("the canvas is not modified by being
- * read"); this is the same rule for the setting that outlives the visit.
+ * 🔴🔴🔴 THE STORED PREFERENCE IS DEAD, AND THIS IS THE THIRD REPORT'S FIX — owner, 2026-08-28 and
+ * again 2026-08-30: *"chat mode should pretty much just work the exact same way, but, you know,
+ * actually show the conversations history"*, then *"Now can we fix the chat mode not showing
+ * conversation history?"* Each time, the thread itself was already built and working. What kept
+ * failing was this: one click of "Focus on the latest output" wrote `answer` here, and from then on
+ * EVERY canvas opened with the history hidden, on every visit, silently — the learner sees a chat
+ * product with no history and has no way to know a preference is doing it. Reproduced on screen
+ * 2026-08-30: a canvas holding four recorded turns opened with none of them drawn.
  *
- * 🔴 ONE KEY FOR THE LEARNER, NOT ONE PER CANVAS. "I read in conversation" is a habit, and a
- * preference that had to be re-set on every new canvas would be a control, not a preference.
+ * The note this replaces argued a per-visit choice "would be a control, not a preference". That was
+ * the wrong trade, three reports' worth of wrong: an invisible setting that contradicts the
+ * product's own default shape ("it should be a chatbot first") reads as the product being broken.
+ * Focusing is a way of LOOKING, like zooming in — it lasts while you look, and letting go returns
+ * you to the product. The toggle still works; it simply no longer outlives the visit.
+ *
+ * 🔴 SO: no `readCanvasView`, no `setItem`, ever. The ONE permitted storage access is
+ * `removeItem(CANVAS_VIEW_STORAGE_KEY)`, which heals every browser that still carries the pin —
+ * including the one this was reported from three times. `canvas-chat-is-the-product.test.ts`
+ * enforces all of it.
  */
 export const CANVAS_VIEW_STORAGE_KEY = "nemesis.canvas.view";
 
-/**
- * Read a stored value back, refusing anything that is not one of the two.
- *
- * 🔴 A BAD VALUE FALLS BACK RATHER THAN THROWING. `localStorage` is shared with every other tab,
- * every previous version of this app and anything a learner has typed into a console; a key holding
- * `"chat"` from some future rename must land on the default, not take the Canvas down. Reading is
- * the only place this can be enforced, because nothing can be assumed about what wrote it.
- */
-export function readCanvasView(raw: string | null | undefined): CanvasView {
-  return raw === "conversation" || raw === "answer" ? raw : DEFAULT_CANVAS_VIEW;
-}
 
 /** The other one. Named rather than inlined so the toggle has no opinion about which is which. */
 export function otherCanvasView(view: CanvasView): CanvasView {

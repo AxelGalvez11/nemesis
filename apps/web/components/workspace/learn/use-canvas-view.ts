@@ -1,61 +1,40 @@
 "use client";
 
-// The view preference, held in React and mirrored to the browser.
+// The view choice, held in React for the visit — and the healer for the pin old builds left behind.
 //
 // 🔴 SEPARATE FROM `lib/learn/canvas-view.ts` SO THAT FILE STAYS PURE. The rules about what a view
 // may be, and what it may never reach, are testable without a DOM; this is only the plumbing.
+//
+// 🔴🔴🔴 THE VIEW IS NEVER READ FROM STORAGE AND NEVER WRITTEN TO IT. This hook used to persist the
+// toggle under `CANVAS_VIEW_STORAGE_KEY`, and that one decision produced the same owner report
+// three times over four days ("chat mode not showing conversation history"): one click of "Focus on
+// the latest output" pinned `answer` for every canvas, on every visit, invisibly — while the thread
+// underneath it worked the whole time. The full account, with the owner's words and the on-screen
+// reproduction, is on the key's own doc in `lib/learn/canvas-view.ts`. Every canvas now opens on
+// `DEFAULT_CANVAS_VIEW`; focusing lasts while you look.
 
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  CANVAS_VIEW_STORAGE_KEY,
-  DEFAULT_CANVAS_VIEW,
-  otherCanvasView,
-  readCanvasView,
-  type CanvasView,
-} from "@/lib/learn/canvas-view";
+import { CANVAS_VIEW_STORAGE_KEY, DEFAULT_CANVAS_VIEW, otherCanvasView, type CanvasView } from "@/lib/learn/canvas-view";
 
-/**
- * 🔴🔴 IT STARTS ON THE DEFAULT AND ADOPTS THE STORED VALUE IN AN EFFECT, WHICH IS NOT AN
- * OPTIMISATION — IT IS THE ONLY CORRECT ORDER UNDER SERVER RENDERING. Reading `localStorage` in the
- * initialiser runs during hydration, where the server rendered the default and the client would
- * render something else: React discards the tree and warns, and in production it silently keeps
- * whichever it got first. The one-frame flash of the answer view is the price, and it is invisible
- * next to a hydration mismatch on the product's primary page.
- *
- * 🔴 EVERY ACCESS IS GUARDED. `localStorage` THROWS — not returns null — in a private window, with
- * site data blocked, and inside a cross-origin frame. An unguarded read here would take out the
- * whole Canvas for the sake of remembering a preference, which is the wrong trade by a wide margin.
- */
 export function useCanvasView(): { view: CanvasView; setView: (next: CanvasView) => void; toggle: () => void } {
   const [view, setStateView] = useState<CanvasView>(DEFAULT_CANVAS_VIEW);
 
+  // 🔴 DELETE THE OLD PIN, ADOPT NOTHING. Browsers that used the persisting build still carry
+  // `answer` under this key; leaving it there invites some future reader to trust it. Removal is
+  // the one storage access this feature has left, and it is guarded because `localStorage` THROWS —
+  // not returns null — in a private window, with site data blocked, and inside a cross-origin
+  // frame. An unguarded touch here would take the whole Canvas down to tidy a dead key.
   useEffect(() => {
     try {
-      setStateView(readCanvasView(window.localStorage.getItem(CANVAS_VIEW_STORAGE_KEY)));
+      window.localStorage.removeItem(CANVAS_VIEW_STORAGE_KEY);
     } catch {
-      // Storage is unavailable. The default is already on screen; there is nothing to recover.
+      // Storage is unavailable, so the pin it might hold cannot be read by anything either.
     }
   }, []);
 
-  const setView = useCallback((next: CanvasView) => {
-    setStateView(next);
-    try {
-      window.localStorage.setItem(CANVAS_VIEW_STORAGE_KEY, next);
-    } catch {
-      // The choice still applies to this visit; it simply will not outlive it.
-    }
-  }, []);
-
-  const toggle = useCallback(() => setStateView((current) => {
-    const next = otherCanvasView(current);
-    try {
-      window.localStorage.setItem(CANVAS_VIEW_STORAGE_KEY, next);
-    } catch {
-      // As above.
-    }
-    return next;
-  }), []);
+  const setView = useCallback((next: CanvasView) => setStateView(next), []);
+  const toggle = useCallback(() => setStateView((current) => otherCanvasView(current)), []);
 
   return { setView, toggle, view };
 }
