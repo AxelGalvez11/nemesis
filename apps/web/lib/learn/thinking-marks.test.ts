@@ -60,7 +60,20 @@ test("🔴 the recipe is the reference's own, number for number", () => {
   assert.ok(rule.length > 0, "the caption's rule is gone");
   assert.match(rule, /background-color: var\(--ui-text-tertiary\);/, "the resting colour left background-color — with a no-repeat half-width band the words are invisible between sweeps");
   assert.match(rule, /var\(--ui-text-tertiary\) 0%/, "the band's edges stopped being the resting colour");
-  assert.match(rule, /color-mix\(in srgb, var\(--ui-text-tertiary\) 35%, transparent\) 40%/, "the fade band moved off the measured 40–60% window");
+  // 🔴🔴 RE-MEASURED 2026-08-31 WITH THE SHIMMER ACTUALLY RUNNING, and the band moved (owner: *"the
+  // thinking doesn't actually match how ChatGPT does the pulsing"*). The first pass read the
+  // reference's stylesheet; this one read the computed style of the live span. Their band is
+  // `rgba(255,255,255,.75)` — a wash toward the PAGE — not a fade toward transparent. On white the
+  // two land near each other, which is why 35%-transparent survived; the pulse reads shallower
+  // because a third of the ink is still there where the band passes, against about a quarter of
+  // theirs. `--ui-bg-editor` reproduces their light AND dark bands in one theme-proof rule.
+  //
+  // The 40–60% window this test is named for is unchanged, and still theirs.
+  assert.match(
+    rule,
+    /color-mix\(in srgb, var\(--ui-bg-editor\) 75%, var\(--ui-text-tertiary\)\) 40%/,
+    "the band moved off the measured 40–60% window, or stopped washing toward the page",
+  );
   assert.match(rule, /background-size: 50% 200%;/, "the band stopped being the reference's half-width");
   assert.match(rule, /background-repeat: no-repeat;/, "the sweep lost its rest between passes");
   assert.match(rule, /animation: canvas-thinking-word 1400ms ease infinite;/, "the tempo left the reference's 1400ms ease");

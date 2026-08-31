@@ -172,7 +172,29 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption is a 
   assert.ok(!/justify-end/.test(previewCode), "justify-end is back — in a row that means the right edge, not the foot");
   assert.match(previewCode, /data-canvas-thinking-line/, "the line lost the handle its placement is measured by");
   assert.match(previewCode, /className="sr-only"/, "the announcement-only export lost its announcement");
-  assert.match(canvasCode, /caption=\{null\}/, "the character is carrying the caption again — it reads as the bottom left corner");
+  // 🔴🔴 SCOPED TO CHAT VIEW ON 2026-08-31, SECOND PASS, AND THE TWO INSTRUCTIONS DO NOT CONFLICT.
+  // This pinned `caption={null}` outright, from the morning's *"in chat mode... it should be above,
+  // where it usually is with ChatGPT."* That afternoon: *"it should only be like that when it's in
+  // chat mode, not when it's in Canvas mode. Canvas mode should just have the thinking below the
+  // mascot."* The first sentence only ever spoke about chat; an unconditional null was reading it
+  // as a rule about both views.
+  //
+  // What the guard protects is unchanged and is why it stays: in CHAT the caption must not ride the
+  // character, because there it resolves to the bottom left corner underneath the conversation the
+  // words are about. In CANVAS there is no conversation on screen and the character is at the
+  // centre station, where the dock draws the caption UNDER it — which is the arrangement asked for.
+  assert.match(
+    canvasCode,
+    /caption=\{threadOpen \? null : preparingLabel\}/,
+    "the character carries the caption in chat view again — there it reads as the bottom left corner",
+  );
+  // 🔴 AND THE LINE IN THE FLOW IS THE OTHER HALF OF THE SAME SPLIT: exactly one of the two draws
+  // the step at a time, or a canvas gets two "Thinking"s on one screen.
+  assert.match(
+    canvasCode,
+    /\{threadOpen && \(turnInFlight \|\| presence === "preparing"\) && !replyText\.trim\(\) && \(/,
+    "the thread's caption is no longer scoped to chat view — canvas view draws two of them",
+  );
   // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
   // of three dots on one screen; the dock owns the character, this owns the caption.
   assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");
