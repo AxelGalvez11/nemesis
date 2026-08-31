@@ -23,9 +23,13 @@
 // is which of the two is the front door: reviewing a deck you are in the middle of discussing
 // should not hide the discussion.
 //
-// 🔴 THE LIBRARY STILL OPENS IT FULL SCREEN, and that is not an inconsistency. A docked panel
-// exists to keep a conversation on screen beside it; on the Library shelf there is no conversation
-// to keep, which is exactly why `OutputPreview` is opened there with `initialMode="full"` too.
+// 🔴🔴 EVERY DOOR OPENS THE PANEL, INCLUDING THE LIBRARY. This once shipped with the Library
+// passing `surface="full"`, reasoned as "a shelf has no conversation to dock beside". The owner
+// rejected it on sight (2026-08-31): he had asked for flashcards in the sidebar like the test, and
+// a deck that behaves differently depending on which door you came through reads as the ask not
+// having been done. `full` is kept for a caller mounted outside the workspace shell, where there
+// is no dock to claim — no such caller exists in the app today, and `artifact-chrome.test.ts`
+// watches for one appearing.
 //
 // 🔴 NO FLIP ANIMATION, AND THAT IS A SETTING WITH AN OWNER BEHIND IT. The Study tab
 // persists `StudyReviewSettings` per student; nothing outside that tab has a stored

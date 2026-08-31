@@ -478,10 +478,18 @@ export interface CanvasSession {
 
 /** What the learner is told once a thing exists, and where to find it. 🔴 A `Record` over the whole
  *  union, so a new deliverable is a compile error here rather than a sentence about the wrong kind
- *  of artifact in the wrong place. */
-const MADE_NOTICE: Record<DeliverableKind, string> = {
+ *  of artifact in the wrong place.
+ *
+ *  🔴🔴 `null` MEANS THE CONVERSATION ALREADY SAID IT. Owner, 2026-08-31, watching a deck get made:
+ *  *"remove the 'flashcards saved' chip, that's not needed."* The turn had already printed
+ *  **Flashcards ready: <name>** with the deck row under it, one click from opening — so the strip
+ *  floated a second announcement over the first. A notice earns its place only by saying something
+ *  the transcript does not, which is why the file kinds keep theirs: they name the outputs panel,
+ *  and nothing else on screen does. `null` is not "no message", it is "the message is already
+ *  there" — and it stays in the Record so a new kind still has to make this choice deliberately. */
+const MADE_NOTICE: Record<DeliverableKind, string | null> = {
   document: "Document ready. Open it from the outputs panel to read it or download the Word file.",
-  flashcards: "Flashcards saved to your Library.",
+  flashcards: null,
   note: "Note saved to your Library.",
   pdf: "PDF ready. Open it from the outputs panel to read it or download the file.",
   report: "Research saved to your Library, with its sources.",
