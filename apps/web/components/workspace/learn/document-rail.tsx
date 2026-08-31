@@ -56,6 +56,22 @@ export function DocumentRail({
     [scroller],
   );
 
+  /**
+   * How far down the scroller a heading sits, in the scroller's own coordinates.
+   *
+   * 🔴🔴 `offsetTop` IS THE WRONG NUMBER AND IT LOOKS LIKE THE RIGHT ONE. It is measured against
+   * the nearest POSITIONED ancestor, and the document's blocks live inside a `relative` grid, so
+   * `offsetTop` returns a heading's offset within that grid rather than within the scroller. The
+   * rail highlighted the correct entry and the page moved about 3px — caught only by pressing a
+   * real entry on production, never by a test, because the offsets are plausible small numbers.
+   * Two rects and the current scroll are immune to whatever is positioned in between.
+   */
+  const offsetIn = useCallback(
+    (element: HTMLElement): number =>
+      element.getBoundingClientRect().top - (scroller?.getBoundingClientRect().top ?? 0) + (scroller?.scrollTop ?? 0),
+    [scroller],
+  );
+
   // 🔴 THE LISTENER IS PASSIVE AND THE WORK IS A LOOP OVER AT MOST A FEW DOZEN HEADINGS, so this
   // stays off the scroll critical path without a rAF gate. An IntersectionObserver was the first
   // instinct and is wrong here: it answers "is this on screen", and several headings are on screen
@@ -68,14 +84,14 @@ export function DocumentRail({
       for (const [ordinal, heading] of headings.entries()) {
         const element = find(heading.index);
         if (!element) continue;
-        if (element.offsetTop <= top) current = ordinal;
+        if (offsetIn(element) <= top) current = ordinal;
       }
       setActive(current);
     };
     recompute();
     scroller.addEventListener("scroll", recompute, { passive: true });
     return () => scroller.removeEventListener("scroll", recompute);
-  }, [scroller, headings, find]);
+  }, [scroller, headings, find, offsetIn]);
 
   const jump = (ordinal: number) => {
     const element = find(headings[ordinal]!.index);
@@ -83,7 +99,15 @@ export function DocumentRail({
     // 🔴 `scrollTop`, NOT `scrollIntoView`. The document sits in a portalled panel that is itself
     // inside the page; `scrollIntoView` walks up and scrolls ancestors too, which shifts the whole
     // workspace behind the reader. Setting the scroller's own offset moves exactly one thing.
-    scroller.scrollTo({ behavior: "smooth", top: Math.max(0, element.offsetTop - 24) });
+    //
+    // 🔴🔴 AND NOT `behavior: "smooth"`, WHICH SILENTLY DOES NOTHING ON THIS CONTAINER. Measured on
+    // production, same element, back to back: `scrollTo({top: 2331, behavior: "auto"})` left
+    // scrollTop at 2331; `behavior: "smooth"` left it at 0 after 900ms. Not reduced motion (the
+    // query reports false) and not a `scroll-behavior` rule (computed `auto` on both the scroller
+    // and the root). Whatever suppresses it, a jump that sometimes does not land is worse than a
+    // jump with no glide, and this failure is invisible: the rail highlighted the right heading
+    // the whole time, so the only symptom was a document that would not move.
+    scroller.scrollTop = Math.max(0, offsetIn(element) - 24);
     setActive(ordinal);
     setOpen(false);
   };

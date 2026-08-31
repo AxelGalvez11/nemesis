@@ -45,6 +45,24 @@ test("🔴🔴 the rail is full screen only, and only above a floor — both mea
   assert.equal(RAIL_MIN_HEADINGS, 3, "the floor moved; a document with one or two headings has no navigation problem");
 });
 
+test("🔴🔴 positions are measured against the SCROLLER, never with offsetTop", () => {
+  // offsetTop is measured against the nearest POSITIONED ancestor, and the document's blocks sit
+  // inside a `relative` grid — so it returns a heading's offset within that grid, not within the
+  // scroller. Pressing an entry on production moved the page about 3px while the rail highlighted
+  // the right heading: the numbers are small and plausible, which is why only driving it caught it.
+  const rail = code("document-rail.tsx");
+  assert.ok(!/\.offsetTop/.test(rail), "offsetTop is back — the rail will highlight correctly and scroll nowhere");
+  assert.match(rail, /getBoundingClientRect\(\)\.top[\s\S]{0,120}scrollTop/, "positions are no longer measured against the scroller");
+  // 🔴🔴 AND NO SMOOTH SCROLL. Measured on production, same element, back to back: `behavior:
+  // "auto"` landed on 2331, `behavior: "smooth"` left scrollTop at 0 after 900ms — with reduced
+  // motion reporting false and `scroll-behavior` computing `auto`. The rail highlighted the right
+  // heading throughout, so the only symptom was a document that would not move.
+  // 🔴 STRIP THE COMMENTS FIRST. The line banning smooth scrolling explains itself by naming it,
+  // and a guard that reads its own explanation as the offence fails the moment it is documented.
+  const railCode = rail.replace(/\/\/.*$/gm, "");
+  assert.ok(!/behavior:\s*"smooth"/.test(railCode), "smooth scrolling is back, and on this container it silently does nothing");
+});
+
 test("🔴 the measured numbers are in the markup, not approximated", () => {
   // From the reference: marks 3px tall, 19px inactive / 25px active, 12px gap (15px pitch);
   // panel 287 wide, 12px radius, 20px padding, entries 16px on 24px.
