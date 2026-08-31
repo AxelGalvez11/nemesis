@@ -53,6 +53,14 @@ test("🔴🔴 positions are measured against the SCROLLER, never with offsetTop
   const rail = code("document-rail.tsx");
   assert.ok(!/\.offsetTop/.test(rail), "offsetTop is back — the rail will highlight correctly and scroll nowhere");
   assert.match(rail, /getBoundingClientRect\(\)\.top[\s\S]{0,120}scrollTop/, "positions are no longer measured against the scroller");
+  // 🔴🔴 AND NO SMOOTH SCROLL. Measured on production, same element, back to back: `behavior:
+  // "auto"` landed on 2331, `behavior: "smooth"` left scrollTop at 0 after 900ms — with reduced
+  // motion reporting false and `scroll-behavior` computing `auto`. The rail highlighted the right
+  // heading throughout, so the only symptom was a document that would not move.
+  // 🔴 STRIP THE COMMENTS FIRST. The line banning smooth scrolling explains itself by naming it,
+  // and a guard that reads its own explanation as the offence fails the moment it is documented.
+  const railCode = rail.replace(/\/\/.*$/gm, "");
+  assert.ok(!/behavior:\s*"smooth"/.test(railCode), "smooth scrolling is back, and on this container it silently does nothing");
 });
 
 test("🔴 the measured numbers are in the markup, not approximated", () => {
