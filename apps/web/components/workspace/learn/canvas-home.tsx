@@ -482,11 +482,30 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             style={
               handoff
                 ? {
+                    // 🔴🔴 IT FADES AS IT GOES, AND THAT IS THE OTHER HALF OF THE 2026-08-30
+                    // DISSOLVE (owner: *"i want a smooth fade in of everything"*). The canvas's own
+                    // character fades IN at the composer — see `.canvas-enter` — and without this
+                    // the front door's simply vanished on the frame of the swap, which is the
+                    // abrupt half of what the report calls the mascot "moving super quickly".
+                    //
+                    // 🔴 A HARD EASE-IN, NOT A LINEAR FADE, and the curve is doing the work. The
+                    // travel below is what the eye is following, so the character has to stay
+                    // legible for most of it and only leave at the end: this curve holds it above
+                    // 0.8 for the first half and spends the whole fall in the last quarter, which
+                    // lands it at nothing exactly as the route swaps. A linear fade would have it
+                    // half gone while it was still visibly moving, which reads as it breaking up
+                    // rather than as it handing over.
+                    //
+                    // 🔴 IT DOES NOT REPLACE THE TRAVEL. The character still goes where it was
+                    // going; this only takes it off screen at the end of the journey rather than
+                    // cutting it. Deleting the transform would leave a character fading out in the
+                    // middle of the page while the composer travels away underneath it.
+                    opacity: 0,
                     transform: `translate3d(${handoff.dx}px, ${handoff.dy}px, 0) scale(${handoff.k})`,
                     // The composer's curve, not the dock's 680ms journey: the two are one
                     // departure and must land together, and the navigation is held for exactly
                     // this long. See `DOCK_MS`.
-                    transition: `transform ${DOCK_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)`,
+                    transition: `transform ${DOCK_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity ${DOCK_MS}ms cubic-bezier(0.7, 0, 0.84, 0)`,
                   }
                 : undefined
             }

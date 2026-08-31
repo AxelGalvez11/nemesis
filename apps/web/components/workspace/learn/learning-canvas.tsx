@@ -128,6 +128,26 @@ const CANVAS_EXIT_ROUTE = "/learn";
  */
 const STRANDED_MS = 2_000;
 
+/**
+ * How long after this canvas mounts an arriving surface still counts as ARRIVING.
+ *
+ * 🔴🔴 WITHOUT THIS THE FADE FIRES TWICE, AND THE SECOND ONE IS MID-SESSION. `LearningCanvas` has
+ * two surfaces: a pre-ready one while the canvas is still being read out of the database, and the
+ * real one after. They are different trees, so React mounts the second — and an arrival animation
+ * on it would play whenever that happens, not when the learner arrived.
+ *
+ * Measured against the dev seed: from the front door the real surface is up within tens of ms of
+ * the mount, because the canvas was just minted. On a DEEP LINK or a refresh the pre-ready surface
+ * holds for **five to nine seconds** first — so the learner has been looking at a character for
+ * most of ten seconds when the swap happens, and fading it in there would read as the page
+ * glitching rather than as anything arriving.
+ *
+ * 1.2s sits an order of magnitude clear of the first case and nowhere near the second, and it is
+ * comfortably past the animation's own 440ms (320 plus its 120 delay) so the class is only ever
+ * dropped from an element that has already finished.
+ */
+const ARRIVING_MS = 1_200;
+
 /** What "send" means when a passage is staged and nothing was typed.
  *
  *  🔴 A CONSTANT, NOT A LITERAL AT THE CALL SITE, because it is a sentence a MODEL reads and the
@@ -255,6 +275,23 @@ export function LearningCanvas({
    * holding it is still on screen, which is the definition of the push not having worked, and it
    * is cancelled on unmount by the effect below.
    */
+  /**
+   * When this canvas mounted, and therefore whether what is on screen is an ARRIVAL.
+   *
+   * 🔴 `useState` WITH A LAZY INITIALISER, NOT A REF, AND NOT AN EFFECT. An effect runs after the
+   * browser has painted, so the class would land a frame late and the content would flash at full
+   * opacity before restarting the animation — the exact flicker this is here to remove. A lazy
+   * initialiser is evaluated once, during the first render, which is early enough.
+   */
+  const [mountedAt] = useState(() => Date.now());
+  /**
+   * `canvas-enter` while this is still an arrival, and nothing once it is not.
+   *
+   * 🔴 IT IS SAFE TO STOP RETURNING THE CLASS. `ARRIVING_MS` is nearly three times the animation's
+   * own length, so by the time a later render drops it the element has finished and is sitting at
+   * its natural opacity. Removing a finished `both` animation changes nothing on screen.
+   */
+  const arriving = Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
   const strandedTimer = useRef<number | null>(null);
   const leave = useCallback(() => {
     router.push(CANVAS_EXIT_ROUTE);
@@ -1580,7 +1617,10 @@ export function LearningCanvas({
   if (!session.ready) {
     return (
       <CanvasSurface onExit={leave}>
-        <div className="flex h-full items-center justify-center">
+        {/* 🔴 UNCONDITIONAL, UNLIKE THE REAL SURFACE'S. This branch exists only while the canvas is
+            being read out of the database, which is only ever on the way in — there is no
+            mid-session render of it to protect against, so it needs no `ARRIVING_MS` window. */}
+        <div className="canvas-enter flex h-full items-center justify-center">
           {/* Nothing is docked yet — there is no composer to stand above — so the character
               simply holds the middle, which is where it would have walked to anyway.
               🔴🔴 `station` IS PASSED, AND THE COMMENT ABOVE WAS A LIE WITHOUT IT. The dock falls back
@@ -2009,7 +2049,12 @@ export function LearningCanvas({
       )}
 
       <SourceTabPane />
-      <div className={`relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
+      {/* 🔴 `canvas-enter` — THE ANSWER REGION FADES IN WITH THE CONTROLS RATHER THAN APPEARING
+          WITH THEM. Owner, 2026-08-30: *"i want a smooth fade in of everything."* The question
+          chip, the thinking caption and the thread all used to land on the same frame as the route
+          swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
+          the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
@@ -2661,6 +2706,15 @@ export function LearningCanvas({
           outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
           a press meant for the composer behind it. */}
       <CharacterDock
+        // 🔴🔴 `canvas-enter` IS WHAT MAKES THE ARRIVAL SMOOTH, AND IT IS THE ONLY THING THAT COULD.
+        // Owner, 2026-08-30: *"the mascot seems to move to the bottom then back to the middle then
+        // back to the chat composer super quickly."* Measured: at the swap this dock appears at
+        // (400,778) at 76px on the same frame the front door's character vanishes from (746,378) at
+        // 159px, then walks 50px and jumps 24px over the next 120ms while it finds its anchor and
+        // the rail collapses. The fade's 120ms delay covers that whole window, so what is left to
+        // see is a character fading into the place it belongs. Trying to make it TRAVEL there
+        // instead has been attempted twice and is why those corrections exist — see globals.css.
+        className={arriving}
         // 🔴 THE COMPOSER, AND ON TOP OF IT (owner 2026-08-26, evening: *"I want it to be on top on
         // the left of the chat composer"*, and then, asked to be exact: *"make sure its on top of
         // the composer not in inside it, top left"*). This reverses that same morning's *"make the
