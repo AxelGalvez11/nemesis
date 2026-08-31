@@ -27,6 +27,7 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import {
   bestAttempt,
   deckMaterial,
+  isTypedQuestion,
   missedQuestionCards,
   noteMaterial,
   outlineToMermaidMindmap,
@@ -34,6 +35,7 @@ import {
   parseTestContent,
   scoreAttempt,
   scoreTone,
+  typedAnswerMatches,
   type ScoreTone,
   type TestContent,
 } from "@/lib/workspace/study-artifact-content";
@@ -222,9 +224,12 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   // truthful until the store round-trips.
   const [contentOverride, setContentOverride] = useState<TestContent | null>(null);
   const content = useMemo(() => contentOverride ?? parseTestContent(artifact.content), [artifact.content, contentOverride]);
-  const [picks, setPicks] = useState<number[]>([]);
+  // A pick is an option INDEX on a choice question and the TYPED TEXT on a
+  // typed one — the same distinction TestMiss.picked stores.
+  const [picks, setPicks] = useState<Array<number | string>>([]);
   const [index, setIndex] = useState(0);
-  const [picked, setPicked] = useState<number | null>(null);
+  const [picked, setPicked] = useState<number | string | null>(null);
+  const [typedDraft, setTypedDraft] = useState("");
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [addedTo, setAddedTo] = useState<string | null>(null);
@@ -276,11 +281,21 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
     setPicked(optionIndex);
   }
 
+  // Submitting LOCKS, exactly as tapping an option does — the typed text becomes
+  // the pick and the reveal happens; there is no un-answering either way.
+  function submitTyped() {
+    if (picked !== null) return;
+    const text = typedDraft.trim();
+    if (!text) return;
+    setPicked(text);
+  }
+
   function next() {
     if (picked === null) return;
     const nextPicks = [...picks, picked];
     setPicks(nextPicks);
     setPicked(null);
+    setTypedDraft("");
     setExplainFor(null);
     if (nextPicks.length < questions.length) setIndex(index + 1);
   }
@@ -317,12 +332,21 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   // Exit button is gone. CLICKING AN OPTION IS STILL THE ANSWER (it locks and
   // reveals), and Next stays a separate deliberate step.
   const answered = picks.length + (picked !== null ? 1 : 0);
-  const explainQuestion = explainFor !== null ? questions[explainFor] : undefined;
-  const explainPicked = explainFor === null
+  // Graded the moment it locks, by the same rule scoreAttempt applies at the end.
+  const typedRight =
+    question !== undefined && isTypedQuestion(question) && typeof picked === "string" && typedAnswerMatches(picked, question);
+  // Explain and Rewrite are choice-question tools: their prompts are built from
+  // options and an answer index, which a typed question does not have. The
+  // buttons that set `explainFor` only render on choice questions, and this
+  // narrowing is what keeps that true in the types too.
+  const explainCandidate = explainFor !== null ? questions[explainFor] : undefined;
+  const explainQuestion = explainCandidate && !isTypedQuestion(explainCandidate) ? explainCandidate : undefined;
+  const explainPickedRaw = explainFor === null
     ? null
     : reviewAttempt
       ? (reviewAttempt.missed.find((miss) => miss.questionIndex === explainFor)?.picked ?? explainQuestion?.answer ?? null)
       : picked;
+  const explainPicked = typeof explainPickedRaw === "number" ? explainPickedRaw : null;
   // Owner 2026-08-04: "the nemesis 'explain' should be able to remake, alter,
   // flashcards and test questions." The rewrite uses the side chat as its
   // brief: the student says what's wrong, presses Rewrite, and the revised
@@ -456,7 +480,38 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
               <ol className="grid gap-4" data-testid="test-review">
                 {questions.map((reviewQuestion, questionIndex) => {
                   const miss = reviewAttempt.missed.find((entry) => entry.questionIndex === questionIndex);
-                  const pickedIndex = miss ? miss.picked : reviewQuestion.answer;
+                  if (isTypedQuestion(reviewQuestion)) {
+                    // A typed question reviews as the accepted answer, plus what
+                    // the student actually typed when that differed.
+                    return (
+                      <li className="rounded-2xl border border-(--ui-stroke-tertiary) px-4 py-3.5" key={questionIndex}>
+                        <p className="min-w-0 text-[0.9375rem] font-medium leading-snug">
+                          <span className="tabular-nums text-(--ui-text-tertiary)">{questionIndex + 1}.</span> {reviewQuestion.q}
+                        </p>
+                        <div className="mt-2.5 grid gap-1.5">
+                          <div className="flex items-center gap-2.5 rounded-xl border border-emerald-600/50 bg-emerald-600/10 px-3 py-1.5 text-sm leading-snug">
+                            <span className="grid size-5 shrink-0 place-items-center rounded-md bg-emerald-600 text-white">
+                              <Codicon name="check" size="0.6875rem" />
+                            </span>
+                            <span className="min-w-0 flex-1">{reviewQuestion.typedAnswer}</span>
+                          </div>
+                          {miss && (
+                            <div className="flex items-center gap-2.5 rounded-xl border border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_10%,transparent)] px-3 py-1.5 text-sm leading-snug">
+                              <span className="grid size-5 shrink-0 place-items-center rounded-md bg-(--theme-primary) text-white">
+                                <Codicon name="close" size="0.6875rem" />
+                              </span>
+                              <span className="min-w-0 flex-1">{typeof miss.picked === "string" ? miss.picked : "(no answer)"}</span>
+                              <span className="shrink-0 text-[0.6875rem] text-(--ui-text-tertiary)">you typed</span>
+                            </div>
+                          )}
+                        </div>
+                        {reviewQuestion.why && (
+                          <p className="mt-2.5 rounded-xl bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] px-3 py-2 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">{reviewQuestion.why}</p>
+                        )}
+                      </li>
+                    );
+                  }
+                  const pickedIndex = typeof miss?.picked === "number" ? miss.picked : reviewQuestion.answer;
                   return (
                     <li className="rounded-2xl border border-(--ui-stroke-tertiary) px-4 py-3.5" key={questionIndex}>
                       <div className="flex items-start justify-between gap-3">
@@ -531,7 +586,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                   <DialogTitle className="truncate text-sm font-medium text-(--ui-text-secondary)">{artifact.title}</DialogTitle>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <DialogDescription className="tabular-nums">Question {index + 1} of {questions.length}</DialogDescription>
-                    {picked !== null && (
+                    {picked !== null && !isTypedQuestion(question) && (
                       <Button
                         aria-label="Have Nemesis explain this question"
                         aria-pressed={explainFor === index}
@@ -554,6 +609,43 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                 </div>
               </div>
               <p className="text-base font-medium leading-relaxed text-balance">{question.q}</p>
+              {isTypedQuestion(question) ? (
+                picked === null ? (
+                  // Enter and the button both submit; empty input submits nothing.
+                  <form
+                    className="flex items-center gap-2.5"
+                    data-testid="test-typed"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      submitTyped();
+                    }}
+                  >
+                    <Input
+                      autoFocus
+                      className="h-11 flex-1 rounded-2xl px-4"
+                      onChange={(event) => setTypedDraft(event.target.value)}
+                      placeholder="Type your answer…"
+                      value={typedDraft}
+                    />
+                    <Button disabled={!typedDraft.trim()} type="submit" variant="secondary">Answer</Button>
+                  </form>
+                ) : (
+                  <div
+                    className={cn(
+                      "flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm leading-snug",
+                      typedRight
+                        ? "border-emerald-600/60 bg-emerald-600/10"
+                        : "border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_10%,transparent)]",
+                    )}
+                    data-testid="test-typed"
+                  >
+                    <span className={cn("grid size-6 shrink-0 place-items-center rounded-md text-white", typedRight ? "bg-emerald-600" : "bg-(--theme-primary)")}>
+                      <Codicon name={typedRight ? "check" : "close"} size="0.75rem" />
+                    </span>
+                    <span className="min-w-0 flex-1">{String(picked)}</span>
+                  </div>
+                )
+              ) : (
               <div className="grid gap-2.5" data-testid="test-options">
                 {question.options.map((option, optionIndex) => {
                   const isPicked = picked === optionIndex;
@@ -591,10 +683,19 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                   );
                 })}
               </div>
+              )}
               {picked !== null && (
                 <div className="rounded-2xl bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] px-4 py-3 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)" data-testid="test-why">
                   <span className="font-semibold text-foreground">
-                    {picked === question.answer ? "Correct. " : `Not quite — the answer is "${question.options[question.answer]}". `}
+                    {isTypedQuestion(question)
+                      ? typedRight
+                        ? String(picked).trim() === question.typedAnswer
+                          ? "Correct. "
+                          : `Correct — written in full: "${question.typedAnswer}". `
+                        : `Not quite — the answer is "${question.typedAnswer}". `
+                      : picked === question.answer
+                        ? "Correct. "
+                        : `Not quite — the answer is "${question.options[question.answer]}". `}
                   </span>
                   {question.why}
                 </div>

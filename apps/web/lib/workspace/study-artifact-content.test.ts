@@ -6,7 +6,9 @@ import {
   buildMindmapGenMessages,
   buildTestGenMessages,
   deckMaterial,
+  isTypedQuestion,
   missedQuestionCards,
+  normalisedAnswer,
   outlineToMermaidMindmap,
   parseGeneratedMindmap,
   parseGeneratedTest,
@@ -14,9 +16,18 @@ import {
   parseTestContent,
   scoreAttempt,
   scoreTone,
+  typedAnswerMatches,
+  type TestQuestion,
 } from "./study-artifact-content";
 
 const QUESTION = { answer: 1, options: ["Alpha", "Beta", "Gamma", "Delta"], q: "Which receptor?", why: "Beta-1 drives rate." };
+/** As a generation reply writes it: a STRING under `answer`, no options. */
+const TYPED_WIRE = { accept: ["consideración"], answer: "Consideration", q: "Name the doctrine that makes a promise enforceable.", why: "No consideration, no contract." };
+
+function asChoice(item: unknown): TestQuestion {
+  assert.ok(item && !isTypedQuestion(item as TestQuestion), "expected a choice question");
+  return item as TestQuestion;
+}
 
 test("generated tests parse through fences, junk, and bad rows", () => {
   const good = parseGeneratedTest('```json\n{"questions":[' + JSON.stringify(QUESTION) + "]}\n```");
@@ -25,13 +36,83 @@ test("generated tests parse through fences, junk, and bad rows", () => {
   // option so a paper's answers are not all in the same place (2026-07-24, see
   // test-answer-balance.ts). What has to hold is that the index still points at
   // the option that was actually true — which is the stronger assertion.
-  assert.equal(good[0]?.options[good[0]?.answer ?? -1], "Beta");
-  assert.deepEqual([...(good[0]?.options ?? [])].sort(), ["Alpha", "Beta", "Delta", "Gamma"]);
+  const first = asChoice(good[0]);
+  assert.equal(first.options[first.answer], "Beta");
+  assert.deepEqual([...first.options].sort(), ["Alpha", "Beta", "Delta", "Gamma"]);
   const mixed = parseGeneratedTest(JSON.stringify({
     questions: [QUESTION, { answer: 9, options: ["a", "b"], q: "out of bounds" }, { options: ["a", "b"], q: "" }],
   }));
   assert.equal(mixed.length, 1);
   assert.deepEqual(parseGeneratedTest("no json"), []);
+});
+
+// ── typed questions (owner 2026-08-31: "the test could include type to answer") ──────────────
+
+test("🔴 a typed question survives the trip: generation reply in, stored jsonb back out", () => {
+  // The wire shape (string `answer`) and the stored shape (`typedAnswer`) are
+  // both readable — regenerating a paper and reopening a saved one must agree.
+  const generated = parseGeneratedTest(JSON.stringify({ questions: [QUESTION, TYPED_WIRE] }));
+  assert.equal(generated.length, 2);
+  const typed = generated[1];
+  assert.ok(typed && isTypedQuestion(typed));
+  assert.equal(typed.typedAnswer, "Consideration");
+  assert.deepEqual(typed.accept, ["consideración"]);
+  const reread = parseTestContent({ attempts: [], questions: generated });
+  assert.ok(reread && isTypedQuestion(reread.questions[1]!));
+});
+
+test("🔴 typed grading forgives writing mechanics, never the words", () => {
+  const typed = { accept: [], q: "Ask 'How are you?' formally in Spanish.", typedAnswer: "¿Cómo está usted?", why: "" };
+  // Calibration: casing, accents, punctuation and spacing are mechanics.
+  assert.ok(typedAnswerMatches("como esta usted", typed));
+  assert.ok(typedAnswerMatches("  Cómo  está USTED?? ", typed));
+  // A different word is a different answer — this is the line that must hold.
+  assert.ok(!typedAnswerMatches("como estas", typed));
+  assert.ok(!typedAnswerMatches("", typed));
+  // `accept` widens spelling, through the same normalisation.
+  assert.ok(typedAnswerMatches("CONSIDERACION", { accept: ["consideración"], q: "", typedAnswer: "Consideration", why: "" }));
+  // 🔴 Field-agnostic: an engineering symbol string works by the same rule.
+  assert.equal(normalisedAnswer("σ = F/A"), "σ f a");
+});
+
+test("🔴 balancing re-seats only choice questions; typed ones hold their place", () => {
+  // Calibration: run balanceAnswerPositions over the mixed list and the typed
+  // row either crashes it or gets dropped — this pins the split-and-reassemble.
+  const mixed = parseGeneratedTest(JSON.stringify({ questions: [QUESTION, TYPED_WIRE, { ...QUESTION, q: "Third?" }] }));
+  assert.equal(mixed.length, 3);
+  assert.ok(!isTypedQuestion(mixed[0]!));
+  assert.ok(isTypedQuestion(mixed[1]!));
+  assert.ok(!isTypedQuestion(mixed[2]!));
+  for (const item of [mixed[0]!, mixed[2]!]) {
+    const choice = asChoice(item);
+    assert.equal(choice.options[choice.answer], "Beta");
+  }
+});
+
+test("a mixed attempt scores typed answers by match and records the typed text on a miss", () => {
+  const questions = parseGeneratedTest(JSON.stringify({ questions: [QUESTION, TYPED_WIRE] }));
+  const first = asChoice(questions[0]);
+  const right = scoreAttempt(questions, [first.answer, "consideracion"], "2026-08-31T00:00:00Z");
+  assert.equal(right.score, 2);
+  const wrong = scoreAttempt(questions, [first.answer, "estoppel"], "2026-08-31T00:00:00Z");
+  assert.equal(wrong.score, 1);
+  // The miss keeps WHAT was typed — the review screen shows it back.
+  assert.deepEqual(wrong.missed, [{ picked: "estoppel", questionIndex: 1 }]);
+  // And that attempt survives the jsonb round trip with the text intact.
+  const stored = parseTestContent({ attempts: [wrong], questions });
+  assert.equal(stored?.attempts[0]?.missed[0]?.picked, "estoppel");
+});
+
+test("a missed typed question becomes a recall flashcard with the written-out answer", () => {
+  const questions = parseGeneratedTest(JSON.stringify({ questions: [TYPED_WIRE] }));
+  const cards = missedQuestionCards(questions, [{ picked: "estoppel", questionIndex: 0 }]);
+  assert.equal(cards[0]?.back, "Consideration\n\nNo consideration, no contract.");
+});
+
+test("the generation prompt offers the typed shape without demanding it", () => {
+  const messages = buildTestGenMessages(deckMaterial("Contracts", [{ back: "b", front: "f" }]), 5);
+  assert.ok(messages[1]?.content.includes('"accept"'));
+  assert.ok(messages[1]?.content.includes("at most a third"));
 });
 
 test("jsonb content round-trips and rejects shells", () => {

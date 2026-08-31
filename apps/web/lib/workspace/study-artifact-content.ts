@@ -18,9 +18,40 @@ export interface TestQuestion {
   why: string;
 }
 
+/**
+ * A question answered by TYPING, not tapping (owner 2026-08-31: "the test could
+ * include type to answer").
+ *
+ * 🔴 RECALL, NOT RECOGNITION, IS THE POINT — so there are no options to lean on.
+ * It exists for material where one exact answer is the skill being tested: a
+ * term, a name, a formula, a phrase in a language being learned. Field-agnostic
+ * by construction: the shape carries no subject assumptions, only "the answer,
+ * written out" plus other spellings that also count.
+ *
+ * `typedAnswer` rather than `answer` so the union stays unambiguous against
+ * TestQuestion's numeric `answer` in stored jsonb — a number means an index, a
+ * string under `typedAnswer` (or `answer` in a FRESH generation reply, which
+ * `toItem` maps) means typed.
+ */
+export interface TypedTestQuestion {
+  q: string;
+  /** The canonical answer, written out in full — shown after the reveal. */
+  typedAnswer: string;
+  /** Other phrasings and spellings that also count, compared normalised. */
+  accept: string[];
+  why: string;
+}
+
+export type TestItem = TestQuestion | TypedTestQuestion;
+
+export function isTypedQuestion(item: TestItem): item is TypedTestQuestion {
+  return "typedAnswer" in item;
+}
+
 export interface TestMiss {
   questionIndex: number;
-  picked: number;
+  /** The option INDEX picked (choice questions) or the TEXT typed (typed ones). */
+  picked: number | string;
 }
 
 export interface TestAttempt {
@@ -31,7 +62,7 @@ export interface TestAttempt {
 }
 
 export interface TestContent {
-  questions: TestQuestion[];
+  questions: TestItem[];
   attempts: TestAttempt[];
 }
 
@@ -74,6 +105,31 @@ function toQuestion(value: unknown): TestQuestion | null {
   return { answer, options, q, why };
 }
 
+/** A typed question, from stored jsonb (`typedAnswer`) or a fresh generation
+ *  reply (a STRING under `answer`, with no options). */
+function toTypedQuestion(value: unknown): TypedTestQuestion | null {
+  if (typeof value !== "object" || value === null) return null;
+  const row = value as Record<string, unknown>;
+  const q = cleanText(row.q ?? row.question);
+  const why = cleanText(row.why ?? row.explanation) ?? "";
+  const typedAnswer = cleanText(row.typedAnswer ?? (typeof row.answer === "string" ? row.answer : null));
+  if (!q || !typedAnswer) return null;
+  const accept = (Array.isArray(row.accept) ? row.accept : [])
+    .map((entry) => cleanText(entry))
+    .filter((entry): entry is string => entry !== null)
+    .slice(0, MAX_OPTIONS);
+  return { accept, q, typedAnswer, why };
+}
+
+/** Either question shape. Options present → choice; a string answer → typed. A
+ *  row that is neither is dropped, exactly as malformed choice rows always were. */
+function toItem(value: unknown): TestItem | null {
+  if (typeof value === "object" && value !== null && Array.isArray((value as Record<string, unknown>).options)) {
+    return toQuestion(value);
+  }
+  return toTypedQuestion(value);
+}
+
 function toAttempt(value: unknown): TestAttempt | null {
   if (typeof value !== "object" || value === null) return null;
   const row = value as Record<string, unknown>;
@@ -82,12 +138,15 @@ function toAttempt(value: unknown): TestAttempt | null {
   const total = Number(row.total);
   if (!at || !Number.isFinite(score) || !Number.isFinite(total) || total <= 0) return null;
   const missed = Array.isArray(row.missed)
-    ? row.missed.flatMap((miss) => {
+    ? row.missed.flatMap((miss): TestMiss[] => {
         if (typeof miss !== "object" || miss === null) return [];
         const entry = miss as Record<string, unknown>;
         const questionIndex = Number(entry.questionIndex);
+        if (!Number.isInteger(questionIndex)) return [];
+        // A typed miss records the TEXT the student wrote; a choice miss the index.
+        if (typeof entry.picked === "string") return [{ picked: entry.picked.slice(0, MAX_TEXT), questionIndex }];
         const picked = Number(entry.picked);
-        return Number.isInteger(questionIndex) && Number.isInteger(picked) ? [{ picked, questionIndex }] : [];
+        return Number.isInteger(picked) ? [{ picked, questionIndex }] : [];
       })
     : [];
   return { at, missed, score, total };
@@ -98,7 +157,7 @@ export function parseTestContent(value: unknown): TestContent | null {
   if (typeof value !== "object" || value === null) return null;
   const row = value as Record<string, unknown>;
   if (!Array.isArray(row.questions)) return null;
-  const questions = row.questions.map(toQuestion).filter((question): question is TestQuestion => question !== null);
+  const questions = row.questions.map(toItem).filter((question): question is TestItem => question !== null);
   if (questions.length === 0) return null;
   const attempts = Array.isArray(row.attempts)
     ? row.attempts.map(toAttempt).filter((attempt): attempt is TestAttempt => attempt !== null)
@@ -136,14 +195,18 @@ export function jsonSlice(raw: string): Record<string, unknown> | null {
  *  content back, and an attempt records the option the student picked as an
  *  INDEX — reordering options after an attempt exists would silently rewrite
  *  what they answered. See test-answer-balance.ts. */
-export function parseGeneratedTest(raw: string): TestQuestion[] {
+export function parseGeneratedTest(raw: string): TestItem[] {
   const parsed = jsonSlice(raw);
   if (!parsed || !Array.isArray(parsed.questions)) return [];
-  const questions = parsed.questions
-    .map(toQuestion)
-    .filter((question): question is TestQuestion => question !== null)
+  const items = parsed.questions
+    .map(toItem)
+    .filter((question): question is TestItem => question !== null)
     .slice(0, MAX_QUESTIONS);
-  return balanceAnswerPositions(questions);
+  // Only choice questions have positions to balance; typed ones pass through in
+  // place, so the paper keeps the order the model wrote it in.
+  const balanced = balanceAnswerPositions(items.filter((item): item is TestQuestion => !isTypedQuestion(item)));
+  let next = 0;
+  return items.map((item) => (isTypedQuestion(item) ? item : balanced[next++]!));
 }
 
 /** The `"outline": "…"` value inside a JSON wrapper that did NOT parse — i.e. one
@@ -230,6 +293,13 @@ export function buildTestGenMessages(material: StudyMaterial, questionCount: num
         'Return JSON shaped {"questions":[{"q":"…","options":["…","…","…","…"],"answer":<index>,"why":"…"}]} — ' +
         "4 options per question, answer is the 0-based index of the correct option, why is a one-sentence explanation " +
         "grounded in the material. If the material is too thin for that many questions, write fewer.\n\n" +
+        // Typed items are OFFERED, not demanded: material with nothing worth
+        // recalling verbatim should come back all-choice, and does.
+        "Where the material rewards exact recall — a term of art, a name, a short formula, a phrase in a language " +
+        'being studied — you may instead write a typed-answer question: {"q":"…","answer":"<the answer, written out>",' +
+        '"accept":["<other correct spellings or phrasings>"],"why":"…"} with no options. The student must produce it ' +
+        "from memory and type it; grading forgives casing, accents and punctuation, so list only genuinely different " +
+        "correct forms in accept. Keep typed answers short (a few words) and use them for at most a third of the test.\n\n" +
         `Material:\n${material.text}`,
       role: "user",
     },
@@ -292,13 +362,47 @@ export function outlineToMermaidMindmap(outline: string): string {
   return out.join("\n");
 }
 
-/** Grade one finished run — picks[i] is the chosen option for questions[i]. */
-export function scoreAttempt(questions: TestQuestion[], picks: number[], at: string): TestAttempt {
+/**
+ * What a typed answer must survive to be compared: casing, accents, punctuation
+ * and spacing all go, letters and digits in every script stay.
+ *
+ * 🔴 FORGIVING ON PURPOSE, AND ONLY ABOUT WRITING MECHANICS. "Como esta usted"
+ * matches "¿Cómo está usted?" because a test of Spanish phrasing is not a test
+ * of whether the student's keyboard types accents. What it never forgives is the
+ * words themselves — a different word is a different answer. Unicode-based, so
+ * it is the same rule in every language and every field (the design test:
+ * a law term and an engineering formula pass through it identically).
+ */
+export function normalisedAnswer(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Does a typed attempt count? The canonical answer and every `accept` entry
+ *  are tried, all through the same normalisation. Empty input never matches. */
+export function typedAnswerMatches(given: string, question: TypedTestQuestion): boolean {
+  const attempt = normalisedAnswer(given);
+  if (!attempt) return false;
+  return [question.typedAnswer, ...question.accept].some((accepted) => normalisedAnswer(accepted) === attempt);
+}
+
+/** Grade one finished run — picks[i] is the chosen option index (choice) or the
+ *  typed text (typed) for questions[i]. */
+export function scoreAttempt(questions: TestItem[], picks: Array<number | string>, at: string): TestAttempt {
   const missed: TestMiss[] = [];
   let score = 0;
   questions.forEach((question, index) => {
-    if (picks[index] === question.answer) score += 1;
-    else missed.push({ picked: picks[index] ?? -1, questionIndex: index });
+    const pick = picks[index];
+    const right = isTypedQuestion(question)
+      ? typeof pick === "string" && typedAnswerMatches(pick, question)
+      : pick === question.answer;
+    if (right) score += 1;
+    else missed.push({ picked: pick ?? -1, questionIndex: index });
   });
   return { at, missed, score, total: questions.length };
 }
@@ -327,11 +431,11 @@ export function scoreTone(attempts: TestAttempt[]): ScoreTone {
 
 /** Missed questions as flashcard drafts — question on the front, the correct
  *  option plus the explanation on the back (active recall, not recognition). */
-export function missedQuestionCards(questions: TestQuestion[], missed: TestMiss[]): Array<{ front: string; back: string }> {
+export function missedQuestionCards(questions: TestItem[], missed: TestMiss[]): Array<{ front: string; back: string }> {
   return missed.flatMap((miss) => {
     const question = questions[miss.questionIndex];
     if (!question) return [];
-    const answer = question.options[question.answer] ?? "";
+    const answer = isTypedQuestion(question) ? question.typedAnswer : (question.options[question.answer] ?? "");
     return [{ back: question.why ? `${answer}\n\n${question.why}` : answer, front: question.q }];
   });
 }
