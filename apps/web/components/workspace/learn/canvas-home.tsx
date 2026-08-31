@@ -117,6 +117,17 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   const [recording, setRecording] = useState(false);
   const filePicker = useRef<HTMLInputElement>(null);
   const composerBox = useRef<HTMLDivElement>(null);
+  /**
+   * The text field itself, because ENTER LIVES ON IT.
+   *
+   * 🔴🔴 THE SEND KEY IS THE FIELD'S OWN `onKeyDown`, so it only fires while the field has focus —
+   * and dropping a file focuses NOTHING (measured on production 2026-08-31: `document.activeElement`
+   * is BODY before the drop and still BODY after it). A learner who dragged material in and pressed
+   * Enter got silence: chips on screen, no upload, no canvas, no error. Owner, 2026-08-31: *"I drop
+   * many in today… I didn't even ingest them at all."* Proved as a three-way A/B on the live site —
+   * drop+Enter did nothing, drop+click-the-box+Enter worked, drop+Start worked.
+   */
+  const composerField = useRef<HTMLInputElement>(null);
   /** The send is on its way out: the greeting fades and the composer travels down. */
   const [departing, setDeparting] = useState(false);
 
@@ -362,6 +373,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   const stageFiles = (files: FileList | readonly File[]) => {
     const picked = Array.from(files);
     if (picked.length === 0) return;
+    // 🔴🔴 MATERIAL ARRIVING PUTS THE CARET IN THE BOX, AND THAT IS THE SEND KEY WORKING AT ALL.
+    // Enter is the field's own handler (see `composerField`), so until something focuses the
+    // field, the most natural gesture after dragging a lecture in — press Enter — is a dead end
+    // that reports nothing. It also lands the caret where the screen is already inviting them to
+    // type ("Ask Nemesis…"), which is where someone who wants to add an instruction is going next.
+    composerField.current?.focus();
     setStaged((current) => {
       // 🔴 DEDUPED BY NAME AND SIZE, because the two ways in overlap. A learner who drops a file and
       // then picks the same one from the dialog has not asked for it twice, and ingesting a lecture
@@ -808,6 +825,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   }
                 }}
                 placeholder={capability ? CAPABILITY_COPY[capability].prompt : "Ask Nemesis…"}
+                ref={composerField}
                 value={text}
               />
               </div>
