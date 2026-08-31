@@ -39,18 +39,7 @@ export const ONBOARDING_MAX_COURSES = 24;
  *  enough to stay a usable folder name. */
 export const ONBOARDING_MAX_COURSE_NAME_CHARS = 80;
 
-/**
- * 🔴 `connect` IS LAST, AND THE ORDER IS THE ARGUMENT. Asking for access to
- * someone's mail and calendar before showing them anything is how a first run
- * gets abandoned: at that moment the request is all cost and no reason. By the
- * end of this flow the student has typed their courses and watched Nemesis pull
- * dates out of a syllabus, so "connect your calendar and these land in it" is a
- * sentence about their own work rather than a permissions demand.
- *
- * It also means the step can be walked past. The footer's finish button lives on
- * the last step, so a student who wants nothing connected presses it and is done.
- */
-export const STEPS = ["courses", "syllabi", "coursework", "connect"] as const;
+export const STEPS = ["courses", "syllabi", "coursework"] as const;
 
 export type OnboardingStep = (typeof STEPS)[number];
 
