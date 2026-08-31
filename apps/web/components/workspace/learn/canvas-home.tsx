@@ -296,7 +296,46 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    * two line up and the swap is invisible. Pushing immediately would play the move against a page
    * that had already been replaced.
    */
+  /**
+   * Material that is not ready to be learned from yet.
+   *
+   * 🔴🔴 SEND IS BLOCKED UNTIL EVERY STAGED FILE HAS BEEN READ (owner, 2026-08-31: *"block the send
+   * button until it process everything all the documents… that just sounds like, to assure
+   * quality"*, naming ChatGPT and NotebookLM, both of which do exactly this). The argument that
+   * settled it is his: **a file that failed to read would otherwise ride along silently**, and the
+   * answer comes back thinner than the learner's material with nothing on screen saying why. A
+   * disabled button that explains itself is a better failure than a confident partial answer.
+   *
+   * 🔴 A FAILURE BLOCKS TOO, AND IT IS NOT A TRAP. "Couldn't read" has two exits on the card
+   * itself: Try again, and ×. Letting a failed card through would restore exactly the silent
+   * partial send this exists to prevent; refusing to say why would be the trap.
+   *
+   * 🔴 THE CANVAS COMPOSER IS DELIBERATELY NOT GATED THIS WAY. Owner, 2026-08-27: *"attaching a
+   * document mid chat should not immediately make the chat go into processing mode"* (#888). There,
+   * attaching is an aside to a conversation already running and the turn waits internally
+   * (`settledAttachments`); here, the material IS the thing being started. Same guarantee, two
+   * surfaces, and the difference is on purpose.
+   */
+  const notReady = staged.filter((file) => {
+    const state = readState[`${file.name}:${file.size}`];
+    return state === "reading" || state === "failed";
+  });
+  const reading = notReady.some((file) => readState[`${file.name}:${file.size}`] === "reading");
+  const blocked = notReady.length > 0;
+  /** Why the send is dark, said in the button's own label rather than left to be guessed. */
+  const sendLabel = reading
+    ? notReady.length > 1
+      ? `Reading ${notReady.length} documents…`
+      : "Reading your document…"
+    : blocked
+      ? "One document couldn't be read. Try again or remove it."
+      : "Start";
+
   const start = () => {
+    // 🔴 THE KEYBOARD OBEYS THE SAME GATE AS THE BUTTON. Enter calls this directly, so a check that
+    // lived only on the button's `disabled` would leave the one route the owner's own report came
+    // in through wide open.
+    if (blocked) return;
     const topic = text.trim();
     // 🔴 THE HANDOVER HAPPENS HERE NOW, NOT WHEN THE FILE WAS PICKED. `putPending` is a module-level
     // stash the canvas claims once, so the files ride across the navigation without a query string —
@@ -699,11 +738,29 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   className="max-w-[260px] shrink-0"
                   key={`${file.name}:${file.size}`}
                   name={file.name}
-                  onRemove={() =>
+                  // 🔴 REMOVING FORGETS THE READ TOO. Without this, dropping the same file again
+                  // after removing it finds its old entry in `reads`, so `beginRead` declines to
+                  // start — and a card that failed the first time would sit at "Couldn't read"
+                  // holding the send with nothing actually running behind it.
+                  onRemove={() => {
+                    const key = `${file.name}:${file.size}`;
+                    reads.current.delete(key);
+                    setReadState((current) => {
+                      const { [key]: gone, ...rest } = current;
+                      return rest;
+                    });
                     setStaged((current) =>
                       current.filter((entry) => entry.name !== file.name || entry.size !== file.size),
-                    )
-                  }
+                    );
+                  }}
+                  // 🔴 THE WAY OUT OF A BLOCKED SEND, on the card that is blocking it. `beginRead`
+                  // refuses a file it has already started, so the previous attempt is forgotten
+                  // first — otherwise Try again would silently do nothing, which is the worst
+                  // possible control to put next to an error.
+                  onRetry={() => {
+                    reads.current.delete(`${file.name}:${file.size}`);
+                    beginRead(file);
+                  }}
                   // 🔴 THE CARD IS WHERE PROGRESS BELONGS, one line per file. A single composer-wide
                   // "reading your files" would be a lie the moment one of three finishes.
                   state={readState[`${file.name}:${file.size}`] ?? "ready"}
@@ -940,10 +997,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   🔴 EXCEPT UNDER A STAGED CAPABILITY, which is a declaration ABOUT words — the
                   session composer's own rule, held here so the `&cap=` can only ever ride beside
                   a real `?ask=`. */}
+              {/* 🔴 AND NOTHING IS SENT UNTIL EVERY STAGED FILE HAS BEEN READ — see `blocked`. The
+                  label carries the reason, so a dark button is never a mystery. */}
               <ComposerSend
                 className="self-end [grid-area:send]"
-                disabled={capability ? !text.trim() : !text.trim() && staged.length === 0}
-                label="Start"
+                disabled={blocked || (capability ? !text.trim() : !text.trim() && staged.length === 0)}
+                label={sendLabel}
                 onClick={start}
               />
             </>
