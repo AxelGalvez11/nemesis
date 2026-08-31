@@ -2247,7 +2247,7 @@ export function LearningCanvas({
             🔴 THE SAME CONDITION THE DOCK USED TO CARRY, so the caption did not change WHEN it
             appears, only WHERE. `turnInFlight` covers an ordinary answer; `preparing` covers the
             first wait on a canvas that has nothing on it yet. */}
-        {(turnInFlight || presence === "preparing") && !replyText.trim() && (
+        {threadOpen && (turnInFlight || presence === "preparing") && !replyText.trim() && (
           <CanvasThinkingPreview label={preparingLabel} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
@@ -2959,12 +2959,25 @@ export function LearningCanvas({
         // against the right edge of the window, hundreds of pixels from the mascot it was meant to
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
         // beside something whose position is a live transform, so it moved onto the dock itself.
-        // 🔴 NO CAPTION ON THE CHARACTER ANY MORE (owner, 2026-08-31). It belonged beside the
-        // character while the character stood in the CENTRE of an empty screen; in a chat it
-        // stands on the composer, so "beside it" reads as the bottom left corner, underneath the
-        // conversation the words are about. The line is in the thread now. The dock keeps its
-        // source chips, which are about what it is READING rather than what step is running.
-        caption={null}
+        // 🔴🔴 THE CHARACTER CARRIES IT IN CANVAS VIEW AND THE THREAD CARRIES IT IN CHAT VIEW, AND
+        // THAT SPLIT IS THE WHOLE RULING (owner, 2026-08-31, second pass): *"the thinking is stuck
+        // to the top left, and it should only be like that when it's in chat mode, not when it's in
+        // Canvas mode. Canvas mode should just have the thinking below the mascot."*
+        //
+        // 🔴 THIS SCOPES THE MORNING'S OWN INSTRUCTION RATHER THAN REVERSING IT. `caption={null}`
+        // landed hours earlier, correctly, on: *"inside a canvas, when it's in chat mode, the
+        // thinking preview is at the bottom next to the mascot, and it should be above, where it
+        // usually is with ChatGPT."* Both sentences are true and they are about different views —
+        // the first says CHAT, and only the second says anything about canvas.
+        //
+        // 🔴 AND IN CANVAS VIEW IT LANDS *UNDER* THE CHARACTER FOR FREE, which is why this is one
+        // expression and not a new layout. The station line below already sends the character to
+        // `centre` when the thread is closed and something is running, and `character-dock.tsx`
+        // places its caption UNDER the character at the centre and BESIDE it in the corner. So the
+        // arrangement the owner asked for is the one the dock already draws; all that was missing
+        // was being handed the words. Measured before this: the caption sat at y=343 with the
+        // character at y=676 — 333px apart, at opposite ends of the screen.
+        caption={threadOpen ? null : preparingLabel}
         // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
         // it streams, and its first character is the honest end of the wait — not a timer, and not
         // the turn formally finishing.

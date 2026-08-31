@@ -1203,11 +1203,33 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-thinking-word { from { background-position: -100% top; } to { background-position: 250% top; } }
 .canvas-thinking-word {
   background-color: var(--ui-text-tertiary);
+  /* 🔴🔴 THE BAND WASHES TOWARD THE PAGE, IT DOES NOT FADE TO TRANSPARENT — re-measured live in
+     the owner's own ChatGPT on 2026-08-31, with the shimmer actually running (owner: *"the
+     thinking doesn't actually match how ChatGPT does the pulsing"*). Read straight off the
+     computed style of their `.loading-shimmer-tertiary` span:
+
+       animation          loading-shimmer 1.4s infinite
+       @keyframes         0% { background-position: -100% top } 100% { 250% top }
+       background-size    50% 200%      background-repeat: no-repeat
+       background-color   #8f8f8f (their text-tertiary)
+       band               rgba(255, 255, 255, 0.75)
+       type               16px / 24px / 400
+
+     Everything but the band already matched to the byte — the sweep range, the period, the band
+     width, the rest beat, the type. The band did not: ours dropped the glyphs toward TRANSPARENT
+     at 35%, theirs washes them toward the PAGE at 75%. On white those land near each other, which
+     is why this survived a first pass; the pulse reads shallower because 35% of the ink is still
+     there where the band is, against about 25% of theirs.
+
+     🔴 THE PAGE COLOUR, NOT A LITERAL WHITE. Their light band is `rgba(255,255,255,.75)` and their
+     dark band is `rgba(0,0,0,.6)` — the same gesture named twice because their two themes are two
+     stylesheets. `--ui-bg-editor` IS the page under these words in either theme, so one rule
+     reproduces both and cannot drift apart from the surface it is washing toward. */
   background-image: linear-gradient(
     90deg,
     var(--ui-text-tertiary) 0%,
-    color-mix(in srgb, var(--ui-text-tertiary) 35%, transparent) 40%,
-    color-mix(in srgb, var(--ui-text-tertiary) 35%, transparent) 60%,
+    color-mix(in srgb, var(--ui-bg-editor) 75%, var(--ui-text-tertiary)) 40%,
+    color-mix(in srgb, var(--ui-bg-editor) 75%, var(--ui-text-tertiary)) 60%,
     var(--ui-text-tertiary) 100%
   );
   background-size: 50% 200%;

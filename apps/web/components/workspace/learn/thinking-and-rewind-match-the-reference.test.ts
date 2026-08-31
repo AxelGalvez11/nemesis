@@ -29,7 +29,20 @@ test("🔴🔴🔴 the running step is a line in the conversation, not a caption
   assert.ok(!/className="sr-only"/.test(PREVIEW.slice(PREVIEW.indexOf("export function CanvasThinkingPreview"), PREVIEW.indexOf("export function CanvasThinkingAnnouncement"))),
     "the visible line went back to being screen-reader only");
   assert.match(CANVAS, /<CanvasThinkingPreview label=\{preparingLabel\} \/>/, "nothing draws the line in the thread");
-  assert.match(CANVAS, /caption=\{null\}/, "the character is carrying the caption again");
+  // 🔴🔴 SCOPED TO CHAT VIEW, 2026-08-31 (owner, same day, second pass): *"it should only be like
+  // that when it's in chat mode, not when it's in Canvas mode. Canvas mode should just have the
+  // thinking below the mascot."* The morning's instruction this guard came from only ever spoke
+  // about chat; pinning an unconditional null was reading it as a rule about both views.
+  //
+  // What it protects is unchanged: in CHAT the caption must not ride the character, because there
+  // the character stands on the composer and "beside it" resolves to the bottom left corner,
+  // underneath the conversation the words are about. In CANVAS there is no conversation on screen
+  // and the character is at the CENTRE station, where the dock draws the caption under it.
+  assert.match(
+    CANVAS,
+    /caption=\{threadOpen \? null : preparingLabel\}/,
+    "the character is carrying the caption in chat view again",
+  );
 });
 
 test("🔴🔴 the line is the reference's own type, in pixels, because of the rem trap", () => {
