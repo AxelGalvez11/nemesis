@@ -149,6 +149,26 @@ const STRANDED_MS = 2_000;
  */
 const ARRIVING_MS = 1_200;
 
+/**
+ * How long a canvas keeps pinning its thread to the most recent turn after it opens.
+ *
+ * 🔴🔴 OWNER, 2026-08-30: *"Going back to old pages should take user back to the most recent chat
+ * or output like in ChatGPT."* Measured on production before this: every saved canvas opened at
+ * `scrollTop: 0` — the TOP of the conversation — so returning to one put the learner at the
+ * beginning of something they had already read, with the newest turn however many screens below.
+ * ChatGPT opens a conversation at its foot, which is the only place the thread is still live.
+ *
+ * 🔴 A WINDOW, NOT A SINGLE JUMP, BECAUSE THE THREAD ARRIVES IN PIECES. The turns render as the
+ * canvas resolves, so one jump on the first frame that has anything in it lands on the first
+ * chunk and the rest grows underneath. This keeps the foot in view while the thread is still
+ * filling, and lets go.
+ *
+ * 🔴 AND THE LEARNER OUTRANKS IT INSTANTLY. Any scroll of their own inside the window stops it —
+ * a thread that hauls itself back down while somebody is reading upward is worse than one that
+ * opens in the wrong place.
+ */
+const LANDING_MS = 1_500;
+
 /** What "send" means when a passage is staged and nothing was typed.
  *
  *  🔴 A CONSTANT, NOT A LITERAL AT THE CALL SITE, because it is a sentence a MODEL reads and the
@@ -293,6 +313,44 @@ export function LearningCanvas({
    * its natural opacity. Removing a finished `both` animation changes nothing on screen.
    */
   const arriving = Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
+  /** The thread's scroller, so an opening canvas can be put at its most recent turn. */
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Open at the foot of the conversation, the way every chat surface does.
+   *
+   * 🔴 KEYED ON THE CANVAS, so switching between two canvases lands in each one's most recent turn
+   * rather than only the first opened in this session.
+   *
+   * 🔴 `scrollTop = scrollHeight`, NOT `scrollIntoView({ behavior: "smooth" })`. The owner asked for
+   * this in the same sentence as *"It should be quick not laggy"*, and a smooth scroll through
+   * eight screens of a conversation somebody has already read is the opposite of arriving there.
+   */
+  useEffect(() => {
+    let raf = 0;
+    let stopped = false;
+    const opened = Date.now();
+    const letGo = () => { stopped = true; };
+    const step = () => {
+      const node = threadRef.current;
+      if (stopped || !node) return;
+      // 🔴 ONLY WHEN THERE IS SOMETHING TO SCROLL. A canvas that fits on one screen — a brand new
+      // one, or a short one — must not be touched at all, or an empty thread gets a scroll position
+      // it never had and the composer's own layout shifts under it.
+      if (node.scrollHeight > node.clientHeight + 8) node.scrollTop = node.scrollHeight;
+      if (Date.now() - opened < LANDING_MS) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    // Passive: this only ever cancels, it never prevents.
+    window.addEventListener("wheel", letGo, { passive: true });
+    window.addEventListener("touchmove", letGo, { passive: true });
+    window.addEventListener("keydown", letGo);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("wheel", letGo);
+      window.removeEventListener("touchmove", letGo);
+      window.removeEventListener("keydown", letGo);
+    };
+  }, [canvasId]);
   const strandedTimer = useRef<number | null>(null);
   const leave = useCallback(() => {
     router.push(CANVAS_EXIT_ROUTE);
@@ -2057,7 +2115,7 @@ export function LearningCanvas({
           chip, the thinking caption and the thread all used to land on the same frame as the route
           swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
           the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
-      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`} ref={threadRef}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
