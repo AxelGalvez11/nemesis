@@ -115,15 +115,20 @@ export function buildDeepseekVisionRequest(
   });
 }
 
-/** Pull text + the token meter out of a chat completions reply. "" text for anything malformed —
- *  the caller treats that as "nothing readable", exactly like the Gemini parser. PURE. */
-export function parseDeepseekVisionReply(payload: unknown): { text: string; usage: DeepseekVisionUsage | null } {
-  const empty = { text: "", usage: null };
+/** Pull text + the token meter out of a chat completions reply, plus the model's own
+ *  finish_reason. "" text for anything malformed — the caller treats that as "nothing readable",
+ *  exactly like the Gemini parser. finish_reason exists for the empty case: "length" there means
+ *  the output cap landed while the model was still reasoning (caught live 2026-08-30: 22,753
+ *  chars of reasoning, 8,192 tokens billed, zero answer), and the log line needs to say so. PURE. */
+export function parseDeepseekVisionReply(payload: unknown): { finishReason: string; text: string; usage: DeepseekVisionUsage | null } {
+  const empty = { finishReason: "", text: "", usage: null };
   if (typeof payload !== "object" || payload === null) return empty;
   const choices = (payload as { choices?: unknown }).choices;
   const first = Array.isArray(choices) ? choices[0] : null;
   const content = (first as { message?: { content?: unknown } })?.message?.content;
   const text = typeof content === "string" ? content.trim() : "";
+  const reason = (first as { finish_reason?: unknown })?.finish_reason;
+  const finishReason = typeof reason === "string" ? reason : "";
 
   const raw = (payload as { usage?: Record<string, unknown> }).usage;
   const count = (key: string): number => {
@@ -141,7 +146,7 @@ export function parseDeepseekVisionReply(payload: unknown): { text: string; usag
     outputTokens: count("completion_tokens"),
   };
   const metered = usage.inputHitTokens + usage.inputMissTokens + usage.outputTokens > 0;
-  return { text, usage: metered ? usage : null };
+  return { finishReason, text, usage: metered ? usage : null };
 }
 
 /**
@@ -193,9 +198,18 @@ export async function readWithDeepseekVision(
     return null;
   }
   const payload = (await response.json().catch(() => null)) as unknown;
-  const { text, usage } = parseDeepseekVisionReply(payload);
+  const { finishReason, text, usage } = parseDeepseekVisionReply(payload);
   if (!text) {
-    console.warn(JSON.stringify({ event: "vision_empty_response", model, provider: "deepseek" }));
+    // finishReason "length" + outputTokens at DEEPSEEK_VISION_MAX_OUTPUT = the cap landed
+    // mid-reasoning and the whole spend bought no answer. The evidence rides in the line so a
+    // production log answers "why empty?" by itself.
+    console.warn(JSON.stringify({
+      event: "vision_empty_response",
+      finishReason,
+      model,
+      outputTokens: usage?.outputTokens ?? 0,
+      provider: "deepseek",
+    }));
     return null;
   }
   return { model, text, usage };

@@ -59,10 +59,30 @@ test("🔴 a missing cache split prices every prompt token at the FULL rate — 
   assert.deepEqual(usage, { inputHitTokens: 0, inputMissTokens: 400, outputTokens: 9 });
 });
 
+test("the parser surfaces the model's own finish_reason, so an empty reply can explain itself", () => {
+  // The live capture, 2026-08-30: HTTP 200, finish_reason "length", 8192 tokens billed, no answer.
+  // Reasoning ate the whole output cap. The parser must hand the reason through, or the
+  // vision_empty_response log line can never distinguish a cap-hit from a genuinely blank reply.
+  const capHit = parseDeepseekVisionReply({
+    choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "..." } }],
+    usage: { completion_tokens: 8192, prompt_tokens: 400 },
+  });
+  assert.equal(capHit.text, "");
+  assert.equal(capHit.finishReason, "length");
+  assert.equal(capHit.usage?.outputTokens, 8192);
+
+  const done = parseDeepseekVisionReply({
+    choices: [{ finish_reason: "stop", message: { content: "14 boxes" } }],
+    usage: { completion_tokens: 3889, prompt_tokens: 400 },
+  });
+  assert.equal(done.finishReason, "stop");
+});
+
 test("malformed replies parse to empty text and no meter, never to a throw", () => {
   for (const payload of [null, "text", [], {}, { choices: [] }, { choices: [{ message: {} }] }]) {
-    const { text, usage } = parseDeepseekVisionReply(payload);
+    const { finishReason, text, usage } = parseDeepseekVisionReply(payload);
     assert.equal(text, "");
+    assert.equal(finishReason, "");
     assert.equal(usage, null);
   }
 });
