@@ -1020,6 +1020,34 @@ export function LearningCanvas({
     [acknowledgeAttachments, applyExplanationEvent, converse, session],
   );
 
+  // Material chosen on the landing page, before this canvas existed. Same shape as the opening
+  // instruction below and latched the same way.
+  //
+  // 🔴🔴 THIS EFFECT SITS ABOVE THE OPENING-ASK EFFECT, AND THE ORDER IS LOAD-BEARING. Effects in
+  // one commit run in source order, and `attachFiles` registers its in-flight work synchronously
+  // (see `settledAttachments` in use-canvas-session), which is what lets the opening turn's packet
+  // wait for the material that rode along. With the ask first, the attach had not STARTED when the
+  // turn went out, so the model's first packet had no sources — proved on production 2026-08-31: a
+  // PDF dropped on the front door uploaded, filed and parsed, and the first answer still said
+  // "I don't see any document attached yet."
+  //
+  // 🔴 THE LATCH IS THE WHOLE SAFETY. `attachFiles` updates the canvas, which re-runs this effect;
+  // without it the same PDF would be ingested repeatedly — a real cost, since extraction is the
+  // expensive step. `takePending()` also clears as it reads, so the two guards are independent:
+  // even a mount ordering nobody predicted cannot attach the same files twice.
+  //
+  // 🔴 NOT GATED ON `canvas.state === "empty"`. A file dropped onto the front door arrives while
+  // the canvas is being minted, and the state it lands in is not something this effect gets to
+  // assume — attaching material is valid on any canvas, which is exactly what the composer's own
+  // attach control does mid-session.
+  const claimedFiles = useRef(false);
+  useEffect(() => {
+    if (claimedFiles.current || !session.ready) return;
+    const files = takePending();
+    claimedFiles.current = true;
+    if (files?.length) void session.attachFiles(files);
+  }, [session]);
+
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
   // 🔴 Guarded by a ref rather than by state: `begin` updates the canvas, which re-runs this
   // effect, and without the latch the same topic would start a second lesson over the first.
@@ -1070,26 +1098,6 @@ export function LearningCanvas({
   }, [canvas.id, openingFolder, session.ready, uid]);
 
   converseRef.current = converse;
-
-  // Material chosen on the landing page, before this canvas existed. Same shape as the opening
-  // instruction above and latched the same way.
-  //
-  // 🔴 THE LATCH IS THE WHOLE SAFETY. `attachFiles` updates the canvas, which re-runs this effect;
-  // without it the same PDF would be ingested repeatedly — a real cost, since extraction is the
-  // expensive step. `takePending()` also clears as it reads, so the two guards are independent:
-  // even a mount ordering nobody predicted cannot attach the same files twice.
-  //
-  // 🔴 NOT GATED ON `canvas.state === "empty"`. A file dropped onto the front door arrives while
-  // the canvas is being minted, and the state it lands in is not something this effect gets to
-  // assume — attaching material is valid on any canvas, which is exactly what the composer's own
-  // attach control does mid-session.
-  const claimedFiles = useRef(false);
-  useEffect(() => {
-    if (claimedFiles.current || !session.ready) return;
-    const files = takePending();
-    claimedFiles.current = true;
-    if (files?.length) void session.attachFiles(files);
-  }, [session]);
 
   // Leaving a canvas that was started but never finished is the number the pilot is being
   // judged on as much as completion is. Recorded on unmount, reading a ref so the value is the

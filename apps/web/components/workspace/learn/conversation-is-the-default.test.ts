@@ -112,8 +112,8 @@ test("🔴 the canvas picks the mechanism for a study turn, not the model", () =
   // and began asking template-generated recall questions, which the owner watched happen and asked
   // to have removed. `begin` still exists and still runs — from `learnFromAside`, where the learner
   // asks for the lesson on purpose.
-  assert.notEqual(converse.indexOf("\n    [command, requireUid]"), -1, "converse's dep-array anchor moved — update this test deliberately");
-  const body = converse.slice(0, converse.indexOf("\n    [command, requireUid]"));
+  assert.notEqual(converse.indexOf("\n    [command, requireUid, settledAttachments]"), -1, "converse's dep-array anchor moved — update this test deliberately");
+  const body = converse.slice(0, converse.indexOf("\n    [command, requireUid, settledAttachments]"));
   // 🔴 THE GUARD IS THE FEATURE. "study" is honoured only when there is material to work on; on an
   // un-begun canvas the turn falls through and is answered as a conversation instead — so a model
   // that says "study" anyway gets a conversation rather than a takeover.
