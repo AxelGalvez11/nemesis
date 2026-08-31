@@ -63,6 +63,7 @@ import {
   MAX_TOOL_ROUNDS,
   runToolRound,
   type PendingConfirmation,
+  type ProducedTest,
 } from "@/lib/learn/canvas-tools";
 import { loadMemory, memoryBlock } from "@/lib/learn/learner-memory";
 import { loadProjectInstructions } from "@/lib/learn/canvas-store";
@@ -153,6 +154,9 @@ export interface CanvasTurnReply {
    * Null on every turn that asked for nothing dangerous, which is almost all of them.
    */
   pending: PendingConfirmation | null;
+  /** A practice test a tool round wrote this turn — the reply grows the card to
+   *  sit it, because the conversation is where results live (owner 2026-08-31). */
+  producedTest: ProducedTest | null;
 }
 
 /**
@@ -427,7 +431,7 @@ export async function askCanvasChat(
   };
 
   const first = await ask("", MAX_SEARCH_ROUNDS, "", MAX_TOOL_ROUNDS);
-  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, pending: null, sources: [], stage };
+  if (first.errorText) return { consulted: [], decision: null, error: first.errorText, pending: null, producedTest: null, sources: [], stage };
   let decision = first.text ? await readDecision(first.text) : null;
 
   // The declaration is applied once, here, before the loop below reads `needsWeb`. `webQuery` falls
@@ -466,6 +470,7 @@ export async function askCanvasChat(
   const toolResults: string[] = [];
   let toolRounds = 0;
   let pending: PendingConfirmation | null = null;
+  let producedTest: ProducedTest | null = null;
   for (
     let round = 0;
     round < MAX_SEARCH_ROUNDS
@@ -493,6 +498,7 @@ export async function askCanvasChat(
       // The model is still shown the held result — it must be able to say "I need you to confirm"
       // in its own words — but it gets no further rounds to try routing around the card.
       if (ran.pending) pending = ran.pending;
+      if (ran.produced) producedTest = ran.produced;
     }
     // 🔴 TWO BEATS, BECAUSE THE COUNT DOES NOT EXIST YET AT THE FIRST ONE. ChatGPT says "Searching
     // 54 websites" because it issues the queries and knows the number; ours comes back with the
@@ -555,7 +561,7 @@ export async function askCanvasChat(
       toolResults.join("\n\n"),
       pending ? 0 : Math.max(0, MAX_TOOL_ROUNDS - toolRounds),
     );
-    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, pending: null, sources: [], stage };
+    if (next.errorText) return { consulted: [], decision: null, error: next.errorText, pending: null, producedTest, sources: [], stage };
     // A failed round leaves the previous answer standing, which is better for the learner than an
     // error — and stops the loop, since a null decision cannot ask for another search.
     decision = (next.text ? await readDecision(next.text) : null) ?? decision;
@@ -575,6 +581,7 @@ export async function askCanvasChat(
     decision,
     error: null,
     pending,
+    producedTest,
     // 🔴 AND IT IS ALSO THE HONEST FALLBACK WHEN THE MODEL CITES NOTHING. Measured in a browser on
     // 2026-08-20: "whats the latest news on ai?" returned an answer plainly built from live pages
     // with NOT ONE `[n]` in it — so `citedWebResults` returned empty, and the learner saw an answer
