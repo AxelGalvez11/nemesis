@@ -24,6 +24,7 @@ import { useDockWidth } from "./use-dock-width";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { CommentLayer } from "@/components/workspace/reader/comment-layer";
+import { DocumentRail, railHeadings } from "./document-rail";
 import {
   addDocumentComment,
   deleteDocumentComment,
@@ -180,6 +181,11 @@ export function OutputPreview({
   const commentRef = useMemo(() => ({ id: output.assetId ?? output.id, kind: "output" as const }), [output.assetId, output.id]);
 
   const blocks = useMemo(() => (markdown ? docBlocks(markdown) : []), [markdown]);
+  // 🔴 STATE, NOT A REF. The rail measures against this element and subscribes to its scroll, so it
+  // has to RE-RENDER when the node arrives; a ref would hand it null on the first pass and never
+  // tell it otherwise, and the marks would sit dead on the first heading.
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  const headings = useMemo(() => railHeadings(blocks), [blocks]);
   // Comment mode exists where there is something to pin to (a sheet and a built PDF are not blocks).
   const canComment = Boolean(comments) && (blocks.length > 0 || Boolean(deck)) && output.kind !== "pdf" && !output.sheet;
   // 🔴🔴 THE MERGED `markdown`, NOT `output.markdown`, AND THAT CHANGE IS THE WHOLE LIBRARY REVISE
@@ -476,7 +482,11 @@ export function OutputPreview({
           same number now (its container offers 932 and the cap takes it), so one document reads
           identically wherever it is opened, which is the rule the Library fix established for
           decks earlier today. */}
-      <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] pt-[25px]">
+      {/* 🔴 THE RAIL IS A SIBLING OF THE SCROLLER, NOT A CHILD. Inside it, `absolute` would resolve
+          against the scrolled content and the marks would slide away up the page with the text.
+          Out here it pins to the panel, which is what a position indicator has to do. */}
+      {full && !deck && !output.sheet && <DocumentRail headings={headings} scroller={scroller} />}
+      <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] pt-[25px]" ref={setScroller}>
         <div className="mx-auto w-full max-w-[816px] bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-primary)">
           {deck ? (
             <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} registerElement={canComment ? registerUnit : undefined} />
