@@ -46,11 +46,9 @@ import { cn } from "@/lib/utils";
 import { eventsFrom, type ReadFile, StepSyllabi } from "./step-syllabi";
 import { StepCourses } from "./step-courses";
 import { StepCoursework } from "./step-coursework";
-import { StepConnect } from "./step-connect";
 import { StepUpgrade } from "./step-upgrade";
 
 const STEP_LABELS: Record<OnboardingStep, string> = {
-  connect: "Your apps",
   courses: "Your courses",
   coursework: "Your coursework",
   syllabi: "Your syllabus",
@@ -248,11 +246,6 @@ export function OnboardingFlow({ onDone }: OnboardingFlowProps) {
             scan={scan}
           />
         )}
-        {/* 🔴 TAKES NO PROPS AND RETURNS NOTHING. Connecting an app happens against the account
-            immediately, out at the provider, so it is the one part of this flow that does NOT
-            collect into local state for the finish button to write. Nothing here can fail the
-            save, and nothing here is undone by pressing Skip. */}
-        {step === "connect" && <StepConnect />}
 
         {problems.length > 0 && (
           <div className="rounded-lg border border-(--ui-danger)/40 bg-(--ui-danger)/10 px-3 py-2">

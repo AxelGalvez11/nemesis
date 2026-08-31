@@ -163,32 +163,3 @@ export function groupApps(
   if (rest.length > 0) out.push({ apps: rest, label: "Other" });
   return out;
 }
-
-/**
- * The handful offered during first run, in the order they are shown.
- *
- * 🔴 NOT ALL ELEVEN, AND THE RESTRAINT IS THE FEATURE. A first-run screen listing
- * every connector is a permissions wall, and a student who is asked for eleven
- * things on day one grants none of them. Settings holds the full list and the
- * step says so.
- *
- * 🔴 EACH OF THESE FOUR ANSWERS THE WORK THE STUDENT JUST DID BY HAND. They have
- * spent the previous three steps typing course names and watching Nemesis pull
- * dates out of a syllabus. An LMS is where those assignments came from, and a
- * calendar is where the dates they just produced belong. That is why the ask
- * lands here rather than at the start: it is a sentence about their own work, not
- * a request for access. A file store is genuinely useful and is deliberately NOT
- * here, because "read my documents" has no such answer at this moment.
- */
-export const ONBOARDING_SUGGESTED: readonly string[] = ["canvas", "google_classroom", "googlecalendar", "outlook"];
-
-/** Those apps, in that order, as rows to render. Silently drops any the server
- *  did not send, so a build that offers fewer apps cannot render a blank row. */
-export function suggestedForOnboarding(apps: readonly ConnectableApp[]): ConnectableApp[] {
-  const found: ConnectableApp[] = [];
-  for (const key of ONBOARDING_SUGGESTED) {
-    const app = apps.find((one) => one.key === key);
-    if (app) found.push(app);
-  }
-  return found;
-}
