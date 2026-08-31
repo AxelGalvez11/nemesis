@@ -316,15 +316,24 @@ export function hardenedMaterial(title: string, questions: TestItem[]): StudyMat
   return { label: `facts the student already answered correctly in "${title}"`, text };
 }
 
+export interface MissedFact {
+  q: string;
+  answer: string;
+  /** The student's own one-tap diagnosis, when they gave one — the single most
+   *  useful line the examiner model gets: "forgot" and "never knew" call for
+   *  different questions, and only the student knows which it was. */
+  why?: MissKind;
+}
+
 /** What the most recent sitting got wrong — the re-ask list for a mixed review. */
-export function missedFacts(questions: TestItem[], attempts: TestAttempt[]): Array<{ q: string; answer: string }> {
+export function missedFacts(questions: TestItem[], attempts: TestAttempt[]): MissedFact[] {
   const latest = attempts[attempts.length - 1];
   if (!latest) return [];
   return latest.missed.flatMap((miss) => {
     const question = questions[miss.questionIndex];
     if (!question) return [];
     const answer = isTypedQuestion(question) ? question.typedAnswer : (question.options[question.answer] ?? "");
-    return [{ answer, q: question.q }];
+    return [{ answer, q: question.q, ...(miss.why ? { why: miss.why } : {}) }];
   });
 }
 
@@ -343,11 +352,15 @@ const MAX_REASKS = 15;
  * dropped exactly the questions the student failed would be the old failure
  * wearing a new name.
  */
-export function mixedReviewMaterial(parts: StudyMaterial[], missed: Array<{ q: string; answer: string }>): StudyMaterial {
+export function mixedReviewMaterial(parts: StudyMaterial[], missed: MissedFact[]): StudyMaterial {
   const missedSection = missed.length
     ? `Previously missed:\n${missed
         .slice(0, MAX_REASKS)
-        .map((entry, index) => `${index + 1}. ${entry.q} — correct answer: ${entry.answer}`)
+        .map(
+          (entry, index) =>
+            `${index + 1}. ${entry.q} — correct answer: ${entry.answer}` +
+            (entry.why ? ` — the student's own diagnosis: "${MISS_KIND_LABEL[entry.why]}"` : ""),
+        )
         .join("\n")}`.slice(0, MATERIAL_CHAR_LIMIT)
     : "";
   const budget = MATERIAL_CHAR_LIMIT - (missedSection ? missedSection.length + 2 : 0);
@@ -370,38 +383,39 @@ const GENERATION_SYSTEM =
 
 export interface TestGenOpts {
   /**
-   * `hard` regenerates a paper the student cruised through (owner 2026-08-31,
-   * from the post-exam report: "if you're answering everything easily, I should
-   * increase the difficulty, not conclude that you're finished").
+   * What is known about THIS student's performance, in plain sentences — recent
+   * scores, what they missed and how they tagged each miss, what they just
+   * asked for. The model reads it and decides the paper.
+   *
+   * 🔴 A RECORD, NOT A RECIPE (owner 2026-08-31: "it should not be hardcoded —
+   * DeepSeek should know what to do based on the given prompts... what the best
+   * path for this user is"). An earlier draft commanded the composition — a
+   * fixed ladder, a fixed share of scenario questions, a fixed re-ask order.
+   * That was this file deciding the teaching. The examiner charter below hands
+   * the model the evidence and the JUDGMENT; code keeps only what models are
+   * measurably bad at (answer-position balance, grading, storage — see
+   * test-answer-balance.ts for why "vary the positions" cannot be a prompt).
    */
-  readonly challenge?: "standard" | "hard";
-  /** The material ends with a "Previously missed:" section to re-test first. */
-  readonly reasksMissed?: boolean;
+  readonly record?: string;
 }
 
 /**
- * The ladder (standard papers) or the top rung only (hard ones).
+ * The examiner's charter: judgment over the paper's composition, guided by the
+ * post-exam report's findings, decided per student rather than commanded.
  *
- * 🔴 THE SCENARIO SHAPE IS STRUCTURAL, NOT MEDICAL. The post-exam report's
- * example is a patient vignette, but the instruction says "a situation from the
- * material's own field" — a law paper climbs to fact patterns, an engineering
- * paper to loaded beams, by the same words. No subject list to maintain.
+ * 🔴 FIELD-AGNOSTIC BY WORDING. "A situation from the material's own field" is
+ * a patient vignette in a therapeutics paper and a fact pattern in a contracts
+ * one, with no subject list to maintain.
  */
-const LADDER_RULE =
-  "Order the paper as a LADDER: open with direct recall, move through questions that test understanding, and " +
-  "end with questions written as a several-sentence SITUATION from the material's own field, where the student " +
-  "must weigh two or three facts from the material together to choose the best next step. At least a third of " +
-  "the paper is that hardest kind. A student who cruises through the final third was not really tested.";
-
-const HARD_RULE =
-  "Every question is the hardest kind: a several-sentence situation from the material's own field that takes two " +
-  "or three steps of reasoning, where the wrong options are the NEAR-MISS decisions a student who half-knows the " +
-  "material would make. Not one question may be answerable by reciting a definition.";
-
-const REASK_RULE =
-  "The material ends with a section headed \"Previously missed:\". FIRST write a fresh question re-testing each " +
-  "item in that section — the same fact, new wording, and where possible a harder angle — then spend the " +
-  "remaining questions on the rest of the material.";
+const EXAMINER_CHARTER =
+  "You are this student's EXAMINER, not their tutor. From the material — and the record of this student's " +
+  "performance, when one follows — YOU decide the paper's composition: the mix of direct recall, typed-answer " +
+  "production and several-sentence situation questions set in the material's own field; how steeply the paper " +
+  "climbs; and which previously missed or weakly held facts to re-test first, reworded, at a harder angle when " +
+  "the record shows they were merely forgotten and gentler when they were never known. Let the record overrule " +
+  "your defaults. Two standing findings to weigh: recognition masquerades as recall, so facts worth knowing cold " +
+  "belong in typed questions; and ease is a signal to climb, never to stop — a well-aimed paper feels slightly " +
+  "uncomfortable to a student who only recognises the material.";
 
 export function buildTestGenMessages(material: StudyMaterial, questionCount: number, opts?: TestGenOpts): WireMsg[] {
   const count = Math.min(Math.max(questionCount, 3), MAX_QUESTIONS);
@@ -410,8 +424,8 @@ export function buildTestGenMessages(material: StudyMaterial, questionCount: num
     {
       content:
         `Write a practice test of exactly ${count} multiple-choice questions from the student's ${material.label}. ` +
-        `${opts?.challenge === "hard" ? HARD_RULE : LADDER_RULE}\n` +
-        (opts?.reasksMissed ? `${REASK_RULE}\n` : "") +
+        `${EXAMINER_CHARTER}\n` +
+        (opts?.record ? `The record of this student's performance:\n${opts.record}\n` : "") +
         // The item-writing rules are shared with the chat "test-craft" skill so
         // the two test-producing lanes cannot drift apart — see item-writing.ts.
         `Follow these rules:\n${EXAM_ITEM_RULES}\n\n` +

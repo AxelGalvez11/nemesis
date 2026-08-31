@@ -22,7 +22,7 @@ export interface GenerateStudyArtifactOpts {
   groupName?: string;
   material: StudyMaterial;
   questionCount?: number;
-  /** Test papers only: difficulty and re-ask behaviour — see TestGenOpts. */
+  /** Test papers only: the student's performance record — see TestGenOpts. */
   testOpts?: TestGenOpts;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   updateArtifact: (artifactId: string, patch: { content?: unknown; status?: "draft" | "ready" }) => Promise<void>;

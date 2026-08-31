@@ -118,7 +118,15 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
         });
       material = mixedReviewMaterial(parts, missed);
       sourceTitle = "Mixed review";
-      testOpts = { reasksMissed: missed.length > 0 };
+      // The situation in sentences, not directives — the examiner charter in
+      // the prompt owns what to DO about it.
+      testOpts = {
+        record:
+          `The student asked for one mixed review across ${parts.length} source${parts.length === 1 ? "" : "s"}. ` +
+          (missed.length > 0
+            ? 'The material ends with a "Previously missed:" list — questions failed on earlier sittings, each carrying the student\'s own diagnosis where they gave one.'
+            : "No earlier misses are on record; this is their first pass over some of this material."),
+      };
     } else if (sourceType === "deck") {
       const deck = decks.find((item) => item.id === deckId) ?? decks[0];
       if (!deck) {
@@ -422,7 +430,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   // you're finished." An aced paper's facts become the material for a harder
   // one — self-contained, because an artifact does not remember its source.
   async function makeHarder() {
-    if (!study.userId || !content) return;
+    if (!study.userId || !content || !reviewAttempt) return;
     setHarder("making");
     try {
       await generateStudyArtifact({
@@ -432,7 +440,13 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
         kind: "test",
         material: hardenedMaterial(artifact.title, questions),
         questionCount: questions.length,
-        testOpts: { challenge: "hard" },
+        // The situation, not a recipe — the charter decides what "harder" means.
+        testOpts: {
+          record:
+            `The student just scored ${reviewAttempt.score} of ${reviewAttempt.total} on a paper over these ` +
+            'facts and pressed "make a harder one". Recognition is proven; write the paper that tests what ' +
+            "recognition cannot.",
+        },
         title: `${artifact.title.replace(/ — practice test$/, "")} — harder`,
         uid: study.userId,
         updateArtifact: study.updateArtifact,
