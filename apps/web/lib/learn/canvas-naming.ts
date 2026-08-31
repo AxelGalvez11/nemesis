@@ -85,22 +85,50 @@ export function canvasNeedsName(canvas: { title: string }): boolean {
  * with a lesson unnamed, which is the exact defect this file exists to end.
  */
 export function firstExchange(moments: readonly CanvasMoment[]): CanvasExchange | null {
+  return firstUntriedExchange(moments, new Set())?.exchange ?? null;
+}
+
+/**
+ * The earliest spoken exchange this canvas has NOT yet asked the model about.
+ *
+ * 🔴🔴 "FIRST" USED TO MEAN THE LITERAL FIRST, AND THAT PINNED EVERY CANVAS THAT OPENED WITH A
+ * GREETING. Measured in production, 2026-08-31: thirteen of the owner's twenty-five unnamed
+ * canvases began with "hi" or "hello" - and four of those went on to hold real conversations,
+ * two to six turns long, that could never name them, because the namer re-read the greeting on
+ * every pass and the model (correctly) refused it every time. The refusal channel worked; the
+ * walk did not move past it.
+ *
+ * So the caller now remembers which exchanges were REFUSED (by moment id) and this walks to the
+ * earliest one it has not tried. "Settles early" survives intact: the first exchange the model
+ * accepts still wins, nothing ever renames a named canvas, and a canvas that is nothing but
+ * greetings still ends up honestly unnamed.
+ */
+export function firstUntriedExchange(
+  moments: readonly CanvasMoment[],
+  tried: ReadonlySet<string>,
+): { key: string; exchange: CanvasExchange } | null {
   for (const moment of moments) {
     if (!SPOKEN.includes(moment.kind)) continue;
     const asked = (moment.userText ?? "").trim();
     if (!asked) continue;
-    return { asked, replied: (moment.assistantText ?? "").trim() };
+    if (tried.has(moment.id)) continue;
+    return { exchange: { asked, replied: (moment.assistantText ?? "").trim() }, key: moment.id };
   }
   return null;
 }
 
 /**
- * The word the model answers with when the exchange is too thin to name.
+ * The word an older prompt let the model answer with when an exchange was too thin to name.
  *
- * 🔴 A REFUSAL CHANNEL, BECAUSE THE ALTERNATIVE IS A NAME NOBODY ASKED FOR. "hey" and "are you
- * there" are real first messages, and a model with no way to decline will invent something for
- * them. "New canvas" is honest about a canvas that has not said what it is about yet; "Greeting and
- * introduction" is not.
+ * 🔴🔴 THE PROMPT NO LONGER OFFERS IT - OWNER REVERSAL, 2026-08-31: *"But ChatGPT when I say hi
+ * it will name it to 'greeting'."* His reference names every conversation, thin or not (his own
+ * ChatGPT list carries one literally titled "Greeting exchange"), so a greeting now gets called
+ * what it is instead of leaving the row untitled. The note this replaces argued "Greeting and
+ * introduction" was dishonest about a canvas with no subject yet; the owner looked at the result
+ * of that honesty - a sidebar full of "New canvas" - and chose the reference's behaviour.
+ *
+ * The constant stays because `readCanvasName` still treats a model that says it anyway as a
+ * refusal rather than as a name - belt for models that remember the old contract.
  */
 const NO_NAME = "none";
 
@@ -129,7 +157,7 @@ const NAMER_SYSTEM = [
   "- Use the person's own words for the subject wherever they gave you one. Do not translate their vocabulary into more formal words.",
   "- Plain text. No quotation marks, no full stop at the end, no emoji, no markdown.",
   "- Never use an em dash. Use a comma, a colon, or a new sentence instead.",
-  `- If they have not said what they want to work on yet, reply with exactly: ${NO_NAME}`,
+  "- If they have only greeted you or made small talk and have not yet said what they want to work on, name the exchange for what it is, in one or two plain words, the way a greeting is simply a greeting.",
 ].join("\n");
 
 /** The exchange, as the model reads it. */
@@ -190,21 +218,39 @@ const liveNamer =
   async (messages) => (await postChatCompletion(uid, messages, { maxTokens: NAME_MAX_TOKENS })).text;
 
 /**
- * Name a canvas from its first exchange.
+ * What one naming attempt came to.
  *
- * 🔴 IT NEVER THROWS AND NEVER REPORTS. Returning "" for every failure is deliberate: this runs
- * unasked, behind a conversation the learner is having, and a canvas that could not be named is not
- * something that happened TO them. Putting "I couldn't name this canvas" in the error strip would
- * interrupt a lesson to report a cosmetic miss.
+ * 🔴 REFUSED AND FAILED ARE DIFFERENT FACTS AND THE CALLER NEEDS BOTH. Refused means the model
+ * read the exchange and said there is nothing to name (a greeting): asking again about the SAME
+ * exchange is waste, so the caller retires it and moves on when a later one exists. Failed means
+ * the answer never arrived (network, a rate limit): the exchange is still perfectly nameable, so
+ * the caller leaves it in place and tries again on the next turn. The old single "" return wore
+ * both faces, which is why one dropped call left a canvas untitled for the rest of its life.
+ */
+export type NamingOutcome =
+  | { kind: "named"; name: string }
+  | { kind: "refused" }
+  | { kind: "failed" };
+
+/**
+ * Name a canvas from one exchange.
+ *
+ * 🔴 IT NEVER THROWS AND NEVER REPORTS. This runs unasked, behind a conversation the learner is
+ * having, and a canvas that could not be named is not something that happened TO them. Putting
+ * "I couldn't name this canvas" in the error strip would interrupt a lesson to report a
+ * cosmetic miss.
  */
 export async function nameCanvasFromExchange(
   uid: string,
   exchange: CanvasExchange,
   complete: NamerComplete = liveNamer(uid),
-): Promise<string> {
+): Promise<NamingOutcome> {
   try {
-    return readCanvasName(await complete(namingMessages(exchange)));
+    const raw = await complete(namingMessages(exchange));
+    if (raw === null) return { kind: "failed" };
+    const name = readCanvasName(raw);
+    return name ? { kind: "named", name } : { kind: "refused" };
   } catch {
-    return "";
+    return { kind: "failed" };
   }
 }

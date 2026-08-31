@@ -40,7 +40,7 @@ import {
   questionAsTask,
   runCommand,
 } from "@/lib/learn/canvas-api";
-import { canvasNeedsName, firstExchange, nameCanvasFromExchange } from "@/lib/learn/canvas-naming";
+import { canvasNeedsName, firstUntriedExchange, nameCanvasFromExchange, type CanvasExchange } from "@/lib/learn/canvas-naming";
 import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, lastThingSaid, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
@@ -901,20 +901,66 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * wrong and never throws. Nothing here was asked for, so nothing here may interrupt a lesson to
    * report that it did not happen; "New canvas" is a true thing to be called.
    */
-  const namedRef = useRef<string | null>(null);
+  /**
+   * One naming machine for the whole canvas: which exchanges were refused, and whether a call is
+   * out right now.
+   *
+   * 🔴🔴 THE OLD SHAPE WAS ONE SHOT PER MOUNT AND IT MARKED THE ATTEMPT BEFORE THE ANSWER CAME
+   * BACK, so a single dropped call - a rate limit, a network blip, closing the lid - left the
+   * canvas untitled for ever unless it was reopened. Measured in production, 2026-08-31: real
+   * first questions ("a full microbiology course", a mechanism request, two presentation asks)
+   * sitting untitled beside thirteen greeting canvases the namer was pinned to (see
+   * `firstUntriedExchange`). Now a FAILED call leaves the exchange eligible and the next turn
+   * retries it; a REFUSED exchange is retired and the walk moves on; and only a NAMED canvas
+   * stops asking.
+   */
+  const naming = useRef<{ canvas: string; tried: Set<string>; busy: boolean }>({ busy: false, canvas: "", tried: new Set() });
+
+  const tryName = useCallback(
+    async (key: string, exchange: CanvasExchange) => {
+      if (!uid) return;
+      const state = naming.current;
+      if (state.busy || state.tried.has(key)) return;
+      state.busy = true;
+      const outcome = await nameCanvasFromExchange(uid, exchange);
+      state.busy = false;
+      if (outcome.kind === "failed") return; // still eligible: the next turn tries again
+      state.tried.add(key);
+      if (outcome.kind === "refused") return;
+      // 🔴 CHECKED AGAIN INSIDE THE UPDATER - a title typed while the model was thinking wins.
+      update((current) => (canvasNeedsName(current) ? { ...current, title: outcome.name } : current));
+      // 🔴 WRITTEN THROUGH, NOT LEFT TO THE DEBOUNCE. The name usually lands seconds after the
+      // answer, which is exactly when a quick session gets closed; production carried canvases
+      // whose whole life fit inside that window. `latest.current` has not re-rendered yet, so
+      // the fresh title is applied to it here rather than read from it.
+      if (canvasNeedsName(latest.current)) {
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        void saveCanvas(uid, { ...latest.current, title: outcome.name });
+      }
+    },
+    [uid, update],
+  );
+
+  /** `converse` reads the namer through this ref so its guarded dependency list
+   *  (`[command, requireUid]`, pinned by conversation-is-the-default.test.ts) does not change
+   *  shape for a side call that needs no re-creation. */
+  const tryNameRef = useRef(tryName);
+  tryNameRef.current = tryName;
+
+  /**
+   * Naming, moment-driven: whenever the canvas is unnamed and holds a spoken exchange the model
+   * has not refused, ask. Runs on load too, which is what heals every untitled canvas from before
+   * this existed the first time it is opened.
+   */
   useEffect(() => {
     if (!uid) return;
     const current = latest.current;
-    if (namedRef.current === current.id) return;
+    if (naming.current.canvas !== current.id) naming.current = { busy: false, canvas: current.id, tried: new Set() };
     if (!canvasNeedsName(current)) return;
-    const exchange = firstExchange(current.moments);
-    if (!exchange) return;
-    namedRef.current = current.id;
-    void nameCanvasFromExchange(uid, exchange).then((name) => {
-      if (!name) return;
-      update((latestCanvas) => (canvasNeedsName(latestCanvas) ? { ...latestCanvas, title: name } : latestCanvas));
-    });
-  }, [canvas.moments, uid, update]);
+    const next = firstUntriedExchange(current.moments, naming.current.tried);
+    if (!next) return;
+    void tryName(next.key, next.exchange);
+  }, [canvas.moments, uid, tryName]);
 
   // Time on task, for the completion state. Only counted while the tab is actually visible —
   // "14 min active learning" must not include an hour in a background tab.
@@ -1539,6 +1585,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!id) return null;
       const said = question.trim();
       if (!said) return null;
+
+      // 🔴 THE NAME STARTS AT SEND, NOT AT RESOLVE. The old namer could only run once the reply
+      // had landed and been recorded, which put the whole answer's round trip plus its own
+      // between the question and the saved title - the exact window a quick session gets closed
+      // in, and production carried canvases whose life fit inside it. The asked text alone is
+      // enough for the model to name or refuse ("a full microbiology course" names; "hi"
+      // refuses), so this fires in parallel with the turn and the title is usually saved before
+      // the answer arrives. Keyed on the text, not a moment id: the moment does not exist yet,
+      // and if this attempt is refused, the recorded moment still gets its own with-reply try -
+      // a reply can settle a subject an opener alone could not.
+      if (canvasNeedsName(latest.current)) void tryNameRef.current(`ask:${said}`, { asked: said, replied: "" });
 
       // 🔴🔴 A DECLARED DEEP RESEARCH SUBMISSION SKIPS THE ROUTER ENTIRELY, and that is the whole
       // difference between the chip and `TurnDecision.wantsReport`. `wantsReport` is the model
