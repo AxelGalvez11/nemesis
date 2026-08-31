@@ -206,7 +206,17 @@ test("🔴🔴 the composer keeps every control while answering, and announces n
   // `aria-label={...}` is no longer written here — it is passed as `label`. The property is
   // unchanged and is still the one that matters: the way to submit is never conditional on being
   // mid-answer.
-  assert.match(composer, /label="Send"/, "the send button renames itself mid-answer again");
+  // 🔴 REPOINTED 2026-08-31: the label now explains a REFUSAL — "Reading your document…" while
+  // staged material is still being read (owner: "block the send button until it process everything
+  // all the documents"). A dark control that will not say why is its own defect. The property this
+  // line has always defended is untouched and is now asserted directly rather than through a
+  // literal: the label never varies by MODE, and with nothing to wait for it is plain "Send".
+  const label = composer.slice(composer.indexOf("const materialNotReady"), composer.indexOf("const submit = () => {"));
+  assert.match(label, /: "Send";/, "the send control must read plain Send when there is nothing to wait for");
+  for (const mode of ["intent", "answering", "inSession", "clarify"]) {
+    assert.ok(!label.includes(mode), `the send label varies by ${mode} — that is the mid-answer rename this bans`);
+  }
+  assert.match(composer, /label=\{sendLabel\}/, "the send control stopped using the explained label");
   assert.match(composer, /<ComposerSend/, "the composer no longer uses the shared send control");
   // A permanently painted scrollbar track inside a one-line control.
   assert.match(composer, /overflow-hidden/);

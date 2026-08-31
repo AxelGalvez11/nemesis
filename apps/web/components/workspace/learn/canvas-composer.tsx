@@ -78,7 +78,7 @@ const IDLE_REPLY_AUDIO = {
   stop: () => {},
 } as const;
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
-import { AttachmentCard, AttachmentRow } from "./attachment-card";
+import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 
 interface CanvasComposerProps {
@@ -226,10 +226,27 @@ interface CanvasComposerProps {
    * through the picker, so none of them can EVER appear here. The failure mode that killed the
    * old chips is unrepresentable, not discouraged.
    *
-   * 🔴 NO ✕, DELIBERATELY. Attach ingests immediately (§2: attach ≠ start) — parsing has begun.
-   * An ✕ would promise an un-ingest nothing can perform.
+   * 🔴🔴 THE ✕ IS BACK, AND SO IS A STATE PER CARD (owner, 2026-08-31: *"the attachments attach to
+   * composer before sending, that way user can see that the chat is processing it too and can
+   * remove attachment if necessary"*). This comment used to read "NO ✕, DELIBERATELY — attach
+   * ingests immediately, an ✕ would promise an un-ingest nothing can perform", and that reasoning
+   * was sound about the OLD behaviour rather than about the right behaviour. What changed is one
+   * level up: material now stages in the composer and is committed to the canvas by SEND, exactly
+   * as it already worked on the front door. So there is nothing to un-ingest, and removing a card
+   * means the obvious thing — this message goes without that file.
+   *
+   * `state` is that file's own progress: reading, ready, or failed. One line per card, because a
+   * single composer-wide caption becomes a lie the moment one of three finishes.
    */
-  recentAttachments?: readonly { readonly id: string; readonly title: string }[];
+  recentAttachments?: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly state?: AttachmentState;
+  }[];
+  /** Drop this file from the message being written. Absent for a surface with nothing staged. */
+  onRemoveAttachment?: (id: string) => void;
+  /** Read it again, after a failure. Shown only on a failed card — see `AttachmentCard`. */
+  onRetryAttachment?: (id: string) => void;
   /**
    * This canvas has not begun. Submitting starts it; `null` once it has.
    *
@@ -260,6 +277,8 @@ export function CanvasComposer({
   onAsk,
   onAnswer,
   onFiles,
+  onRemoveAttachment,
+  onRetryAttachment,
   capabilities = [],
   capability = null,
   onCapability,
@@ -485,6 +504,29 @@ export function CanvasComposer({
     return offers;
   }, [capabilities, onCapability, onRecord]);
 
+  /**
+   * Material in this message that is not ready to be learned from yet.
+   *
+   * 🔴🔴 THE SAME RULE THE FRONT DOOR ALREADY HOLDS (#967, owner: *"block the send button until it
+   * process everything all the documents… to assure quality"*). His argument carries here
+   * unchanged: a file that failed to read would otherwise ride along in silence and the reply
+   * comes back thinner than the learner's material with nothing saying why.
+   *
+   * 🔴 THIS DOES NOT CONTRADICT #888. That ruling was *"attaching a document mid chat should not
+   * immediately make the chat go into processing mode"* — the CANVAS must not be taken over, the
+   * character must not walk to the middle, the page must not blank. None of that happens: the
+   * canvas carries on, and the only thing that waits is the one control whose press would send an
+   * unread document.
+   */
+  const materialNotReady = recentAttachments.some(
+    (file) => file.state === "reading" || file.state === "failed",
+  );
+  const sendLabel = recentAttachments.some((file) => file.state === "reading")
+    ? "Reading your document…"
+    : materialNotReady
+      ? "One document couldn't be read. Try again or remove it."
+      : "Send";
+
   const submit = () => {
     const value = text.trim();
     // 🔴 THE `!value` REFUSAL IS NOW CONDITIONAL, AND THAT ONE CHARACTER IS §3. It used to be
@@ -493,6 +535,9 @@ export function CanvasComposer({
     // press did nothing they could see. An empty box is a real submission when material is
     // attached and the canvas has not started; everywhere else it is still nothing to send.
     if (busy) return;
+    // 🔴 THE KEY OBEYS THE SAME GATE AS THE BUTTON. Enter reaches `submit` without passing the
+    // control's `disabled`, so a check that lived only there would leave the commonest route open.
+    if (materialNotReady) return;
     // 🔴 A STAGED SELECTION IS A SUBMISSION, EXACTLY AS A STAGED FILE IS. Without this clause the
     // send button rendered (see `hasSelection`) and pressing it did nothing at all — worse than the
     // missing button it replaced, because a control that visibly does nothing reads as broken
@@ -792,7 +837,14 @@ export function CanvasComposer({
           {recentAttachments.length > 0 && !listening && (
             <AttachmentRow>
               {recentAttachments.map((file) => (
-                <AttachmentCard className="max-w-[260px] shrink-0" key={file.id} name={file.title} />
+                <AttachmentCard
+                  className="max-w-[260px] shrink-0"
+                  key={file.id}
+                  name={file.title}
+                  {...(onRemoveAttachment ? { onRemove: () => onRemoveAttachment(file.id) } : {})}
+                  {...(onRetryAttachment ? { onRetry: () => onRetryAttachment(file.id) } : {})}
+                  state={file.state ?? "ready"}
+                />
               ))}
             </AttachmentRow>
           )}
@@ -1121,8 +1173,8 @@ export function CanvasComposer({
                 ) : (
                 <ComposerSend
                   busy={busy}
-                  disabled={!showSend}
-                  label="Send"
+                  disabled={!showSend || materialNotReady}
+                  label={sendLabel}
                   onClick={submit}
                 />
                 )}

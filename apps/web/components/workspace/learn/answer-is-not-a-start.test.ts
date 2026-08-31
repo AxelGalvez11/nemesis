@@ -115,7 +115,11 @@ test("🔴🔴 the composer is not given the sources at all, so it cannot draw t
     "the composer takes the source list again, which is all it needs to start drawing chips",
   );
   assert.match(composerSource, /attachedCount\??:? ?(number|=)/, "the composer no longer knows whether material is waiting");
-  assert.match(canvasSource, /attachedCount=\{canvas\.sources\.length\}/, "the caller is passing more than a count again");
+  // 🔴 REPOINTED 2026-08-31 (#composer-staging): material dropped mid-session now waits in the
+  // composer instead of landing in `canvas.sources` on arrival, so the count has to include what is
+  // staged or an empty "learn this with me" send would be refused. It is still a COUNT — which is
+  // the whole property this line defends. The composer must never be handed the sources themselves.
+  assert.match(canvasSource, /attachedCount=\{canvas\.sources\.length \+ staged\.length\}/, "the caller is passing more than a count again");
   assert.ok(!/pendingSources=/.test(canvasSource), "the caller is handing the sources back to the composer");
 });
 

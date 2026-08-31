@@ -47,6 +47,9 @@ import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
 import { buildCanvasHistory, reconstructMoment } from "@/lib/learn/canvas-history";
 import type { TurnSurroundings } from "./canvas-chat";
 import { buildTranscript } from "@/lib/learn/session-transcript";
+import { type AttachmentState } from "./attachment-card";
+import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
+import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { CanvasComposer } from "./canvas-composer";
 import { COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { planTerritories } from "@/lib/learn/curriculum-plan";
@@ -516,34 +519,29 @@ export function LearningCanvas({
   const [materialRequestedDuring, setMaterialRequestedDuring] = useState<string | null>(null);
 
   /**
-   * Files the learner picked since their last send, for the composer's attachment chips.
+   * Material staged in the composer: picked, being read, and not yet part of this canvas.
    *
-   * 🔴 FED BY THE PICK, CLEARED BY THE SEND, AND NEVER READ FROM `canvas.sources` — that is the
-   * entire design, and the history demanding it is written on `recentAttachments` in
-   * canvas-composer.tsx. A machine-grounded page never passes through the picker, so it can never
-   * chip. A reload starts this empty, which is correct: nothing is pending over the box the
-   * learner has not touched yet.
+   * 🔴🔴 IT STAGES NOW INSTEAD OF INGESTING ON THE SPOT (owner, 2026-08-31: *"the composer should
+   * also have the drop into composer ability like in the landing page composer, where the
+   * attachments attach to composer before sending, that way user can see that the chat is
+   * processing it too and can remove attachment if necessary"*). The front door has worked this
+   * way since #959; this is the same behaviour one level in.
    *
-   * 🔴 THE CHIP APPEARS ON PICK, NOT ON INGEST COMPLETING. The learner's question is "did my file
-   * land where I'm typing?", and the honest moment to answer it is immediately — `attachFiles`
-   * takes seconds on a real deck, and a chip that appears only afterwards reproduces the silence
-   * this exists to end. If ingest fails, `session.error` already says so on the same screen.
+   * What that buys, and neither half worked before: the card shows the file's own progress while
+   * it is read, and the ✕ means something. The old comment on `recentAttachments` in
+   * canvas-composer.tsx argued there could be no ✕ because attaching had already ingested —
+   * correct about the old design, and the design is what changed. Nothing is added to
+   * `canvas.sources` until the learner sends.
+   *
+   * 🔴 THE CARD STILL APPEARS ON PICK, NOT ON THE READ FINISHING. The learner's question is "did my
+   * file land where I'm typing?", and the honest moment to answer is immediately. What is new is
+   * that the card then says what is happening to it.
+   *
+   * 🔴 NEVER READ FROM `canvas.sources`. A machine-grounded page, a promoted web result and a
+   * source restored on reload never pass through the picker, so they can never appear here. A
+   * reload starts this empty, which is correct: nothing is pending over a box nobody has touched.
    */
-  const [recentAttachments, setRecentAttachments] = useState<readonly { id: string; title: string }[]>([]);
-  // 🔴 IT RETURNS THE INGEST NOW, AND CALLERS MAY IGNORE IT. Every existing caller is an event
-  // handler that fires and forgets, which is still correct — the chip is the feedback. `askFromReader`
-  // is the one caller that has to WAIT: it sends a question about a picture in the same gesture that
-  // attaches it, and a turn that starts beside the upload races the model against the material.
-  const attachWithChips = useCallback(
-    (files: FileList | File[]) => {
-      const picked = Array.from(files).map((file) => ({ id: crypto.randomUUID(), title: file.name }));
-      if (picked.length > 0) setRecentAttachments((current) => [...current, ...picked]);
-      return session.attachFiles(files);
-    },
-    [session],
-  );
-  const acknowledgeAttachments = useCallback(() => setRecentAttachments([]), []);
-
+  const [staged, setStaged] = useState<readonly { id: string; file: File; state: AttachmentState }[]>([]);
   const selected = useMemo(
     () => canvas.blocks.filter((block) => selectedIds.includes(block.id)),
     [canvas.blocks, selectedIds],
@@ -818,6 +816,68 @@ export function LearningCanvas({
   }, [policy.evidence, policy.objectives, session.testQuestions, session.testRequested]);
   const { session: authSession } = useAuth();
   const uid = authSession?.user.id ?? null;
+
+  /** The read running for each staged card, by card id. A promise is machinery, not render state. */
+  const stagedReads = useRef(new Map<string, Promise<ExtractedFile>>());
+
+  /** Begin reading one staged file, and remember the call so SEND can claim it. */
+  const readStaged = useCallback(
+    (id: string, file: File) => {
+      if (!uid) return;
+      const run = extractFile(file, uid, { folderPath: CANVAS_FILING_FOLDER, keep: true });
+      stagedReads.current.set(id, run);
+      // Marking the promise handled here is also what keeps a failure the learner never sends from
+      // surfacing as an unhandled rejection. A send still sees the rejection, because it awaits the
+      // same promise.
+      void run.then(
+        () => setStaged((current) => current.map((entry) => (entry.id === id ? { ...entry, state: "ready" } : entry))),
+        () => setStaged((current) => current.map((entry) => (entry.id === id ? { ...entry, state: "failed" } : entry))),
+      );
+    },
+    [uid],
+  );
+
+  // 🔴 IT NO LONGER INGESTS, AND THE ONE CALLER THAT NEEDED IT TO STILL DOES — see `askFromReader`,
+  // which sends a question about a picture in the same gesture that attaches it and therefore
+  // commits explicitly.
+  const attachWithChips = useCallback(
+    (files: FileList | File[]) => {
+      const picked = Array.from(files).map((file) => ({ id: crypto.randomUUID(), file, state: "reading" as const }));
+      if (picked.length === 0) return;
+      setStaged((current) => [...current, ...picked]);
+      for (const entry of picked) readStaged(entry.id, entry.file);
+    },
+    [readStaged],
+  );
+
+  /**
+   * Hand everything staged to the canvas. Called by SEND, and only by send.
+   *
+   * 🔴 THE READS RIDE ALONG, so a file already read is not read again — the third argument is the
+   * in-flight `extractFile` call, exactly as the front door's handoff works (#959). Registration
+   * inside `attachFiles` is synchronous, so a turn started immediately after this call still waits
+   * for the material (#953).
+   */
+  const commitStaged = useCallback(() => {
+    const entries = staged;
+    if (entries.length === 0) return;
+    const reads = entries.map((entry) => stagedReads.current.get(entry.id) ?? null);
+    for (const entry of entries) stagedReads.current.delete(entry.id);
+    setStaged([]);
+    void session.attachFiles(entries.map((entry) => entry.file), undefined, reads);
+  }, [session, staged]);
+
+  /** The composer's own view of what is staged: a title and a state, never the bytes. */
+  const stagedCards = useMemo(
+    () => staged.map((entry) => ({ id: entry.id, title: entry.file.name, state: entry.state })),
+    [staged],
+  );
+  // 🔴 SENDING COMMITS WHAT IS STAGED. This used to only clear the chips, because attaching had
+  // already happened on pick; now the send is what moves material into the canvas. Every route
+  // that submits already calls this, which is why the commit lives here rather than in four
+  // handlers that would each have to remember.
+  const acknowledgeAttachments = useCallback(() => commitStaged(), [commitStaged]);
+
 
   /**
    * A finished check opens itself, once.
@@ -1949,7 +2009,11 @@ export function LearningCanvas({
   const undoOutput = (output: CanvasOutput) => session.updateOutput(output.id, undoRevision);
 
   const askFromReader = async (asked: string, files: File[]) => {
-    if (files.length > 0) await attachWithChips(files);
+    // 🔴 THE READER'S OWN SEND COMMITS DIRECTLY AND WAITS. Everywhere else material is staged and
+    // committed by the composer's send; here the question and the picture are one gesture, so
+    // there is no staging step to pass through — and the turn must not start before the picture is
+    // in the canvas.
+    if (files.length > 0) await session.attachFiles(files);
     acknowledgeAttachments();
     if (intent.kind === "start") beginOrAnswer(asked, null);
     else void submit(asked, null);
@@ -3171,8 +3235,25 @@ export function LearningCanvas({
           // (owner 2026-08-21: *"the sources should appear in the sources"*). All it still needs to
           // know is whether pressing send with an empty box means anything, and passing the list
           // for that would be handing it everything it needs to start drawing them again.
-          attachedCount={canvas.sources.length}
-          recentAttachments={recentAttachments}
+          // 🔴 STAGED MATERIAL COUNTS AS MATERIAL FOR THE EMPTY SEND. `canStartFromAttachment`
+          // asks "is there something to learn from?", and since #969 a dropped file waits in the
+          // composer instead of landing in `canvas.sources` on arrival — so counting only the
+          // canvas would refuse the exact send that means "learn this with me".
+          attachedCount={canvas.sources.length + staged.length}
+          onRemoveAttachment={(id) => {
+            // 🔴 REMOVING FORGETS THE READ TOO, so re-adding the same file starts cleanly and a
+            // failed card cannot hold the send with nothing running behind it.
+            stagedReads.current.delete(id);
+            setStaged((current) => current.filter((entry) => entry.id !== id));
+          }}
+          onRetryAttachment={(id) => {
+            const entry = staged.find((candidate) => candidate.id === id);
+            if (!entry) return;
+            stagedReads.current.delete(id);
+            setStaged((current) => current.map((c) => (c.id === id ? { ...c, state: "reading" } : c)));
+            readStaged(id, entry.file);
+          }}
+          recentAttachments={stagedCards}
           selected={selected}
           // 🔴 ONE CAPABILITY OFFERED, AND ONLY THE COMPOSER CLEARS IT. §38's amendment (owner,
           // 2026-08-23) permits one-shot capabilities that declare what the next submission IS;
