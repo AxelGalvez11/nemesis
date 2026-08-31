@@ -95,12 +95,22 @@ export function AttachmentCard({
   className,
   name,
   onRemove,
+  onRetry,
   state = "ready",
 }: {
   className?: string;
   name: string;
   /** Omitted for a file already sent — the reference's card has no × once it is committed. */
   onRemove?: () => void;
+  /**
+   * Read it again.
+   *
+   * 🔴 A FAILED CARD HOLDS THE SEND, so it must carry its own way out. Most read failures are
+   * transient (a dropped connection mid-upload), which makes "try again" the likeliest correct
+   * action and the × the second one. Shown only on `failed`: a retry beside a file that read
+   * perfectly would invite a second parse of something already done.
+   */
+  onRetry?: () => void;
   state?: AttachmentState;
 }) {
   const kind = fileKind(name);
@@ -149,6 +159,20 @@ export function AttachmentCard({
           {line}
         </span>
       </span>
+      {onRetry && state === "failed" ? (
+        <button
+          aria-label={`Try reading ${name} again`}
+          className={cn(
+            "ml-[4px] shrink-0 rounded-[8px] px-[8px] py-[4px]",
+            "text-[length:var(--canvas-text-meta)] font-medium leading-[16px] text-(--ui-text-primary)",
+            "transition-colors hover:bg-(--ui-bg-tertiary)",
+          )}
+          onClick={onRetry}
+          type="button"
+        >
+          Try again
+        </button>
+      ) : null}
       {onRemove ? (
         <button
           aria-label={`Remove ${name}`}

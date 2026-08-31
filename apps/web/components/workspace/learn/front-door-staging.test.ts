@@ -73,14 +73,33 @@ test("🔴 material alone is enough to send — except under a staged capability
   // The capability half mirrors the session composer's own §3 rule (`canStartFromAttachment`
   // refuses a capability there too): a chip is a declaration ABOUT words, and it is also what
   // keeps `start`'s `&cap=` riding only beside a real `?ask=`.
-  assert.match(HOME, /disabled=\{capability \? !text\.trim\(\) : !text\.trim\(\) && staged\.length === 0\}/);
+  // 🔴 REPOINTED 2026-08-31: the control also refuses while material is still being read (owner:
+  // "block the send button until it process everything all the documents"), so the expression now
+  // opens with `blocked ||`. The rule this test exists for is untouched and is what stays pinned:
+  // words are not required beside material, and a staged capability requires them.
+  assert.match(HOME, /disabled=\{blocked \|\| \(capability \? !text\.trim\(\) : !text\.trim\(\) && staged\.length === 0\)\}/);
 });
 
-// 🔴 NOTHING IS UPLOADED, PARSED OR PAID FOR UNTIL START. Extraction is the expensive step; a file
-// sitting in a chip has not begun it, which is the whole reason removing one is free.
-test("🔴 staging does not extract", () => {
+// 🔴🔴 THIS TEST USED TO ASSERT THE EXACT OPPOSITE, AND THE REVERSAL IS THE OWNER'S.
+//
+// It read "NOTHING IS UPLOADED, PARSED OR PAID FOR UNTIL START… a file sitting in a chip has not
+// begun it, which is the whole reason removing one is free." That was true and deliberate until
+// 2026-08-31, when the owner asked for the reference's behaviour instead: *"read them on drop, like
+// chatgpt"*, and then *"block the send button until it process everything"*. Reading on drop is now
+// the point, so the old rule is not a rule any more.
+//
+// 🔴 IT SURVIVED #959 BY ACCIDENT, WHICH IS THE LESSON. `stageFiles` calls `beginRead`, and
+// `beginRead` calls `extractFile` — one function away, so a substring check on the staging body
+// still passed while describing behaviour that had already been deliberately inverted. A guard that
+// keeps passing after its rule is reversed is worse than no guard: it reads as proof.
+//
+// What is genuinely still true is narrower, and it is what this now pins: staging reads, and
+// staging does NOT attach to a canvas or navigate — there is no canvas yet, and the learner has not
+// pressed anything. `read-on-drop.test.ts` holds the reading half.
+test("🔴 staging reads, and does nothing else", () => {
   const stage = bodyOf("stageFiles");
-  for (const spend of ["extractFile", "attachFiles", "await"]) {
-    assert.ok(!stage.includes(spend), `staging calls ${spend} — picking a file now costs money`);
+  assert.ok(stage.includes("beginRead"), "staging must start the read — owner reversal, 2026-08-31");
+  for (const overreach of ["attachFiles", "router.push", "putPending"]) {
+    assert.ok(!stage.includes(overreach), `staging calls ${overreach} — picking a file now commits it`);
   }
 });

@@ -60,7 +60,11 @@ test("🔴 both ways in go through stageFiles, so both inherit the focus", () =>
   assert.ok(pickerToStage, "the file picker must stage through the same door");
 });
 
-test("🔴 material alone can still send — the button stays enabled with no words typed", () => {
+test("🔴 material alone can still send — no words are ever required beside a file", () => {
   // The other half of the same gesture: focus makes Enter reachable, this keeps Start reachable.
-  assert.match(home, /disabled=\{capability \? !text\.trim\(\) : !text\.trim\(\) && staged\.length === 0\}/);
+  // 🔴 REPOINTED 2026-08-31: the control now also refuses while a file is still being read or has
+  // failed (owner: "block the send button until it process everything all the documents"), which is
+  // a readiness gate and not a words gate. The words half is what this test guards, and it is
+  // unchanged — `send-waits-for-material.test.ts` owns the readiness half.
+  assert.match(home, /disabled=\{blocked \|\| \(capability \? !text\.trim\(\) : !text\.trim\(\) && staged\.length === 0\)\}/);
 });
