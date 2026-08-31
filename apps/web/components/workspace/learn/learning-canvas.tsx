@@ -1270,7 +1270,13 @@ export function LearningCanvas({
    * and the learner would hear the beginning of the answer over and over. It is the same signal the
    * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
    */
-  const voice = useCanvasVoice(turnInFlight ? null : spokenReply);
+  // 🔴 A VOICE CONVERSATION IS A SESSION, NOT A SETTING (owner 2026-08-30 evening: entered from
+  // the composer, "like claude", turn-based STT+TTS). While one runs, replies are spoken — and
+  // the stored autoplay preference died that same morning (#937), so this is the one automatic
+  // play left in the product. See `alwaysSpeak` in use-canvas-voice.ts for why it is an argument
+  // and not the preference returning.
+  const [voiceConversing, setVoiceConversing] = useState(false);
+  const voice = useCanvasVoice(turnInFlight ? null : spokenReply, voiceConversing);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -2877,6 +2883,8 @@ export function LearningCanvas({
       {showComposer && !recording && (
         <CanvasComposer
           busy={intent.kind === "answer" && intent.sink === "policy" ? policy.judging : busy.kind === "command"}
+        onVoiceConversation={setVoiceConversing}
+        voiceReplyAudio={voice.replyAudio}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
           // asked, which is the rule this component already ran on.

@@ -106,7 +106,16 @@ export interface SpokenReply {
 }
 
 // 🔴 THE `runtime` PARAMETER LEFT WITH THE NARRATION LANE — `momentFor` was its only reader.
-export function useCanvasVoice(reply: SpokenReply | null = null): CanvasVoice {
+/**
+ * @param alwaysSpeak A voice CONVERSATION is running (owner 2026-08-30, evening: *"it should
+ * work like claude where its not real time voice but just quick tts and stt"*): the learner
+ * pressed the composer's voice button, so this reply is spoken. 🔴 THIS IS NOT THE AUTOPLAY
+ * PREFERENCE RETURNING — that died the same morning (#937), with its toggle. A stored setting
+ * spoke every answer for ever; a session speaks them between an explicit press and an explicit
+ * stop, and is an ARGUMENT here rather than a mode so there is still one effect, one player,
+ * one path.
+ */
+export function useCanvasVoice(reply: SpokenReply | null = null, alwaysSpeak = false): CanvasVoice {
   /** Counts presses of the on-demand Speak control, so each one is a new utterance key. */
   const aloudPress = useRef(0);
   /**
@@ -219,9 +228,17 @@ export function useCanvasVoice(reply: SpokenReply | null = null): CanvasVoice {
     // 🔴 ONLY WHEN THE ANSWER IS NEW, NEVER WHEN THE SETTING CHANGES. Switching autoplay on while an
     // answer is already on screen would make the toggle read the paragraph you are in the middle of
     // reading — a preference about what happens NEXT, narrating the present retroactively.
-    // 🔴 AUTOPLAY ITSELF DIED WITH THE MODE (owner, 2026-08-30) — this effect used to press play
-    // here when the setting was on. Stopping the OLD answer's audio above is what survives: it
-    // belongs to the answer being replaced, not to any setting.
+    // 🔴 AUTOPLAY ITSELF DIED WITH THE MODE (owner, 2026-08-30 morning) — this effect used to
+    // press play here when the setting was on. Stopping the OLD answer's audio above is what
+    // survives of that: it belongs to the answer being replaced, not to any setting.
+    // 🔴 A VOICE CONVERSATION IS THE ONE THING THAT STILL PRESSES PLAY — the same owner, the
+    // same evening. A SESSION between an explicit press and an explicit stop, never a stored
+    // preference; and it takes the same path a learner's own Read-aloud press takes, so which
+    // provider, which voice, how it streams and how it is controlled are identical either way.
+    if (!arrived || !replyKey || !reply || !alwaysSpeak) return;
+    replyAudio.start(reply.text);
+    // Keyed on the answer, never on `replyAudio`: the controller's identity changes as its own
+    // state does, and depending on it would restart the audio on every tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replyKey]);
 
