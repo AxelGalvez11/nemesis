@@ -37,7 +37,7 @@ export function TestReadyCard({ produced }: { produced: ProducedTest }) {
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="m-0 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{produced.title}</p>
           <p className="m-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-            {artifact ? "Ready when you are — it grades as you go." : "Filing it…"}
+            {artifact ? "Ready when you are. It grades as you go." : "Filing it…"}
           </p>
         </div>
         <button
