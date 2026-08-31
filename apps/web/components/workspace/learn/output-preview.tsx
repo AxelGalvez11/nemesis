@@ -460,11 +460,24 @@ export function OutputPreview({
         </p>
       )}
 
-      {/* 🔴 THE SHEET IS INSET 24px AND CARRIES THE REFERENCE'S OWN SHADOW, measured: 931 wide
-          inside 980, `0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)`. It is a page on a
-          desk, not a panel with padding. */}
+      {/* 🔴 THE SHEET IS INSET 24px AND CARRIES THE REFERENCE'S OWN SHADOW,
+          `0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)`. It is a page on a desk, not a
+          panel with padding.
+
+          🔴🔴 816px IS A MEASURED CAP, AND ITS ABSENCE WAS A REAL DEFECT. `w-full` with nothing
+          above it was fine while this only ever opened docked, and became nonsense the moment the
+          same sheet opened full screen: on a 1470px window the page grew to 1422 and the prose ran
+          **1332px at 14px type, about 190 characters a line**, against the 45-75 a reader can
+          track. The owner put it plainly on 2026-08-31 — *"why is that research document like it's
+          too wide, and it doesn't look like how [ChatGPT] outputs its own research reports."*
+
+          Measured the same hour, ChatGPT signed in at the same 1470px viewport: a report paragraph
+          is **736px wide**. 736 + the 40px padding on each side is this 816. Docked lands on the
+          same number now (its container offers 932 and the cap takes it), so one document reads
+          identically wherever it is opened, which is the rule the Library fix established for
+          decks earlier today. */}
       <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] pt-[25px]">
-        <div className="mx-auto w-full bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-primary)">
+        <div className="mx-auto w-full max-w-[816px] bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-primary)">
           {deck ? (
             <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} registerElement={canComment ? registerUnit : undefined} />
           ) : output.sheet ? (
@@ -525,9 +538,17 @@ function DocBody({ markdown, registerElement }: { markdown: string; registerElem
         // identity. Two identical bullets would otherwise collide on a text key.
         const key = `${index}`;
         if (block.kind === "heading") {
-          const size = block.level === 1 ? "--canvas-text-lead" : block.level === 2 ? "--canvas-text-body" : "--canvas-text-small";
+          // 🔴 THE SCALE MOVED UP WITH THE BODY, AND ONLY ALONG THE DECLARED STEPS. Body used to be
+          // 14px, so a level-2 heading at 16px was a step above it; body is 16px now, and leaving
+          // the old mapping would have printed a heading at exactly the size of the sentence under
+          // it, with weight doing all the work — and a level-3 heading SMALLER than its own body.
+          // 🔴 I FIRST WROTE 24/20/16 AS px LITERALS AND §46.3 CAUGHT IT: the Canvas has five
+          // declared steps and a literal is a sixth nobody chose. 20px is not one of them. These
+          // are `title` (24), `lead` (18) and `body` (16) — hierarchy from the scale that exists,
+          // which is the rule's whole point, and `title` is the ceiling §46.3 allows.
+          const size = block.level === 1 ? "--canvas-text-title" : block.level === 2 ? "--canvas-text-lead" : "--canvas-text-body";
           return (
-            <p className={`relative m-0 mt-2 font-semibold text-[length:var(${size})] text-(--ui-text-primary)`} data-comment-block={index} key={key}>
+            <p className={`relative m-0 mt-4 font-semibold text-[length:var(${size})] text-(--ui-text-primary)`} data-comment-block={index} key={key}>
               {block.text}
             </p>
           );
@@ -544,14 +565,22 @@ function DocBody({ markdown, registerElement }: { markdown: string; registerElem
         }
         if (block.kind === "bullet" || block.kind === "number") {
           return (
-            <p className="relative m-0 flex gap-2 pl-2 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" data-comment-block={index} key={key}>
+            <p className="relative m-0 flex gap-2 pl-2 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)" data-comment-block={index} key={key}>
               <span className="shrink-0 text-(--ui-text-quaternary)">{block.kind === "bullet" ? "•" : `${block.index}.`}</span>
               <span>{block.text}</span>
             </p>
           );
         }
+        // 🔴🔴 BODY IS 16/26 IN THE PRIMARY COLOUR, ALL THREE MEASURED OFF THE REFERENCE
+        // (ChatGPT, signed in, 1470px, 2026-08-31): paragraph and list item both **16px on 26px,
+        // weight 400, rgb(13,13,13)**. This shipped at `--canvas-text-small` (14px) in
+        // `--ui-text-secondary`, which is the styling of a caption: a whole document set in grey
+        // half-size type reads as a preview of a document rather than the document. 16px on
+        // `leading-relaxed` IS 26px exactly (1.625 x 16), so the line-height needs no literal.
+        // `--canvas-text-body` is 16px, so this also puts a document on the same body size as the
+        // rest of the product — the reader was the one surface disagreeing with our own token.
         return (
-          <p className="relative m-0 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)" data-comment-block={index} key={key}>
+          <p className="relative m-0 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)" data-comment-block={index} key={key}>
             {block.text}
           </p>
         );
