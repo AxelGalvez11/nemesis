@@ -130,7 +130,11 @@ test("the shell reserves clearance with padding rather than a header element", (
   // padding), which is a 2px corner pop and a 4px control shift at the exact instant of the route
   // swap. So this asserts the same 52px, one level up: the class points at the token, and the
   // token's own value is pinned in globals.css beside the rest of the composer's geometry.
-  assert.match(composer, /min-h-\[var\(--composer-min-height\)\] items-center/, "the input row stopped using the shared height");
+  // 🔴 THE TOKEN IS WHAT THIS PINS; THE ALIGNMENT BESIDE IT MOVED ON PURPOSE. The row bottom-aligns
+  // its controls now (owner 2026-08-31, so they do not drift as the box grows) and that shape is
+  // pinned in `composer-growth.test.ts`. Matching it here too would make one owner decision fail two
+  // unrelated tests, which teaches people to edit assertions rather than read them.
+  assert.match(composer, /min-h-\[var\(--composer-min-height\)\]/, "the input row stopped using the shared height");
   assert.match(read("../../../app/globals.css"), /--composer-min-height: 52px;/, "the input row is no longer 52px tall");
   // 🔴 AND THE RADIUS WENT THE SAME WAY, WITH ONE REAL CORRECTION ON THE WAY. This pinned a private
   // 26px while the front door's composer — the one that flies into this one's place — had been on
