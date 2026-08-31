@@ -101,7 +101,9 @@ test("🔴🔴🔴 the rail has ONE geometry — hovering it may not move a sing
   assert.ok(!/h-\[36px\]/.test(marker), "the 36px open row is back — the column will grow on hover again");
   // 🔴 14px SINCE 2026-08-30 (owner: "still feels a bit small"; was 9px). The number may move
   // again; what may not exist is a SECOND one — the h-[36px] check above holds that half.
-  assert.ok(/"group relative flex h-\[14px\] shrink-0/.test(RAIL_CODE), "the marker is no longer one fixed height");
+  // 🔴 15px SINCE 2026-08-31, matching the document rail's pitch (owner: *"make sure the right side
+  // rail… looks the same way"*). What this guard protects is that there is ONE height, not which.
+  assert.ok(/"group relative flex h-\[15px\] shrink-0/.test(RAIL_CODE), "the marker is no longer one fixed height");
   assert.ok(rowHeights.length >= 1, "the marker stopped composing its classes, so this guard cannot read it");
 });
 
@@ -117,9 +119,15 @@ test("🔴🔴 the labels live in a PANEL, out of flow, carrying the reference's
   // label that reserved space in ANY form would reintroduce the report.
   // 🔴 ONE LABEL PER ROW, IN A LIST, since 2026-08-31. The per-marker tooltip is gone: the panel
   // names every moment at once, so a floating label for the one under the pointer would be the
-  // same words twice. Measured after the change: 288px wide, 36px rows, 20px clear of the strip.
-  assert.match(RAIL_CODE, /w-\[288px\]/, "the panel is no longer the measured width");
-  assert.match(RAIL_CODE, /h-\[36px\]/, "the rows drifted off 36px — `h-9` is 40.5px in this app");
+  // same words twice.
+  // 🔴🔴 THE NUMBERS ARE THE DOCUMENT RAIL'S NOW, chosen by the owner the same day with all three
+  // directions in front of him: 287px on a 12px radius, rows that are 16px text on 24px rather
+  // than 36px boxes, and no copy of the strip's mark inside them. They came from ChatGPT's
+  // deep-research rail, measured in his own session — so the two rails are one family by
+  // construction rather than by eye.
+  assert.match(RAIL_CODE, /w-\[287px\]/, "the panel is no longer the measured width");
+  assert.match(RAIL_CODE, /leading-\[24px\]/, "the panel rows drifted off the document rail's 16/24");
+  assert.ok(!/h-\[36px\]/.test(RAIL_CODE), "the 36px row boxes are back — the matched panel is text, not list furniture");
   assert.ok(!/leading-6\b/.test(RAIL_CODE), "`leading-6` is 27px here — name the pixels");
   assert.match(RAIL_CODE, /truncate/, "a long title can now push the panel wider than its measured width");
   // 🔴 IT MUST NOT EAT THE CLICK IT DESCRIBES: it overlaps the reading column and sits over the
@@ -260,9 +268,46 @@ test("the active marker is both longer and brighter", () => {
   // Pinned as an INEQUALITY, not as pixels — the 2026-08-30 size-up tripped the exact-value form
   // of this guard while leaving its truth intact, which is this file's own recorded trap.
   const active = /w-\[(\d+)px\] bg-\(--ui-text-primary\)/.exec(RAIL_CODE);
-  const resting = /w-\[(\d+)px\] bg-\(--ui-text-tertiary\)/.exec(RAIL_CODE);
+  // 🔴 THE RESTING MARK IS `--ui-stroke-secondary` SINCE 2026-08-31, not text-tertiary at 75%
+  // opacity — the document rail's colour, which the owner chose for both. Reading only the old
+  // token here would have made this guard silently unmatchable rather than red.
+  const resting = /w-\[(\d+)px\] bg-\(--ui-stroke-secondary\)/.exec(RAIL_CODE);
   assert.ok(active && resting, "the two marker states stopped declaring widths this guard can read");
   assert.ok(Number(active[1]) > Number(resting[1]), "the active marker is no longer LONGER than a resting one");
+});
+
+test("🔴🔴 the two rails are ONE family, pinned to each other rather than to a memory", () => {
+  // Owner, 2026-08-31, with both on screen: *"make sure the right side rail… looks the same way,
+  // because right now it's different."* It was: 2px marks at 16/26 on an 18px pitch beside 3px
+  // marks at 19/25 on a 15px pitch, and two panels that shared only a width.
+  //
+  // 🔴 THE POINT OF THIS GUARD IS THAT IT READS BOTH FILES. Restating the document rail's numbers
+  // here as literals would pin this rail to a COPY of them, and the next size-up would move one
+  // rail and leave the other quietly behind — which is exactly the drift being fixed. The
+  // assertion is equality between the two sources, so either file may change the numbers and
+  // neither may change them alone.
+  const doc = readFileSync(join(import.meta.dirname, "document-rail.tsx"), "utf8");
+  const marks = (code: string) => ({
+    active: /w-\[(\d+)px\] bg-\(--ui-text-primary\)/.exec(code)?.[1],
+    resting: /w-\[(\d+)px\] bg-\(--ui-stroke-secondary\)/.exec(code)?.[1],
+    thickness: /h-\[(\d+)px\][^"]*rounded-full/.exec(code)?.[1] ?? /rounded-full[^"]*h-\[(\d+)px\]/.exec(code)?.[1],
+  });
+  const here = marks(RAIL_CODE);
+  const there = marks(doc);
+  assert.ok(there.active && there.resting, "the document rail's marks stopped declaring widths this guard can read");
+  assert.equal(here.active, there.active, "the two rails disagree about the ACTIVE mark's length");
+  assert.equal(here.resting, there.resting, "the two rails disagree about a RESTING mark's length");
+  assert.equal(here.thickness, there.thickness, "the two rails disagree about how thick a mark is");
+
+  // The panel, same argument.
+  // 🔴 ANCHORED TO THE PANEL'S OWN RADIUS, because a bare width regex matched the MARK first
+  // (`w-[25px]`) and reported the two panels as different sizes when both were 287.
+  const panelWidth = (code: string) => /w-\[(\d+)px\][^"]*rounded-\[12px\]/.exec(code)?.[1];
+  assert.equal(panelWidth(RAIL_CODE), panelWidth(doc), "the two rails' panels are no longer the same width");
+  for (const shared of [/rounded-\[12px\]/, /py-\[20px\] pl-\[20px\] pr-\[16px\]/, /leading-\[24px\]/]) {
+    assert.match(RAIL_CODE, shared, `the history panel dropped a shape the document panel still has: ${shared.source}`);
+    assert.match(doc, shared, `the document panel dropped a shape this guard pairs them on: ${shared.source}`);
+  }
 });
 
 test("🔴 the rail listens to no scroll event", () => {
