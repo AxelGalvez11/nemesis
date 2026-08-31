@@ -27,19 +27,14 @@ import {
 
 // ── Step order ───────────────────────────────────────────────────────────────
 
-test("steps run courses → syllabi → coursework → connect and then stop", () => {
-  // 🔴 `connect` IS LAST ON PURPOSE. Asking for access to someone's mail and
-  // calendar before showing them anything is all cost and no reason; by the end
-  // they have watched Nemesis read dates out of their own syllabus.
-  assert.deepEqual([...STEPS], ["courses", "syllabi", "coursework", "connect"]);
+test("steps run courses → syllabi → coursework and then stop", () => {
+  assert.deepEqual([...STEPS], ["courses", "syllabi", "coursework"]);
   assert.equal(nextStep("courses"), "syllabi");
   assert.equal(nextStep("syllabi"), "coursework");
-  assert.equal(nextStep("coursework"), "connect");
-  assert.equal(nextStep("connect"), null);
+  assert.equal(nextStep("coursework"), null);
 });
 
 test("going back stops at the first step", () => {
-  assert.equal(previousStep("connect"), "coursework");
   assert.equal(previousStep("coursework"), "syllabi");
   assert.equal(previousStep("syllabi"), "courses");
   assert.equal(previousStep("courses"), null);
