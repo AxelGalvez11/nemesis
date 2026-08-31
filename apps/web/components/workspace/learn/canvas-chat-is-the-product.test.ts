@@ -251,18 +251,24 @@ test("🔴 the control's words name the DESTINATION, never where you already are
   assert.notEqual(canvasViewAction("answer"), canvasViewAction("conversation"));
 });
 
-test("🔴 the view switch survives inside the options menu, wording intact", () => {
-  // 2026-08-30: the switch moved into the `⋯` — its own shipped comment prescribed exactly this
-  // ("if the row is now too busy, this is the icon to move, not the feature to cut"), and the
-  // owner's "only show up when they are actually needed" made the row too busy. What must not
-  // move: `canvasViewAction` still writes the words, so the row names the DESTINATION.
+test("🔴 the view switch is a glyph on the row again, wording intact (owner 2026-08-30)", () => {
+  // The morning fold into the `⋯` lasted one day — by evening: *"there should be a way to chat
+  // mode to canvas mode"*; a door is not a door when it is behind another door. What must not
+  // move: `canvasViewAction` still writes the words (the tooltip and a screen reader name the
+  // DESTINATION), and the header still withholds the control until a conversation exists.
   const controls = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
-  const at = controls.indexOf("export function OptionsMenu");
-  assert.ok(at > 0, "the options menu is gone");
-  const body = controls.slice(at);
-  assert.match(body, /canvasViewAction\(view\)/, "the row no longer writes its wording through canvasViewAction");
-  assert.match(body, /label=\{action\}/, "the row's label is not the action's own words");
-  assert.match(body, /onToggleView\(\)/, "the row does not actually switch the view");
+  const at = controls.indexOf("export function CanvasViewControl");
+  assert.ok(at > 0, "the view control is gone");
+  const body = controls.slice(at, at + 900);
+  assert.match(body, /canvasViewAction\(view\)/, "the control no longer writes its wording through canvasViewAction");
+  assert.match(body, /aria-label=\{action\}/, "the control's accessible name is not the action's own words");
+  assert.match(body, /onClick=\{onToggleView\}/, "the control does not actually switch the view");
+  const header = strip(readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8"));
+  assert.match(
+    header,
+    /\{view && onToggleView && <CanvasViewControl onToggleView=\{onToggleView\} view=\{view\} \/>\}/,
+    "the header stopped gating the door on a conversation existing",
+  );
 });
 
 test("🔴🔴 every control in the floating strip can actually be clicked", () => {
@@ -277,12 +283,14 @@ test("🔴🔴 every control in the floating strip can actually be clicked", () 
   assert.match(controls.slice(at, at + 200), /pointer-events-auto/, "the header controls are dead again");
 });
 
-test("🔴 the glyph exists in the icon font", () => {
-  // A `Codicon` whose name is not in the font still measures, still takes clicks, and draws nothing.
+test("🔴 every glyph the row's controls draw exists in the icon font", () => {
+  // A `Codicon` whose name is not in the font still measures, still takes clicks, and draws
+  // nothing. The view door's two names sit in a ternary, so they are checked by name.
   const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
-  const at = controls.indexOf("export function OptionsMenu");
-  const named = /<Codicon name="([a-z-]+)"/.exec(controls.slice(at));
-  assert.ok(named, "the switch draws no glyph");
+  const viewControl = controls.slice(controls.indexOf("export function CanvasViewControl"));
+  assert.match(viewControl, /view === "conversation" \? "output" : "comment-discussion"/, "the door's glyphs changed — repoint the font check");
   const css = readFileSync(new URL("../../../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url), "utf8");
-  assert.ok(css.includes(`.codicon-${named[1]}:before`), `codicon-${named[1]} is not in the font`);
+  for (const name of ["ellipsis", "output", "comment-discussion"]) {
+    assert.ok(css.includes(`.codicon-${name}:before`), `codicon-${name} is not in the font`);
+  }
 });

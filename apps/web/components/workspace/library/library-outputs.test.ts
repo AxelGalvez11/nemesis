@@ -92,7 +92,10 @@ test("🔴🔴 the 'Folders' section draws `visibleFolders`, not the raw `folder
   // them, newest first); the invariant here is unchanged — it still filters on nonEmptyFolders.
   assert.match(OUTPUTS, /folders\s*\.filter\(\(folder\) => nonEmptyFolders\.has\(folder\.id\)\)/);
   assert.match(OUTPUTS, /folderModified\.get\(b\.id\)/, "the Folders section lost its recency ordering");
-  assert.match(OUTPUTS, /\{visibleFolders\.map\(\(folder\) => \(/, "the row list reverted to mapping the raw folders array");
+  // Since the 2026-08-30 recency rework the folder row is one shared renderer, drawn on a kind
+  // shelf AND leading the merged "All" list — same element, two homes, so they cannot drift.
+  assert.match(OUTPUTS, /const folderRow = \(folder: Folder\) => \(/, "the shared folder renderer is gone");
+  assert.ok((OUTPUTS.match(/visibleFolders\.map\(folderRow\)/g) ?? []).length >= 2, "the folder rows stopped drawing from visibleFolders in both homes");
   assert.match(
     OUTPUTS,
     /openFolder === null && \(visibleFolders\.length > 0 \|\| naming !== null\)/,
@@ -138,4 +141,24 @@ test("🔴 a folder's Modified is a real rollup, and the folders order by it (20
   assert.match(OUTPUTS, /const folderModified = useMemo/, "the rollup is gone");
   assert.match(OUTPUTS, /notes\.forEach\(\(row\) => bump\(row\.folderId, row\.updatedAt\)\)/, "notes stopped feeding the rollup");
   assert.match(OUTPUTS, /folderModified\.has\(folder\.id\) \? when\(folderModified\.get\(folder\.id\) \?\? ""\) : ""/, "an untouched folder would print a false date");
+});
+
+test("🔴🔴 'All' is one list by recency, not sections (owner 2026-08-30)", () => {
+  // *"the library 'all' sections should be organized by recent not by section"* — and the
+  // reference's own All tab, measured in his Chrome the same day: folders grouped first (by
+  // their rolled-up Modified), then every file together newest-first, no per-kind headings.
+  assert.match(OUTPUTS, /const showing = \(which: OutputKind\) => shelf === which;/, "the kind shelves leak back into All");
+  for (const feed of [
+    /\.\.\.shownDecks\.map\(\(deck\) => \(\{ deck, kind: "deck" as const, when: deck\.createdAt \}\)\)/,
+    /\.\.\.shownSlides\.map\(\(slides\) => \(\{ kind: "slides" as const, slides, when: slides\.createdAt \}\)\)/,
+    /\.\.\.shownNotes\.map\(\(note\) => \(\{ kind: "note" as const, note, when: note\.updatedAt \}\)\)/,
+  ]) {
+    assert.match(OUTPUTS, feed, "a kind stopped feeding the merged list its freshest fact");
+  }
+  assert.match(OUTPUTS, /\.sort\(\(a, b\) => b\.when\.localeCompare\(a\.when\)\)/, "the merged list stopped ordering by recency");
+  const all = OUTPUTS.slice(OUTPUTS.indexOf('{shelf === "all" && ('));
+  assert.ok(all.length > 0, "the merged All section is gone");
+  const foldersAt = all.indexOf("visibleFolders.map(folderRow)");
+  const filesAt = all.indexOf("{allRows.map(allRow)}");
+  assert.ok(foldersAt > -1 && filesAt > foldersAt, "folders stopped leading the merged list");
 });

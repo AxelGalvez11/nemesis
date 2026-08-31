@@ -28,10 +28,8 @@ import {
   type AttentionTarget,
 } from "@/lib/mascot/attention";
 
-import type { ThinkingMark as ThinkingMarkKind } from "@/lib/learn/thinking-phases";
 
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
-import { ThinkingMark } from "./thinking-mark";
 import { useDoze } from "./use-doze";
 import { useMontage } from "./use-montage";
 import { usePoke } from "./use-poke";
@@ -165,15 +163,6 @@ export interface CharacterDockProps {
    */
   domains?: readonly string[];
   /**
-   * The mark that belongs beside the caption, when the runtime can name the KIND of work.
-   *
-   * 🔴 DERIVED BY THE CALLER FROM THE SAME FACTS THE CAPTION IS, via `thinkingMark` — never
-   * guessed here from the caption's words. A mark is a claim about what Nemesis is doing, and one
-   * chosen by a different rule from the sentence beside it would eventually contradict it.
-   * Null wherever the kind is not known, which is the honest answer and the common one.
-   */
-  captionMark?: ThinkingMarkKind | null;
-  /**
    * Where the character stands, when the surface knows better than the pose does.
    *
    * 🔴🔴 THE POSE USED TO DECIDE, AND IT CANNOT ANY MORE. `stationOf` reads the state id, which
@@ -265,7 +254,6 @@ export interface CharacterDockProps {
 export function CharacterDock({
   caption = null,
   captionLeaving: leaving = false,
-  captionMark = null,
   domains = [],
   station: stationOverride,
   state = "idle",
@@ -903,12 +891,12 @@ export function CharacterDock({
                 }
           }
         >
-          {/* 🔴 THE MARK RIDES THE CHARACTER TOO. The caption moved onto the dock because nothing
-              static can sit beside a live transform (see above); the mark is part of the same
-              claim, so it lives in the same box and counter-scales with it. */}
+          {/* 🔴 NO MARK BESIDE THE WORDS ANY MORE (owner 2026-08-30: match ChatGPT's thinking
+              preview). The reference was measured the same day: a bare shimmering sentence in the
+              tertiary colour, no glyph in any working state. thinking-mark.tsx is deleted, not
+              parked — the words are the whole claim now. */}
           {caption ? (
             <span className="flex items-center gap-2 whitespace-nowrap">
-              {captionMark ? <ThinkingMark kind={captionMark} /> : null}
               {/* 🔴 THE SHIMMER PAINTS TEXT, SO IT MAY ONLY WRAP TEXT. `canvas-thinking-word`
                   clips a moving gradient to glyphs, which it does by setting `color:transparent`
                   — so while it sat on the whole caption box it made the mark beside the words

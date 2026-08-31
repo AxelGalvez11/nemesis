@@ -64,11 +64,10 @@ export default function DomainChipsPreview() {
       {/* The real render site: chips under the caption, both counter-scaled with the character. */}
       <div className="relative mt-10 h-64 w-full max-w-2xl rounded-xl border border-(--ui-stroke-secondary)">
         <p className="p-3 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-          On the dock, centre station: phase mark + shimmering caption on one row, chips beneath. Both features landed the same day in different sessions; this is the merge.
+          On the dock, centre station: the shimmering caption, chips beneath (the mark died 2026-08-30 with ChatGPT parity). Both features landed the same day in different sessions; this is the merge.
         </p>
         <CharacterDock
           caption="Searching the web"
-          captionMark="searching"
           contain
           domains={WELL_KNOWN}
           state="idle"

@@ -25,10 +25,14 @@ test("🔴 the maps still appear only where there is something to map", () => {
   assert.ok(gates.length >= 2, "Progress and the course map lost their course gate");
 });
 
-test("🔴 the view switch and read-aloud are IN the menu, not back on the row", () => {
-  assert.ok(!/ConversationControl/.test(HEADER), "the view switch is a row glyph again");
+test("🔴 the view door is a gated glyph again; read-aloud stays in the menu (owner 2026-08-30)", () => {
+  // Two rulings in one day, both his: the morning sweep folded the switch into the `⋯`; by
+  // evening — *"there should be a way to chat mode to canvas mode"* — he could not find it. The
+  // door came back out as `CanvasViewControl`, wearing the same rule as every glyph on this row:
+  // absent until there is a conversation to leave, then present for the whole session.
+  assert.match(HEADER, /\{view && onToggleView && <CanvasViewControl /, "the view door lost its conversation gate");
   assert.ok(!/<OptionsControl/.test(HEADER), "the standalone read-aloud glyph is back");
-  assert.match(HEADER, /<OptionsMenu onToggleView=\{onToggleView\} view=\{view\} voice=\{voice\}/, "the menu lost its rows' inputs");
+  assert.match(HEADER, /<OptionsMenu voice=\{voice\} \/>/, "the menu lost its voice input");
 });
 
 test("🔴 the `⋯` is the row's ONE unconditional control, and it reports non-default state", () => {

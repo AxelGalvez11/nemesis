@@ -22,7 +22,7 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
-import { MinimapControl, OptionsMenu, SourcesControl } from "./canvas-controls";
+import { CanvasViewControl, MinimapControl, OptionsMenu, SourcesControl } from "./canvas-controls";
 import { CourseMapControl } from "./course-map";
 import type { CanvasView } from "@/lib/learn/canvas-view";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
@@ -228,10 +228,15 @@ export function CanvasHeader({
               title={minimap.planTitle}
             />
           )}
-          {/* Last on the row: it is about how the product behaves, not about this page. The view
-              switch and read-aloud live inside it now — see OptionsMenu's own header for the
-              owner rulings that shaped this. */}
-          <OptionsMenu onToggleView={onToggleView} view={view} voice={voice} />
+          {/* 🔴 THE VIEW DOOR IS A GLYPH AGAIN (owner 2026-08-30: *"there should be a way to
+              chat mode to canvas mode"*). It sat inside the `⋯` from 2026-08-27 and the owner
+              could not find it — a door is not a door if it is behind another door. Same gate as
+              always: both props arrive only once there is a conversation to leave, and then the
+              control stays for the session. */}
+          {view && onToggleView && <CanvasViewControl onToggleView={onToggleView} view={view} />}
+          {/* Last on the row: it is about how the product behaves, not about this page.
+              Read-aloud and the teaching style live inside it. */}
+          <OptionsMenu voice={voice} />
       </div>
     </>
   );

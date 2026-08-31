@@ -36,7 +36,7 @@ import type { CanvasBlock, CanvasOutput } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
-import { THINKING_COPY, thinkingMark } from "@/lib/learn/thinking-phases";
+import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import { previewLine, previewWorthShowing } from "@/lib/learn/turn-preview";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
@@ -1668,20 +1668,8 @@ export function LearningCanvas({
   const preparingLabel = previewWorthShowing({ milestones: session.milestones, systemLabel })
     ? previewLine({ milestones: session.milestones, stage: session.stage, systemLabel })
     : null;
-  // 🔴 THE MARK IS DERIVED FROM THE SAME THREE FACTS, IN THE SAME ORDER, as `systemLabel` above —
-  // that is the only thing stopping a magnifier appearing beside "Reading your material".
-  // `searching` is the most specific truth available and outranks the rest, and it is true only
-  // while a turn is in flight AND real hostnames have come back, which is the same gate the chips
-  // themselves are drawn behind.
-  const preparingMark = thinkingMark({
-    busyKind: busy.kind,
-    phase: policy.phase,
-    searching: turnInFlight && session.searchedDomains.length > 0,
-    work: session.work,
-    // 🔴 THE MARK THE LABEL BROUGHT WITH IT, and nothing else. `thinkingMark` still refuses to
-    // invent one for a label that arrived bare — see the note on `workMark` there.
-    workMark: session.workMark,
-  });
+  // (The mark that used to be derived here beside the label is gone — owner 2026-08-30, ChatGPT
+  // parity for the thinking preview. See thinking-phases.ts for the tombstone.)
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
   // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
@@ -2723,7 +2711,6 @@ export function LearningCanvas({
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
         // beside something whose position is a live transform, so it moved onto the dock itself.
         caption={turnInFlight || presence === "preparing" ? preparingLabel : null}
-        captionMark={turnInFlight || presence === "preparing" ? preparingMark : null}
         // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
         // it streams, and its first character is the honest end of the wait — not a timer, and not
         // the turn formally finishing.
@@ -2847,7 +2834,6 @@ export function LearningCanvas({
       {showComposer && !recording && (
         <CanvasComposer
           busy={intent.kind === "answer" && intent.sink === "policy" ? policy.judging : busy.kind === "command"}
-          busyLabel={intent.kind === "answer" && intent.sink === "policy" ? THINKING_COPY.reading_answer : busy.label}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
           // asked, which is the rule this component already ran on.

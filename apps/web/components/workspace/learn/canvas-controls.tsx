@@ -145,6 +145,24 @@ export const CONTROL =
   "pointer-events-auto relative flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
+/** The chat↔canvas door, back on the row as its own glyph (owner 2026-08-30: *"there should be a
+ *  way to chat mode to canvas mode"* — the fold into the `⋯` on 2026-08-27 left the switch
+ *  findable only by learners with a reason to open a menu, and the owner could not find it).
+ *  The glyph names the DESTINATION, exactly like the menu row it replaces: an output mark while
+ *  the conversation is open, a speech mark while the focused output is. `canvasViewAction` still
+ *  owns the words, so the tooltip and a screen reader cannot drift from what the click does.
+ *  Gated the same way as before — learning-canvas.tsx withholds both props until there is a
+ *  conversation to switch away from, and once offered the control STAYS for the session (the
+ *  2026-08-19 rule: gates are monotonic; chrome that comes and goes reads as the page breaking). */
+export function CanvasViewControl({ onToggleView, view }: { onToggleView: () => void; view: CanvasView }) {
+  const action = canvasViewAction(view);
+  return (
+    <button aria-label={action} className={cn(CONTROL, "shrink-0")} onClick={onToggleView} title={action} type="button">
+      <Codicon name={view === "conversation" ? "output" : "comment-discussion"} size="20px" />
+    </button>
+  );
+}
+
 // 🔴🔴 EVERY PANEL HANGS OFF THE ROW, NOT OFF ITS OWN GLYPH (owner 2026-08-30: *"Can you make sure
 // source panel and map are both right side aligned?"*).
 //
@@ -1290,13 +1308,8 @@ function MenuItem({
  * keeps re-filing.
  */
 export function OptionsMenu({
-  onToggleView,
-  view,
   voice,
 }: {
-  /** Swap the one-answer view for the whole conversation. Absent until there is one to show. */
-  onToggleView?: () => void;
-  view?: CanvasView;
   /** 🔴 THE HOOK'S OWN TYPE, NOT A COPY — see CanvasHeader's prop comment. */
   voice?: CanvasVoiceState["header"];
 }) {
@@ -1326,9 +1339,6 @@ export function OptionsMenu({
   };
 
   const voiceOn = voice?.mode === "on";
-  // The row's words name the DESTINATION, never where you already are — `canvasViewAction` owns
-  // the wording so the label, the tooltip and a screen reader cannot drift apart.
-  const action = view && onToggleView ? canvasViewAction(view) : null;
 
   return (
     <div className="pointer-events-auto shrink-0" ref={holder}>
@@ -1348,16 +1358,6 @@ export function OptionsMenu({
 
       {open && (
         <div className={cn(PANEL, "w-[17rem]")}>
-          {action && onToggleView && (
-            <MenuItem
-              icon="comment-discussion"
-              label={action}
-              onClick={() => {
-                setOpen(false);
-                onToggleView();
-              }}
-            />
-          )}
           {/* 🔴 A TOGGLE ROW STAYS OPEN ON CLICK: flipping a checkbox and having the menu
               vanish reads as the menu misfiring, and the learner reopens it to check what
               happened. Choosing a style CLOSES, because a radio choice is a completed errand. */}

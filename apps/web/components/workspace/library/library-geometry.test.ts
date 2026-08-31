@@ -120,13 +120,31 @@ test("🔴🔴🔴 a row is a 60px band with a hairline under it — never a car
   assert.ok(!/border border-transparent/.test(row), "the row grew a full box outline again");
 });
 
-test("🔴 the row's parts are the measured sizes: 20px icon, 14px name, 14px meta", () => {
-  // Leading icon 20x20 in `--icon-secondary` — it used to be a 16px tertiary glyph, which reads
-  // as a bullet rather than as a file type.
-  assert.match(OUTPUTS, /const COL_ICON = "mr-\[12px\] shrink-0 text-\(--ui-text-secondary\)"/, "the leading icon lost its measured colour or gap");
-  for (const icon of ["FolderIcon", "Layers", "MonitorPlay", "NotebookText"]) {
-    assert.match(OUTPUTS, new RegExp(`<${icon} className=\\{COL_ICON\\} size=\\{20\\}`), `the ${icon} row icon is not 20x20`);
+test("🔴 the row leads with the reference's 32px tile, and the glyph's colour names the kind", () => {
+  // Re-measured on the reference 2026-08-30 evening (owner: *"they should also have colors like
+  // in chatgpt"*): every library row leads with a 32px rounded-[8px] tile on the primary surface
+  // with a hairline border, and the 20px glyph INSIDE carries the kind's colour — their .docx
+  // draws #0285FF, their .pdf #FF3B30, their folders stay neutral. (The morning's bare-20px-icon
+  // reading was the same page before this pass looked closer: the tile is invisible in dark mode
+  // because its surface matches the page; the border was the tell.)
+  assert.match(
+    OUTPUTS,
+    /const COL_TILE =\s*"mr-\[12px\] flex size-\[32px\] shrink-0 items-center justify-center rounded-\[8px\] border border-black\/\[0\.10\] bg-\(--ui-bg-primary\) dark:border-white\/\[0\.15\]"/,
+    "the leading tile lost the measured geometry",
+  );
+  assert.match(OUTPUTS, /const KIND_COLOR = \{ deck: "#34C759", note: "#0285FF", slides: "#FF9500" \} as const;/, "the kind colours drifted");
+  for (const [icon, kind] of [["Layers", "deck"], ["MonitorPlay", "slides"], ["NotebookText", "note"]] as const) {
+    assert.match(
+      OUTPUTS,
+      new RegExp(`<span className=\\{COL_TILE\\}><${icon} size=\\{20\\} strokeWidth=\\{1\\.8\\} style=\\{\\{ color: KIND_COLOR\\.${kind} \\}\\} /></span>`),
+      `the ${icon} row glyph lost its tile or its colour`,
+    );
   }
+  assert.match(
+    OUTPUTS,
+    /<span className=\{COL_TILE\}><FolderIcon className="text-\(--ui-text-secondary\)" size=\{20\} strokeWidth=\{1\.8\} \/><\/span>/,
+    "folders stopped being neutral in their tile",
+  );
   assert.match(OUTPUTS, /const ROW_NAME = "min-w-0 flex-1 truncate text-\[14px\] font-normal text-\(--ui-text-primary\)"/, "the row name stopped being 14px/400");
   // 🔴 THE META IS 14px SECONDARY, NOT 12px QUATERNARY. The dates on this page used to be a size
   // smaller and a shade fainter than the reference's, which made every row look bottom-heavy.

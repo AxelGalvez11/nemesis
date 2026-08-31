@@ -52,7 +52,6 @@ import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { prepareAnswer } from "@/lib/learn/answer-prepare";
 import { fillMissingFigures } from "@/lib/learn/figure-fallback";
 import type { TurnStage } from "@/lib/learn/turn-preview";
-import type { ThinkingMark } from "@/lib/learn/thinking-phases";
 import {
   decisionOrReply,
   turnRouterMessages,
@@ -294,15 +293,9 @@ export async function askCanvasChat(
    * it wrote its milestones — it does not know whether the resolver will be slow. These labels name
    * work that is executing, which is exactly what `thinking-phases.ts` permits in the caption slot.
    */
-  /**
-   * What is happening right now, and the mark that goes beside it.
-   *
-   * 🔴 THE MARK IS OPTIONAL BECAUSE ONLY SOME CALLERS HAVE ONE. `prepareAnswer` reports a step in
-   * words and genuinely does not know a kind; `runToolRound` is about to call a named tool and
-   * does. `thinkingMark` treats an absent mark exactly as it always has — no mark at all — so
-   * nothing gets a picture on a guess.
-   */
-  onWork?: (label: string | null, mark?: ThinkingMark | null) => void,
+  /** What is happening right now, in words. (The mark that used to ride beside the label died
+   *  2026-08-30 with the ChatGPT-parity thinking preview — the reference draws no glyph.) */
+  onWork?: (label: string | null) => void,
   /**
    * The learner attached the Course capability to this submission.
    *
@@ -500,7 +493,7 @@ export async function askCanvasChat(
       // labels once it is over — see `onCall`'s own note. `labelFor` never shows a slug.
       const ran = await runToolRound(decision.tools, catalogue.index, {
         askText: question,
-        onCall: (note) => onWork?.(note.label, note.mark),
+        onCall: (note) => onWork?.(note.label),
       });
       if (ran.context) toolResults.push(ran.context);
       // 🔴 A HELD CALL ENDS THE TOOL HALF OF THE TURN, HERE, BEFORE ANOTHER ROUND CAN ASK AGAIN.
