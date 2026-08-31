@@ -11,6 +11,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { CourseworkImportGate } from "@/components/workspace/onboarding/coursework-import-gate";
 import { OnboardingGate } from "@/components/workspace/onboarding/onboarding-gate";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
+import { WorkspaceWaiting } from "@/components/workspace/shell/workspace-waiting";
 import { signInRedirect } from "@/lib/auth-redirect";
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
@@ -29,9 +30,15 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     }
   }, [loading, pathname, router, session]);
 
-  if (loading || !session) {
-    return <main className="nemesis-account-loading">Loading…</main>;
-  }
+  // 🔴🔴 NOT `nemesis-account-loading` ANY MORE, AND THAT CLASS WAS THE WHOLE OF THE OWNER'S
+  // "the screen goes blank" (2026-08-30). It is the ACCOUNT PORTAL's screen — a full-viewport
+  // #080809 ground with the word LOADING at 11px — borrowed by the product, and it is also
+  // exactly what the prerendered HTML for `/learn` contains, so it is the first paint of every
+  // full page load of the workspace. Worse, nothing clears it but `getSession()` settling, and
+  // that call has no timeout: a request that hangs leaves a black screen with nothing to press.
+  // `WorkspaceWaiting` keeps the silence and adds the two things it was missing — the product's
+  // own ground, and an admission with a way out once the wait stops being normal.
+  if (loading || !session) return <WorkspaceWaiting />;
 
   return (
     <WorkspaceShell>
