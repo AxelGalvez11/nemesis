@@ -178,7 +178,14 @@ test("🔴 the two composers are one shape, so the swap shows nothing", () => {
   // two pills is a pop at the instant of the route swap. These were `rounded-[26px]` and
   // `px-[12px]` against tokens of 28px and 8px — a 2px corner and a 4px control shift.
   assert.match(COMPOSER, /"rounded-\[var\(--composer-radius\)\]"/);
-  assert.match(COMPOSER, /min-h-\[var\(--composer-min-height\)\] items-center gap-0 px-\[var\(--composer-pad-x\)\]/);
+  // 🔴 ASSERTED OF BOTH FILES NOW, WHICH IS WHAT "ONE SHAPE" ACTUALLY MEANS. This pinned the canvas
+  // composer's row alone, so when the controls moved to the floor of the box on 2026-08-31 (owner:
+  // *"the composer buttons stay fixed to… the bottom, like in ChatGPT"*) the guard could be made
+  // green again by editing this line and leaving the front door centred — the pop it exists to
+  // catch, shipped past the test that names it. The invariant is that the two rows agree.
+  const ROW = /min-h-\[var\(--composer-min-height\)\] items-end/;
+  assert.match(COMPOSER, ROW, "the canvas pill's input row changed shape");
+  assert.match(HOME, ROW, "the front door's departing pill no longer matches the one it flies into");
   // 🔴 THE QUOTED FORM, NOT THE BARE STRING. Both literals are NAMED in the comment above the fix,
   // as the removal record; matching them anywhere in the file would make this test fail on its own
   // explanation. A class only ever reaches the DOM inside a quoted string.

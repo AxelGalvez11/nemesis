@@ -43,7 +43,7 @@
 // silently swap it back to `1rem` for consistency with the rest of this file, which would
 // reintroduce the zoom by way of looking like a tidy-up.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
@@ -56,6 +56,7 @@ import {
   START_WITH_MATERIAL_PLACEHOLDER,
 } from "@/lib/learn/canvas-tasks";
 import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-capability";
+import { continueList, pastedTextFile } from "@/lib/learn/composer-text";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
 
@@ -279,6 +280,14 @@ export function CanvasComposer({
    * lose several minutes of working out. With no door there is nothing to reopen. Restoring the
    * page restores this ref, and the reason it sat ABOVE the effect below rather than inside it. */
   const input = useRef<HTMLTextAreaElement>(null);
+  /** Where the caret must land after a list continuation rewrites the text.
+   *
+   *  🔴 A REF AND A LAYOUT EFFECT, BECAUSE THE BOX IS CONTROLLED. Calling
+   *  `setSelectionRange` beside `setText` sets it on the value React is about to
+   *  replace, so the caret snapped back to the end of the line on every
+   *  continuation. It has to be applied after the commit that carries the new
+   *  text, and before the browser paints, or the caret is visibly seen moving. */
+  const pendingCaret = useRef<number | null>(null);
   /** The file input is triggered from a menu item now, so it needs a handle rather than a wrapping
    *  label. It stays `sr-only` rather than `hidden` — a hidden input is out of the accessibility
    *  tree entirely. */
@@ -398,6 +407,13 @@ export function CanvasComposer({
     // the more dictated words there are"). Keying on the flag re-measures at the remount. (The
     // `listening` alias below this effect is not usable here — a const in its temporal dead zone.)
   }, [text, dictation.listening]);
+
+  useLayoutEffect(() => {
+    const at = pendingCaret.current;
+    if (at === null) return;
+    pendingCaret.current = null;
+    input.current?.setSelectionRange(at, at);
+  }, [text]);
 
   // Summonable from anywhere: "/" focuses the bar unless the learner is already typing.
   useEffect(() => {
@@ -781,7 +797,18 @@ export function CanvasComposer({
             </AttachmentRow>
           )}
           {/* The input row, on the same tokens the front door's composer uses. */}
-          <div className="flex min-h-[var(--composer-min-height)] items-center gap-0 px-[var(--composer-pad-x)]">
+          {/* 🔴🔴 `items-end`, NOT `items-center` — THE CONTROLS STAY ON THE FLOOR OF THE BOX
+              (owner 2026-08-31: *"when the chat composer expands because of the lot of text… the
+              composer buttons stay fixed to, like, the bottom, like in ChatGPT"*). Centred, every
+              button drifted down the pill as the text grew, so the send target moved while
+              somebody was still typing toward it. Bottom-aligned they are where they were when
+              the box was one line, whatever it becomes.
+              🔴 AND ONE LINE STILL LOOKS EXACTLY AS IT DID, WHICH IS WHY THE TEXTAREA'S PADDING
+              MOVED WITH THIS. 8px above and below a 36px control is the 52px
+              `--composer-min-height`; the textarea's own one-line height is tuned to that same
+              36px below, so at one line bottom-aligning and centring are the same picture and
+              only the grown box differs. */}
+          <div className="flex min-h-[var(--composer-min-height)] items-end gap-0 px-[var(--composer-pad-x)] py-[8px]">
             {/* Stays put through every state, including dictation: spatial continuity is the
                 reason there is one composer at all. Subdued, not moved, while listening.
                 🔴 ALWAYS PRESENT since 2026-08-26: it used to vanish once the policy was
@@ -940,7 +967,11 @@ export function CanvasComposer({
                   // reserves and paints a scrollbar track inside a one-line control that has nothing
                   // to scroll. The effect promotes it to `auto` if the answer ever exceeds the cap.
                   className={cn(
-                    "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-1",
+                    // 🔴 5px, SO ONE LINE IS 36px — THE HEIGHT OF THE BUTTONS BESIDE IT. 26px of line
+                    // plus 5 above and below is exactly the control box, which is what makes the
+                    // bottom alignment above invisible until the box actually grows. `py-1` (4.5px
+                    // at this root size) left it 35px and shifted the words half a pixel.
+                    "min-h-[1.75rem] w-full min-w-0 flex-1 resize-none overflow-hidden bg-transparent py-[5px]",
                     // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
                     // 16px, not a scale token -- see the file header. The value is a platform
                     // threshold, not a typographic choice, so it must not move when the scale does.
@@ -971,7 +1002,36 @@ export function CanvasComposer({
                       event.preventDefault();
                       submit();
                     }
+                    // 🔴 SHIFT+ENTER IS WHERE A LIST CONTINUES, BECAUSE IT IS WHERE A NEWLINE
+                    // HAPPENS. Enter sends on this composer, so the newline key is the shifted one,
+                    // and a learner writing a list presses it between items (owner 2026-08-31:
+                    // the composer should carry "the markdown style formats… numbered or bullet
+                    // lists"). `continueList` returns null for prose and for a selection, so the
+                    // ordinary newline is untouched — this only ever adds the marker somebody was
+                    // already going to type.
+                    if (event.key === "Enter" && event.shiftKey) {
+                      const field = event.currentTarget;
+                      const next = continueList(field.value, field.selectionStart, field.selectionEnd);
+                      if (next) {
+                        event.preventDefault();
+                        pendingCaret.current = next.caret;
+                        setText(next.text);
+                        typedBefore.current = next.text;
+                      }
+                    }
                     if (event.key === "Escape" && selected.length > 0) onClearSelection();
+                  }}
+                  // 🔴 A PASTED DOCUMENT BECOMES MATERIAL, NOT A WALL OF TEXT IN THE PILL (owner
+                  // 2026-08-31). It goes through `onFiles`, the same door a real upload uses, so it
+                  // is filed and read like any other source rather than being a second kind of
+                  // attachment. A paste that still fits the box is left completely alone, and a
+                  // clipboard carrying real files is the file lane's business, not this one.
+                  onPaste={(event) => {
+                    if (event.clipboardData.files.length > 0) return;
+                    const file = pastedTextFile(event.clipboardData.getData("text/plain"));
+                    if (!file) return;
+                    event.preventDefault();
+                    onFiles([file]);
                   }}
                   placeholder={
                     // 🔴 THE PLACEHOLDER NO LONGER ANNOUNCES THE WAIT (owner 2026-08-30: match

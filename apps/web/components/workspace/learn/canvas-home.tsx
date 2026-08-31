@@ -43,6 +43,7 @@ import { ProjectPicker } from "./project-picker";
 import { FileDropOverlay } from "./file-drop-overlay";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
+import { pastedTextFile } from "@/lib/learn/composer-text";
 import { putPending, type PendingAttachment } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
 import { useCanvasDictation } from "./use-canvas-dictation";
@@ -789,7 +790,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             className={cn(
               "gap-0 px-[var(--composer-pad-x)]",
               departing
-                ? "flex min-h-[var(--composer-min-height)] items-center"
+                // 🔴 BOTTOM-ALIGNED BECAUSE THE PILL IT FLIES INTO IS (owner 2026-08-31). The
+                  // canvas composer's controls sit on the floor of the box so they cannot drift as
+                  // it grows; this is the same pill mid-flight, so a centred row here would pop at
+                  // the instant of the route swap — the exact defect the shared tokens beside it
+                  // were introduced to end.
+                  ? "flex min-h-[var(--composer-min-height)] items-end py-[8px]"
                 : cn(
                     "grid min-h-[var(--composer-tall-height)]",
                     // 🔴 THE WORDS SPAN EVERY COLUMN. Placed after an `auto` column that the `+`
@@ -953,6 +959,18 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                     event.preventDefault();
                     start();
                   }
+                }}
+                // 🔴 THE SAME PASTE RULE THE CANVAS COMPOSER CARRIES, FROM THE SAME FUNCTION. This
+                // field is one line, so a pasted syllabus would fill it with a sliver of itself and
+                // hide the rest; `stageFiles` is this door's `onFiles`, and a paste that still fits
+                // is left alone. Two doors, one rule — a per-door copy is exactly the drift the
+                // `+` menu's own comment in this file records being bitten by.
+                onPaste={(event) => {
+                  if (event.clipboardData.files.length > 0) return;
+                  const file = pastedTextFile(event.clipboardData.getData("text/plain"));
+                  if (!file) return;
+                  event.preventDefault();
+                  stageFiles([file]);
                 }}
                 placeholder={capability ? CAPABILITY_COPY[capability].prompt : "Ask Nemesis…"}
                 ref={composerField}

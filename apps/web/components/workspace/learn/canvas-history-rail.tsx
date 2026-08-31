@@ -242,43 +242,45 @@ export function CanvasHistoryRail({
             <div
               className={cn(
                 "absolute right-full top-1/2 z-20 -translate-y-1/2",
-                "max-h-[70vh] w-[288px] overflow-y-auto rounded-2xl p-2",
-                "bg-(--ui-bg-elevated) shadow-[0_16px_48px_rgba(0,0,0,0.28)] ring-1 ring-(--ui-stroke-tertiary)",
+                // 🔴🔴 THE DOCUMENT RAIL'S PANEL, SAME NUMBERS. 287px on a 12px radius, 20px of
+                // padding, a quiet uppercase heading, and rows that are text rather than list
+                // items with their own furniture. Was 288px / rounded-2xl / 36px rows carrying a
+                // duplicate of the strip's mark.
+                "max-h-[70vh] w-[287px] overflow-y-auto rounded-[12px] py-[20px] pl-[20px] pr-[16px]",
+                "bg-(--ui-bg-elevated) shadow-lg ring-1 ring-(--ui-stroke-secondary)",
               )}
               data-canvas-history-panel=""
               style={{ marginRight: PANEL_GAP_PX }}
             >
-              {shown.map((entry) => {
-                const current = entry.momentId === activeMomentId;
-                return (
-                  <button
-                    aria-current={current ? "true" : undefined}
-                    className={cn(
-                      // 🔴 36px ROWS, IN PIXELS, BECAUSE OF THE REM TRAP. `html { font-size: 112.5% }`
-                      // makes Tailwind's `h-9` 40.5px here; the reference's rows and this app's own
-                      // sidebar rows are both 36. Measured at 41px before this line was pinned.
-                      "flex h-[36px] w-full items-center gap-3.5 rounded-[10px] px-3 text-left",
-                      "transition-colors hover:bg-(--ui-bg-tertiary)",
-                      current ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
-                    )}
-                    key={entry.id}
-                    onClick={() => onSelect(entry.momentId)}
-                    type="button"
-                  >
-                    {/* The same mark the strip draws, so the row and its marker read as one thing. */}
-                    <span
-                      aria-hidden
+              {/* 🔴 A HEADING, LIKE THE DOCUMENT RAIL'S "TABLE OF CONTENTS". This one indexes a
+                  conversation rather than a document, so it says what it actually lists. */}
+              <p className="m-0 mb-[12px] text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary)">
+                Earlier in this canvas
+              </p>
+              <div className="flex flex-col gap-[12px]">
+                {shown.map((entry) => {
+                  const current = entry.momentId === activeMomentId;
+                  return (
+                    <button
+                      aria-current={current ? "true" : undefined}
                       className={cn(
-                        "block h-[2px] shrink-0 rounded-full",
-                        current ? "w-[26px] bg-(--ui-text-primary)" : "w-[16px] bg-(--ui-text-tertiary) opacity-75",
+                        // 🔴 NO MARK IN THE ROW ANY MORE. The strip is two centimetres away and
+                        // already draws it; repeating it here made every row carry a second copy
+                        // of the thing the row is next to. The document rail's panel is words.
+                        "block w-full truncate text-left text-[length:var(--canvas-text-body)] leading-[24px] transition-colors",
+                        current
+                          ? "font-semibold text-(--ui-text-primary)"
+                          : "text-(--ui-text-secondary) hover:text-(--ui-text-primary)",
                       )}
-                    />
-                    <span className="min-w-0 truncate text-[length:var(--canvas-text-small)] leading-[20px]">
+                      key={entry.id}
+                      onClick={() => onSelect(entry.momentId)}
+                      type="button"
+                    >
                       {shortTitle(entry.title, DRAWER_TITLE_LIMIT)}
-                    </span>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -289,7 +291,10 @@ export function CanvasHistoryRail({
               // background-color, box-shadow, padding and gap — the four properties the pop-up
               // animated. With one state there is nothing for them to animate between, and a
               // transition on a value that never changes is a promise nothing keeps.
-              "flex flex-col items-stretch gap-[4px] rounded-lg py-2",
+              // 🔴 15px PITCH, THE DOCUMENT RAIL'S. Its marks sit 12px apart on a 3px rule; here the
+              // row is the hit target, so a 15px row with no gap gives the same rhythm and keeps
+              // every pixel of the strip clickable. Was 14px + 4px = 18.
+              "flex flex-col items-stretch gap-0 rounded-lg py-2",
               // 🔴🔴 BARE MARKS ON THE SHEET, ALWAYS — "nearly disappear until needed". The strip
               // used to grow a surface while it was being read (`bg-(--ui-bg-elevated)/95`, a
               // shadow, a ring and a backdrop blur) and that surface is the "pop up" the owner
@@ -367,18 +372,24 @@ function RailMarker({
         // 🔴 `relative` IS LOAD-BEARING: it is what the tooltip below is positioned against.
         // 🔴 `group` DRIVES BOTH the mark's widening and the tooltip's appearance from one hover,
         // so the two can never disagree about whether this row is the one being pointed at.
-        "group relative flex h-[14px] shrink-0 items-center justify-end gap-2 focus-visible:outline-none",
+        "group relative flex h-[15px] shrink-0 items-center justify-end gap-2 focus-visible:outline-none",
       )}
       onClick={onSelect}
       type="button"
     >
+      {/* 🔴🔴 THE DOCUMENT RAIL'S MARK, TO THE PIXEL. Owner, 2026-08-31, with both on screen:
+          *"make sure the right side rail… looks the same way, because right now it's different."*
+          Asked which way to unify with all three directions in front of him, he chose the
+          document rail's look — so these numbers are `document-rail.tsx`'s, which are ChatGPT's
+          deep-research rail measured in his own session. 3px thick, 19px resting, 25px active.
+          🔴 THE HOVER WIDENING IS GONE WITH THEM. This grew 16px -> 22px under the pointer, and
+          the document rail has no such step: the panel already says which row you are on, and a
+          mark that changes size on hover competes with the one mark that means "you are here". */}
       <span
         aria-hidden
         className={cn(
-          "block shrink-0 rounded-full transition-all duration-200 ease-out",
-          active
-            ? "h-[2px] w-[26px] bg-(--ui-text-primary)"
-            : "h-[2px] w-[16px] bg-(--ui-text-tertiary) opacity-75 group-hover:w-[22px] group-hover:opacity-100",
+          "block h-[3px] shrink-0 rounded-full transition-all duration-200 ease-out",
+          active ? "w-[25px] bg-(--ui-text-primary)" : "w-[19px] bg-(--ui-stroke-secondary)",
         )}
       />
       {/* 🔴 NO PER-MARKER TOOLTIP ANY MORE. The panel beside the strip names every moment at once

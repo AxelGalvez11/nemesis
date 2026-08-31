@@ -148,10 +148,24 @@ function resolveClient(header: string | null, keyLabel: string | null): string {
   return 'unknown'
 }
 
-/** Keep a background promise alive past the response. Metering runs un-awaited so
- *  the student never waits on it, but the runtime can tear the isolate down the
- *  moment a streamed response closes — and a streamed chat is nearly every chat, so
- *  without this the cost report is exactly the thing that gets cut. */
+/** Keep a background promise alive past the response — for ANALYTICS ONLY.
+ *
+ *  🔴🔴 THIS IS NOT LOAD-BEARING ANY MORE, AND IT MUST NOT BECOME SO AGAIN. It used to
+ *  carry the student meter as well, and on 2026-08-31 production showed what that costs:
+ *  usage_events and usage_counters had recorded NOTHING since 2026-08-20 while the same
+ *  function was answering chats with 200s the whole time. `device_keys.last_used_at` —
+ *  the other fire-and-forget write in this file — had stopped on 2026-08-27. Reads were
+ *  fine; every write that nobody awaited was being cut when the isolate was torn down
+ *  after the response, and `waitUntil` was not saving them.
+ *
+ *  The consequence was not a missing chart. The same call increments the daily and
+ *  monthly caps, so for eleven days the plan's economic wall was not counting: a
+ *  subscriber could have spent without limit and the ledger would have shown nothing.
+ *
+ *  So the rule now is: anything that MUST land is awaited before the response is
+ *  finished (see `recordUsage`'s call sites). This helper survives for the PostHog
+ *  report, which is genuinely optional — a lost cost chart is a lost chart, and a lost
+ *  meter is a lost business. */
 function keepAlive(work: Promise<unknown>): void {
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime
 
@@ -294,7 +308,10 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
     return json({ error: 'unknown or revoked device key' }, 403)
   }
 
-  void admin.from('device_keys').update({ last_used_at: new Date().toISOString() }).eq('key_hash', keyHash)
+  // 🔴 AWAITED SINCE 2026-08-31. This was `void`-ed and it stopped landing on 2026-08-27
+  // — the same teardown that silenced the meter. It is one indexed update on the row we
+  // have just read, and it is how anyone can tell a live install from an abandoned one.
+  await admin.from('device_keys').update({ last_used_at: new Date().toISOString() }).eq('key_hash', keyHash)
 
   const { data: sub } = await admin
     .from('subscriptions')
@@ -459,8 +476,10 @@ async function recordUsage(
   const recorded = totals && typeof totals === 'object' ? totals as Record<string, unknown> : {}
   const dailyAfter = typeof recorded.daily_used === 'number' ? recorded.daily_used : ctx.used + spent
   const monthlyAfter = typeof recorded.monthly_used === 'number' ? recorded.monthly_used : ctx.monthlyUsed + spent
-  void maybeWarnCap(ctx, 'daily', Math.max(0, dailyAfter - spent), dailyAfter, ctx.dailyLimit, ctx.periodStart)
-  void maybeWarnCap(ctx, 'monthly', Math.max(0, monthlyAfter - spent), monthlyAfter, ctx.monthlyLimit, ctx.monthStart)
+  // 🔴 AWAITED for the same reason the meter is: these only fire on the one tick that
+  // crosses the warn line, so a dropped one is not "late", it is gone for that period.
+  await maybeWarnCap(ctx, 'daily', Math.max(0, dailyAfter - spent), dailyAfter, ctx.dailyLimit, ctx.periodStart)
+  await maybeWarnCap(ctx, 'monthly', Math.max(0, monthlyAfter - spent), monthlyAfter, ctx.monthlyLimit, ctx.monthStart)
 }
 
 /** Emit one nemesis_cap_warning event the moment usage crosses the warn line for a
@@ -791,7 +810,10 @@ async function chatCompletions(req: Request): Promise<Response> {
   if (!streaming) {
     const data = await upstream.json().catch(() => null)
     const num = (field: string): number => (data?.usage?.[field] as number | undefined) ?? 0
-    keepAlive(recordUsage(
+    // 🔴 AWAITED, NOT FIRE-AND-FORGET. One database round trip (tens of milliseconds)
+    // before the answer is handed back, in exchange for a meter that cannot be cut by
+    // the isolate shutting down. See `keepAlive` for what the un-awaited version cost.
+    await recordUsage(
       ctx,
       {
         cacheHit: num('prompt_cache_hit_tokens'),
@@ -802,7 +824,7 @@ async function chatCompletions(req: Request): Promise<Response> {
       model,
       client,
       Date.now() - startedAt
-    ))
+    )
 
     return json(data ?? { error: 'upstream returned no body' }, upstream.status)
   }
@@ -830,11 +852,15 @@ async function chatCompletions(req: Request): Promise<Response> {
   }
 
   const meter = new TransformStream<Uint8Array, Uint8Array>({
-    flush() {
+    // 🔴 `async` AND AWAITED. A TransformStream waits for the promise `flush` returns
+    // before the stream is closed, so the meter lands while the isolate is provably
+    // still alive. The student has already received every byte of the answer by this
+    // point, so nobody waits on it.
+    async flush() {
       // The length/4 fallback has no usage chunk to read cache data from — bill it
       // at full weight rather than guessing a discount, and with no prompt/completion
       // split, which recordUsage marks as an ESTIMATED cost rather than a measured one.
-      keepAlive(recordUsage(
+      await recordUsage(
         ctx,
         {
           cacheHit: usageTokens ? cacheHitTokens : 0,
@@ -845,7 +871,7 @@ async function chatCompletions(req: Request): Promise<Response> {
         model,
         client,
         Date.now() - startedAt
-      ))
+      )
     },
     transform(chunk, controller) {
       controller.enqueue(chunk)
