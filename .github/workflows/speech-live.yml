@@ -28,6 +28,7 @@ jobs:
           # The custom domain first (what learners hit); the project's vercel.app alias
           # second, because the custom domain's bot check may challenge a plain API call.
           APP_ORIGINS: https://app.enternemesis.com,https://nemesis-web-axelgalvez1121-4954s-projects.vercel.app
+          DEBUG_SPEECH: "1"
         run: deno run --allow-net --allow-env --allow-read --allow-write --allow-run=ffmpeg scripts/live-speech-acceptance.ts
       - name: Remove the run's test account, even if the run was cancelled
         if: always()
