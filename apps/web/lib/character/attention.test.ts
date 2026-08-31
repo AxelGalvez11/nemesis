@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { attentionAt, FOLLOW_MS } from "./attention";
+import { attentionAt, FOLLOW_MS, SETTLE_MS } from "./attention";
 import { holdFor, isMontageLoop, MONTAGE, resolveMontage } from "./montage";
 
 const DOCK = readFileSync("components/character/character-dock.tsx", "utf8");
@@ -28,13 +28,44 @@ function walk(step = 250) {
 
 test("🔴🔴🔴 watching you and wearing a face never share an instant", () => {
   // The whole change, in one assertion. Two clocks could only make this PROBABLE; one makes it
-  // structural — there is a single answer per instant and it is either a face or the pointer.
+  // structural — there is a single answer per instant, and no instant is both.
   for (const { ms, at } of walk()) {
     if (at.kind === "absorbed") assert.ok(at.entry, `${ms}ms is absorbed in nothing`);
-    else assert.equal(at.kind, "follow");
+    else assert.ok(at.kind === "follow" || at.kind === "settle", `${ms}ms is a fourth thing`);
   }
   const kinds = new Set(walk().map((w) => w.at.kind));
-  assert.deepEqual([...kinds].sort(), ["absorbed", "follow"], "the clock only ever does one of the two");
+  assert.deepEqual([...kinds].sort(), ["absorbed", "follow", "settle"], "a state was added or lost");
+});
+
+test("🔴🔴🔴 a face NEVER begins on the frame the pointer is let go of — the 2026-08-31 seam", () => {
+  // Owner, sixth report: *"either it should only be following the mouse with its eyes, no
+  // expressions, or it should be doing the expressions without regard for the mouse."* Measured on
+  // screen the day #934 shipped: an absorbed character with a settled pose answers the cursor by
+  // 0.42px, so the cutoff itself was right — but 3% of frames (16 of 553, five samples a second
+  // for two minutes) still showed an expression playing while the pointer drove the head, because
+  // the face changed on a React commit and the pointer was released by a 120ms poll and then EASED
+  // out over 400ms more.
+  //
+  // 🔴 SO THE GUARANTEE IS ABOUT THE TRANSITION, NOT THE SHARE, and this is the assertion that
+  // says so: every step from watching into a face passes through a settling beat, and that beat is
+  // long enough for the head to have left the cursor. Deleting `SETTLE_MS` reddens this alone.
+  const rows = walk(50);
+  let checked = 0;
+  for (let i = 1; i < rows.length; i += 1) {
+    const before = rows[i - 1]!.at.kind;
+    const now = rows[i]!.at.kind;
+    if (now === "absorbed" && before !== "absorbed") {
+      assert.equal(before, "settle", `a face starts straight out of "${before}" at ${rows[i]!.ms}ms`);
+      checked += 1;
+    }
+    // 🔴 NOTHING IS ASSERTED ABOUT THE OTHER EDGE, ON PURPOSE. Coming out of a face the dock can
+    // only turn tracking back ON LATE, never early, so the face is already gone before the eyes
+    // find the cursor; a trailing beat would buy nothing and would cost `holdFor` its meaning.
+    // See the note on `pass` in attention.ts.
+  }
+  assert.ok(checked > 3, "no transition into a face was sampled, so this proved nothing");
+  // And the beat is genuinely long enough to cover the head's own ease back off the pointer.
+  assert.ok(SETTLE_MS >= 400, "the beat is shorter than the head's ease, so the cursor is still in the eyes");
 });
 
 test("🔴 a character that has just come to rest WATCHES YOU", () => {
@@ -42,7 +73,9 @@ test("🔴 a character that has just come to rest WATCHES YOU", () => {
   // three times. Whatever a learner sees in the first seconds after anything happens is it
   // watching them, and the rest clock restarting is what makes that true after every answer too.
   assert.equal(attentionAt({ ms: 0 }).kind, "follow");
-  assert.equal(attentionAt({ ms: FOLLOW_MS - 1 }).kind, "follow");
+  assert.equal(attentionAt({ ms: FOLLOW_MS - SETTLE_MS - 1 }).kind, "follow");
+  // The last beat of the watching stretch is the character letting the cursor go, before any face.
+  assert.equal(attentionAt({ ms: FOLLOW_MS - 1 }).kind, "settle");
   assert.equal(attentionAt({ ms: FOLLOW_MS }).kind, "absorbed", "the first face does not arrive when it says it does");
   // A clock that has not started, and `performance.now()` read before the first frame, are real.
   assert.equal(attentionAt({ ms: -1 }).kind, "follow");
@@ -74,6 +107,8 @@ test("🔴 every entry the owner ticked is actually reached, in his order", () =
 test("🔴 an entry gets its OWN length, not a fixed one", () => {
   // A loop cut off part way through is, on screen, the held face it exists to replace:
   // `gaze-searching` is six poses over 16.8s and five seconds of it is two poses and a cut.
+  // 🔴 IN FULL. The settling beat sits in FRONT of a face, inside the watching stretch, so a loop
+  // still plays every millisecond of its own cycle — see the note on `pass` in attention.ts.
   for (const id of ["gaze-searching", "neutral"]) {
     const rows = walk(100).filter((r) => r.at.kind === "absorbed" && r.at.entry === id);
     const span = rows[rows.length - 1]!.ms - rows[0]!.ms;

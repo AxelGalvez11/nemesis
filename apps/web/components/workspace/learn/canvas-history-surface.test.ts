@@ -80,21 +80,32 @@ test("🔴🔴🔴 the rail has ONE geometry — hovering it may not move a sing
   // ACTUALLY HOLD. A pixel assertion cannot: both geometries were individually defensible.
   assert.ok(!/peeking/.test(RAIL_CODE), "the rail grew a second display state again");
   assert.ok(!/HistoryRailDisplay/.test(RAIL_CODE), "the rail's display-state type is back");
-  assert.ok(!/onMouseEnter|onMouseLeave/.test(RAIL_CODE), "the rail opens on hover again");
+  // 🔴🔴 HOVER IS ALLOWED AGAIN AND THE INVARIANT IS UNCHANGED — owner, 2026-08-31, with the
+  // screenshot: *"i said the rail popup needed to look like this."* The 2026-08-29 report was
+  // never "a panel exists", it was *"it just moves a lot"*: the STRIP grew from a 12px pitch to
+  // 36px on hover, so 24 markers went 288px to 864px and slid out from under the pointer. What
+  // must never come back is a hover that changes the STRIP. So this now forbids the mechanism
+  // rather than the trigger: the panel is out of flow, and the marker keeps one height.
+  assert.match(RAIL_CODE, /absolute right-full top-1\/2 z-20/, "the panel is in flow and can move the markers again");
+  assert.match(RAIL_CODE, /data-canvas-history-panel/, "the panel lost the handle its geometry is measured by");
   // The surface that faded in with it — this is the literal "pop up".
   assert.ok(!/backdrop-blur/.test(RAIL_CODE), "the rail paints a panel behind itself again");
   assert.ok(!/shadow-lg ring-1 ring-\(--ui-stroke-secondary\) backdrop/.test(RAIL_CODE), "the pop-up panel is back");
   // 🔴 AND EXACTLY ONE ROW HEIGHT. Calibration: add a second `h-[...]` to the marker and this
   // reddens, which is the only edit that could bring the movement back.
   const rowHeights = [...RAIL_CODE.matchAll(/className=\{cn\(([\s\S]*?)\n      \)\}/g)];
-  assert.ok(!/h-\[36px\]/.test(RAIL_CODE), "the 36px open row is back — the column will grow on hover again");
+  // 🔴 SCOPED TO THE MARKER SINCE 2026-08-31. The forbidden thing is the STRIP's row growing to
+  // 36px on hover; the panel's own rows are legitimately 36px (the reference's list-row height),
+  // and a file-wide ban on the string would refuse the fix while pretending to guard the bug.
+  const marker = RAIL_CODE.slice(RAIL_CODE.indexOf("function RailMarker"));
+  assert.ok(!/h-\[36px\]/.test(marker), "the 36px open row is back — the column will grow on hover again");
   // 🔴 14px SINCE 2026-08-30 (owner: "still feels a bit small"; was 9px). The number may move
   // again; what may not exist is a SECOND one — the h-[36px] check above holds that half.
   assert.ok(/"group relative flex h-\[14px\] shrink-0/.test(RAIL_CODE), "the marker is no longer one fixed height");
   assert.ok(rowHeights.length >= 1, "the marker stopped composing its classes, so this guard cannot read it");
 });
 
-test("🔴🔴 the label is a TOOLTIP, out of flow, carrying the reference's list type", () => {
+test("🔴🔴 the labels live in a PANEL, out of flow, carrying the reference's list type", () => {
   // The label wears ChatGPT's own TOOLTIP, measured in the owner's signed-in account 2026-08-30:
   // a fully-rounded pill, 5px 12px padding, 14px type on an 18px line at weight 600, shadow and no
   // ring. Truncated at 200px (the same share of a title its 260px sidebar shows inside 10px row
@@ -104,18 +115,23 @@ test("🔴🔴 the label is a TOOLTIP, out of flow, carrying the reference's lis
   // 🔴 `absolute` IS THE WHOLE FIX. Out of flow, a label cannot change the row's height, the
   // column's height, or where any other marker is — so the thing being pointed at stays put. A
   // label that reserved space in ANY form would reintroduce the report.
-  assert.ok(/pointer-events-none absolute right-full/.test(RAIL_CODE), "the label is back in flow and can move the column");
-  assert.ok(/rounded-full/.test(RAIL_CODE), "the label lost the reference's pill shape");
-  assert.ok(/leading-\[18px\]/.test(RAIL_CODE), "the label is not on the reference tooltip's 18px line");
-  assert.ok(/font-semibold/.test(RAIL_CODE), "the label lost the reference tooltip's 600 weight");
-  assert.ok(/max-w-\[200px\]/.test(RAIL_CODE), "the label lost the measured truncation width");
+  // 🔴 ONE LABEL PER ROW, IN A LIST, since 2026-08-31. The per-marker tooltip is gone: the panel
+  // names every moment at once, so a floating label for the one under the pointer would be the
+  // same words twice. Measured after the change: 288px wide, 36px rows, 20px clear of the strip.
+  assert.match(RAIL_CODE, /w-\[288px\]/, "the panel is no longer the measured width");
+  assert.match(RAIL_CODE, /h-\[36px\]/, "the rows drifted off 36px — `h-9` is 40.5px in this app");
+  assert.ok(!/leading-6\b/.test(RAIL_CODE), "`leading-6` is 27px here — name the pixels");
+  assert.match(RAIL_CODE, /truncate/, "a long title can now push the panel wider than its measured width");
   // 🔴 IT MUST NOT EAT THE CLICK IT DESCRIBES: it overlaps the reading column and sits over the
   // marker's own hit target.
-  assert.ok(/pointer-events-none/.test(RAIL_CODE), "the tooltip can intercept the press meant for the marker");
+  // 🔴 THE PANEL IS THE OPPOSITE OF THE TOOLTIP HERE: it MUST take the press, because every row
+  // is a door to its own moment. The tooltip had to be transparent to clicks precisely because it
+  // was not one.
+  assert.match(RAIL_CODE, /onClick=\{\(\) => onSelect\(entry\.momentId\)\}/, "the panel's rows are dead controls");
   // 🔴 20px CLEAR OF THE STRIP, measured in the owner's signed-in ChatGPT on 2026-08-29: its rail
   // ends at 52 and its tooltip starts at 72. The number is theirs; the side is ours, because this
   // rail is on the right edge and a tooltip to its right would be off screen.
-  assert.ok(/TOOLTIP_GAP_PX = 20/.test(RAIL_CODE), "the tooltip's clearance is no longer the measured 20px");
+  assert.ok(/PANEL_GAP_PX = 20/.test(RAIL_CODE), "the panel's clearance is no longer the measured 20px");
 });
 
 test("🔴 no synthesised 'Canvas started' row reaches any surface", () => {
@@ -224,13 +240,14 @@ test("🔴 with more moments than the rail can draw, an un-rewound rail holds th
 test("🔴 nothing but marks is painted while the rail is collapsed", () => {
   // Owner: "Do not show message bubbles, timestamps, labels, avatars or text while collapsed."
   //
-  // 🔴 REPOINTED 2026-08-29. The labels are still in the DOM for screen readers and still unpainted
-  // until the row is pointed at — what changed is HOW they are hidden. They used to be clipped to
-  // zero width in flow; they are now transparent tooltips out of flow, because an in-flow label
-  // still occupies a line box and that is what let the column grow on hover.
-  assert.ok(/max-w-\[200px\] opacity-0/.test(RAIL_CODE), "labels are not hidden at rest");
-  assert.ok(/group-hover:opacity-100/.test(RAIL_CODE), "labels never appear when a marker is pointed at");
-  assert.ok(/group-focus-visible:opacity-100/.test(RAIL_CODE), "a keyboard user cannot read a marker's label");
+  // 🔴 REPOINTED AGAIN 2026-08-31. The rule is unchanged and is the owner's: a rail at rest is
+  // marks and nothing else. What changed is where the words live when they DO appear — a panel
+  // beside the strip rather than a tooltip on one marker. Both satisfy "collapsed shows no text",
+  // because neither is rendered at all until the rail is pointed at.
+  assert.match(RAIL_CODE, /\{open && \(/, "the panel is painted while the rail is at rest");
+  assert.ok(!/opacity-0/.test(RAIL_CODE), "something is being hidden by transparency again, which still occupies its box");
+  // The marker itself carries no text in any state; its name is for screen readers only.
+  assert.match(RAIL_CODE, /aria-label=\{label\}/, "a collapsed marker lost its accessible name");
 });
 
 test("🔴 a collapsed marker still has an accessible name", () => {
@@ -340,7 +357,10 @@ test("🔴🔴 a rewound moment shows the learner's OWN words, in the learner's 
   assert.match(BODY, /label="Correction"/, "a correction lost the word that tells it apart from an answer");
 
   // 🔴 THE REWIND DRAWS THROUGH THE SHARED BODY AND NOT ITSELF.
-  assert.match(VIEW_CODE, /<CanvasMomentBody moment=\{moment\}/, "the rewind draws a recorded moment its own way again");
+  // 🔴 THE PROP IS ALLOWED, THE SECOND RENDERING IS NOT. `learnerSide="end"` arrived 2026-08-31
+  // (owner: the sent message on the right, the answer below it on the left, as in the reference);
+  // it is layout the container owns, and the treatment still lives entirely in the shared body.
+  assert.match(VIEW_CODE, /<CanvasMomentBody [^>]*moment=\{moment\}/, "the rewind draws a recorded moment its own way again");
   assert.ok(!/LearnerUtterance/.test(VIEW_CODE), "the rewind view is drawing the learner's words itself again");
 
   // 🔴🔴 AND THE THREAD DOES NOT USE THIS PATH AT ALL, WHICH IS THE POINT OF THE 2026-08-26 REBUILD.

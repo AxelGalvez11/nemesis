@@ -41,14 +41,14 @@
 // brief rules that out by name. The rail shows the most recent `RAIL_MARKERS` around wherever the
 // learner is.
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
 
 import { cn } from "@/lib/utils";
 
 import type { CanvasHistoryEntry } from "@/lib/learn/canvas-history";
-import { TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-history";
+import { DRAWER_TITLE_LIMIT, TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-history";
 
 // 🔴🔴 THERE IS NO "NOW" MARK, AND ITS REMOVAL WAS SAFE FOR A REASON WORTH WRITING DOWN. Owner,
 // 2026-08-25: *"could you remove the 'now' since thats not really needed?"* It was the last mark on
@@ -108,9 +108,19 @@ import { TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-history";
  */
 export const RAIL_MARKERS = 24;
 
-/** How far the tooltip stands clear of the strip. Measured off the reference: its rail ends at 52
- *  and its tooltip starts at 72. */
-const TOOLTIP_GAP_PX = 20;
+/** How far the panel stands clear of the strip. Kept from the tooltip it replaces: the reference's
+ *  rail ends at 52 and its floating label starts at 72. */
+const PANEL_GAP_PX = 20;
+
+/**
+ * How long the panel survives the pointer leaving.
+ *
+ * 🔴 IT EXISTS BECAUSE THE STRIP HAS GAPS IN IT. Crossing the 4px between two markers is a
+ * `mouseleave` on the row and a `mouseenter` on the next, and without a grace the panel would
+ * blink out and back on every one. The panel and the strip share it, so travelling from the strip
+ * to the panel to click a row does not dismiss the thing being aimed at.
+ */
+const PANEL_GRACE_MS = 140;
 
 export function CanvasHistoryRail({
   activeMomentId,
@@ -158,6 +168,35 @@ export function CanvasHistoryRail({
   // to "is a panel open", free to disagree with the first.
   const inset = useSidePanelInset();
 
+  /**
+   * Whether the list is open.
+   *
+   * 🔴🔴 THE PANEL IS BACK, BY OWNER INSTRUCTION AND WITH THE OLD BUG DESIGNED OUT — 2026-08-31,
+   * pasting a screenshot of exactly this: *"i said the rail popup needed to look like this."* He
+   * had been shown five options as working mockups and chose the list.
+   *
+   * 🔴 SO WHAT WAS THE 2026-08-29 REPORT, AND WHY IS THIS NOT IT AGAIN? *"I don't want it to have
+   * that. It just moves a lot."* The thing that moved was THE STRIP: the markers themselves grew
+   * from a 12px pitch to 36px on hover, so a 24-marker column went from about 288px to 864px and
+   * every marker slid out from under the pointer that was aiming at it. That was never about a
+   * panel existing; it was about the hover target moving.
+   *
+   * This panel cannot do that. It is `absolute`, in its own layer, anchored to the strip's
+   * container — so the markers keep one geometry in every state, which is the invariant
+   * `canvas-history-surface.test.ts` holds and which was measured again after this change: the
+   * marker tops are identical with the panel open and closed.
+   */
+  const [open, setOpen] = useState(false);
+  const grace = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const show = useCallback(() => {
+    if (grace.current) clearTimeout(grace.current);
+    setOpen(true);
+  }, []);
+  const hide = useCallback(() => {
+    if (grace.current) clearTimeout(grace.current);
+    grace.current = setTimeout(() => setOpen(false), PANEL_GRACE_MS);
+  }, []);
+
   // 🔴 A CANVAS WITH NO MOMENTS DRAWS NO RAIL, AND THIS GUARD ARRIVED WITH THE "NOW" MARK'S
   // REMOVAL. Until then the column always had at least that one mark, so it was always a real
   // object. Without it an empty history renders an empty `<nav>` — invisible, and still holding a
@@ -178,7 +217,71 @@ export function CanvasHistoryRail({
             with a 120ms grace so crossing the strip's own gaps did not collapse it — machinery for a
             state that no longer exists. Each marker now owns its own hover, and a tooltip cannot
             move the column it is anchored in. */}
-        <div className="pointer-events-auto flex max-h-[70vh] items-center py-4 pl-6 pr-2">
+        {/* 🔴 THE PADDING IS THE HOVER APPROACH, NOT THE ANCHOR. This box is deliberately wider
+            than the strip so the pointer meets the rail slightly before the marks; anchoring the
+            panel to it would add that padding to the clearance (measured: 47px against the
+            reference's 20). The panel hangs off the strip itself, one level in. */}
+        <div
+          className="pointer-events-auto flex max-h-[70vh] items-center py-4 pl-6 pr-2"
+          onMouseEnter={show}
+          onMouseLeave={hide}
+        >
+          <div className="relative flex items-center">
+          {/* ── the list ──────────────────────────────────────────────────────────────────────
+              🔴🔴 IT IS `absolute`, AND THAT IS THE WHOLE REASON THIS IS NOT THE 2026-08-29 BUG
+              AGAIN. Out of flow, in its own layer, anchored to this box: it cannot change the
+              strip's height, the pitch between markers, or where the marker under the pointer is.
+              The old pop-up was not a panel problem, it was the STRIP growing 288px to 864px.
+              🔴 IT OPENS TO THE LEFT because this rail is pinned to the right edge of the window
+              and a panel to its right would be off screen. `PANEL_GAP_PX` is the reference's own
+              clearance, kept from the tooltip this replaces.
+              🔴 EVERY ROW IS A REAL DOOR. The panel is how you read the column, and reading it
+              without being able to act on what you read is the "dead control" this file has been
+              caught by before — so a row selects the moment, exactly as its marker does. */}
+          {open && (
+            <div
+              className={cn(
+                "absolute right-full top-1/2 z-20 -translate-y-1/2",
+                "max-h-[70vh] w-[288px] overflow-y-auto rounded-2xl p-2",
+                "bg-(--ui-bg-elevated) shadow-[0_16px_48px_rgba(0,0,0,0.28)] ring-1 ring-(--ui-stroke-tertiary)",
+              )}
+              data-canvas-history-panel=""
+              style={{ marginRight: PANEL_GAP_PX }}
+            >
+              {shown.map((entry) => {
+                const current = entry.momentId === activeMomentId;
+                return (
+                  <button
+                    aria-current={current ? "true" : undefined}
+                    className={cn(
+                      // 🔴 36px ROWS, IN PIXELS, BECAUSE OF THE REM TRAP. `html { font-size: 112.5% }`
+                      // makes Tailwind's `h-9` 40.5px here; the reference's rows and this app's own
+                      // sidebar rows are both 36. Measured at 41px before this line was pinned.
+                      "flex h-[36px] w-full items-center gap-3.5 rounded-[10px] px-3 text-left",
+                      "transition-colors hover:bg-(--ui-bg-tertiary)",
+                      current ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
+                    )}
+                    key={entry.id}
+                    onClick={() => onSelect(entry.momentId)}
+                    type="button"
+                  >
+                    {/* The same mark the strip draws, so the row and its marker read as one thing. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "block h-[2px] shrink-0 rounded-full",
+                        current ? "w-[26px] bg-(--ui-text-primary)" : "w-[16px] bg-(--ui-text-tertiary) opacity-75",
+                      )}
+                    />
+                    <span className="min-w-0 truncate text-[length:var(--canvas-text-small)] leading-[20px]">
+                      {shortTitle(entry.title, DRAWER_TITLE_LIMIT)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <nav
             aria-label="Canvas history"
             className={cn(
@@ -214,6 +317,7 @@ export function CanvasHistoryRail({
               />
             ))}
           </nav>
+          </div>
         </div>
       </div>
     </>
@@ -277,41 +381,10 @@ function RailMarker({
             : "h-[2px] w-[16px] bg-(--ui-text-tertiary) opacity-75 group-hover:w-[22px] group-hover:opacity-100",
         )}
       />
-      {/* 🔴 THE LABEL, AS A TOOLTIP RATHER THAN A ROW — the 2026-08-29 change. It stands
-          `TOOLTIP_GAP_PX` clear of the strip on the LEFT, because this rail is pinned to the right
-          edge of the window and a tooltip to its right would be off screen. The reference floats
-          its own 20px clear of a rail on the opposite edge; the number is theirs, the side is ours.
-
-          🔴 `pointer-events-none`, SO IT CANNOT EAT THE CLICK IT DESCRIBES. It overlaps the reading
-          column, and a learner aiming at the marker must not have the label intercept the press.
-
-          🔴 14px THROUGH THE TOKEN, NEVER AS A BARE LENGTH. `--canvas-text-small` IS 14px, which is
-          the reference's own list type, measured. §46.3's guard in canvas-shell.test.ts refuses a
-          raw size precisely so a sixth type step cannot be introduced by whoever happened to
-          measure one; it has caught this line twice, once for the size and once for a comment that
-          spelled the banned utility out. Do not name that form here even to explain its absence.
-
-          🔴 `max-w-[200px]` AND `truncate` ARE KEPT FROM THE ROW THIS REPLACES: the reference's
-          sidebar is 260px with 10px of row padding a side, so 200 keeps the same share of a title
-          readable before it clips. A tooltip that grew to fit any title would run across the whole
-          answer. */}
-      <span
-        className={cn(
-          // 🔴 THE REFERENCE'S OWN TOOLTIP, MEASURED IN THE OWNER'S CHATGPT 2026-08-30: a 30px
-          // pill — fully rounded, 5px 12px padding, 14px/18px at weight 600, a solid surface with
-          // a shadow and NO ring. The colour stays on our tokens so both themes hold; everything
-          // with a number is theirs.
-          "pointer-events-none absolute right-full top-1/2 z-10 -translate-y-1/2 truncate rounded-full",
-          "bg-(--ui-bg-elevated) px-[12px] py-[5px] text-left text-[length:var(--canvas-text-small)] font-semibold leading-[18px]",
-          "shadow-lg",
-          "max-w-[200px] opacity-0 transition-opacity duration-150 ease-out",
-          "group-hover:opacity-100 group-focus-visible:opacity-100",
-          active ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
-        )}
-        style={{ marginRight: TOOLTIP_GAP_PX }}
-      >
-        {label}
-      </span>
+      {/* 🔴 NO PER-MARKER TOOLTIP ANY MORE. The panel beside the strip names every moment at once
+          (owner, 2026-08-31, choosing the list from five working mockups), so a second floating
+          label for the one under the pointer would be the same words twice. The marker keeps its
+          `aria-label`, which is what a screen reader reads and what the tooltip never was. */}
     </button>
   );
 }
