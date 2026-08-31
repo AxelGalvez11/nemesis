@@ -150,6 +150,24 @@ const STRANDED_MS = 2_000;
 const ARRIVING_MS = 1_200;
 
 /**
+ * How often the opening thread checks whether it has anything to scroll to yet.
+ *
+ * 🔴 A POLL, NOT A FRAME LOOP. This has to stay armed until the conversation arrives, which is
+ * measured in SECONDS on a saved canvas — `requestAnimationFrame` for that long is hundreds of
+ * layout reads during the exact load it must not slow down. Ten a second is invisible to a person
+ * and free next to what the page is already doing.
+ */
+const LANDING_TICK_MS = 100;
+
+/**
+ * How long the thread must stop growing before the landing considers itself done.
+ *
+ * The turns render in pieces, so the first frame with anything in it is not the end of the
+ * conversation. This is what tells "the thread has arrived" from "the thread is still arriving".
+ */
+const LANDING_SETTLE_MS = 400;
+
+/**
  * How long a canvas keeps pinning its thread to the most recent turn after it opens.
  *
  * 🔴🔴 OWNER, 2026-08-30: *"Going back to old pages should take user back to the most recent chat
@@ -161,13 +179,20 @@ const ARRIVING_MS = 1_200;
  * 🔴 A WINDOW, NOT A SINGLE JUMP, BECAUSE THE THREAD ARRIVES IN PIECES. The turns render as the
  * canvas resolves, so one jump on the first frame that has anything in it lands on the first
  * chunk and the rest grows underneath. This keeps the foot in view while the thread is still
- * filling, and lets go.
+ * filling, and lets go once it has stopped growing (`LANDING_SETTLE_MS`).
  *
- * 🔴 AND THE LEARNER OUTRANKS IT INSTANTLY. Any scroll of their own inside the window stops it —
- * a thread that hauls itself back down while somebody is reading upward is worse than one that
- * opens in the wrong place.
+ * 🔴🔴 TWELVE SECONDS, AND THE FIRST VERSION OF THIS WAS 1.5 — WHICH DID NOTHING AT ALL. Measured
+ * on production after shipping it: the conversation is not readable until **9.7 seconds** into
+ * opening a saved canvas, so a window keyed to the MOUNT had long expired before there was
+ * anything to scroll. The number has to cover how long the canvas actually takes, not how long a
+ * scroll takes. When the open gets faster this can come down; while it is slow, a landing that
+ * gives up early is a landing that never happens.
+ *
+ * 🔴 AND THE LEARNER OUTRANKS IT INSTANTLY, which is what makes a window this long safe. Any
+ * scroll of their own ends it — a thread that hauls itself back down while somebody is reading
+ * upward is worse than one that opens in the wrong place.
  */
-const LANDING_MS = 1_500;
+const LANDING_MS = 12_000;
 
 /** What "send" means when a passage is staged and nothing was typed.
  *
@@ -326,30 +351,41 @@ export function LearningCanvas({
    * eight screens of a conversation somebody has already read is the opposite of arriving there.
    */
   useEffect(() => {
-    let raf = 0;
-    let stopped = false;
     const opened = Date.now();
-    const letGo = () => { stopped = true; };
+    /** The tallest the thread has been, and when it last got taller. */
+    let tallest = 0;
+    let grewAt = Date.now();
+    let timer = 0;
+    const stop = () => {
+      window.clearInterval(timer);
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("touchmove", stop);
+      window.removeEventListener("keydown", stop);
+    };
     const step = () => {
       const node = threadRef.current;
-      if (stopped || !node) return;
+      if (!node) return;
       // 🔴 ONLY WHEN THERE IS SOMETHING TO SCROLL. A canvas that fits on one screen — a brand new
       // one, or a short one — must not be touched at all, or an empty thread gets a scroll position
       // it never had and the composer's own layout shifts under it.
       if (node.scrollHeight > node.clientHeight + 8) node.scrollTop = node.scrollHeight;
-      if (Date.now() - opened < LANDING_MS) raf = requestAnimationFrame(step);
+      if (node.scrollHeight > tallest) {
+        tallest = node.scrollHeight;
+        grewAt = Date.now();
+      } else if (tallest > 0 && Date.now() - grewAt > LANDING_SETTLE_MS) {
+        // Arrived and stopped growing: nothing more to follow.
+        stop();
+        return;
+      }
+      if (Date.now() - opened > LANDING_MS) stop();
     };
-    raf = requestAnimationFrame(step);
-    // Passive: this only ever cancels, it never prevents.
-    window.addEventListener("wheel", letGo, { passive: true });
-    window.addEventListener("touchmove", letGo, { passive: true });
-    window.addEventListener("keydown", letGo);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("wheel", letGo);
-      window.removeEventListener("touchmove", letGo);
-      window.removeEventListener("keydown", letGo);
-    };
+    timer = window.setInterval(step, LANDING_TICK_MS);
+    step();
+    // Passive: these only ever cancel, they never prevent.
+    window.addEventListener("wheel", stop, { passive: true });
+    window.addEventListener("touchmove", stop, { passive: true });
+    window.addEventListener("keydown", stop);
+    return stop;
   }, [canvasId]);
   const strandedTimer = useRef<number | null>(null);
   const leave = useCallback(() => {

@@ -56,6 +56,18 @@ test("🔴🔴 an opening canvas lands on its most recent turn", () => {
   assert.match(CANVAS, /const LANDING_MS = [\d_]+;/, "the landing window is gone");
   assert.match(CANVAS, /if \(node\.scrollHeight > node\.clientHeight \+ 8\) node\.scrollTop = node\.scrollHeight;/, "the thread no longer opens at its foot");
   assert.match(CANVAS, /\}, \[canvasId\]\);/, "the landing is no longer re-armed per canvas");
+  // 🔴🔴 IT MUST OUTLAST THE OPEN, AND THE FIRST VERSION DID NOT. Measured on production after
+  // shipping a 1.5s window: the conversation is not readable until 9.7s, so a window keyed to the
+  // MOUNT expired before there was anything to scroll and the landing never fired once.
+  const landing = figure(/const LANDING_MS = ([\d_]+);/, CANVAS);
+  assert.ok(landing >= 10_000, `${landing}ms expires before a saved canvas has finished opening`);
+  // 🔴 AND IT LETS GO ONCE THE THREAD STOPS GROWING, rather than running the whole window out.
+  assert.match(CANVAS, /const LANDING_SETTLE_MS = \d+;/, "the landing no longer notices when the thread has arrived");
+  assert.match(CANVAS, /\} else if \(tallest > 0 && Date\.now\(\) - grewAt > LANDING_SETTLE_MS\) \{/, "the landing runs its whole window instead of stopping when the thread settles");
+  // 🔴 A POLL, NOT A FRAME LOOP: twelve seconds of rAF is hundreds of layout reads during the exact
+  // load this must not slow down.
+  assert.match(CANVAS, /timer = window\.setInterval\(step, LANDING_TICK_MS\);/, "the landing went back to a frame loop");
+  assert.ok(!/raf = requestAnimationFrame\(step\)/.test(CANVAS), "the landing went back to a frame loop");
   assert.match(CANVAS, /ref=\{threadRef\}/, "the thread scroller lost its ref, so there is nothing to scroll");
   // 🔴 INSTANT, NOT SMOOTH. Asked for in the same sentence as "quick not laggy"; a smooth scroll
   // through eight screens of a conversation already read is the opposite of arriving at the end.
@@ -66,10 +78,12 @@ test("🔴🔴 the learner outranks the landing, instantly", () => {
   // A thread that hauls itself back down while somebody is reading upward is worse than one that
   // opens in the wrong place.
   for (const event of ["wheel", "touchmove", "keydown"]) {
-    assert.ok(CANVAS.includes(`addEventListener("${event}", letGo`), `${event} no longer stops the landing`);
-    assert.ok(CANVAS.includes(`removeEventListener("${event}", letGo)`), `${event} listener is leaked`);
+    assert.ok(CANVAS.includes(`addEventListener("${event}", stop`), `${event} no longer stops the landing`);
+    assert.ok(CANVAS.includes(`removeEventListener("${event}", stop)`), `${event} listener is leaked`);
   }
+  // 🔴 THE WINDOW IS LONG — TWELVE SECONDS — AND THAT IS ONLY SAFE BECAUSE OF THE THREE LISTENERS
+  // ABOVE. A learner's own scroll ends it on the first event, so the length is a ceiling on how
+  // long it will WAIT for content, never on how long it can fight somebody.
   const window_ = figure(/const LANDING_MS = ([\d_]+);/, CANVAS);
-  assert.ok(window_ <= 3_000, `${window_}ms is long enough to fight a learner who is scrolling`);
-  assert.ok(window_ >= 500, `${window_}ms ends before a thread that arrives in pieces has finished`);
+  assert.ok(window_ <= 20_000, `${window_}ms is longer than anyone waits for a canvas at all`);
 });
