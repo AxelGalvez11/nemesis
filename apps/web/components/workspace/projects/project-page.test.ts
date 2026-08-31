@@ -111,18 +111,25 @@ test("🔴🔴🔴 a row is 40px — exactly two 20px lines, which is why there 
   assert.match(PAGE, /style=\{\{ height: ROW_H_PX \}\}/);
 });
 
-test("🔴 no divider, no fill, no radius on a row — not even on hover", () => {
+test("🔴 the divider is on the li, the hover on the row, and still no radius (re-measured 2026-08-30)", () => {
+  // The 2026-08-26 spec said "no divider" and it was true THEN — the reference changed under us:
+  // its project list now draws the same 5% hairline its Library table always had, with 13px of
+  // air each side of the 40px content box. The date on a measurement is part of the measurement.
   const at = PAGE.indexOf("function CanvasRow(");
   assert.notEqual(at, -1, "CanvasRow is gone");
   const row = PAGE.slice(at, PAGE.indexOf("\n}\n", at));
-  assert.ok(!/border-b/.test(row), "a divider appeared on a row the spec says has none");
+  assert.match(row, /border-b border-b-black\/\[0\.05\] dark:border-b-white\/\[0\.05\]/, "the re-measured hairline is gone");
   assert.ok(!/rounded-(?!full)/.test(row.replace("rounded-full", "")), "a radius appeared on a row the spec says has none");
 });
 
 test("🔴 line one is the canvas title (14/500), line two is a REAL fact or a plain label, never invented content", () => {
   assert.match(PAGE, /const ROW_NAME_TEXT = "text-\[14px\] leading-\[20px\] font-medium text-\(--ui-text-primary\)";/);
   assert.match(PAGE, /const ROW_META_TEXT = "text-\[14px\] leading-\[20px\] font-normal text-\(--ui-text-secondary\)";/);
-  assert.match(PAGE, /\{canvas\.courseTitle \|\| "Canvas"\}/, "line two stopped being a real fact (courseTitle) or an honest label");
+  // Line two is the conversation's REAL tail now — `CanvasSummary.preview`, extracted inside
+  // listCanvases's own SELECT, flattened of markdown — with the old honest fallbacks behind it.
+  assert.match(PAGE, /\{snippet\(canvas\)\}/, "line two stopped reading the snippet helper");
+  assert.match(PAGE, /return canvas\.courseTitle \|\| "Canvas";/, "the fallback stopped being a real fact (courseTitle) or an honest label");
+  assert.match(PAGE, /canvas\.preview\?\.trim\(\)/, "the snippet stopped reading the stored preview");
 });
 
 test("🔴 a canvas row opens where the sidebar opens it, character for character", () => {
@@ -139,7 +146,20 @@ test("🔴🔴 only THIS project's own direct canvases are listed — no sub-pro
 test("🔴 no Share button — we have no sharing, and a dead control fails a 1:1 copy while matching it", () => {
   assert.ok(!/>\s*Share\s*</.test(PAGE), "a Share button appeared in a product with no sharing");
   assert.match(PAGE, />Rename</);
-  assert.match(PAGE, />Delete</);
+  assert.match(PAGE, />\s*Delete\s*</);
+  // And the ⋯ carries what the reference's page ⋯ carries (measured 2026-08-30): Project
+  // settings opens the same dialog the sidebar opens, Pin project writes folders.pinned_at.
+  assert.match(PAGE, />\s*Project settings\s*</, "the page lost its Project settings door");
+  assert.match(PAGE, /\{project\.pinnedAt \? "Unpin project" : "Pin project"\}/, "the page lost its pin toggle");
+  assert.match(PAGE, /ProjectCustomizeDialog/, "the settings dialog is not mounted on the page");
+});
+
+test("🔴 the header wears the project's OWN icon and colour at 32px (measured 2026-08-30)", () => {
+  // The reference paints "school" as its blue mortar-board on the page header, not a generic
+  // folder. `buildProjects` carries icon/colour through ProjectNode for exactly this read.
+  assert.match(PAGE, /name=\{project\.icon \?\? "folder"\}/, "the header fell back to a generic glyph for customized projects");
+  assert.match(PAGE, /size="32px"/, "the header icon left the measured 32px");
+  assert.match(PAGE, /style=\{project\.color \? \{ color: project\.color \} : undefined\}/, "the header ignores the project's colour");
 });
 
 test("🔴🔴🔴 no rem-based spacing class survives — `px-4` is EIGHTEEN pixels here, not sixteen", () => {
@@ -170,16 +190,14 @@ test("🔴 the route is thin, reads the id from the URL, and mounts the real pag
 });
 
 test("🔴🔴 rows have the reference's rhythm, not just its row height", () => {
-  // The first spec for this page carried a row HEIGHT and no gap, because the project it was
-  // measured from held exactly one chat — there was no second row to measure against. The page
-  // shipped with its rows nearly touching, so two 40px two-line rows read as one four-line block.
-  // Re-measured on a project with two chats: gap 25, pitch 65, confirmed twice (row boxes, and
-  // independently title-to-title). Ours now measures 326/366 and 391/431 in real headless Chrome,
-  // which is the reference's own pair of boxes exactly.
-  assert.match(PAGE, /const ROW_GAP_PX = 25;/, "the measured gap between rows is gone");
-  assert.match(PAGE, /style=\{\{ gap: ROW_GAP_PX, marginTop: ROWS_GAP_PX \}\}/, "the row list stopped spacing its rows");
-  // 🔴 THE GAP IS ON THE LIST, NOT PADDING ON THE ROW. The row's own box is 40px in the reference
-  // and the hover fill is drawn around it, so a 65px row would carry 12px of dead hover above and
-  // below every title.
+  // Twice re-measured now. First (2026-08-26, two-chat project): 40px rows, 25px gap, no divider.
+  // Second (2026-08-30, six-chat project, the owner's own Chrome): the reference grew hairline
+  // dividers, and the air moved to 13px of li padding each side of the 40px box — title-to-title
+  // pitch 66-67 confirmed on screen. The 13s live on the li WITH the hairline so the divider
+  // spans the full column; the hover stays on the 40px content box, where dead hover cannot sit
+  // above the title.
+  assert.match(PAGE, /const ROW_PAD_Y_PX = 13;/, "the measured row padding is gone");
+  assert.match(PAGE, /paddingBottom: ROW_PAD_Y_PX, paddingTop: ROW_PAD_Y_PX/, "the li stopped carrying the air");
+  assert.match(PAGE, /marginTop: ROWS_GAP_PX - ROW_PAD_Y_PX/, "the first row's top no longer lands on the measured 326+13");
   assert.match(PAGE, /const ROW_H_PX = 40;/, "the row stopped being the reference's 40px");
 });

@@ -51,7 +51,9 @@ test("🔴🔴🔴 the Projects header is UNCONDITIONAL, because it carries the 
   // Calibration: wrap the header in `{rootFolders.length > 0 ? (` and this reddens, because the
   // conditional then opens BEFORE the label instead of after it.
   const header = at(SIDEBAR, 'label="Projects"');
-  const list = at(SIDEBAR, "{rootFolders.length > 0 ? (");
+  // The body's conditional grew a collapse gate 2026-08-30; the invariant is unchanged — the
+  // HEADER stands before and outside whatever decides whether rows render under it.
+  const list = at(SIDEBAR, 'closedSections.has("projects") ? null : rootFolders.length > 0 ? (');
   assert.ok(header < list, "the Projects header moved inside its own conditional — the New project button can now be unreachable");
 
   const buttons = SIDEBAR.match(/action=\{newFolderButton\}/g) ?? [];
@@ -86,8 +88,36 @@ test("🔴 nothing a learner READS in this sidebar calls a project a folder", ()
 test("🔴 Pinned and Canvases ARE conditional — no heading over nothing", () => {
   // A header with no rows under it reads as a list that failed to load, which is a worse lie than
   // an absent section. Both of these open their conditional BEFORE their label; Projects does not.
-  assert.ok(at(SIDEBAR, "{pinned.length > 0 ? (") < at(SIDEBAR, 'label="Pinned"'), "an empty Pinned header can now render");
+  // Pinned exists when either kind of pin does — a pinned PROJECT alone must still summon it.
+  assert.ok(
+    at(SIDEBAR, "{pinned.length > 0 || pinnedFolders.length > 0 ? (") < at(SIDEBAR, 'label="Pinned"'),
+    "an empty Pinned header can now render",
+  );
   assert.ok(at(SIDEBAR, "{unfiled.length > 0 ? (") < at(SIDEBAR, 'label="Canvases"'), "an empty Canvases header can now render");
+});
+
+test("🔴 every section header collapses, and the collapse persists (owner 2026-08-30)", () => {
+  // His report named this exactly: "the canvases or projects or pinned things being collapsable".
+  // The reference's Pinned/Projects/Chats headers are all buttons with a hover caret; collapse
+  // hides the ROWS and never the header, and the choice survives a reload the same way open
+  // folders do — stored as the CLOSED set, so a section that did not exist yet defaults open.
+  assert.ok(!SIDEBAR.includes("collapsible={false}"), "a section header went back to being dead to clicks");
+  for (const section of ['toggleSection("pinned")', 'toggleSection("projects")', 'toggleSection("canvases")']) {
+    assert.ok(SIDEBAR.includes(section), `${section} is gone — that header no longer collapses`);
+  }
+  assert.match(SIDEBAR, /const CLOSED_SECTIONS_KEY = "nemesis\.sidebar\.canvases\.v1\.closedSections";/, "the collapse choice no longer persists");
+  // Collapsing must never hide the one create button: the Projects HEADER renders outside the gate.
+  const gate = at(SIDEBAR, 'closedSections.has("projects") ? null :');
+  assert.ok(at(SIDEBAR, 'label="Projects"') < gate, "the Projects header moved inside its own collapse gate");
+});
+
+test("🔴 a project row is icon + name — no leading chevron (measured 2026-08-30)", () => {
+  // The reference's project row wears nothing at rest but the project's own glyph; expandability
+  // is what the click DOES. The old chevron also indented every project 14px past the canvases.
+  const folderRowAt = SIDEBAR.indexOf("const folderRow =");
+  const body = SIDEBAR.slice(folderRowAt, SIDEBAR.indexOf("const newFolderButton"));
+  assert.ok(!body.includes("chevron-right"), "the project row grew its leading chevron back");
+  assert.match(body, /aria-expanded=\{isOpen\}/, "the row no longer tells assistive tech it expands");
 });
 
 test("🔴 the groups keep the reference's order: pinned, then projects, then loose canvases", () => {

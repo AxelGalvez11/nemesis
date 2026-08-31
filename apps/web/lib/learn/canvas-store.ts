@@ -270,6 +270,12 @@ export interface CanvasSummary {
    *  table of its own on purpose (see curriculum-plan.ts), and lists only need the one fact
    *  "this canvas carries a course", not the plan itself. */
   courseTitle?: string | null;
+  /** The tail of the conversation — the last moment's `assistantText`, extracted INSIDE the same
+   *  SELECT (`document->moments->-1->>assistantText`), so a list row can show what a ChatGPT row
+   *  shows (its last message) without the N+1 of loading every document. Null when the last
+   *  moment carries no assistant text (an answer submit, a source attach); readers fall back to
+   *  the course title or a plain label, never to an invented sentence. */
+  preview?: string | null;
 }
 
 export interface Folder {
@@ -286,6 +292,9 @@ export interface Folder {
   color?: string | null;
   /** Standing instructions that ride every turn of every canvas filed here. */
   instructions?: string | null;
+  /** When the learner pinned this project (folders.pinned_at, 20260830T40). A pinned project
+   *  moves to the sidebar's Pinned section — it does not appear twice. */
+  pinnedAt?: string | null;
 }
 
 /** The learner's sessions, pinned first and then most recently worked.
@@ -298,14 +307,18 @@ export async function listCanvases(userId: string | null): Promise<CanvasSummary
   if (userId) {
     const { data, error } = await supabase
       .from(TABLE)
-      .select("id,title,state,updated_at,pinned_at,folder_id,course_title:territory->plan->>title")
+      .select("id,title,state,updated_at,pinned_at,folder_id,course_title:territory->plan->>title,preview:document->moments->-1->>assistantText")
       .eq("deleted", false)
       .order("pinned_at", { ascending: false, nullsFirst: false })
       .order("updated_at", { ascending: false })
       .limit(200);
     if (!error && data) {
       return data.map((row) => {
-        const typed = row as {
+        // `as unknown` because supabase-js's compile-time select parser cannot read the negative
+        // array index (`->-1`) in the preview extraction — the SERVER parses it fine (verified
+        // against production PostgREST 2026-08-30; a parse failure is a 400, and the probe came
+        // back permission-denied, i.e. parsed and executed). The runtime rows are untouched.
+        const typed = row as unknown as {
           id: string;
           title: string;
           state: string;
@@ -313,6 +326,7 @@ export async function listCanvases(userId: string | null): Promise<CanvasSummary
           pinned_at: string | null;
           folder_id: string | null;
           course_title: string | null;
+          preview: string | null;
         };
         return {
           id: typed.id,
@@ -322,6 +336,7 @@ export async function listCanvases(userId: string | null): Promise<CanvasSummary
           pinnedAt: typed.pinned_at,
           folderId: typed.folder_id,
           courseTitle: typed.course_title,
+          preview: typed.preview,
         };
       });
     }
@@ -364,9 +379,9 @@ export async function setCanvasFolder(userId: string | null, id: string, folderI
 
 export async function listFolders(userId: string | null): Promise<Folder[]> {
   if (!userId) return [];
-  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at,icon,color,instructions").order("name");
+  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at,icon,color,instructions,pinned_at").order("name");
   if (error || !data) return [];
-  return (data as { id: string; name: string; parent_id: string | null; created_at: string; icon: string | null; color: string | null; instructions: string | null }[]).map((row) => ({
+  return (data as { id: string; name: string; parent_id: string | null; created_at: string; icon: string | null; color: string | null; instructions: string | null; pinned_at: string | null }[]).map((row) => ({
     color: row.color,
     createdAt: row.created_at,
     icon: row.icon,
@@ -374,6 +389,7 @@ export async function listFolders(userId: string | null): Promise<Folder[]> {
     instructions: row.instructions,
     name: row.name,
     parentId: row.parent_id,
+    pinnedAt: row.pinned_at,
   }));
 }
 
@@ -398,6 +414,18 @@ export async function customizeFolder(
   }
   emitCanvasesChanged();
   return true;
+}
+
+/** Pin or unpin a project, the same contract as `setCanvasPinned`: a timestamp, not a flag,
+ *  so the Pinned section keeps its own stable order. */
+export async function setFolderPinned(userId: string | null, id: string, pinned: boolean): Promise<void> {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("folders")
+    .update({ pinned_at: pinned ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (error) console.warn("[learn] project pin failed", error.message);
+  emitCanvasesChanged();
 }
 
 /**

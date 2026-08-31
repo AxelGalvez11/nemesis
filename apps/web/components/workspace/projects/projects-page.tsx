@@ -33,13 +33,25 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Folder as FolderIcon, Plus, Search } from "lucide-react";
+import { MoreHorizontal, Plus, Search } from "lucide-react";
 
+import { Codicon } from "@/components/desktop-ui/codicon";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
+import { ProjectCustomizeDialog } from "@/components/workspace/shell/project-customize-dialog";
 import {
   CANVASES_CHANGED_EVENT,
   createFolder,
+  deleteFolder,
   listCanvases,
   listFolders,
+  setFolderPinned,
   type CanvasSummary,
   type Folder,
 } from "@/lib/learn/canvas-store";
@@ -212,6 +224,7 @@ export interface ProjectsPreview {
 
 export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; userId: string | null }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -219,6 +232,8 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
   const [query, setQuery] = useState("");
   /** The draft name of a project being created, or null when none is. */
   const [naming, setNaming] = useState<string | null>(null);
+  /** The folder whose look/instructions dialog is open — the same dialog the sidebar opens. */
+  const [customizing, setCustomizing] = useState<Folder | null>(null);
 
   const refresh = useCallback(async () => {
     if (preview) {
@@ -249,6 +264,24 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
 
   const projects = useMemo(() => buildProjects(folders, canvases), [canvases, folders]);
   const shown = useMemo(() => visibleProjects(projects, filter, query), [filter, projects, query]);
+
+  /** Same copy the sidebar's delete uses — the row's canvases survive, and that has to be said. */
+  const removeProject = useCallback(
+    async (project: ProjectNode) => {
+      const sure = await confirm({
+        body:
+          project.children.length > 0
+            ? `Its canvases are kept — they go back to Unfiled — but the projects nested inside "${project.name}" are deleted with it.`
+            : `Its canvases are kept — they go back to Unfiled.`,
+        confirmLabel: "Delete project",
+        title: `Delete "${project.name}"?`,
+      });
+      if (!sure) return;
+      await deleteFolder(userId, project.id);
+      void refresh();
+    },
+    [confirm, refresh, userId],
+  );
 
   /**
    * 🔴 THE NAME IS AN ARGUMENT, NOT READ FROM STATE. Enter commits and blur commits, and Escape
@@ -382,11 +415,11 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
               <li className={cn("flex items-center", DIVIDER)} style={rowBox(0)}>
                 <NameCells
                   icon={
-                    <FolderIcon
+                    <Codicon
                       aria-hidden
                       className="shrink-0 text-(--ui-text-secondary)"
-                      size={ICON_PX}
-                      strokeWidth={1.8}
+                      name="folder"
+                      size={`${ICON_PX}px`}
                     />
                   }
                   indent={0}
@@ -414,7 +447,23 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
             )}
 
             {shown.map((project) => (
-              <ProjectRow key={project.id} onOpen={(id) => router.push(`/projects/${id}`)} project={project} />
+              <ProjectRow
+                key={project.id}
+                onCustomize={() =>
+                  setCustomizing({
+                    color: project.color,
+                    icon: project.icon,
+                    id: project.id,
+                    instructions: project.instructions,
+                    name: project.name,
+                    parentId: null,
+                  })
+                }
+                onDelete={() => void removeProject(project)}
+                onOpen={(id) => router.push(`/projects/${id}`)}
+                onPin={() => void setFolderPinned(userId, project.id, !project.pinnedAt)}
+                project={project}
+              />
             ))}
           </ul>
 
@@ -425,6 +474,12 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
           )}
         </div>
       </div>
+      <ProjectCustomizeDialog
+        folder={customizing}
+        onClose={() => setCustomizing(null)}
+        onSaved={() => void refresh()}
+        userId={userId}
+      />
     </main>
   );
 }
@@ -447,9 +502,21 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
  * change. What it does NOT get from this page is a click-through to ITS OWN `/projects/<id>` —
  * ChatGPT has no nested projects to have measured that behaviour from, so nothing here invents one.
  */
-function ProjectRow({ onOpen, project }: { onOpen: (id: string) => void; project: ProjectNode }) {
+function ProjectRow({
+  onCustomize,
+  onDelete,
+  onOpen,
+  onPin,
+  project,
+}: {
+  onCustomize: () => void;
+  onDelete: () => void;
+  onOpen: (id: string) => void;
+  onPin: () => void;
+  project: ProjectNode;
+}) {
   return (
-    <li>
+    <li className="group/row relative">
       <button
         className={cn("flex w-full items-center text-left transition-colors", DIVIDER, ROW_HOVER)}
         onClick={() => onOpen(project.id)}
@@ -457,7 +524,17 @@ function ProjectRow({ onOpen, project }: { onOpen: (id: string) => void; project
         type="button"
       >
         <NameCells
-          icon={<FolderIcon aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={ICON_PX} strokeWidth={1.8} />}
+          // 🔴 THE PROJECT'S OWN MARK, matching its sidebar row and its page header: the learner's
+          // chosen glyph in the learner's chosen colour, a plain folder otherwise.
+          icon={
+            <Codicon
+              aria-hidden
+              className={cn("shrink-0", !project.color && "text-(--ui-text-secondary)")}
+              name={project.icon ?? "folder"}
+              size={`${ICON_PX}px`}
+              style={project.color ? { color: project.color } : undefined}
+            />
+          }
           indent={0}
         >
           <span className={cn("min-w-0 flex-1 truncate", NAME_TEXT)}>{project.name}</span>
@@ -466,6 +543,24 @@ function ProjectRow({ onOpen, project }: { onOpen: (id: string) => void; project
           {modified(project.modifiedAt)}
         </span>
       </button>
+      {/* The row's own ⋯, in the trailing space the row already reserves — the same actions the
+          sidebar's project menu carries, minus the ones that only mean something over there. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={`${project.name} options`}
+          className="absolute top-1/2 right-[8px] flex size-[28px] -translate-y-1/2 items-center justify-center rounded-lg text-(--ui-text-secondary) opacity-0 transition-opacity hover:bg-black/[0.05] hover:text-(--ui-text-primary) focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 dark:hover:bg-white/[0.10]"
+        >
+          <MoreHorizontal aria-hidden size={18} strokeWidth={1.8} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onCustomize}>Project settings</DropdownMenuItem>
+          <DropdownMenuItem onClick={onPin}>{project.pinnedAt ? "Unpin project" : "Pin project"}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onDelete} variant="destructive">
+            Delete project
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </li>
   );
 }

@@ -16,10 +16,13 @@
 //     (at any depth), falling back to the folder's own `created_at` when it holds nothing yet.
 //     That is also the honest answer to "when did I last work on this project".
 //
-//   * `folders` HAS NO `pinned_at`; only `learning_canvases` does. So the "Pinned" filter means
-//     *this project holds something the learner pinned*, which is real data and a real filter.
-//     A per-project pin would need a migration, and inventing one in the browser (localStorage)
-//     would be a pin the sidebar could not see.
+//   * `folders.pinned_at` EXISTS NOW (20260830T40) — the migration the first version of this
+//     comment said a real pin would need. The "Pinned" filter reads it: pinned means *the learner
+//     pinned this project*, exactly like a pinned canvas, and the sidebar's Pinned section shows
+//     the same rows this filter keeps. `holdsPinned` (a project holding a pinned canvas) is still
+//     computed — the sidebar's Pinned section is not the only reader of the tree — but it is no
+//     longer what "Pinned" means here, because a filter named like the reference's must mean what
+//     the reference's means.
 
 import type { CanvasSummary, Folder } from "@/lib/learn/canvas-store";
 
@@ -30,6 +33,14 @@ export interface ProjectNode {
   modifiedAt: string;
   /** True when this project, or anything nested inside it, holds a pinned canvas. */
   holdsPinned: boolean;
+  /** The learner's own pin on the PROJECT itself (`folders.pinned_at`), or null. */
+  pinnedAt: string | null;
+  /** The project's own look and standing instructions, carried through from `Folder` so the
+   *  pages drawing a node (`/projects`, `/projects/<id>`) can wear the learner's icon and colour
+   *  without a second lookup. */
+  icon: string | null;
+  color: string | null;
+  instructions: string | null;
   /** Canvases filed directly in this folder, most recently worked first. */
   canvases: CanvasSummary[];
   /** Sub-projects. The database caps nesting at two levels (`folders_depth_guard`). */
@@ -84,11 +95,15 @@ export function buildProjects(folders: readonly Folder[], canvases: readonly Can
     for (const child of children) modifiedAt = later(modifiedAt, child.modifiedAt);
     return {
       canvases: own,
-      children,
+      children: children.sort(byRecency),
+      color: folder.color ?? null,
       holdsPinned: own.some((canvas) => Boolean(canvas.pinnedAt)) || children.some((child) => child.holdsPinned),
+      icon: folder.icon ?? null,
       id: folder.id,
+      instructions: folder.instructions ?? null,
       modifiedAt,
       name: folder.name,
+      pinnedAt: folder.pinnedAt ?? null,
     };
   };
 
@@ -142,6 +157,8 @@ export function visibleProjects(
   query: string,
 ): ProjectNode[] {
   return projects
-    .filter((project) => (filter === "pinned" ? project.holdsPinned : true))
+    // "Pinned" is the project's OWN pin (`folders.pinned_at`) — the same fact the sidebar's
+    // Pinned section shows — not the older "holds a pinned canvas" reading. See the header.
+    .filter((project) => (filter === "pinned" ? Boolean(project.pinnedAt) : true))
     .filter((project) => matchesQuery(project, query));
 }
