@@ -42,7 +42,11 @@ test("🔴 every way material arrives goes through staging", () => {
 
 test("🔴 only Start hands the files over", () => {
   const start = bodyOf("start");
-  assert.match(start, /if \(staged\.length > 0\) putPending\(staged\)/);
+  // 🔴 REPOINTED 2026-08-31 (owner: "read them on drop, like chatgpt"): `start` hands over the
+  // staged files PAIRED with the reads already running for them, rather than the bare list. What
+  // this test guards is untouched — only Start hands anything over, and it happens exactly once.
+  assert.match(start, /if \(staged\.length > 0\) \{\s*putPending\(/);
+  assert.match(start, /staged\.map<PendingAttachment>\(\(file\) => \(\{/);
   assert.match(start, /router\.push|setTimeout\(\(\) => router\.push/);
   // 🔴 AND `putPending` HAPPENS EXACTLY ONCE IN THE FILE. Two stashes would mean the second clears
   // the first — `takePending` reads once and clears — so a file would vanish rather than duplicate.

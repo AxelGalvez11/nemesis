@@ -80,17 +80,34 @@ function DocGlyph({ tint }: { tint: string }) {
   );
 }
 
+/**
+ * How far this file has got, said on the card's own second line.
+ *
+ * 🔴 THE TYPE LINE CARRIES IT, RATHER THAN A SPINNER OR A BAR. §5 rules out a centred spinner and
+ * a progress bar without real progress, and the reason applies at this size too: "Reading…" is a
+ * step that is genuinely running, while a bar would have to invent a percentage nobody measured.
+ * The line returns to the file's type the moment the read lands, so the card at rest is exactly
+ * the card that was measured off the reference.
+ */
+export type AttachmentState = "reading" | "ready" | "failed";
+
 export function AttachmentCard({
   className,
   name,
   onRemove,
+  state = "ready",
 }: {
   className?: string;
   name: string;
   /** Omitted for a file already sent — the reference's card has no × once it is committed. */
   onRemove?: () => void;
+  state?: AttachmentState;
 }) {
   const kind = fileKind(name);
+  // 🔴 THE NAME OF THE STEP, NOT AN ADJECTIVE ABOUT THE FILE. "Reading…" is what Nemesis is doing;
+  // "Couldn't read" says the one thing the learner can act on (remove it, or send anyway and ask
+  // about the rest). Neither line is a status code dressed up as English.
+  const line = state === "reading" ? "Reading…" : state === "failed" ? "Couldn't read" : kind;
   return (
     <div
       className={cn(
@@ -123,8 +140,13 @@ export function AttachmentCard({
         <span className="truncate text-[length:var(--canvas-text-small)] font-medium leading-[20px] text-(--ui-text-primary)">
           {name}
         </span>
-        <span className="truncate text-[length:var(--canvas-text-meta)] leading-[16px] text-(--ui-text-secondary)">
-          {kind}
+        <span
+          className={cn(
+            "truncate text-[length:var(--canvas-text-meta)] leading-[16px]",
+            state === "failed" ? "text-(--destructive)" : "text-(--ui-text-secondary)",
+          )}
+        >
+          {line}
         </span>
       </span>
       {onRemove ? (
