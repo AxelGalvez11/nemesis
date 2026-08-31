@@ -50,12 +50,11 @@ test("🔴 the milestones are reported when stated, not when the turn returns", 
 // this feature not to become. The caption and the lockout are two questions and had one answer.
 test("🔴 naming a running step does not lock the composer", () => {
   assert.match(SESSION, /const \[work, setWork\] = useState<string \| null>\(null\)/);
-  // 🔴 THE CALLBACK GREW A BODY, AND WHAT THIS PINS IS UNCHANGED. It was `(label) => setWork(label)`
-  // until 2026-08-25, when the label started arriving with a mark beside it (see `workMark` in
-  // thinking-phases.ts) and the arrow gained a block. The rule this test is about was never the
-  // shape of the arrow: it is that a step label lands in `setWork` and NEVER in `setBusy`, because
-  // `busy` disables the composer and naming a running step must not stop somebody typing.
-  assert.match(SESSION, /\(label, mark\) => \{\n\s*setWork\(label\);/);
+  // 🔴 THE RULE HERE WAS NEVER THE SHAPE OF THE ARROW: a step label lands in `setWork` and NEVER
+  // in `setBusy`, because `busy` disables the composer and naming a running step must not stop
+  // somebody typing. (The arrow grew a body 2026-08-25 when a mark rode beside the label, and
+  // shrank back 2026-08-30 when the mark died with the ChatGPT-parity preview.)
+  assert.match(SESSION, /\(label\) => setWork\(label\)/);
   assert.ok(
     !/setBusy\(label \?/.test(SESSION),
     "a step label is back on `busy`, which disables the composer while it runs",

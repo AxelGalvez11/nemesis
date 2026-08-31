@@ -37,17 +37,41 @@ const TURN_CODE = strip(TURN);
 
 // ── the chat is the front door ──────────────────────────────────────────────────────────────
 
-test("🔴🔴🔴 the chat is the ONLY view — there is no second one to be stuck in", () => {
-  // Owner, 2026-08-30: *"why is latest output option even there in the first place? that seems
-  // unnecessary."* The one-answer view, its toggle and `lib/learn/canvas-view.ts` are deleted.
-  // This is the terminal form of a three-report defect: first the view existed with a stored pin
-  // (three "history is missing" reports), then the pin was killed, and hours later the owner cut
-  // the view itself. Calibration: reintroduce a `useCanvasView` import, a `view ===` comparison,
-  // or the storage key and this reddens alone.
-  assert.ok(!/useCanvasView|use-canvas-view/.test(CANVAS), "the second view is back");
-  assert.ok(!/view === "conversation"|view === "answer"/.test(CANVAS), "something is comparing a view again");
-  assert.ok(!/nemesis\.canvas\.view/.test(CANVAS), "the stored view pin is back");
-  assert.match(CANVAS, /const threadOpen = !viewing;/, "the thread is gated on something beside a rewind");
+test("🔴🔴 the chat is the DEFAULT view, and the second one is a door, not a pin", () => {
+  // Two owner rulings, hours apart, 2026-08-30. Morning (#937): *"why is latest output option
+  // even there in the first place?"* — the view died with its buried menu row. Evening: *"also
+  // there should be a way to chat mode to canvas mode"* — the view came back with a VISIBLE,
+  // gated glyph. What must never come back is the part that generated three defect reports: the
+  // stored pin. The view is in-memory per visit; every canvas opens on the conversation.
+  const HOOK = strip(readFileSync(new URL("./use-canvas-view.ts", import.meta.url), "utf8"));
+  const MODEL = strip(readFileSync(new URL("../../../lib/learn/canvas-view.ts", import.meta.url), "utf8"));
+  assert.match(MODEL, /DEFAULT_CANVAS_VIEW: CanvasView = "conversation"/, "the chat stopped being the default");
+  assert.match(HOOK, /useState<CanvasView>\(DEFAULT_CANVAS_VIEW\)/, "the view no longer starts at the default");
+  assert.ok(!/getItem|setItem/.test(HOOK), "the stored view pin is back — the three-report defect returns");
+  assert.match(HOOK, /removeItem\(CANVAS_VIEW_STORAGE_KEY\)/, "old browsers' pins are no longer healed on mount");
+  assert.match(CANVAS, /const threadOpen = view === "conversation" && !viewing;/, "the thread gate lost the view");
+});
+
+test("🔴 the view door is a gated header glyph, wording owned by canvasViewAction", () => {
+  const CONTROLS = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
+  const HEADER = strip(readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8"));
+  const at = CONTROLS.indexOf("export function CanvasViewControl");
+  assert.ok(at > 0, "the view control is gone");
+  const body = CONTROLS.slice(at, at + 900);
+  assert.match(body, /canvasViewAction\(view\)/, "the control no longer writes its wording through canvasViewAction");
+  assert.match(body, /aria-label=\{action\}/, "the control's accessible name is not the action's own words");
+  assert.match(body, /onClick=\{onToggleView\}/, "the control does not actually switch the view");
+  assert.match(body, /view === "conversation" \? "output" : "comment-discussion"/, "the door's glyphs changed — repoint the font check below");
+  const css = readFileSync(new URL("../../../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url), "utf8");
+  for (const name of ["output", "comment-discussion"]) {
+    assert.ok(css.includes(`.codicon-${name}:before`), `codicon-${name} is not in the font`);
+  }
+  assert.match(
+    HEADER,
+    /\{view && onToggleView && <CanvasViewControl onToggleView=\{onToggleView\} view=\{view\} \/>\}/,
+    "the header stopped gating the door on a conversation existing",
+  );
+  assert.match(CANVAS, /onToggleView=\{conversationOffered \? toggleView : undefined\}/, "the canvas stopped withholding the door");
 });
 
 test("🔴🔴 the thread is in the SAME scroller as the live answer, not an overlay over it", () => {
@@ -203,7 +227,11 @@ test("🔴 the options menu did not survive anywhere, and neither did its rows' 
   assert.ok(!/export function OptionsMenu/.test(controls), "the options menu is back");
   assert.ok(!/OptionsMenu|MinimapControl/.test(header.replace(/import[^;]+;/g, "")), "the header mounts a dead control again");
   assert.ok(!/LEARNING_STYLE|LearningStyle/.test(controls), "the teaching-style picker is back");
-  assert.ok(!/canvasViewAction|CanvasView\b/.test(controls), "the view switch is back in the controls");
+  // 🔴 The view switch is deliberately NOT on this list any more: the owner ordered it back the
+  // same evening (*"there should be a way to chat mode to canvas mode"*) — as a visible header
+  // glyph, never as a menu. The two tests above this one are its fence; what stays banned here
+  // is the MENU it used to hide in.
+  assert.ok(!/MenuItem[\s\S]{0,200}canvasViewAction/.test(controls), "the view switch crawled back into a menu row");
 });
 
 test("🔴🔴 every control in the floating strip can actually be clicked", () => {

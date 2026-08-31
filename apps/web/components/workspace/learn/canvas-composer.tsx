@@ -62,6 +62,20 @@ import { cn } from "@/lib/utils";
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { useCanvasDictation } from "./use-canvas-dictation";
+import { useVoiceConversation } from "./use-voice-conversation";
+import type { ResponseAudio } from "./use-response-audio";
+
+/** An inert player for surfaces that mount the composer without one (previews). Never plays, so
+ *  the voice loop simply treats every turn as a quiet one. */
+const IDLE_REPLY_AUDIO = {
+  complete: false,
+  currentTime: 0,
+  failure: null,
+  playing: false,
+  reach: 0,
+  status: "idle",
+  stop: () => {},
+} as const;
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
 import { AttachmentCard, AttachmentRow } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
@@ -122,6 +136,13 @@ interface CanvasComposerProps {
    * composer-intent.ts for the full account and for why `answer` outranks `start`.
    */
   intent: ComposerIntent;
+  /** The answer's player, watched by the voice conversation so the mic re-opens when the spoken
+   *  reply finishes. The SAME controller the header's transport bar drives — pausing or scrubbing
+   *  there and the loop here read one state. */
+  voiceReplyAudio?: ResponseAudio;
+  /** Reports the voice conversation starting and ending, so the canvas can force replies spoken
+   *  for the session (see `alwaysSpeak` in use-canvas-voice.ts). */
+  onVoiceConversation?: (active: boolean) => void;
   /**
    * Nemesis asked the learner a question about what to build, and they typed rather than tapped.
    *
@@ -133,7 +154,6 @@ interface CanvasComposerProps {
    */
   onClarify: (text: string) => void;
   busy: boolean;
-  busyLabel?: string;
   /* 🔴 `listenSignal` WAS HERE AND IS GONE, 2026-08-25. It was a nonce the voice hook bumped once
      Nemesis stopped speaking, so the microphone opened by itself after a question. The owner
      removed the menu row that turned that on — *"remove … the 'open mic after each question'
@@ -244,8 +264,9 @@ export function CanvasComposer({
   onCapability,
   onRecord = null,
   intent,
+  voiceReplyAudio,
+  onVoiceConversation,
   busy,
-  busyLabel,
   advanceBusy = false,
   attachedCount = 0,
   recentAttachments = [],
@@ -479,6 +500,8 @@ export function CanvasComposer({
     // menu's guard), so this branch cannot normally hold one — but a stale selection surviving into
     // an answer would attach a curriculum request to a learner's answer to a question, which is the
     // class of defect `composer-intent.ts` exists to end. Stated here rather than assumed.
+    // A held voice conversation resumes on the learner's own send — see use-voice-conversation.ts.
+    voiceLoop.noteSent();
     if (intent.kind === "answer") onAnswer(value, inputModality.current, Date.now() - startedAt.current);
     // 🔴🔴 BEFORE `onAsk`, AND WITHOUT THIS LINE THE CARD IS DECORATION. `onAsk` opens a fresh
     // conversational turn: the learner's "academic" would be read as a new question, the pending
@@ -605,6 +628,29 @@ export function CanvasComposer({
   // the material that asks to be read — a passage or a correction — because §38 says there is ONE
   // button and §39 says what triggers it is the COGNITIVE MODE the policy declares, not anything
   // the composer can see. What is left here is what the composer was always for: sending.
+  // The turn-based voice conversation (owner 2026-08-30: *"the send button should function like
+  // in chatgpt becoming the voice button… it should work like claude where its not real time
+  // voice but just quick tts and stt"*). The loop lives in use-voice-conversation.ts; what this
+  // component contributes is the same dictation instance (one microphone), the same submit (one
+  // pipeline), and the buttons below.
+  const voiceLoop = useVoiceConversation({
+    busy,
+    dictation,
+    onActiveChange: onVoiceConversation,
+    replyAudio: voiceReplyAudio ?? IDLE_REPLY_AUDIO,
+    submit: () => {
+      // 🔴 A GRADED ANSWER IS NEVER AUTO-SENT. Recognition mishears, and a misheard answer
+      // written into the evidence is indistinguishable from a wrong one — the same rule that
+      // keeps `acceptDictation` from submitting. The words stay in the box; the learner sends.
+      if (intent.kind === "answer") return "held";
+      if (busy) return "retry";
+      const value = text.trim();
+      if (!value && !canStartFromAttachment && selected.length === 0) return "retry";
+      submit();
+      return "sent";
+    },
+  });
+
   const control = composerControl({
     hasResponse: Boolean(text.trim()),
     hasAttachment: canStartFromAttachment,
@@ -854,6 +900,11 @@ export function CanvasComposer({
                 <div className="ml-[12px] flex min-w-0 flex-1 items-center">
                   <CanvasVoiceBars live />
                 </div>
+                {/* 🔴 IN A VOICE CONVERSATION THE ONLY CONTROL IS STOP — measured on claude.ai
+                    2026-08-30: while listening, their composer offers exactly one way out. The
+                    dictation pair (cancel / finish) belongs to dictation, where the learner
+                    reviews the words before sending; a conversation sends itself. */}
+                {voiceLoop.active ? null : (
                 <button
                   aria-label="Cancel dictation"
                   className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
@@ -863,10 +914,14 @@ export function CanvasComposer({
                 >
                   <Codicon name="close" size="18px" />
                 </button>
+                )}
                 {/* Filled and coloured -- MEASURED, not chosen. ChatGPT's own idle-composer action
                     (Start Voice, since nothing is typed) is a solid coloured circle, never a grey
                     glyph; ours picks up the same principle with the product's own accent instead of
                     copying their exact hue. See the send button below for the other half. */}
+                {voiceLoop.active ? (
+                  <VoiceStopButton onClick={voiceLoop.end} />
+                ) : (
                 <button
                   aria-label="Finish dictation"
                   className="ml-[10px] flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
@@ -876,6 +931,7 @@ export function CanvasComposer({
                 >
                   <Codicon name="check" size="20px" />
                 </button>
+                )}
               </>
             ) : (
               <>
@@ -918,12 +974,11 @@ export function CanvasComposer({
                     if (event.key === "Escape" && selected.length > 0) onClearSelection();
                   }}
                   placeholder={
-                    busy
-                      ? // Strip any trailing ellipsis the label already carries before adding one --
-                        // THINKING_COPY's captions are Runtime's copy and may or may not end in "…"
-                        // (see thinking-phases.ts); doubling it up reads as a typo, not as emphasis.
-                        `${(busyLabel ?? "Working").replace(/…$/, "")}…`
-                      : capability
+                    // 🔴 THE PLACEHOLDER NO LONGER ANNOUNCES THE WAIT (owner 2026-08-30: match
+                    // ChatGPT's thinking presentation). Measured that day: the reference keeps its
+                    // resting prompt while it works — the one "Thinking" on screen is the caption
+                    // shimmering in the thread, and a second copy down here said it twice.
+                    capability
                         ? // The chip names the capability; the placeholder asks the one question
                           // that capability needs answered. 🔴 KEYED OFF THE CAPABILITY, NOT OFF
                           // `=== "course"`, because the named form silently sent every other
@@ -984,12 +1039,33 @@ export function CanvasComposer({
                     ready to send) stay visibly different without a colour swap between them. */}
                 {/* 🔴 ALWAYS PRESENT, DIMMED WHEN EMPTY. `showSend` used to remove it from the DOM, so the
                     pill changed shape on the first keystroke. See `ComposerSend`. */}
+                {/* 🔴 THE SEND SLOT IS THE VOICE DOOR WHILE THE BOX IS EMPTY (owner 2026-08-30:
+                    *"the send button should function like in chatgpt becoming the voice button
+                    until text is manually [typed]"* — and claude.ai measured the same evening does
+                    exactly this: bars in the send slot, arrow the moment words exist). Same
+                    circle, same accent, so the pill keeps its shape on the first keystroke — the
+                    rule the comment above this slot has always stated. While the conversation
+                    runs, the slot is its stop. */}
+                {voiceLoop.active ? (
+                  <VoiceStopButton className="ml-[8px]" onClick={voiceLoop.end} />
+                ) : !showSend && !busy && voiceLoop.offered ? (
+                  <button
+                    aria-label="Start a voice conversation"
+                    className="ml-[8px] flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
+                    onClick={voiceLoop.begin}
+                    title="Start a voice conversation"
+                    type="button"
+                  >
+                    <VoiceBarsGlyph />
+                  </button>
+                ) : (
                 <ComposerSend
                   busy={busy}
                   disabled={!showSend}
                   label="Send"
                   onClick={submit}
                 />
+                )}
 
               </>
             )}
@@ -1010,5 +1086,37 @@ export function CanvasComposer({
         </div>
       </div>
     </>
+  );
+}
+
+/** The voice door's bars — drawn, not imported, like every house mark. Static: the LIVE waveform
+ *  belongs to CanvasVoiceBars while listening; a button glyph that wiggled would claim a
+ *  microphone that is not open. */
+function VoiceBarsGlyph() {
+  return (
+    <svg aria-hidden fill="currentColor" height="18" viewBox="0 0 18 18" width="18">
+      <rect height="6" rx="1" width="2" x="2" y="6" />
+      <rect height="12" rx="1" width="2" x="6" y="3" />
+      <rect height="8" rx="1" width="2" x="10" y="5" />
+      <rect height="4" rx="1" width="2" x="14" y="7" />
+    </svg>
+  );
+}
+
+/** The conversation's one way out, wherever the loop currently is (listening, waiting, spoken). */
+function VoiceStopButton({ className, onClick }: { className?: string; onClick: () => void }) {
+  return (
+    <button
+      aria-label="End the voice conversation"
+      className={cn(
+        "flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90",
+        className,
+      )}
+      onClick={onClick}
+      title="End the voice conversation"
+      type="button"
+    >
+      <Codicon name="primitive-square" size="16px" />
+    </button>
   );
 }

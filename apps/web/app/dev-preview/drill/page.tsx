@@ -90,7 +90,6 @@ export default function DrillPreviewPage() {
           {step && step.kind !== "encode" && (
             <CanvasComposer
               busy={false}
-              busyLabel=""
               onAnswer={(text) => record(text, false)}
               onAsk={() => undefined}
           onClarify={() => undefined}

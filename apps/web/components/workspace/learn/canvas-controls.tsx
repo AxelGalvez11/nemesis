@@ -31,6 +31,7 @@ import { deckDesign } from "@/lib/export/deck-designs";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
+import { canvasViewAction, type CanvasView } from "@/lib/learn/canvas-view";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { OutputPreview } from "./output-preview";
@@ -113,6 +114,23 @@ export const CONTROL =
   // the dots would fly to the corner of the whole glyph row. A badge belongs to its button.
   "pointer-events-auto relative flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
+
+/** The chat↔canvas door — a visible, gated glyph (owner, evening of 2026-08-30: *"there should
+ *  be a way to chat mode to canvas mode"*, hours after the morning cut deleted the view with its
+ *  buried menu row). The glyph names the DESTINATION: an output mark while the conversation is
+ *  open, a speech mark while the focused output is; `canvasViewAction` owns the words so the
+ *  tooltip and a screen reader cannot drift from what the click does. The header withholds both
+ *  props until there is a conversation to leave — so a brand-new canvas still shows a bare
+ *  title, and the no-unconditional-control rule of icons-earn-their-place.test.ts holds. */
+export function CanvasViewControl({ onToggleView, view }: { onToggleView: () => void; view: CanvasView }) {
+  const action = canvasViewAction(view);
+  return (
+    <button aria-label={action} className={cn(CONTROL, "shrink-0")} onClick={onToggleView} title={action} type="button">
+      <Codicon name={view === "conversation" ? "output" : "comment-discussion"} size="20px" />
+    </button>
+  );
+}
+
 
 // 🔴🔴 EVERY PANEL HANGS OFF THE ROW, NOT OFF ITS OWN GLYPH (owner 2026-08-30: *"Can you make sure
 // source panel and map are both right side aligned?"*).

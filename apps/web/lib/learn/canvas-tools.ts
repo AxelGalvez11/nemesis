@@ -30,7 +30,6 @@
 
 import { WEB_WORKSPACE_AGENT_TOOL_NAMES, toolDescription, type PendingDelete } from "@nemesis/shared";
 
-import type { ThinkingMark } from "@/lib/learn/thinking-phases";
 
 import { EXAM_ITEM_RULES_SHORT } from "@/lib/workspace/item-writing";
 
@@ -79,7 +78,6 @@ export interface ToolRoundResult {
 /** What the strip says while one call runs, and which mark sits beside it. */
 export interface WorkNote {
   readonly label: string;
-  readonly mark: ThinkingMark;
 }
 
 /**
@@ -165,12 +163,12 @@ export async function loadToolCatalogue(): Promise<{ block: string; index: Compo
  */
 export function labelFor(name: string, app: string | undefined): WorkNote {
   if (name.startsWith("list_calendar") || name === "find_calendar_issues") {
-    return { label: "Reading the calendar", mark: "calendar" };
+    return { label: "Reading the calendar" };
   }
-  if (name.startsWith("add_calendar")) return { label: "Adding to the calendar", mark: "calendar" };
-  if (name.startsWith("update_calendar")) return { label: "Changing the calendar", mark: "calendar" };
-  if (name.startsWith("delete_calendar")) return { label: "Checking before deleting", mark: "calendar" };
-  return { label: app ? `Working in ${app}` : "Working in a connected app", mark: "apps" };
+  if (name.startsWith("add_calendar")) return { label: "Adding to the calendar" };
+  if (name.startsWith("update_calendar")) return { label: "Changing the calendar" };
+  if (name.startsWith("delete_calendar")) return { label: "Checking before deleting" };
+  return { label: app ? `Working in ${app}` : "Working in a connected app" };
 }
 
 function readPending(result: unknown): PendingConfirmation | null {

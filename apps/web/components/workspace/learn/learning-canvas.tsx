@@ -36,7 +36,7 @@ import type { CanvasBlock, CanvasOutput } from "@/lib/learn/canvas-model";
 import { buildAnchor, surroundingSentence, type CanvasSelection } from "@/lib/learn/canvas-selection";
 import type { PolicyOverride } from "@/lib/learn/policy-override";
 import type { TeachingStrategyId } from "@/lib/learn/teaching-strategy";
-import { THINKING_COPY, thinkingMark } from "@/lib/learn/thinking-phases";
+import { THINKING_COPY } from "@/lib/learn/thinking-phases";
 import { previewLine, previewWorthShowing } from "@/lib/learn/turn-preview";
 import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
@@ -84,6 +84,7 @@ import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
+import { useCanvasView } from "./use-canvas-view";
 import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
@@ -127,6 +128,26 @@ const CANVAS_EXIT_ROUTE = "/learn";
  * about to land is a visible regression on every slow connection.
  */
 const STRANDED_MS = 2_000;
+
+/**
+ * How long after this canvas mounts an arriving surface still counts as ARRIVING.
+ *
+ * 🔴🔴 WITHOUT THIS THE FADE FIRES TWICE, AND THE SECOND ONE IS MID-SESSION. `LearningCanvas` has
+ * two surfaces: a pre-ready one while the canvas is still being read out of the database, and the
+ * real one after. They are different trees, so React mounts the second — and an arrival animation
+ * on it would play whenever that happens, not when the learner arrived.
+ *
+ * Measured against the dev seed: from the front door the real surface is up within tens of ms of
+ * the mount, because the canvas was just minted. On a DEEP LINK or a refresh the pre-ready surface
+ * holds for **five to nine seconds** first — so the learner has been looking at a character for
+ * most of ten seconds when the swap happens, and fading it in there would read as the page
+ * glitching rather than as anything arriving.
+ *
+ * 1.2s sits an order of magnitude clear of the first case and nowhere near the second, and it is
+ * comfortably past the animation's own 440ms (320 plus its 120 delay) so the class is only ever
+ * dropped from an element that has already finished.
+ */
+const ARRIVING_MS = 1_200;
 
 /** What "send" means when a passage is staged and nothing was typed.
  *
@@ -255,6 +276,23 @@ export function LearningCanvas({
    * holding it is still on screen, which is the definition of the push not having worked, and it
    * is cancelled on unmount by the effect below.
    */
+  /**
+   * When this canvas mounted, and therefore whether what is on screen is an ARRIVAL.
+   *
+   * 🔴 `useState` WITH A LAZY INITIALISER, NOT A REF, AND NOT AN EFFECT. An effect runs after the
+   * browser has painted, so the class would land a frame late and the content would flash at full
+   * opacity before restarting the animation — the exact flicker this is here to remove. A lazy
+   * initialiser is evaluated once, during the first render, which is early enough.
+   */
+  const [mountedAt] = useState(() => Date.now());
+  /**
+   * `canvas-enter` while this is still an arrival, and nothing once it is not.
+   *
+   * 🔴 IT IS SAFE TO STOP RETURNING THE CLASS. `ARRIVING_MS` is nearly three times the animation's
+   * own length, so by the time a later render drops it the element has finished and is sitting at
+   * its natural opacity. Removing a finished `both` animation changes nothing on screen.
+   */
+  const arriving = Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
   const strandedTimer = useRef<number | null>(null);
   const leave = useCallback(() => {
     router.push(CANVAS_EXIT_ROUTE);
@@ -1232,7 +1270,13 @@ export function LearningCanvas({
    * and the learner would hear the beginning of the answer over and over. It is the same signal the
    * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
    */
-  const voice = useCanvasVoice(turnInFlight ? null : spokenReply);
+  // 🔴 A VOICE CONVERSATION IS A SESSION, NOT A SETTING (owner 2026-08-30 evening: entered from
+  // the composer, "like claude", turn-based STT+TTS). While one runs, replies are spoken — and
+  // the stored autoplay preference died that same morning (#937), so this is the one automatic
+  // play left in the product. See `alwaysSpeak` in use-canvas-voice.ts for why it is an argument
+  // and not the preference returning.
+  const [voiceConversing, setVoiceConversing] = useState(false);
+  const voice = useCanvasVoice(turnInFlight ? null : spokenReply, voiceConversing);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -1361,12 +1405,15 @@ export function LearningCanvas({
    */
   const [rewound, setRewound] = useState<string | null>(null);
 
-  // 🔴🔴 THERE IS NO SECOND VIEW ANY MORE — owner, 2026-08-30: *"why is latest output option even
-  // there in the first place? that seems unnecessary."* The one-answer "answer" view, its toggle,
-  // its localStorage pin and `lib/learn/canvas-view.ts` are all deleted. The conversation IS the
-  // canvas. That family of defects ends with it: the pinned view produced the same "chat mode not
-  // showing conversation history" report three times before being healed earlier the same day, and
-  // this removes the state that could ever hide the thread again.
+  // 🔴🔴 THE SECOND VIEW IS BACK, BY THE SAME OWNER, THE SAME DAY. The morning cut (#937) read
+  // *"why is latest output option even there in the first place?"* as the VIEW being unnecessary
+  // and deleted it whole. By evening, looking at the chat: *"also there should be a way to chat
+  // mode to canvas mode"*. What was actually unnecessary was the DOOR he was shown — a wordy row
+  // buried in a menu — not the place it led. The view returns with a visible, gated glyph in the
+  // header (`CanvasViewControl`) and none of what made it a defect factory: no localStorage pin
+  // (#930's in-memory rule stands, fenced below in canvas-chat-is-the-product.test.ts), and the
+  // conversation is the default on every visit.
+  const { toggle: toggleView, view } = useCanvasView();
 
 
   /**
@@ -1483,7 +1530,10 @@ export function LearningCanvas({
    * died on 2026-08-30 (see the note above `rewound`'s sibling state), so `!viewing` is the whole
    * condition.
    */
-  const threadOpen = !viewing;
+  const threadOpen = view === "conversation" && !viewing;
+  // The door is withheld until there is a conversation to switch away from, and monotonic within
+  // a session — the 2026-08-19 rule: chrome may arrive and stay, never come and go.
+  const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
 
   /**
    * Re-ask a question and let the answer land as a new turn.
@@ -1580,7 +1630,10 @@ export function LearningCanvas({
   if (!session.ready) {
     return (
       <CanvasSurface onExit={leave}>
-        <div className="flex h-full items-center justify-center">
+        {/* 🔴 UNCONDITIONAL, UNLIKE THE REAL SURFACE'S. This branch exists only while the canvas is
+            being read out of the database, which is only ever on the way in — there is no
+            mid-session render of it to protect against, so it needs no `ARRIVING_MS` window. */}
+        <div className="canvas-enter flex h-full items-center justify-center">
           {/* Nothing is docked yet — there is no composer to stand above — so the character
               simply holds the middle, which is where it would have walked to anyway.
               🔴🔴 `station` IS PASSED, AND THE COMMENT ABOVE WAS A LIE WITHOUT IT. The dock falls back
@@ -1656,20 +1709,8 @@ export function LearningCanvas({
   const preparingLabel = previewWorthShowing({ milestones: session.milestones, systemLabel })
     ? previewLine({ milestones: session.milestones, stage: session.stage, systemLabel })
     : null;
-  // 🔴 THE MARK IS DERIVED FROM THE SAME THREE FACTS, IN THE SAME ORDER, as `systemLabel` above —
-  // that is the only thing stopping a magnifier appearing beside "Reading your material".
-  // `searching` is the most specific truth available and outranks the rest, and it is true only
-  // while a turn is in flight AND real hostnames have come back, which is the same gate the chips
-  // themselves are drawn behind.
-  const preparingMark = thinkingMark({
-    busyKind: busy.kind,
-    phase: policy.phase,
-    searching: turnInFlight && session.searchedDomains.length > 0,
-    work: session.work,
-    // 🔴 THE MARK THE LABEL BROUGHT WITH IT, and nothing else. `thinkingMark` still refuses to
-    // invent one for a label that arrived bare — see the note on `workMark` there.
-    workMark: session.workMark,
-  });
+  // (The mark that used to be derived here beside the label is gone — owner 2026-08-30, ChatGPT
+  // parity for the thinking preview. See thinking-phases.ts for the tombstone.)
 
   // 🔴 ONE PLACE DECIDES WHO RECEIVES THE ANSWER, AND IT CANNOT NAME TWO. The composer used to pick
   // with `policyOwns ? … : …`, which was safe only while ownership was all-or-nothing. Now that a
@@ -1883,6 +1924,8 @@ export function LearningCanvas({
       onExit={leave}
       chrome={
       <CanvasHeader
+        onToggleView={conversationOffered ? toggleView : undefined}
+        view={conversationOffered ? view : undefined}
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
         // 🔴 THE SOURCES PANEL HAS TO BE ABLE TO SAY "THE MODEL" (N10), AND IT ASKS THE CLAIMS
@@ -2009,7 +2052,12 @@ export function LearningCanvas({
       )}
 
       <SourceTabPane />
-      <div className={`relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
+      {/* 🔴 `canvas-enter` — THE ANSWER REGION FADES IN WITH THE CONTROLS RATHER THAN APPEARING
+          WITH THEM. Owner, 2026-08-30: *"i want a smooth fade in of everything."* The question
+          chip, the thinking caption and the thread all used to land on the same frame as the route
+          swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
+          the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
@@ -2661,6 +2709,15 @@ export function LearningCanvas({
           outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
           a press meant for the composer behind it. */}
       <CharacterDock
+        // 🔴🔴 `canvas-enter` IS WHAT MAKES THE ARRIVAL SMOOTH, AND IT IS THE ONLY THING THAT COULD.
+        // Owner, 2026-08-30: *"the mascot seems to move to the bottom then back to the middle then
+        // back to the chat composer super quickly."* Measured: at the swap this dock appears at
+        // (400,778) at 76px on the same frame the front door's character vanishes from (746,378) at
+        // 159px, then walks 50px and jumps 24px over the next 120ms while it finds its anchor and
+        // the rail collapses. The fade's 120ms delay covers that whole window, so what is left to
+        // see is a character fading into the place it belongs. Trying to make it TRAVEL there
+        // instead has been attempted twice and is why those corrections exist — see globals.css.
+        className={arriving}
         // 🔴 THE COMPOSER, AND ON TOP OF IT (owner 2026-08-26, evening: *"I want it to be on top on
         // the left of the chat composer"*, and then, asked to be exact: *"make sure its on top of
         // the composer not in inside it, top left"*). This reverses that same morning's *"make the
@@ -2703,7 +2760,6 @@ export function LearningCanvas({
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
         // beside something whose position is a live transform, so it moved onto the dock itself.
         caption={turnInFlight || presence === "preparing" ? preparingLabel : null}
-        captionMark={turnInFlight || presence === "preparing" ? preparingMark : null}
         // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
         // it streams, and its first character is the honest end of the wait — not a timer, and not
         // the turn formally finishing.
@@ -2827,7 +2883,8 @@ export function LearningCanvas({
       {showComposer && !recording && (
         <CanvasComposer
           busy={intent.kind === "answer" && intent.sink === "policy" ? policy.judging : busy.kind === "command"}
-          busyLabel={intent.kind === "answer" && intent.sink === "policy" ? THINKING_COPY.reading_answer : busy.label}
+        onVoiceConversation={setVoiceConversing}
+        voiceReplyAudio={voice.replyAudio}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
           // asked, which is the rule this component already ran on.

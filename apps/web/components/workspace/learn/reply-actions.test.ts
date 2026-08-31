@@ -173,18 +173,28 @@ test("🔴🔴 the Canvas no longer asks which voice, and no longer asks how fas
   assert.ok(!/onSetVoice|onCycleSpeed/.test(VOICE_HOOK), "the Canvas hook still owns choosing a voice");
 });
 
-test("🔴🔴 autoplay is DEAD, and pressing play is the only way an answer speaks", () => {
-  // Owner reversal, 2026-08-30: *"also remove the read outloud."* The 2026-08-22 ruling this
-  // replaces ("Canvas should have a simple option for: Automatically read responses aloud") lost
-  // its row when the `⋯` menu died, and this file's own standard — a mode whose only door is gone
-  // goes entirely — took the mode with it. What half of that ruling SURVIVES is pinned by the
-  // next test: *"the user should still be able to manually play a response."*
+test("🔴🔴 autoplay is DEAD; a voice CONVERSATION is the one session that still presses play", () => {
+  // Owner reversal, 2026-08-30 morning: *"also remove the read outloud."* The 2026-08-22 ruling
+  // this replaces ("Canvas should have a simple option for: Automatically read responses aloud")
+  // lost its row when the `⋯` menu died, and this file's own standard — a mode whose only door is
+  // gone goes entirely — took the mode with it. What half of that ruling SURVIVES is pinned by
+  // the next test: *"the user should still be able to manually play a response."*
+  // 🔴 AND THE SAME EVENING ADDED THE ONE NON-PREFERENCE EXCEPTION (*"it should work like claude
+  // where its not real time voice but just quick tts and stt"*): a voice conversation — the
+  // composer's own session, press to start, press to stop — speaks its replies while it runs. A
+  // session is not a setting: it cannot outlive the press that started it, and it is fenced in
+  // voice-conversation.test.ts.
   assert.ok(!/VoiceMode|readVoiceMode|DEFAULT_VOICE_MODE/.test(VOICE_HOOK), "the autoplay mode is back in the voice hook");
   assert.ok(!/"Read responses aloud"/.test(CONTROLS), "the autoplay row is back in the controls");
   assert.ok(!existsSync(new URL("../../../lib/learn/voice-preferences.ts", import.meta.url)), "the mode's preference file is back");
   // 🔴 The half of the old autoplay effect that was never about the setting stays: a new answer
   // still silences the previous answer's audio, because that audio belongs to what it narrates.
   assert.match(VOICE_HOOK, /if \(arrived\) replyAudio\.stop\(\);/, "a replaced answer keeps talking");
+  assert.match(
+    VOICE_HOOK,
+    /if \(!arrived \|\| !replyKey \|\| !reply \|\| !alwaysSpeak\) return;\n    replyAudio\.start\(reply\.text\)/,
+    "a running conversation no longer speaks its replies",
+  );
 });
 
 test("🔴🔴 manual play survives the mode's death — the press the owner promised is still wired", () => {
@@ -192,7 +202,9 @@ test("🔴🔴 manual play survives the mode's death — the press the owner pro
   // ruling outlives the autoplay half the 2026-08-30 cut removed. The player presses the same
   // controller the hook exposes; nothing else may start an answer's audio.
   assert.match(PLAYER, /audio\.start\(text\)/);
-  assert.ok(!/replyAudio\.start\(/.test(VOICE_HOOK), "the hook presses play by itself again — autoplay is back");
+  // Exactly ONE self-press in the hook, and it is the conversation's, behind `alwaysSpeak` — a
+  // second one appearing is preference-autoplay sneaking back in.
+  assert.equal((VOICE_HOOK.match(/replyAudio\.start\(/g) ?? []).length, 1, "the hook presses play somewhere new — autoplay is back");
 });
 
 test("🔴🔴 the Canvas reads the voice from Settings and follows it without a reload", () => {
@@ -250,7 +262,7 @@ test("🔴🔴 the ANSWER is never waiting on the audio", () => {
 test("🔴🔴 autoplay fires ONCE, at the end of the turn, not on every streamed chunk", () => {
   // `spokenReply`'s key is derived from the text, and the text GROWS while an answer streams — so an
   // ungated autoplay would buy a fresh synthesis per chunk and replay the opening over and over.
-  assert.match(CANVAS, /useCanvasVoice\(turnInFlight \? null : spokenReply\)/);
+  assert.match(CANVAS, /useCanvasVoice\(turnInFlight \? null : spokenReply, voiceConversing\)/);
 });
 
 test("🔴🔴 the canvas menu asks ONE voice question, with no explanation under it", () => {
