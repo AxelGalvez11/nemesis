@@ -19,8 +19,6 @@ import { ANIMATION_BY_ID, DEFAULT_AVATAR, FACE_BY_ID, eyeFrames } from "@/lib/av
 
 import { MONTAGE } from "./montage";
 import {
-  ABSORBED_MS,
-  ATTENTION_CYCLE_MS,
   CAP_PITCH,
   CAP_YAW,
   GLANCE_EVERY_MS,
@@ -28,7 +26,6 @@ import {
   GLANCE_PITCH,
   GLANCE_YAW,
   POINTER_MEMORY_MS,
-  absorbedAt,
   cappedTurn,
   gazeTarget,
   glanceAt,
@@ -36,7 +33,6 @@ import {
   glanceOffset,
   trackTurn,
 } from "./gaze";
-import { isMontageLoop, montageLoop } from "./montage";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
@@ -318,71 +314,14 @@ test("🔴 but a surface that asked, and thinking, both still outrank it", () =>
   assert.deepEqual(gazeTarget({ ...CALM, working: sweep, absorbed: true }), { kind: "at", point: sweep });
 });
 
-test("🔴 following is the clear majority of every cycle", () => {
-  // The single most repeated report about this character is that it does NOT follow the mouse —
-  // three times, and twice I replied that it did. A stretch of not following has to stay a minority
-  // or this fix becomes that report.
-  assert.ok(ABSORBED_MS / ATTENTION_CYCLE_MS <= 0.4, "the character is absorbed for more than two fifths of its life");
-  assert.ok(ABSORBED_MS / ATTENTION_CYCLE_MS >= 0.25, "a stretch this rare is the 2026-08-30 report again");
-  let away = 0;
-  const step = 50;
-  const span = ATTENTION_CYCLE_MS * 6;
-  for (let ms = 0; ms < span; ms += step) if (absorbedAt(ms)) away += 1;
-  const share = away / (span / step);
-  assert.ok(Math.abs(share - ABSORBED_MS / ATTENTION_CYCLE_MS) < 0.02, `absorbed ${(share * 100).toFixed(0)}% of the time`);
-});
-
-test("🔴 a freshly mounted character FOLLOWS — the window sits at the end of the cycle", () => {
-  // Whatever a learner sees in the first seconds of a page is the character watching them.
-  assert.equal(absorbedAt(0), false);
-  assert.equal(absorbedAt(ATTENTION_CYCLE_MS - ABSORBED_MS - 1), false);
-  assert.equal(absorbedAt(ATTENTION_CYCLE_MS - ABSORBED_MS), true, "the window does not open where it says it does");
-  assert.equal(absorbedAt(ATTENTION_CYCLE_MS - 1), true);
-  assert.equal(absorbedAt(ATTENTION_CYCLE_MS), false, "the window does not close");
-  // `performance.now()` before the first frame, and a clock that has not started, are both real.
-  assert.equal(absorbedAt(-1), false);
-  assert.equal(absorbedAt(Number.POSITIVE_INFINITY), false);
-});
-
-test("🔴🔴🔴 an absorbed stretch is GIVEN something to move to — the gate that hid this is gone", () => {
-  // 🔴 REPOINTED 2026-08-30, AND THE ASSERTION IT REPLACES IS WHY THIS SHIPPED BROKEN TWICE. It
-  // pinned the dock asking `isMontageLoop(shown)` before letting go of the pointer: let go only if
-  // the montage HAPPENED to be playing something that moves. Correct on its face — dropping the
-  // cursor during a held feeling gives a character that stops following and then does nothing.
-  //
-  // But the montage's list is 12 loops, 11 held feelings, then one loop. Measured over ten minutes
-  // at rest: **55 seconds of every 193 is an unbroken stretch where the window could never open**,
-  // and the learner got 18.1% against the 25% the clock was set to. Owner, for the fourth time:
-  // *"the mascot is still following the mouse … at times, it just should just move independently."*
-  //
-  // The safeguard's REASONING still holds and is now satisfied by construction: the clock drives the
-  // face instead of the face gating the clock.
-  for (const cycle of [0, 1, 2, 7, 40, 41]) {
-    assert.ok(isMontageLoop(montageLoop({ cycle })), `cycle ${cycle} is absorbed in a face that does not move`);
-  }
-  // 🔴 A NEGATIVE CYCLE IS A REAL VALUE, not a defensive flourish: `%` in JS keeps the sign.
-  assert.ok(isMontageLoop(montageLoop({ cycle: -3 })), "a negative cycle falls off the list");
-  // 🔴 AND NOT THE SAME PERFORMANCE TWICE RUNNING.
-  assert.notEqual(montageLoop({ cycle: 0 }), montageLoop({ cycle: 1 }), "every absorbed stretch plays the same loop");
-  // 🔴 A LEARNER WHO TICKED ONLY HELD FEELINGS STILL GETS MOVEMENT — the fall-back is the defaults'
-  // loops, never a frozen character.
-  assert.ok(isMontageLoop(montageLoop({ chosen: ["neutral", "happy"], cycle: 0 })), "a feelings-only list freezes the character");
-
-  // 🔴 THE DOCK NO LONGER ASKS PERMISSION, IT TELLS. Calibration: restore the gate and the share
-  // measured over a session drops back to 18%.
-  // 🔴 THE IMPORT, NOT THE WORD. The dock's own note explains the gate it replaced and names it;
-  // a test that banned the string outright would be asking the file to forget its history — the
-  // same rule the facing guard at the bottom of this file already follows. Unimported is uncallable.
-  assert.ok(!/^import [^\n]*isMontageLoop/m.test(DOCK), "the dock gates on what the montage happens to be playing again");
-  // 🔴 THE GAZE READS THE VALUE COMPUTED IN THE TICK, NOT THE STATE. The attention interval is armed
-  // on `[anchor, size]`, so its closure keeps whatever the state was on the render that created it —
-  // null, for the life of the interval. Reading it back meant the face swapped on schedule while the
-  // eyes never let go: measured 20.5px of response while "absorbed" against 20.1px while following.
-  // Calibration: change `stretch` back to `absorbedCycle` here and the two become indistinguishable.
-  assert.match(DOCK, /const stretch = atRestRef\.current \? absorbedCycleAt\(now\) : null;/, "the stretch is not computed inside the tick");
-  assert.match(DOCK, /absorbed: stretch !== null/, "the eyes stopped following the same clock as the face");
-  assert.match(DOCK, /useMontage\(poked, atRest, poking, absorbedCycle\)/, "the stretch no longer chooses the face");
-});
+// 🔴🔴 THE THREE TESTS THAT STOOD HERE MOVED TO `attention.test.ts` WITH THE CLOCK THEY COVERED.
+// They pinned the 18s/6s cycle, that the window sat at the END of it, and that an absorbed stretch
+// was handed a movement loop. All three were true and the character still wore an expression with
+// the cursor driving its eyes, because a second clock in `montage.ts` chose the face and nothing
+// lined the two up. The property that replaces all three is one sentence — watching you and
+// wearing a face never share an instant — and it belongs beside the clock that now guarantees it.
+//
+// What stays in this file is PRECEDENCE: what being absorbed loses to, which is this file's subject.
 
 test("🔴🔴 'self' is the ONLY answer that turns tracking off, and it really turns it off", () => {
   // Every other answer is a PLACE, and handing the avatar any place at all is still a stare. This
