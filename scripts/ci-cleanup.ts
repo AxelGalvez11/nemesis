@@ -24,7 +24,7 @@ if (!SB_URL || !SERVICE_KEY) {
 
 // Every prefix any harness mints under. A file that is not there costs nothing;
 // a prefix that is missing from this list leaks an account on every cancelled run.
-const PATHS = ["guardrail", "eval", "smoke"].map((p) => `ci-run-${p}.json`);
+const PATHS = ["guardrail", "eval", "smoke", "speech"].map((p) => `ci-run-${p}.json`);
 const override = Deno.env.get("CI_RUN_MANIFEST");
 if (override) PATHS.push(override);
 
