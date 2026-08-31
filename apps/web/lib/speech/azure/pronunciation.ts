@@ -141,7 +141,16 @@ export function mapErrorType(raw: unknown): WordErrorType {
 function assessmentOf(node: unknown): Record<string, unknown> {
   if (!node || typeof node !== "object") return {};
   const found = (node as Record<string, unknown>).PronunciationAssessment;
-  return found && typeof found === "object" ? (found as Record<string, unknown>) : {};
+  if (found && typeof found === "object") return found as Record<string, unknown>;
+  // 🔴 THE REST SHORT-AUDIO API RETURNS THE SCORES FLAT, AND THIS FALLBACK IS MEASURED, NOT
+  // GUESSED. speech-live run 3 (2026-08-31) put the DEPLOYED service's actual response in the
+  // log: `AccuracyScore`, `ErrorType`, `PronScore` and the rest sit directly on the word and
+  // NBest nodes — only the SDK's JSON nests them under `PronunciationAssessment`. Reading only
+  // the nested shape meant every live score parsed to undefined, every ErrorType fell through
+  // to "", and a learner who said a DIFFERENT SENTENCE was told "Every word landed." The node
+  // itself is the assessment record in that shape; a plain recognition node has none of these
+  // keys and still yields nothing, exactly as before.
+  return node as Record<string, unknown>;
 }
 
 function phonemesOf(word: Record<string, unknown>): PhonemeAssessment[] | undefined {

@@ -57,6 +57,13 @@ let JWT: string | undefined;
 let userId: string | undefined;
 let failed = 0;
 
+/** The route reports the diagnosis's number (0-100) and the evidence's (0-1);
+ *  compare on one scale whichever arrived. */
+function scale01(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return value > 1 ? value / 100 : value;
+}
+
 function check(id: string, ok: boolean, detail: string): void {
   if (!ok) failed += 1;
   console.log(`${ok ? "PASS" : "FAIL"}  ${id}`);
@@ -130,10 +137,13 @@ async function assess(
     method: "POST", headers: { Authorization: `Bearer ${JWT}` }, body: form,
   });
   const body = await res.json().catch(() => ({}));
+  // The audio is synthetic and the sentences are the script's own — nothing
+  // personal can be in this dump.
+  if (Deno.env.get("DEBUG_SPEECH")) console.log(`      DEBUG ${JSON.stringify(body).slice(0, 2400)}`);
   return {
     status: res.status,
     reason: body?.reason,
-    overall: body?.evidence?.overall?.overall,
+    overall: body?.evidence?.overall?.overall ?? body?.diagnosis?.overall,
     words: body?.evidence?.words?.length,
     verdict: body?.diagnosis?.verdict,
     headline: body?.diagnosis?.headline,
@@ -171,8 +181,8 @@ async function main() {
     const a = await assess(origin, wav, probe.locale, probe.text);
     check(
       `round trip ${probe.locale}`,
-      a.status === 200 && (a.overall ?? 0) > ROUND_TRIP_FLOOR && (a.words ?? 0) > 0,
-      `status ${a.status}, overall ${a.overall?.toFixed(2) ?? "—"}, ${a.words ?? 0} words, ` +
+      a.status === 200 && (scale01(a.overall) ?? 0) > ROUND_TRIP_FLOOR && (a.words ?? 0) > 0,
+      `status ${a.status}, overall ${scale01(a.overall)?.toFixed(2) ?? "—"}, ${a.words ?? 0} words, ` +
         `verdict ${a.verdict ?? a.reason ?? "—"}: ${a.headline ?? ""}`,
     );
     if (probe.locale === "es-MX") {
@@ -185,8 +195,9 @@ async function main() {
     const wrong = await assess(origin, esWav, "es-MX", WRONG_TEXT);
     check(
       "mismatch is caught",
-      wrong.status === 422 || (wrong.status === 200 && (wrong.overall ?? 1) < ROUND_TRIP_FLOOR),
-      `status ${wrong.status}, overall ${wrong.overall?.toFixed(2) ?? "—"}, reason ${wrong.reason ?? wrong.verdict ?? "—"}`,
+      wrong.status === 422 ||
+        (wrong.status === 200 && ((scale01(wrong.overall) ?? 1) < ROUND_TRIP_FLOOR || wrong.verdict === "off-target" || wrong.verdict === "needs-work")),
+      `status ${wrong.status}, overall ${scale01(wrong.overall)?.toFixed(2) ?? "—"}, reason ${wrong.reason ?? wrong.verdict ?? "—"}`,
     );
 
     if (esEvidence) {

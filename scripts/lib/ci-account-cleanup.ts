@@ -144,7 +144,11 @@ export async function removeCiAccount(env: CiEnv, manifest: RunManifest): Promis
         method: "DELETE",
         headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}`, Prefer: "return=minimal" },
       });
-      if (!res.ok) {
+      // 404 is "nothing there to delete" — the row is gone, or the whole table
+      // is (generated_answers was dropped in a later schema). Either way the
+      // goal state holds; counting it as failure printed "orphaned" over
+      // accounts that were in fact fully removed.
+      if (!res.ok && res.status !== 404) {
         ok = false;
         console.warn(`cleanup: ${what} failed (${res.status})`);
       }
