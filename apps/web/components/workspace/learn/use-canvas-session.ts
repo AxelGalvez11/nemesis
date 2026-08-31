@@ -274,7 +274,7 @@ export interface CanvasSession {
   attachUrl: (url: string) => Promise<void>;
   /** Starts the arc. Takes the topic for a topic-first canvas (§6B); omit it when
    *  material is already attached. */
-  begin: (topic?: string) => void;
+  begin: (topic?: string) => Promise<void>;
   command: (text: string, selected: readonly CanvasBlock[]) => Promise<void>;
   askAbout: (block: CanvasBlock, question: string) => Promise<void>;
   /**
@@ -1001,7 +1001,27 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
   // ------------------------------------------------------------------ sources
 
-  const attachFiles = useCallback(
+  /**
+   * Every attach still in flight, so a turn can wait for material the learner already handed over.
+   *
+   * 🔴🔴 REGISTRATION IS SYNCHRONOUS, AND THAT IS THE WHOLE MECHANISM. The public `attachFiles`
+   * and `attachUrl` put their promise in this set before anything inside them awaits, so any
+   * caller sequenced after the call — the front door's opening ask, a question typed while a deck
+   * is still being read — finds the work here and can wait for it. Registered after the first
+   * await, it would miss exactly the caller this exists for. Proved on production 2026-08-31: a
+   * PDF dropped on the front door uploaded, filed and parsed perfectly, and the opening turn still
+   * answered "I don't see any document attached yet", because the ask raced the ingestion and
+   * nothing made it wait.
+   */
+  const attaching = useRef<Set<Promise<void>>>(new Set());
+  /** Resolves once every attach that has started (or starts while waiting) has SETTLED — settled,
+   *  not succeeded: a failed upload already reported itself through the error strip, and holding
+   *  every later turn hostage to one bad file would turn it into a dead canvas. */
+  const settledAttachments = useCallback(async () => {
+    while (attaching.current.size > 0) await Promise.allSettled([...attaching.current]);
+  }, []);
+
+  const attachFilesInner = useCallback(
     async (files: FileList | File[], sourceUrl?: string) => {
       const id = requireUid();
       if (!id) return;
@@ -1160,6 +1180,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [recordMoment, requireUid, update],
   );
 
+  /** The registering door — see `attaching` above. Everything that adds files funnels here. */
+  const attachFiles = useCallback(
+    (files: FileList | File[], sourceUrl?: string): Promise<void> => {
+      const run = attachFilesInner(files, sourceUrl);
+      attaching.current.add(run);
+      void run.finally(() => attaching.current.delete(run));
+      return run;
+    },
+    [attachFilesInner],
+  );
+
   /**
    * Read a web page and file it as a source.
    *
@@ -1173,7 +1204,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * so the learner can reopen the page without teaching the extractor the synthetic claim
    * `Source: https://...`. The scraped body remains exactly the body the page reader returned.
    */
-  const attachUrl = useCallback(
+  const attachUrlInner = useCallback(
     async (rawUrl: string) => {
       const id = requireUid();
       if (!id) return;
@@ -1212,6 +1243,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
     },
     [attachFiles, requireUid],
+  );
+
+  /** The registering door for a link, for the same reason as `attachFiles` — the scrape is the
+   *  long half, and a turn sent while a page is still being read must wait for it too. */
+  const attachUrl = useCallback(
+    (rawUrl: string): Promise<void> => {
+      const run = attachUrlInner(rawUrl);
+      attaching.current.add(run);
+      void run.finally(() => attaching.current.delete(run));
+      return run;
+    },
+    [attachUrlInner],
   );
 
   /** Start learning. The topic is passed in rather than set first and read back:
@@ -1285,7 +1328,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * question we should never have asked.
    */
   const begin = useCallback(
-    (topic?: string) => {
+    async (topic?: string) => {
+      // 🔴 BEFORE `canStart`, WHICH COUNTS SOURCES. An empty send with material staged means
+      // "learn this material with me" — and while that material is still uploading, the count is
+      // zero and the door would refuse the exact learner it exists for. Same wait as `converse`.
+      await settledAttachments();
       const title = topic?.trim() ?? "";
       const check = canStart({ sources: latest.current.sources, title: title || latest.current.title });
       if (!check.ok) {
@@ -1351,7 +1398,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       };
       void ground();
     },
-    [attachUrl, openCanvas, requireUid, update],
+    [attachUrl, openCanvas, requireUid, settledAttachments, update],
   );
 
   /**
@@ -1593,6 +1640,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       if (!id) return null;
       const said = question.trim();
       if (!said) return null;
+
+      // 🔴🔴 THE TURN WAITS FOR MATERIAL ALREADY IN FLIGHT. A document dropped on the front door
+      // (or attached seconds before typing) is uploading and parsing while this runs; the packet
+      // below is built from `latest.current`, so going out now means going out without it — and
+      // the model answers "I don't see any document attached yet" over material that ingested
+      // perfectly (production, 2026-08-31). The learner is not kept in the dark meanwhile:
+      // `attachFiles` holds the busy caption ("Reading your slides") for as long as this waits.
+      await settledAttachments();
 
       // 🔴 THE NAME STARTS AT SEND, NOT AT RESOLVE. The old namer could only run once the reply
       // had landed and been recorded, which put the whole answer's round trip plus its own
@@ -1985,7 +2040,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     // 🔴 `begin` LEFT THIS LIST WHEN THE TOPIC BRANCH DID. It is still exported and still runs —
     // but only from `learnFromAside`, where the learner deliberately asks for the laid-out lesson.
     // Nothing a conversation says can start one any more.
-    [command, requireUid],
+    [command, requireUid, settledAttachments],
   );
 
   /**

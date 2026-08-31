@@ -202,8 +202,8 @@ test("🔴🔴 the plan is applied BESIDE the turn, and cannot force study", () 
   const converse = SESSION.slice(SESSION.indexOf("const converse = useCallback"));
   // 🔴 ANCHOR UPDATED 2026-08-24 with the removal of the rigid lane: `begin` left this dependency
   // list when a named topic stopped being allowed to start a laid-out lesson.
-  assert.notEqual(converse.indexOf("\n    [command, requireUid]"), -1, "converse's dep anchor moved");
-  const body = converse.slice(0, converse.indexOf("\n    [command, requireUid]"));
+  assert.notEqual(converse.indexOf("\n    [command, requireUid, settledAttachments]"), -1, "converse's dep anchor moved");
+  const body = converse.slice(0, converse.indexOf("\n    [command, requireUid, settledAttachments]"));
   assert.match(body, /if \(decision\.curriculumFor\) \{/, "the course request is no longer honoured");
   assert.match(body, /applyCurriculumPlan\(/, "nothing applies the plan");
   // The refusal is SHOWN — a Course press that failed silently would be a dead control.
