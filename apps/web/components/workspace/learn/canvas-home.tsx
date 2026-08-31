@@ -33,15 +33,17 @@ import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
 import { connectionStatus, NOT_CONFIGURED } from "@/lib/workspace/composio-client";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
+import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
+import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
-import { AttachmentCard, AttachmentRow } from "./attachment-card";
+import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 import { ProjectPicker } from "./project-picker";
 import { FileDropOverlay } from "./file-drop-overlay";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
-import { putPending } from "./pending-attachment";
+import { putPending, type PendingAttachment } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
 import { useCanvasDictation } from "./use-canvas-dictation";
 
@@ -128,6 +130,22 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    * drop+Enter did nothing, drop+click-the-box+Enter worked, drop+Start worked.
    */
   const composerField = useRef<HTMLInputElement>(null);
+  /**
+   * The read running for each staged file, keyed the way the cards are keyed.
+   *
+   * 🔴🔴 READING STARTS ON DROP, NOT ON SEND (owner 2026-08-31: *"read them on drop, like
+   * chatgpt"*). Measured on production before this: the front door made ZERO network calls while
+   * material sat staged, so every second the learner spent typing their question was a second the
+   * upload and the parse had not begun. The reference reads while you type; the whole wait then
+   * overlaps with something the learner was doing anyway.
+   *
+   * 🔴 A REF, BECAUSE A PROMISE IS NOT RENDER STATE. What the card draws is `reading`/`ready`/
+   * `failed` below; the promise itself is machinery for the handoff, and putting it in state would
+   * re-render the composer every time one settled for no visible reason.
+   */
+  const reads = useRef(new Map<string, Promise<ExtractedFile>>());
+  /** What each card should say about itself. Keyed identically to `reads`. */
+  const [readState, setReadState] = useState<Record<string, AttachmentState>>({});
   /** The send is on its way out: the greeting fades and the composer travels down. */
   const [departing, setDeparting] = useState(false);
 
@@ -282,7 +300,18 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     // 🔴 THE HANDOVER HAPPENS HERE NOW, NOT WHEN THE FILE WAS PICKED. `putPending` is a module-level
     // stash the canvas claims once, so the files ride across the navigation without a query string —
     // which is what lets the topic keep using one.
-    if (staged.length > 0) putPending(staged);
+    // 🔴 THE READ TRAVELS WITH THE FILE. Each entry carries the `extractFile` call started when the
+    // material landed, so the canvas claims a finished result instead of uploading the same bytes
+    // again. A file with no read (signed out when it was dropped) hands over `null` and the canvas
+    // reads it itself, exactly as it did before any of this existed.
+    if (staged.length > 0) {
+      putPending(
+        staged.map<PendingAttachment>((file) => ({
+          file,
+          read: reads.current.get(`${file.name}:${file.size}`) ?? null,
+        })),
+      );
+    }
     // A canvas is addressed by query string, and a brand-new one has no id yet — the canvas
     // surface mints it. The opening instruction rides along so the learner does not have to
     // retype what they already said.
@@ -384,8 +413,49 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
       // then picks the same one from the dialog has not asked for it twice, and ingesting a lecture
       // deck twice is the most expensive mistake this screen can make.
       const seen = new Set(current.map((file) => `${file.name}:${file.size}`));
-      return [...current, ...picked.filter((file) => !seen.has(`${file.name}:${file.size}`))];
+      const fresh = picked.filter((file) => !seen.has(`${file.name}:${file.size}`));
+      // 🔴 THE READ IS STARTED FROM INSIDE THE UPDATER'S RESULT, over the DEDUPED list, so a file
+      // dropped twice is read once. Starting it above, over `picked`, would upload the same deck
+      // twice while the cards correctly showed one.
+      for (const file of fresh) beginRead(file);
+      return [...current, ...fresh];
     });
+  };
+
+  /**
+   * Start reading one file immediately, and remember the call so the canvas can claim its result.
+   *
+   * 🔴 THE SAME CHOKEPOINT EVERY OTHER LANE USES (`extractFile` with `keep`), not a second
+   * ingestion path. Library import, chat attachments, the syllabus reader and the canvas itself
+   * all go through it, which is what makes a document filed here indistinguishable from one filed
+   * anywhere else — same row, same parse, same content hash.
+   *
+   * 🔴 `keep: true`, WHICH MEANS A DROPPED FILE IS A KEPT FILE. Reading on drop and storing on
+   * drop are the same act: there is nowhere to put a parse except against a filed row. So a
+   * learner who drops a lecture and then changes their mind has still added it to their Library.
+   * That is the reference's behaviour and the owner's explicit call (2026-08-31), and it is why
+   * removing a card does NOT delete anything: the row is deduped by content hash and may already
+   * be cited by another canvas, so a × here that deleted would be a × that reaches into work it
+   * cannot see.
+   *
+   * 🔴 SIGNED OUT, NOTHING STARTS. `userId` is null before auth resolves; the card then simply
+   * waits at "Reading…" and the canvas does the read itself after send, which is the old
+   * behaviour and still correct.
+   */
+  const beginRead = (file: File) => {
+    if (!userId) return;
+    const key = `${file.name}:${file.size}`;
+    if (reads.current.has(key)) return;
+    setReadState((current) => ({ ...current, [key]: "reading" }));
+    const run = extractFile(file, userId, { folderPath: CANVAS_FILING_FOLDER, keep: true });
+    reads.current.set(key, run);
+    // 🔴 THE STATE HANDLER IS ALSO WHAT MARKS THE PROMISE HANDLED. Without it a read that fails
+    // while the learner never sends would surface as an unhandled rejection in their console. The
+    // rejection still reaches the canvas if they DO send, because that awaits `run` itself.
+    void run.then(
+      () => setReadState((current) => ({ ...current, [key]: "ready" })),
+      () => setReadState((current) => ({ ...current, [key]: "failed" })),
+    );
   };
 
   const startDictation = () => {
@@ -633,6 +703,9 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                       current.filter((entry) => entry.name !== file.name || entry.size !== file.size),
                     )
                   }
+                  // 🔴 THE CARD IS WHERE PROGRESS BELONGS, one line per file. A single composer-wide
+                  // "reading your files" would be a lie the moment one of three finishes.
+                  state={readState[`${file.name}:${file.size}`] ?? "ready"}
                 />
               ))}
             </AttachmentRow>

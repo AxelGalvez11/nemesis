@@ -15,7 +15,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
 import { documentTitle } from "@/lib/learn/document-title";
-import { extractFile } from "@/lib/workspace/chat-attachments";
+import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { ComposerCapability } from "@/lib/learn/composer-capability";
 import { applyCurriculumPlan, applyResearchedPlan, courseRefusalLine, loadCurriculumPlan } from "@/lib/learn/curriculum-course";
@@ -261,7 +261,18 @@ export interface CanvasSession {
   /** §12 — record that the learner finished reading the chunk on screen. Writes no evidence. */
   finishReadingChunk: () => void;
   dismissAside: () => void;
-  attachFiles: (files: FileList | File[]) => Promise<void>;
+  /**
+   * Add material to this canvas.
+   *
+   * 🔴 `started` CARRIES READS THAT ARE ALREADY RUNNING — the front door begins reading the moment
+   * a file lands (owner 2026-08-31, "read them on drop, like chatgpt"), and hands the in-flight
+   * calls over with the files. Aligned by index; a `null` entry means "not started, read it here".
+   */
+  attachFiles: (
+    files: FileList | File[],
+    sourceUrl?: string,
+    started?: readonly (Promise<ExtractedFile> | null)[],
+  ) => Promise<void>;
   /**
    * Read a web page and add it as a source, the same way an uploaded file becomes one.
    *
@@ -1022,7 +1033,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   }, []);
 
   const attachFilesInner = useCallback(
-    async (files: FileList | File[], sourceUrl?: string) => {
+    async (files: FileList | File[], sourceUrl?: string, started?: readonly (Promise<ExtractedFile> | null)[]) => {
       const id = requireUid();
       if (!id) return;
       setError(null);
@@ -1034,7 +1045,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const firstName = Array.from(files)[0]?.name ?? "";
       setBusy({ kind: "source", label: thinkingCopy("reading_source", readingSubjectFor(firstName)) });
       try {
-        for (const file of Array.from(files)) {
+        for (const [index, file] of Array.from(files).entries()) {
           // The existing extraction chokepoint — same door chat attachments, Library import
           // and syllabus import all use. No second pipeline.
           //
@@ -1046,7 +1057,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // same lecture could not tell it was the same lecture, and retrieval, which needs a
           // filed row, returned nothing at all. Chat keeps the old default on purpose — a photo
           // dropped into a conversation should not silently become a permanent document.
-          const extracted = await extractFile(file, id, { folderPath: CANVAS_FILING_FOLDER, keep: true });
+          //
+          // 🔴🔴 A READ THE FRONT DOOR ALREADY STARTED IS CLAIMED, NOT REPEATED (owner 2026-08-31:
+          // *"read them on drop, like chatgpt"*). `started[index]` is the very same `extractFile`
+          // call, begun the moment the file landed on the landing page and handed over with it. If
+          // it has finished, this awaits a settled promise and costs nothing; if it is still
+          // running, this waits out the remainder rather than uploading the bytes a second time.
+          // A rejection propagates here exactly as a fresh failure would, into the catch below.
+          const alreadyReading = started?.[index] ?? null;
+          const extracted = alreadyReading
+            ? await alreadyReading
+            : await extractFile(file, id, { folderPath: CANVAS_FILING_FOLDER, keep: true });
           // 🔴 A SLOT NUMBER, NOT A DOCUMENT IDENTITY — AND IT IS ONLY UNIQUE BECAUSE NOTHING
           // REMOVES A SOURCE. This mints a fresh ordinal on every attach, which is why the
           // duplicate guard in `mergeSourceIntoCanvas` used to compare `id` and could never
@@ -1182,8 +1203,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
 
   /** The registering door — see `attaching` above. Everything that adds files funnels here. */
   const attachFiles = useCallback(
-    (files: FileList | File[], sourceUrl?: string): Promise<void> => {
-      const run = attachFilesInner(files, sourceUrl);
+    (
+      files: FileList | File[],
+      sourceUrl?: string,
+      started?: readonly (Promise<ExtractedFile> | null)[],
+    ): Promise<void> => {
+      const run = attachFilesInner(files, sourceUrl, started);
       attaching.current.add(run);
       void run.finally(() => attaching.current.delete(run));
       return run;
