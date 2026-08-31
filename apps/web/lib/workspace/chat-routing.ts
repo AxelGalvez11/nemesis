@@ -25,9 +25,11 @@ export {
  *  tells the model to read the complete state with a tool it was not given is an instruction to
  *  invent the reading — the same defect CHAT_NO_TOOLS_PROMPT exists to prevent one layer up. */
 export const WORKSPACE_INSTRUCTION =
-  "This turn is about the student's own calendar. Ground every claim in what the tools return THIS turn, start from the " +
+  "This turn is about the student's own workspace — their calendar, or how their studying is going. Ground every claim in " +
+  "what the tools return THIS turn, start from the " +
   "attached snapshot for orientation, then read deeper before stating contents, counts, or dates. The snapshot's lists are " +
-  "samples: for anything about 'everything' or a full semester, read the complete range first with list_calendar_events " +
+  "samples: for anything about 'everything' or a full semester, read the complete range first with list_calendar_events, " +
+  "and read scores, misses and the student's own miss diagnoses with get_study_record, " +
   "rather than answering from the sample. When you change things, say plainly what " +
   "changed and what you left alone; when something is ambiguous or risky, ask before acting.";
 

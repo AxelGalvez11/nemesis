@@ -22,7 +22,7 @@ import {
 } from "@nemesis/shared";
 import { EXAM_ITEM_RULES_SHORT } from "./item-writing";
 import { supabase } from "@/lib/supabase";
-import { refreshStudyAfterExternalWrite } from "@/lib/workspace/study-cloud-store";
+import { refreshStudyAfterExternalWrite, type CreateArtifactInput, type StudyArtifact } from "@/lib/workspace/study-cloud-store";
 import {
   calendarCoverage,
   calendarEventFromRow,
@@ -39,7 +39,19 @@ import { planLibraryMigration, migrationSummary } from "./library-migration";
 import { remapLibrarySourceFolders, setLibrarySourceFolder } from "./library-sources";
 import { expandLibraryFolder, summarizeLibraryTree, type LibraryTreeDoc } from "./library-tree-summary";
 import { writeLibraryNote } from "./library-write";
-import { parseGeneratedMindmap, parseMindmapContent, parseTestContent } from "./study-artifact-content";
+import {
+  bestAttempt,
+  deckMaterial,
+  missedFacts,
+  mixedReviewMaterial,
+  MISS_KIND_LABEL,
+  noteMaterial,
+  parseGeneratedMindmap,
+  parseMindmapContent,
+  parseTestContent,
+  type StudyMaterial,
+} from "./study-artifact-content";
+import { generateStudyArtifact } from "./study-generate";
 import { studyOverview, type OverviewCardRow, type OverviewDeckRow } from "./study-agent-overview";
 import { joinGroupPath, normalizeGroupPath, pathLeaf, renamedGroupPath, uniqueDeckName } from "./study-tree";
 import { findCalendarIssues, splitCalendarConflicts } from "./calendar-conflicts";
@@ -159,6 +171,38 @@ export const AGENT_TOOLS = [
       parameters: {
         properties: { event_id: { description: "The event's id from list_calendar_events", type: "string" } },
         required: ["event_id"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: toolDescription("get_study_record", EXAM_ITEM_RULES_SHORT),
+      name: "get_study_record",
+      parameters: { properties: {}, type: "object" },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: toolDescription("make_practice_test", EXAM_ITEM_RULES_SHORT),
+      name: "make_practice_test",
+      parameters: {
+        properties: {
+          question_count: { description: "How many questions (default 10, 3-25)", type: "number" },
+          record: {
+            description:
+              "What you know of THIS student, in plain sentences — scores, their own miss diagnoses, what they "
+              + "just struggled with in the conversation, what they asked for. The paper is aimed by this.",
+            type: "string",
+          },
+          source: {
+            description: 'A deck name, a note title, or "everything" for all decks and notes plus previously missed questions',
+            type: "string",
+          },
+        },
+        required: ["source"],
         type: "object",
       },
     },
@@ -931,6 +975,7 @@ const STUDY_WRITING_TOOLS = new Set([
   "add_flashcards",
   "add_mindmap",
   "add_practice_test",
+  "make_practice_test",
   "delete_flashcard",
   "delete_study_artifact",
   "delete_study_deck",
@@ -939,6 +984,221 @@ const STUDY_WRITING_TOOLS = new Set([
   "move_study_deck",
   "rename_study_deck",
 ]);
+
+/* ------------------------------------------------------------------ */
+/* The examiner pair (owner 2026-08-31: "DeepSeek should know what to  */
+/* do based on the given prompts and on its given tool set")           */
+/* ------------------------------------------------------------------ */
+
+/** How many test artifacts the record reads back. Newest first; a student with
+ *  forty old papers is asking about the recent ones. */
+const RECORD_TESTS = 12;
+/** Misses quoted per paper — enough to aim at, not a transcript. */
+const RECORD_MISSES = 6;
+
+/**
+ * The student's study record, compact enough to think with.
+ *
+ * 🔴 THE DIAGNOSES ARE THE POINT. Scores say how it went; the student's own
+ * one-tap miss labels say WHY, and that is what lets the model choose between
+ * a straight re-ask and a different angle. This is read-only and cheap: the
+ * whole point of giving the model this tool is that IT decides when the
+ * conversation calls for looking.
+ */
+async function getStudyRecord(): Promise<unknown> {
+  const [deckRows, cardRows, artifactResult] = await Promise.all([
+    fetchAllRows((a, b) => supabase.from("study_decks").select("id,name").order("name").order("id").range(a, b)),
+    fetchAllRows((a, b) => supabase.from("study_cards").select("id,deck_id,due_at,suspended").order("id").range(a, b)),
+    supabase
+      .from("study_artifacts")
+      .select("id,title,content,updated_at")
+      .eq("kind", "test")
+      .order("updated_at", { ascending: false })
+      .limit(RECORD_TESTS),
+  ]);
+  if (artifactResult.error) throw new Error(artifactResult.error.message);
+  const now = Date.now();
+  const decks = deckRows.map((row) => {
+    const cards = cardRows.filter((card) => str(card.deck_id) === str(row.id) && card.suspended !== true);
+    const due = cards.filter((card) => new Date(str(card.due_at)).getTime() <= now).length;
+    return { cards: cards.length, due, name: str(row.name) };
+  });
+  const tests = (artifactResult.data ?? []).flatMap((row) => {
+    const content = parseTestContent(row.content);
+    if (!content) return [];
+    const best = bestAttempt(content.attempts);
+    const misses = missedFacts(content.questions, content.attempts)
+      .slice(0, RECORD_MISSES)
+      .map((miss) => ({
+        question: miss.q.slice(0, 120),
+        ...(miss.why ? { student_diagnosis: MISS_KIND_LABEL[miss.why] } : {}),
+      }));
+    return [
+      {
+        attempts: content.attempts.length,
+        ...(best ? { best_score: `${best.score}/${best.total}` } : {}),
+        ...(misses.length ? { latest_misses: misses } : {}),
+        questions: content.questions.length,
+        title: str(row.title),
+      },
+    ];
+  });
+  if (decks.length === 0 && tests.length === 0) {
+    return { decks, note: "The record is empty — no decks and no tests yet. That is a fact about the account, not a failure.", tests };
+  }
+  return { decks, tests };
+}
+
+/** Resolve what a paper is written FROM. A deck name, a note title, or the
+ *  whole workspace with earlier misses brought back — never an invented one. */
+async function materialForTestSource(source: string): Promise<{ material: StudyMaterial; title: string } | { error: string }> {
+  const wanted = source.trim().toLowerCase();
+  const [deckRows, cardRows] = await Promise.all([
+    fetchAllRows((a, b) => supabase.from("study_decks").select("id,name").order("name").order("id").range(a, b)),
+    fetchAllRows((a, b) => supabase.from("study_cards").select("id,deck_id,front,back,suspended").order("id").range(a, b)),
+  ]);
+  const cardsOf = (deckId: string) =>
+    cardRows
+      .filter((card) => str(card.deck_id) === deckId && card.suspended !== true)
+      .map((card) => ({ back: str(card.back), front: str(card.front) }));
+
+  if (wanted === "everything") {
+    const parts: StudyMaterial[] = deckRows
+      .map((row) => ({ cards: cardsOf(str(row.id)), name: str(row.name) }))
+      .filter((entry) => entry.cards.length > 0)
+      .map((entry) => deckMaterial(entry.name, entry.cards));
+    const { data: noteRows, error: noteError } = await supabase
+      .from("readable_library_documents")
+      .select("title,content")
+      .eq("deleted", false)
+      .limit(12);
+    if (noteError) throw new Error(noteError.message);
+    for (const row of noteRows ?? []) {
+      const content = str(row.content);
+      if (content.trim()) parts.push(noteMaterial(str(row.title), content));
+    }
+    if (parts.length === 0) {
+      return { error: "There is nothing to build from yet — no deck has cards and no notes exist." };
+    }
+    const { data: testRows, error: testError } = await supabase
+      .from("study_artifacts")
+      .select("content")
+      .eq("kind", "test")
+      .order("updated_at", { ascending: false })
+      .limit(RECORD_TESTS);
+    if (testError) throw new Error(testError.message);
+    const missed = (testRows ?? []).flatMap((row) => {
+      const content = parseTestContent(row.content);
+      return content ? missedFacts(content.questions, content.attempts) : [];
+    });
+    return { material: mixedReviewMaterial(parts, missed), title: "Mixed review — practice test" };
+  }
+
+  const deck = deckRows.find((row) => str(row.name).trim().toLowerCase() === wanted);
+  if (deck) {
+    const cards = cardsOf(str(deck.id));
+    if (cards.length === 0) return { error: `The deck "${str(deck.name)}" has no cards to build from.` };
+    return { material: deckMaterial(str(deck.name), cards), title: `${str(deck.name)} — practice test` };
+  }
+  const { data: noteRows, error: noteError } = await supabase
+    .from("readable_library_documents")
+    .select("title,content")
+    .eq("deleted", false)
+    .ilike("title", source.trim())
+    .limit(1);
+  if (noteError) throw new Error(noteError.message);
+  const note = noteRows?.[0];
+  if (note && str(note.content).trim()) {
+    return { material: noteMaterial(str(note.title), str(note.content)), title: `${str(note.title)} — practice test` };
+  }
+  return { error: `Nothing is named "${source}". get_study_record lists the decks; or pass "everything".` };
+}
+
+/**
+ * Write a paper and hand it to the conversation.
+ *
+ * 🔴 THE MODEL'S OWN `record` AIMS IT. This tool does not decide composition —
+ * the examiner charter in the generation prompt does, from whatever record the
+ * calling model wrote out of the conversation and get_study_record. Code here
+ * only resolves the material, runs the generation, and files the artifact.
+ *
+ * 🔴 `produced_test` IS FOR THE CANVAS, NOT THE MODEL. The tool round carries
+ * it out so the reply can grow a card the student presses to sit the paper —
+ * the conversation is where results live (owner 2026-08-31, picking exactly
+ * that over reviving a Tests page).
+ */
+async function makePracticeTest(args: Record<string, unknown>): Promise<unknown> {
+  const source = str(args.source).trim();
+  if (!source) return { error: 'Pass source: a deck name, a note title, or "everything".' };
+  const requested = Number(args.question_count);
+  const questionCount = Number.isFinite(requested) ? Math.min(Math.max(Math.round(requested), 3), 25) : 10;
+  const record = typeof args.record === "string" && args.record.trim() ? args.record.trim() : undefined;
+
+  const { data: session } = await supabase.auth.getSession();
+  const uid = session.session?.user.id;
+  if (!uid) return { error: "The student is not signed in." };
+
+  const resolved = await materialForTestSource(source);
+  if ("error" in resolved) return resolved;
+
+  const createArtifact = async (input: CreateArtifactInput): Promise<StudyArtifact> => {
+    const { data, error } = await supabase
+      .from("study_artifacts")
+      .insert({
+        content: input.content ?? null,
+        group_name: input.groupName?.trim() ?? "",
+        kind: input.kind,
+        status: input.status ?? "draft",
+        title: input.title,
+        user_id: uid,
+      })
+      .select("id,kind,group_name,title,status,content,created_at,updated_at")
+      .single();
+    if (error) throw new Error(error.message);
+    return {
+      content: data.content ?? null,
+      createdAt: str(data.created_at),
+      groupName: str(data.group_name),
+      id: str(data.id),
+      kind: input.kind,
+      status: "draft",
+      title: str(data.title),
+      updatedAt: str(data.updated_at),
+    };
+  };
+  const updateArtifact = async (artifactId: string, patch: { content?: unknown; status?: "draft" | "ready" }) => {
+    const { error } = await supabase
+      .from("study_artifacts")
+      .update({
+        ...(patch.content !== undefined ? { content: patch.content } : {}),
+        ...(patch.status ? { status: patch.status } : {}),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", artifactId);
+    if (error) throw new Error(error.message);
+  };
+  const deleteArtifact = async (artifactId: string) => {
+    await supabase.from("study_artifacts").delete().eq("id", artifactId);
+  };
+
+  const artifactId = await generateStudyArtifact({
+    createArtifact,
+    deleteArtifact,
+    kind: "test",
+    material: resolved.material,
+    questionCount,
+    ...(record ? { testOpts: { record } } : {}),
+    title: resolved.title,
+    uid,
+    updateArtifact,
+  });
+
+  return {
+    made: resolved.title,
+    note: "The card to sit it is in this conversation — point at it in one sentence, and never read the questions out.",
+    produced_test: { artifact_id: artifactId, title: resolved.title },
+  };
+}
 
 /** Run one tool call; ALWAYS resolves to a JSON-stringifiable result (errors
  *  become `{error}` so the model can react instead of the turn dying). */
@@ -1010,6 +1270,8 @@ async function dispatchTool(
     case "add_calendar_event": return await addCalendarEvent(args);
     case "update_calendar_event": return await updateCalendarEventTool(args);
     case "delete_calendar_event": return await deleteCalendarEventTool(args);
+    case "get_study_record": return await getStudyRecord();
+    case "make_practice_test": return await makePracticeTest(args);
     default: return { error: `Unknown tool '${call.name}'.` };
   }
 }

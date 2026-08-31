@@ -86,7 +86,7 @@ import {
   type UserQuestion,
 } from "@/lib/learn/clarify-question";
 import { askCanvasChat, type TurnSurroundings } from "./canvas-chat";
-import { runConfirmed, type PendingConfirmation } from "@/lib/learn/canvas-tools";
+import { runConfirmed, type PendingConfirmation, type ProducedTest } from "@/lib/learn/canvas-tools";
 import { prepareWebSourcePromotion } from "./web-source-promotion";
 
 const RECALL_CARDS = 8;
@@ -194,6 +194,10 @@ type CanvasAside = {
    * the one way a consent button can become genuinely dangerous.
    */
   pending?: PendingConfirmation | null;
+  /** A practice test a tool wrote during this answer. Same one-answer lifetime
+   *  as `pending` above: the card sits under the sentence that announced it,
+   *  and the next turn replaces both together. */
+  producedTest?: ProducedTest | null;
 } | null;
 
 /**
@@ -1875,6 +1879,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             consulted: result.consulted,
             sources: result.sources,
             pending: result.pending,
+            producedTest: result.producedTest,
             text: decision.say,
             topic: decision.topic ?? undefined,
             visuals: decision.visuals,
@@ -1961,6 +1966,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // moment a tool came back held, so this is the one thing the model asked for that the
         // learner has not yet allowed. See `canvas-tools.ts` for why it is not fed back to the model.
         pending: result.pending,
+        producedTest: result.producedTest,
         sources: result.sources,
         text: [decision.say, courseNote].filter(Boolean).join("\n\n"),
         topic: decision.topic ?? undefined,

@@ -68,11 +68,20 @@ export type PendingConfirmation =
   | { readonly kind: "delete"; readonly pending: PendingDelete }
   | { readonly kind: "action"; readonly pending: PendingAction };
 
+/** A practice test a tool round just wrote — the reply grows a card to sit it. */
+export interface ProducedTest {
+  readonly artifactId: string;
+  readonly title: string;
+}
+
 export interface ToolRoundResult {
   /** What to put in front of the model next round, already serialised. */
   readonly context: string;
   /** Set when something is waiting on the learner. The loop stops when this appears. */
   readonly pending: PendingConfirmation | null;
+  /** Set when a round produced a test — the conversation is where it lives
+   *  (owner 2026-08-31), so the canvas renders the card, not a page. */
+  readonly produced: ProducedTest | null;
 }
 
 /** What the strip says while one call runs, and which mark sits beside it. */
@@ -94,7 +103,7 @@ export interface WorkNote {
  */
 export function toolCatalogueBlock(connected: readonly { function: { name: string; description: string } }[]): string {
   const lines: string[] = [
-    "Their calendar, which you can read and change:",
+    "The student's workspace — their calendar, and their study record and practice tests — which you can read and act in:",
     // 🔴 `toolDescription`, NEVER THE MAP DIRECTLY. A description may carry the exam-rules
     //    placeholder, and the shared file makes this function the only way to read one so a tool
     //    cannot reach the model still carrying the literal token.
@@ -168,6 +177,8 @@ export function labelFor(name: string, app: string | undefined): WorkNote {
   if (name.startsWith("add_calendar")) return { label: "Adding to the calendar" };
   if (name.startsWith("update_calendar")) return { label: "Changing the calendar" };
   if (name.startsWith("delete_calendar")) return { label: "Checking before deleting" };
+  if (name === "get_study_record") return { label: "Reading your study record" };
+  if (name === "make_practice_test") return { label: "Writing a practice test" };
   return { label: app ? `Working in ${app}` : "Working in a connected app" };
 }
 
@@ -217,6 +228,7 @@ export async function runToolRound(
   const capped = asks.slice(0, MAX_CALLS_PER_ROUND);
   const lines: string[] = [];
   let pending: PendingConfirmation | null = null;
+  let produced: ProducedTest | null = null;
 
   for (const ask of capped) {
     const app = index.get(ask.name);
@@ -226,13 +238,24 @@ export async function runToolRound(
       ? await runConnectedApp(call, app)
       : await executeAgentTool(call, { askText: options.askText });
     if (!pending) pending = readPending(result);
+    if (!produced) produced = readProducedTest(result);
     // 🔴 NEVER A BLIND SLICE. An over-budget result comes back as valid JSON that says
     // `complete: false` and where to resume; cutting it with `.slice()` would hand the model
     // truncated JSON and it would read half a calendar as the whole one.
     lines.push(`${ask.name}(${JSON.stringify(ask.arguments ?? {})}) -> ${serializeToolResult(result)}`);
   }
 
-  return { context: lines.join("\n\n"), pending };
+  return { context: lines.join("\n\n"), pending, produced };
+}
+
+/** The `produced_test` marker a make_practice_test result carries for the UI. */
+function readProducedTest(result: unknown): ProducedTest | null {
+  if (!result || typeof result !== "object") return null;
+  const row = (result as Record<string, unknown>).produced_test;
+  if (!row || typeof row !== "object") return null;
+  const artifactId = String((row as Record<string, unknown>).artifact_id ?? "");
+  const title = String((row as Record<string, unknown>).title ?? "");
+  return artifactId && title ? { artifactId, title } : null;
 }
 
 /**

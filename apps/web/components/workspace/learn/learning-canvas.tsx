@@ -77,6 +77,7 @@ import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
 import { ConfirmCard } from "./confirm-card";
+import { TestReadyCard } from "./test-ready-card";
 import { ReplyActions } from "./reply-actions";
 import { SpokenExample } from "./spoken-example";
 import { CanvasQuiet } from "./canvas-quiet";
@@ -2375,6 +2376,12 @@ export function LearningCanvas({
                   answer is a button under a sentence that is about to say something else. */}
               {!turnInFlight && session.aside?.pending && (
                 <ConfirmCard onAnswer={(approve) => session.confirmPending(approve)} pending={session.aside.pending} />
+              )}
+
+              {/* The paper a tool round wrote this turn, delivered where it was decided: in the
+                  conversation. Same aside lifetime as the confirmation card above. */}
+              {!turnInFlight && session.aside?.producedTest && (
+                <TestReadyCard produced={session.aside.producedTest} />
               )}
 
               {/* 🔴 AFTER THE ANSWER, AND ONLY ONCE IT HAS ARRIVED. Copying half an answer copies
