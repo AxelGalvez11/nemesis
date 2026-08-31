@@ -219,5 +219,31 @@ test("🔴🔴 the room an artifact sits in is neutral, never an accent fill", (
   // The document/PDF reader was already neutral and has to stay that way: measured
   // `color(srgb 0.9915 …)` = rgb(253, 253, 253) for the panel, pure white for the sheet.
   assert.match(PREVIEW, /flex flex-col bg-\(--ui-bg-elevated\)/, "the reader panel is no longer the neutral elevated ground");
-  assert.match(PREVIEW, /mx-auto w-full bg-white /, "the sheet is no longer white");
+  // 🔴 THE CAP IS NAMED HERE because it sits between `w-full` and `bg-white`, and this assertion
+  // used to read the two as adjacent — which made a width fix look like a colour regression.
+  assert.match(PREVIEW, /mx-auto w-full max-w-\[816px\] bg-white /, "the sheet is no longer white");
+});
+
+test("🔴🔴 a document is read at the measured column, not at whatever width the window is", () => {
+  // Owner, 2026-08-31: *"why is that research document like it's too wide, and it doesn't look
+  // like how [ChatGPT] outputs its own research reports."* He was right, and the numbers say how
+  // badly: the sheet was `w-full` with nothing above it, which was harmless while it only opened
+  // docked and became 1422px wide the moment it opened full screen — prose at **1332px on 14px
+  // type, about 190 characters a line**, against the 45-75 a reader can actually track.
+  //
+  // 🔴 MEASURED THE SAME HOUR on ChatGPT, signed in, 1470px viewport: a report paragraph is
+  // **736px wide, 16px on 26px, weight 400, rgb(13,13,13)** — and a list item the same. 736 plus
+  // the sheet's 40px padding on each side is the 816 pinned here.
+  //
+  // 🔴 THE COLOUR AND SIZE MATTER AS MUCH AS THE WIDTH. This shipped in `--canvas-text-small`
+  // (14px) in `--ui-text-secondary`, which is caption styling: a whole document set in grey
+  // half-size type reads as a PREVIEW of a document rather than the document. `leading-relaxed`
+  // on 16px is 26px exactly, so the measured line-height needs no literal to hit.
+  assert.match(PREVIEW, /max-w-\[816px\]/, "the document sheet is uncapped again — full screen will run it to the window's width");
+  const body = PREVIEW.slice(PREVIEW.indexOf("function DocBody"));
+  assert.ok(
+    !/text-\[length:var\(--canvas-text-small\)\][^"]*text-\(--ui-text-secondary\)/.test(body),
+    "the document body is back to 14px grey, which reads as a preview rather than a document",
+  );
+  assert.match(body, /text-\[length:var\(--canvas-text-body\)\] leading-relaxed text-\(--ui-text-primary\)/, "the document body is no longer the measured 16/26 in the primary colour");
 });
