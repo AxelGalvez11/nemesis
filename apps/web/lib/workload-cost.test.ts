@@ -355,10 +355,19 @@ test("every scenario names every provider, so nothing goes missing from a margin
 });
 
 test("the scenarios rise in cost, light through cap exhaustion", () => {
-  const costs = SCENARIOS.map((month) => modelStudentMonth(month).cogsBeforePaymentUsd);
+  // 🔴 THE LANGUAGE LEARNER IS OUT OF THE LADDER ON PURPOSE (2026-08-31). It is not a heavier
+  // student, it is the SAME student talking to a different provider: the heavy profile with its
+  // voice minutes moved onto Azure's lane, which costs several times xAI's for the same minute.
+  // Sorting it into a rising ladder would be claiming a rank it does not have.
+  const ladder = SCENARIOS.filter((month) => month.label !== "language learner");
+  const costs = ladder.map((month) => modelStudentMonth(month).cogsBeforePaymentUsd);
   for (let i = 1; i < costs.length; i += 1) {
-    assert.ok(costs[i]! > costs[i - 1]!, `${SCENARIOS[i]!.label} must cost more than ${SCENARIOS[i - 1]!.label}`);
+    assert.ok(costs[i]! > costs[i - 1]!, `${ladder[i]!.label} must cost more than ${ladder[i - 1]!.label}`);
   }
+  // And it must land between the profile it is built from and the ceiling: same work, dearer voice.
+  const heavy = modelStudentMonth(SCENARIOS.find((m) => m.label === "heavy")!).cogsBeforePaymentUsd;
+  const language = modelStudentMonth(SCENARIOS.find((m) => m.label === "language learner")!).cogsBeforePaymentUsd;
+  assert.ok(language > heavy, "the language lane is supposed to cost MORE than the same month on the canvas lane");
 });
 
 test("🔴 every scenario is flagged synthetic, because there is no paying cohort", () => {
@@ -367,7 +376,13 @@ test("🔴 every scenario is flagged synthetic, because there is no paying cohor
   // 258 input tokens at Flash-Lite's rate -- and #681 gave it an actual meter in
   // the parse worker. Infrastructure stays synthetic: Vercel and Supabase are
   // still amortised guesses, so every scenario is still flagged.
-  assert.deepEqual(syntheticProviders().sort(), ["supabase", "vercel"]);
+  // 🔴 AZURE JOINED THIS LIST ON 2026-08-31 AND THAT IS THE HONEST STATE, NOT A REGRESSION. The
+  // owner pointed out the model had no Azure line at all while the product routes every dialect
+  // voice and every pronunciation score through it. Its rates are PLANNING FIGURES at the public
+  // list price: Azure's speech pricing varies by region, commitment tier and voice class, and
+  // nobody has read which of those this account is on. They come off this list the day someone
+  // does, exactly as Gemini's did.
+  assert.deepEqual(syntheticProviders().sort(), ["azure_pronunciation", "azure_tts", "supabase", "vercel"]);
   for (const month of SCENARIOS) {
     assert.equal(modelStudentMonth(month).synthetic, true, `${month.label} must declare itself synthetic`);
   }
