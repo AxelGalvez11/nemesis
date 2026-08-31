@@ -2225,6 +2225,21 @@ export function LearningCanvas({
             <LearnerUtterance via={null}>{currentSaid}</LearnerUtterance>
           </div>
         )}
+
+        {/* 🔴🔴 THE RUNNING STEP, IN THE CONVERSATION — owner, 2026-08-31: *"the thinking preview,
+            it's at the bottom next to the mascot, and it should be above, where it usually is with
+            ChatGPT."* It sits directly under the learner's own message and exactly where the answer
+            is about to land, which is what the reference does (measured in his account the same
+            day: the live line is left-aligned on the assistant's own column, under the bubble).
+            🔴 OUTSIDE `CanvasFade`, like the learner's sentence above it. The fade swaps what
+            NEMESIS is showing; this is not a thing being shown, it is the fact that something is
+            being made, and it must not cross-fade with the answer that replaces it.
+            🔴 THE SAME CONDITION THE DOCK USED TO CARRY, so the caption did not change WHEN it
+            appears, only WHERE. `turnInFlight` covers an ordinary answer; `preparing` covers the
+            first wait on a canvas that has nothing on it yet. */}
+        {(turnInFlight || presence === "preparing") && !replyText.trim() && (
+          <CanvasThinkingPreview label={preparingLabel} />
+        )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
             below what anyone notices; the owner's reading ("there are also no fade in or fade out
@@ -2715,9 +2730,8 @@ export function LearningCanvas({
             case, so what followed was an empty page with nothing running to explain it, on the
             first thing a student ever does. The trigger is now "there is no content to show",
             which is the question that was actually being asked. */}
-        {presence === "preparing" && (
-          <CanvasThinkingPreview label={preparingLabel} mascot={turnInFlight} />
-        )}
+        {/* 🔴 THE THINKING LINE MOVED UP, next to the learner's own message — see its mount above.
+            Drawing it here as well would put the same words on the page twice. */}
 
         {/* 🔴 A CANVAS WITH NOTHING TO PRESENT AND NOTHING RUNNING SAYS SO. This is the other half
             of the same defect, and it must NOT be a caption: `thinking-phases.ts` rules that a
@@ -2935,7 +2949,12 @@ export function LearningCanvas({
         // against the right edge of the window, hundreds of pixels from the mascot it was meant to
         // label (owner, 2026-08-21: "why is the 'thinking' so far off"). Nothing static can sit
         // beside something whose position is a live transform, so it moved onto the dock itself.
-        caption={turnInFlight || presence === "preparing" ? preparingLabel : null}
+        // 🔴 NO CAPTION ON THE CHARACTER ANY MORE (owner, 2026-08-31). It belonged beside the
+        // character while the character stood in the CENTRE of an empty screen; in a chat it
+        // stands on the composer, so "beside it" reads as the bottom left corner, underneath the
+        // conversation the words are about. The line is in the thread now. The dock keeps its
+        // source chips, which are about what it is READING rather than what step is running.
+        caption={null}
         // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
         // it streams, and its first character is the honest end of the wait — not a timer, and not
         // the turn formally finishing.

@@ -124,7 +124,7 @@ test("🔴🔴🔴 and the surface is not rebuilt just because the mode changed"
   assert.match(key, /screenKey\(policy\)/, "a new question no longer refreshes the surface");
 });
 
-test("🔴🔴 there is no skeleton loader on either wait, and the caption sits BESIDE the mascot", () => {
+test("🔴🔴 there is no skeleton loader on either wait, and the caption is a line in the conversation", () => {
   // 🔴 THIS TEST HAS BEEN REVERSED, AND THE REVERSAL IS AN OWNER DECISION RATHER THAN A REGRESSION.
   //
   // It used to assert the forming lines SURVIVED — three staggered bars occupying the shape a
@@ -151,15 +151,28 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption sits 
   // So the caption moved onto the dock, as a sibling of its own transform, where being beside the
   // character is structural rather than a coincidence of two layouts agreeing.
   //
-  // 🔴 REVERSED A THIRD TIME, 2026-08-25, AND NOW THERE IS NOTHING VISIBLE AT ALL. The wait
-  // with no mascot used to centre its own caption; that visible wait was exactly the state in
-  // which the dock was switched off, and on production it left NO character ("It won't show
-  // the mascot… it would just disappear"). The dock now owns character AND caption in every
-  // wait; the preview is a screen-reader announcement and nothing else.
+  // 🔴 REVERSED A THIRD TIME, 2026-08-25: the preview became a screen-reader announcement and the
+  // dock owned character AND caption in every wait.
+  //
+  // 🔴🔴 AND A FOURTH TIME, 2026-08-31, WHICH IS THE ONE THAT RESOLVES THE WHOLE SEQUENCE. Owner:
+  // *"inside a canvas, when it's in chat mode, the thinking preview is at the bottom next to the
+  // mascot, and it should be above, where it usually is with ChatGPT."*
+  //
+  // Every earlier round argued about HOW to put the caption beside the character. None of them
+  // questioned that it belonged there, and that premise expired when the canvas became a chat: the
+  // character no longer stands in the centre of an empty screen, it stands on the composer at the
+  // bottom, so "beside the character" resolves to the bottom left corner — underneath the very
+  // conversation the words are about. The reference puts the running step in the thread, where the
+  // answer is about to appear, and that is a position no transform can wander away from.
+  //
+  // So the caption is a LINE IN THE FLOW now, drawn under the learner's own message. What survives
+  // from every previous round: no skeleton, no second mascot, and no row layout whose `justify-end`
+  // can silently mean "the right edge of the window".
   assert.equal((previewCode.match(/flex-row items-center/g) ?? []).length, 0, "the preview is laying out a visible wait again");
-  assert.match(previewCode, /className="sr-only"/, "the preview lost its announcement");
   assert.ok(!/justify-end/.test(previewCode), "justify-end is back — in a row that means the right edge, not the foot");
-  assert.match(canvasCode, /caption=\{turnInFlight \|\| presence === "preparing" \? preparingLabel : null\}/, "the dock is no longer given the caption");
+  assert.match(previewCode, /data-canvas-thinking-line/, "the line lost the handle its placement is measured by");
+  assert.match(previewCode, /className="sr-only"/, "the announcement-only export lost its announcement");
+  assert.match(canvasCode, /caption=\{null\}/, "the character is carrying the caption again — it reads as the bottom left corner");
   // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
   // of three dots on one screen; the dock owns the character, this owns the caption.
   assert.ok(!/<Bloub /.test(previewCode), "the preview is drawing its own mascot again");

@@ -42,16 +42,48 @@ export function CanvasThinkingPreview({
   /** Kept for callers mid-migration; the visible split it used to select is gone. */
   mascot?: boolean;
 }) {
-  // 🔴🔴 NOTHING VISIBLE HERE ANY MORE, IN EITHER WAIT — AND THAT IS THE FIX (owner 2026-08-25,
-  // on production: "I'll send a prompt. It won't show the mascot… it would just disappear").
-  // This component stopped drawing its own character when the caption moved onto the dock, but
-  // the dock was STILL being switched off for it (`hidden={presence === "preparing"}` in
-  // learning-canvas.tsx) — a guard protecting against a second character that no longer
-  // existed, which left NO character at all on the one screen whose whole job is "something is
-  // happening". The dock now owns the character and the caption in every wait; what remains
-  // here is the half a screen reader needs, because the dock is aria-hidden decoration and
-  // deleting the announcement would take the running step's name away from the one audience
-  // that cannot see the character.
+  // 🔴🔴 IT IS VISIBLE AGAIN, AND IT IS BACK IN THE CONVERSATION — owner, 2026-08-31: *"inside a
+  // canvas, when it's in chat mode, the thinking preview is at the bottom next to the mascot, and
+  // it should be above, where it usually is with ChatGPT."*
+  //
+  // The caption moved onto the dock on 2026-08-25, when the character stood at the CENTRE of an
+  // otherwise empty screen and the words belonged beside it. The canvas is a chat now: the
+  // character stands on the composer at the bottom, so "beside the character" became "in the
+  // bottom left corner", underneath the very conversation it is about. In the reference the step
+  // is a line in the thread, exactly where the answer is about to appear.
+  //
+  // 🔴 MEASURED IN THE OWNER'S OWN CHATGPT, 2026-08-31: the live "Thinking" line renders at
+  // 16px/24px at weight 400, in the body colour, left-aligned on the answer's own column (x=481,
+  // the same left edge as the assistant message) directly under the learner's bubble. A finished
+  // one reads "Worked for 59s" in the same slot. So: the canvas column, the body size, the
+  // shimmer this app already uses for a step that is still running.
+  //
+  // 🔴 `leading-[24px]`, NOT `leading-6`, AND THAT IS THE REM TRAP RATHER THAN A PREFERENCE. This
+  // app sets `html { font-size: 112.5% }`, so Tailwind's `leading-6` is 1.5rem = 27px here and the
+  // line measured 16/27 against the reference's 16/24. The number is named in pixels because the
+  // reference's number is in pixels.
+  //
+  // 🔴 THE SHIMMER IS THE SAME `canvas-thinking-word` THE DOCK USED, not a second treatment. The
+  // rule it obeys is unchanged and is stated at the top of this file: the caption names the step
+  // that is genuinely running, never a sequence on a timer.
+  return (
+    <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-2" data-canvas-thinking-line="">
+      <p
+        aria-live="polite"
+        className="text-[length:var(--canvas-text-body)] leading-[24px] text-(--ui-text-secondary)"
+        role="status"
+      >
+        <span className="canvas-thinking-word">{label ? label.replace(/…$/, "") : "Thinking"}</span>
+      </p>
+    </div>
+  );
+}
+
+/** The announcement only, for callers that draw their own line. */
+export function CanvasThinkingAnnouncement({ label = null }: { label?: string | null }) {
+  // 🔴 THE ANNOUNCEMENT ON ITS OWN. The character is `aria-hidden` decoration, so wherever the
+  // step's name is drawn it also has to be SAID; this is that half, for a caller that already
+  // draws its own line and would otherwise announce the same thing twice.
   return (
     <div aria-live="polite" className="sr-only" role="status">
       {label ? `${label.replace(/…$/, "")}…` : null}

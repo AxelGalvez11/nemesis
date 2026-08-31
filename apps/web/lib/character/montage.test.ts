@@ -23,7 +23,8 @@ const worn = (ms: number, chosen?: readonly string[]) => {
   const at = attentionAt({ ms, chosen });
   return at.kind === "absorbed" ? at.entry : null;
 };
-/** When entry `i` of `list` starts, counting the watching stretch before each. */
+/** When entry `i` of `list` starts, counting the watching stretch before each. Its last
+ *  `SETTLE_MS` is the settling beat, which is inside `FOLLOW_MS` rather than added to it. */
 const startOf = (i: number, list: readonly string[]) =>
   (i + 1) * FOLLOW_MS + list.slice(0, i).reduce((sum, id) => sum + holdFor(id), 0);
 

@@ -49,9 +49,47 @@ import { holdFor, resolveMontage } from "./montage";
  */
 export const FOLLOW_MS = 9_000;
 
+/**
+ * The beat between letting go of the pointer and starting a face, and again between ending a face
+ * and picking the pointer back up.
+ *
+ * 🔴🔴 THIS IS THE 2026-08-31 FIX, AND IT IS AN ORDERING FIX RATHER THAN ANOTHER SHARE. Owner,
+ * sixth report on this surface: *"either it should only be following the mouse with its eyes, no
+ * expressions, or it should be doing the expressions without regard for the mouse."* #934 made one
+ * half true - measured on screen the day after, an absorbed character with a settled pose responds
+ * to the cursor by 0.42px, which is nothing. What it did not make true was the SEAM: 3% of frames
+ * (16 of 553, sampled five times a second for two minutes) had an expression already playing while
+ * the pointer still drove the head, because the face changes on a React commit and the pointer is
+ * released by the dock's own 120ms poll and then EASED out over about 400ms. Every transition
+ * therefore showed a moment of exactly the thing that was asked about, and transitions are the most
+ * watchable moment there is.
+ *
+ * A gap makes the overlap impossible instead of unlikely: the character stops tracking, spends this
+ * long wearing its resting face while the head slides back off the cursor, and only then begins the
+ * expression. It sits IN FRONT of a face and not behind one, because only that edge is dangerous —
+ * the reasoning is on `pass`. Nothing here is tuned to make the overlap rare; there is no instant
+ * at which both are true.
+ *
+ * 🔴 IT IS THE HEAD'S OWN EASE, NOT A ROUND NUMBER. `TRACK_EASE` is 0.12 per frame at 60fps, so a
+ * full deflection decays under a pixel in about 23 frames. 400ms covers that with a frame to spare
+ * at 30fps, which is where a loaded page actually runs.
+ */
+export const SETTLE_MS = 400;
+
 /** Watching the pointer, wearing nothing but the resting face. */
 export interface Following {
   readonly kind: "follow";
+}
+
+/**
+ * Between the two: the pointer is already let go of, and no face has started yet.
+ *
+ * 🔴 IT IS A STATE, NOT A DELAY, so both consumers read the same answer for the same instant and
+ * neither has to run a timer. The character wears its resting face here and does not track, which
+ * is what makes "an expression with the cursor in its eyes" unreachable rather than rare.
+ */
+export interface Settling {
+  readonly kind: "settle";
 }
 
 /** Absorbed in one montage entry, with the cursor out of it entirely. */
@@ -63,9 +101,10 @@ export interface Absorbed {
   readonly round: number;
 }
 
-export type Attention = Following | Absorbed;
+export type Attention = Following | Settling | Absorbed;
 
 const FOLLOWING: Following = { kind: "follow" };
+const SETTLING: Settling = { kind: "settle" };
 
 /**
  * What the character is doing `ms` into an unbroken rest.
@@ -94,18 +133,36 @@ export function attentionAt(input: {
   if (n === 0) return FOLLOWING;
 
   const holds = entries.map(holdFor);
-  // One pass is every entry once, each preceded by its own stretch of watching. Taking the
-  // remainder against the pass is what keeps this constant-cost however long the session runs.
+  // One pass is every entry once: a stretch of watching, a settling beat, the face, and a settling
+  // beat again before the next stretch of watching. Taking the remainder against the pass is what
+  // keeps this constant-cost however long the session runs.
+  //
+  // 🔴 THE TWO BEATS COME OUT OF THE WATCHING, NOT OUT OF THE FACE. A face cut short is the held
+  // pose it exists to replace (see `holdFor`), and the settling beats are the character letting go
+  // of the cursor, which is watching-adjacent work. So `FOLLOW_MS` is the whole gap between two
+  // faces and the beats are carved from its ends rather than added to the round.
+  //
+  // 🔴 THE BEAT IS ONLY EVER IN FRONT OF A FACE, AND THE ASYMMETRY IS THE REASONING RATHER THAN AN
+  // OVERSIGHT. The seam has one dangerous edge and one safe one. Going IN, the face arrives on a
+  // React commit while the dock is still up to 120ms from releasing the pointer and 400ms from
+  // having eased off it, so the expression starts with the cursor in its eyes. Coming OUT, the dock
+  // can only turn tracking back on LATE, never early, so the face is already gone before the eyes
+  // find the cursor. A trailing beat would buy nothing and would cost `holdFor` its meaning: a loop
+  // is given its WHOLE cycle here, and trimming 400ms off `gaze-searching` to make the shape
+  // symmetrical is that rule quietly bending.
   const pass = n * FOLLOW_MS + holds.reduce((a, b) => a + b, 0);
   let left = ms % pass;
   for (let round = 0; round < n; round += 1) {
-    if (left < FOLLOW_MS) return FOLLOWING;
+    // Watching, then the beat that hands the pointer back before any face starts.
+    if (left < FOLLOW_MS - SETTLE_MS) return FOLLOWING;
+    if (left < FOLLOW_MS) return SETTLING;
     left -= FOLLOW_MS;
     // 🔴 THE SEED ROTATES THE LIST, IT DOES NOT OFFSET THE CLOCK. Offsetting time would drop a
     // character halfway through some loop on its very first frame; rotating starts it cleanly on a
     // different entry, which is all the seed was ever for. `pass` is a sum over every entry, so it
     // is the same whichever rotation is in use and the walk always consumes exactly one pass.
     const at = (round + seed) % n;
+    // The face, in full — see the note on `pass` for why nothing follows it.
     if (left < holds[at]!) return { kind: "absorbed", entry: entries[at]!, round };
     left -= holds[at]!;
   }

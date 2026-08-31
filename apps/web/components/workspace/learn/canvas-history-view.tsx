@@ -83,9 +83,23 @@ export function CanvasHistoryView({
       {/* 🔴 DRAWN AS THE EXCHANGE IT WAS AND NOTHING ELSE. `CanvasMomentBody` already uses
           `LearnerUtterance` for the learner's words and the live answer's own renderer for the
           reply, which are the two components chat mode draws a turn with, so matching chat mode was
-          a matter of taking things away rather than building a third rendering. */}
+          a matter of taking things away rather than building a third rendering.
+
+          🔴🔴 `learnerSide="end"` — THE MESSAGE ON THE RIGHT, THE ANSWER BELOW IT ON THE LEFT.
+          Owner, 2026-08-31: *"when you go back to your previous message with the rail, then it just
+          showed the chats that you sent on the right side. And then on the bottom left, it should
+          show the message."* Measured in his own ChatGPT the same day: the person's bubble is
+          right-aligned and the answer is plain prose starting at the column's left edge (x=481 for
+          both the bubble's container and the answer).
+
+          This prop already existed and this caller was the reason it defaulted the other way: a
+          rewound moment was "alone on a sheet", where a lone bubble pushed right "would read as
+          misaligned rather than as authored". That reasoning was written when the rewind REPLACED
+          the page. It no longer does anything of the sort — the conversation is the canvas now, so
+          a rewound exchange is read against the same left edge as every other turn, and matching
+          them is the whole ask. The default stays `start` for any caller that really is alone. */}
       <div className="canvas-swap">
-        <CanvasMomentBody moment={moment} />
+        <CanvasMomentBody learnerSide="end" moment={moment} />
       </div>
     </div>
   );
