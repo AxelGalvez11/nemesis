@@ -50,11 +50,23 @@ export type Provider =
   | "brave"
   | "xai_stt"
   | "xai_tts"
+  | "azure_tts"
+  | "azure_pronunciation"
   | "vercel"
   | "supabase"
   | "stripe";
 
 export const PROVIDER_ROLE: Readonly<Record<Provider, string>> = {
+  // 🔴 AZURE WAS MISSING FROM THIS TABLE ENTIRELY UNTIL 2026-08-31, and the owner is the one who
+  // caught it: *"for the voices, you didn't really mention Azure because we use Azure for the
+  // language pronunciation scoring and also the language dialects accents."* He is right, and the
+  // omission is not cosmetic — it is the one lane where a cost model that reports "voice" as a
+  // single xAI line is describing a product we do not ship. `speech-route.ts` has routed the target
+  // language to Azure since §43 (`TARGET_LANGUAGE_PROVIDER = "azure"`), because only its catalogue
+  // can name a dialect; and `azure/pronunciation.ts` scores what the learner says back, which xAI
+  // cannot do at all.
+  azure_pronunciation: "Pronunciation scoring, in the language being learned",
+  azure_tts: "Target-language speech, in a named dialect",
   brave: "Web search",
   deepseek: "Teaching, reasoning and learning orchestration",
   gemini: "Image, diagram, figure and handwriting understanding",
@@ -99,6 +111,18 @@ export interface ProviderRate {
  * from a usage row without a switch statement anywhere else in the codebase.
  */
 export const RATES: readonly ProviderRate[] = [
+  // ── Azure AI Speech. The language lane: dialect voices out, pronunciation scored in. ──
+  //
+  // 🔴 `assumed`, AND DELIBERATELY SO UNTIL SOMEBODY READS THE PORTAL. Every other rate here is
+  // either mirrored from our own code or read off a public price page on a stated date. Azure's
+  // speech prices vary by region, by commitment tier and by whether the voice is standard or HD,
+  // and this repo has never recorded which of those the account is on — there is no meter for it
+  // either (`voice_seconds_month` counts xAI's lane). So these are PLANNING FIGURES at the public
+  // pay-as-you-go list rate, and `syntheticProviders()` will name them in any margin table they
+  // touch. Replace with `published` + a URL + a date the moment the account's real tier is known.
+  { basis: "assumed", checked: "2026-08-31", provider: "azure_tts", service: "neural TTS", source: "planning figure at Azure's public pay-as-you-go list rate; account tier unread", unit: "per_million_characters", usd: 16 },
+  { basis: "assumed", checked: "2026-08-31", provider: "azure_pronunciation", service: "pronunciation assessment", source: "planning figure; billed as speech-to-text on Azure's public pay-as-you-go list rate", unit: "per_hour", usd: 1 },
+
   // ── DeepSeek. Mirrored from the valve's own price list, guarded by a test. ──
   { basis: "mirrored", checked: "2026-07-24", provider: "deepseek", service: "deepseek-v4-flash", source: "supabase/functions/_shared/llm-cost.ts", unit: "per_million_input_tokens", usd: 0.14 },
   { basis: "mirrored", checked: "2026-07-24", provider: "deepseek", service: "deepseek-v4-flash", source: "supabase/functions/_shared/llm-cost.ts", unit: "per_million_cached_input_tokens", usd: 0.0028 },

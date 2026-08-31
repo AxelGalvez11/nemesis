@@ -311,6 +311,18 @@ export interface StudentMonth {
   /** Seconds of conversational voice, split between listening and speaking. */
   voiceSecondsIn: number;
   voiceSecondsOut: number;
+  /**
+   * Seconds of TARGET-LANGUAGE speech, which is a different provider and a different bill.
+   *
+   * 🔴 SEPARATE FROM `voiceSecondsOut` BECAUSE THE ROUTING IS SEPARATE, NOT BECAUSE IT IS TIDIER.
+   * `speech-route.ts` sends the canvas lane to xAI and the target language to Azure
+   * (`TARGET_LANGUAGE_PROVIDER`), because only Azure's catalogue can name a dialect. Azure's
+   * characters cost roughly 4x xAI's, so folding them into one line would under-report a language
+   * learner and over-report everyone else.
+   */
+  targetLanguageSecondsOut: number;
+  /** Seconds of the learner's own speech scored for pronunciation. Azure again, billed like STT. */
+  pronunciationSecondsIn: number;
 }
 
 /**
@@ -330,7 +342,11 @@ function scenario(
   searches: number,
   voiceMinutes: number,
   proLaneShare: number,
+  /** How much of this month's talking is a language being LEARNED rather than the canvas.
+   *  Zero for most students; the language learner is a real profile the owner named. */
+  languageShare = 0,
 ): StudentMonth {
+  const languageSeconds = Math.round(voiceMinutes * 60 * languageShare);
   return {
     documentPages,
     geminiShare: ESCALATION.gemini,
@@ -343,8 +359,12 @@ function scenario(
     searches,
     // Half the conversation is the learner talking and half is Nemesis, which is
     // what a taught exchange looks like. Both halves bill, at different rates.
-    voiceSecondsIn: Math.round((voiceMinutes * 60) / 2),
-    voiceSecondsOut: Math.round((voiceMinutes * 60) / 2),
+    // 🔴 THE LANGUAGE SECONDS COME OUT OF THE TOTAL, NOT ON TOP OF IT. A learner has one mouth
+    // and one hour; drilling Spanish is time NOT spent talking to the canvas.
+    pronunciationSecondsIn: Math.round(languageSeconds / 2),
+    targetLanguageSecondsOut: Math.round(languageSeconds / 2),
+    voiceSecondsIn: Math.round((voiceMinutes * 60 - languageSeconds) / 2),
+    voiceSecondsOut: Math.round((voiceMinutes * 60 - languageSeconds) / 2),
   };
 }
 
@@ -365,14 +385,26 @@ export const POWER_STUDENT = scenario("power", 20_000_000, 2_500, 0.75, 140, 200
  * worst a single subscriber can cost" has to have an answer.
  */
 export const CAP_EXHAUSTION: StudentMonth = {
-  ...scenario("cap exhaustion", PLANS.nemesis.monthlyTokens, 6_000, 0.6, PLANS.nemesis.searchMonthly, PLANS.nemesis.voiceSeconds / 60, 1),
+  // 🔴 THE WHOLE VOICE ALLOWANCE ON THE EXPENSIVE LANE. The ceiling has to assume the costliest
+  // legal way to spend each meter, and for voice that is Azure's, not xAI's.
+  ...scenario("cap exhaustion", PLANS.nemesis.monthlyTokens, 6_000, 0.6, PLANS.nemesis.searchMonthly, PLANS.nemesis.voiceSeconds / 60, 1, 1),
 };
+
+/**
+ * The owner's own second use for this product: *"let's say I wanna learn a new language."*
+ *
+ * 🔴 IT IS THE HEAVY STUDENT WITH THEIR VOICE TIME MOVED, NOT AN EXTRA HOUR ADDED. The point of
+ * the profile is that Azure's lane costs several times xAI's for the same minute, so the same
+ * amount of talking bills differently depending on WHAT is being talked.
+ */
+export const LANGUAGE_LEARNER = scenario("language learner", 12_000_000, 1_400, 0.8, 90, 90, 0.25, 0.7);
 
 export const SCENARIOS: readonly StudentMonth[] = [
   LIGHT_STUDENT,
   NORMAL_STUDENT,
   HEAVY_STUDENT,
   POWER_STUDENT,
+  LANGUAGE_LEARNER,
   CAP_EXHAUSTION,
 ];
 
@@ -442,6 +474,25 @@ export function modelStudentMonth(month: StudentMonth): WorkloadReport {
         ),
         4,
       ),
+    },
+    // The language lane. Zero for a student who never opens one, which is most of them.
+    {
+      provider: "azure_tts",
+      role: PROVIDER_ROLE.azure_tts,
+      usd: round(
+        usdFor(
+          "azure_tts",
+          "neural TTS",
+          "per_million_characters",
+          (month.targetLanguageSecondsOut * (SPEECH_CHARS_PER_MINUTE / 60)) / 1e6,
+        ),
+        4,
+      ),
+    },
+    {
+      provider: "azure_pronunciation",
+      role: PROVIDER_ROLE.azure_pronunciation,
+      usd: round(usdFor("azure_pronunciation", "pronunciation assessment", "per_hour", month.pronunciationSecondsIn / 3_600), 4),
     },
     { provider: "vercel", role: PROVIDER_ROLE.vercel, usd: usdFor("vercel", "fluid compute", "per_subscriber_month", 1) },
     { provider: "supabase", role: PROVIDER_ROLE.supabase, usd: usdFor("supabase", "database, storage, egress", "per_subscriber_month", 1) },
