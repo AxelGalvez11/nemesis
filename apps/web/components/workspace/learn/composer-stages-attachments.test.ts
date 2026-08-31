@@ -63,6 +63,20 @@ test("🔴 the reader's own send still commits directly and WAITS", () => {
   assert.match(reader, /await session\.attachFiles\(files\)/);
 });
 
+test("🔴🔴 EVERY way material arrives mid-session stages it — including the drop", () => {
+  // 🔴 THIS IS THE ONE THAT SHIPPED BROKEN. #969 rerouted the composer's `+` and left the canvas
+  // surface calling `session.attachFiles` directly, so the commonest gesture in the product —
+  // dragging a PDF onto the page — skipped the composer: no card, no reading state, nothing to
+  // remove. Measured on production the same evening. Two doors to one action is how a fix lands on
+  // one of them, so both are pinned here by name.
+  assert.match(canvas, /onDropFiles=\{attachWithChips\}/, "dropping on the canvas bypasses the composer again");
+  assert.match(canvas, /attach=\{async \(files\) => \{ attachWithChips\(files\); \}\}/, "a finished recording bypasses the composer");
+  // The only direct ingests left are the two that must be: SEND committing what is staged, and the
+  // reader's own send, where the question and the picture are a single gesture.
+  const direct = (canvas.match(/session\.attachFiles\(/g) ?? []).length;
+  assert.equal(direct, 3, "a new direct attach appeared — route it through attachWithChips instead");
+});
+
 // ── the card can be seen and removed ────────────────────────────────────────
 
 test("🔴🔴 each card carries its own state and a way out", () => {

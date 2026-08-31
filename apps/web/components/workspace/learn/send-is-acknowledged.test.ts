@@ -405,7 +405,12 @@ test("🔴🔴 a file dropped anywhere on the canvas is attached", () => {
   assert.match(surface, /<FileDropOverlay /, "the canvas gives no sign it accepts the drop");
   assert.match(surface, /setDraggingOver\(true\)/, "nothing raises the overlay");
   assert.match(surface, /setDraggingOver\(false\)/, "the overlay never comes down");
-  assert.match(canvasCode, /onDropFiles=\{\(files\) => void session\.attachFiles\(files\)\}/, "the canvas does not hand dropped files to the session");
+  // 🔴 REPOINTED 2026-08-31: a dropped file now goes to `attachWithChips`, which STAGES it in the
+  // composer — a card the learner watches being read and can remove — and SEND commits it (owner:
+  // "the attachments attach to composer before sending… and can remove attachment if necessary").
+  // The property this line defends is unchanged and is still exactly what is pinned: the canvas
+  // hands a dropped file to the code that ingests it, rather than dropping it on the floor.
+  assert.match(canvasCode, /onDropFiles=\{attachWithChips\}/, "the canvas does not hand dropped files to the session");
 });
 
 test("🔴 the loading branch does NOT accept drops, because there is nothing to attach to", () => {
