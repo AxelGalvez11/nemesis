@@ -125,6 +125,7 @@ export default function CourseMapPreviewPage() {
               activeLabel={focused}
               evidence={EVIDENCE}
               onPick={(scope: { label: string; identityKeys: readonly string[] }) => setFocused(scope.label)}
+              onWhole={() => setFocused(null)}
               plan={plan}
               title={title}
             />

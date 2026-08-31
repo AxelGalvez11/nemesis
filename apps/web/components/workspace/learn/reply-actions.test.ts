@@ -114,13 +114,6 @@ test("🔴🔴 ONE player for the whole response, never one per block", () => {
   assert.match(CANVAS, /audio=\{voice\.replyAudio\}/, "the row is not reading the one shared controller");
 });
 
-test("🔴 turning autoplay ON does not retro-read the answer already on screen", () => {
-  // A preference about what happens NEXT must not narrate the paragraph you are in the middle of
-  // reading. Calibration: put `mode` back in the effect's dependencies and this reddens.
-  assert.match(VOICE_HOOK, /const arrived = autoplayed\.current !== replyKey/);
-  assert.match(VOICE_HOOK, /if \(!arrived \|\| !replyKey \|\| !reply\) return;/);
-});
-
 test("🔴🔴 the row does NOT appear while the turn is still arriving", () => {
   // Copying half an answer copies half an answer, and a play button on a sentence about to be
   // replaced reads as broken.
@@ -180,28 +173,26 @@ test("🔴🔴 the Canvas no longer asks which voice, and no longer asks how fas
   assert.ok(!/onSetVoice|onCycleSpeed/.test(VOICE_HOOK), "the Canvas hook still owns choosing a voice");
 });
 
-test("🔴🔴 the ONE voice decision left on the Canvas is autoplay", () => {
-  // Owner: *"Canvas should have a simple option for: Automatically read responses aloud."*
-  // 🔴 THE BUTTON BECAME A ROW AGAIN (2026-08-30) — owner: "so many icons ... only show up
-  // when they are actually needed." It left the `⋯` menu on 2026-08-25 only because that menu
-  // had emptied to one row; the menu is real again (teaching style gave it three rows), so the
-  // toggle moved back in. The invariant is unchanged across BOTH moves — autoplay is offered on
-  // the canvas — only its shape moved, so this matches the menu row inside `OptionsMenu`.
-  const menu = CONTROLS.slice(CONTROLS.indexOf("export function OptionsMenu"));
-  assert.match(menu, /checked=\{voiceOn\}/, "autoplay is not offered on the canvas");
-  assert.match(menu, /"Read responses aloud"/, "the row no longer says what it does");
-  assert.match(menu, /voice\.onToggle\(voiceOn \? "off" : "on"\)/, "the row does not flip the mode");
-  // 🔴 AND THE ON STATE STAYS VISIBLE WITHOUT A CLICK: the `⋯` glyph tints when voice is on,
-  // which is what the standalone button's aria-pressed used to say from the row.
-  assert.match(menu, /voiceOn \|\| style !== DEFAULT_LEARNING_STYLE/, "an on state no longer lights the glyph");
-  assert.match(VOICE_HOOK, /if \(mode !== "on"\) return;\n    replyAudio\.start\(reply\.text\)/, "autoplay does not start the audio");
+test("🔴🔴 autoplay is DEAD, and pressing play is the only way an answer speaks", () => {
+  // Owner reversal, 2026-08-30: *"also remove the read outloud."* The 2026-08-22 ruling this
+  // replaces ("Canvas should have a simple option for: Automatically read responses aloud") lost
+  // its row when the `⋯` menu died, and this file's own standard — a mode whose only door is gone
+  // goes entirely — took the mode with it. What half of that ruling SURVIVES is pinned by the
+  // next test: *"the user should still be able to manually play a response."*
+  assert.ok(!/VoiceMode|readVoiceMode|DEFAULT_VOICE_MODE/.test(VOICE_HOOK), "the autoplay mode is back in the voice hook");
+  assert.ok(!/"Read responses aloud"/.test(CONTROLS), "the autoplay row is back in the controls");
+  assert.ok(!existsSync(new URL("../../../lib/learn/voice-preferences.ts", import.meta.url)), "the mode's preference file is back");
+  // 🔴 The half of the old autoplay effect that was never about the setting stays: a new answer
+  // still silences the previous answer's audio, because that audio belongs to what it narrates.
+  assert.match(VOICE_HOOK, /if \(arrived\) replyAudio\.stop\(\);/, "a replaced answer keeps talking");
 });
 
-test("🔴🔴 autoplay and manual play are the SAME path, so one cannot work while the other does not", () => {
-  // Owner: *"When disabled… the user should still be able to manually play a response."* Autoplay
-  // decides whether to press play; everything after that is identical.
-  assert.match(VOICE_HOOK, /replyAudio\.start\(reply\.text\)/);
+test("🔴🔴 manual play survives the mode's death — the press the owner promised is still wired", () => {
+  // 2026-08-22: *"the user should still be able to manually play a response."* That half of the
+  // ruling outlives the autoplay half the 2026-08-30 cut removed. The player presses the same
+  // controller the hook exposes; nothing else may start an answer's audio.
   assert.match(PLAYER, /audio\.start\(text\)/);
+  assert.ok(!/replyAudio\.start\(/.test(VOICE_HOOK), "the hook presses play by itself again — autoplay is back");
 });
 
 test("🔴🔴 the Canvas reads the voice from Settings and follows it without a reload", () => {
@@ -259,7 +250,7 @@ test("🔴🔴 the ANSWER is never waiting on the audio", () => {
 test("🔴🔴 autoplay fires ONCE, at the end of the turn, not on every streamed chunk", () => {
   // `spokenReply`'s key is derived from the text, and the text GROWS while an answer streams — so an
   // ungated autoplay would buy a fresh synthesis per chunk and replay the opening over and over.
-  assert.match(CANVAS, /useCanvasVoice\(policy, turnInFlight \? null : spokenReply\)/);
+  assert.match(CANVAS, /useCanvasVoice\(turnInFlight \? null : spokenReply\)/);
 });
 
 test("🔴🔴 the canvas menu asks ONE voice question, with no explanation under it", () => {
@@ -269,10 +260,10 @@ test("🔴🔴 the canvas menu asks ONE voice question, with no explanation unde
   assert.ok(!/Open the mic after each question/.test(CONTROLS), "the mic option is back in the menu");
   // 🔴 AND IT WENT END TO END, NOT JUST OUT OF SIGHT. That row was the only switch `autoDictation`
   // had, so leaving the preference behind would leave a lane that can never run — this codebase's
-  // most-repeated defect wearing the other face.
-  const PREFS = readFileSync(new URL("../../../lib/learn/voice-preferences.ts", import.meta.url), "utf8");
+  // most-repeated defect wearing the other face. The whole preference FILE followed on
+  // 2026-08-30, when the autoplay mode (its last remaining half) died with the `⋯` menu.
   const COMPOSER = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
-  assert.ok(!/export (type AutoDictation|function (read|write)AutoDictation|function should(Ask|Open)Dictation)/.test(PREFS), "the auto-dictation preference outlived its only switch");
+  assert.ok(!existsSync(new URL("../../../lib/learn/voice-preferences.ts", import.meta.url)), "the preference file is back");
   assert.ok(!/listenSignal\?:|\[listenSignal\]/.test(COMPOSER), "the composer still listens for a signal nothing can send");
   // 🔴 DICTATION ITSELF IS UNTOUCHED — the button, and hold-space-to-talk.
   assert.match(COMPOSER, /startDictation/, "the microphone button went with the preference");

@@ -70,9 +70,9 @@ import { CanvasFade } from "./canvas-fade";
 import { CanvasThreadTurnView } from "./canvas-thread-turn";
 import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
+import { WHOLE_CANVAS } from "@/lib/learn/canvas-focus";
 import { fileTurn, turnHasContent, type CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { LearnerUtterance } from "./learner-utterance";
-import { useCanvasView } from "./use-canvas-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
@@ -1232,7 +1232,7 @@ export function LearningCanvas({
    * and the learner would hear the beginning of the answer over and over. It is the same signal the
    * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
    */
-  const voice = useCanvasVoice(policy, turnInFlight ? null : spokenReply);
+  const voice = useCanvasVoice(turnInFlight ? null : spokenReply);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -1361,22 +1361,12 @@ export function LearningCanvas({
    */
   const [rewound, setRewound] = useState<string | null>(null);
 
-  /**
-   * WHICH OF THE TWO VIEWS IS ON SCREEN — owner, 2026-08-26: *"a different view, a different way to
-   * view outputs."*
-   *
-   * 🔴🔴 UNLIKE `rewound` ABOVE, THIS ONE PERSISTS, AND THE DIFFERENCE IS WHAT KIND OF FACT EACH IS.
-   * Where you scrolled BACK to is about this visit and must not survive it — reopening tomorrow has
-   * to land on now. How you like to read is about you, and a preference that reset on every reload
-   * would be a control rather than a preference. It is kept in the browser and never on the canvas,
-   * so looking at a canvas still cannot modify it; see `lib/learn/canvas-view.ts`.
-   *
-   * 🔴 PERSISTING IS ONLY SAFE BECAUSE THE CONVERSATION VIEW ENDS AT THE PRESENT. The dangerous
-   * state this feature could have — old content reading as live — is exactly what `rewound` guards
-   * against with a banner and a `turnInFlight` reset. There is no such state here: the newest thing
-   * on the page is the newest thing that happened, and a new answer lands at the bottom of it.
-   */
-  const { toggle: toggleView, view } = useCanvasView();
+  // 🔴🔴 THERE IS NO SECOND VIEW ANY MORE — owner, 2026-08-30: *"why is latest output option even
+  // there in the first place? that seems unnecessary."* The one-answer "answer" view, its toggle,
+  // its localStorage pin and `lib/learn/canvas-view.ts` are all deleted. The conversation IS the
+  // canvas. That family of defects ends with it: the pinned view produced the same "chat mode not
+  // showing conversation history" report three times before being healed earlier the same day, and
+  // this removes the state that could ever hide the thread again.
 
 
   /**
@@ -1483,18 +1473,18 @@ export function LearningCanvas({
   }, [session.aside, session.madeArtifact]);
 
   /**
-   * Whether the thread is on screen.
+   * Whether the thread is on screen — which is always, except while rewound.
    *
    * 🔴 A REWIND STILL OUTRANKS IT. `CanvasHistoryView` is an opaque overlay aimed at ONE moment;
    * leaving the thread painting underneath would put two readings of the same canvas on screen.
    *
-   * 🔴 IT IS NOT GATED ON HAVING CONTENT. The thread is the DEFAULT surface now, and an empty one
-   * is simply a new conversation — the same thing an empty chat looks like anywhere. What is gated
-   * is the SWITCH, below, which has nothing to offer until a turn has happened.
+   * 🔴 IT IS NOT GATED ON HAVING CONTENT. An empty thread is simply a new conversation — the same
+   * thing an empty chat looks like anywhere. And it is no longer gated on a view: the view switch
+   * died on 2026-08-30 (see the note above `rewound`'s sibling state), so `!viewing` is the whole
+   * condition.
    */
-  const threadOpen = view === "conversation" && !viewing;
+  const threadOpen = !viewing;
 
-  /** Whether there is anything to read back through at all — see `ConversationControl`. */
   /**
    * Re-ask a question and let the answer land as a new turn.
    *
@@ -1504,8 +1494,6 @@ export function LearningCanvas({
    * something was said that no longer is.
    */
   const retryTurn = useCallback((said: string) => { void converse(said); }, [converse]);
-
-  const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
 
   /**
    * 🔴 A NEW TURN RETURNS THE LEARNER TO NOW. Leaving the canvas rewound while an answer arrives
@@ -1911,19 +1899,18 @@ export function LearningCanvas({
         outputTools={{ onRevise: reviseOutput, onUndo: undoOutput, uid }}
         replyAudio={voice.replyAudio}
         transcript={transcript}
-        voice={voice.header}
         // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in
-        // canvas-header.tsx. `decidedObjectiveKey` is derived here rather than handing the whole
-        // `decision` down, so nothing below this line can reach into it for anything but the one
-        // fact the Minimap's "recommended" row needs (§H3).
+        // canvas-header.tsx. The slice shrank with `MinimapControl` (owner, 2026-08-30): the
+        // course map is the one panel left in that corner, and these are exactly its inputs.
         minimap={{
-          coverage: policy.coverage,
-          decidedObjectiveKey: policy.decision?.objective.identityKey ?? null,
           evidence: policy.evidence,
           focus: policy.focus,
-          outcome: policy.outcome,
+          // 🔴 WIDENING IS THE SAME DOOR NARROWING USES — `setFocus`, with the whole-canvas
+          // scope. The map's "Whole course" row exists because the panel that used to carry the
+          // way back out (Progress) is gone; see course-map.tsx's `onWhole` prop comment.
+          onClearCourseScope: () => policy.setFocus(WHOLE_CANVAS),
           // 🔴 THE COURSE, RESOLVED AGAINST WHAT THIS CANVAS ACTUALLY HOLDS — see `planRows` above.
-          // Null on the ordinary canvas, in which case the panel is exactly what it was yesterday.
+          // Null on the ordinary canvas, in which case there is no map control at all.
           onPickCourseScope: (scope) => policy.setFocus({ kind: "selection", ...scope }),
           plan: planRows,
           planTitle: session.coursePlan?.title ?? null,
@@ -1933,8 +1920,6 @@ export function LearningCanvas({
           // the panel.
           planCredit:
             session.coursePlan?.sources?.length === 1 ? (session.coursePlan.sources[0] ?? null) : null,
-          setFocus: policy.setFocus,
-          territories: policy.territories,
         }}
         onDelete={() => {
           void session.remove().then(() => router.push(CANVAS_EXIT_ROUTE));
@@ -1957,11 +1942,6 @@ export function LearningCanvas({
         // continuous across question and feedback, never quiet over a document.
         onFiles={attachWithChips}
         onRename={session.rename}
-        // 🔴 WITHHELD UNTIL THERE IS A CONVERSATION TO READ, which is what keeps a fresh canvas's
-        // control row exactly as it is today. `CanvasHeader` renders the control only when both
-        // arrive, so this is one condition rather than a prop the header has to second-guess.
-        onToggleView={conversationOffered ? toggleView : undefined}
-        view={conversationOffered ? view : undefined}
       />
       }
     >
@@ -2211,7 +2191,7 @@ export function LearningCanvas({
                     locale={segment.locale}
                     onSpeak={() => voice.speakExample(`s${index}`, segment.locale, segment.text)}
                     onStop={voice.stopSpeaking}
-                    // 🔴 THIS ROW, NOT ANY ROW. `voice.header.speaking` is one boolean for the whole
+                    // 🔴 THIS ROW, NOT ANY ROW. `voice.speaking` is one boolean for the whole
                     // surface, and handing it to every example turned all of them into stop buttons
                     // the moment one played (owner, 2026-08-21).
                     speaking={voice.speakingExample === `s${index}`}
@@ -2820,7 +2800,7 @@ export function LearningCanvas({
           forceOpen={!text.selection && Boolean(term)}
           onAsk={(request) => void ask(request)}
           onSpeak={(text) => voice.speakAloud(text)}
-          speaking={voice.header.speaking}
+          speaking={voice.speaking}
           onDismiss={dismissSelection}
           rect={pointed.rect}
           selection={pointed.selection}

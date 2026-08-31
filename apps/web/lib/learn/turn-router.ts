@@ -39,7 +39,7 @@
 // was wanted hijacks somebody who said hello. The old file said that too, and then defaulted the
 // unrecognised case to TEACH. Here an unparseable or empty decision falls back to conversation.
 
-import { learningStyleInstruction, learningStyleReminder, THINKING_STANCE, type LearningStyle } from "@nemesis/shared";
+import { THINKING_STANCE } from "@nemesis/shared";
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
@@ -1763,23 +1763,17 @@ export function turnRouterMessages(input: {
   context: TurnContext;
   /** Extra rules the caller owns, e.g. which source wins when they disagree. */
   sourceRule?: string;
-  /**
-   * How much the learner wants handed to them. Their own setting, from the options menu.
-   *
-   * 🔴 OPTIONAL AND DEFAULTING TO NOTHING, so a canvas that has never opened the picker sends a
-   * packet byte-identical to what shipped before this existed. `learningStyleInstruction` returns
-   * the empty string for `direct`, which `filter(Boolean)` then drops entirely.
-   */
-  learningStyle?: LearningStyle;
 }): WireMsg[] {
   const { context, utterance } = input;
   return [
-    // 🔴 THE STYLE GOES LAST AND `NEMESIS_SYSTEM` STAYS FIRST. The cache argument canvas-prompts.ts
-    // makes: the identity is the common prefix across every canvas turn. And the instruction one:
-    // the style OVERRIDES the stance's "answer the question" default, so the model has to read the
-    // default before it reads the thing that overrides it.
+    // 🔴 NO TEACHING-STYLE INSTRUCTION ANY MORE — owner reversal, 2026-08-30: *"deepseek should
+    // decide how to best teach material."* The three-setting picker (Direct/Guided/Socratic,
+    // 2026-08-28) is deleted; the stance in NEMESIS_SYSTEM answers the question by default and the
+    // model chooses its own pedagogy from the material and what the learner asks in words. For
+    // `direct` — every canvas that never opened the picker — this packet is byte-identical to the
+    // one it replaces, because the instruction was the empty string.
     {
-      content: [NEMESIS_SYSTEM, input.sourceRule, learningStyleInstruction(input.learningStyle ?? "direct")]
+      content: [NEMESIS_SYSTEM, input.sourceRule]
         .filter(Boolean)
         .join("\n\n"),
       role: "system",
@@ -1882,15 +1876,8 @@ export function turnRouterMessages(input: {
       { content: exchange.said, role: "user" },
       ...(exchange.replied.trim() ? [{ content: exchange.replied, role: "assistant" as const }] : []),
     ]),
-    // 🔴🔴 THE STYLE REMINDER RIDES LAST, AND WITHOUT IT THE SETTING DOES NOT WORK. Measured
-    // 2026-08-28: the full instruction in the system prompt alone left Guided and Socratic producing
-    // near-identical answers three turns in, with Socratic handing over the very derivation its own
-    // rule forbids. A rule two thousand characters back loses to the exchange in front of the model.
-    // Claude Code's output styles solve it the same way. Empty for `direct`.
     {
-      content: [`${utterance}\n\n---\n${DECISION_CONTRACT}`, learningStyleReminder(input.learningStyle ?? "direct")]
-        .filter(Boolean)
-        .join("\n\n"),
+      content: `${utterance}\n\n---\n${DECISION_CONTRACT}`,
       role: "user",
     },
   ];

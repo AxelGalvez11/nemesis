@@ -186,19 +186,23 @@ export function CanvasHistoryRail({
               // background-color, box-shadow, padding and gap — the four properties the pop-up
               // animated. With one state there is nothing for them to animate between, and a
               // transition on a value that never changes is a promise nothing keeps.
-              "flex flex-col items-stretch gap-[3px] rounded-lg py-2",
+              "flex flex-col items-stretch gap-[4px] rounded-lg py-2",
               // 🔴🔴 BARE MARKS ON THE SHEET, ALWAYS — "nearly disappear until needed". The strip
               // used to grow a surface while it was being read (`bg-(--ui-bg-elevated)/95`, a
               // shadow, a ring and a backdrop blur) and that surface is the "pop up" the owner
               // reported on 2026-08-29. See the file header for the measurement.
               //
-              // 🔴 THE 3px GAP IS THE OWNER'S OWN NUMBER AND IS UNCHANGED. Reading the live rail on
-              // 2026-08-23: *"just increase the spacing a bit."* That moved the collapsed gap from
-              // 1px to 3px, an 12px pitch with the 9px row. It was never the thing that moved.
-              // 🔴 `h-2` IS 9px IN THIS APP (`html { font-size: 112.5% }`), not 8. At the 24-marker
-              // cap the column is ~288px, comfortably inside 70vh of an 800px viewport — and it is
-              // now that height in every state, which is the point. Measure after changing any
-              // metric here; the estimate in the note this replaces was 2.2x wrong.
+              // 🔴 THE WHOLE STRIP SIZED UP ON 2026-08-30 — owner: *"it's honestly... still feels a
+              // bit small."* Row 9px -> 14px, gap 3px -> 4px (an 18px pitch), marks 1px -> 2px
+              // thick and longer at rest. His own ChatGPT was measured the same day looking for
+              // the rail to copy and HAS NONE — a 79-turn conversation carries no edge rail at
+              // all — so what "match ChatGPT" can honestly mean is its ergonomics, which do have
+              // numbers: 36px hover targets, and a tooltip that is a 30px pill (5px 12px padding,
+              // 14px/18px at weight 600). The tooltip below wears exactly those numbers.
+              // 🔴 STILL ONE GEOMETRY IN EVERY STATE — sizing up must never bring the hover
+              // pop-up back. At the 24-marker cap the column is 14*24 + 4*23 + 18 = 446px,
+              // measured, inside 70vh of an 800px viewport. Measure after changing any metric
+              // here; the estimate a prior note held was 2.2x wrong.
             )}
           >
             {shown.map((entry) => (
@@ -251,15 +255,15 @@ function RailMarker({
       // buttons, which is exactly as useful as it sounds.
       aria-label={label}
       className={cn(
-        // 🔴 A HIT TARGET, NOT A HAIRLINE. The rule itself is 1px; a 1px button cannot be
-        // clicked, so the row is 9px of transparent space around it. With the nav's 3px gap the
-        // column has no dead pixels — every point on the strip belongs to a marker or the gap
-        // beside it.
+        // 🔴 A HIT TARGET, NOT A HAIRLINE. The rule itself is 2px; a 2px button cannot be
+        // clicked, so the row is 14px of transparent space around it (sized up from 9px on
+        // 2026-08-30 — "still feels a bit small"). With the nav's 4px gap the column has no dead
+        // pixels — every point on the strip belongs to a marker or the gap beside it.
         //
         // 🔴 `relative` IS LOAD-BEARING: it is what the tooltip below is positioned against.
         // 🔴 `group` DRIVES BOTH the mark's widening and the tooltip's appearance from one hover,
         // so the two can never disagree about whether this row is the one being pointed at.
-        "group relative flex h-2 shrink-0 items-center justify-end gap-2 focus-visible:outline-none",
+        "group relative flex h-[14px] shrink-0 items-center justify-end gap-2 focus-visible:outline-none",
       )}
       onClick={onSelect}
       type="button"
@@ -269,8 +273,8 @@ function RailMarker({
         className={cn(
           "block shrink-0 rounded-full transition-all duration-200 ease-out",
           active
-            ? "h-0.5 w-4 bg-(--ui-text-primary)"
-            : "h-px w-2.5 bg-(--ui-text-tertiary) opacity-50 group-hover:w-4 group-hover:opacity-90",
+            ? "h-[2px] w-[26px] bg-(--ui-text-primary)"
+            : "h-[2px] w-[16px] bg-(--ui-text-tertiary) opacity-75 group-hover:w-[22px] group-hover:opacity-100",
         )}
       />
       {/* 🔴 THE LABEL, AS A TOOLTIP RATHER THAN A ROW — the 2026-08-29 change. It stands
@@ -293,9 +297,13 @@ function RailMarker({
           answer. */}
       <span
         className={cn(
-          "pointer-events-none absolute right-full top-1/2 z-10 -translate-y-1/2 truncate rounded-[8px]",
-          "bg-(--ui-bg-elevated) px-[10px] py-[5px] text-left text-[length:var(--canvas-text-small)] leading-[20px]",
-          "shadow-lg ring-1 ring-(--ui-stroke-secondary)",
+          // 🔴 THE REFERENCE'S OWN TOOLTIP, MEASURED IN THE OWNER'S CHATGPT 2026-08-30: a 30px
+          // pill — fully rounded, 5px 12px padding, 14px/18px at weight 600, a solid surface with
+          // a shadow and NO ring. The colour stays on our tokens so both themes hold; everything
+          // with a number is theirs.
+          "pointer-events-none absolute right-full top-1/2 z-10 -translate-y-1/2 truncate rounded-full",
+          "bg-(--ui-bg-elevated) px-[12px] py-[5px] text-left text-[length:var(--canvas-text-small)] font-semibold leading-[18px]",
+          "shadow-lg",
           "max-w-[200px] opacity-0 transition-opacity duration-150 ease-out",
           "group-hover:opacity-100 group-focus-visible:opacity-100",
           active ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
