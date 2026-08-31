@@ -111,6 +111,26 @@ test("the cache weight matches the meter in the valve", () => {
   assert.match(source, new RegExp(`CACHE_HIT_WEIGHT = ${CACHE_HIT_WEIGHT}`));
 });
 
+test("🔴🔴🔴 the meter is AWAITED, because a margin you cannot see is a margin you do not have", () => {
+  // Production, 2026-08-31: `usage_events` and `usage_counters` had recorded nothing
+  // since 2026-08-20 while the same function returned 200 on chat completions the whole
+  // time, and `device_keys.last_used_at` had stopped on 2026-08-27. Reads worked; every
+  // write nobody awaited was cut when the isolate was torn down after the response.
+  //
+  // 🔴 IT IS NOT AN ANALYTICS BUG. The same call increments the daily and monthly caps,
+  // so for eleven days the wall behind this plan was not counting — the ceiling in this
+  // file's own `CAP_EXHAUSTION` scenario was theoretical.
+  //
+  // Calibration: wrap either `recordUsage` call in `keepAlive(...)` again and this
+  // reddens alone.
+  const source = repoFile("supabase/functions/nemesis-llm/index.ts");
+  assert.ok(!/keepAlive\(recordUsage/.test(source), "the student meter is fire-and-forget again");
+  assert.equal((source.match(/await recordUsage\(/g) ?? []).length, 2, "both the streamed and the plain path must await the meter");
+  assert.match(source, /async flush\(\)/, "the streamed meter runs in a flush the stream does not wait for");
+  assert.ok(!/void maybeWarnCap/.test(source), "a cap warning fires on one tick only, so a dropped one is gone");
+  assert.ok(!/void admin\.from\('device_keys'\)/.test(source), "last_used_at is fire-and-forget again");
+});
+
 test("the note pass runs once per recording, over the whole transcript", () => {
   const source = repoFile("packages/shared/src/recording-note.ts");
   assert.match(source, new RegExp(`RECORDING_NOTE_TRANSCRIPT_CHARS = ${RECORDING_NOTE_TRANSCRIPT_CHARS / 1000}_000`));
