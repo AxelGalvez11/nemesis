@@ -1,137 +1,73 @@
+/**
+ * The thinking preview is the reference's, measured — not remembered (owner 2026-08-30: *"i need
+ * the thinking preview in chat mode match how chatgpt does it"*).
+ *
+ * Read live off chatgpt.com the same day, signed in, dark theme, from the real
+ * `.loading-shimmer-tertiary` span and its stylesheet rules:
+ *
+ *   - a BARE shimmering sentence — no glyph, no spinner beside it, in every working state
+ *     ("Thinking", "Working", the search states), and NOTHING once the answer lands: no
+ *     "Thought for Xs", nothing expandable. Their build never shows the trace at all.
+ *   - 16px on a 24px line, weight 400, in the TERTIARY text colour.
+ *   - the sweep: a half-width `no-repeat` band, `background-position` -100% → 250%, `1400ms ease
+ *     infinite` (their `--cot-shimmer-duration: 1400ms`), and the band FADES the words toward
+ *     the background (dark: rgba(0,0,0,.6) over #afafaf; light: rgba(255,255,255,.75) over
+ *     grey) — which `color-mix(… 35%, transparent)` reproduces in one theme-proof rule.
+ *   - the composer keeps its resting placeholder while the model works; the row in the thread
+ *     is the one place that says "Thinking".
+ *
+ * The marks that used to sit beside our caption arrived 2026-08-24 ("like it does in ChatGPT")
+ * and died 2026-08-30, the day the reference measurably had none. This file was their fence;
+ * now it fences their absence and the recipe.
+ */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { test } from "node:test";
+import test from "node:test";
 
-import { domainLabel, sourceLabel } from "../favicon";
-import { markForBusy, THINKING_COPY, THINKING_MARK, thinkingMark, type ThinkingPhase } from "./thinking-phases";
+const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-// Owner 2026-08-24: icons on the thinking preview, and favicons while it searches. The rule the
-// captions live under applies unchanged to a mark — it is a claim about what Nemesis is doing,
-// read faster than a sentence and questioned less.
-
-test("🔴 every phase that can report itself has a mark, and nothing else does", () => {
-  const phases = Object.keys(THINKING_COPY) as ThinkingPhase[];
-  for (const phase of phases) {
-    assert.ok(THINKING_MARK[phase], `${phase} has a caption but no mark`);
+test("🔴🔴 the mark machinery is dead end to end, not parked", () => {
+  assert.throws(() => read("../../components/character/thinking-mark.tsx"), "the mark renderer is back");
+  const phases = strip(read("./thinking-phases.ts"));
+  for (const name of ["export type ThinkingMark", "THINKING_MARK", "markForBusy", "export function thinkingMark"]) {
+    assert.ok(!phases.includes(name), `${name} came back to thinking-phases.ts`);
   }
-  assert.equal(
-    Object.keys(THINKING_MARK).length,
-    phases.length,
-    "a mark exists for a phase this runtime cannot emit — see the header of thinking-phases.ts",
-  );
-});
-
-test("🔴 the mark follows the SAME precedence as the caption beside it", () => {
-  // learning-canvas.tsx builds systemLabel as: busy.label → session.work → THINKING_COPY[phase].
-  // If this function ordered them differently, the picture and the sentence would eventually
-  // describe two different instants — a magnifier next to "Reading your material".
-  assert.equal(thinkingMark({ busyKind: "source", phase: "finding_gap" }), "reading", "busy must outrank the phase");
-  assert.equal(thinkingMark({ phase: "finding_gap", work: "Looking something up" }), null, "work must outrank the phase");
-  assert.equal(thinkingMark({ phase: "mapping_knowledge" }), "mapping");
-  assert.equal(thinkingMark({}), null, "a mark appeared with nothing to describe");
-});
-
-test("🔴 searching outranks everything, because it is the most specific true thing", () => {
-  assert.equal(thinkingMark({ busyKind: "command", searching: true }), "searching");
-  assert.equal(thinkingMark({ phase: "reading_source", searching: true }), "searching");
-  assert.equal(thinkingMark({ searching: true, work: "Reading the results" }), "searching");
-  // ...and only when it is actually true.
-  assert.equal(thinkingMark({ busyKind: "command", searching: false }), "writing");
-});
-
-test("🔴 a free-text label earns no mark", () => {
-  // `session.work` is a sentence with no kind attached. Inferring one from its words would be
-  // exactly the keyword-matching this codebase refuses elsewhere — and it would be wrong the
-  // first time a label was reworded.
-  for (const work of ["Reading the paper", "Searching the web", "Checking your answer", "Anything at all"]) {
-    assert.equal(thinkingMark({ work }), null, `"${work}" was matched to a mark by its wording`);
+  for (const rel of [
+    "../../components/character/character-dock.tsx",
+    "../../components/workspace/learn/learning-canvas.tsx",
+    "../../components/workspace/learn/canvas-chat.ts",
+    "../../components/workspace/learn/use-canvas-session.ts",
+    "./canvas-tools.ts",
+  ]) {
+    const source = strip(read(rel));
+    assert.ok(!source.includes("ThinkingMark"), `${rel} still reaches for a mark`);
+    assert.ok(!source.includes("workMark"), `${rel} still carries a mark beside the label`);
   }
 });
 
-test("🔴🔴 a label that BROUGHT its kind may show it, and that is not the same rule", () => {
-  // The rule above forbids GUESSING a kind from words. It says nothing about a caller that already
-  // knows: `canvas-tools.ts` writing "Reading the calendar" is naming the call it is about to make,
-  // not reading a sentence it found. Calibration: drop `workMark` from `thinkingMark` and this
-  // reddens, while the guess-refusing test above stays green — which is the pair working.
-  assert.equal(thinkingMark({ work: "Reading the calendar", workMark: "calendar" }), "calendar");
-  assert.equal(thinkingMark({ work: "Working in gmail", workMark: "apps" }), "apps");
-  assert.equal(thinkingMark({ work: "Reading the calendar" }), null, "a bare label earned a mark");
-  // 🔴 AND IT STILL LOSES TO EVERYTHING MORE SPECIFIC, in the same order the caption uses.
-  assert.equal(thinkingMark({ searching: true, work: "Reading the calendar", workMark: "calendar" }), "searching");
-  assert.equal(thinkingMark({ busyKind: "source", work: "Reading the calendar", workMark: "calendar" }), "reading");
-});
-
-test("🔴🔴 every mark in the union is DRAWN, or it silently becomes the writing nib", () => {
-  // `thinking-mark.tsx` is a switch with a `default`, so a kind added to the union and forgotten in
-  // the switch does not fail to compile and does not throw — it quietly renders a pen. That is a
-  // picture contradicting a sentence, arriving through an omission rather than through a decision.
-  const GLYPHS = readFileSync(new URL("../../components/character/thinking-mark.tsx", import.meta.url), "utf8");
-  const drawn = new Set([...GLYPHS.matchAll(/case "([a-z]+)":/g)].map((hit) => hit[1]));
-  // `writing` is the deliberate default and has no `case` of its own.
-  for (const kind of ["reading", "mapping", "finding", "checking", "searching", "calendar", "apps"]) {
-    assert.ok(drawn.has(kind), `${kind} is in the union with no glyph — it renders as the writing nib`);
-  }
-});
-
-test("an unknown busy kind draws nothing rather than guessing", () => {
-  assert.equal(markForBusy("something-new"), null);
-  assert.equal(markForBusy(null), null);
-  assert.equal(markForBusy(undefined), null);
-  assert.equal(markForBusy("source"), "reading");
-  assert.equal(markForBusy("recall"), "checking");
-});
-
-test("the two doors onto the naming rule agree", () => {
-  // `domainLabel` takes a bare hostname and `sourceLabel` takes a URL, and they must be the same
-  // rule — one delegates to the other, and this is what says so.
-  //
-  // 🔴 A FUNCTION-LEVEL INVARIANT, NOT A CLAIM ABOUT ANY SURFACE. It was written as "a chip and a
-  // source card spell a host the same way", which stopped being true the same day: the searched-
-  // domain chips print the BARE HOSTNAME instead, because title-casing a host invents misspellings
-  // of real organisations — "Bbc", "Jstor" — and does it hardest to the most recognisable sources.
-  // The functions still have to agree with each other; what reads them is their own decision.
-  for (const host of ["pubmed.ncbi.nlm.nih.gov", "en.wikipedia.org", "www.bbc.co.uk", "fifa.com"]) {
-    assert.equal(domainLabel(host), sourceLabel(`https://${host}/some/path`), `${host} reads two ways`);
-  }
-  assert.equal(domainLabel("en.wikipedia.org"), "Wikipedia");
-  assert.equal(domainLabel("www.bbc.co.uk"), "Bbc");
-  assert.equal(domainLabel(null), null);
-  assert.equal(domainLabel(""), null);
-});
-
-test("🔴 the dock draws the mark from the prop, not from the caption's words", () => {
-  const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
-  assert.match(dock, /captionMark \? <ThinkingMark kind=\{captionMark\} \/> : null/, "the mark is not drawn");
-  const canvas = readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8");
-  assert.match(canvas, /const preparingMark = thinkingMark\(\{/, "the canvas no longer derives a mark");
-  assert.match(canvas, /searching: turnInFlight && session\.searchedDomains\.length > 0/, "searching is not gated on a real turn");
-});
-
-test("🔴 the shimmer wraps the WORDS, so it cannot paint the mark out", () => {
-  // `canvas-thinking-word` clips a moving gradient to glyphs, which it does by setting
-  // `color: transparent`. While it sat on the whole caption box the mark beside the words was
-  // drawn perfectly and painted in nothing — measured in a browser, `getComputedStyle(svg).color`
-  // came back `rgba(0,0,0,0)`. Anything else that ever joins the caption would have met the same
-  // fate, so the class belongs on the sentence it animates.
-  const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
+test("🔴 the caption is the bare shimmering words, and the shimmer wraps only them", () => {
+  const dock = read("../../components/character/character-dock.tsx");
   assert.match(dock, /<span className="canvas-thinking-word">\{caption\}<\/span>/, "the shimmer left the words");
-  assert.ok(
-    !/character-caption canvas-thinking-word/.test(dock),
-    "🔴 the shimmer is back on the caption BOX, which paints everything that is not text transparent",
-  );
-  const mark = readFileSync(new URL("../../components/character/thinking-mark.tsx", import.meta.url), "utf8");
-  // 🔴 THE INVARIANT IS "ITS OWN COLOUR", NOT "THIS PARTICULAR TOKEN". This pinned
-  // `text-(--ui-text-tertiary)` and so went red on 2026-08-26 when the mark moved a step forward to
-  // `--ui-text-secondary` — a change that satisfies the rule completely. What must never happen is
-  // the mark taking `currentColor` from a caption the shimmer has painted transparent.
-  assert.match(mark, /className="shrink-0 text-\(--ui-text-[a-z]+\)"/, "the mark inherits a colour it cannot rely on");
-  // 🔴 AND THE GLYPHS THEMSELVES STROKE IN `currentColor`, WHICH IS CORRECT AND MUST NOT BE
-  // "FIXED". `stroke: "currentColor"` on the paths is what makes the root's one colour class reach
-  // every mark; the rule is about the ROOT, which the assertion above holds. A version of this test
-  // that banned the word outright failed on the paths doing exactly the right thing.
-  assert.ok(!/height="1em"/.test(mark), "the mark is sized in em inside a counter-scaled box");
-  // 🔴 AND IT IS SIZED TO THE CAPTION IT SITS ON. Owner 2026-08-26: the icons "look a bit small".
-  // 13px beside 16px type read as a stray pip; the caption is `--canvas-text-body` now.
-  const side = Number(/height="(\d+)"/.exec(mark)?.[1]);
-  assert.ok(side >= 16, `the mark shrank back to ${side}px beside 16px type`);
+  // On the caption box itself the shimmer would paint the domain chips transparent — the two
+  // sessions that found that independently are why this stays split.
+  assert.ok(!/character-caption canvas-thinking-word/.test(dock), "the shimmer crawled back onto the caption box");
+});
+
+test("🔴 the recipe is the reference's own, number for number", () => {
+  const css = read("../../app/globals.css");
+  const rule = css.slice(css.indexOf(".canvas-thinking-word {"), css.indexOf("@keyframes canvas-rewriting"));
+  assert.ok(rule.length > 0, "the caption's rule is gone");
+  assert.match(rule, /background-color: var\(--ui-text-tertiary\);/, "the resting colour left background-color — with a no-repeat half-width band the words are invisible between sweeps");
+  assert.match(rule, /var\(--ui-text-tertiary\) 0%/, "the band's edges stopped being the resting colour");
+  assert.match(rule, /color-mix\(in srgb, var\(--ui-text-tertiary\) 35%, transparent\) 40%/, "the fade band moved off the measured 40–60% window");
+  assert.match(rule, /background-size: 50% 200%;/, "the band stopped being the reference's half-width");
+  assert.match(rule, /background-repeat: no-repeat;/, "the sweep lost its rest between passes");
+  assert.match(rule, /animation: canvas-thinking-word 1400ms ease infinite;/, "the tempo left the reference's 1400ms ease");
+});
+
+test("🔴 the composer keeps its resting placeholder while the model works", () => {
+  const composer = strip(read("../../components/workspace/learn/canvas-composer.tsx"));
+  assert.ok(!composer.includes("busyLabel"), "the busy label is back in the composer");
+  assert.ok(!/placeholder=\{\s*busy\b/.test(composer), "the placeholder announces the wait again");
 });

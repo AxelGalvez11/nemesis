@@ -133,7 +133,6 @@ interface CanvasComposerProps {
    */
   onClarify: (text: string) => void;
   busy: boolean;
-  busyLabel?: string;
   /* 🔴 `listenSignal` WAS HERE AND IS GONE, 2026-08-25. It was a nonce the voice hook bumped once
      Nemesis stopped speaking, so the microphone opened by itself after a question. The owner
      removed the menu row that turned that on — *"remove … the 'open mic after each question'
@@ -245,7 +244,6 @@ export function CanvasComposer({
   onRecord = null,
   intent,
   busy,
-  busyLabel,
   advanceBusy = false,
   attachedCount = 0,
   recentAttachments = [],
@@ -918,12 +916,11 @@ export function CanvasComposer({
                     if (event.key === "Escape" && selected.length > 0) onClearSelection();
                   }}
                   placeholder={
-                    busy
-                      ? // Strip any trailing ellipsis the label already carries before adding one --
-                        // THINKING_COPY's captions are Runtime's copy and may or may not end in "…"
-                        // (see thinking-phases.ts); doubling it up reads as a typo, not as emphasis.
-                        `${(busyLabel ?? "Working").replace(/…$/, "")}…`
-                      : capability
+                    // 🔴 THE PLACEHOLDER NO LONGER ANNOUNCES THE WAIT (owner 2026-08-30: match
+                    // ChatGPT's thinking presentation). Measured that day: the reference keeps its
+                    // resting prompt while it works — the one "Thinking" on screen is the caption
+                    // shimmering in the thread, and a second copy down here said it twice.
+                    capability
                         ? // The chip names the capability; the placeholder asks the one question
                           // that capability needs answered. 🔴 KEYED OFF THE CAPABILITY, NOT OFF
                           // `=== "course"`, because the named form silently sent every other

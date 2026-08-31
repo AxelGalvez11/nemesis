@@ -22,7 +22,7 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
-import { SourcesControl } from "./canvas-controls";
+import { CanvasViewControl, SourcesControl } from "./canvas-controls";
 import { CourseMapControl } from "./course-map";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -31,6 +31,10 @@ import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
+  /** The chat↔canvas door's inputs. Withheld by the canvas until a conversation exists; the
+   *  control renders only when both arrive. See CanvasViewControl. */
+  view?: import("@/lib/learn/canvas-view").CanvasView;
+  onToggleView?: () => void;
   onFiles: (files: FileList | File[]) => void;
   /** Threaded straight to SourcesControl — see its own prop comments. */
   outputTools?: import("./canvas-controls").OutputTools;
@@ -92,6 +96,8 @@ export function CanvasHeader({
   minimap,
   transcript = [],
   replyAudio,
+  view,
+  onToggleView,
 }: CanvasHeaderProps) {
   return (
     <>
@@ -178,8 +184,12 @@ export function CanvasHeader({
           )}
           {/* 🔴 NO `⋯` ANY MORE. The options menu and every row in it died on 2026-08-30 — the
               tombstone in canvas-controls.tsx carries the owner's words and where each row's
-              feature went. The row ends on the course map (or on Sources, on a courseless
-              canvas), and a brand-new canvas shows a bare title and nothing else. */}
+              feature went. A brand-new canvas still shows a bare title and nothing else. */}
+          {/* 🔴 THE VIEW DOOR CAME BACK THE SAME EVENING THE MENU DIED — owner: *"there should be
+              a way to chat mode to canvas mode"*. A glyph this time, not a buried row, and gated
+              like everything else here: both props arrive only once there is a conversation to
+              leave, and then the control stays for the session. */}
+          {view && onToggleView && <CanvasViewControl onToggleView={onToggleView} view={view} />}
       </div>
     </>
   );

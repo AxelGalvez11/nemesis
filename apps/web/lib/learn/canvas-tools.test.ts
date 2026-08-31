@@ -96,16 +96,16 @@ test("🔴 a connected app appears only once it is connected, and by its own slu
   assert.ok(!withApp.includes("gmail_send_email"), "the slug was rewritten on its way to the model");
 });
 
-test("🔴 the strip never shows a raw action slug, and every line brings its own mark", () => {
+test("🔴 the strip never shows a raw action slug", () => {
   // "GMAIL_FETCH_EMAILS" on screen is our plumbing showing through; the learner asked about mail.
   for (const [name, app] of [["list_calendar_events", undefined], ["GMAIL_FETCH_EMAILS", "gmail"]] as const) {
     const note = labelFor(name, app);
     assert.ok(!note.label.includes("_"), `${note.label} is a slug, not a sentence`);
     assert.ok(note.label.length > 0);
   }
-  assert.deepEqual(labelFor("delete_calendar_event", undefined), { label: "Checking before deleting", mark: "calendar" });
-  assert.equal(labelFor("GMAIL_SEND_EMAIL", "gmail").mark, "apps");
-  assert.equal(labelFor("list_calendar_events", undefined).mark, "calendar");
+  // The mark that used to ride beside each label died 2026-08-30 with the ChatGPT-parity
+  // thinking preview — the reference draws a bare shimmering sentence. The WORDS still carry it.
+  assert.deepEqual(labelFor("delete_calendar_event", undefined), { label: "Checking before deleting" });
 });
 
 test("🔴🔴 the strip moves BEFORE each call, not after the round", () => {
@@ -124,17 +124,12 @@ test("🔴🔴 the strip moves BEFORE each call, not after the round", () => {
   assert.ok(!/labels/.test(round), "the round still collects labels to hand back at the end");
 });
 
-test("🔴 the mark travels WITH the label, and a bare label still earns none", () => {
-  // `thinking-phases.ts` refuses to guess a kind from words, and that rule is untouched: what
-  // changed is that a caller which already KNOWS the kind may pass it. Calibration: derive
-  // `workMark` from the label's text anywhere and this reddens.
-  const PHASES = readFileSync(new URL("./thinking-phases.ts", import.meta.url), "utf8");
-  assert.match(PHASES, /if \(input\.work\) return input\.workMark \?\? null;/, "a bare work label now earns a mark");
-  assert.match(CHAT, /onCall: \(note\) => onWork\?\.\(note\.label, note\.mark\)/, "the mark is dropped between the tool and the strip");
-  assert.match(SESSION, /setWorkMark\(mark \?\? null\)/, "the session drops the mark");
-  // 🔴 AND IT IS CLEARED WITH THE LABEL. A mark left behind sits beside whatever the next step
-  // says — a picture contradicting a sentence, which is what the precedence rule exists to stop.
-  assert.match(SESSION, /setWork\(null\);\n[\s\S]{0,400}?setWorkMark\(null\);/, "the mark outlives the label it belonged to");
+test("🔴 the label travels alone now — the mark machinery may not creep back (2026-08-30)", () => {
+  // The mark beside the caption died with the ChatGPT-parity thinking preview (the reference
+  // draws a bare shimmering sentence in every working state). The WORDS still travel live:
+  // tool → onWork → setWork, announced before the call runs.
+  assert.match(CHAT, /onCall: \(note\) => onWork\?\.\(note\.label\)/, "the label stopped travelling from the tool to the caption");
+  assert.ok(!/workMark|ThinkingMark/.test(SESSION), "the session grew a mark again");
 });
 
 // ── The envelope ─────────────────────────────────────────────────────────────────────────────

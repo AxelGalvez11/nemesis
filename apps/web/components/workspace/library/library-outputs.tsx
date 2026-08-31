@@ -179,7 +179,22 @@ const SHELVES: readonly { id: Shelf; label: string }[] = [
  * children said which one this page is. The wrong model is the expensive one — it put this page
  * and Projects 32px apart, and no arithmetic would have found it.
  */
-const COL_ICON = "mr-[12px] shrink-0 text-(--ui-text-secondary)";
+/* 🔴🔴 THE LEADING ICON GREW A TILE, AND THE COLOUR MOVED ONTO THE GLYPH — measured on the
+ * reference's library 2026-08-30 evening (owner: *"they should also have colors like in
+ * chatgpt"*). Their every row leads with a 32px `rounded-[8px]` box: primary surface, hairline
+ * border (`rgba(255,255,255,0.15)` dark), 20px glyph inside — and the GLYPH's colour names the
+ * kind (.docx draws #0285FF, .pdf #FF3B30, folders stay neutral). The lead is therefore
+ * 32px tile + 12px gap = 44px now; Name is `flex-1` and absorbs the 12px the old bare-icon
+ * model gave it. The old `COL_ICON` constant died here — nothing draws a bare 20px lead any
+ * more. */
+const COL_TILE =
+  "mr-[12px] flex size-[32px] shrink-0 items-center justify-center rounded-[8px] border border-black/[0.10] bg-(--ui-bg-primary) dark:border-white/[0.15]";
+/* One colour per kind the Library holds, the way the reference colours file types. Chosen from
+ * the same system family as its measured picks (#0285FF blue, #FF3B30 red): documents take the
+ * reference's own document blue; slides and decks take two more from that family so the three
+ * kinds never share. Folders wear no colour — the reference keeps containers neutral, and a
+ * project's own custom colour lives in the sidebar and on /projects, not here. */
+const KIND_COLOR = { deck: "#34C759", note: "#0285FF", slides: "#FF9500" } as const;
 /** Reference: `Modified` column, 160px. */
 const COL_MODIFIED = "w-[160px] shrink-0";
 /**
@@ -639,7 +654,20 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     [folderModified, folders, nonEmptyFolders],
   );
 
-  const showing = (which: OutputKind) => shelf === "all" || shelf === which;
+  // 🔴 A SHELF SECTION RENDERS ONLY FOR ITS OWN PILL NOW (owner 2026-08-30: *"the library 'all'
+  // sections should be organized by recent not by section"*). "All" stopped being three stacked
+  // tables — it is ONE list: folders first (each by its rolled-up Modified), then every deck,
+  // slide deck and document TOGETHER, newest change first, no per-kind headings. Measured on the
+  // reference's own All tab the same day: that is exactly how it draws — the kind is said by the
+  // coloured glyph in the leading tile, never by a section title.
+  const showing = (which: OutputKind) => shelf === which;
+  const allRows = [
+    ...shownDecks.map((deck) => ({ deck, kind: "deck" as const, when: deck.createdAt })),
+    ...shownSlides.map((slides) => ({ kind: "slides" as const, slides, when: slides.createdAt })),
+    ...shownNotes.map((note) => ({ kind: "note" as const, note, when: note.updatedAt })),
+    // Decks and slides only know when they were made; documents know their last edit. Each kind
+    // contributes the freshest fact it holds, compared lexicographically — they are ISO strings.
+  ].sort((a, b) => b.when.localeCompare(a.when));
 
   const toggleDeck = useCallback(
     async (id: string) => {
@@ -706,6 +734,246 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     if (id) setReviewing(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once, on arrival.
   }, []);
+
+
+  // 🔴 ONE RENDERER PER ROW SHAPE, shared verbatim between a kind's own shelf and the merged
+  // "All" list — the menus, downloads and expansions on a deck row are the SAME element in both
+  // places, so they cannot drift apart (owner 2026-08-30, the recency rework).
+  const folderRow = (folder: Folder) => (
+              <li key={folder.id}>
+                <button className={cn(ROW, "w-full")} onClick={() => setOpenFolder(folder.id)} type="button">
+                  <span className={COL_TILE}><FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} /></span>
+                  <span className={ROW_NAME}>{folder.name}</span>
+                  <span className={cn(COL_MODIFIED, ROW_META)}>
+                    {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
+                  </span>
+                  <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
+                  <span aria-hidden className={COL_ACTIONS} />
+                </button>
+              </li>
+  );
+  const namingRow = naming !== null && (
+              <li className={ROW}>
+                <span className={COL_TILE}><FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} /></span>
+                <input
+                  aria-label="Name the new folder"
+                  autoFocus
+                  className="min-w-0 flex-1 bg-transparent text-[14px] text-(--ui-text-primary) outline-none"
+                  maxLength={120}
+                  // Enter commits, clicking away commits, Escape abandons.
+                  onBlur={(event) => void addFolder(event.currentTarget.value)}
+                  onChange={(event) => setNaming(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void addFolder(event.currentTarget.value);
+                    if (event.key === "Escape") {
+                      // 🔴 EMPTY THE INPUT ITSELF, NOT THE STATE. Whatever blur follows this reads
+                      // the DOM node's value, so clearing it here is what makes cancelling actually
+                      // cancel, with no assumption about when React next renders.
+                      event.currentTarget.value = "";
+                      setNaming(null);
+                    }
+                  }}
+                  placeholder="Folder name"
+                  value={naming}
+                />
+                <span aria-hidden className={COL_MODIFIED} />
+                <span aria-hidden className={COL_COUNT} />
+                <span aria-hidden className={COL_ACTIONS} />
+              </li>
+  );
+  const deckRow = (deck: DeckRow) => (
+              <li key={deck.id}>
+                <div className={ROW}>
+                  <button
+                    aria-label={`Review ${deck.name}`}
+                    className={ROW_MAIN}
+                    onClick={() => setReviewing(deck.id)}
+                    type="button"
+                  >
+                    <span className={COL_TILE}><Layers size={20} strokeWidth={1.8} style={{ color: KIND_COLOR.deck }} /></span>
+                    <span className={ROW_NAME}>{deck.name}</span>
+                    <span className={cn(COL_MODIFIED, ROW_META)}>{when(deck.createdAt)}</span>
+                    <span className={cn(COL_COUNT, ROW_META)}>{deck.cards}</span>
+                  </button>
+                  <span className={COL_ACTIONS}>
+                  {/* The peek. Deliberately secondary and deliberately still here: reading
+                      the answers is sometimes what you want (checking what Nemesis made
+                      before trusting it), it just must not be what pressing a deck does. */}
+                  <FolderPicker
+                    current={deck.folderId}
+                    folders={folders}
+                    label={`Move ${deck.name} to a folder`}
+                    onFile={(folderId) => void file("deck", deck.id, folderId)}
+                  />
+                  {/* 🔴🔴 A HAND-AUTHORING DOOR STOOD HERE FOR ONE DAY, AND THE OWNER REVERSED IT
+                      (2026-08-25): *"I don't want users to edit flashcards, really. Mainly just
+                      download them if they want to… similar to notebook where you don't have to
+                      edit cards. That's not what I want users to do in my app."*
+
+                      What sat here was `DeckOcclusion`, which opened the drag-your-own-boxes
+                      editor. It was added the day before to answer *"can I do image occlusion?"*
+                      — and the answer to that question is now DeepSeek making the cards itself,
+                      not the learner drawing rectangles. `OcclusionEditor` is not deleted (same
+                      as the Anki importer above it); the Library simply stopped offering it.
+
+                      🔴 IT IS REPLACED, NOT JUST REMOVED. Taking authoring away leaves a learner
+                      with cards they cannot change and cannot take elsewhere, which is a cage
+                      rather than a clean surface. Download is the way out: a deck leaves as a
+                      file Anki can import, so nothing here is a one-way door. */}
+                  <button
+                    aria-label={`Download ${deck.name}`}
+                    className={ROW_ACTION}
+                    disabled={downloading === deck.id}
+                    onClick={() => void takeDeck(deck)}
+                    title="Download for Anki"
+                    type="button"
+                  >
+                    <Download size={15} strokeWidth={1.8} />
+                  </button>
+                  <button
+                    aria-label={`Share ${deck.name}`}
+                    className={ROW_ACTION}
+                    onClick={() => setSharing(deck)}
+                    type="button"
+                  >
+                    <Share2 size={15} strokeWidth={1.8} />
+                  </button>
+                  <button
+                    aria-expanded={openDeck === deck.id}
+                    aria-label={openDeck === deck.id ? `Hide the cards in ${deck.name}` : `Show the cards in ${deck.name}`}
+                    className={ROW_ACTION}
+                    onClick={() => void toggleDeck(deck.id)}
+                    type="button"
+                  >
+                    <ChevronDown className={cn("transition-transform", openDeck === deck.id && "rotate-180")} size={15} strokeWidth={1.8} />
+                  </button>
+                  </span>
+                </div>
+                {openDeck === deck.id && (
+                  <div className="mb-[8px] ml-[32px] mr-[8px] max-h-[320px] overflow-y-auto border-b border-b-black/[0.05] dark:border-b-white/[0.05]">
+                    {(cards[deck.id] ?? []).map((card) => (
+                      <div className="border-b border-b-black/[0.05] px-[12px] py-[8px] last:border-b-0 dark:border-b-white/[0.05]" key={card.id}>
+                        <p className="text-[14px] text-(--ui-text-primary)">{card.front}</p>
+                        <p className="mt-[2px] text-[14px] leading-relaxed text-(--ui-text-secondary)">
+                          {card.back}
+                        </p>
+                      </div>
+                    ))}
+                    {!cards[deck.id] && <p className="px-[12px] py-[8px] text-[14px] text-(--ui-text-secondary)">Loading…</p>}
+                  </div>
+                )}
+              </li>
+  );
+  const noteRow = (note: NoteRow) => (
+              <li className={ROW} key={note.path}>
+                {/* 🔴🔴 IT OPENS HERE, NOT AT `/library/classic`. Owner, 2026-08-25: *"i dont want
+                    anything to route to this old library."* This was the last link into it, and it
+                    was a navigation OFF the Library to read one of the Library's own documents —
+                    the surface the owner screenshotted showing "Couldn't reach your notes".
+
+                    🔴 THE SAME CARD THE CANVAS USES, not a second reader. `OutputPreview` takes a
+                    `notePath` and fetches the body itself, so a document reads identically wherever
+                    it is opened from, and there is one place to fix when it is wrong. */}
+                <button
+                  className={ROW_MAIN}
+                  onClick={() => setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })}
+                  type="button"
+                >
+                  <span className={COL_TILE}><NotebookText size={20} strokeWidth={1.8} style={{ color: KIND_COLOR.note }} /></span>
+                  <span className={ROW_NAME}>{note.title}</span>
+                  <span className={cn(COL_MODIFIED, ROW_META)}>{when(note.updatedAt)}</span>
+                  <span aria-hidden className={COL_COUNT} />
+                </button>
+                <span className={COL_ACTIONS}>
+                  <FolderPicker
+                    current={note.folderId}
+                    folders={folders}
+                    label={`Move ${note.title} to a folder`}
+                    onFile={(folderId) => void file("note", note.id, folderId)}
+                  />
+                </span>
+              </li>
+  );
+  const slidesRow = (row: SlidesRow) => (
+    <SlidesShelfRow
+      folders={folders}
+      key={row.assetId}
+      onFile={(folderId) => void file("slides", row.assetId, folderId)}
+      row={row}
+    />
+  );
+  const folderCard = (folder: Folder) => (
+                <button
+                  className={cn(CARD, "h-[104px] justify-between")}
+                  key={folder.id}
+                  onClick={() => setOpenFolder(folder.id)}
+                  type="button"
+                >
+                  <span className="truncate text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                    {folder.name}
+                  </span>
+                  <span className="flex items-center justify-between">
+                    <FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} />
+                    <span className="text-[12px] text-(--ui-text-secondary)">
+                      {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
+                    </span>
+                  </span>
+                </button>
+  );
+  const deckCard = (deck: DeckRow) => (
+              <button
+                aria-label={`Review ${deck.name}`}
+                className={cn(CARD, "h-[220px]")}
+                key={deck.id}
+                onClick={() => setReviewing(deck.id)}
+                type="button"
+              >
+                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                  {deck.name}
+                </span>
+                <span className="flex flex-1 items-center justify-center">
+                  <Layers size={28} strokeWidth={1.5} style={{ color: KIND_COLOR.deck }} />
+                </span>
+                <span className="text-[12px] text-(--ui-text-secondary)">{when(deck.createdAt)}</span>
+              </button>
+  );
+  const slidesCard = (row: SlidesRow) => (
+              <a
+                className={cn(CARD, "h-[220px]", !row.canvasId && "pointer-events-none opacity-60")}
+                href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
+                key={row.assetId}
+              >
+                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                  {row.title}
+                </span>
+                <span className="flex flex-1 items-center justify-center">
+                  <MonitorPlay size={28} strokeWidth={1.5} style={{ color: KIND_COLOR.slides }} />
+                </span>
+                <span className="text-[12px] text-(--ui-text-secondary)">{when(row.createdAt)}</span>
+              </a>
+  );
+  const noteCard = (note: NoteRow) => (
+              <button
+                className={cn(CARD, "h-[220px]")}
+                key={note.path}
+                onClick={() =>
+                  setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })
+                }
+                type="button"
+              >
+                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                  {note.title}
+                </span>
+                <span className="flex flex-1 items-center justify-center">
+                  <NotebookText size={28} strokeWidth={1.5} style={{ color: KIND_COLOR.note }} />
+                </span>
+                <span className="text-[12px] text-(--ui-text-secondary)">{when(note.updatedAt)}</span>
+              </button>
+  );
+  const allRow = (row: (typeof allRows)[number]) =>
+    row.kind === "deck" ? deckRow(row.deck) : row.kind === "slides" ? slidesRow(row.slides) : noteRow(row.note);
+  const allCard = (row: (typeof allRows)[number]) =>
+    row.kind === "deck" ? deckCard(row.deck) : row.kind === "slides" ? slidesCard(row.slides) : noteCard(row.note);
 
   return (
     // 🔴🔴 THE PAGE GROUND IS NOT WHITE, and getting this wrong is the single most visible 1:1
@@ -904,31 +1172,17 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           made on `/projects` and never filed into is a real `folders` row with nothing pointing
           at it, and showing it here was the owner's report: a brand-new project "showed up in
           the library, and that's not where it should go." */}
-      {openFolder === null && (visibleFolders.length > 0 || naming !== null) && (
+      {/* 🔴 ON A KIND PILL the folders keep their own little table — they are not filtered by the
+          pills (a folder holds all three kinds at once). On "All" they are NOT a section any
+          more: they are the first rows of the one merged list below. */}
+      {shelf !== "all" && openFolder === null && (visibleFolders.length > 0 || naming !== null) && (
         <section className="pb-[24px]">
           <h2 className={SECTION_TITLE}>Folders</h2>
           {/* Naming forces the list: the inline name input is a table row, and a grid with an
               invisible input would be a New-project door that silently eats the click. */}
           {view === "grid" && naming === null ? (
             <div className={CARD_GRID}>
-              {visibleFolders.map((folder) => (
-                <button
-                  className={cn(CARD, "h-[104px] justify-between")}
-                  key={folder.id}
-                  onClick={() => setOpenFolder(folder.id)}
-                  type="button"
-                >
-                  <span className="truncate text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
-                    {folder.name}
-                  </span>
-                  <span className="flex items-center justify-between">
-                    <FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} />
-                    <span className="text-[12px] text-(--ui-text-secondary)">
-                      {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
-                    </span>
-                  </span>
-                </button>
-              ))}
+              {visibleFolders.map(folderCard)}
             </div>
           ) : (
           <ul className="flex flex-col">
@@ -940,7 +1194,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                 An empty cell says "not applicable"; a borrowed `createdAt` under a header reading
                 "Modified" would say something false. */}
             <li className={COLUMN_HEAD}>
-              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
               {/* A real Modified now — see `folderModified`: the latest change INSIDE, rolled up,
                   which is what the word means for a container and what the reference prints. */}
@@ -948,48 +1202,8 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               <span className={COL_COUNT}>Items</span>
               <span aria-hidden className={COL_ACTIONS} />
             </li>
-            {visibleFolders.map((folder) => (
-              <li key={folder.id}>
-                <button className={cn(ROW, "w-full")} onClick={() => setOpenFolder(folder.id)} type="button">
-                  <FolderIcon className={COL_ICON} size={20} strokeWidth={1.8} />
-                  <span className={ROW_NAME}>{folder.name}</span>
-                  <span className={cn(COL_MODIFIED, ROW_META)}>
-                    {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
-                  </span>
-                  <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
-                  <span aria-hidden className={COL_ACTIONS} />
-                </button>
-              </li>
-            ))}
-            {naming !== null && (
-              <li className={ROW}>
-                <FolderIcon className={COL_ICON} size={20} strokeWidth={1.8} />
-                <input
-                  aria-label="Name the new folder"
-                  autoFocus
-                  className="min-w-0 flex-1 bg-transparent text-[14px] text-(--ui-text-primary) outline-none"
-                  maxLength={120}
-                  // Enter commits, clicking away commits, Escape abandons.
-                  onBlur={(event) => void addFolder(event.currentTarget.value)}
-                  onChange={(event) => setNaming(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void addFolder(event.currentTarget.value);
-                    if (event.key === "Escape") {
-                      // 🔴 EMPTY THE INPUT ITSELF, NOT THE STATE. Whatever blur follows this reads
-                      // the DOM node's value, so clearing it here is what makes cancelling actually
-                      // cancel, with no assumption about when React next renders.
-                      event.currentTarget.value = "";
-                      setNaming(null);
-                    }
-                  }}
-                  placeholder="Folder name"
-                  value={naming}
-                />
-                <span aria-hidden className={COL_MODIFIED} />
-                <span aria-hidden className={COL_COUNT} />
-                <span aria-hidden className={COL_ACTIONS} />
-              </li>
-            )}
+            {visibleFolders.map(folderRow)}
+            {namingRow}
           </ul>
           )}
         </section>
@@ -1010,6 +1224,42 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {/* 🔴 A SHELF THE FILTER HAS HIDDEN IS NOT RENDERED AT ALL, heading included. Keeping the
           heading over an empty list would make a filtered-out shelf look like an emptied one. */}
+      {shelf === "all" && (
+      <section className="pb-[40px]">
+        {allRows.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
+          <p className={ROW_EMPTY}>
+            {!loaded
+              ? "Loading…"
+              : query.trim() !== ""
+                ? "Nothing matches that."
+                : openFolder !== null
+                  ? "Nothing in this folder yet."
+                  : "Nothing here yet. Ask Nemesis for flashcards, slides or a write-up in any conversation."}
+          </p>
+        ) : view === "grid" && naming === null ? (
+          <>
+            {openFolder === null && visibleFolders.length > 0 && (
+              <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
+            )}
+            <div className={CARD_GRID}>{allRows.map(allCard)}</div>
+          </>
+        ) : (
+          <ul className="flex flex-col">
+            <li className={COLUMN_HEAD}>
+              <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
+              <span className="min-w-0 flex-1">Name</span>
+              <span className={COL_MODIFIED}>Modified</span>
+              <span className={COL_COUNT}>Items</span>
+              <span aria-hidden className={COL_ACTIONS} />
+            </li>
+            {openFolder === null && visibleFolders.map(folderRow)}
+            {openFolder === null && namingRow}
+            {allRows.map(allRow)}
+          </ul>
+        )}
+      </section>
+      )}
+
       {showing("deck") && (
       <section className="pb-[40px]">
         <h2 className={SECTION_TITLE}>Flashcard decks</h2>
@@ -1025,23 +1275,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           </p>
         ) : view === "grid" ? (
           <div className={CARD_GRID}>
-            {shownDecks.map((deck) => (
-              <button
-                aria-label={`Review ${deck.name}`}
-                className={cn(CARD, "h-[220px]")}
-                key={deck.id}
-                onClick={() => setReviewing(deck.id)}
-                type="button"
-              >
-                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
-                  {deck.name}
-                </span>
-                <span className="flex flex-1 items-center justify-center">
-                  <Layers className="text-(--ui-text-secondary)" size={28} strokeWidth={1.5} />
-                </span>
-                <span className="text-[12px] text-(--ui-text-secondary)">{when(deck.createdAt)}</span>
-              </button>
-            ))}
+            {shownDecks.map(deckCard)}
           </div>
         ) : (
           <ul className="flex flex-col">
@@ -1049,95 +1283,13 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                 card COUNT, not a byte size: we do not hold a size for a deck, and a column of em
                 dashes forever would say "this is broken" rather than "this does not apply". */}
             <li className={COLUMN_HEAD}>
-              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
               <span className={COL_MODIFIED}>Modified</span>
               <span className={COL_COUNT}>Cards</span>
               <span aria-hidden className={COL_ACTIONS} />
             </li>
-            {shownDecks.map((deck) => (
-              <li key={deck.id}>
-                <div className={ROW}>
-                  <button
-                    aria-label={`Review ${deck.name}`}
-                    className={ROW_MAIN}
-                    onClick={() => setReviewing(deck.id)}
-                    type="button"
-                  >
-                    <Layers className={COL_ICON} size={20} strokeWidth={1.8} />
-                    <span className={ROW_NAME}>{deck.name}</span>
-                    <span className={cn(COL_MODIFIED, ROW_META)}>{when(deck.createdAt)}</span>
-                    <span className={cn(COL_COUNT, ROW_META)}>{deck.cards}</span>
-                  </button>
-                  <span className={COL_ACTIONS}>
-                  {/* The peek. Deliberately secondary and deliberately still here: reading
-                      the answers is sometimes what you want (checking what Nemesis made
-                      before trusting it), it just must not be what pressing a deck does. */}
-                  <FolderPicker
-                    current={deck.folderId}
-                    folders={folders}
-                    label={`Move ${deck.name} to a folder`}
-                    onFile={(folderId) => void file("deck", deck.id, folderId)}
-                  />
-                  {/* 🔴🔴 A HAND-AUTHORING DOOR STOOD HERE FOR ONE DAY, AND THE OWNER REVERSED IT
-                      (2026-08-25): *"I don't want users to edit flashcards, really. Mainly just
-                      download them if they want to… similar to notebook where you don't have to
-                      edit cards. That's not what I want users to do in my app."*
-
-                      What sat here was `DeckOcclusion`, which opened the drag-your-own-boxes
-                      editor. It was added the day before to answer *"can I do image occlusion?"*
-                      — and the answer to that question is now DeepSeek making the cards itself,
-                      not the learner drawing rectangles. `OcclusionEditor` is not deleted (same
-                      as the Anki importer above it); the Library simply stopped offering it.
-
-                      🔴 IT IS REPLACED, NOT JUST REMOVED. Taking authoring away leaves a learner
-                      with cards they cannot change and cannot take elsewhere, which is a cage
-                      rather than a clean surface. Download is the way out: a deck leaves as a
-                      file Anki can import, so nothing here is a one-way door. */}
-                  <button
-                    aria-label={`Download ${deck.name}`}
-                    className={ROW_ACTION}
-                    disabled={downloading === deck.id}
-                    onClick={() => void takeDeck(deck)}
-                    title="Download for Anki"
-                    type="button"
-                  >
-                    <Download size={15} strokeWidth={1.8} />
-                  </button>
-                  <button
-                    aria-label={`Share ${deck.name}`}
-                    className={ROW_ACTION}
-                    onClick={() => setSharing(deck)}
-                    type="button"
-                  >
-                    <Share2 size={15} strokeWidth={1.8} />
-                  </button>
-                  <button
-                    aria-expanded={openDeck === deck.id}
-                    aria-label={openDeck === deck.id ? `Hide the cards in ${deck.name}` : `Show the cards in ${deck.name}`}
-                    className={ROW_ACTION}
-                    onClick={() => void toggleDeck(deck.id)}
-                    type="button"
-                  >
-                    <ChevronDown className={cn("transition-transform", openDeck === deck.id && "rotate-180")} size={15} strokeWidth={1.8} />
-                  </button>
-                  </span>
-                </div>
-                {openDeck === deck.id && (
-                  <div className="mb-[8px] ml-[32px] mr-[8px] max-h-[320px] overflow-y-auto border-b border-b-black/[0.05] dark:border-b-white/[0.05]">
-                    {(cards[deck.id] ?? []).map((card) => (
-                      <div className="border-b border-b-black/[0.05] px-[12px] py-[8px] last:border-b-0 dark:border-b-white/[0.05]" key={card.id}>
-                        <p className="text-[14px] text-(--ui-text-primary)">{card.front}</p>
-                        <p className="mt-[2px] text-[14px] leading-relaxed text-(--ui-text-secondary)">
-                          {card.back}
-                        </p>
-                      </div>
-                    ))}
-                    {!cards[deck.id] && <p className="px-[12px] py-[8px] text-[14px] text-(--ui-text-secondary)">Loading…</p>}
-                  </div>
-                )}
-              </li>
-            ))}
+            {shownDecks.map(deckRow)}
           </ul>
         )}
       </section>
@@ -1158,41 +1310,20 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           </p>
         ) : view === "grid" ? (
           <div className={CARD_GRID}>
-            {shownSlides.map((row) => (
-              <a
-                className={cn(CARD, "h-[220px]", !row.canvasId && "pointer-events-none opacity-60")}
-                href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
-                key={row.assetId}
-              >
-                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
-                  {row.title}
-                </span>
-                <span className="flex flex-1 items-center justify-center">
-                  <MonitorPlay className="text-(--ui-text-secondary)" size={28} strokeWidth={1.5} />
-                </span>
-                <span className="text-[12px] text-(--ui-text-secondary)">{when(row.createdAt)}</span>
-              </a>
-            ))}
+            {shownSlides.map(slidesCard)}
           </div>
         ) : (
           <ul className="flex flex-col">
             {/* Two columns here, not three: a slide deck has no count worth a column, and the
                 reference's third column is a size we do not hold. */}
             <li className={COLUMN_HEAD}>
-              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
               <span className={COL_MODIFIED}>Modified</span>
               <span aria-hidden className={COL_COUNT} />
               <span aria-hidden className={COL_ACTIONS} />
             </li>
-            {shownSlides.map((row) => (
-              <SlidesShelfRow
-                folders={folders}
-                key={row.assetId}
-                onFile={(folderId) => void file("slides", row.assetId, folderId)}
-                row={row}
-              />
-            ))}
+            {shownSlides.map(slidesRow)}
           </ul>
         )}
       </section>
@@ -1213,64 +1344,18 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           </p>
         ) : view === "grid" ? (
           <div className={CARD_GRID}>
-            {shownNotes.map((note) => (
-              <button
-                className={cn(CARD, "h-[220px]")}
-                key={note.path}
-                onClick={() =>
-                  setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })
-                }
-                type="button"
-              >
-                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
-                  {note.title}
-                </span>
-                <span className="flex flex-1 items-center justify-center">
-                  <NotebookText className="text-(--ui-text-secondary)" size={28} strokeWidth={1.5} />
-                </span>
-                <span className="text-[12px] text-(--ui-text-secondary)">{when(note.updatedAt)}</span>
-              </button>
-            ))}
+            {shownNotes.map(noteCard)}
           </div>
         ) : (
           <ul className="flex flex-col">
             <li className={COLUMN_HEAD}>
-              <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
+              <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
               <span className={COL_MODIFIED}>Modified</span>
               <span aria-hidden className={COL_COUNT} />
               <span aria-hidden className={COL_ACTIONS} />
             </li>
-            {shownNotes.map((note) => (
-              <li className={ROW} key={note.path}>
-                {/* 🔴🔴 IT OPENS HERE, NOT AT `/library/classic`. Owner, 2026-08-25: *"i dont want
-                    anything to route to this old library."* This was the last link into it, and it
-                    was a navigation OFF the Library to read one of the Library's own documents —
-                    the surface the owner screenshotted showing "Couldn't reach your notes".
-
-                    🔴 THE SAME CARD THE CANVAS USES, not a second reader. `OutputPreview` takes a
-                    `notePath` and fetches the body itself, so a document reads identically wherever
-                    it is opened from, and there is one place to fix when it is wrong. */}
-                <button
-                  className={ROW_MAIN}
-                  onClick={() => setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })}
-                  type="button"
-                >
-                  <NotebookText className={COL_ICON} size={20} strokeWidth={1.8} />
-                  <span className={ROW_NAME}>{note.title}</span>
-                  <span className={cn(COL_MODIFIED, ROW_META)}>{when(note.updatedAt)}</span>
-                  <span aria-hidden className={COL_COUNT} />
-                </button>
-                <span className={COL_ACTIONS}>
-                  <FolderPicker
-                    current={note.folderId}
-                    folders={folders}
-                    label={`Move ${note.title} to a folder`}
-                    onFile={(folderId) => void file("note", note.id, folderId)}
-                  />
-                </span>
-              </li>
-            ))}
+            {shownNotes.map(noteRow)}
           </ul>
         )}
       </section>
@@ -1367,7 +1452,7 @@ function SlidesShelfRow({
         className={cn(ROW_MAIN, !row.canvasId && "pointer-events-none opacity-60")}
         href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
       >
-        <MonitorPlay className={COL_ICON} size={20} strokeWidth={1.8} />
+        <span className={COL_TILE}><MonitorPlay size={20} strokeWidth={1.8} style={{ color: KIND_COLOR.slides }} /></span>
         <span className={ROW_NAME}>{row.title}</span>
         <span className={cn(COL_MODIFIED, ROW_META)}>{when(row.createdAt)}</span>
         <span aria-hidden className={COL_COUNT} />

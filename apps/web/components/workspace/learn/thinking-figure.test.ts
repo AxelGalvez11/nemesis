@@ -79,15 +79,20 @@ test("🔴 the surface says where the character stands, because the pose no long
   assert.match(STATIONS, /export function stationOf/);
 });
 
-// 🔴 ONE MOTION SYSTEM. §20 asks for information forming left to right, and `.canvas-thinking-word`
-// is the same band and the same 1900ms as `.canvas-forming` and `.canvas-rewriting`. A second
-// treatment beside the character would read as a second kind of event happening at once.
+// 🔴 ONE MOTION SYSTEM, AT THE REFERENCE'S TEMPO. §20 asks for information forming left to
+// right; since 2026-08-30 the caption runs ChatGPT's measured recipe (owner: *"match how chatgpt
+// does it"*) — a half-width band sweeping -100% → 250% over 1400ms `ease` (their own
+// `--cot-shimmer-duration`), with a rest between passes — and the forming/rewriting bars moved
+// to the same 1400ms so the system still beats once.
 test("🔴 the words are lit left to right, at the rate everything else moves at", () => {
   assert.match(DOCK, /canvas-thinking-word/, "the caption stopped carrying the motion");
-  assert.match(CSS, /@keyframes canvas-thinking-word \{ from \{ background-position: 200% 0; \}/);
-  assert.match(CSS, /\.canvas-thinking-word \{[\s\S]*?animation: canvas-thinking-word 1900ms linear infinite;/);
+  assert.match(CSS, /@keyframes canvas-thinking-word \{ from \{ background-position: -100% top; \} to \{ background-position: 250% top; \} \}/);
+  assert.match(CSS, /\.canvas-thinking-word \{[\s\S]*?animation: canvas-thinking-word 1400ms ease infinite;/);
+  // 🔴 THE RESTING COLOUR RIDES `background-color`: the band image is `no-repeat` and half as
+  // wide as the box, so without it the words are INVISIBLE between sweeps.
+  assert.match(CSS, /\.canvas-thinking-word \{[\s\S]*?background-color: var\(--ui-text-tertiary\);/);
   for (const sibling of ["canvas-forming", "canvas-rewriting"]) {
-    assert.match(CSS, new RegExp(`animation: ${sibling} 1900ms linear infinite`), `${sibling} drifted`);
+    assert.match(CSS, new RegExp(`animation: ${sibling} 1400ms linear infinite`), `${sibling} drifted`);
   }
 });
 

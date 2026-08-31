@@ -6,8 +6,9 @@ import test from "node:test";
 // they are actually needed." — and, hours later, the second half of the same instinct: *"remove
 // this entire panel … remove the 'progress' map since the course map is pretty much the same
 // thing."* This file pins the canvas header's side of both rulings; the sidebar's side is pinned
-// in lib/workspace/sidebar-nav.test.ts. The row is now AT MOST two gated glyphs — Sources &
-// outputs, and the course map — and a brand-new canvas shows none at all.
+// in lib/workspace/sidebar-nav.test.ts. The row is AT MOST three gated glyphs — Sources &
+// outputs, the course map, and (that same evening's third ruling: *"there should be a way to
+// chat mode to canvas mode"*) the view door — and a brand-new canvas shows none at all.
 
 const HEADER = readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8");
 const CONTROLS = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
@@ -45,4 +46,12 @@ test("🔴 the map keeps the way back OUT of a narrowed focus", () => {
   assert.match(map, /onWhole: \(\) => void/, "the map lost its widening callback");
   const canvas = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
   assert.match(canvas, /onClearCourseScope: \(\) => policy\.setFocus\(WHOLE_CANVAS\)/, "widening no longer reaches setFocus");
+});
+
+test("🔴 the view door is gated exactly like everything else on the row", () => {
+  // The evening ruling of 2026-08-30 put the switch BACK — as a glyph, not the buried menu row
+  // the morning cut was aimed at. Same law as Sources and the map: absent until it has something
+  // to do (a conversation to leave), then present for the session.
+  assert.match(HEADER, /\{view && onToggleView && <CanvasViewControl /, "the view door lost its conversation gate");
+  assert.match(CONTROLS, /export function CanvasViewControl/, "the door's control left the controls file");
 });

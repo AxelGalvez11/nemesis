@@ -1136,11 +1136,11 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
     transparent 100%
   );
   background-size: 200% 100%;
-  animation: canvas-forming 1900ms linear infinite;
+  animation: canvas-forming 1400ms linear infinite;
 }
 
 /* §11 — a passage rewriting itself IN PLACE. Same left-to-right band as
-   `.canvas-forming`, and deliberately the same 1900ms, so a paragraph being
+   `.canvas-forming`, and deliberately the same 1400ms, so a paragraph being
    rewritten and a question being formed read as one system doing one kind of
    work rather than two effects that happen to coexist.
    🔴 NO `background-color`, WHICH IS THE WHOLE DIFFERENCE FROM `.canvas-forming`.
@@ -1186,21 +1186,36 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   animation: canvas-preview-out 220ms ease-out forwards;
 }
 
-@keyframes canvas-thinking-word { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+/* 🔴🔴 REBUILT TO THE REFERENCE'S OWN RECIPE, MEASURED 2026-08-30 (owner: *"i need the
+   thinking preview in chat mode match how chatgpt does it"*). Read off chatgpt.com signed in,
+   dark theme, from the live `.loading-shimmer-tertiary` span and its stylesheet rules:
+   16px/24px/400 text in the TERTIARY colour, and the sweep is a 50%-wide band that FADES the
+   words toward the background (their dark band is rgba(0,0,0,.6) over #afafaf on a black page;
+   their light band is rgba(255,255,255,.75) over grey on white — both read as "the text dims
+   where the band is"). `color-mix` toward transparent reproduces that in one theme-proof rule.
+   🔴 `background-color` CARRIES THE RESTING COLOUR, because the band image is `no-repeat` and
+   only half as wide as the box: everywhere the image is not, the glyphs are painted by the
+   background colour underneath it — drop it and the words vanish between sweeps.
+   🔴 -100% → 250% WITH A 50% IMAGE IS A SWEEP AND THEN A REST. The band crosses and the words
+   sit plain for a beat before the next pass — the reference's rhythm, not a continuous churn.
+   🔴 1400ms `ease`, THEIR `--cot-shimmer-duration`, and the forming/rewriting bars below moved
+   to the same period so the §20 rule — one motion system — survives the retune. */
+@keyframes canvas-thinking-word { from { background-position: -100% top; } to { background-position: 250% top; } }
 .canvas-thinking-word {
+  background-color: var(--ui-text-tertiary);
   background-image: linear-gradient(
     90deg,
-    var(--ui-text-quaternary) 0%,
-    var(--ui-text-quaternary) 35%,
-    var(--ui-text-primary) 50%,
-    var(--ui-text-quaternary) 65%,
-    var(--ui-text-quaternary) 100%
+    var(--ui-text-tertiary) 0%,
+    color-mix(in srgb, var(--ui-text-tertiary) 35%, transparent) 40%,
+    color-mix(in srgb, var(--ui-text-tertiary) 35%, transparent) 60%,
+    var(--ui-text-tertiary) 100%
   );
-  background-size: 200% 100%;
+  background-size: 50% 200%;
+  background-repeat: no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: canvas-thinking-word 1900ms linear infinite;
+  animation: canvas-thinking-word 1400ms ease infinite;
 }
 
 @keyframes canvas-rewriting { from { background-position: 200% 0; } to { background-position: -200% 0; } }
@@ -1212,7 +1227,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
     transparent 100%
   );
   background-size: 200% 100%;
-  animation: canvas-rewriting 1900ms linear infinite;
+  animation: canvas-rewriting 1400ms linear infinite;
 }
 /* The wording on its way out reads as provisional while the new one is made. Not
    hidden: the learner asked for THIS paragraph to change and needs to keep
