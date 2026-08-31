@@ -99,7 +99,15 @@ export function DocumentRail({
     // 🔴 `scrollTop`, NOT `scrollIntoView`. The document sits in a portalled panel that is itself
     // inside the page; `scrollIntoView` walks up and scrolls ancestors too, which shifts the whole
     // workspace behind the reader. Setting the scroller's own offset moves exactly one thing.
-    scroller.scrollTo({ behavior: "smooth", top: Math.max(0, offsetIn(element) - 24) });
+    //
+    // 🔴🔴 AND NOT `behavior: "smooth"`, WHICH SILENTLY DOES NOTHING ON THIS CONTAINER. Measured on
+    // production, same element, back to back: `scrollTo({top: 2331, behavior: "auto"})` left
+    // scrollTop at 2331; `behavior: "smooth"` left it at 0 after 900ms. Not reduced motion (the
+    // query reports false) and not a `scroll-behavior` rule (computed `auto` on both the scroller
+    // and the root). Whatever suppresses it, a jump that sometimes does not land is worse than a
+    // jump with no glide, and this failure is invisible: the rail highlighted the right heading
+    // the whole time, so the only symptom was a document that would not move.
+    scroller.scrollTop = Math.max(0, offsetIn(element) - 24);
     setActive(ordinal);
     setOpen(false);
   };
