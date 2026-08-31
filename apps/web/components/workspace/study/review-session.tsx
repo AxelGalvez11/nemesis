@@ -1,12 +1,13 @@
 "use client";
 
 import {
+  IconMessage,
   IconThumbDown,
   IconThumbDownFilled,
   IconThumbUp,
   IconThumbUpFilled,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
@@ -15,20 +16,29 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { parseRevisedCard, reviseCardMessages } from "@/lib/workspace/study-ai-extras";
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/workspace/study-cloze";
-import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
-import { buildReviewQueue } from "@/lib/workspace/study-review-queue";
-import type { StudyGrade } from "@/lib/workspace/study-scheduler";
-import { decideSessionGrade } from "@/lib/workspace/study-session-steps";
+import { lastSeenAt, type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
+import { buildReviewQueue, minutesUntilNext } from "@/lib/workspace/study-review-queue";
+import { describeDelay, elapsedDaysBetween, previewAnswers, type StudyGrade } from "@/lib/workspace/study-scheduler";
 import { cn } from "@/lib/utils";
 
 import { OcclusionCardView } from "./occlusion-card";
 import type { StudyReviewSettings } from "./study-chrome";
 
-const GRADES: { grade: StudyGrade; label: string; hint: string; variant: "outline" | "secondary" }[] = [
-  { grade: "again", label: "Again", hint: "1 · soon", variant: "outline" },
-  { grade: "hard", label: "Hard", hint: "2 · slower", variant: "secondary" },
-  { grade: "good", label: "Good", hint: "3 · normal", variant: "secondary" },
-  { grade: "easy", label: "Easy", hint: "4 · longer", variant: "secondary" },
+/**
+ * The four buttons.
+ *
+ * 🔴🔴 THE HINT USED TO READ "1 · soon", "3 · normal" — WORDS ABOUT A FEELING, NOT A SCHEDULE, and
+ * that is how a learner ends up surprised. Owner, 2026-08-30: *"just saying good and it disappears
+ * for, like, three days. That's too much."* There was no way to find that out except by pressing it
+ * and losing the card. Anki has printed the real interval above every button since forever, so now
+ * the label is computed per card from the same function that does the scheduling — see
+ * `previewAnswers` in study-scheduler.ts. The number under the button IS what pressing it does.
+ */
+const GRADES: { grade: StudyGrade; label: string; variant: "outline" | "secondary" }[] = [
+  { grade: "again", label: "Again", variant: "outline" },
+  { grade: "hard", label: "Hard", variant: "secondary" },
+  { grade: "good", label: "Good", variant: "secondary" },
+  { grade: "easy", label: "Easy", variant: "secondary" },
 ];
 
 const GRADE_KEYS: Record<string, StudyGrade> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
@@ -39,9 +49,31 @@ interface ReviewSessionProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   settings: StudyReviewSettings;
+  /**
+   * Which shell this review is wearing.
+   *
+   * 🔴🔴 ONE REVIEW SCREEN, TWO SHELLS — NEVER TWO SCREENS. The Study tab opens this as a
+   * full-screen dialog, which is what it has always been. The canvas opens it inside `StudyPanel`
+   * beside the conversation (owner 2026-08-30), and a panel that carried its own dialog would be a
+   * dialog inside a dialog: two focus traps, two Escape handlers and two close buttons. `bare`
+   * therefore drops the `Dialog` wrapper and nothing else — every pixel below is shared by
+   * construction rather than by two teams remembering to match, which is the same rule
+   * `deck-review.tsx` was built on.
+   */
+  surface?: "dialog" | "bare";
 }
 
-export function ReviewSession({ cards, deck, open, onOpenChange, settings }: ReviewSessionProps) {
+export function ReviewSession({ cards, deck, open, onOpenChange, settings, surface = "dialog" }: ReviewSessionProps) {
+  const bare = surface === "bare";
+  /**
+   * 🔴🔴 THE HOTKEYS MUST NOT REACH ACROSS A NON-MODAL PANEL. In the dialog the review owns the
+   * screen, so a bare `window` listener is safe. Docked beside a live canvas it is not: Space,
+   * 1-4 and Z would grade a card while the learner is working next to it. The listener therefore
+   * only acts when focus is inside this subtree, or nowhere in particular (`body`, the state
+   * right after the panel opens). Typing is already excluded by the field check below, which is
+   * what protects the composer specifically.
+   */
+  const scope = useRef<HTMLDivElement>(null);
   // 🔴🔴 THREE CONTROLS LEFT THIS ROW ON 2026-08-26, AND THEIR STORE WRITES LEFT WITH THEM. Owner:
   // *"remove the [have] nemesis explain this card… and remove the flag function for cards. Pretty
   // much just hide it. And also the suspend card, which is… the three dots icon inside the
@@ -53,18 +85,25 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   // 🔴 THE EXPLAIN PANEL IS PARKED, NOT DELETED. `explain-chat.tsx` stays, `study-artifact-dialogs`
   // still mounts it, and `reviseCardMessages` / `parseRevisedCard` are still live HERE, because the
   // thumbs-down rewrite runs on them. Only the door from this screen is gone.
-  const { gradeCard, undoGrade, updateCard, rateCard, logStudyPress, userId } = useCloudStudy();
+  const { gradeCard, undoGrade, updateCard, rateCard, userId } = useCloudStudy();
   const previewMode = useWorkspacePreview();
-  const [passedIds, setPassedIds] = useState<string[]>([]);
-  const [retryIds, setRetryIds] = useState<string[]>([]);
-  // Successful learning passes per card this sitting (study-session-steps):
-  // new cards graduate after two, so they never vanish after one look.
-  const [progressById, setProgressById] = useState<Record<string, number>>({});
+  /**
+   * 🔴🔴 THE SITTING NO LONGER TRACKS WHICH CARDS IT HAS SEEN, AND REMOVING THAT WAS THE POINT.
+   * Until 2026-08-30 this component kept `passedIds`, `retryIds` and a per-card pass counter, and
+   * `study-session-steps.ts` used them to SIMULATE Anki's learning steps inside one sitting: a new
+   * card was requeued at the back twice and only the graduating press was ever written down. That
+   * was a stand-in for steps, and it had the defect the owner found — the card came back "a few
+   * cards later" rather than in ten minutes, and once it graduated it left for days.
+   *
+   * Real steps live in the card now (`state`, `remainingSteps`, and a `dueAt` that can hold
+   * minutes), so the queue is simply "what is due", and a card returns because its time came. Two
+   * mechanisms for one behaviour is how they drift; there is one, and it is the stored one.
+   */
   const [priorityId, setPriorityId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastGrade, setLastGrade] = useState<{ cardId: string; snapshot: StudyScheduleSnapshot | null; progress: number; wasRetry: boolean } | null>(null);
+  const [lastGrade, setLastGrade] = useState<{ cardId: string; snapshot: StudyScheduleSnapshot } | null>(null);
   // 🔴🔴 THERE IS NO CARD EDITOR, AND ITS ABSENCE IS THE FEATURE (owner 2026-08-24:
   // "I don't really want the user to be able to edit them", and on the plan: "no card
   // editing anywhere, including the old tab"). What used to sit here was an inline
@@ -80,15 +119,42 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   // already reads as "(none — improve accuracy and clarity)". One mechanism, two
   // doors, so a fix to either lands on both.
   const [rewriting, setRewriting] = useState(false);
+  /**
+   * When the card currently on screen was first shown, so the grade can record how long it took.
+   *
+   * 🔴 NOTHING SCHEDULES ON THIS. Neither Anki nor FSRS uses answer latency to pick an interval;
+   * hesitation is meant to be reported by pressing Hard. It is recorded because the question of
+   * whether latency predicts anything cannot be answered on data nobody collected, and our review
+   * logs are useful today only because they have existed since July. See `study-scheduler.ts`.
+   *
+   * 🔴 A REF, NOT STATE. Setting state on every card change would re-render the card the moment it
+   * appears, and this value is never rendered.
+   */
+  const shownAt = useRef<number | null>(null);
+  /**
+   * The learner asking for a change to the card in front of them, in words.
+   *
+   * 🔴🔴 THIS IS NOT A CARD EDITOR, AND THE OWNER HAS BANNED THOSE TWICE. The learner never gets a
+   * cursor in the card: they write a NOTE and Nemesis rewrites the card. That is exactly the line
+   * the documents lane draws (`revise-output.ts`, and claude.ai's Comment mode rather than its Edit
+   * mode), applied to the one artifact that never got it.
+   *
+   * 🔴 WHY IT HAD TO EXIST. Before this, the only way to change a card was the thumbs-down, which
+   * rewrites it with NO instruction — Nemesis guessed at what was wrong. Owner, 2026-08-30: *"what
+   * happens when a user asks for an adjustment on one?"* The honest answer was that they could not.
+   */
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
   // The Explain side chat: transcripts cache per card for the sitting, so
   // reopening a card never bills twice; the panel itself lives to the RIGHT
   // of the card (owner 2026-08-04) and streams into explain-chat.tsx.
 
   useEffect(() => {
+    if (open && bare) scope.current?.focus({ preventScroll: true });
+  }, [bare, open]);
+
+  useEffect(() => {
     if (!open) return;
-    setPassedIds([]);
-    setRetryIds([]);
-    setProgressById({});
     setPriorityId(null);
     setRevealed(false);
     setError(null);
@@ -96,28 +162,89 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     setRewriting(false);
   }, [open, deck?.id]);
 
+  // 🔴 RE-RUN ON A TIMER, BECAUSE THE QUEUE IS NOW TIME-DEPENDENT. A card due in one minute has to
+  // arrive on its own; without this the screen would sit on "You're caught up" until something else
+  // forced a render. Thirty seconds is well under the shortest step.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setInterval(() => setTick((count) => count + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, [open]);
+
   const queue = useMemo(
-    () => buildReviewQueue({ cards, deckId: deck?.id ?? null, passedIds, retryIds, priorityId }),
-    [cards, deck?.id, passedIds, retryIds, priorityId],
+    () => buildReviewQueue({ cards, deckId: deck?.id ?? null, priorityId }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `tick` is the clock, deliberately
+    [cards, deck?.id, priorityId, tick],
   );
   const current = queue[0] ?? null;
 
-  // Anki-style remaining counts for the footer: cards failed this sitting
-  // count as learning, untouched cards as new, the rest as due reviews.
+  // 🔴 KEYED ON THE CARD, NOT ON THE REVEAL. The clock has to start when the QUESTION appears —
+  // that is the whole interval a latency signal would be about — and a card re-queued after
+  // "Again" is a fresh look at the same id, which is why the reveal flag is a dependency too.
+  const currentId = current?.id ?? null;
+  useEffect(() => {
+    shownAt.current = currentId ? Date.now() : null;
+    // 🔴 THE BOX IS PER CARD. A note half-written about card one must not arrive on card two.
+    setAsking(false);
+    setNote("");
+    // 🔴 AND SO IS THE ANSWER. `grade()` and `undo()` each clear this on their own way out, which
+    // covered every route a learner had until the card could also change underneath them — a
+    // re-sorted queue, a card arriving from its learning step. Anchoring it to the card itself
+    // means a new front can never appear with the previous card's answer already showing.
+    setRevealed(false);
+  }, [currentId]);
+
+  /** Anki's three counters, read off each card's own state rather than inferred from what this
+   *  sitting happens to remember. */
+  const bucketOf = (card: StudyCard) => (card.state === "learning" || card.state === "relearning" ? "learn" : card.state === "new" ? "new" : "due");
+  /**
+   * 🔴🔴 COUNTED FROM THE DECK, NOT FROM THE QUEUE, AND THAT DISTINCTION ONLY APPEARED ON SCREEN.
+   * The queue holds what is due THIS INSTANT. A card sitting out a ten-minute learning step is not
+   * in it, so counting the queue made the card vanish from all three numbers the moment it was
+   * graded — the screen said less work remained than actually did, and the learner could reasonably
+   * close the deck on unfinished cards.
+   *
+   * A card in a learning step counts as learning whether or not its minute has come, which is what
+   * Anki's middle number has always meant. New and due still require the card to actually be due,
+   * because a review card scheduled for next week is not work left today.
+   */
   const remaining = useMemo(() => {
+    const at = Date.now();
     let newCount = 0;
     let learnCount = 0;
     let dueCount = 0;
-    for (const card of queue) {
-      if (retryIds.includes(card.id) || (progressById[card.id] ?? 0) > 0) learnCount += 1;
-      else if (card.repetitions === 0) newCount += 1;
+    for (const card of cards) {
+      if (card.deckId !== deck?.id || card.suspended) continue;
+      const bucket = bucketOf(card);
+      if (bucket === "learn") learnCount += 1;
+      else if (new Date(card.dueAt).getTime() > at) continue;
+      else if (bucket === "new") newCount += 1;
       else dueCount += 1;
     }
     return { dueCount, learnCount, newCount };
-  }, [progressById, queue, retryIds]);
-  const currentBucket = current
-    ? retryIds.includes(current.id) || (progressById[current.id] ?? 0) > 0 ? "learn" : current.repetitions === 0 ? "new" : "due"
-    : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `tick` is the clock, deliberately
+  }, [cards, deck?.id, tick]);
+  const currentBucket = current ? bucketOf(current) : null;
+
+  /**
+   * What each button would do to THIS card, in words.
+   *
+   * 🔴 COMPUTED FROM THE SCHEDULER ITSELF, never from a parallel table of guesses. If the two could
+   * disagree the button would be a lie, and it is the kind of lie nobody reports because it looks
+   * like the scheduler being strange rather than the label being wrong.
+   */
+  /** Minutes until a card still in its steps returns, or null when nothing is pending. */
+  const waitingMinutes = useMemo(
+    () => minutesUntilNext(cards, deck?.id ?? null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `tick` is the clock, deliberately
+    [cards, deck?.id, tick],
+  );
+
+  const previews = useMemo(
+    () => (current ? previewAnswers(current, elapsedDaysBetween(lastSeenAt(current), new Date())) : null),
+    [current],
+  );
 
   // Occlusion cards render their image with masks; the payload is only ever
   // non-null when it validated, so anything malformed falls back to text.
@@ -136,29 +263,30 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     setSaving(true);
     setError(null);
     try {
-      const progress = progressById[graded.id] ?? 0;
-      const wasRetry = retryIds.includes(graded.id);
-      const decision = decideSessionGrade({ inRetry: wasRetry, progress, repetitions: graded.repetitions }, value);
-      let snapshot: StudyScheduleSnapshot | null = null;
-      if (decision.write) {
-        snapshot = { dueAt: graded.dueAt, intervalDays: graded.intervalDays, repetitions: graded.repetitions, lapses: graded.lapses };
-        await gradeCard(graded.id, value);
-      } else {
-        // Session-only learning step: nothing schedules, but the press still
-        // counts in stats — Anki logs every answer.
-        logStudyPress(graded.id, value);
-      }
-      setLastGrade({ cardId: graded.id, snapshot, progress, wasRetry });
+      // 🔴🔴 EVERY PRESS IS WRITTEN NOW. It used to be that only the press which GRADUATED a card
+      // reached the scheduler, because the steps were simulated in this component and writing the
+      // in-between presses would have inflated the schedule. The steps are real and stored, so a
+      // press inside a step is a real review with a real ten-minute due date — and holding it back
+      // would mean closing the tab lost your place in the card.
+      //
+      // 🔴 THE WHOLE PRE-PRESS STATE RIDES IN THE SNAPSHOT, memory AND step position. Undo has to
+      // put back a card the scheduler has already moved; leaving out the stability would restore
+      // the old due date while keeping the memory of a review that no longer happened, and every
+      // later interval would compound the error.
+      const snapshot: StudyScheduleSnapshot = {
+        difficulty: graded.difficulty,
+        dueAt: graded.dueAt,
+        intervalDays: graded.intervalDays,
+        lapses: graded.lapses,
+        lastReviewedAt: graded.lastReviewedAt,
+        remainingSteps: graded.remainingSteps,
+        repetitions: graded.repetitions,
+        stability: graded.stability,
+        state: graded.state,
+      };
+      await gradeCard(graded.id, value, shownAt.current === null ? undefined : Date.now() - shownAt.current);
+      setLastGrade({ cardId: graded.id, snapshot });
       setPriorityId((id) => (id === graded.id ? null : id));
-      setProgressById((map) => ((map[graded.id] ?? 0) === decision.progress ? map : { ...map, [graded.id]: decision.progress }));
-      if (decision.requeue) {
-        // The card hasn't finished this sitting — it re-enters at the back.
-        setRetryIds((ids) => [...ids.filter((id) => id !== graded.id), graded.id]);
-        setPassedIds((ids) => ids.filter((id) => id !== graded.id));
-      } else {
-        setRetryIds((ids) => ids.filter((id) => id !== graded.id));
-        setPassedIds((ids) => (ids.includes(graded.id) ? ids : [...ids, graded.id]));
-      }
       setRevealed(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't save the review.");
@@ -169,15 +297,13 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
 
   async function undo() {
     if (!lastGrade || saving) return;
-    const { cardId, snapshot, progress, wasRetry } = lastGrade;
+    const { cardId, snapshot } = lastGrade;
     setSaving(true);
     setError(null);
     try {
-      // Session-only presses (null snapshot) never wrote — only unwind state.
-      if (snapshot) await undoGrade(cardId, snapshot);
-      setPassedIds((ids) => ids.filter((id) => id !== cardId));
-      setRetryIds((ids) => (wasRetry ? (ids.includes(cardId) ? ids : [...ids, cardId]) : ids.filter((id) => id !== cardId)));
-      setProgressById((map) => ({ ...map, [cardId]: progress }));
+      await undoGrade(cardId, snapshot);
+      // 🔴 THE UNDONE CARD JUMPS THE QUEUE. Its restored due date may be days away, so without this
+      // the card the learner just asked to re-grade would vanish instead of coming back.
       setPriorityId(cardId);
       setLastGrade(null);
       setRevealed(false);
@@ -220,8 +346,15 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     if (value === -1 && !clearing && card.cardType !== "image_occlusion") await rewriteCurrent();
   }
 
-  /** Rewrite a card the learner has just called badly made. The learner never types. */
-  async function rewriteCurrent() {
+  /**
+   * Rewrite the card in front of the learner.
+   *
+   * 🔴 TWO DOORS, ONE MECHANISM. Thumbs-down calls this with no note ("this is bad, you work out
+   * why"); the note box calls it with one ("the answer is wrong, it is the neutral axis"). A second
+   * rewrite path for the second door is how the two would start disagreeing about what a revision
+   * does, so there is one, and the note is a parameter.
+   */
+  async function rewriteCurrent(instruction?: string) {
     if (!current || saving || rewriting) return;
     if (!userId || previewMode) {
       setError("Sign in to have Nemesis rewrite a card.");
@@ -232,7 +365,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     try {
       const reply = await postChatCompletion(
         userId,
-        reviseCardMessages({ back: current.back, front: current.front, transcript: "" }),
+        reviseCardMessages({ back: current.back, front: current.front, note: instruction, transcript: "" }),
         { decision: { model: "deepseek-chat", route: "conversation", searchWeb: false } },
       );
       const revised = reply.text ? parseRevisedCard(reply.text) : null;
@@ -245,6 +378,9 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       // underneath them, and showing the new answer they never tried to recall would
       // spend the retrieval for nothing.
       setRevealed(false);
+      // The ask is done; close the box and clear it so the next card starts empty.
+      setAsking(false);
+      setNote("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't rewrite this card.");
     } finally {
@@ -260,6 +396,15 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      // 🔴 SCOPED WHEN DOCKED. See `scope` above: a non-modal panel must not grade a card because
+      // somebody pressed Space while reading the canvas beside it.
+      //
+      // 🔴 `instanceof Node` IS NOT BELT AND BRACES, IT IS THE FIX FOR A REAL THROW. `event.target`
+      // is an EventTarget, not necessarily a Node: a keydown dispatched on `window` has `window` as
+      // its target, which is truthy and makes `Node.contains()` raise a TypeError that kills the
+      // whole handler. Found on screen driving this panel, not in review.
+      const inside = target instanceof Node && scope.current?.contains(target);
+      if (bare && scope.current && !inside && target !== document.body) return;
       if (!current) return;
       if (event.key === " " || event.key === "Enter" || event.code === "Space") {
         event.preventDefault();
@@ -284,12 +429,12 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="review-stage left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 px-7 py-6" showCloseButton>
-        <DialogTitle className="sr-only">{deck?.name ?? "Flashcard review"}</DialogTitle>
-        <DialogDescription className="sr-only">Review the front of the card, reveal its answer, then grade your recall.</DialogDescription>
-        {current ? (
+  // 🔴 ONE BODY, TWO SHELLS. Everything below this line is shared verbatim between the Study tab's
+  // full-screen dialog and the canvas's docked panel; only the wrapper differs. Writing it twice is
+  // how the two surfaces would start disagreeing about what a review looks like.
+  const body = (
+    <>
+      {current ? (
           <div className="mx-auto grid min-h-0 w-full max-w-6xl grid-rows-[auto_minmax(0,1fr)_auto] gap-4 pt-1">
             {/* 🔴 NO DECK NAME ACROSS THE TOP (owner 2026-08-25: "in the flashcards, it had this
                 title called nemesis flashcards, and I don't really need that there. And kinda
@@ -301,7 +446,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 screen does not print a name at all. The learner opened this deck; they know
                 which one it is. `DialogTitle` above still carries it for screen readers, where
                 a nameless dialog is a real loss rather than clutter. */}
-            <div className="flex items-center justify-end pr-10">
+            <div className={cn("flex items-center justify-end", !bare && "pr-10")}>
               <div className="flex items-center gap-1">
                 {lastGrade && (
                   <Button className="text-xs" disabled={saving} onClick={() => void undo()} size="sm" title="Undo last grade (Z)" variant="ghost">
@@ -340,7 +485,33 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 >
                   {current.quality === -1 ? <IconThumbDownFilled className="text-(--ui-learner)" /> : <IconThumbDown />}
                 </Button>
-                {/* 🔴🔴 THE ROW ENDS HERE: TWO THUMBS, AND NOTHING ELSE. Three controls were cut on
+                {/* 🔴🔴 THE ONE CONTROL ADDED BACK TO THIS ROW, AND IT EARNS ITS PLACE BY BEING THE
+                    THING THE CUT ONES WERE STANDING IN FOR. Three controls left here on 2026-08-26
+                    (explain, flag, suspend) because each was a decision ABOUT the card taken during
+                    recall. This is the same gesture as the thumbs beside it — "this card is wrong" —
+                    except the learner gets to say HOW, which is the difference between Nemesis
+                    fixing it and Nemesis guessing. Owner, 2026-08-30: *"what happens when a user
+                    asks for an adjustment on one?"* */}
+                <Button
+                  aria-label="Ask Nemesis to change this card"
+                  aria-pressed={asking}
+                  data-testid="ask-card-change"
+                  disabled={rewriting}
+                  onClick={() => setAsking((open) => !open)}
+                  size="icon-xs"
+                  title="Ask Nemesis to change this card"
+                  variant="ghost"
+                >
+                  {/* 🔴 A SPEECH BUBBLE, NOT A PENCIL, AND THE GLYPH IS THE WHOLE POINT. A pencil
+                      means "edit this card" everywhere in software, and editing a card is the one
+                      thing this screen has never allowed — it would promise a cursor and then take
+                      it away. It is also already spoken for: `study-row-actions.tsx` uses the same
+                      pencil for Rename, a real edit. A bubble says "leave a note", which is what
+                      happens, and it matches `output-preview.tsx`, where the same gesture on a
+                      document is a comment. Owner picked it, 2026-08-30. */}
+                  <IconMessage />
+                </Button>
+                {/* 🔴🔴 THE ROW ENDS HERE: TWO THUMBS AND ONE ASK, AND NOTHING ELSE. Three controls were cut on
                     2026-08-26 on the owner's instruction, and each had a defensible reason to exist:
                     ✨ opened a side chat that explained the card, 🚩 flagged it a colour, and ⋯ held
                     "Suspend card".
@@ -377,6 +548,42 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 </div>
               </section>
             </div>
+            {asking && !rewriting && (
+              // 🔴 A NOTE BOX, NOT THE CARD. The learner types what they want changed; the card
+              // itself stays read-only. Same shape as the document reader's note, same rule.
+              <div className="grid gap-2 rounded-xl p-3 ring-1 ring-(--ui-stroke-secondary)">
+                <textarea
+                  autoFocus
+                  className="min-h-16 w-full resize-none bg-transparent text-sm text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+                  data-testid="ask-card-note"
+                  onChange={(event) => setNote(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Enter sends, Shift+Enter breaks the line: the composer's own rule, so the
+                    // gesture is the one the learner already has in their hands.
+                    if (event.key === "Enter" && !event.shiftKey && note.trim()) {
+                      event.preventDefault();
+                      void rewriteCurrent(note);
+                    }
+                    if (event.key === "Escape") setAsking(false);
+                  }}
+                  placeholder="What should change? For example: the answer is wrong, it is the neutral axis."
+                  value={note}
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <Button className="text-xs" onClick={() => setAsking(false)} size="sm" variant="ghost">Cancel</Button>
+                  <Button
+                    className="text-xs"
+                    data-testid="ask-card-send"
+                    disabled={!note.trim()}
+                    onClick={() => void rewriteCurrent(note)}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Ask Nemesis
+                  </Button>
+                </div>
+              </div>
+            )}
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
             {/* A rewrite is a model call, so it takes seconds. Saying so beats a menu
                 item that closed and apparently did nothing. */}
@@ -395,10 +602,13 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 <Button className="bg-foreground text-background hover:bg-foreground/90" onClick={() => setRevealed(true)} size="lg" title="Show answer (Space)" variant="ghost">Show answer</Button>
               ) : (
                 <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
-                  {GRADES.map(({ grade: value, hint, label, variant }) => (
-                    <Button className="h-auto flex-col gap-0.5 bg-background py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]" disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
+                  {GRADES.map(({ grade: value, label, variant }) => (
+                    <Button className="h-auto flex-col gap-0.5 bg-background py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]" data-testid={`grade-${value}`} disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
                       <span>{label}</span>
-                      <span className="text-[0.625rem] font-normal opacity-70">{hint}</span>
+                      {/* The real interval, from the real scheduler. Anki puts it here too. */}
+                      <span className="text-[0.625rem] font-normal tabular-nums opacity-70">
+                        {previews ? describeDelay(previews[value]) : ""}
+                      </span>
                     </Button>
                   ))}
                 </div>
@@ -408,12 +618,44 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
         ) : (
           <div className="grid min-h-56 place-items-center bg-background p-8 text-center">
             <div>
-              <p className="text-sm font-semibold">You’re caught up</p>
-              <p className="mt-1 text-xs text-muted-foreground">The next review will appear when a card is due.</p>
+              {/* 🔴 "CAUGHT UP" IS NOT TRUE WHILE A CARD IS MID-STEP, and saying it anyway is how a
+                  learner closes the tab on unfinished work. If something is still walking its
+                  learning steps, say when it comes back instead. */}
+              <p className="text-sm font-semibold">{waitingMinutes === null ? "You’re caught up" : "Nothing due right now"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {waitingMinutes === null
+                  ? "The next review will appear when a card is due."
+                  : `The next card comes back in ${waitingMinutes} minute${waitingMinutes === 1 ? "" : "s"}.`}
+              </p>
               <Button className="mt-5 bg-background" onClick={() => onOpenChange(false)} variant="outline">Done</Button>
             </div>
           </div>
         )}
+    </>
+  );
+
+  // Docked beside the conversation: no dialog, no second Escape handler, no second close button —
+  // `StudyPanel` owns all three. `tabIndex` is what makes the container focusable so the review
+  // hotkeys work the moment the panel opens, without the learner having to click a card first.
+  if (bare) {
+    return (
+      <div
+        className="review-stage flex h-full min-h-0 flex-col px-4 py-3 outline-none"
+        data-testid="review-bare"
+        ref={scope}
+        tabIndex={-1}
+      >
+        {open ? body : null}
+      </div>
+    );
+  }
+
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="review-stage left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 px-7 py-6" showCloseButton>
+        <DialogTitle className="sr-only">{deck?.name ?? "Flashcard review"}</DialogTitle>
+        <DialogDescription className="sr-only">Review the front of the card, reveal its answer, then grade your recall.</DialogDescription>
+        {body}
       </DialogContent>
     </Dialog>
   );

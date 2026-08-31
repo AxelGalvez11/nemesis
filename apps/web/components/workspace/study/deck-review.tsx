@@ -15,6 +15,18 @@
 // the scheduling, the keyboard shortcuts, the Anki-style counts and the look are
 // identical by construction rather than by two teams remembering to match.
 //
+// 🔴🔴 ON THE CANVAS IT OPENS IN THE RIGHT-HAND PANEL, WHICH REVERSES AN EARLIER ORDER.
+// Owner, 2026-08-30: *"the tests and the flashcards could appear in the sidebar… because that way,
+// users could ask questions as well, have the chat on the side, and they could also full screen if
+// they want."* In August the instruction had been the opposite — *"full screen just like an Anki
+// with an x on it"* — and full screen is still one button away in the panel's header. What changed
+// is which of the two is the front door: reviewing a deck you are in the middle of discussing
+// should not hide the discussion.
+//
+// 🔴 THE LIBRARY STILL OPENS IT FULL SCREEN, and that is not an inconsistency. A docked panel
+// exists to keep a conversation on screen beside it; on the Library shelf there is no conversation
+// to keep, which is exactly why `OutputPreview` is opened there with `initialMode="full"` too.
+//
 // 🔴 NO FLIP ANIMATION, AND THAT IS A SETTING WITH AN OWNER BEHIND IT. The Study tab
 // persists `StudyReviewSettings` per student; nothing outside that tab has a stored
 // preference to read, so this passes the owner's stated default explicitly rather than
@@ -29,6 +41,7 @@
 
 import { useEffect, useMemo } from "react";
 
+import { StudyPanel } from "@/components/workspace/learn/study-panel";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 import { ReviewSession } from "./review-session";
@@ -42,10 +55,14 @@ export const REVIEW_DEFAULTS: StudyReviewSettings = { flashcardOutline: false, f
 export function DeckReview({
   deckId,
   onClose,
+  surface = "panel",
 }: {
   /** The deck to review. The component is expected to be mounted only while this is set. */
   deckId: string;
   onClose: () => void;
+  /** `panel` docks beside a conversation; `full` takes the screen, for surfaces with no
+   *  conversation to sit beside. */
+  surface?: "panel" | "full";
 }) {
   const { cards, decks, selectDeck, status } = useCloudStudy();
 
@@ -62,23 +79,45 @@ export function DeckReview({
   // card list mid-fetch makes it render its "You're caught up" state, which reads as a
   // finished deck and is the most misleading thing this screen could say. `idle` counts
   // as not-yet-loaded: it is the status before the first fetch has even been issued.
-  if (status !== "loaded" && status !== "error" && cards.length === 0) {
+  const loading = status !== "loaded" && status !== "error" && cards.length === 0;
+
+  if (surface === "full") {
+    if (loading) {
+      return (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-(--ui-bg-primary)/80">
+          <p className="text-sm text-(--ui-text-secondary)">Opening the deck…</p>
+        </div>
+      );
+    }
     return (
-      <div className="fixed inset-0 z-50 grid place-items-center bg-(--ui-bg-primary)/80">
-        <p className="text-sm text-(--ui-text-secondary)">Opening the deck…</p>
-      </div>
+      <ReviewSession
+        cards={cards}
+        deck={deck}
+        onOpenChange={(next) => {
+          if (!next) onClose();
+        }}
+        open
+        settings={REVIEW_DEFAULTS}
+      />
     );
   }
 
   return (
-    <ReviewSession
-      cards={cards}
-      deck={deck}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      open
-      settings={REVIEW_DEFAULTS}
-    />
+    <StudyPanel crumb="Flashcards" onClose={onClose} open title={deck?.name ?? "Flashcards"}>
+      {loading ? (
+        <p className="p-6 text-sm text-(--ui-text-secondary)">Opening the deck…</p>
+      ) : (
+        <ReviewSession
+          cards={cards}
+          deck={deck}
+          onOpenChange={(next) => {
+            if (!next) onClose();
+          }}
+          open
+          settings={REVIEW_DEFAULTS}
+          surface="bare"
+        />
+      )}
+    </StudyPanel>
   );
 }
