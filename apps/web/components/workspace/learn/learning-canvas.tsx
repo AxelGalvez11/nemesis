@@ -113,6 +113,21 @@ import { SourceTabPane, SourceTabsProvider, useSourceTabsState } from "./source-
  */
 const CANVAS_EXIT_ROUTE = "/learn";
 
+/**
+ * How long the soft navigation out of a canvas gets before a real page load takes over.
+ *
+ * 🔴 A DEADLINE FOR A NAVIGATION, NOT A GUESS AT ONE. Measured on production: the `×` swaps the
+ * canvas for the front door within about 600ms, of which 200 is the departure animation this
+ * deliberately waits out (`EXIT_MS` in `canvas-surface.tsx`). Two seconds is more than three times
+ * the observed worst case, so a working exit never reaches it, and a wedged one is not left long
+ * enough for anyone to conclude the product is broken.
+ *
+ * 🔴 IT MUST NOT BE TIGHT. Firing while a slow-but-working push is still in flight would turn one
+ * navigation into two and throw away the shell for no reason — a full reload where a soft one was
+ * about to land is a visible regression on every slow connection.
+ */
+const STRANDED_MS = 2_000;
+
 /** What "send" means when a passage is staged and nothing was typed.
  *
  *  🔴 A CONSTANT, NOT A LITERAL AT THE CALL SITE, because it is a sentence a MODEL reads and the
@@ -215,7 +230,43 @@ export function LearningCanvas({
   // 🔴 DEFINED BEFORE THE EARLY RETURN, so both render branches use the same one. The processing
   // branch below returns before most of this component exists; anything the exit needs has to be
   // above it, and a second inline handler down in the JSX is how the two would drift apart.
-  const leave = useCallback(() => router.push(CANVAS_EXIT_ROUTE), [router]);
+  /**
+   * Leaving the canvas, with a hard reload behind it if the soft one does not land.
+   *
+   * 🔴🔴 A CLIENT NAVIGATION IS NOT A RECOVERY PATH, AND LEAVING IS ALWAYS A RECOVERY PATH. Owner,
+   * 2026-08-30: *"exiting a canvas cause the screen to go blank, it should take to landing page."*
+   * Driven through every exit on production in his own browser — the `×`, the browser's Back, the
+   * rail's New canvas, Library, a canvas opened from the rail, one opened by typing, one left
+   * before it had finished loading — every one landed on the front door, so this is not a fault
+   * in `router.push` that reproduces on demand. It is a fault it CAN have and cannot report: a
+   * soft navigation runs on the client router and its chunks, and when either is wedged — a
+   * deployment landing under an open tab is the everyday cause, and this app ships several times
+   * a day — the push resolves to nothing at all. The canvas has already faded itself out by then
+   * (`.canvas-exit-out` holds `opacity: 0` with `forwards`), so what is left on screen is a blank
+   * page with no exit on it.
+   *
+   * 🔴 THE CODEBASE ALREADY DECIDED THIS TWICE. `learn/error.tsx` makes its way out a plain `<a>`
+   * *"because whatever crashed the render may be crashed application state"*, and
+   * `canvas-quiet.tsx`'s retry is a full document load for the same reason. The exit is the one
+   * remaining way out that trusted the client router with no fallback.
+   *
+   * 🔴 IT IS A DEADLINE, NOT A REPLACEMENT. The soft push stays and is what nearly always runs —
+   * it is instant and it keeps the shell mounted. The timer only outlives it when the surface
+   * holding it is still on screen, which is the definition of the push not having worked, and it
+   * is cancelled on unmount by the effect below.
+   */
+  const strandedTimer = useRef<number | null>(null);
+  const leave = useCallback(() => {
+    router.push(CANVAS_EXIT_ROUTE);
+    if (strandedTimer.current !== null) window.clearTimeout(strandedTimer.current);
+    strandedTimer.current = window.setTimeout(() => {
+      window.location.assign(CANVAS_EXIT_ROUTE);
+    }, STRANDED_MS);
+  }, [router]);
+  // Cleared when this canvas goes, which is what a working exit looks like from in here.
+  useEffect(() => () => {
+    if (strandedTimer.current !== null) window.clearTimeout(strandedTimer.current);
+  }, []);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
   // A no-op outside the workspace provider, so an isolated preview of this canvas never throws.
