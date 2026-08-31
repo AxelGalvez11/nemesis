@@ -16,6 +16,7 @@ import {
   EN_US_GOOD,
   ES_ES_MIXED,
   JA_JP_MIXED,
+  ES_MX_FLAT_REST,
   NO_MATCH,
   SILENCE,
   WORDS_ONLY,
@@ -185,4 +186,37 @@ test("only formats the assessor accepts are sent", () => {
   // Safari's MediaRecorder output. Refused by name so the failure is diagnosable.
   assert.equal(azureContentType("audio/mp4"), null);
   assert.equal(azureContentType("video/webm"), null);
+});
+
+// ─────────────────────────────────────────────── the shape production returns
+
+test("🔴🔴 the REST short-audio shape — scores flat, no wrapper — yields the same evidence", () => {
+  // Calibration: make assessmentOf read ONLY the nested `PronunciationAssessment`
+  // shape again and every assertion here reddens — which is exactly what the
+  // deployed scorer was doing until speech-live run 3 caught it: undefined
+  // scores, ErrorType "", and "Every word landed" for a different sentence.
+  const evidence = evidenceOf(ES_MX_FLAT_REST, "El perro corre rápido por el parque.", "es-MX");
+  assert.equal(evidence.overall?.overall, 0.968);
+  assert.equal(evidence.overall?.accuracy, 0.96);
+  assert.equal(evidence.overall?.completeness, 1);
+  assert.equal(evidence.prosody?.fluency, 0.98);
+  assert.equal(at(evidence.words, 0).accuracy, 1);
+  assert.equal(at(evidence.words, 2).errorType, "mispronunciation");
+  // The omitted word still has NO score — flat parsing must not invent one.
+  assert.equal(at(evidence.words, 6).errorType, "omission");
+  assert.equal(at(evidence.words, 6).accuracy, undefined);
+});
+
+test("a plain recognition node without assessment fields still yields no scores", () => {
+  // The flat fallback reads the node itself; a node that never carried
+  // assessment fields must parse exactly as it always did.
+  const bare = {
+    DisplayText: "hello.",
+    NBest: [{ Confidence: 0.9, Display: "hello.", Lexical: "hello", Words: [{ Duration: 1_000_000, Offset: 0, Word: "hello" }] }],
+    RecognitionStatus: "Success",
+  };
+  const evidence = evidenceOf(bare, "hello", "en-US");
+  assert.equal(evidence.overall, undefined);
+  assert.equal(at(evidence.words, 0).accuracy, undefined);
+  assert.equal(at(evidence.words, 0).errorType, "none");
 });

@@ -692,7 +692,11 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                         ? String(picked).trim() === question.typedAnswer
                           ? "Correct. "
                           : `Correct — written in full: "${question.typedAnswer}". `
-                        : `Not quite — the answer is "${question.typedAnswer}". `
+                        : typeof picked === "string" && typedAnswerMatches(picked, { ...question, strict: false })
+                          ? // Right letters, wrong marks, on a question where the marks ARE the
+                            // material — name the actual miss instead of a flat wrong.
+                            `Almost — the accent is the difference: "${question.typedAnswer}". `
+                          : `Not quite — the answer is "${question.typedAnswer}". `
                       : picked === question.answer
                         ? "Correct. "
                         : `Not quite — the answer is "${question.options[question.answer]}". `}

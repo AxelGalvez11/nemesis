@@ -20,6 +20,7 @@
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
+import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { usePronunciationAttempt } from "./use-pronunciation-attempt";
 
 /** How each verdict reads on the page. The words are the diagnosis's, not ours. */
@@ -89,6 +90,16 @@ export function SpokenExample({
           {locale}
         </p>
 
+        {/* 🔴 THE WAVEFORM IS EVIDENCE, NOT DECORATION — the same live strip dictation shows,
+            fed by the level this attempt's recorder already publishes. It sits UNDER the
+            sentence, never over it: the learner has to keep READING the line while saying it,
+            which is the one way this differs from dictation's take-over-the-composer strip. */}
+        {attempt.recording && (
+          <div className="mt-1.5 flex" data-testid="attempt-waveform">
+            <CanvasVoiceBars live />
+          </div>
+        )}
+
         {/* 🔴 THE VERDICT IS THE DIAGNOSIS'S OWN SENTENCE. `pronunciation-diagnosis.ts` already
             bounds it to a few words and already refuses to speak when it has nothing to say; a
             second opinion written here would be this file guessing at a score it cannot see. */}
@@ -99,7 +110,9 @@ export function SpokenExample({
           <p className={cn("mt-2 text-[length:var(--canvas-text-meta)]", VERDICT_TONE[scored.diagnosis.verdict] ?? "text-(--ui-text-secondary)")}>
             {scored.diagnosis.headline}
             {typeof scored.diagnosis.overall === "number" && (
-              <span className="ml-1.5 text-(--ui-text-quaternary) tabular-nums">{Math.round(scored.diagnosis.overall)}%</span>
+              // The diagnosis carries a 0-1 fraction (evidence scores are normalised); the
+              // percent is made here, at the one place a percent is shown.
+              <span className="ml-1.5 text-(--ui-text-quaternary) tabular-nums">{Math.round(scored.diagnosis.overall * 100)}%</span>
             )}
           </p>
         )}

@@ -39,6 +39,13 @@ export interface TypedTestQuestion {
   typedAnswer: string;
   /** Other phrasings and spellings that also count, compared normalised. */
   accept: string[];
+  /**
+   * The exact written form IS the skill (owner 2026-08-31, on "hablo" vs
+   * "habló": strict when it's the point). Grading then keeps accents and marks
+   * — a conjugation where the accent distinguishes tense cannot be graded
+   * without them. Casing, punctuation and spacing stay forgiven either way.
+   */
+  strict: boolean;
   why: string;
 }
 
@@ -118,7 +125,7 @@ function toTypedQuestion(value: unknown): TypedTestQuestion | null {
     .map((entry) => cleanText(entry))
     .filter((entry): entry is string => entry !== null)
     .slice(0, MAX_OPTIONS);
-  return { accept, q, typedAnswer, why };
+  return { accept, q, strict: row.strict === true, typedAnswer, why };
 }
 
 /** Either question shape. Options present → choice; a string answer → typed. A
@@ -294,12 +301,16 @@ export function buildTestGenMessages(material: StudyMaterial, questionCount: num
         "4 options per question, answer is the 0-based index of the correct option, why is a one-sentence explanation " +
         "grounded in the material. If the material is too thin for that many questions, write fewer.\n\n" +
         // Typed items are OFFERED, not demanded: material with nothing worth
-        // recalling verbatim should come back all-choice, and does.
-        "Where the material rewards exact recall — a term of art, a name, a short formula, a phrase in a language " +
-        'being studied — you may instead write a typed-answer question: {"q":"…","answer":"<the answer, written out>",' +
-        '"accept":["<other correct spellings or phrasings>"],"why":"…"} with no options. The student must produce it ' +
-        "from memory and type it; grading forgives casing, accents and punctuation, so list only genuinely different " +
-        "correct forms in accept. Keep typed answers short (a few words) and use them for at most a third of the test.\n\n" +
+        // producing verbatim should come back all-choice, and does.
+        "Where the material rewards producing the exact form — a conjugated or inflected word, a term of art, a name, " +
+        'a short formula, a phrase in a language being studied — you may instead write a typed-answer question: ' +
+        '{"q":"…","answer":"<the answer, written out>","accept":["<other correct spellings or phrasings>"],' +
+        '"strict":<boolean>,"why":"…"} with no options. The student must produce it from memory and type it. ' +
+        "Set strict true when the exact written form is the skill being tested — a conjugation where an accent " +
+        "distinguishes tense, a spelling — and grading will require accents and marks; leave it false for phrases " +
+        "and terms where writing mechanics are not the lesson (grading then forgives casing, accents and " +
+        "punctuation, so list only genuinely different correct forms in accept). Keep typed answers short (a few " +
+        "words) and use them for at most a third of the test.\n\n" +
         `Material:\n${material.text}`,
       role: "user",
     },
@@ -373,22 +384,25 @@ export function outlineToMermaidMindmap(outline: string): string {
  * it is the same rule in every language and every field (the design test:
  * a law term and an engineering formula pass through it identically).
  */
-export function normalisedAnswer(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+export function normalisedAnswer(text: string, opts?: { keepMarks?: boolean }): string {
+  // keepMarks is the strict lane: composed letters stay whole under NFC and
+  // \p{M} spares the combining marks of scripts that have no composed forms.
+  const folded = opts?.keepMarks
+    ? text.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ")
+    : text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ");
+  return folded.replace(/\s+/g, " ").trim();
 }
 
 /** Does a typed attempt count? The canonical answer and every `accept` entry
- *  are tried, all through the same normalisation. Empty input never matches. */
+ *  are tried, all through the question's own normalisation \u2014 strict questions
+ *  keep accents and marks. Empty input never matches. */
 export function typedAnswerMatches(given: string, question: TypedTestQuestion): boolean {
-  const attempt = normalisedAnswer(given);
+  const keepMarks = question.strict;
+  const attempt = normalisedAnswer(given, { keepMarks });
   if (!attempt) return false;
-  return [question.typedAnswer, ...question.accept].some((accepted) => normalisedAnswer(accepted) === attempt);
+  return [question.typedAnswer, ...question.accept].some(
+    (accepted) => normalisedAnswer(accepted, { keepMarks }) === attempt,
+  );
 }
 
 /** Grade one finished run — picks[i] is the chosen option index (choice) or the

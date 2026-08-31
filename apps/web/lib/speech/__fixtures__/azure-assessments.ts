@@ -268,3 +268,43 @@ export const WORDS_ONLY: unknown = {
   Offset: 1_000_000,
   RecognitionStatus: "Success",
 };
+
+/**
+ * The REST short-audio shape: every score FLAT on the NBest candidate and on
+ * each word — no `PronunciationAssessment` wrapper anywhere.
+ *
+ * 🔴 THIS IS WHAT THE DEPLOYED ENDPOINT ACTUALLY RETURNS, and the fixtures
+ * above are the SDK's nested shape. speech-live run 3 (2026-08-31) caught the
+ * difference in production: a reader that only knew the nested shape parsed
+ * every live score to undefined, every ErrorType fell through to "", and a
+ * learner who said a different sentence was told "Every word landed." Field
+ * names and units follow the short-audio REST docs; the sentence is run 3's.
+ */
+export const ES_MX_FLAT_REST: unknown = {
+  DisplayText: "El perro corre rápido por el parque.",
+  Duration: 18_300_000,
+  NBest: [
+    {
+      AccuracyScore: 96,
+      CompletenessScore: 100,
+      Confidence: 0.95,
+      Display: "El perro corre rápido por el parque.",
+      FluencyScore: 98,
+      ITN: "el perro corre rápido por el parque",
+      Lexical: "el perro corre rápido por el parque",
+      MaskedITN: "el perro corre rápido por el parque",
+      PronScore: 96.8,
+      Words: [
+        { AccuracyScore: 100, Duration: 2_100_000, ErrorType: "None", Offset: 1_900_000, Word: "El" },
+        { AccuracyScore: 88, Duration: 2_700_000, ErrorType: "None", Offset: 4_100_000, Word: "perro" },
+        { AccuracyScore: 45, Duration: 2_700_000, ErrorType: "Mispronunciation", Offset: 6_900_000, Word: "corre" },
+        { AccuracyScore: 97, Duration: 4_100_000, ErrorType: "None", Offset: 9_700_000, Word: "rápido" },
+        { AccuracyScore: 99, Duration: 1_300_000, ErrorType: "None", Offset: 13_900_000, Word: "por" },
+        { AccuracyScore: 100, Duration: 900_000, ErrorType: "None", Offset: 15_300_000, Word: "el" },
+        { ErrorType: "Omission", Word: "parque" },
+      ],
+    },
+  ],
+  Offset: 900_000,
+  RecognitionStatus: "Success",
+};

@@ -28,6 +28,12 @@ test("🔴 the reveal grades by the same rule the final score uses", () => {
   assert.match(dialogs, /scoreAttempt\(questions, picks,/, "the final grade no longer comes from scoreAttempt");
 });
 
+test("a strict miss that is only the marks gets named, not a flat wrong", () => {
+  // The re-check runs the SAME matcher with strict off — never a second rule.
+  assert.match(dialogs, /typedAnswerMatches\(picked, \{ \.\.\.question, strict: false \}\)/, "the marks-only re-check no longer reuses the matcher");
+  assert.match(dialogs, /the accent is the difference/, "the marks-only reveal copy is gone");
+});
+
 test("Explain and Rewrite stay choice-question tools", () => {
   // Their prompts are built from options and an answer index, which a typed
   // question does not have — so the buttons must not render for one.

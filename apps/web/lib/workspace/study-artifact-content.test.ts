@@ -62,7 +62,7 @@ test("🔴 a typed question survives the trip: generation reply in, stored jsonb
 });
 
 test("🔴 typed grading forgives writing mechanics, never the words", () => {
-  const typed = { accept: [], q: "Ask 'How are you?' formally in Spanish.", typedAnswer: "¿Cómo está usted?", why: "" };
+  const typed = { accept: [], q: "Ask 'How are you?' formally in Spanish.", strict: false, typedAnswer: "¿Cómo está usted?", why: "" };
   // Calibration: casing, accents, punctuation and spacing are mechanics.
   assert.ok(typedAnswerMatches("como esta usted", typed));
   assert.ok(typedAnswerMatches("  Cómo  está USTED?? ", typed));
@@ -70,9 +70,26 @@ test("🔴 typed grading forgives writing mechanics, never the words", () => {
   assert.ok(!typedAnswerMatches("como estas", typed));
   assert.ok(!typedAnswerMatches("", typed));
   // `accept` widens spelling, through the same normalisation.
-  assert.ok(typedAnswerMatches("CONSIDERACION", { accept: ["consideración"], q: "", typedAnswer: "Consideration", why: "" }));
+  assert.ok(typedAnswerMatches("CONSIDERACION", { accept: ["consideración"], q: "", strict: false, typedAnswer: "Consideration", why: "" }));
   // 🔴 Field-agnostic: an engineering symbol string works by the same rule.
   assert.equal(normalisedAnswer("σ = F/A"), "σ f a");
+});
+
+test("🔴🔴 a strict question keeps the marks, because the accent IS the grammar", () => {
+  // Owner 2026-08-31: tests grade conjugations — and "hablo" (I speak) differs
+  // from "habló" (he spoke) by nothing but the accent. Strict grading is what
+  // makes a conjugation test able to tell them apart.
+  const conjugation = { accept: [], q: "Conjugate hablar: he spoke.", strict: true, typedAnswer: "habló", why: "" };
+  assert.ok(typedAnswerMatches("habló", conjugation));
+  assert.ok(typedAnswerMatches("  Habló. ", conjugation), "casing and punctuation stay forgiven under strict");
+  assert.ok(!typedAnswerMatches("hablo", conjugation), "the accentless form is a DIFFERENT tense");
+  // The same input passes once the question is not strict — one flag, one rule.
+  assert.ok(typedAnswerMatches("hablo", { ...conjugation, strict: false }));
+  // Strict survives the wire and the stored round trip.
+  const generated = parseGeneratedTest(JSON.stringify({ questions: [{ answer: "habló", q: "…", strict: true, why: "" }] }));
+  assert.ok(generated[0] && isTypedQuestion(generated[0]) && generated[0].strict);
+  const reread = parseTestContent({ attempts: [], questions: generated });
+  assert.ok(reread && isTypedQuestion(reread.questions[0]!) && reread.questions[0].strict);
 });
 
 test("🔴 balancing re-seats only choice questions; typed ones hold their place", () => {
@@ -113,6 +130,9 @@ test("the generation prompt offers the typed shape without demanding it", () => 
   const messages = buildTestGenMessages(deckMaterial("Contracts", [{ back: "b", front: "f" }]), 5);
   assert.ok(messages[1]?.content.includes('"accept"'));
   assert.ok(messages[1]?.content.includes("at most a third"));
+  // The strict flag is explained in terms of when the written form is the skill.
+  assert.ok(messages[1]?.content.includes('"strict"'));
+  assert.ok(messages[1]?.content.includes("exact written form"));
 });
 
 test("jsonb content round-trips and rejects shells", () => {
