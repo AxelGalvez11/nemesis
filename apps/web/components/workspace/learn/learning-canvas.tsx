@@ -2127,7 +2127,15 @@ export function LearningCanvas({
       // 🔴 THE WHOLE CANVAS IS THE DROP TARGET, not the composer. A 52px pill is a target you have
       // to aim at, and nobody aims at a text box when they are dragging a PDF — they drop it on the
       // page. Same door a picked file takes, so a dropped lecture and a chosen one are one path.
-      onDropFiles={(files) => void session.attachFiles(files)}
+      //
+      // 🔴🔴 AND THAT DOOR IS `attachWithChips`, WHICH STAGES. This line called `session.attachFiles`
+      // directly, so the commonest gesture in the product — dragging a PDF onto the page — skipped
+      // the composer entirely: no card, no reading state, nothing to remove, the file simply in the
+      // canvas. Measured on production 2026-08-31 immediately after #969 shipped: the picker staged
+      // correctly and the DROP did not, which is the half the owner actually asked about
+      // ("the composer should also have the drop into composer ability"). Two doors to one action
+      // is how a fix lands on one of them.
+      onDropFiles={attachWithChips}
       onExit={leave}
       chrome={
       <CanvasHeader
@@ -3155,7 +3163,10 @@ export function LearningCanvas({
             <CanvasRecorder
               // The canvas's ordinary attach path — the identical one a dropped file takes, which is
               // what makes a recorded lecture a real source rather than a fourth kind of thing.
-              attach={async (files) => { await session.attachFiles(files); }}
+              // 🔴 SO IT STAGES TOO, and the recording appears as a card the learner can see being
+              // read and can remove, exactly like a dropped lecture. The front door's recorder has
+              // staged since it was built; this is the same rule one level in.
+              attach={async (files) => { attachWithChips(files); }}
               onClose={() => setRecording(false)}
             />
           </div>
