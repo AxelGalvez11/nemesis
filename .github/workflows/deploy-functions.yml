@@ -62,9 +62,18 @@ jobs:
       # time — a broken import or a type error deploys perfectly happily and then 500s for the first
       # learner who asks a question. `deno check` is the only gate that catches that before students do.
       - name: Typecheck the functions being deployed
+        # 🔴 THE VALVE NEEDS TWO FLAGS THAT THE LITERATURE FUNCTION DOES NOT, AND BOTH ARE ABOUT
+        # THIS REPO RATHER THAN ABOUT DENO. `nemesis-llm` imports supabase-js from JSR, which pulls
+        # npm dependencies transitively; Deno then finds the pnpm workspace at the root, refuses to
+        # resolve them out of it, and offers to rewrite package.json — in a repo where pnpm owns
+        # that file. So: `DENO_NO_PACKAGE_JSON=1` tells Deno the workspace is none of its business,
+        # and `--node-modules-dir=auto` lets it fetch its own copies into the runner's scratch. The
+        # first run of this step failed exactly here, which is the gate doing its job.
+        env:
+          DENO_NO_PACKAGE_JSON: "1"
         run: |
           deno check supabase/functions/nemesis-literature/index.ts
-          deno check supabase/functions/nemesis-llm/index.ts
+          deno check --node-modules-dir=auto supabase/functions/nemesis-llm/index.ts
 
       - uses: supabase/setup-cli@v1
         with:
