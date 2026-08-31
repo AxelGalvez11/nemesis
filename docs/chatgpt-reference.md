@@ -317,3 +317,55 @@ title-to-title distance. **A single-instance list cannot tell you its own rhythm
 before writing the spec.**
 
 Ours now measures 326/366 and 391/431, gap 25, pitch 65, title top 116 at 28/500/34 — identical.
+
+## The deep research report's table-of-contents rail
+
+Measured 2026-08-31, signed in, 1470px viewport, on a real Deep Research run ("Research completed
+in 9m · 90 citations"). Owner: *"the document from deep research also doesnt have the leftside
+rail popup for table of contents… i need you to measure the chatgpt one in chrome."*
+
+🔴 **IT BELONGS TO THE EXPANDED REPORT, NOT THE CHAT.** In the conversation the report sits in a
+card with a title bar, a download button and an expand button; there is no rail. Pressing expand
+opens the report full screen, and the rail is only there. Worth knowing before copying it onto a
+surface that has no expanded state.
+
+🔴 **THE RAIL IS NOT MEASURABLE BY SCRIPT.** The expanded report renders inside a cross-origin
+sandboxed iframe (`connector-openai-deep-research.web-sandbox.oaiusercontent.com`), so
+`contentDocument` is null and `elementFromPoint` from the parent returns the iframe itself. Every
+number below is off 2x zoomed screenshots, halved back to CSS px. Treat them as ±1.
+
+### Collapsed: a stack of tick marks
+
+| thing | measured |
+| --- | --- |
+| marks | **one per TOC entry**, 8 here = the title + 7 sections |
+| left edge | x=**61**, about 9px inside the report frame's own left edge |
+| each mark | **3px tall**, fully rounded |
+| inactive | **19px** wide, light grey (~#e5e5e5) |
+| active | **25px** wide, black — longer AND darker, so it reads at a glance |
+| pitch | **15px** top to top |
+
+🔴 **IT IS A SCROLL-SPY, AND THAT IS THE POINT.** Scrolling from the title into "Executive
+summary" moved the black mark from the first tick to the second, with nothing clicked. A rail that
+only responded to clicks would be a menu; this one is a position indicator that happens to be
+clickable, which is why it earns permanent screen space at 19px wide.
+
+### Hover: the panel
+
+Hovering anywhere on the rail opens a white card over it.
+
+| thing | measured |
+| --- | --- |
+| panel | **287 x 569**, at x=**57**, y=**115** |
+| corner | **12px**, hairline border, soft shadow |
+| padding | **20px** left (text starts at x=77) |
+| label | `TABLE OF CONTENTS`, uppercase, ~11px, letter-spaced, grey |
+| entries | **16px on 24px**, wrapping to two lines where needed |
+| entry pitch | **36px** for a single-line entry (24px line + 12px gap) |
+| first entry | the document's own title, **bold and near-black** — it is the active one |
+| the rest | grey (~rgb(120,120,120)) until active |
+
+The entries are the report's headings in order: the title, then Executive summary, Market
+architecture and evaluation framework, Vendor landscape and detailed profiles, Comparative
+capabilities and compliance, Evidence base and market dynamics, Gaps and opportunities, Strategic
+options and recommendation.
