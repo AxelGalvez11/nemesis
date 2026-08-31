@@ -1044,6 +1044,42 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 @keyframes canvas-chrome-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .canvas-chrome-in { animation: canvas-chrome-in 320ms 120ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
 
+/* Everything else the canvas arrives with, on the controls' own timing.
+ *
+ * 🔴🔴 THE CONTROLS WERE THE ONLY THING THAT FADED, AND THE REST HARD-CUT AROUND THEM. Owner,
+ * 2026-08-30: *"entering a chat/canvas... the mascot seems to move to the bottom then back to the
+ * middle then back to the chat composer super quickly, i want a smooth fade in of everything."*
+ *
+ * Traced frame by frame in headless Chrome at 1440x900, from the press of Enter:
+ *
+ * |  ms | what the character does |
+ * |-----|-------------------------|
+ * | 14-315 | front door: grows 80px to 159px, drifts down 27px. Smooth. |
+ * | **409** | **cut** — (746,378) at 159px becomes **(400,778) at 76px** in ONE frame |
+ * | 409-512 | walks 50px left as the dock finds its anchor |
+ * | **530** | **jumps 24px right** as the nav rail finishes collapsing |
+ *
+ * A 530px diagonal teleport at half the size, then two corrections in the open. Add the question
+ * chip, the thinking caption and the answer region all appearing on the same frame and that is
+ * the "super quickly" in the report.
+ *
+ * 🔴 SO THE ARRIVAL IS A DISSOLVE NOW, NOT A JOURNEY, AND THAT IS A REVERSAL WORTH NAMING. The
+ * previous answer was to make the character TRAVEL across the swap — one character carrying the
+ * whole handoff — and it has been attempted twice (see the four faults in `canvas-handoff-anatomy`).
+ * It cannot work: the two ends are a different component, in a different route, at a different
+ * size, measured against a different rectangle, and every attempt has ended in visible corrections.
+ * Fading covers all of them by construction, and it is what was actually asked for.
+ *
+ * 🔴 THE DELAY IS THE POINT, NOT THE DURATION. `120ms` holds the canvas at zero for longer than
+ * the whole correction window measured above (409ms to 530ms), so the walk and the jump happen
+ * while there is nothing on screen to see them. Shorten this and they come back into view.
+ *
+ * 🔴 OPACITY ONLY — NO LIFT, unlike `.canvas-chrome-in` one rule up. This is worn by the character
+ * dock, which carries its OWN `transform` for where it stands; a transform in the keyframes would
+ * fight the placement and drag it 4px off its anchor for the length of the fade. */
+@keyframes canvas-enter { from { opacity: 0; } to { opacity: 1; } }
+.canvas-enter { animation: canvas-enter 320ms 120ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+
 /* The canvas LEAVING for the front door — see canvas-surface.tsx's `beginExit`.
  *
  * 🔴🔴 THE REVERSE OF THE ARRIVAL ABOVE, LITERALLY, NOT A NEW EFFECT INVENTED TO MATCH A BRIEF.
@@ -1195,6 +1231,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-question-in,
   .canvas-phrase,
   .canvas-chrome-in,
+  .canvas-enter,
   .canvas-forming,
   .canvas-rewriting,
   .canvas-thinking-word,
