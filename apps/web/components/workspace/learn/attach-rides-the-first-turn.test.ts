@@ -39,7 +39,10 @@ test("🔴🔴 attachFiles registers its promise in the same tick it is called",
   // that registered inside the async body — after its first await — would miss exactly the caller
   // this exists for (the opening ask fires in the same commit the attach starts in).
   const wrapper = sessionCode.match(
-    /const run = attachFilesInner\(files, sourceUrl\);\s*attaching\.current\.add\(run\);/,
+    // 🔴 REPOINTED 2026-08-31 (#read-on-drop): the wrapper now forwards `started`, the reads the
+    // front door already has in flight. The mechanism under test is unchanged and is what stays
+    // pinned — start the call, register it in the SAME tick, before anything can interleave.
+    /const run = attachFilesInner\(files, sourceUrl, started\);\s*attaching\.current\.add\(run\);/,
   );
   assert.ok(wrapper, "attachFiles must add its run to `attaching` synchronously, right after starting it");
 });
@@ -98,5 +101,10 @@ test("🔴🔴 the file latch sits ABOVE the opening-ask effect, and the order i
 });
 
 test("🔴 the latch still claims exactly once and still attaches through the session door", () => {
-  assert.match(canvasCode, /const files = takePending\(\);\s*claimedFiles\.current = true;\s*if \(files\?\.length\) void session\.attachFiles\(files\);/);
+  // 🔴 REPOINTED 2026-08-31 (#read-on-drop): the latch now claims `{file, read}` entries and hands
+  // the in-flight reads through as the third argument, so the canvas claims the front door's work
+  // instead of parsing the same bytes again. The two properties this test exists for are unchanged:
+  // it claims EXACTLY ONCE, and it attaches through the session's own door.
+  assert.match(canvasCode, /const waiting = takePending\(\);\s*claimedFiles\.current = true;/);
+  assert.match(canvasCode, /void session\.attachFiles\(\s*waiting\.map\(\(entry\) => entry\.file\),\s*undefined,\s*waiting\.map\(\(entry\) => entry\.read\),\s*\);/);
 });

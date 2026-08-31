@@ -1043,9 +1043,19 @@ export function LearningCanvas({
   const claimedFiles = useRef(false);
   useEffect(() => {
     if (claimedFiles.current || !session.ready) return;
-    const files = takePending();
+    const waiting = takePending();
     claimedFiles.current = true;
-    if (files?.length) void session.attachFiles(files);
+    // 🔴 THE FRONT DOOR'S READS RIDE ALONG. Each entry carries the `extractFile` call that started
+    // when the file landed there, so this claims a finished (or nearly finished) result instead of
+    // uploading and parsing the same bytes again. `null` means nothing was started — signed out at
+    // the time — and the session reads it here, which is the older path and still correct.
+    if (waiting?.length) {
+      void session.attachFiles(
+        waiting.map((entry) => entry.file),
+        undefined,
+        waiting.map((entry) => entry.read),
+      );
+    }
   }, [session]);
 
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
