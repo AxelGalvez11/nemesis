@@ -1380,8 +1380,18 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {/* 🔴 CONDITIONAL, NEVER `open={…}`. Mounting DeckReview starts a load of every deck,
           card and review on the account; keeping it unmounted until a learner presses a deck
-          is what stops the Library paying that cost on arrival. */}
-      {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} surface="full" />}
+          is what stops the Library paying that cost on arrival.
+
+          🔴🔴 DOCKED HERE TOO, AND THE FULL-SCREEN VERSION THIS ONCE PASSED WAS A REAL DEFECT.
+          The argument for it was "there is no conversation on the shelf to keep on screen", which
+          is true and is not the rule the owner gave. He gave one rule for the object: flashcards
+          open in the panel, with full screen a button inside it. Opening the same deck two
+          different ways depending on which door you came through is exactly the surprise he hit
+          on 2026-08-31 — *"the flashcard open full screen, and it did not open in the sidebar,
+          like the test. I thought I already asked for that."* What sits beside the panel here is
+          the shelf, which is worth keeping: the next deck is one click away without closing this
+          one. */}
+      {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} />}
       {/* 🔴 The Anki import and Progress dialogs were removed with their buttons (owner,
           2026-08-24), and the occlusion EDITOR went the same way the day after (owner,
           2026-08-25: "I don't want users to edit flashcards, really"). In all three cases the

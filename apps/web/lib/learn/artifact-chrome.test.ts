@@ -151,12 +151,17 @@ test("🔴🔴 flashcards and the check open in the side panel, with full screen
   assert.match(canvas, /open=\{checkOpen\}/, "the check panel does not follow its own open flag");
   assert.doesNotMatch(canvas, /checkOpen && \(\s*<StudyPanel/, "the check is unmounted when the panel closes, losing the learner's answers");
 
-  // A deck docks beside a conversation and takes the screen where there is no conversation.
+  // 🔴 A DECK OPENS IN THE PANEL FROM EVERY DOOR. The Library used to pass surface="full" on the
+  // argument that a shelf has no conversation to sit beside. The owner rejected that on
+  // 2026-08-31 — he had asked for flashcards in the sidebar "like the test", and meeting it in
+  // one place only reads as not having done it. `surface="full"` still EXISTS for a caller with
+  // no shell to dock into; nothing in the app passes it, and this guard is what notices if
+  // something starts.
   assert.match(deck, /<StudyPanel/, "a deck no longer opens beside the conversation");
   assert.match(deck, /surface="bare"/, "the docked deck mounts a dialog inside a panel");
-  assert.match(deck, /surface === "full"/, "the Library lost its full-screen review");
   const library = code("../../components/workspace/library/library-outputs.tsx");
-  assert.match(library, /<DeckReview[\s\S]{0,140}surface="full"/, "the Library docks a panel with nothing to dock beside");
+  assert.doesNotMatch(library, /<DeckReview[\s\S]{0,140}surface="full"/, "the Library is back to opening a deck full screen, which is the one rule flashcards have");
+  assert.match(library, /<DeckReview deckId=\{reviewing\} onClose=\{\(\) => setReviewing\(null\)\} \/>/, "the Library's deck no longer opens through the docked default");
 
   // 🔴 ONE REVIEW SCREEN, TWO SHELLS. `bare` may only drop the dialog; if it ever grows its own
   // card, counts or grade buttons there are two review screens to keep in step and they will drift.
