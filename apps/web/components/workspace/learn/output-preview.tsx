@@ -180,10 +180,17 @@ export function OutputPreview({
   const commentRef = useMemo(() => ({ id: output.assetId ?? output.id, kind: "output" as const }), [output.assetId, output.id]);
 
   const blocks = useMemo(() => (markdown ? docBlocks(markdown) : []), [markdown]);
-  // Comment mode exists where there is something to pin to, and revising needs the content to be
-  // HELD (a fetched note's home is its own editor; a sheet and a built PDF are not blocks).
+  // Comment mode exists where there is something to pin to (a sheet and a built PDF are not blocks).
   const canComment = Boolean(comments) && (blocks.length > 0 || Boolean(deck)) && output.kind !== "pdf" && !output.sheet;
-  const revisable = Boolean(onRevise) && Boolean(output.markdown || deck);
+  // 🔴🔴 THE MERGED `markdown`, NOT `output.markdown`, AND THAT CHANGE IS THE WHOLE LIBRARY REVISE
+  // DOOR. This read `output.markdown`, so a note that arrived as a `notePath` and was FETCHED into
+  // `fetched` could never be revised however it was mounted — the old comment called that
+  // deliberate ("a fetched note's home is its own editor"), which stopped being true the moment
+  // the owner asked for edit-if-Nemesis-made on the Library shelf (2026-08-31), where every note
+  // arrives by path. The host still decides WHETHER to offer it: `onRevise` is passed only for a
+  // document Nemesis wrote. What this line now says is only "there is something here to revise",
+  // which is a question about content, and content is what `markdown` holds.
+  const revisable = Boolean(onRevise) && Boolean(markdown || deck);
 
   useEffect(() => {
     if (!commentEnv || !canComment) return;

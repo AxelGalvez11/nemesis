@@ -2590,10 +2590,11 @@ export function LearningCanvas({
             output={canvas.outputs.find((row) => row.id === openArtifact.id) ?? openArtifact}
           />
         )}
-        {/* 🔴 THE ONE ARTIFACT THAT IS NOT A READER. `ReviewSession` is already `h-[100dvh] w-screen`
-            with a close button — full screen with an `x`, which is what the owner asked flashcards
-            to be. Mounting it here rather than teaching the reader a third mode keeps "a deck is
-            something you do" and "a document is something you read" as two different objects. */}
+        {/* 🔴 THE ONE ARTIFACT THAT IS NOT A READER. Mounting `DeckReview` here rather than teaching
+            the reader a third mode keeps "a deck is something you do" and "a document is something
+            you read" as two different objects. It opens in the study panel like everything else —
+            this comment used to say full screen was "what the owner asked flashcards to be", which
+            he reversed on 2026-08-30 and again on 2026-08-31 when the Library still did it. */}
         {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
         {/* 🔴🔴 THE CHECK, DOCKED BESIDE THE CONVERSATION (owner 2026-08-30: *"the tests and the
             flashcards could appear in the sidebar… that way, users could ask questions as well,
