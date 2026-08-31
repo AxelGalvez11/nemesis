@@ -27,8 +27,13 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import {
   bestAttempt,
   deckMaterial,
+  hardenedMaterial,
   isTypedQuestion,
+  missedFacts,
   missedQuestionCards,
+  mixedReviewMaterial,
+  MISS_KINDS,
+  MISS_KIND_LABEL,
   noteMaterial,
   outlineToMermaidMindmap,
   parseMindmapContent,
@@ -36,8 +41,10 @@ import {
   scoreAttempt,
   scoreTone,
   typedAnswerMatches,
+  type MissKind,
   type ScoreTone,
   type TestContent,
+  type TestGenOpts,
 } from "@/lib/workspace/study-artifact-content";
 import { generateStudyArtifact } from "@/lib/workspace/study-generate";
 import { useCloudStudy, type StudyArtifact } from "@/lib/workspace/study-cloud-store";
@@ -63,7 +70,7 @@ export function artifactScoreTone(artifact: StudyArtifact): ScoreTone {
 export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" | "mindmap"; open: boolean; onClose: () => void }) {
   const study = useCloudStudy();
   const { notes } = useCloudLibrary();
-  const [sourceType, setSourceType] = useState<"deck" | "note">("deck");
+  const [sourceType, setSourceType] = useState<"deck" | "note" | "mixed">("deck");
   const [deckId, setDeckId] = useState("");
   const [notePath, setNotePath] = useState("");
   const [count, setCount] = useState(10);
@@ -87,7 +94,32 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
     }
     let material;
     let sourceTitle;
-    if (sourceType === "deck") {
+    let testOpts: TestGenOpts | undefined;
+    if (sourceType === "mixed") {
+      // Everything at once: every deck with cards, every note — and the
+      // questions missed on earlier sittings come back for re-asking. This is
+      // the spaced half of the post-exam report: old material mixed with new.
+      const parts = [
+        ...decks
+          .map((deck) => ({ cards: study.cards.filter((card) => card.deckId === deck.id && !card.suspended), deck }))
+          .filter((entry) => entry.cards.length > 0)
+          .map((entry) => deckMaterial(entry.deck.name, entry.cards)),
+        ...notes.map((note) => noteMaterial(note.title, note.content)),
+      ];
+      if (parts.length === 0) {
+        setError("Nothing to review yet — add cards to a deck or write a note first.");
+        return;
+      }
+      const missed = study.artifacts
+        .filter((artifact) => artifact.kind === "test")
+        .flatMap((artifact) => {
+          const content = parseTestContent(artifact.content);
+          return content ? missedFacts(content.questions, content.attempts) : [];
+        });
+      material = mixedReviewMaterial(parts, missed);
+      sourceTitle = "Mixed review";
+      testOpts = { reasksMissed: missed.length > 0 };
+    } else if (sourceType === "deck") {
       const deck = decks.find((item) => item.id === deckId) ?? decks[0];
       if (!deck) {
         setError("Create a deck with cards first, or generate from a note.");
@@ -118,6 +150,7 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
         kind,
         material,
         questionCount: count,
+        testOpts,
         title: `${sourceTitle} — ${kind === "test" ? "practice test" : "mind map"}`,
         uid: study.userId,
         updateArtifact: study.updateArtifact,
@@ -138,8 +171,9 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
           <DialogDescription>Built only from the source you pick — a deck's cards or a library note.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          <div className="grid grid-cols-2 gap-2">
-            {(["deck", "note"] as const).map((option) => (
+          <div className={cn("grid gap-2", kind === "test" ? "grid-cols-3" : "grid-cols-2")}>
+            {/* Mixed review is a TEST idea — a mind map of everything at once is mush. */}
+            {(kind === "test" ? (["deck", "note", "mixed"] as const) : (["deck", "note"] as const)).map((option) => (
               <Button
                 className={cn(sourceType === option && "bg-(--ui-control-active-background) text-foreground")}
                 key={option}
@@ -148,10 +182,15 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
                 type="button"
                 variant="outline"
               >
-                {option === "deck" ? "From a deck" : "From a note"}
+                {option === "deck" ? "From a deck" : option === "note" ? "From a note" : "Mixed review"}
               </Button>
             ))}
           </div>
+          {sourceType === "mixed" && (
+            <p className="text-xs text-(--ui-text-tertiary)">
+              One paper across everything: all your decks and notes, and the questions you missed on earlier tests come back reworded.
+            </p>
+          )}
           {sourceType === "deck" ? (
             <label className="grid gap-1.5 text-xs font-medium">
               Deck
@@ -168,7 +207,7 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
                 ))}
               </select>
             </label>
-          ) : (
+          ) : sourceType === "mixed" ? null : (
             <label className="grid gap-1.5 text-xs font-medium">
               Note
               <select
@@ -212,6 +251,35 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
   );
 }
 
+/**
+ * One tap on WHY a question was missed (owner 2026-08-31, from the post-exam
+ * report: "Every wrong answer gets classified... That diagnosis determines what
+ * happens next"). Self-reported, because only the student knows whether they
+ * forgot it or never knew it — and saying it out loud is itself remediation.
+ */
+function MissWhyChips({ current, onPick }: { current: MissKind | undefined; onPick: (why: MissKind) => void }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="miss-why">
+      <span className="text-[0.6875rem] text-(--ui-text-quaternary)">Why?</span>
+      {MISS_KINDS.map((kind) => (
+        <button
+          className={cn(
+            "h-6 rounded-full border px-2.5 text-[0.6875rem] transition-colors",
+            current === kind
+              ? "border-transparent bg-(--ui-control-active-background) text-foreground"
+              : "border-(--ui-stroke-tertiary) text-(--ui-text-tertiary) hover:text-(--ui-text-primary)",
+          )}
+          key={kind}
+          onClick={() => onPick(kind)}
+          type="button"
+        >
+          {MISS_KIND_LABEL[kind]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Take a test                                                         */
 /* ------------------------------------------------------------------ */
@@ -233,6 +301,10 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [addedTo, setAddedTo] = useState<string | null>(null);
+  // The student's tap-through diagnosis of each miss, rendered from here so a
+  // tap answers instantly; the same value is stamped onto the stored attempt.
+  const [missWhys, setMissWhys] = useState<Record<number, MissKind>>({});
+  const [harder, setHarder] = useState<"idle" | "making" | "made" | "failed">("idle");
   const [targetDeckId, setTargetDeckId] = useState("");
   const [busy, setBusy] = useState(false);
   // The Explain side chat, per question — the panel opens to the RIGHT of the
@@ -321,6 +393,53 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
       setAddedTo(deck.name);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Stamp the tap onto the STORED attempt too, so the diagnosis outlives this
+  // screen. The just-finished attempt may not have round-tripped into the
+  // artifact prop yet, so an unknown `at` is appended rather than lost.
+  function classifyMiss(questionIndex: number, why: MissKind) {
+    setMissWhys((current) => ({ ...current, [questionIndex]: why }));
+    if (!content || !reviewAttempt) return;
+    const stamped = {
+      ...reviewAttempt,
+      missed: reviewAttempt.missed.map((miss) => (miss.questionIndex === questionIndex ? { ...miss, why } : miss)),
+    };
+    const known = content.attempts.some((attempt) => attempt.at === reviewAttempt.at);
+    const nextContent: TestContent = {
+      attempts: known
+        ? content.attempts.map((attempt) => (attempt.at === reviewAttempt.at ? stamped : attempt))
+        : [...content.attempts, stamped],
+      questions,
+    };
+    setContentOverride(nextContent);
+    void study.updateArtifact(artifact.id, { content: nextContent }).catch(() => setSaveError(true));
+  }
+
+  // Owner 2026-08-31, from the post-exam report: "if you're answering
+  // everything easily, I should increase the difficulty, not conclude that
+  // you're finished." An aced paper's facts become the material for a harder
+  // one — self-contained, because an artifact does not remember its source.
+  async function makeHarder() {
+    if (!study.userId || !content) return;
+    setHarder("making");
+    try {
+      await generateStudyArtifact({
+        createArtifact: study.createArtifact,
+        deleteArtifact: study.deleteArtifact,
+        groupName: artifact.groupName || undefined,
+        kind: "test",
+        material: hardenedMaterial(artifact.title, questions),
+        questionCount: questions.length,
+        testOpts: { challenge: "hard" },
+        title: `${artifact.title.replace(/ — practice test$/, "")} — harder`,
+        uid: study.userId,
+        updateArtifact: study.updateArtifact,
+      });
+      setHarder("made");
+    } catch {
+      setHarder("failed");
     }
   }
 
@@ -477,6 +596,15 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                   Perfect run — nothing missed.
                 </p>
               )}
+              {/* An examiner's read of a high score: not "finished", "ready for harder". */}
+              {reviewAttempt.score / reviewAttempt.total >= 0.8 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button data-testid="make-harder" disabled={harder === "making" || harder === "made"} onClick={() => void makeHarder()} size="sm" type="button" variant="secondary">
+                    {harder === "making" ? "Writing it…" : harder === "made" ? "Harder test added to Tests" : "This felt easy — make a harder one"}
+                  </Button>
+                  {harder === "failed" && <span className="text-xs text-(--theme-primary)">Couldn't write it — try again.</span>}
+                </div>
+              )}
               <ol className="grid gap-4" data-testid="test-review">
                 {questions.map((reviewQuestion, questionIndex) => {
                   const miss = reviewAttempt.missed.find((entry) => entry.questionIndex === questionIndex);
@@ -505,6 +633,9 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                             </div>
                           )}
                         </div>
+                        {miss && (
+                          <MissWhyChips current={missWhys[questionIndex] ?? miss.why} onPick={(why) => classifyMiss(questionIndex, why)} />
+                        )}
                         {reviewQuestion.why && (
                           <p className="mt-2.5 rounded-xl bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] px-3 py-2 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">{reviewQuestion.why}</p>
                         )}
@@ -565,6 +696,9 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
                           );
                         })}
                       </div>
+                      {miss && (
+                        <MissWhyChips current={missWhys[questionIndex] ?? miss.why} onPick={(why) => classifyMiss(questionIndex, why)} />
+                      )}
                       {reviewQuestion.why && (
                         <p className="mt-2.5 rounded-xl bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] px-3 py-2 text-[0.8125rem] leading-relaxed text-(--ui-text-secondary)">{reviewQuestion.why}</p>
                       )}

@@ -55,10 +55,29 @@ export function isTypedQuestion(item: TestItem): item is TypedTestQuestion {
   return "typedAnswer" in item;
 }
 
+/**
+ * The student's own diagnosis of a miss (owner 2026-08-31, from the post-exam
+ * report: "Every wrong answer gets classified... That diagnosis determines what
+ * happens next"). Self-reported with one tap on the review screen — the student
+ * is the only one who knows whether they forgot it or never knew it.
+ */
+export const MISS_KINDS = ["didnt-know", "forgot", "mixed-up", "couldnt-apply", "misread"] as const;
+export type MissKind = (typeof MISS_KINDS)[number];
+
+export const MISS_KIND_LABEL: Record<MissKind, string> = {
+  "couldnt-apply": "Couldn't apply it",
+  "didnt-know": "Didn't know it",
+  forgot: "Forgot it",
+  misread: "Misread it",
+  "mixed-up": "Mixed two things up",
+};
+
 export interface TestMiss {
   questionIndex: number;
   /** The option INDEX picked (choice questions) or the TEXT typed (typed ones). */
   picked: number | string;
+  /** The student's one-tap diagnosis, when they gave one. */
+  why?: MissKind;
 }
 
 export interface TestAttempt {
@@ -150,10 +169,13 @@ function toAttempt(value: unknown): TestAttempt | null {
         const entry = miss as Record<string, unknown>;
         const questionIndex = Number(entry.questionIndex);
         if (!Number.isInteger(questionIndex)) return [];
+        const why = MISS_KINDS.find((kind) => kind === entry.why);
         // A typed miss records the TEXT the student wrote; a choice miss the index.
-        if (typeof entry.picked === "string") return [{ picked: entry.picked.slice(0, MAX_TEXT), questionIndex }];
+        if (typeof entry.picked === "string") {
+          return [{ picked: entry.picked.slice(0, MAX_TEXT), questionIndex, ...(why ? { why } : {}) }];
+        }
         const picked = Number(entry.picked);
-        return Number.isInteger(picked) ? [{ picked, questionIndex }] : [];
+        return Number.isInteger(picked) ? [{ picked, questionIndex, ...(why ? { why } : {}) }] : [];
       })
     : [];
   return { at, missed, score, total };
@@ -275,18 +297,121 @@ export function noteMaterial(noteTitle: string, content: string): StudyMaterial 
   return { label: `note "${noteTitle}"`, text: content.trim().slice(0, MATERIAL_CHAR_LIMIT) };
 }
 
+/**
+ * An aced paper's facts, as material for a harder paper on the SAME facts.
+ *
+ * 🔴 SELF-CONTAINED ON PURPOSE. A test artifact does not remember which deck or
+ * note it came from, and adding that pointer would be a schema change for one
+ * button. The questions already carry every fact they test — question, answer,
+ * explanation — which is exactly the material a harder paper needs.
+ */
+export function hardenedMaterial(title: string, questions: TestItem[]): StudyMaterial {
+  const text = questions
+    .map((question, index) => {
+      const answer = isTypedQuestion(question) ? question.typedAnswer : (question.options[question.answer] ?? "");
+      return `${index + 1}. ${question.q} — ${answer}${question.why ? ` (${question.why})` : ""}`;
+    })
+    .join("\n")
+    .slice(0, MATERIAL_CHAR_LIMIT);
+  return { label: `facts the student already answered correctly in "${title}"`, text };
+}
+
+/** What the most recent sitting got wrong — the re-ask list for a mixed review. */
+export function missedFacts(questions: TestItem[], attempts: TestAttempt[]): Array<{ q: string; answer: string }> {
+  const latest = attempts[attempts.length - 1];
+  if (!latest) return [];
+  return latest.missed.flatMap((miss) => {
+    const question = questions[miss.questionIndex];
+    if (!question) return [];
+    const answer = isTypedQuestion(question) ? question.typedAnswer : (question.options[question.answer] ?? "");
+    return [{ answer, q: question.q }];
+  });
+}
+
+/** How many re-asks one mixed paper carries. More than this and the paper is
+ *  remediation, not review — and the sources it spans get squeezed out. */
+const MAX_REASKS = 15;
+
+/**
+ * Everything recent in one paper: sources concatenated, previously missed
+ * questions appended for re-asking (owner 2026-08-31, from the post-exam
+ * report's "spaced retrieval" failure: old material must come back, mixed with
+ * new, and a missed question is the single highest-value thing to re-test).
+ *
+ * 🔴 THE MISSED SECTION IS BUDGETED FIRST. Under the material cap it is the
+ * sources that get truncated, never the re-asks — a mixed review that silently
+ * dropped exactly the questions the student failed would be the old failure
+ * wearing a new name.
+ */
+export function mixedReviewMaterial(parts: StudyMaterial[], missed: Array<{ q: string; answer: string }>): StudyMaterial {
+  const missedSection = missed.length
+    ? `Previously missed:\n${missed
+        .slice(0, MAX_REASKS)
+        .map((entry, index) => `${index + 1}. ${entry.q} — correct answer: ${entry.answer}`)
+        .join("\n")}`.slice(0, MATERIAL_CHAR_LIMIT)
+    : "";
+  const budget = MATERIAL_CHAR_LIMIT - (missedSection ? missedSection.length + 2 : 0);
+  const sources: string[] = [];
+  let used = 0;
+  for (const part of parts) {
+    if (used >= budget) break;
+    const block = `== ${part.label} ==\n${part.text}`.slice(0, budget - used);
+    sources.push(block);
+    used += block.length + 2;
+  }
+  const text = [sources.join("\n\n"), missedSection].filter(Boolean).join("\n\n");
+  return { label: `mixed review across ${parts.length} source${parts.length === 1 ? "" : "s"}`, text };
+}
+
 const GENERATION_SYSTEM =
   "You are Nemesis's study-deliverable engine. Build the requested deliverable STRICTLY from the " +
   "material provided — never invent facts the material does not contain. Return strict JSON only: " +
   "no markdown fences, no prose outside the JSON object. Never use emojis.";
 
-export function buildTestGenMessages(material: StudyMaterial, questionCount: number): WireMsg[] {
+export interface TestGenOpts {
+  /**
+   * `hard` regenerates a paper the student cruised through (owner 2026-08-31,
+   * from the post-exam report: "if you're answering everything easily, I should
+   * increase the difficulty, not conclude that you're finished").
+   */
+  readonly challenge?: "standard" | "hard";
+  /** The material ends with a "Previously missed:" section to re-test first. */
+  readonly reasksMissed?: boolean;
+}
+
+/**
+ * The ladder (standard papers) or the top rung only (hard ones).
+ *
+ * 🔴 THE SCENARIO SHAPE IS STRUCTURAL, NOT MEDICAL. The post-exam report's
+ * example is a patient vignette, but the instruction says "a situation from the
+ * material's own field" — a law paper climbs to fact patterns, an engineering
+ * paper to loaded beams, by the same words. No subject list to maintain.
+ */
+const LADDER_RULE =
+  "Order the paper as a LADDER: open with direct recall, move through questions that test understanding, and " +
+  "end with questions written as a several-sentence SITUATION from the material's own field, where the student " +
+  "must weigh two or three facts from the material together to choose the best next step. At least a third of " +
+  "the paper is that hardest kind. A student who cruises through the final third was not really tested.";
+
+const HARD_RULE =
+  "Every question is the hardest kind: a several-sentence situation from the material's own field that takes two " +
+  "or three steps of reasoning, where the wrong options are the NEAR-MISS decisions a student who half-knows the " +
+  "material would make. Not one question may be answerable by reciting a definition.";
+
+const REASK_RULE =
+  "The material ends with a section headed \"Previously missed:\". FIRST write a fresh question re-testing each " +
+  "item in that section — the same fact, new wording, and where possible a harder angle — then spend the " +
+  "remaining questions on the rest of the material.";
+
+export function buildTestGenMessages(material: StudyMaterial, questionCount: number, opts?: TestGenOpts): WireMsg[] {
   const count = Math.min(Math.max(questionCount, 3), MAX_QUESTIONS);
   return [
     { content: GENERATION_SYSTEM, role: "system" },
     {
       content:
         `Write a practice test of exactly ${count} multiple-choice questions from the student's ${material.label}. ` +
+        `${opts?.challenge === "hard" ? HARD_RULE : LADDER_RULE}\n` +
+        (opts?.reasksMissed ? `${REASK_RULE}\n` : "") +
         // The item-writing rules are shared with the chat "test-craft" skill so
         // the two test-producing lanes cannot drift apart — see item-writing.ts.
         `Follow these rules:\n${EXAM_ITEM_RULES}\n\n` +

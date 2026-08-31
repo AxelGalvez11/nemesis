@@ -11,6 +11,7 @@ import {
   parseGeneratedMindmap,
   parseGeneratedTest,
   type StudyMaterial,
+  type TestGenOpts,
 } from "@/lib/workspace/study-artifact-content";
 import type { CreateArtifactInput, StudyArtifact } from "@/lib/workspace/study-cloud-store";
 
@@ -21,6 +22,8 @@ export interface GenerateStudyArtifactOpts {
   groupName?: string;
   material: StudyMaterial;
   questionCount?: number;
+  /** Test papers only: difficulty and re-ask behaviour — see TestGenOpts. */
+  testOpts?: TestGenOpts;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   updateArtifact: (artifactId: string, patch: { content?: unknown; status?: "draft" | "ready" }) => Promise<void>;
   deleteArtifact: (artifactId: string) => Promise<void>;
@@ -39,7 +42,7 @@ export async function generateStudyArtifact(opts: GenerateStudyArtifactOpts): Pr
   });
   try {
     const messages = opts.kind === "test"
-      ? buildTestGenMessages(opts.material, opts.questionCount ?? 10)
+      ? buildTestGenMessages(opts.material, opts.questionCount ?? 10, opts.testOpts)
       : buildMindmapGenMessages(opts.material);
     const reply = await postChatCompletion(opts.uid, messages, {
       decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
