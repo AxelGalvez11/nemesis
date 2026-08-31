@@ -121,13 +121,36 @@ export function reviseQuestionMessages(input: { q: string; options: string[]; an
   ];
 }
 
-export function reviseCardMessages(input: { front: string; back: string; transcript: string }): WireMsg[] {
+/**
+ * Revise one flashcard.
+ *
+ * 🔴🔴 `note` IS THE LEARNER SAYING WHAT IS WRONG, IN THEIR OWN WORDS, and it is why this function
+ * takes two different things. Until 2026-08-30 the only way to change a card was the thumbs-down,
+ * which called this with an EMPTY transcript — the prompt read that as "(none)" and Nemesis simply
+ * tried to write a better card without being told what was wrong with this one. That is a guess,
+ * and it is the difference between "this card is bad" and "the answer is wrong, it is the neutral
+ * axis". Owner, 2026-08-30, on the deck panel: *"what happens when a user asks for an adjustment on
+ * one?"* This is that.
+ *
+ * 🔴 A NOTE IS NOT A CARD EDITOR, AND THE DISTINCTION IS THE OWNER'S STANDING RULE (twice: no
+ * card-authoring control anywhere). The learner never gets a cursor in the card. They point at a
+ * card, say what is wrong, and NEMESIS rewrites it — the same line `revise-output.ts` draws for
+ * documents, where the reference is claude.ai's Comment mode rather than its Edit mode.
+ *
+ * 🔴 IT IS PUT LAST AND LABELLED AS AN INSTRUCTION. A note buried inside a transcript reads as one
+ * more turn of chat; models follow the last, clearest instruction, so it is stated as one.
+ */
+export function reviseCardMessages(input: { front: string; back: string; transcript: string; note?: string }): WireMsg[] {
+  const note = input.note?.trim();
   return [
     { content: REVISE_SYSTEM, role: "system" },
     {
       content:
         `The current flashcard, as JSON:\n${JSON.stringify({ back: input.back, front: input.front })}\n\n` +
-        `The side-chat conversation about it:\n${input.transcript.trim() || "(none — improve accuracy and clarity)"}\n\n` +
+        `The side-chat conversation about it:\n${input.transcript.trim() || "(none)"}\n\n` +
+        (note
+          ? `The student's instruction, which is what you must act on:\n"${note}"\n\n`
+          : "The student did not say what is wrong, so improve the card's accuracy and clarity.\n\n") +
         'Return the revised card as ```json {"front": string, "back": string} ``` — a complete replacement, not a diff. Keep any {{c1::…}} cloze markers the card style needs.',
       role: "user",
     },

@@ -1381,7 +1381,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
       {/* 🔴 CONDITIONAL, NEVER `open={…}`. Mounting DeckReview starts a load of every deck,
           card and review on the account; keeping it unmounted until a learner presses a deck
           is what stops the Library paying that cost on arrival. */}
-      {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} />}
+      {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} surface="full" />}
       {/* 🔴 The Anki import and Progress dialogs were removed with their buttons (owner,
           2026-08-24), and the occlusion EDITOR went the same way the day after (owner,
           2026-08-25: "I don't want users to edit flashcards, really"). In all three cases the

@@ -66,6 +66,7 @@ import { useEffect, useRef, useState } from "react";
 // now writes the same fact into the account `describeAttempt` hands the model.
 import { describeAttempt, type TestRun } from "@/lib/learn/test-run";
 import { OcclusionCardView } from "@/components/workspace/study/occlusion-card";
+import { Codicon } from "@/components/desktop-ui/codicon";
 
 export function CanvasCheck({
   run,
@@ -439,6 +440,69 @@ export function CanvasCheck({
           first question and did one thing: step back one. The numbered pips in the header do that
           and also say where you are, which is the same control doing two jobs instead of two
           controls doing one and a half. */}
+    </section>
+  );
+}
+
+/**
+ * The check, handed back in the conversation as an object you open.
+ *
+ * 🔴🔴 THE TEST USED TO BE THE CARD ITSELF, SITTING IN THE THREAD. Owner, 2026-08-30: *"you get an
+ * inline artifact component that you can click on to open the sidebar… I said flashcards and tests.
+ * It should work like that."* So the questions moved into `StudyPanel` and this is what stays in
+ * the flow: the same receipt shape `ArtifactCard` uses for a document, because it is the same kind
+ * of event — this turn produced a thing, and the thing has a name and a door.
+ *
+ * 🔴 WHY IT IS BETTER IN A PANEL, IN ONE SENTENCE: the questions stay on screen while you argue
+ * with Nemesis about the ones you missed. Inline, they scrolled away the moment the reply arrived,
+ * so the thing being discussed was the thing you could no longer see.
+ *
+ * 🔴 IT DOES NOT DUPLICATE THE CHECK'S OWN STATE. How far through the run a learner is lives in
+ * `CanvasCheck`, which stays mounted behind the panel; this button only opens it. Two components
+ * counting the same progress is how they start disagreeing.
+ */
+export function CheckCard({
+  offer = "quiz",
+  onOpen,
+  open,
+  run,
+}: {
+  offer?: "quiz" | "cards" | "both";
+  onOpen: () => void;
+  /** Whether the panel is showing it right now, so the row can say so rather than look inert. */
+  open: boolean;
+  run: TestRun;
+}) {
+  const count = run.questions.length;
+  const cards = offer === "cards";
+  const label = cards ? "Flashcards" : "Check";
+
+  return (
+    <section aria-label="What Nemesis made" className="canvas-swap my-3">
+      {/* 🔴 A COLON, NOT AN EM DASH — `canvas-copy.test.ts` bans them in learner-facing copy on this
+          surface by owner rule, and it has caught this exact line shape before. */}
+      <p className="m-0 mb-2 text-[length:var(--canvas-text-body)] text-(--ui-text-primary)">
+        {label} ready: <span className="font-medium">{count} {count === 1 ? "question" : "questions"}</span>
+      </p>
+      <button
+        className="flex w-full items-center gap-3 rounded-xl bg-transparent px-3.5 py-3 text-left ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
+        data-testid="check-card-open"
+        onClick={onOpen}
+        type="button"
+      >
+        <Codicon
+          className="shrink-0"
+          name={cards ? "layers" : "checklist"}
+          size="22px"
+          style={{ color: `var(${cards ? "--ui-kind-purple" : "--ui-kind-cyan"})` }}
+        />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{label}</span>
+          <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+            {open ? "Open beside this conversation" : "Open it beside this conversation"}
+          </span>
+        </span>
+      </button>
     </section>
   );
 }

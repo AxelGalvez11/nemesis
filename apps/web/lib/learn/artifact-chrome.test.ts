@@ -111,22 +111,65 @@ test("🔴 the two surfaces differ by where they are opened from", () => {
   assert.match(library, /initialMode="full"/, "the Library opens a docked panel with nothing beside it");
 });
 
-test("🔴🔴 an artifact opens itself, and flashcards go full screen instead of into the reader", () => {
+test("🔴🔴 an artifact opens itself, and a deck is opened by pressing its card", () => {
   // The owner's own condition for this being done: *"user can click in the Canvas to create a
-  // PowerPoint or any artifact, and it should open a sidebar for it inside the Canvas. Except for
-  // flashcards… full screen just like an Anki with an x on it."*
+  // PowerPoint or any artifact, and it should open a sidebar for it inside the Canvas."*
   const canvas = code("../../components/workspace/learn/learning-canvas.tsx");
   assert.match(canvas, /openedArtifactId\.current = made\.id/, "a finished artifact does not open itself");
-  assert.match(canvas, /made\.kind === "flashcards" && made\.deckId\) setReviewingDeck/, "a deck is squeezed into the reader");
-  assert.match(canvas, /<DeckReview deckId=\{reviewingDeck\}/, "the full-screen review is never mounted");
+  assert.match(canvas, /made\.kind === "flashcards" && made\.deckId\) setReviewingDeck/, "a deck is squeezed into the document reader");
+  assert.match(canvas, /<DeckReview deckId=\{reviewingDeck\}/, "the review is never mounted");
   // 🔴 LATCHED ON THE ID. Without it, closing the reader on an artifact still held in state
   // re-opens it on the next render — a panel that cannot be dismissed.
   assert.match(canvas, /openedArtifactId\.current === made\.id\) return;/, "the reader re-opens itself after being closed");
+});
 
-  // And the deck really is a full-screen surface with a close, rather than something told to be.
+test("🔴🔴 flashcards and the check open in the side panel, with full screen one button away", () => {
+  // 🔴 THIS REVERSES AN EARLIER RULE, DELIBERATELY. Until 2026-08-30 this file pinned the opposite,
+  // quoting the owner in August: *"Except for flashcards… full screen just like an Anki with an x
+  // on it."* He changed it: *"the tests and the flashcards could appear in the sidebar… because
+  // that way, users could ask questions as well, have the chat on the side, and they could also
+  // full screen if they want."* Full screen did not go away; it stopped being the only way in.
+  //
+  // The argument that decided it: a check that owns the screen scrolls its own questions away the
+  // moment the reply arrives, so the thing being discussed is the thing you can no longer see.
+  const panel = code("../../components/workspace/learn/study-panel.tsx");
+  const deck = code("../../components/workspace/study/deck-review.tsx");
+  const canvas = code("../../components/workspace/learn/learning-canvas.tsx");
+
+  // The same geometry as the document reader, from the same module — never a second set of numbers.
+  assert.match(panel, /from "\.\/reader-chrome"/, "the study panel measures itself instead of importing CHROME");
+  assert.match(panel, /useDockWidth/, "the study panel cannot be resized like the readers beside it");
+  assert.match(panel, /fixed inset-y-0 right-0/, "the study panel is not docked to the right edge");
+  assert.match(panel, /createPortal\(/, "the panel is not portalled — `fixed` will resolve against the canvas");
+  assert.match(panel, /data-workspace/, "the portal left the workspace scope and the global button rule owns it");
+  assert.match(panel, /full \? "left-0"/, "the panel has no full-screen geometry");
+  assert.match(panel, /data-testid="study-panel-full"/, "there is no way to go full screen");
+
+  // 🔴🔴 CLOSED HIDES, IT DOES NOT UNMOUNT. A learner four questions into a check who closes the
+  // panel must find those four answers when they reopen it. This is the line that guarantees it.
+  assert.match(panel, /display: open \? undefined : "none"/, "closing the panel now discards what is inside it");
+  assert.match(canvas, /open=\{checkOpen\}/, "the check panel does not follow its own open flag");
+  assert.doesNotMatch(canvas, /checkOpen && \(\s*<StudyPanel/, "the check is unmounted when the panel closes, losing the learner's answers");
+
+  // A deck docks beside a conversation and takes the screen where there is no conversation.
+  assert.match(deck, /<StudyPanel/, "a deck no longer opens beside the conversation");
+  assert.match(deck, /surface="bare"/, "the docked deck mounts a dialog inside a panel");
+  assert.match(deck, /surface === "full"/, "the Library lost its full-screen review");
+  const library = code("../../components/workspace/library/library-outputs.tsx");
+  assert.match(library, /<DeckReview[\s\S]{0,140}surface="full"/, "the Library docks a panel with nothing to dock beside");
+
+  // 🔴 ONE REVIEW SCREEN, TWO SHELLS. `bare` may only drop the dialog; if it ever grows its own
+  // card, counts or grade buttons there are two review screens to keep in step and they will drift.
   const review = code("../../components/workspace/study/review-session.tsx");
-  assert.match(review, /h-\[100dvh\] max-h-none w-screen/, "the review is no longer full screen");
-  assert.match(review, /showCloseButton/, "the review has no way out");
+  assert.match(review, /h-\[100dvh\] max-h-none w-screen/, "the Study tab's review is no longer full screen");
+  assert.match(review, /showCloseButton/, "the full-screen review has no way out");
+  assert.equal((review.match(/GRADES\.map/g) ?? []).length, 1, "the grade buttons are drawn twice — two review screens now exist");
+  assert.equal((review.match(/data-testid="review-counts"/g) ?? []).length, 1, "the Anki counts are drawn twice");
+
+  // 🔴 AND THE HOTKEYS MUST NOT REACH OUT OF A NON-MODAL PANEL: docked beside a live canvas, Space
+  // and 1-4 would otherwise grade a card while the learner is working next to it.
+  assert.match(review, /if \(bare && scope\.current && !inside/, "the review's hotkeys are unscoped while docked");
+  assert.match(review, /target instanceof Node/, "a keydown dispatched on `window` will throw inside the handler");
 });
 
 test("🔴🔴 the portal carries `data-workspace`, or every control in it goes acid green", () => {

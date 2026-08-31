@@ -27,6 +27,7 @@ import { supabase } from "@/lib/supabase";
 import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
+import { hasCloze } from "@/lib/workspace/study-cloze";
 
 import { deckSystemPrompt, readDeckJson, type DeckPlan } from "../export/deck-plan";
 import { canvasFigures, figureMenu } from "./deck-figures";
@@ -39,6 +40,7 @@ import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
 import { deckName } from "./deck-name";
 import { findLabelledFigure } from "./figure-occlusion-api";
+import { dropCardsCoveredByFigure, pickCanvasFigure, labelCanvasFigure } from "./canvas-figure-occlusion";
 import { readFigureSubject } from "./figure-subject";
 import { occlusionCards } from "./occlusion-from-labels";
 
@@ -196,15 +198,64 @@ const newId = (): string =>
 
 // ---------------------------------------------------------------- flashcards
 
-const CARDS_SYSTEM =
+export const CARDS_SYSTEM =
   "You write flashcards from study material. Reply with ONLY a JSON array of objects, each " +
   'with exactly two string fields: "front" (a question or prompt) and "back" (the answer). ' +
   "Write 10 to 16 cards that cover the material's core ideas. No markdown fences, no commentary. " +
+  // 🔴🔴 ONE IDEA PER CARD, AND NOTHING ASKED FOR THAT UNTIL 2026-08-30. Without it the model
+  // writes "name the three types of X" and puts a three-item list on the back, which is the card
+  // spaced repetition handles worst: recall two of three and no grade is honest, so the schedule
+  // learns nothing from the press. Splitting is free at write time and impossible afterwards.
+  //
+  // 🔴 STATED AS A RULE ABOUT SHAPE, NEVER ABOUT LENGTH. "Keep it short" invites a truncated
+  // answer; "one fact, and split a list into one card per item" gets a short answer as a
+  // consequence of being right. The 1000-character cap in `readCardsJson` is a safety limit, not
+  // a target, and must not be lowered to enforce this: it would cut sentences in half.
+  "ONE FACT PER CARD. If an answer would be a list, write one card for each item instead. Never " +
+  'ask for several things at once ("name the three ..."), and never put a paragraph on the back: ' +
+  "a phrase or a sentence. A card the learner can only half-remember cannot be graded honestly. " +
+  // 🔴🔴 THE SPLIT RULE NEEDS A FLOOR, AND A LIVE RUN IS THE ONLY THING THAT SHOWED IT. Asked for
+  // atomic cards on a four-stroke engine, the model split the material's parts list into seven of
+  // these: "The {{c1::piston}} is a labelled part of the cylinder assembly." Each one is atomic,
+  // correctly formatted, and worth nothing: it tests membership of a list, not what a piston does.
+  //
+  // 🔴 AND THEY COLLIDE WITH THE FIGURE. Those seven parts are exactly what the occlusion cards
+  // cover, so the deck was about to carry seven dead text cards beside seven good image ones. The
+  // rule therefore ends by pointing the parts at the picture instead of at more prose.
+  "Split a list only when each item carries its OWN fact, something the learner could be asked " +
+  "about on its own. A bare enumeration is not a set of cards: never write a card whose answer is " +
+  "merely that something belongs to a list, appears in a diagram, or is one of the parts of a " +
+  "thing. If the material's list is the labelled parts of a diagram, write NO cards about those " +
+  "parts at all, in any form, including a cloze that hides one of them or the thing they belong " +
+  "to. Name the figure instead and let the picture ask. " +
+  // 🔴🔴 CLOZE WAS RENDERABLE AND UNREACHABLE. `study-cloze.ts` has parsed `{{c1::...}}` since the
+  // Study tab shipped and `review-session.tsx` auto-detects it even on a card typed basic, but the
+  // writer was never told the syntax existed, so no generated deck has ever contained one. Owner
+  // asked for it directly, 2026-08-30.
+  //
+  // 🔴 ONE CLOZE PER CARD, ALWAYS c1, AND THAT IS THE ATOMICITY RULE AGAIN RATHER THAN A SEPARATE
+  // ONE. `activeClozeNumber` rotates which blank is hidden by the card's repetition count, so a
+  // card carrying c1/c2/c3 is three facts wearing one schedule: its interval reflects whichever
+  // blank happened to come up. Anki splits those into separate cards, and so do we.
+  "A card may hide a phrase inside a sentence instead of asking a question. Write the sentence as " +
+  'the "front" with the hidden part wrapped as {{c1::the phrase}}, and put the complete sentence ' +
+  'in "back". Use exactly ONE {{c1::...}} per card and never c2 or c3: a card that hides several ' +
+  "things is several cards. Reach for this when a fact only means anything in its sentence and a " +
+  "bare question would strip the context out of it. " +
+  // 🔴 ONE FORM PER FACT, AND THIS ONE ALSO CAME FROM A LIVE RUN. Given both a question form and a
+  // cloze form, the model used BOTH: a twelve-card engine deck where cards 7 to 12 were cloze
+  // restatements of cards 1 to 6. Every duplicate is a second schedule for one memory, so the
+  // learner is asked the same thing twice at drifting intervals and the deck feels padded.
+  "Each fact appears ONCE, in one form. Never write the same fact as both a question and a cloze. " +
   // 🔴 THE OPTIONAL OBJECT FORM IS BACKWARDS COMPATIBLE BY CONSTRUCTION. `readCardsJson` slices
   // from the first "[" to the last "]", so it reads the cards array out of either shape without
-  // knowing this field exists — which is why adding it cannot break a deck.
-  'If the material has a LABELLED DIAGRAM worth knowing the parts of — anatomy, a circuit, a ' +
-  "cell, a map, an engine, a piece of apparatus — you may instead reply with an object: " +
+  // knowing this field exists, which is why adding it cannot break a deck.
+  //
+  // 🔴 "WHEN ... REPLY", NOT "YOU MAY". It read as permission and was therefore usually declined;
+  // a labelled diagram is exactly the material a written card serves badly, so the trigger is the
+  // material having one, not the model feeling like it.
+  "When the material has a LABELLED DIAGRAM worth knowing the parts of (anatomy, a circuit, a " +
+  "cell, a map, an engine, a piece of apparatus), reply with an object instead: " +
   '{"cards": [...], "figure": "nephron"}. "figure" is the SHORTEST NAME for the thing, the way ' +
   'an index would list it: "nephron", "chloroplast", "four-stroke engine". Never a phrase, never ' +
   'a request, never "diagram of ...". Nemesis finds a licensed diagram and makes one image card ' +
@@ -279,7 +330,12 @@ export async function makeFlashcardsDeliverable(
 
   const rows: Record<string, unknown>[] = cards.map((card) => ({
     back: card.back,
-    card_type: "basic",
+    // 🔴 THE MARKER DECIDES THE TYPE, NOT THE WRITER. Hard-coding "basic" here was the second half
+    // of why cloze never appeared: even had the model written one, the row would have claimed to be
+    // a plain card. The review screen already auto-detects a marker on a basic card, so this only
+    // ever made the STORED row disagree with what the learner saw, which is the kind of quiet
+    // mismatch that surfaces months later in an export or a stats query.
+    card_type: hasCloze(card.front) ? "cloze" : "basic",
     deck_id: deckId,
     front: card.front,
     tags: normalizeStudyTags([CANVAS_DECK_TAG]),
@@ -300,7 +356,25 @@ export async function makeFlashcardsDeliverable(
   // an unreachable repository: every one of them leaves `figure` null and the text cards save
   // exactly as they would have. `findLabelledFigure` never throws for precisely this reason.
   if (subject) {
-    const figure = await findLabelledFigure(subject);
+    // 🔴🔴 THE LEARNER'S OWN DOCUMENT IS ASKED FIRST (owner, 2026-08-30: *"diagrams should also be
+    // from uploaded documents too if its appropriate"*). When the material IS a lecture PDF with a
+    // labelled figure in it, that figure is the one worth covering: it is the one they will see in
+    // the exam, with their lecturer's labels and their lecturer's emphasis. A licensed lookalike
+    // found by name is a good second choice and a poor first one.
+    //
+    // 🔴 THE FALLBACK IS NOT A FAILURE PATH. Most material has no figure at all, and for it the
+    // corpus is the only source there has ever been. Both lanes end in the same `occlusionCards`.
+    const own = pickCanvasFigure(subject, await canvasFigures(canvas));
+    const figure = (own ? await labelCanvasFigure(own) : null) ?? (await findLabelledFigure(subject));
+    // 🔴 THE PICTURE WINS THE PARTS. Any written card whose whole answer is a part the image cards
+    // now cover is that image card inverted, and keeping both means two schedules for one fact. See
+    // `dropCardsCoveredByFigure`: the prompt asks for this and a live run showed it is not enough.
+    if (figure) {
+      const labels = figure.boxes.map((box) => box.label ?? "");
+      const kept = dropCardsCoveredByFigure(rows.map((row) => ({ back: String(row.back), front: String(row.front), row })), labels);
+      rows.length = 0;
+      rows.push(...kept.map((entry) => entry.row));
+    }
     for (const card of figure ? occlusionCards(figure) : []) {
       rows.push({
         back: card.back,

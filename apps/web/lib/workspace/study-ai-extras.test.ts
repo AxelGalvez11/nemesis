@@ -131,8 +131,28 @@ test("revise messages carry the item, the conversation, and the strict-JSON cont
   assert.match(question[1]!.content, /make it harder/);
   assert.match(question[1]!.content, /complete replacement/);
   const card = reviseCardMessages({ back: "b", front: "f", transcript: "" });
-  assert.match(card[1]!.content, /improve accuracy and clarity/);
+  assert.match(card[1]!.content, /improve the card's accuracy and clarity/);
   assert.match(card[1]!.content, /cloze markers/);
+});
+
+test("🔴🔴 a card revision says whether the learner told us what was wrong", () => {
+  // TWO DOORS, AND THE MODEL MUST BE ABLE TO TELL THEM APART. Thumbs-down sends no note ("this card
+  // is bad, work out why"); the note box sends one ("the answer is wrong, it is the neutral axis").
+  // Sending the second as if it were the first is how a precise complaint becomes a vague rewrite.
+  const guessing = reviseCardMessages({ back: "b", front: "f", transcript: "" });
+  assert.match(guessing[1]!.content, /did not say what is wrong/, "a note-less rewrite does not admit it is guessing");
+  assert.doesNotMatch(guessing[1]!.content, /must act on/, "an absent note is presented as an instruction");
+
+  const told = reviseCardMessages({ back: "b", front: "f", note: "  the answer is the neutral axis  ", transcript: "" });
+  assert.match(told[1]!.content, /the answer is the neutral axis/, "the learner's words never reached the model");
+  assert.match(told[1]!.content, /instruction, which is what you must act on/, "the note is not marked as the thing to act on");
+  assert.doesNotMatch(told[1]!.content, /did not say what is wrong/, "the model is told both that it has a note and that it has none");
+  // 🔴 THE NOTE COMES LAST. Models follow the last clear instruction, and a note buried above the
+  // card JSON reads as background rather than as the ask.
+  assert.ok(told[1]!.content.indexOf("neutral axis") > told[1]!.content.indexOf('"front"'), "the note is buried above the card");
+
+  // Whitespace-only is not an instruction; it is somebody pressing send on an empty box.
+  assert.match(reviseCardMessages({ back: "b", front: "f", note: "   ", transcript: "" })[1]!.content, /did not say what is wrong/);
 });
 
 test("explainTranscript labels the two voices", () => {

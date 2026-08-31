@@ -23,7 +23,8 @@ import { applyRevision, reviseOutputDeck, reviseOutputMarkdown, undoRevision, ty
 import { ResearchPlanCard } from "./research-plan-card";
 import { useAuth } from "@/components/AuthProvider";
 import { setCanvasFolder } from "@/lib/learn/canvas-store";
-import { CanvasCheck } from "./canvas-check";
+import { CanvasCheck, CheckCard } from "./canvas-check";
+import { StudyPanel } from "./study-panel";
 // 🔴 `ensureCanvasDeck` / `writeRecallCards` / `cardsFromMisses` LEFT WITH THE RESULTS SCREEN
 // (owner, 2026-08-24). They existed for one caller: the "Make cards from what I missed" button on
 // the card that no longer exists. All three are still exported and still used elsewhere; this file
@@ -453,8 +454,17 @@ export function LearningCanvas({
   /** The artifact open in the side panel, or null. Canvas-level rather than inside the card, so the
    *  panel survives the card being replaced by the next make mid-read. */
   const [openArtifact, setOpenArtifact] = useState<CanvasOutput | null>(null);
-  /** A deck of cards being reviewed, which is a full-screen surface rather than a reader. */
+  /** A deck of cards being reviewed, docked beside the conversation. */
   const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
+  /**
+   * Whether the check is showing in the side panel.
+   *
+   * 🔴🔴 THE CHECK ITSELF NEVER UNMOUNTS WHILE A RUN IS LIVE — see the `StudyPanel` mount below.
+   * This is only whether the panel is on screen. A learner four questions in who closes the panel
+   * to re-read something must find those four answers waiting when they reopen it, and answers
+   * that quietly reset are worse than a panel that cannot be closed.
+   */
+  const [checkOpen, setCheckOpen] = useState(false);
 
   /**
    * A finished artifact opens itself.
@@ -807,6 +817,26 @@ export function LearningCanvas({
   }, [policy.evidence, policy.objectives, session.testQuestions, session.testRequested]);
   const { session: authSession } = useAuth();
   const uid = authSession?.user.id ?? null;
+
+  /**
+   * A finished check opens itself, once.
+   *
+   * 🔴 THE SAME LATCH THE ARTIFACT READER USES, AND FOR THE SAME REASON. Without it, closing the
+   * panel on a run still held in `session.testRequested` re-opens it on the very next render, which
+   * is a panel that cannot be dismissed. Keyed on the run's questions rather than on a counter, so
+   * a second test genuinely opens and a re-render of the same one does not.
+   */
+  const openedCheck = useRef<string | null>(null);
+  useEffect(() => {
+    if (!session.testRequested || isTestRefusal(testRun)) {
+      openedCheck.current = null;
+      return;
+    }
+    const identity = testRun.questions.map((question) => question.prompt).join("\u0000");
+    if (openedCheck.current === identity) return;
+    openedCheck.current = identity;
+    setCheckOpen(true);
+  }, [session.testRequested, testRun]);
 
   /**
    * THE THREAD: every finished turn EXCEPT the one the live region is showing.
@@ -2558,6 +2588,40 @@ export function LearningCanvas({
             to be. Mounting it here rather than teaching the reader a third mode keeps "a deck is
             something you do" and "a document is something you read" as two different objects. */}
         {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
+        {/* 🔴🔴 THE CHECK, DOCKED BESIDE THE CONVERSATION (owner 2026-08-30: *"the tests and the
+            flashcards could appear in the sidebar… that way, users could ask questions as well,
+            have the chat on the side"*). Mounted at canvas level and kept mounted for the whole run,
+            because `StudyPanel` hides rather than unmounts and that is what makes closing the panel
+            safe: the learner's answers so far survive it.
+
+            🔴 THE CONDITION IS THE RUN'S EXISTENCE, NEVER `checkOpen`. Gating the mount on the open
+            flag would discard the run every time the panel was closed, which is the exact bug the
+            hide-don't-unmount rule exists to prevent. */}
+        {session.testRequested && !policy.awaitingAnswer && !isTestRefusal(testRun) && (
+          <StudyPanel
+            crumb={session.testOffer === "cards" ? "Flashcards" : "Check"}
+            onClose={() => setCheckOpen(false)}
+            open={checkOpen}
+            title={canvas.title || "This canvas"}
+          >
+            <div className="px-4 py-3">
+              <CanvasCheck
+                offer={session.testOffer}
+                onDismiss={() => {
+                  setCheckOpen(false);
+                  session.clearTest();
+                }}
+                onFinished={(account) => {
+                  // 🔴 THE PANEL CLOSES ITSELF ON THE LAST ANSWER, because what happens next is a
+                  // reply in the conversation and the conversation is what the learner needs to see.
+                  setCheckOpen(false);
+                  void finishCheck(account);
+                }}
+                run={testRun}
+              />
+            </div>
+          </StudyPanel>
+        )}
                 {session.researchPlan && presence !== "preparing" && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
             <ResearchPlanCard
@@ -2610,7 +2674,9 @@ export function LearningCanvas({
                   : "Not enough of this canvas can carry a fair question yet. Keep going a little longer and ask again."}
               </p>
             ) : (
-              <CanvasCheck offer={session.testOffer} onDismiss={session.clearTest} onFinished={(account) => void finishCheck(account)} run={testRun} />
+              // 🔴 THE RECEIPT, NOT THE QUESTIONS. The run itself lives in the panel below; this is
+              // the object the turn handed back, in the same shape a made document arrives in.
+              <CheckCard offer={session.testOffer} onOpen={() => setCheckOpen(true)} open={checkOpen} run={testRun} />
             )}
           </div>
         )}

@@ -94,3 +94,83 @@ test("slides are the generalist deliverable: grounded when material exists, mode
   assert.match(source, /kind: "generated_slides"/, "slides left the assets ledger");
   assert.ok(source.includes("deck: plan"), "the plan no longer rides the canvas output — downloads would have nothing to rebuild from");
 });
+
+/** The card writer's system prompt, with its own comments stripped so the guards read the
+ *  INSTRUCTION and never the reasoning written beside it. */
+const CARDS_PROMPT = (() => {
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  const block = source.slice(source.indexOf("const CARDS_SYSTEM"), source.indexOf('labelled diagram.";') + 20);
+  const code = block.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+  // 🔴 WHITESPACE NORMALISED, because the prompt is concatenated string fragments: a sentence that
+  //    spans two source lines arrives with a double space, and a guard written against the sentence
+  //    as a human reads it would fail for a reason that has nothing to do with the prompt.
+  return [...code.matchAll(/"([^"]*)"|'([^']*)'/g)].map((hit) => hit[1] ?? hit[2] ?? "").join(" ").replace(/\s+/g, " ");
+})();
+
+test("🔴🔴 the card writer is told ONE FACT PER CARD, and to split a list", () => {
+  // Owner, 2026-08-30: *"does it try to make flashcards as atomic as possible?"* It did not. The
+  // prompt asked for "10 to 16 cards that cover the material's core ideas" and said nothing about
+  // shape, so the model wrote "name the three types of X" with a three-item answer. That is the
+  // card spaced repetition handles worst: recall two of three and NO grade is honest, so the
+  // schedule learns nothing from the press. Splitting is free at write time and impossible later.
+  assert.match(CARDS_PROMPT, /ONE FACT PER CARD/, "the card writer is not asked for atomic cards");
+  assert.match(CARDS_PROMPT, /write one card for each item instead/, "a list answer is still allowed to stay one card");
+  assert.match(CARDS_PROMPT, /never put a paragraph on the back/, "the back may be a paragraph again");
+
+  // 🔴🔴 THE SPLIT RULE HAS A FLOOR, AND ONLY A LIVE RUN FOUND IT. Asked for atomic cards on a
+  // four-stroke engine, the model split the parts list into seven of these: "The {{c1::piston}} is
+  // a labelled part of the cylinder assembly." Atomic, well-formed, and worth nothing — and they
+  // duplicated the very parts the occlusion figure was about to cover properly.
+  assert.match(CARDS_PROMPT, /Split a list only when each item carries its OWN fact/, "a bare enumeration can become cards again");
+  assert.match(CARDS_PROMPT, /NO cards about those parts at all, in any form/, "a diagram's parts can be written as text cards again");
+
+  // 🔴 ONE FORM PER FACT, also from a live run: given both forms the model used BOTH, and half the
+  // engine deck was cloze restatements of its own questions. Two schedules for one memory.
+  assert.match(CARDS_PROMPT, /Each fact appears ONCE, in one form/, "a fact may be written twice again");
+
+  // 🔴 THE PARSER'S CAP IS A SAFETY LIMIT, NOT THE RULE. Lowering it to enforce atomicity would
+  // cut answers off mid-sentence, which is worse than a long one. The instruction does this job.
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  assert.match(source, /back\.slice\(0, 1000\)/, "the safety cap moved — check it is not doing the prompt's job");
+});
+
+test("🔴🔴 a labelled diagram TRIGGERS image occlusion rather than merely permitting it", () => {
+  // Owner, same message: *"does DeepSeek know to use image occlusion when it would be helpful for
+  // visual labeling?"* It was told, but as permission ("you may instead reply"), which a model
+  // reads as an option and usually declines. A labelled diagram is exactly the material a written
+  // card serves badly, so the trigger is the material having one.
+  assert.match(CARDS_PROMPT, /When the material has a LABELLED DIAGRAM/, "the occlusion path lost its trigger");
+  assert.doesNotMatch(CARDS_PROMPT, /you may instead reply/, "the occlusion path is optional again");
+  assert.match(CARDS_PROMPT, /one image card\s+per labelled part/, "the model is not told what the figure becomes");
+
+  // 🔴 THE EXAMPLES SPAN FIELDS ON PURPOSE. This product is field-agnostic, and a diagram list that
+  // read as anatomy-only would quietly scope occlusion to one subject — the exact shape of mistake
+  // `keyword-scoping-hides-in-prompts` records. Structure (labelled parts) is the test, not topic.
+  for (const kind of ["anatomy", "a circuit", "a map", "an engine"]) {
+    assert.ok(CARDS_PROMPT.includes(kind), `the diagram examples narrowed and dropped ${kind}`);
+  }
+});
+
+test("🔴 no em dashes reach the model, by owner rule", () => {
+  assert.equal(CARDS_PROMPT.includes("—"), false, "an em dash is back in the card prompt");
+});
+
+
+test("🔴🔴 cloze is reachable: the writer knows the syntax and the row is typed by the marker", () => {
+  // Owner, 2026-08-30: *"make sure it can do cloze deletion on its own."* Both halves were missing.
+  // `study-cloze.ts` has parsed {{c1::...}} since the Study tab shipped and `review-session.tsx`
+  // auto-detects it even on a card typed basic, but the writer was never told the syntax existed,
+  // and `makeFlashcardsDeliverable` hard-coded card_type "basic" — so no generated deck had ever
+  // contained one, and had one appeared the stored row would have lied about what it was.
+  assert.match(CARDS_PROMPT, /\{\{c1::the phrase\}\}/, "the writer is not told the cloze syntax");
+  assert.match(CARDS_PROMPT, /never c2 or c3/, "a card may hide several things again");
+
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  assert.match(source, /card_type: hasCloze\(card\.front\) \? "cloze" : "basic"/, "the row no longer types itself from the marker");
+
+  // 🔴 ONE c1 PER CARD IS THE ATOMICITY RULE AGAIN, NOT A SEPARATE ONE. `activeClozeNumber` rotates
+  // which blank is hidden by the card's repetition count, so a card carrying c1/c2/c3 is three
+  // facts sharing one schedule: its interval reflects whichever blank happened to come up.
+  const cloze = readFileSync(new URL("../workspace/study-cloze.ts", import.meta.url), "utf8");
+  assert.match(cloze, /export function activeClozeNumber/, "the rotation this rule exists for is gone");
+});

@@ -27,12 +27,29 @@ const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^
 const REVIEW = strip(readFileSync(new URL("./review-session.tsx", import.meta.url), "utf8"));
 const STORE = strip(readFileSync(new URL("../../../lib/workspace/study-cloud-store.ts", import.meta.url), "utf8"));
 
-test("🔴🔴🔴 the review screen has no way to type into a card", () => {
-  // Calibration: add an <input> or <textarea> bound to front/back and this reddens. The Explain
-  // panel has its own composer and lives in its own file, which is why this reads only this one.
-  assert.ok(!/<textarea/i.test(REVIEW), "a text area appeared on the review screen");
+test("🔴🔴🔴 the review screen has no way to type INTO a card", () => {
+  // 🔴🔴 THIS GUARD WAS LOOSENED BY EXACTLY ONE TEXTAREA ON 2026-08-30, AND THE LOOSENING IS THE
+  // POINT OF THIS COMMENT. It used to ban every text field on this screen, which was a good proxy
+  // for the rule while the only thing anyone might type was a card. The owner then asked for
+  // something the proxy also blocked — *"ask for changes on the flash card"*, and *"what happens
+  // when a user asks for an adjustment on one?"* — so the proxy had to become the rule itself.
+  //
+  // The rule, stated in this file's own header from the day it was written: the learner may never
+  // change what a card SAYS; they tell Nemesis it is wrong and Nemesis rewrites it. A note box is
+  // that sentence with words instead of a thumb. A front/back form is not, and never becomes one.
+  //
+  // So: exactly one text field, it is the note, and nothing on this screen is bound to card text.
+  const textareas = REVIEW.match(/<textarea/gi) ?? [];
+  assert.equal(textareas.length, 1, "a second text field appeared on the review screen");
+  assert.match(REVIEW, /data-testid="ask-card-note"/, "the one text field is not the note box");
   assert.ok(!/<input/i.test(REVIEW), "an input appeared on the review screen");
   assert.ok(!/Edit card/.test(REVIEW), "the card editor came back");
+
+  // 🔴 THE CALIBRATION THAT MATTERS: nothing writes card text back from a field. Binding a field to
+  // `current.front` or `current.back`, or holding either in state, is the editor returning under a
+  // different name — which is precisely how the Library grew a box-dragging occlusion editor.
+  assert.doesNotMatch(REVIEW, /value=\{current\.(front|back)\}/, "a field is bound to the card's own text");
+  assert.doesNotMatch(REVIEW, /useState[^\n]*\b(front|back)\b/, "the card's text is being held in editable state");
 });
 
 test("🔴🔴🔴 the thumbs are the only verdict a learner may give a card", () => {
@@ -94,3 +111,26 @@ test("🔴 an unreadable vote reads as unvoted rather than crashing a review", (
 });
 
 console.log("cards-are-output-only.test.ts OK");
+
+test("🔴🔴 the ask reaches the model as an instruction, and there is only one rewrite path", () => {
+  // Before this, the ONLY way to change a card was thumbs-down, which called `reviseCardMessages`
+  // with nothing — the prompt read that as "(none)" and Nemesis rewrote the card without being told
+  // what was wrong. That is the difference between "this card is bad" and "the answer is wrong, it
+  // is the neutral axis", and it is why the note exists.
+  assert.match(REVIEW, /rewriteCurrent\(note\)/, "the note is collected and then thrown away");
+
+  // 🔴 THE GLYPH IS PART OF THE RULE, NOT DECORATION. A pencil means "edit this card", which this
+  // screen has never allowed, and `study-row-actions.tsx` already uses it for Rename — a real edit.
+  // A speech bubble says "leave a note", which is what the control does, and it is what
+  // `output-preview.tsx` uses for the same gesture on a document. Owner picked it, 2026-08-30.
+  assert.match(REVIEW, /<IconMessage \/>/, "the ask control is not a speech bubble");
+  assert.doesNotMatch(REVIEW, /IconPencil/, "the pencil is back, promising an editor this screen does not have");
+
+  // 🔴 TWO DOORS, ONE MECHANISM. The thumbs-down and the note must not grow separate model calls,
+  // or they will start disagreeing about what a revision does.
+  assert.equal((REVIEW.match(/postChatCompletion\(/g) ?? []).length, 1, "the note grew its own model call");
+
+  const extras = strip(readFileSync(new URL("../../../lib/workspace/study-ai-extras.ts", import.meta.url), "utf8"));
+  assert.match(extras, /note\?: string/, "reviseCardMessages cannot carry an instruction");
+  assert.match(extras, /instruction, which is what you must act on/, "the note is not labelled as the instruction");
+});

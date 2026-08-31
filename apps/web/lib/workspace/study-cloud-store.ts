@@ -15,7 +15,7 @@ import {
   type OcclusionPayload,
   type OcclusionShape,
 } from "@nemesis/shared";
-import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
+import { answerStudyCard, elapsedDaysBetween, nextDueAt, type StudyCardState, type StudyGrade } from "./study-scheduler";
 import { fetchAllRows } from "./supabase-paging";
 import { decksInGroup, isWithinGroup, normalizeGroupPath, planGroupDissolve, renamedGroupPath, rewriteGroupPrefix } from "./study-tree";
 
@@ -39,6 +39,19 @@ export interface StudyCard {
   intervalDays: number;
   repetitions: number;
   lapses: number;
+  /** FSRS: days until recall of this card falls to 90%. This IS the interval, in memory terms.
+   *  0 on a card that has never been graded under FSRS — see `scheduleStudyCard`, which seeds it. */
+  stability: number;
+  /** FSRS: 1-10, how much work this particular card is. 0 means "no evidence yet". */
+  difficulty: number;
+  /** When this card was last graded. Null on a card that never has been. */
+  lastReviewedAt: string | null;
+  /** Where the card is in its life: new, walking its learning steps, graduated, or relearning
+   *  after a lapse. Anki's `CardType`, and the thing that decides whether the next appearance is
+   *  measured in minutes or in days. */
+  state: StudyCardState;
+  /** Learning steps left before graduating, counting DOWN. Meaningless outside learning states. */
+  remainingSteps: number;
   suspended: boolean;
   /** Anki-style colored flag — 0 none, 1-7 per STUDY_FLAG_COLORS. */
   flag: number;
@@ -163,6 +176,11 @@ const previewCard = (id: string, deckId: string, front: string, back: string, ov
   intervalDays: 0,
   repetitions: 0,
   lapses: 0,
+  stability: 0,
+  difficulty: 0,
+  lastReviewedAt: null,
+  state: "new",
+  remainingSteps: 0,
   suspended: false,
   flag: 0,
   quality: 0,
@@ -184,6 +202,11 @@ const PREVIEW_CARDS: StudyCard[] = [
     intervalDays: 0,
     repetitions: 0,
     lapses: 0,
+    stability: 0,
+    difficulty: 0,
+    lastReviewedAt: null,
+    state: "new",
+    remainingSteps: 0,
     suspended: false,
     flag: 1,
     quality: 0,
@@ -204,6 +227,11 @@ const PREVIEW_CARDS: StudyCard[] = [
     repetitions: 11,
     // Failed enough times to trip the leech radar in /dev-preview.
     lapses: 9,
+    stability: 0,
+    difficulty: 0,
+    lastReviewedAt: null,
+    state: "new",
+    remainingSteps: 0,
     suspended: false,
     flag: 0,
     quality: 0,
@@ -223,6 +251,11 @@ const PREVIEW_CARDS: StudyCard[] = [
     intervalDays: 0,
     repetitions: 0,
     lapses: 0,
+    stability: 0,
+    difficulty: 0,
+    lastReviewedAt: null,
+    state: "new",
+    remainingSteps: 0,
     suspended: false,
     flag: 0,
     quality: 0,
@@ -242,6 +275,11 @@ const PREVIEW_CARDS: StudyCard[] = [
     intervalDays: 0,
     repetitions: 0,
     lapses: 0,
+    stability: 0,
+    difficulty: 0,
+    lastReviewedAt: null,
+    state: "new",
+    remainingSteps: 0,
     suspended: true,
     flag: 0,
     quality: 0,
@@ -261,6 +299,11 @@ const PREVIEW_CARDS: StudyCard[] = [
     intervalDays: 0,
     repetitions: 0,
     lapses: 0,
+    stability: 0,
+    difficulty: 0,
+    lastReviewedAt: null,
+    state: "new",
+    remainingSteps: 0,
     suspended: false,
     flag: 0,
     quality: 0,
@@ -314,12 +357,12 @@ const PREVIEW_MAP_CONTENT = {
 // Filler for the other decks so the review table shows a realistic spread of counts.
 const PREVIEW_FILLER: StudyCard[] = [
   previewCard("pf-m1", "preview-mechanics", "Where is bending stress zero in a beam section?", "At the neutral axis."),
-  previewCard("pf-m2", "preview-mechanics", "State the equilibrium conditions for a 2D rigid body.", "Sum of forces in x and y is zero, and sum of moments is zero.", { repetitions: 4, intervalDays: 3 }),
+  previewCard("pf-m2", "preview-mechanics", "State the equilibrium conditions for a 2D rigid body.", "Sum of forces in x and y is zero, and sum of moments is zero.", { repetitions: 4, intervalDays: 3, state: "review", stability: 3, difficulty: 2.118 }),
   previewCard("pf-m3", "preview-mechanics", "What does the second moment of area measure?", "How a section's material is distributed about the bending axis."),
   previewCard("pf-b1", "preview-baroque-deck", "What is tenebrism?", "Extreme contrast between light and dark, with light used to stage the drama."),
-  previewCard("pf-b2", "preview-baroque-deck", "Which commission cycle established Caravaggio's reputation?", "The Contarelli Chapel paintings of St Matthew.", { repetitions: 2, intervalDays: 2 }),
+  previewCard("pf-b2", "preview-baroque-deck", "Which commission cycle established Caravaggio's reputation?", "The Contarelli Chapel paintings of St Matthew.", { repetitions: 2, intervalDays: 2, state: "review", stability: 2, difficulty: 2.118 }),
   previewCard("pf-s1", "preview-spanish", "Which verbs of wishing trigger the subjunctive?", "querer, desear, esperar, preferir."),
-  previewCard("pf-s2", "preview-spanish", "Give the present subjunctive of tener, first person.", "tenga.", { repetitions: 6, intervalDays: 5 }),
+  previewCard("pf-s2", "preview-spanish", "Give the present subjunctive of tener, first person.", "tenga.", { repetitions: 6, intervalDays: 5, state: "review", stability: 5, difficulty: 2.118 }),
   previewCard("pf-s3", "preview-spanish", "Does 'creer que' take the indicative or the subjunctive?", "Indicative when affirmative; subjunctive when negated."),
 ];
 
@@ -422,6 +465,13 @@ export function normalizeCardQuality(value: unknown): number {
   return value === 1 || value === -1 ? value : 0;
 }
 
+/** A row's state, refusing anything the scheduler would not recognise. A card whose state cannot
+ *  be read is treated as NEW, which costs one extra pass through the learning steps and never
+ *  loses a schedule — the opposite guess would drop a card straight into day intervals. */
+function cardState(raw: unknown): StudyCardState {
+  return raw === "learning" || raw === "review" || raw === "relearning" ? raw : "new";
+}
+
 function toCard(raw: unknown): StudyCard | null {
   if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.deck_id !== "string") return null;
   return {
@@ -435,6 +485,11 @@ function toCard(raw: unknown): StudyCard | null {
     intervalDays: number(raw.interval_days),
     repetitions: number(raw.repetitions),
     lapses: number(raw.lapses),
+    stability: number(raw.stability),
+    difficulty: number(raw.difficulty),
+    lastReviewedAt: typeof raw.last_reviewed_at === "string" ? raw.last_reviewed_at : null,
+    state: cardState(raw.state),
+    remainingSteps: number(raw.remaining_steps),
     suspended: raw.suspended === true,
     flag: normalizeStudyFlag(raw.flag),
     quality: normalizeCardQuality(raw.quality),
@@ -564,12 +619,37 @@ export interface CreateCardInput {
   tags?: string[];
 }
 
+/**
+ * When this card was last put in front of the learner.
+ *
+ * 🔴 THE FALLBACK IS THE SAME ONE `grade_study_card` USES, and it has to be: a card graded before
+ * 2026-08-30 has no `lastReviewedAt`, and its last review is reconstructable only as "its due date
+ * minus the interval it was given". Two different reconstructions would put the preview lane and
+ * production on different forgetting curves.
+ */
+export function lastSeenAt(card: Pick<StudyCard, "dueAt" | "intervalDays" | "lastReviewedAt">): string | null {
+  if (card.lastReviewedAt) return card.lastReviewedAt;
+  if (!card.dueAt) return null;
+  const due = new Date(card.dueAt);
+  if (!Number.isFinite(due.getTime())) return null;
+  due.setDate(due.getDate() - Math.max(0, Math.round(card.intervalDays)));
+  return due.toISOString();
+}
+
 /** Card scheduling fields captured before a grade so the grade can be undone. */
 export interface StudyScheduleSnapshot {
   dueAt: string;
   intervalDays: number;
   repetitions: number;
   lapses: number;
+  /** 🔴 THE FSRS STATE IS PART OF THE SNAPSHOT, and leaving it out is a silent corruption rather
+   *  than a missing feature: the card would go back to its old due date carrying the stability and
+   *  difficulty of a review the learner just undid, and every later interval would compound it. */
+  stability: number;
+  difficulty: number;
+  lastReviewedAt: string | null;
+  state: StudyCardState;
+  remainingSteps: number;
 }
 
 /** Cloze and occlusion cards carry the answer in the front, so the back is optional. */
@@ -657,7 +737,7 @@ export interface UseCloudStudyApi extends StoreState {
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   updateArtifact: (artifactId: string, patch: UpdateArtifactPatch) => Promise<void>;
   deleteArtifact: (artifactId: string) => Promise<void>;
-  gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
+  gradeCard: (cardId: string, grade: StudyGrade, durationMs?: number) => Promise<StudyCard>;
   undoGrade: (cardId: string, snapshot: StudyScheduleSnapshot) => Promise<StudyCard>;
   setCardSuspended: (cardId: string, suspended: boolean) => Promise<StudyCard>;
   setCardFlag: (cardId: string, flag: number) => Promise<StudyCard>;
@@ -779,6 +859,11 @@ export function useCloudStudy(): UseCloudStudyApi {
         intervalDays: 0,
         repetitions: 0,
         lapses: 0,
+        stability: 0,
+        difficulty: 0,
+        lastReviewedAt: null,
+        state: "new",
+        remainingSteps: 0,
         suspended: false,
         flag: 0,
         quality: 0,
@@ -825,6 +910,11 @@ export function useCloudStudy(): UseCloudStudyApi {
         intervalDays: 0,
         repetitions: 0,
         lapses: 0,
+        stability: 0,
+        difficulty: 0,
+        lastReviewedAt: null,
+        state: "new",
+        remainingSteps: 0,
         suspended: false,
         flag: 0,
         quality: 0,
@@ -906,6 +996,11 @@ export function useCloudStudy(): UseCloudStudyApi {
               intervalDays: 0,
               repetitions: 0,
               lapses: 0,
+              stability: 0,
+              difficulty: 0,
+              lastReviewedAt: null,
+              state: "new",
+              remainingSteps: 0,
               suspended: card.suspended === true,
               flag: card.flag ?? 0,
               // An imported card was written by somebody else, so there is nothing of ours to rate.
@@ -1046,19 +1141,41 @@ export function useCloudStudy(): UseCloudStudyApi {
     setState({ ...state, artifacts: state.artifacts.filter((artifact) => artifact.id !== artifactId) });
   }, [preview, userId]);
 
-  const gradeCard = useCallback(async (cardId: string, grade: StudyGrade) => {
+  /**
+   * Grade one card.
+   *
+   * `durationMs` is how long the learner had the card on screen before pressing a grade.
+   *
+   * 🔴 NOTHING SCHEDULES ON IT, AND THAT IS DELIBERATE (see study-scheduler.ts). Neither Anki nor
+   * FSRS treats answer latency as a scheduling input; hesitation is reported by pressing Hard. It
+   * is stored so the question can be settled with our own learners' data later, which is
+   * impossible if collection starts the day somebody asks.
+   */
+  const gradeCard = useCallback(async (cardId: string, grade: StudyGrade, durationMs?: number) => {
     const card = state.cards.find((item) => item.id === cardId);
     if (!card) throw new Error("That card is no longer available.");
     const reviewedAt = new Date();
+    // 🔴 THE COLUMN IS `integer` WITH A RANGE CHECK, so a float or a tab left open overnight would
+    // be rejected by Postgres and lose the whole review. Clamped here rather than at the boundary.
+    const duration = typeof durationMs === "number" && Number.isFinite(durationMs)
+      ? Math.min(3_600_000, Math.max(0, Math.round(durationMs)))
+      : null;
     let nextCard: StudyCard;
     if (preview) {
-      const schedule = scheduleStudyCard(card, grade);
-      const due = new Date(reviewedAt);
-      due.setDate(due.getDate() + schedule.intervalDays);
-      nextCard = { ...card, ...schedule, dueAt: due.toISOString(), updatedAt: reviewedAt.toISOString() };
+      // 🔴 THE SAME MACHINE, INCLUDING THE STEPS. `answerStudyCard` decides whether this press puts
+      // the card out in minutes or in days; `nextDueAt` turns that into an instant. Computing a day
+      // interval here would give the signed-out lane a scheduler the real one does not have.
+      const answer = answerStudyCard(card, grade, elapsedDaysBetween(lastSeenAt(card), reviewedAt));
+      nextCard = {
+        ...card,
+        ...answer,
+        dueAt: nextDueAt(answer, reviewedAt).toISOString(),
+        lastReviewedAt: reviewedAt.toISOString(),
+        updatedAt: reviewedAt.toISOString(),
+      };
     } else {
       if (!userId) throw new Error("Sign in to review cards.");
-      const { data, error } = await supabase.rpc("grade_study_card", { p_card_id: cardId, p_grade: grade });
+      const { data, error } = await supabase.rpc("grade_study_card", { p_card_id: cardId, p_duration_ms: duration, p_grade: grade });
       if (error) throw new Error(error.message);
       const result = Array.isArray(data) ? data[0] : data;
       if (!isObject(result) || typeof result.next_due !== "string") throw new Error("The review returned an invalid response.");
@@ -1068,6 +1185,14 @@ export function useCloudStudy(): UseCloudStudyApi {
         intervalDays: number(result.interval_days),
         repetitions: number(result.repetitions),
         lapses: number(result.lapses),
+        // 🔴 TAKEN FROM THE SERVER'S ANSWER, NEVER RECOMPUTED HERE. Postgres holds the row lock and
+        // is the only place a review is applied; a second local calculation would drift the moment
+        // the two implementations disagree by a rounding step, and the drift would compound.
+        stability: number(result.stability),
+        difficulty: number(result.difficulty),
+        state: cardState(result.state),
+        remainingSteps: number(result.remaining_steps),
+        lastReviewedAt: reviewedAt.toISOString(),
         updatedAt: reviewedAt.toISOString(),
       };
     }
@@ -1096,7 +1221,18 @@ export function useCloudStudy(): UseCloudStudyApi {
       if (!userId) throw new Error("Sign in to review cards.");
       const { error } = await supabase
         .from("study_cards")
-        .update({ due_at: snapshot.dueAt, interval_days: snapshot.intervalDays, repetitions: snapshot.repetitions, lapses: snapshot.lapses, updated_at: updatedAt })
+        .update({
+          due_at: snapshot.dueAt,
+          interval_days: snapshot.intervalDays,
+          repetitions: snapshot.repetitions,
+          lapses: snapshot.lapses,
+          stability: snapshot.stability,
+          difficulty: snapshot.difficulty,
+          last_reviewed_at: snapshot.lastReviewedAt,
+          state: snapshot.state,
+          remaining_steps: snapshot.remainingSteps,
+          updated_at: updatedAt,
+        })
         .eq("id", cardId)
         .eq("user_id", userId);
       if (error) throw new Error(error.message);
