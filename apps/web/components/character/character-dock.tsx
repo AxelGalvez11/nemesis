@@ -37,7 +37,7 @@ import { useMontage } from "./use-montage";
 import { usePoke } from "./use-poke";
 import type { FeatureFace } from "@/lib/avatar/features";
 import { ACTIVITY_STATE, speedOf, stationOf, type StateId, type Station } from "@/lib/character/stations";
-import { absorbedCycleAt, gazeTarget, glanceOffset, trackReach } from "@/lib/character/gaze";
+import { gazeTarget, glanceOffset, trackReach } from "@/lib/character/gaze";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { placeAbove, placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
@@ -285,25 +285,6 @@ export function CharacterDock({
   // Clicking it draws a reaction, and a busy state cancels one mid-gesture.
   // `motion` is the half the engine has no pose for — the hop. See `use-poke.ts`.
   const { state: poked, motion, face: pokeFace, poke, poking } = usePoke(state);
-  /**
-   * Which absorbed stretch is running, or null while the character is following the pointer.
-   *
-   * 🔴🔴 STATE, NOT A REF, AND THE PROMOTION IS THE WHOLE FIX. This was `absorbableRef`, read only
-   * inside the attention interval, because being absorbed used to change nothing but where the eyes
-   * pointed. It now chooses the FACE as well — an absorbed stretch gives the character a movement
-   * loop to be absorbed in — and what is drawn has to come from state.
-   *
-   * 🔴 IT REPLACES A GATE THAT MADE THE FEATURE INVISIBLE. The ref held `isMontageLoop(shown)`: let
-   * go of the pointer only if the montage happened to be playing something that moves. Measured
-   * over ten minutes at rest, 55 seconds of every 193 could never qualify, and the learner got 18.1%
-   * where the clock said 25%. See `montageLoop` in `lib/character/montage.ts`.
-   *
-   * 🔴 A BOOLEAN WOULD RE-RENDER JUST AS OFTEN AND SAY LESS. The cycle number varies which loop is
-   * chosen, so two stretches in a row are not the same performance; React bails out of a `setState`
-   * that lands on the same value, so this still only re-renders twice per cycle.
-   */
-  const [absorbedCycle, setAbsorbedCycle] = useState<number | null>(null);
-
   // 🔴🔴 THREE LAYERS OVER ONE BASE STATE, AND THE ORDER IS THE WHOLE BEHAVIOUR:
   //
   //   usePoke      what a click asked for. Beats everything: a click must be answered.
@@ -318,7 +299,19 @@ export function CharacterDock({
   // `atRest` and `busy` are read from the SURFACE's own `state`, never from the layered result —
   // otherwise the montage's own face would read as "something is happening" and stop itself.
   const atRest = state === ACTIVITY_STATE.resting;
-  const varied = useMontage(poked, atRest, poking, absorbedCycle);
+  /**
+   * 🔴🔴 THE FACE AND THE CURSOR COME OUT OF ONE CALL, AND THAT IS THE 2026-08-30 FIX (owner:
+   * *"during expressions the mouse still moves the mascot eyes"*). This dock used to run its own
+   * attention clock in the interval below and hand a cycle number DOWN to the montage, while the
+   * montage ran a second clock of its own to choose the face. Two clocks nobody had aligned, so an
+   * expression and the pointer ran together most of the time. `lib/character/attention.ts` is now
+   * the only clock and it answers both questions at once, which is what makes them exclusive
+   * rather than usually-different.
+   */
+  const { state: varied, absorbed } = useMontage(poked, atRest, poking);
+  /** 🔴 THE INTERVAL BELOW HAS DEPS `[anchor, size]`, so it cannot read this from the closure. */
+  const absorbedRef = useRef(absorbed);
+  absorbedRef.current = absorbed;
   // `hidden` counts as away: the character is not on screen to fall asleep on.
   const shown = useDoze(varied, hidden, !atRest);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -673,19 +666,18 @@ export function CharacterDock({
 
     const timer = window.setInterval(() => {
       const now = performance.now();
-      // 🔴 THE STRETCH IS A FACT ABOUT THE CLOCK AND THE SURFACE'S OWN STATE, nothing else. It is
-      // refused while Nemesis is doing something and while a poke is playing — both own the face —
-      // and `useDoze` still wins after it, so a sleeping character is not pulled into a loop.
+      // 🔴🔴 THE ANSWER IS READ THROUGH A REF, NOT RECOMPUTED, and both halves of that matter.
       //
-      // 🔴🔴 COMPUTED HERE AND USED HERE, NOT READ BACK OFF THE STATE. This effect is armed on
-      // `[anchor, size]`, so its closure keeps whatever `absorbedCycle` was on the render that
-      // created it — `null`, for the life of the interval. Reading the state below to decide the
-      // gaze meant the eyes NEVER let go while the face swapped on schedule, which measured as
-      // 36% of stretches with a 20.5px response to the pointer against 20.1px while following:
-      // indistinguishable, and exactly the report this is fixing. `absorbableRef` was a ref for
-      // this reason; promoting it to state for the renderer is what re-opened the hole.
-      const stretch = atRestRef.current ? absorbedCycleAt(now) : null;
-      setAbsorbedCycle(stretch);
+      // Recomputing is what this used to do — a second attention clock, running here, next to the
+      // montage's own. They were never aligned, so the character wore an expression while the
+      // cursor drove its eyes for most of every round, which is the whole of the owner's report.
+      // One clock now, in `useMontage`, and this reads its answer.
+      //
+      // And a REF, because this effect is armed on `[anchor, size]`: its closure keeps whatever
+      // the value was on the render that created it — the interval would see `false` for its
+      // entire life. That exact mistake, made by promoting a ref to state, measured as 36% of
+      // stretches responding 20.5px to the pointer against 20.1px while following. Indistinguishable.
+      const stretch = absorbedRef.current;
       // The glance rides on TOP of whatever is being watched, so the character looks away from the
       // composer and back to the composer rather than away from and back to a fixed direction.
       // 🔴 THE GLANCE AND THE SWEEP ARE FRACTIONS OF FULL DEFLECTION, so both are measured in the
@@ -754,10 +746,10 @@ export function CharacterDock({
         resting: restingBox,
         pointerAgeMs: now - pointerAtRef.current,
         working: workingBox,
-        // 🔴 THE ONE VALUE DRIVES BOTH HALVES. `stretch` is handed to `useMontage` through state to
-        // pick the face and read straight from here for the gaze, so the character's eyes and its
-        // expression cannot disagree about whether it is paying attention to you.
-        absorbed: stretch !== null,
+        // 🔴 THE ONE VALUE DRIVES BOTH HALVES. It IS the montage's answer, so the character's eyes
+        // and its expression cannot disagree about whether it is paying attention to you — not
+        // "usually agree", cannot: there is one value and this is it.
+        absorbed: stretch,
       });
       // 🔴🔴 `self` IS THE ONLY THING THAT TURNS TRACKING OFF, AND TURNING IT OFF IS THE ONLY WAY TO
       // SAY IT (owner 2026-08-28: *"there are moments where it's tracking mouse movement, but other

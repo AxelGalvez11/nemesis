@@ -19,6 +19,20 @@
 // 🔴 AND IT ONLY EVER RUNS AT REST. The moment Nemesis is doing something, the schedule owns the
 // face again — see `stations.ts`. A montage over a working character would be exactly the rule
 // breaking in the way that matters.
+//
+// 🔴🔴 WHEN AN ENTRY PLAYS IS NO LONGER DECIDED HERE. This file is the CATALOGUE — what may be
+// worn, in what order, and for how long — and `attention.ts` is the clock that walks it. They were
+// one thing, and being one thing is what let a second clock in `gaze.ts` decide the cursor
+// independently: the character wore a face for 100% of its rest and the pointer overrode two
+// thirds of it (owner, 2026-08-30: *"during expressions the mouse still moves the mascot eyes"*).
+// `montageFace` and `montageLoop` were the two halves of that split and are gone.
+//
+// 🔴 `montageLoop` FILTERED THIS LIST TO THE MOVEMENT LOOPS and that filter went with it, which
+// is a real change and a deliberate one: the owner ticked eleven HELD feelings and they were
+// unreachable during a stretch. Its reasoning — that letting go of the cursor during a face which
+// moves 0.8px gives a character doing nothing — is answered instead by the shape of the clock. A
+// held feeling gets its five seconds and is followed by nine of watching, so no face is ever the
+// last thing that happened for long.
 
 import { ANIMATION_BY_ID, animationDuration } from "@/lib/avatar";
 
@@ -161,45 +175,17 @@ export const MONTAGE_LEFT_OUT: readonly string[] = MONTAGE_CHOICES.map((c) => c.
 );
 
 /**
- * A movement loop for one absorbed stretch, chosen from the learner's own list.
- *
- * 🔴🔴 THIS REPLACES A GATE, AND THE GATE IS WHY THE FEATURE WAS INVISIBLE FOR TWO DAYS. The dock
- * used to ask `isMontageLoop(shown)` before it would let go of the pointer — a safeguard, and a
- * correct one on its face: dropping the cursor while a HELD feeling is on gives a character that
- * stops following and then does nothing, which is worse than not stopping at all.
- *
- * But the montage's own list is 12 loops, then 11 held feelings, then one more loop. Measured over
- * a real ten-minute session at rest: **55 seconds of every 193 is an unbroken stretch in which the
- * window could never open**, and the share the learner actually got was 18.1% against the 25% the
- * clock was set to. So the character followed the mouse solidly for nearly a minute at a time,
- * which is exactly what the owner reported, four times.
- *
- * 🔴 SO THE CLOCK DRIVES THE FACE NOW, INSTEAD OF THE FACE GATING THE CLOCK. When a stretch opens,
- * the character is GIVEN something to be absorbed in. The safeguard's reasoning is fully honoured —
- * a stretch still always contains real movement — but by construction rather than by luck.
- *
- * 🔴 FROM THE LEARNER'S OWN CHOICES, falling back to the defaults' loops and finally to `gaze-idle`,
- * so a learner who has ticked only held feelings still gets movement here rather than a frozen
- * character. `cycle` varies the pick so two stretches running are not the same performance.
- */
-export function montageLoop(input: { readonly cycle: number; readonly chosen?: readonly string[] | null }): string {
-  const { cycle, chosen } = input;
-  const loops = resolveMontage(chosen).filter(isMontageLoop);
-  const pool = loops.length > 0 ? loops : MONTAGE.filter(isMontageLoop);
-  if (pool.length === 0) return "gaze-idle";
-  // A non-negative index whatever the clock hands over.
-  return pool[((cycle % pool.length) + pool.length) % pool.length]!;
-}
-
-/**
  * Is `id` one of the entries that MOVES, rather than a face that is merely held?
  *
  * 🔴 THE DIFFERENCE IS 30px AGAINST 0.8px, WHICH IS THE DIFFERENCE BETWEEN "DOING ITS OWN THING"
  * AND "STANDING STILL" (the table at the top of this file has the measurements).
  *
- * 🔴 THE DOCK NO LONGER ASKS THIS BEFORE LETTING GO OF THE POINTER — that was the gate `montageLoop`
- * replaces, and the reason is written there. What still reads it is `montageLoop` itself, choosing
- * what to play, and the settings card, saying which entries are which.
+ * 🔴 NOTHING THAT DRAWS ASKS THIS, AND THAT IS THE POINT OF LEAVING IT HERE. The dock once gated
+ * letting go of the pointer on it — only stop following if the montage HAPPENED to be playing
+ * something that moves — and that gate measured as 55 seconds of every 193 in which the character
+ * could never let go. What reads it now is `attention.test.ts`, asking whether a round of the
+ * clock still contains real movement, which is the gate's reasoning kept as a check rather than
+ * as a condition.
  *
  * Unknown ids are not loops. `resolveMontage` has already dropped anything unknown, so reaching
  * here with one means the catalogue moved under a stored list, and the safe answer is to keep
@@ -259,44 +245,4 @@ export function resolveMontage(chosen: readonly string[] | null | undefined): re
   const known = new Set(MONTAGE_CHOICES.map((c) => c.id));
   const kept = chosen.filter((id) => known.has(id));
   return kept.length > 0 ? kept : MONTAGE;
-}
-
-/**
- * Which entry is playing `ms` into a rest, or null when the character is not resting.
- *
- * 🔴 ADDRESSED FROM THE CLOCK, NOT ADVANCED BY A TIMER, which is the same construction the blink
- * schedule uses and for the same reason: asking about a moment an hour in costs the same as asking
- * about the first second, and two characters mounted at the same time do not march in step. That
- * survives the move to uneven holds because the walk below is over a list, not over elapsed ticks.
- *
- * 🔴 `seed` SHIFTS THE STARTING ENTRY, NOT THE CLOCK. Offsetting the time would put a character
- * mid-way through some loop on its first frame; offsetting the index starts it cleanly on a
- * different one, which is all the seed was ever for.
- */
-export function montageFace(input: {
-  readonly restingMs: number;
-  readonly atRest: boolean;
-  /** Anything the character is doing that owns its face: a poke, a doze, a turn in flight. */
-  readonly busy: boolean;
-  /** Varies the starting entry per character so two on one page are never in step. */
-  readonly seed?: number;
-  /** The learner's own choice, or nothing for the default set. */
-  readonly chosen?: readonly string[] | null;
-}): string | null {
-  const { restingMs, atRest, busy, seed = 0, chosen } = input;
-  if (!atRest || busy || restingMs < 0) return null;
-  const faces = resolveMontage(chosen);
-  const n = faces.length;
-  if (n === 0) return null;
-
-  const holds = faces.map(holdFor);
-  const round = holds.reduce((a, b) => a + b, 0);
-  let left = restingMs % round;
-  let step = 0;
-  // A walk rather than arithmetic, because the holds are uneven. At most 39 entries, once a second.
-  while (step < n - 1 && left >= holds[(step + seed) % n]!) {
-    left -= holds[(step + seed) % n]!;
-    step += 1;
-  }
-  return faces[(step + seed) % n] ?? null;
 }

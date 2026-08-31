@@ -214,76 +214,35 @@ export function glanceOffset(ms: number, reach: number): { x: number; y: number 
 // **+58.9 with the pointer far LEFT and +58.4 with it far RIGHT** — pinned, ignoring the mouse
 // completely. With nothing focused the identical sweep runs **-56.9 to +56.2**.
 
-// ── Following, and being absorbed ────────────────────────────────────────────
+// ── Being absorbed ───────────────────────────────────────────────────────────
 //
-// 🔴🔴 THE THIRD TIME THIS REPORT HAS BEEN MADE, AND THE FIRST TIME THE MECHANISM CHANGES. Owner,
-// 2026-08-26: *"it should follow the mouse … but also have moments where it does its own animations
-// and expressions."* Answered with `montage.ts` — a different FACE every few seconds. Owner,
-// 2026-08-27: *"it still does not do expressions after a while of following the mouse."* Answered by
-// widening the montage to the movement loops and shortening its hold. Owner, 2026-08-28: *"make sure
-// that there are moments where it's tracking mouse movement, but other moments where it's just doing
-// its own thing, own expressions."*
+// 🔴🔴 THE CLOCK THAT USED TO LIVE HERE HAS MOVED TO `attention.ts`, AND THE MOVE IS THE FIX.
+// This file ran one clock deciding when the character let go of the pointer; `montage.ts` ran a
+// second deciding which face it wore. Two clocks nobody had aligned, so the two states ran in
+// every combination — and the combination on screen most of the time was an expression with the
+// cursor driving its eyes (owner, 2026-08-30: *"during expressions the mouse still moves the
+// mascot eyes"*). There is one clock now and it answers both questions from one value.
 //
-// 🔴 EVERY ANSWER SO FAR CHANGED WHAT THE FACE WAS DOING AND NONE OF THEM CHANGED WHERE THE HEAD WAS
-// POINTING, which is the whole of what "doing its own thing" looks like from across a room. A gaze
-// loop like `gaze-searching` is six measured poses that carry the head 30px on their own — and the
-// renderer was adding pointer tracking ON TOP of every frame of it, so the loop's movement was
-// permanently overwritten by the cursor's. The character was following the mouse 100% of the time it
-// was awake. There was no "other moments" to see.
+// 🔴 WHAT STAYS HERE IS `gazeTarget`'s `absorbed` INPUT: the rule about PRECEDENCE — what being
+// absorbed loses to — which is this file's subject. When it happens is not.
 //
-// 🔴 THIS IS THE PATTERN FROM [[character-signals-are-dead]], RUNNING THE OTHER WAY. Four narrowings
-// of the `?` mark were each a true statement about when it was wrong and none was why it was wrong.
-// Three widenings of the montage have been the same shape. So this stops adjusting the montage and
-// takes the pointer away instead, for a bounded stretch, on a clock.
+// The history of the four reports before that one is worth keeping, because it is the argument
+// against answering the fifth with another number:
+//
+//   2026-08-26  *"it should follow the mouse … but also have moments where it does its own
+//               animations and expressions."* Answered with a different FACE every few seconds.
+//   2026-08-27  *"it still does not do expressions after a while of following the mouse."*
+//               Answered by widening the montage to the movement loops and shortening the hold.
+//   2026-08-28  *"make sure that there are moments where it's tracking mouse movement, but other
+//               moments where it's just doing its own thing."* Answered by taking the pointer
+//               away on a clock — the first answer that moved the HEAD rather than the face.
+//   2026-08-30  *"it should follow the mouse at times, but at times just move independently."*
+//               Answered by tuning that clock from 20s/5s to 18s/6s.
+//
+// 🔴 THIS IS THE PATTERN FROM [[character-signals-are-dead]], RUNNING THE OTHER WAY. Four
+// narrowings of the `?` mark were each a true statement about when it was wrong and none was why
+// it was wrong. Four adjustments here have been the same shape. A share cannot fix an overlap.
 
-/**
- * One full round of the character's attention: it follows, then it is absorbed, then it follows.
- *
- * 🔴 FOLLOWING IS STILL THE MAJORITY. The most repeated report about this character used to be
- * *"the mascot is not following the mouse at all"* — three times, and twice I replied that it did.
- * The cycle OPENS on following, so whatever the learner sees in the first seconds after a page
- * loads is the character watching them.
- *
- * 🔴🔴 20s/5s → 18s/6s ON THE FOURTH REPORT OF THE OPPOSITE (owner 2026-08-30: *"the mascot is
- * still following the mouse, and it should follow the mouse at times, but at times, it just should
- * just move independently of the mouse"*). A quarter was already the intent and the learner was not
- * getting a quarter — see the gate that used to stand in front of this, described in
- * `montageLoop`. With that gate gone the share is real, and a third is what reads as *sometimes*.
- */
-export const ATTENTION_CYCLE_MS = 18_000;
-
-/**
- * How long one absorbed stretch lasts.
- *
- * Long enough for a montage loop to reach its second and third pose, which is where a loop's
- * movement lives (`montage.ts` measures the busiest at 30px of eye travel over a cycle, against
- * 0.8px for a held feeling). Much shorter and being absorbed is indistinguishable from a glance,
- * which this product already has and which is not what was asked for.
- */
-export const ABSORBED_MS = 6_000;
-
-/**
- * Is the character absorbed in its own business at `ms`?
- *
- * 🔴 THE WINDOW SITS AT THE END OF THE CYCLE, so a character that has just mounted follows first.
- */
-export function absorbedAt(ms: number): boolean {
-  if (!Number.isFinite(ms) || ms < 0) return false;
-  return ms % ATTENTION_CYCLE_MS >= ATTENTION_CYCLE_MS - ABSORBED_MS;
-}
-
-/**
- * Which absorbed stretch this is, counting from the clock's start — or null while following.
- *
- * 🔴 IT EXISTS SO THE STRETCH CAN CHOOSE WHAT TO DO WITH ITSELF. The montage picks a different
- * movement loop per cycle from this number, so two absorbed stretches in a row are not the same
- * performance; see `montageLoop`. Deterministic, like everything else in this file — no clock of
- * its own, no randomness that a test cannot ask about.
- */
-export function absorbedCycleAt(ms: number): number | null {
-  if (!absorbedAt(ms)) return null;
-  return Math.floor(ms / ATTENTION_CYCLE_MS);
-}
 
 /** A point in client coordinates. */
 export interface AimPoint {

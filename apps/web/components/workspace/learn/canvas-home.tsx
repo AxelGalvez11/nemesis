@@ -137,14 +137,17 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // 🔴 THE GREETER IS NOT THE DOCK. It renders `NemesisAvatar` directly, so every layer the dock
   // composes has to be repeated here or it does not apply. That is a real seam and this is the
   // second thing to fall through it; `montage.test.ts` now pins both surfaces.
-  const greeterFace = useMontage(
-    greeter.state, !departing && !listening, greeter.poking,
-    // 🔴 THE GREETER NEVER GOES ABSORBED, AND THAT IS THE FRONT DOOR'S JOB RATHER THAN AN OVERSIGHT.
-    // The attention cycle exists so a character parked beside a page of text for minutes at a time
-    // has moments of its own. This one is on screen for the few seconds between arriving and typing
-    // the first sentence, and every one of them should be it looking at you.
-    null,
-  );
+  //
+  // 🔴🔴 IT GOES ABSORBED HERE TOO NOW, AND THE CARVE-OUT THAT USED TO STAND HERE WAS WRONG IN ITS
+  // OWN WORDS. It read *"this one is on screen for the few seconds between arriving and typing"*,
+  // two paragraphs below the note calling this *"the surface anyone sees first and sits on
+  // longest before typing anything"*. Both cannot be true, and the second is the one that matches
+  // what the front door is for. What the carve-out was actually protecting — that the first
+  // seconds are the character looking at you — is now free: `attentionAt` runs off the REST clock
+  // and opens on `FOLLOW_MS` of watching, so a character that has just arrived always watches
+  // first. A surface-specific exception to a rule about the character is how the two surfaces
+  // came to disagree in the first place.
+  const greeterFace = useMontage(greeter.state, !departing && !listening, greeter.poking);
   /**
    * Where the composer travels, in px. Measured at the moment of the send; see `start`.
    *
@@ -502,16 +505,21 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   ends disagreed about facing, the head would swing about 28° at the exact frame of
                   the route swap — a fresh version of the glitch the whole handoff sequence was
                   rebuilt to remove. Both were `"forward"`; both are `"free"` since 2026-08-27.
-                  `character-place.test.ts` pins that they agree. See the prop's own note. */}
+                  `character-place.test.ts` pins that they agree. See the prop's own note.
+
+                  🔴 AND `track` IS NOT A CONSTANT ANY MORE. The cursor is let go of for exactly
+                  as long as a face is on — the other half of the owner's 2026-08-30 rule, which
+                  the hook cannot enforce on its own (see `Montage.absorbed`). A flat `track`
+                  here is precisely what the bug looked like. */}
               <NemesisAvatar
                 accent={accent}
                 face={greeter.face}
                 onPoke={greeter.poke}
                 size={GREETER_SIZE}
-                animation={greeterFace}
+                animation={greeterFace.state}
                 facing="free"
                 silhouette={CHARACTER_SILHOUETTE}
-                track
+                track={!greeterFace.absorbed}
                 waggle={greeter.motion === "waggle"}
               />
             </div>

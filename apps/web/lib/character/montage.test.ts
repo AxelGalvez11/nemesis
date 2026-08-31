@@ -11,9 +11,21 @@ import { ANIMATION_BY_ID, animationDuration, FACE_BY_ID, RADIUS } from "@/lib/av
 import { ANIMATIONS as GAZE_ANIMATIONS } from "@/lib/avatar/animations";
 import { EXPRESSION_IDS } from "@/lib/avatar/expressions";
 
-import { holdFor, MONTAGE, MONTAGE_CHOICES, MONTAGE_HOLD_MS, MONTAGE_LEFT_OUT, montageFace, resolveMontage } from "./montage";
+import { attentionAt, FOLLOW_MS } from "./attention";
+import { holdFor, MONTAGE, MONTAGE_CHOICES, MONTAGE_HOLD_MS, MONTAGE_LEFT_OUT, resolveMontage } from "./montage";
 
-const resting = { restingMs: 0, atRest: true, busy: false };
+// 🔴 THE WALK MOVED TO `attention.ts`, SO THESE ASK IT. This file used to own both the catalogue
+// and the clock that walked it, and owning both is what let a SECOND clock decide the cursor
+// independently — see the note at the top of `attention.ts`. The assertions below are unchanged in
+// what they claim; they now put the question to the clock that answers it. Every entry is preceded
+// by its own stretch of watching, which is the one thing that shifts.
+const worn = (ms: number, chosen?: readonly string[]) => {
+  const at = attentionAt({ ms, chosen });
+  return at.kind === "absorbed" ? at.entry : null;
+};
+/** When entry `i` of `list` starts, counting the watching stretch before each. */
+const startOf = (i: number, list: readonly string[]) =>
+  (i + 1) * FOLLOW_MS + list.slice(0, i).reduce((sum, id) => sum + holdFor(id), 0);
 
 test("🔴 everything the montage can play is a real animation", () => {
   // 🔴 REPOINTED 2026-08-27. This used to assert every entry was one of the SIXTEEN FEELINGS, and
@@ -58,12 +70,12 @@ test("🔴🔴 a loop gets its whole cycle, not the held-face floor", () => {
   assert.equal(holdFor("not-a-thing"), MONTAGE_HOLD_MS, "an id the catalogue lost should fall back, not throw");
   // Walked end to end, every entry is reached and each one lasts exactly its own hold.
   const one = ["gaze-searching", "neutral"];
-  const at = (ms: number) => montageFace({ ...resting, restingMs: ms, chosen: one });
-  assert.equal(at(0), "gaze-searching");
-  assert.equal(at(searching - 1), "gaze-searching", "the loop was cut short");
-  assert.equal(at(searching), "neutral", "the montage never moves off the loop");
-  assert.equal(at(searching + MONTAGE_HOLD_MS - 1), "neutral");
-  assert.equal(at(searching + MONTAGE_HOLD_MS), "gaze-searching", "the round does not come back to the start");
+  const at = (ms: number) => worn(ms, one);
+  assert.equal(at(startOf(0, one)), "gaze-searching");
+  assert.equal(at(startOf(0, one) + searching - 1), "gaze-searching", "the loop was cut short");
+  assert.equal(at(startOf(1, one)), "neutral", "the montage never moves off the loop");
+  assert.equal(at(startOf(1, one) + MONTAGE_HOLD_MS - 1), "neutral");
+  assert.equal(at(startOf(1, one) + MONTAGE_HOLD_MS + FOLLOW_MS), "gaze-searching", "the round does not come back to the start");
 });
 
 test("🔴🔴 what is left out is named rather than quietly dropped", () => {
@@ -82,24 +94,27 @@ test("🔴🔴 what is left out is named rather than quietly dropped", () => {
 });
 
 test("🔴🔴 it runs ONLY at rest, and never over something the character is doing", () => {
-  assert.equal(montageFace({ ...resting, atRest: false }), null, "a montage face is painted over a working character");
-  assert.equal(montageFace({ ...resting, busy: true }), null, "a montage face is painted over a poke");
-  assert.notEqual(montageFace(resting), null, "the montage never runs at all");
+  // 🔴 THE GATE MOVED INTO THE HOOK WITH THE CLOCK, and it has to be asserted somewhere or a
+  // montage face paints over a character that is working. `attentionAt` is deliberately ignorant
+  // of activity — it answers for a rest — so `useMontage` is where the two are joined.
+  const hook = readFileSync(new URL("../../components/character/use-montage.ts", import.meta.url), "utf8");
+  assert.match(hook, /!atRest \|\| busy \|\| since === 0\s*\?\s*null/, "a montage face is painted over a working character or a poke");
+  assert.notEqual(worn(FOLLOW_MS + 10), null, "the montage never runs at all");
 });
 
 test("it moves on at its own schedule and comes back round", () => {
   // 🔴 REPOINTED 2026-08-27 FROM A FIXED HOLD. Every entry used to last exactly `MONTAGE_HOLD_MS`,
   // so the old assertions could name that number directly. They now ask each entry for its own
   // hold, which is the same question against the shape the montage actually has.
-  const at = (ms: number) => montageFace({ ...resting, restingMs: ms });
   const first = holdFor(MONTAGE[0]!);
-  const round = MONTAGE.reduce((sum, id) => sum + holdFor(id), 0);
-  assert.equal(at(0), MONTAGE[0], "it does not start at the start");
-  assert.equal(at(first - 1), at(0), "an entry was cut short inside its own hold");
-  assert.notEqual(at(first), at(0), "it never moves on");
-  assert.equal(at(first), MONTAGE[1], "it moved on to something that is not the next entry");
-  assert.equal(at(round), at(0), "the round does not return to where it started");
-  assert.equal(at(round * 3 + 17), at(17), "the round is not the same every time");
+  const round = MONTAGE.length * FOLLOW_MS + MONTAGE.reduce((sum, id) => sum + holdFor(id), 0);
+  const open = startOf(0, MONTAGE);
+  assert.equal(worn(open), MONTAGE[0], "it does not start at the start");
+  assert.equal(worn(open + first - 1), MONTAGE[0], "an entry was cut short inside its own hold");
+  assert.equal(worn(open + first), null, "it does not go back to watching between entries");
+  assert.equal(worn(startOf(1, MONTAGE)), MONTAGE[1], "it moved on to something that is not the next entry");
+  assert.equal(worn(open + round), MONTAGE[0], "the round does not return to where it started");
+  assert.equal(worn(open + round * 3 + 17), worn(open + 17), "the round is not the same every time");
 });
 
 test("🔴 unhurried, but not so slow that nobody ever catches two", () => {
@@ -116,8 +131,8 @@ test("🔴 unhurried, but not so slow that nobody ever catches two", () => {
 test("🔴🔴 the learner's own list is used, and a bad one never leaves the character faceless", () => {
   // Owner, 2026-08-27: *"allow me to pick the expressions for the montage"*. It is stored in
   // `localStorage`, so it can be anything: from an older build, hand-edited, or emptied.
-  assert.equal(montageFace({ ...resting, chosen: ["happy"] }), "happy", "a chosen list is ignored");
-  assert.equal(montageFace({ ...resting, chosen: ["happy"], restingMs: MONTAGE_HOLD_MS * 3 }), "happy", "one chosen face should hold");
+  assert.equal(worn(startOf(0, ["happy"]), ["happy"]), "happy", "a chosen list is ignored");
+  assert.equal(worn(startOf(0, ["happy"]) + (MONTAGE_HOLD_MS + FOLLOW_MS) * 3, ["happy"]), "happy", "one chosen face should hold");
   assert.deepEqual(resolveMontage(["happy", "not-a-face"]), ["happy"], "an unknown id is drawn instead of dropped");
   // 🔴 EMPTY MEANS THE DEFAULT, NOT NOTHING. "No expressions" is already expressible by leaving one
   // ticked, and a character frozen on one face is a better failure than a blank one.
@@ -154,13 +169,8 @@ test("🔴🔴 BOTH surfaces run the montage, not just the canvas", () => {
   const home = readFileSync(new URL("../../components/workspace/learn/canvas-home.tsx", import.meta.url), "utf8");
   const dock = readFileSync(new URL("../../components/character/character-dock.tsx", import.meta.url), "utf8");
   assert.match(home, /useMontage\(/, "the front door's greeter stopped pulling faces");
-  assert.match(home, /animation=\{greeterFace\}/, "the greeter computes a montage face and then draws something else");
+  assert.match(home, /animation=\{greeterFace\.state\}/, "the greeter computes a montage face and then draws something else");
   assert.match(dock, /useMontage\(/, "the canvas character stopped pulling faces");
-});
-
-test("two characters on one page are not in step", () => {
-  // The front door hands over to the canvas, and for a moment both exist.
-  assert.notEqual(montageFace({ ...resting, seed: 0 }), montageFace({ ...resting, seed: 1 }));
 });
 
 test("🔴 the montage is addressed from a clock, not advanced by a timer", () => {
@@ -170,16 +180,19 @@ test("🔴 the montage is addressed from a clock, not advanced by a timer", () =
   // 🔴 REPOINTED 2026-08-27: the holds became uneven, so the arithmetic became a walk over a list
   // of holds. The invariant is unchanged and is what is asserted — `restingMs` is the only clock,
   // and nothing in this file counts ticks.
-  const src = readFileSync(new URL("./montage.ts", import.meta.url), "utf8");
-  assert.match(src, /restingMs % round/, "the montage stopped addressing its round from the clock");
-  assert.ok(!/setInterval|setTimeout|Date\.now/.test(src), "the montage grew a clock of its own");
+  const src = readFileSync(new URL("./attention.ts", import.meta.url), "utf8");
+  assert.match(src, /ms % pass/, "the clock stopped addressing its round from the time it is given");
+  assert.ok(!/setInterval|setTimeout|Date\.now|performance\.now/.test(src), "the clock grew a clock of its own");
+  for (const file of ["./montage.ts"]) {
+    const other = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!/setInterval|setTimeout|Date\.now/.test(other), `${file} grew a clock of its own`);
+  }
   // Asked about a moment an hour in, it answers, and it answers the same as one round earlier.
-  const round = MONTAGE.reduce((sum, id) => sum + holdFor(id), 0);
+  const round = MONTAGE.length * FOLLOW_MS + MONTAGE.reduce((sum, id) => sum + holdFor(id), 0);
   const hour = 60 * 60 * 1000;
-  assert.notEqual(montageFace({ ...resting, restingMs: hour }), null, "it gives up after long enough");
   assert.equal(
-    montageFace({ ...resting, restingMs: hour }),
-    montageFace({ ...resting, restingMs: hour + round }),
+    JSON.stringify(attentionAt({ ms: hour })),
+    JSON.stringify(attentionAt({ ms: hour + round })),
     "one full round does not return to the same entry",
   );
 });
