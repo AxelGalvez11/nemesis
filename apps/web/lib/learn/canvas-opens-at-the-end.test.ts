@@ -15,6 +15,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+/** The first capture of `re` in `src`, as a number, with any `_` digit separators removed. */
+function figure(re: RegExp, src: string): number {
+  return Number((re.exec(src)?.[1] ?? "").replace(/_/g, ""));
+}
+
 const KNOWLEDGE = readFileSync("lib/learn/canvas-knowledge.ts", "utf8");
 const CANVAS = readFileSync("components/workspace/learn/learning-canvas.tsx", "utf8");
 
@@ -22,7 +27,7 @@ test("🔴🔴 the knowledge replay runs in lanes, not one write after another",
   // The 96 round trips are not the waste — the `await` in the loop was. Each object has its own
   // identity key, its own upsert and its own read-back; nothing about them is ordered.
   assert.match(KNOWLEDGE, /const WRITE_LANES = \d+;/, "the write concurrency is gone");
-  const lanes = Number(/const WRITE_LANES = (\d+);/.exec(KNOWLEDGE)![1]);
+  const lanes = figure(/const WRITE_LANES = (\d+);/, KNOWLEDGE);
   assert.ok(lanes > 1, "one lane is the sequential loop this replaces");
   assert.ok(lanes <= 12, `${lanes} lanes is a burst on the learner's own database, and the browser queues most of it anyway`);
   assert.match(KNOWLEDGE, /await Promise\.all\(Array\.from\(\{ length: Math\.min\(WRITE_LANES, objects\.length\) \}, lane\)\)/, "the lanes no longer run together");
@@ -64,7 +69,7 @@ test("🔴🔴 the learner outranks the landing, instantly", () => {
     assert.ok(CANVAS.includes(`addEventListener("${event}", letGo`), `${event} no longer stops the landing`);
     assert.ok(CANVAS.includes(`removeEventListener("${event}", letGo)`), `${event} listener is leaked`);
   }
-  const window_ = Number(/const LANDING_MS = ([\d_]+);/.exec(CANVAS)![1].replace(/_/g, ""));
+  const window_ = figure(/const LANDING_MS = ([\d_]+);/, CANVAS);
   assert.ok(window_ <= 3_000, `${window_}ms is long enough to fight a learner who is scrolling`);
   assert.ok(window_ >= 500, `${window_}ms ends before a thread that arrives in pieces has finished`);
 });
