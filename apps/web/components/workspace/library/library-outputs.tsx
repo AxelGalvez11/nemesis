@@ -26,16 +26,19 @@
 // forever-empty shelves and read as broken (the §38.3 lesson).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   ChevronLeft,
   Download,
-  FolderPlus,
   Folder as FolderIcon,
   GraduationCap,
+  LayoutGrid,
   Layers,
+  List,
   MonitorPlay,
   NotebookText,
+  Plus,
   Search,
   Share2,
 } from "lucide-react";
@@ -101,6 +104,8 @@ interface SlidesRow {
  * a list of files the learner already owns; nothing here reaches the composer or the policy.
  */
 type Shelf = "all" | OutputKind;
+
+const VIEW_KEY = "nemesis.library.v1.view";
 
 const SHELVES: readonly { id: Shelf; label: string }[] = [
   { id: "all", label: "All" },
@@ -253,6 +258,17 @@ const ROW_ACTION =
 /** Empty-state and loading copy, at the same 14px the rows use. */
 const ROW_EMPTY = "py-[12px] text-[14px] text-(--ui-text-secondary)";
 
+/* ── Grid view (measured 2026-08-30, the reference's own grid) ─────────────────────────────────
+ * Folder cards 104px tall, file cards tall with the name on top and the time at the foot; 240px
+ * wide, three across the 768 column: 240·3 + 24·2 = 768, a sum that closes the same way the list
+ * row's does. The reference fills a file card's face with a thumbnail when it holds one and an
+ * icon face when it does not; our outputs have no thumbnails, so every card wears the honest
+ * icon face. The fill has no published light value (his account is dark), so both states ride
+ * the same token pair the row hover already uses rather than a guessed grey. */
+const CARD_GRID = "grid grid-cols-3 gap-[24px]";
+const CARD =
+  "flex flex-col rounded-[16px] bg-black/[0.03] p-[16px] text-left transition-colors hover:bg-black/[0.06] dark:bg-white/[0.06] dark:hover:bg-white/[0.10]";
+
 function when(iso: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return "";
@@ -352,6 +368,29 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
   const [folders, setFolders] = useState<Folder[]>(() => [...(preview?.folders ?? [])]);
   /** null means "everything, wherever it is filed" — the arrival view. */
   const [openFolder, setOpenFolder] = useState<string | null>(null);
+  const router = useRouter();
+  /**
+   * List or grid — the reference's own two-button toggle beside its filter row (measured in the
+   * owner's Chrome, 2026-08-30: two 36px buttons, the active one on the selected-pill fill; grid
+   * draws folders as 104px cards and files as tall cards, list is the table this page already
+   * is). Persisted per browser the way the sidebar persists its open folders: view choice is a
+   * reading preference, not data.
+   */
+  const [view, setView] = useState<"list" | "grid">(() => {
+    try {
+      return window.localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list";
+    } catch {
+      return "list";
+    }
+  });
+  const chooseView = (next: "list" | "grid") => {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Storage refused: the toggle still happened for this visit.
+    }
+  };
 
   useEffect(() => {
     // 🔴 THE PREVIEW ROUTE NEVER REACHES THE DATABASE. Its rows are already in state (seeded at
@@ -555,10 +594,50 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
    * already marked a node, which a ring makes happen on its second step rather than never.
    */
   const nonEmptyFolders = useMemo(() => foldersWithContent(folders, folderCounts), [folders, folderCounts]);
+  /**
+   * When something INSIDE each folder last changed — the reference's own folder rows print a
+   * Modified date and order by it, newest first (measured 2026-08-30: Aug 28 above Aug 26 above
+   * Aug 10). The first version of this page left the cell empty on the argument that a folder
+   * "genuinely has no modified date"; that was true of the row it refused to borrow
+   * (`createdAt`), and it is not true of this: the latest date of anything filed inside, rolled
+   * up through ancestors the same walk `foldersWithContent` does, is exactly what "Modified"
+   * honestly means for a container. Empty stays empty — a folder holding nothing prints nothing.
+   */
+  const folderModified = useMemo(() => {
+    const byId = new Map(folders.map((folder) => [folder.id, folder] as const));
+    const latest = new Map<string, string>();
+    const bump = (folderId: string | null, when: string) => {
+      let current = folderId ? byId.get(folderId) : undefined;
+      const seen = new Set<string>();
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id);
+        const held = latest.get(current.id);
+        if (!held || when > held) latest.set(current.id, when);
+        current = current.parentId ? byId.get(current.parentId) : undefined;
+      }
+    };
+    decks.forEach((row) => bump(row.folderId, row.createdAt));
+    notes.forEach((row) => bump(row.folderId, row.updatedAt));
+    slides.forEach((row) => bump(row.folderId, row.createdAt));
+    return latest;
+  }, [decks, folders, notes, slides]);
   /** The rows the "Folders" section actually draws — see `nonEmptyFolders` just above. Every
    *  OTHER reader of `folders` (the move-to-folder menu, the open-folder breadcrumb) keeps the
    *  full list: a fresh, empty project has to be a legal place to file the first thing INTO. */
-  const visibleFolders = useMemo(() => folders.filter((folder) => nonEmptyFolders.has(folder.id)), [folders, nonEmptyFolders]);
+  const visibleFolders = useMemo(
+    () =>
+      folders
+        .filter((folder) => nonEmptyFolders.has(folder.id))
+        // Most recently touched first — the ordering the Modified column implies, and the one
+        // the reference uses. Ties (and the never-touched) fall back to name so the order is
+        // still deterministic.
+        .sort(
+          (a, b) =>
+            (folderModified.get(b.id) ?? "").localeCompare(folderModified.get(a.id) ?? "") ||
+            a.name.localeCompare(b.name),
+        ),
+    [folderModified, folders, nonEmptyFolders],
+  );
 
   const showing = (which: OutputKind) => shelf === "all" || shelf === which;
 
@@ -707,15 +786,27 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
             Settings picker writes this token. A literal here would be the one button in the app
             that ignores the learner's chosen accent. The Projects page's "New" is this exact
             string, deliberately: the two pages are meant to be indistinguishable side by side. */}
+          {/* 🔴 THE REFERENCE'S "New" IS A MENU, NOT ONE VERB (measured 2026-08-30: its pill
+              opens Image / Note / Document / … / Folder / Upload files). Ours offers the two
+              things a learner can genuinely start from here — a project to file into, and a
+              canvas, which is where every OTHER thing this page lists actually gets made.
+              Rows for artifacts Nemesis makes on request (a deck, a note, slides) would be
+              §38/cards-are-output-only violations dressed as menu items. */}
           {openFolder === null && naming === null && (
-            <button
-              className="flex h-[36px] shrink-0 items-center gap-[6px] rounded-full bg-(--ui-action) px-[16px] text-[14px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-80"
-              onClick={() => setNaming("")}
-              type="button"
-            >
-              <FolderPlus size={16} strokeWidth={1.8} />
-              New folder
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="New"
+                className="flex h-[36px] shrink-0 items-center gap-[6px] rounded-full bg-(--ui-action) px-[16px] text-[14px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-80"
+              >
+                <Plus size={16} strokeWidth={2} />
+                New
+                <ChevronDown size={14} strokeWidth={2} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setNaming("")}>New project</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/learn")}>New canvas</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         {/* 🔴🔴 BOTH DOORS REMOVED — owner, 2026-08-24: "the library page has an import from Anki
@@ -743,6 +834,33 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
             shows what is in it. */}
         {/* 🔴 THE PILL ROW'S TOP EDGE LANDS ON y=204 — 53px below a title row that ends at 151. */}
         <div className="mt-[53px] flex flex-wrap items-center gap-[6px]">
+          {/* View toggle rides the pill row's right edge, exactly where the reference parks its
+              own pair. Grid and list draw the same rows the same order; only the shape changes. */}
+          <span className="order-last ml-auto flex items-center gap-[4px]">
+            {(
+              [
+                { icon: LayoutGrid, id: "grid", label: "Grid view" },
+                { icon: List, id: "list", label: "List view" },
+              ] as const
+            ).map((option) => (
+              <button
+                aria-label={option.label}
+                aria-pressed={view === option.id}
+                className={cn(
+                  "flex size-[36px] items-center justify-center rounded-full transition-colors",
+                  view === option.id
+                    ? "bg-[#f3f3f3] text-(--ui-text-primary) dark:bg-[#414141]"
+                    : "text-(--ui-text-secondary) hover:bg-black/[0.05] dark:hover:bg-white/[0.10]",
+                )}
+                key={option.id}
+                onClick={() => chooseView(option.id)}
+                title={option.label}
+                type="button"
+              >
+                <option.icon size={18} strokeWidth={1.8} />
+              </button>
+            ))}
+          </span>
           {SHELVES.map((option) => (
             <button
               aria-pressed={shelf === option.id}
@@ -789,6 +907,30 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
       {openFolder === null && (visibleFolders.length > 0 || naming !== null) && (
         <section className="pb-[24px]">
           <h2 className={SECTION_TITLE}>Folders</h2>
+          {/* Naming forces the list: the inline name input is a table row, and a grid with an
+              invisible input would be a New-project door that silently eats the click. */}
+          {view === "grid" && naming === null ? (
+            <div className={CARD_GRID}>
+              {visibleFolders.map((folder) => (
+                <button
+                  className={cn(CARD, "h-[104px] justify-between")}
+                  key={folder.id}
+                  onClick={() => setOpenFolder(folder.id)}
+                  type="button"
+                >
+                  <span className="truncate text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                    {folder.name}
+                  </span>
+                  <span className="flex items-center justify-between">
+                    <FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} />
+                    <span className="text-[12px] text-(--ui-text-secondary)">
+                      {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
           <ul className="flex flex-col">
             {/* 🔴 A COUNT IS NOT A DATE, SO IT DOES NOT SIT IN THE DATE COLUMN. This printed
                 "3 items" in the same column position where all three shelves below print a
@@ -800,7 +942,9 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
             <li className={COLUMN_HEAD}>
               <span aria-hidden className="mr-[12px] w-[20px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
-              <span aria-hidden className={COL_MODIFIED} />
+              {/* A real Modified now — see `folderModified`: the latest change INSIDE, rolled up,
+                  which is what the word means for a container and what the reference prints. */}
+              <span className={COL_MODIFIED}>Modified</span>
               <span className={COL_COUNT}>Items</span>
               <span aria-hidden className={COL_ACTIONS} />
             </li>
@@ -809,7 +953,9 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                 <button className={cn(ROW, "w-full")} onClick={() => setOpenFolder(folder.id)} type="button">
                   <FolderIcon className={COL_ICON} size={20} strokeWidth={1.8} />
                   <span className={ROW_NAME}>{folder.name}</span>
-                  <span aria-hidden className={COL_MODIFIED} />
+                  <span className={cn(COL_MODIFIED, ROW_META)}>
+                    {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
+                  </span>
                   <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
                   <span aria-hidden className={COL_ACTIONS} />
                 </button>
@@ -845,6 +991,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               </li>
             )}
           </ul>
+          )}
         </section>
       )}
 
@@ -876,6 +1023,26 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No decks in this folder."
                   : "No decks yet. Ask Nemesis for flashcards in any conversation."}
           </p>
+        ) : view === "grid" ? (
+          <div className={CARD_GRID}>
+            {shownDecks.map((deck) => (
+              <button
+                aria-label={`Review ${deck.name}`}
+                className={cn(CARD, "h-[220px]")}
+                key={deck.id}
+                onClick={() => setReviewing(deck.id)}
+                type="button"
+              >
+                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                  {deck.name}
+                </span>
+                <span className="flex flex-1 items-center justify-center">
+                  <Layers className="text-(--ui-text-secondary)" size={28} strokeWidth={1.5} />
+                </span>
+                <span className="text-[12px] text-(--ui-text-secondary)">{when(deck.createdAt)}</span>
+              </button>
+            ))}
+          </div>
         ) : (
           <ul className="flex flex-col">
             {/* 🔴 THE COLUMN HEADER THE REFERENCE HAS AND THIS PAGE DID NOT. Third column is a
@@ -989,6 +1156,24 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No slide decks in this folder."
                   : "No slide decks yet. Ask Nemesis for a PowerPoint in any conversation."}
           </p>
+        ) : view === "grid" ? (
+          <div className={CARD_GRID}>
+            {shownSlides.map((row) => (
+              <a
+                className={cn(CARD, "h-[220px]", !row.canvasId && "pointer-events-none opacity-60")}
+                href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
+                key={row.assetId}
+              >
+                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                  {row.title}
+                </span>
+                <span className="flex flex-1 items-center justify-center">
+                  <MonitorPlay className="text-(--ui-text-secondary)" size={28} strokeWidth={1.5} />
+                </span>
+                <span className="text-[12px] text-(--ui-text-secondary)">{when(row.createdAt)}</span>
+              </a>
+            ))}
+          </div>
         ) : (
           <ul className="flex flex-col">
             {/* Two columns here, not three: a slide deck has no count worth a column, and the
@@ -1026,6 +1211,27 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No documents in this folder."
                   : "No documents yet. Ask Nemesis for a summary or a write-up in any conversation."}
           </p>
+        ) : view === "grid" ? (
+          <div className={CARD_GRID}>
+            {shownNotes.map((note) => (
+              <button
+                className={cn(CARD, "h-[220px]")}
+                key={note.path}
+                onClick={() =>
+                  setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })
+                }
+                type="button"
+              >
+                <span className="line-clamp-2 text-[14px] leading-[20px] font-medium text-(--ui-text-primary)">
+                  {note.title}
+                </span>
+                <span className="flex flex-1 items-center justify-center">
+                  <NotebookText className="text-(--ui-text-secondary)" size={28} strokeWidth={1.5} />
+                </span>
+                <span className="text-[12px] text-(--ui-text-secondary)">{when(note.updatedAt)}</span>
+              </button>
+            ))}
+          </div>
         ) : (
           <ul className="flex flex-col">
             <li className={COLUMN_HEAD}>

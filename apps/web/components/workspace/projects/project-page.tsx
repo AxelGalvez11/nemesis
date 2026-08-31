@@ -30,13 +30,13 @@
 //     same word the sidebar, the Library and `/projects` already use. The tab SHAPE (pill size,
 //     the two-tab layout, every measurement) is copied exactly; only the label changes to say
 //     what we actually have.
-//   * THE ROW'S "SNIPPET" IS NOT A CONTENT PREVIEW. ChatGPT's second line is the chat's last
-//     message, which costs nothing to show because the row already carries the whole thread.
-//     `CanvasSummary` (`listCanvases`) does not — a real preview would mean loading every full
-//     canvas just to list them, the same N+1 the Library avoids by reading only what it already
-//     has. So line two shows the one real thing a summary carries about WHAT is inside — the
-//     course title, when a canvas built one — and a plain, honest label otherwise. It is real
-//     data or it is nothing; it is never an invented sentence standing in for content nobody read.
+//   * THE ROW'S SNIPPET IS THE REAL TAIL OF THE CONVERSATION NOW. The first version of this
+//     comment refused a preview because it would have meant loading every full canvas (the N+1
+//     the Library avoids). The N+1 is gone without the load: `listCanvases` extracts the last
+//     moment's `assistantText` INSIDE its own SELECT (`document->moments->-1->>assistantText`),
+//     so the summary carries what a ChatGPT row carries — its last message — for free. When the
+//     last moment holds no assistant text, line two falls back to the course title and then to a
+//     plain label; it is still never an invented sentence.
 //   * SOURCES IS A HONEST EMPTY TAB. Nemesis has no per-project source list — a canvas's sources
 //     live on that canvas, not indexed by folder, and the Library's own "Documents" shelf is
 //     Nemesis-generated notes, a different object from uploaded material entirely (see
@@ -52,10 +52,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUp, Folder as FolderIcon, MoreHorizontal } from "lucide-react";
+import { ArrowUp, MoreHorizontal } from "lucide-react";
 
+import { Codicon } from "@/components/desktop-ui/codicon";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
+import { ProjectCustomizeDialog } from "@/components/workspace/shell/project-customize-dialog";
 import {
   CANVASES_CHANGED_EVENT,
   deleteFolder,
@@ -65,6 +67,7 @@ import {
   renameFolder,
   saveCanvas,
   setCanvasFolder,
+  setFolderPinned,
   type CanvasSummary,
   type Folder,
 } from "@/lib/learn/canvas-store";
@@ -105,22 +108,22 @@ const ROWS_GAP_PX = 28;
 /** Reference: a row is 40px tall — exactly two 20px lines stacked with no gap between them. */
 const ROW_H_PX = 40;
 /**
- * Reference: **25px between one row's bottom and the next row's top**, so title-to-title pitch is
- * 65px.
+ * Reference, RE-MEASURED 2026-08-30 in the owner's Chrome: the rows are separated by a hairline
+ * divider now (rgba(255,255,255,0.05) dark / rgba(0,0,0,0.05) light), with 13px of padding on
+ * each side of the 40px content block — title-to-title pitch 66-67px, confirmed on a six-chat
+ * project.
  *
- * 🔴 THIS NUMBER WAS MISSING FROM THE FIRST SPEC, AND THE REASON IS WORTH KEEPING. The project I
- * measured the row shape from held exactly ONE chat, so there was no second row to measure a gap
- * against — the spec handed over a row height and silently no rhythm, and the page shipped its
- * rows nearly touching: two 40px blocks of two lines each, stacked, read as one four-line block
- * rather than as two rows. Re-measured on a project with two chats: gap 25, pitch 65, confirmed
- * both by the row boxes and independently by title-to-title distance.
+ * 🔴 THE 2026-08-26 SPEC SAID "no divider", AND IT WAS TRUE THEN — the reference changed under
+ * us (its project list now draws the same hairline its Library table does). This is why the
+ * measurement carries a date: a 1:1 page is 1:1 with a moving target, and the honest move when
+ * the target moves is to re-measure and say so, not to defend a stale number.
  *
- * 🔴 A GAP ON THE LIST, NOT PADDING ON THE ROW. The row's own box is 40px in the reference and the
- * hover fill is drawn around it, so growing the row to 65px would put 12px of dead hover above and
- * below every title. `flex flex-col` with a `gap` keeps the row exactly 40 and puts the air
- * between rows, where the reference puts it.
+ * 🔴 PADDING ON THE LIST ITEM, DIVIDER ON THE LIST ITEM, HOVER ON THE ROW. The 40px content box
+ * keeps its own hover fill (dead hover above the title was the reason the old gap lived on the
+ * list); the li carries the air and the hairline, so the divider spans the full column the way
+ * the reference's does.
  */
-const ROW_GAP_PX = 25;
+const ROW_PAD_Y_PX = 13;
 
 /** 116 + 36 + 24 = 176, the reference's own measured composer top. */
 const COMPOSER_TOP_PX = TITLE_TOP_PX + HEADER_H_PX + COMPOSER_GAP_PX;
@@ -172,6 +175,8 @@ export function ProjectPage({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [starting, setStarting] = useState(false);
+  /** The folder whose look/instructions dialog is open, or null — same dialog the sidebar opens. */
+  const [customizing, setCustomizing] = useState<Folder | null>(null);
 
   const refresh = useCallback(async () => {
     if (preview) {
@@ -283,7 +288,17 @@ export function ProjectPage({
           ) : (
             <>
               <header className="flex items-center gap-[10px]" style={{ height: HEADER_H_PX }}>
-                <FolderIcon aria-hidden className="shrink-0 text-(--ui-text-secondary)" size={24} strokeWidth={1.8} />
+                {/* 🔴 THE PROJECT'S OWN MARK, NOT A GENERIC FOLDER. Re-measured 2026-08-30: the
+                    reference draws the project's own icon in its own colour at 32px beside the
+                    28px title ("school" wears its blue mortar-board on its page, not a folder).
+                    `buildProjects` carries icon/colour through `ProjectNode` for exactly this. */}
+                <Codicon
+                  aria-hidden
+                  className={cn("shrink-0", !project.color && "text-(--ui-text-secondary)")}
+                  name={project.icon ?? "folder"}
+                  size="32px"
+                  style={project.color ? { color: project.color } : undefined}
+                />
                 {/* 🔴 `self-start` ON THE NAME ALONE, NOT THE WHOLE ROW. The icon and the overflow
                     button both want to sit centred in the 36px row (`items-center`, above); the
                     name wants its OWN top pinned to the measured y=116 exactly. A 34px line
@@ -317,7 +332,10 @@ export function ProjectPage({
                   </h1>
                 )}
 
-                {/* 🔴 NO SHARE BUTTON — see the header comment. `…` alone, opening Rename/Delete. */}
+                {/* 🔴 NO SHARE BUTTON — see the header comment. The ⋯ carries what the
+                    reference's page ⋯ carries (measured 2026-08-30: Project settings, Pin
+                    project) plus the Rename/Delete the reference keeps inside its settings
+                    modal — ours are menu rows because our settings dialog does not rename. */}
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     aria-label={`${project.name} options`}
@@ -326,8 +344,28 @@ export function ProjectPage({
                     <MoreHorizontal aria-hidden size={20} strokeWidth={1.8} />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() =>
+                        setCustomizing({
+                          color: project.color,
+                          icon: project.icon,
+                          id: project.id,
+                          instructions: project.instructions,
+                          name: project.name,
+                          parentId: null,
+                        })
+                      }
+                    >
+                      Project settings
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void setFolderPinned(userId, project.id, !project.pinnedAt)}>
+                      {project.pinnedAt ? "Unpin project" : "Pin project"}
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setRenaming(project.name)}>Rename</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => void removeProject()}>Delete</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => void removeProject()} variant="destructive">
+                      Delete
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </header>
@@ -388,7 +426,7 @@ export function ProjectPage({
                 ))}
               </div>
 
-              <ul className="flex flex-col" style={{ gap: ROW_GAP_PX, marginTop: ROWS_GAP_PX }}>
+              <ul className="flex flex-col" style={{ marginTop: ROWS_GAP_PX - ROW_PAD_Y_PX }}>
                 {tab === "canvases" ? (
                   project.canvases.length === 0 ? (
                     <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>Nothing filed here yet.</p>
@@ -407,6 +445,12 @@ export function ProjectPage({
           )}
         </div>
       </div>
+      <ProjectCustomizeDialog
+        folder={customizing}
+        onClose={() => setCustomizing(null)}
+        onSaved={() => void refresh()}
+        userId={userId}
+      />
     </main>
   );
 }
@@ -420,7 +464,10 @@ export function ProjectPage({
  */
 function CanvasRow({ canvas, onOpen }: { canvas: CanvasSummary; onOpen: (id: string) => void }) {
   return (
-    <li>
+    <li
+      className="border-b border-b-black/[0.05] dark:border-b-white/[0.05]"
+      style={{ paddingBottom: ROW_PAD_Y_PX, paddingTop: ROW_PAD_Y_PX }}
+    >
       {/* 🔴 NO RADIUS, EVEN ON HOVER — the measured spec says so explicitly, and the /projects
           list page's own hover (`ROW_HOVER`) is square-cornered for the same reason: a rounded
           hover on a full-width band reads as a button, and this is a row in a list. */}
@@ -432,14 +479,33 @@ function CanvasRow({ canvas, onOpen }: { canvas: CanvasSummary; onOpen: (id: str
       >
         <span className="flex min-w-0 flex-1 flex-col justify-center">
           <span className={cn("truncate", ROW_NAME_TEXT)}>{canvas.title || "Untitled"}</span>
-          {/* See the header comment: a real fact (the course this canvas built) or a plain,
-              honest label — never a fabricated content preview. */}
-          <span className={cn("truncate", ROW_META_TEXT)}>{canvas.courseTitle || "Canvas"}</span>
+          {/* See the header comment: the conversation's real tail, then the course title, then a
+              plain label — never an invented sentence. */}
+          <span className={cn("truncate", ROW_META_TEXT)}>{snippet(canvas)}</span>
         </span>
         <span className={cn("shrink-0", ROW_META_TEXT)}>{when(canvas.updatedAt)}</span>
       </button>
     </li>
   );
+}
+
+/**
+ * Line two of a row: the last thing Nemesis said, flattened to one plain line. Markdown survives
+ * in the stored moment (a reply can open with a ```mermaid fence), and a snippet that prints
+ * fence syntax reads as a bug — so code fences drop to their bare text, whitespace collapses,
+ * and list/heading markers at the start go. The fallbacks are the old honest ones.
+ */
+function snippet(canvas: CanvasSummary): string {
+  const raw = canvas.preview?.trim();
+  if (raw) {
+    const flat = raw
+      .replace(/```[a-z]*\n?/gi, " ")
+      .replace(/[`*_#>]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (flat) return flat.slice(0, 160);
+  }
+  return canvas.courseTitle || "Canvas";
 }
 
 /** Same date rendering `projects-page.tsx` and `library-outputs.tsx` both already use. */

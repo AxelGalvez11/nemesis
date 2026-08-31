@@ -115,7 +115,10 @@ test("🔴 the row hover is the reference's `--interactive-bg-secondary-hover`, 
 
 test("🔴 the leading icon is 20x20 on `--icon-secondary`, and the name is 14px/400", () => {
   assert.equal(measured("ICON_PX"), 20);
-  assert.match(page, /size=\{ICON_PX\}/);
+  // A Codicon now (the icon font takes a fontSize string), wearing the project's OWN icon and
+  // colour so the row, the sidebar and the project page all paint one identity.
+  assert.match(page, /size=\{`\$\{ICON_PX\}px`\}/);
+  assert.match(page, /name=\{project\.icon \?\? "folder"\}/, "the row fell back to a generic glyph for customized projects");
   assert.match(page, /const NAME_TEXT = "text-\[14px\] leading-\[20px\] font-normal text-\(--ui-text-primary\)";/);
   assert.match(page, /const META_TEXT = "text-\[14px\] leading-\[20px\] font-normal text-\(--ui-text-secondary\)";/);
 });
@@ -289,7 +292,8 @@ test("🔴 the page sits on the reference's #fcfcfc ground, which is our own sid
 // sidebar-opens-it assertion moved WITH the canvas rows themselves: `project-page.test.ts` is
 // where `/learn?c=` now lives, because `projects-page.tsx` no longer renders a canvas row at all.
 test("🔴🔴 a project row navigates to its own page — the ChatGPT behaviour this page didn't have", () => {
-  assert.match(page, /onOpen: \(id: string\) => void; project: ProjectNode/);
+  assert.match(page, /onOpen: \(id: string\) => void;/);
+  assert.match(page, /project: ProjectNode;/);
   assert.match(page, /onOpen=\{\(id\) => router\.push\(`\/projects\/\$\{id\}`\)\}/);
   // No leftover toggle machinery: a click either navigates or it expands, never both.
   assert.ok(!/aria-expanded/.test(page), "the old expand/collapse state is still wired up alongside navigation");
@@ -344,14 +348,16 @@ test("🔴 work inside a SUB-project counts as work on the project", () => {
   assert.equal(projects[0]?.children[0]?.id, "child");
 });
 
-test("🔴🔴 Pinned means a canvas the learner really pinned, at any depth", () => {
-  // `folders` has no `pinned_at`; only `learning_canvases` does. So the pill filters on something
-  // that exists rather than on a flag invented in the browser that the sidebar could not see.
+test("🔴🔴 Pinned means a project the learner really pinned — folders.pinned_at, since 20260830T40", () => {
+  // This asserted the OPPOSITE until 2026-08-30: with no `folders.pinned_at`, "Pinned" filtered
+  // on holds-a-pinned-canvas, the best real fact available. The migration exists now, the
+  // sidebar pins projects with it, and a filter named like the reference's must mean what the
+  // reference's means: the project's own pin, not its contents'.
   const projects = buildProjects(
-    [folder("a"), folder("deep", { parentId: "a" }), folder("b")],
+    [folder("a", { pinnedAt: "2026-08-02T00:00:00.000Z" }), folder("deep", { parentId: "a" }), folder("b")],
     [
-      canvas({ folderId: "deep", id: "p", pinnedAt: "2026-08-01T00:00:00.000Z" }),
-      canvas({ folderId: "b", id: "q", pinnedAt: null }),
+      // A pinned canvas inside an UNPINNED project must no longer light the filter…
+      canvas({ folderId: "b", id: "p", pinnedAt: "2026-08-01T00:00:00.000Z" }),
     ],
   );
   const pinned = visibleProjects(projects, "pinned", "");
@@ -359,6 +365,8 @@ test("🔴🔴 Pinned means a canvas the learner really pinned, at any depth", (
     pinned.map((project) => project.id),
     ["a"],
   );
+  // …while holdsPinned stays computed for readers that DO mean the contents.
+  assert.equal(projects.find((node) => node.id === "b")?.holdsPinned, true);
   assert.equal(visibleProjects(projects, "all", "").length, 2);
 });
 

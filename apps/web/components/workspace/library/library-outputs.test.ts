@@ -88,10 +88,10 @@ const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^
 const OUTPUTS = strip(readFileSync(new URL("./library-outputs.tsx", import.meta.url), "utf8"));
 
 test("🔴🔴 the 'Folders' section draws `visibleFolders`, not the raw `folders` state", () => {
-  assert.match(
-    OUTPUTS,
-    /const visibleFolders = useMemo\(\(\) => folders\.filter\(\(folder\) => nonEmptyFolders\.has\(folder\.id\)\), \[folders, nonEmptyFolders\]\);/,
-  );
+  // The memo grew the reference's recency sort 2026-08-30 (folders order by what changed inside
+  // them, newest first); the invariant here is unchanged — it still filters on nonEmptyFolders.
+  assert.match(OUTPUTS, /folders\s*\.filter\(\(folder\) => nonEmptyFolders\.has\(folder\.id\)\)/);
+  assert.match(OUTPUTS, /folderModified\.get\(b\.id\)/, "the Folders section lost its recency ordering");
   assert.match(OUTPUTS, /\{visibleFolders\.map\(\(folder\) => \(/, "the row list reverted to mapping the raw folders array");
   assert.match(
     OUTPUTS,
@@ -110,4 +110,32 @@ test("🔴 the move-to-folder menu and the open-folder breadcrumb keep the FULL 
     /folders\.find\(\(folder\) => folder\.id === openFolder\)\?\.name \?\?\s*"Library"/,
     "the open-folder breadcrumb stopped reading the full folders list",
   );
+});
+
+test("🔴 the title row's New is a menu of real doors, and the view toggle persists (2026-08-30)", () => {
+  // Measured in the owner's Chrome: the reference's "New" pill opens a menu (Image / Note / … /
+  // Folder / Upload files), and a two-button grid/list toggle sits at the filter row's right
+  // edge. Ours offers the two things a learner can genuinely start from here — a project, and a
+  // canvas (where every artifact this page lists is actually made). Menu rows that AUTHOR a
+  // deck, note or slides here would be §38/cards-are-output-only violations dressed as menu
+  // items, so their absence is asserted too.
+  assert.match(OUTPUTS, />New project</, "the New menu lost its project door");
+  assert.match(OUTPUTS, />New canvas</, "the New menu lost its canvas door");
+  assert.ok(!/>New deck<|>New note<|>New document<|>New slides</.test(OUTPUTS), "the New menu grew an authoring door");
+  assert.match(OUTPUTS, /const VIEW_KEY = "nemesis\.library\.v1\.view";/, "the view choice no longer persists");
+  // Three 240px cards close on the 768 column: 240·3 + 24·2 = 768, the same closing-sum
+  // discipline the list row documents.
+  assert.match(OUTPUTS, /grid-cols-3 gap-\[24px\]/, "the grid left the measured three-across layout");
+  assert.match(OUTPUTS, /h-\[104px\]/, "folder cards left the measured 104px");
+  // Naming forces the list: a grid with an invisible inline input would eat the New-project click.
+  assert.match(OUTPUTS, /view === "grid" && naming === null/, "the naming flow can now land in a grid with no input");
+});
+
+test("🔴 a folder's Modified is a real rollup, and the folders order by it (2026-08-30)", () => {
+  // The empty cell was honest when the only candidate was a borrowed createdAt; the rollup —
+  // latest change of anything filed inside, walked up ancestors like foldersWithContent — is
+  // what "Modified" means for a container, and it is what the reference prints and sorts by.
+  assert.match(OUTPUTS, /const folderModified = useMemo/, "the rollup is gone");
+  assert.match(OUTPUTS, /notes\.forEach\(\(row\) => bump\(row\.folderId, row\.updatedAt\)\)/, "notes stopped feeding the rollup");
+  assert.match(OUTPUTS, /folderModified\.has\(folder\.id\) \? when\(folderModified\.get\(folder\.id\) \?\? ""\) : ""/, "an untouched folder would print a false date");
 });
