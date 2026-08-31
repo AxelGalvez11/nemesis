@@ -2,12 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import {
-  CANVAS_VIEW_STORAGE_KEY,
-  DEFAULT_CANVAS_VIEW,
-  canvasViewAction,
-  otherCanvasView,
-} from "@/lib/learn/canvas-view";
 
 // 🔴🔴🔴 NEMESIS IS A CHATBOT, AND THE CANVAS IS A WAY OF LOOKING AT IT.
 //
@@ -40,14 +34,20 @@ const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^
 const CANVAS = strip(read("./learning-canvas.tsx"));
 const TURN = read("./canvas-thread-turn.tsx");
 const TURN_CODE = strip(TURN);
-const HOOK = strip(read("./use-canvas-view.ts"));
-const MODEL = strip(readFileSync(new URL("../../../lib/learn/canvas-view.ts", import.meta.url), "utf8"));
 
 // ── the chat is the front door ──────────────────────────────────────────────────────────────
 
-test("🔴🔴🔴 the chat is the default, and the Canvas is the option", () => {
-  // The owner's reversal, in one value. Calibration: put `answer` back and this reddens alone.
-  assert.equal(DEFAULT_CANVAS_VIEW, "conversation");
+test("🔴🔴🔴 the chat is the ONLY view — there is no second one to be stuck in", () => {
+  // Owner, 2026-08-30: *"why is latest output option even there in the first place? that seems
+  // unnecessary."* The one-answer view, its toggle and `lib/learn/canvas-view.ts` are deleted.
+  // This is the terminal form of a three-report defect: first the view existed with a stored pin
+  // (three "history is missing" reports), then the pin was killed, and hours later the owner cut
+  // the view itself. Calibration: reintroduce a `useCanvasView` import, a `view ===` comparison,
+  // or the storage key and this reddens alone.
+  assert.ok(!/useCanvasView|use-canvas-view/.test(CANVAS), "the second view is back");
+  assert.ok(!/view === "conversation"|view === "answer"/.test(CANVAS), "something is comparing a view again");
+  assert.ok(!/nemesis\.canvas\.view/.test(CANVAS), "the stored view pin is back");
+  assert.match(CANVAS, /const threadOpen = !viewing;/, "the thread is gated on something beside a rewind");
 });
 
 test("🔴🔴 the thread is in the SAME scroller as the live answer, not an overlay over it", () => {
@@ -194,75 +194,16 @@ test("🔴🔴 the newest stored turn is held back ONLY when the session put it 
   assert.match(CANVAS, /const liveShowsLast = canvas\.blocks\.length === 0;/, "the hold-back is unconditional again");
 });
 
-// ── the choice lasts while you look, and nothing else ───────────────────────────────────────
-//
-// 🔴🔴🔴 THE STORED VIEW IS DEAD, AND THESE TESTS ARE WRITTEN SO RESTORING IT REDDENS THEM.
-// Persisting the toggle produced the same owner report three times over four days ("chat mode not
-// showing conversation history"): one click of "Focus on the latest output" pinned `answer` for
-// every canvas on every visit, invisibly, while the thread worked the whole time. Reproduced on
-// screen 2026-08-30 — four recorded turns, none drawn. The account lives on
-// `CANVAS_VIEW_STORAGE_KEY`'s doc; what follows is the enforcement.
-
-test("🔴🔴🔴 every canvas opens on the conversation, because nothing stored can say otherwise", () => {
-  // Both halves matter. The default IS the conversation — and the hook has no way to start
-  // anywhere else, because its state initialises from the constant and nothing reads storage.
-  assert.equal(DEFAULT_CANVAS_VIEW, "conversation");
-  assert.match(HOOK, /useState<CanvasView>\(DEFAULT_CANVAS_VIEW\)/, "the view no longer starts on the default");
-  assert.ok(!/getItem/.test(HOOK), "the hook is reading a stored view again — the invisible pin is back");
-  assert.ok(!/readCanvasView/.test(HOOK) && !MODEL.includes("readCanvasView"), "the stored-view reader has been rebuilt");
-});
-
-test("🔴🔴 the toggle is never persisted, anywhere", () => {
-  // To the browser: one click must not outlive the visit. To the canvas: merely looking at a
-  // canvas must not modify it (the History Rail's own rule for `rewound`).
-  assert.ok(!/setItem/.test(HOOK), "the toggle writes to storage again — one click will outlive the visit");
-  assert.ok(!/update\(\{[^}]*view/.test(CANVAS), "the view is being written into the canvas document");
-  assert.ok(!MODEL.includes("canvas.document"), "the view model reaches into the canvas document");
-});
-
-test("🔴🔴 the old pin is deleted on mount, and that is the ONE storage access left", () => {
-  // Browsers that ran the persisting build still hold `answer` under the key. Leaving it there
-  // invites some future reader to trust it; removal heals every one of them, including the three
-  // reports' own browser.
-  assert.match(HOOK, /removeItem\(CANVAS_VIEW_STORAGE_KEY\)/, "the healer is gone and stale pins live for ever");
-  assert.equal((HOOK.match(/window\.localStorage/g) ?? []).length, 1, "a second storage access appeared — this feature is allowed exactly one, the healer");
-  assert.match(MODEL, new RegExp(`"${CANVAS_VIEW_STORAGE_KEY.replace(/\./g, "\\.")}"`), "the key moved, so the healer deletes the wrong thing");
-});
-
-test("🔴🔴 the one storage access is guarded, because localStorage THROWS", () => {
-  // Not "returns null" — throws, in a private window, with site data blocked, and inside a
-  // cross-origin frame. An unguarded touch takes out the product's front door to tidy a dead key.
-  const touches = (HOOK.match(/window\.localStorage/g) ?? []).length;
-  const guards = (HOOK.match(/\btry \{/g) ?? []).length;
-  assert.ok(touches > 0, "the healer no longer touches storage");
-  assert.equal(guards, touches, `${touches} storage accesses, ${guards} guards — one can take the Canvas down`);
-});
-
-// ── the model, as a pure function ───────────────────────────────────────────────────────────
-
-test("the switch is symmetric", () => {
-  assert.equal(otherCanvasView("answer"), "conversation");
-  assert.equal(otherCanvasView("conversation"), "answer");
-});
-
-test("🔴 the control's words name the DESTINATION, never where you already are", () => {
-  assert.match(canvasViewAction("answer"), /whole conversation/i);
-  assert.match(canvasViewAction("conversation"), /focus/i);
-  assert.notEqual(canvasViewAction("answer"), canvasViewAction("conversation"));
-});
-
-test("🔴 the view switch survives inside the options menu, wording intact", () => {
-  // 2026-08-30: the switch moved into the `⋯` — its own shipped comment prescribed exactly this
-  // ("if the row is now too busy, this is the icon to move, not the feature to cut"), and the
-  // owner's "only show up when they are actually needed" made the row too busy. What must not
-  // move: `canvasViewAction` still writes the words, so the row names the DESTINATION.
+test("🔴 the options menu did not survive anywhere, and neither did its rows' machinery", () => {
+  // Owner, 2026-08-30, pointing at the open panel: *"remove this entire panel."* Every row's
+  // feature died with it — the tombstone in canvas-controls.tsx carries the words. This pins the
+  // ABSENCES a partial revert would resurrect first.
   const controls = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
-  const at = controls.indexOf("export function OptionsMenu");
-  assert.ok(at > 0, "the options menu is gone");
-  const body = controls.slice(at);
-  assert.match(body, /canvasViewAction\(view\)/, "the row no longer writes its wording through canvasViewAction");
-  assert.match(body, /label=\{action\}/, "the row's label is not the action's own words");
-  assert.match(body, /onToggleView\(\)/, "the row does not actually switch the view");
+  const header = strip(readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8"));
+  assert.ok(!/export function OptionsMenu/.test(controls), "the options menu is back");
+  assert.ok(!/OptionsMenu|MinimapControl/.test(header.replace(/import[^;]+;/g, "")), "the header mounts a dead control again");
+  assert.ok(!/LEARNING_STYLE|LearningStyle/.test(controls), "the teaching-style picker is back");
+  assert.ok(!/canvasViewAction|CanvasView\b/.test(controls), "the view switch is back in the controls");
 });
 
 test("🔴🔴 every control in the floating strip can actually be clicked", () => {
@@ -277,12 +218,18 @@ test("🔴🔴 every control in the floating strip can actually be clicked", () 
   assert.match(controls.slice(at, at + 200), /pointer-events-auto/, "the header controls are dead again");
 });
 
-test("🔴 the glyph exists in the icon font", () => {
-  // A `Codicon` whose name is not in the font still measures, still takes clicks, and draws nothing.
-  const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
-  const at = controls.indexOf("export function OptionsMenu");
-  const named = /<Codicon name="([a-z-]+)"/.exec(controls.slice(at));
-  assert.ok(named, "the switch draws no glyph");
+test("🔴 every glyph on the header's surviving controls exists in the icon font", () => {
+  // A `Codicon` whose name is not in the font still measures, still takes clicks, and draws
+  // nothing. This used to check the one glyph inside the `⋯` menu; the menu is gone
+  // (2026-08-30), so it now sweeps every named glyph in the two files that draw this corner —
+  // strictly wider than what it replaces.
   const css = readFileSync(new URL("../../../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url), "utf8");
-  assert.ok(css.includes(`.codicon-${named[1]}:before`), `codicon-${named[1]} is not in the font`);
+  for (const file of ["./canvas-controls.tsx", "./course-map.tsx"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    const names = [...source.matchAll(/<Codicon name="([a-z-]+)"/g)].map((hit) => hit[1]);
+    assert.ok(names.length > 0, `${file} draws no named glyph at all`);
+    for (const name of names) {
+      assert.ok(css.includes(`.codicon-${name}:before`), `codicon-${name} (${file}) is not in the font`);
+    }
+  }
 });

@@ -11,65 +11,34 @@
 // Each opens a panel that also floats. A panel is an overlay: it closes on outside-click and on
 // Escape, and it never pushes the document sideways.
 //
-// What each one is FOR is the part worth keeping straight:
+// What each one is FOR is the part worth keeping straight (owner, 2026-08-30, cutting the row
+// to two: *"remove this entire panel … remove the 'progress' map"*):
 //
 //   ▣  Sources & Outputs   what went IN, and what Nemesis made
-//   ⊞  Objectives          what Nemesis is trying to do with this learner
-//   ⛶  Territory (Minimap) which part of the material the learner has chosen to work on (§H)
-//   ⋯  Session             renaming, filing, deleting — never learning actions (§48)
+//   ⌥  Course map          the course's outline and mastery marks — lives in course-map.tsx
 //
-// 🔴 OBJECTIVES AND TERRITORY LOOK LIKE THEY OVERLAP. THEY DO NOT SHARE A SUBSTRATE.
-// `ObjectivesControl` reads `canvas.concepts` / `weakConceptIds` / `correctedConceptIds` — the
-// legacy six-stage machine's own fields, populated by a generated lesson. `MinimapControl` reads
-// `PolicyRuntime.territories`, built from `canvas-focus.ts` over durable knowledge objects — the
-// compositional Canvas's substrate. A canvas running the compositional runtime has empty
-// `concepts` (so `ObjectivesControl` disables itself) and a real `territories` list; a canvas
-// still on the six-stage machine has the reverse. They are not two views of one truth; they are
-// two different truths that happen to sit in the same corner. Do not "unify" them here — ask
-// Brain, this is a substrate question, not a presentation one.
+// Objectives, Territory (Minimap) and the `⋯` options menu all lived here; their tombstones
+// below say where each went and why. `SessionControl` stays exported and unrendered (its own
+// note explains that), which is why `MenuItem` is still in the file.
 
 import { Children, useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  DEFAULT_LEARNING_STYLE,
-  LEARNING_STYLES,
-  LEARNING_STYLE_STORAGE_KEY,
-  readLearningStyle,
-  type LearningStyle,
-} from "@nemesis/shared";
 
 import { useAuth } from "@/components/AuthProvider";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { deckDesign } from "@/lib/export/deck-designs";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
-import { isFocused, WHOLE_CANVAS, type FocusScope } from "@/lib/learn/canvas-focus";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
-import { currentObjectiveLabel, objectiveMap, type ObjectiveState } from "@/lib/learn/canvas-objectives";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
-import { canvasViewAction, type CanvasView } from "@/lib/learn/canvas-view";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { OutputPreview } from "./output-preview";
 import { SourcePreview } from "./source-preview";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
-import type { CanvasCoverage } from "@/lib/learn/knowledge-coverage";
-import type { LearnerEvidence } from "@/lib/learn/learner-evidence";
 import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
-import type { PlanTerritory } from "@/lib/learn/curriculum-plan";
-import { type VoiceMode } from "@/lib/learn/voice-preferences";
-import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 import { cn } from "@/lib/utils";
 
-import {
-  orderedTerritories,
-  recommendedTerritoryLabel,
-  sourceDisclosure,
-  territoryMark,
-  type Territory,
-  type MarkedTerritory,
-  type TerritoryMark,
-} from "./canvas-minimap";
 
 /** Close on outside click and Escape. Shared so the three panels cannot drift apart in how they
  *  dismiss — an overlay that only closes one of the two ways feels broken in a way people
@@ -753,347 +722,16 @@ function OutputRow({
 // not a control."* `makeDeliverable` itself is untouched and still reached from the composer, so
 // that deleted a door and not a feature. `outputs-have-no-make-buttons.test.ts` holds the absence.
 
-// ---------------------------------------------------------------- objectives
-
-/** Five states that have to be told apart at a glance and at 7px.
- *
- *  🔴 `needs_evidence` is amber rather than a lighter grey. The first version used grey, and
- *  "you have shown this" and "this is worth checking again" came out as two greys one shade
- *  apart — a distinction that survives a code review and not a glance. Amber is also what the
- *  diagnosis on the very same screen already uses for what needs work, so the map now agrees
- *  with the panel beside it instead of inventing a second vocabulary. */
-const DOT: Record<ObjectiveState, string> = {
-  demonstrated: "bg-(--ui-text-secondary)",
-  corrected: "bg-(--ui-accent)",
-  current: "bg-(--ui-text-primary) ring-2 ring-(--ui-text-primary)/25",
-  needs_evidence: "bg-amber-500/80",
-  untouched: "border border-(--ui-stroke-primary)",
-};
-
-/** Said in words on hover, because a legend of five glyphs is a thing nobody reads. */
-const MEANING: Record<ObjectiveState, string> = {
-  demonstrated: "You've shown this",
-  corrected: "You fixed this after getting it wrong",
-  current: "Working on this now",
-  // 🔴 Never "forgotten". We know what we have not seen, not what they have lost (§35).
-  needs_evidence: "Worth checking again",
-  untouched: "Not covered yet",
-};
-
-// 🔴 `SlidesOutputRow` IS GONE, AND ITS DESIGN PICKER WITH IT. The row it drew was the last
-// artifact row that navigated away, replaced on 2026-08-25 by the side panel; what remained was a
-// component nothing rendered. The picker is not lost — the full deck page carries its own, which is
-// where twenty designs belong and where the panel links out to.
-
-function ObjectivesPanel({
-  canvas,
-  activeTaskId,
-}: {
-  canvas: LearningCanvas;
-  activeTaskId?: string | null;
-}) {
-  const objectives = objectiveMap(canvas, activeTaskId);
-  const focus = currentObjectiveLabel(canvas, activeTaskId);
-
-  if (objectives.length === 0) {
-    return (
-      <p className="px-2 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
-        Nothing to work on yet.
-      </p>
-    );
-  }
-
-  return (
-    <>
-          {objectives.map((objective) => (
-            <div className="flex items-start gap-2.5 px-2 py-1.5" key={objective.id} title={MEANING[objective.state]}>
-              <span
-                aria-hidden
-                className={cn("mt-[6px] h-[7px] w-[7px] shrink-0 rounded-full", DOT[objective.state])}
-              />
-              <span
-                className={cn(
-                  "text-[length:var(--canvas-text-small)] leading-snug",
-                  objective.state === "untouched" ? "text-(--ui-text-quaternary)" : "text-(--ui-text-secondary)",
-                  objective.state === "current" && "text-(--ui-text-primary)",
-                )}
-              >
-                {objective.label}
-                {/* The state in words, for the one row where it matters most.
-                    🔴 A PERIOD, WAS AN EM DASH (Brain 2026-08-13 ruled it exempt — `sr-only` is
-                    never rendered, so it read as "not on the Canvas" under the old "no em dashes
-                    on the Canvas" framing — but that same ruling named the fix in advance: "make it
-                    a period: a period gets the same pause more reliably across screen readers than
-                    an em dash does." Contract rule 2's copy guard (2026-08-15) scans learner-facing
-                    strings regardless of `sr-only`, since a screen reader still speaks this text to
-                    a learner even though their eyes never do — so the pre-authorised fix is taken
-                    now rather than carved out as a standing exception. */}
-                <span className="sr-only">. {MEANING[objective.state]}</span>
-              </span>
-            </div>
-          ))}
-
-      {/* 🔴 No percentage, here or anywhere (§9). */}
-      {focus && (
-        <p className="mt-1.5 border-t border-(--ui-stroke-tertiary) px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
-          Nemesis is currently working on <span className="text-(--ui-text-secondary)">{focus}</span>.
-        </p>
-      )}
-    </>
-  );
-}
-
 // ---------------------------------------------------------------- territory (minimap)
-
-/** Dots for the two marks a territory can carry. `null` (no evidence yet) renders no dot at all —
- *  see canvas-minimap.ts. Reusing `ObjectivesControl`'s exact palette for the same underlying
- *  facts (amber for "worth another look", the same fill for "shown"), so the app is not speaking
- *  two colour vocabularies about one thing on two panels a click apart. */
-const TERRITORY_DOT: Record<TerritoryMark, string> = {
-  developing: "bg-amber-500/80",
-  established: "bg-(--ui-text-secondary)",
-};
-
-/** Said in words on hover — the same restraint `ObjectivesControl` uses, and its exact vetted
- *  copy for the states that mean the same thing. 🔴 NEITHER WORD IMPLIES FINISHED (§18/M1): a
- *  correct retrieval makes knowledge better established, not permanently done, so this stays an
- *  observation ("you've shown this") rather than a completion claim ("done" / a checkmark). */
-const TERRITORY_MEANING: Record<TerritoryMark, string> = {
-  developing: "Worth checking again",
-  established: "You've shown this",
-};
-
-/** §H: a way to say "work on this part of the material", nothing more. Selecting a row calls
- *  `setFocus` with a `FocusScope` and NOTHING else — no operation, no difficulty, no mode ever
- *  crosses this boundary (H6). See `canvas-minimap.ts` for every derivation used here; this
- *  component only lays them out. */
-export function MinimapControl({
-  territories,
-  plan = null,
-  planTitle = null,
-  focus,
-  setFocus,
-  decidedObjectiveKey,
-  outcome,
-  coverage,
-  evidence,
-}: {
-  territories: readonly Territory[];
-  /**
-   * The canvas's COURSE, projected for this panel — null on the ordinary canvas that has none.
-   *
-   * 🔴 A SECOND, SEPARATELY-LABELLED TREE, NEVER MERGED INTO `territories`. The knowledge tree
-   * earns its parents from the material's own explicit semantic relations — evidence-backed
-   * grouping. A plan's structure is an AUTHOR'S claim about the subject. Folding one into the
-   * other would leave the next reader believing the curriculum was derived from the learner's own
-   * material — the provenance confusion this file's own header warns about for Objectives vs
-   * Territory. A plan is a third thing in that corner, and it stays third.
-   *
-   * 🔴 AND ITS ROWS KEEP THE AUTHOR'S ORDER. Plan rows deliberately do NOT pass through
-   * `orderedTerritories`, whose recommended-then-marked re-sort is right for evidence-backed
-   * territories and would destroy an authored sequence.
-   */
-  plan?: readonly PlanTerritory[] | null;
-  /** The course's title, shown over its rows. */
-  planTitle?: string | null;
-  focus: FocusScope;
-  setFocus: (scope: FocusScope) => void;
-  /** The objective the CURRENT decision names, if any — used only to find which territory
-   *  Nemesis would work on next when nothing is manually focused (§H3). Never a ranking; see
-   *  `recommendedTerritoryLabel`. */
-  decidedObjectiveKey: string | null;
-  outcome: ExtractionOutcome | "no-durable-source";
-  coverage: CanvasCoverage;
-  evidence: readonly LearnerEvidence[];
-}) {
-  const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const holder = useDismiss(open, () => setOpen(false));
-
-  const recommended = recommendedTerritoryLabel(territories, decidedObjectiveKey, focus);
-  const rows = orderedTerritories(territories, evidence, recommended);
-  const disclosure = sourceDisclosure(outcome, coverage);
-  const onWholeCanvas = focus.kind === "canvas";
-
-  const renderTerritory = (territory: MarkedTerritory, depth = 0, path = territory.label): React.ReactNode => {
-    const current = focus.kind === "selection" && focus.label === territory.label;
-    const isRecommended = territory.label === recommended;
-    const hasChildren = Boolean(territory.children?.length);
-    const isExpanded = expanded.has(path);
-    return (
-      <div key={path}>
-        <div className="flex items-center">
-          {hasChildren ? (
-            <button
-              aria-expanded={isExpanded}
-              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${territory.label}`}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
-              onClick={() => setExpanded((currentSet) => {
-                const next = new Set(currentSet);
-                if (next.has(path)) next.delete(path);
-                else next.add(path);
-                return next;
-              })}
-              type="button"
-            >
-              <Codicon name={isExpanded ? "chevron-down" : "chevron-right"} size="0.6875rem" />
-            </button>
-          ) : (
-            <span aria-hidden className="h-7 w-7 shrink-0" />
-          )}
-          <button
-            className={cn(
-              "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
-              current && "bg-(--ui-bg-tertiary)",
-            )}
-            onClick={() => {
-              setFocus({ identityKeys: territory.identityKeys, kind: "selection", label: territory.label });
-              setOpen(false);
-            }}
-            style={{ paddingLeft: `${8 + depth * 12}px` }}
-            title={territory.mark ? TERRITORY_MEANING[territory.mark] : undefined}
-            type="button"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "h-[7px] w-[7px] shrink-0 rounded-full",
-                current && "ring-2 ring-(--ui-text-primary)/25",
-                territory.mark ? TERRITORY_DOT[territory.mark] : "bg-transparent",
-              )}
-            />
-            <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-              {territory.label}
-              <span className="sr-only">
-                {territory.mark ? `. ${TERRITORY_MEANING[territory.mark]}` : ""}
-                {current ? ". Currently focused here." : ""}
-              </span>
-            </span>
-            {isRecommended && (
-              <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-                Suggested next
-              </span>
-            )}
-          </button>
-        </div>
-        {hasChildren && isExpanded && (
-          <div>{territory.children!.map((child) => renderTerritory(child, depth + 1, `${path}/${child.label}`))}</div>
-        )}
-      </div>
-    );
-  };
-
-  /**
-   * One course row. Deliberately NOT `renderTerritory`: that renderer offers "Suggested next" and
-   * calls `setFocus` unconditionally, and a plan row has a state knowledge rows cannot have — a
-   * node the canvas holds NO MATERIAL for. That row is not a button at all: `applyFocus` returns
-   * everything when a filter empties, so focusing an empty node would silently focus the whole
-   * canvas — a control that appears to work and does something else, the defect this codebase
-   * names most often.
-   *
-   * 🔴 "No material yet" IS A SOURCE FACT, NOT A LEARNER STATE, and it must not be collapsed into
-   * the reading-gap ◇ or the evidence dots: I3 keeps source uncertainty, learner unknown and
-   * no-demonstration as separate states, and this is a fourth — there is no source here at all.
-   *
-   * 🔴 EXPANSION PATHS ARE NAMESPACED `course/…` so a plan node and a knowledge territory sharing
-   * a label cannot toggle each other's chevrons.
-   */
-  // 🔴🔴 `renderPlanRow` IS GONE, NOT COMMENTED OUT (2026-08-29). It drew the whole plan tree
-  // inside this popover; the course now has its own docked map (`course-map.tsx`) and the row above
-  // is the only way to it. Keeping a second renderer for the same chapters "in case" is how two
-  // drawings of one thing come to disagree — the file's own note about Objectives vs Territory
-  // provenance is the same argument. Restoring it means restoring one function; the shape it read,
-  // `PlanTerritory`, is unchanged.
-
-
-  return (
-    <div className="pointer-events-auto shrink-0" ref={holder}>
-      <button
-        aria-expanded={open}
-        aria-label="Progress"
-        className={CONTROL}
-        onClick={() => setOpen((current) => !current)}
-        title="Progress"
-        type="button"
-      >
-        <Codicon name="map" size="20px" />
-        {/* §46 convention: a dot, not a count. It marks that a focus is narrowing the
-            candidates — the one fact worth knowing without opening the panel. */}
-        {isFocused(focus) && (
-          <span className="absolute right-[5px] top-[5px] h-[5px] w-[5px] rounded-full bg-(--ui-accent)" />
-        )}
-      </button>
-
-      {open && (
-        <div className={cn(PANEL, "w-[20rem]")}>
-          <p className="px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
-            Territory
-          </p>
-
-          {/* H5: source-side facts. Kept out of the per-territory dots below and out of each
-              other — two different claims (RUNTIME-005), never merged into one. Both are
-              canvas-wide; there is no per-territory coverage signal yet. */}
-          {disclosure.readingGap && (
-            <p className="px-2 pb-1.5 text-[length:var(--canvas-text-meta)] leading-relaxed text-amber-500">
-              Nemesis could not read all of this material clearly. That is a gap in our reading,
-              not in what you know.
-            </p>
-          )}
-          {disclosure.unrepresented && (
-            <p className="px-2 pb-1.5 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-quaternary)">
-              Some of this material has not been turned into practice yet.
-            </p>
-          )}
-
-          {/* Clearing focus and choosing "the whole canvas" are the same action (canvas-focus.ts:
-              WHOLE_CANVAS is what both produce), so there is one row for it, not a separate
-              "Clear" control living apart from the list it clears. */}
-          <button
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
-              onWholeCanvas && "bg-(--ui-bg-tertiary)",
-            )}
-            onClick={() => {
-              setFocus(WHOLE_CANVAS);
-              setOpen(false);
-            }}
-            type="button"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "h-[7px] w-[7px] shrink-0 rounded-full",
-                onWholeCanvas
-                  ? "bg-(--ui-text-primary) ring-2 ring-(--ui-text-primary)/25"
-                  : "border border-(--ui-stroke-primary)",
-              )}
-            />
-            <span className="text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-              Whole canvas
-              <span className="sr-only">{onWholeCanvas ? ". Currently focused here." : ""}</span>
-            </span>
-          </button>
-
-          {rows.length === 0 ? (
-            <p className="px-2 py-3 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-              Nothing to focus on within this canvas yet.
-            </p>
-          ) : (
-            rows.map((territory) => renderTerritory(territory))
-          )}
-
-          {/* 🔴🔴 THE COURSE IS NOT DRAWN HERE AND HAS NO DOOR HERE EITHER. It rendered in this
-              popover as `Course · <title>` over a run of plan rows until 2026-08-29, then briefly as
-              a row that opened a docked panel. It is now its own control beside this one — see
-              `course-map.tsx` — because the two answer different questions from different data, and
-              this file's own note says so: a plan is an AUTHOR'S claim about the subject, territory
-              is evidence-backed grouping, and *"a plan is a third thing in that corner, and it stays
-              third"*. `plan` is still taken as a prop and still gates nothing else here. */}
-        </div>
-      )}
-    </div>
-  );
-}
+//
+// 🔴🔴 `MinimapControl` (the Progress glyph and its territory panel) IS GONE — owner, 2026-08-30:
+// *"remove the 'progress' map since the course map is pretty much the same thing."* Measured
+// before the cut: a row click in EITHER panel ended in the same `policy.setFocus({kind:
+// "selection"})`, so two adjacent course-only glyphs opened two right-aligned boxes that steered
+// one thing. `course-map.tsx` is the survivor and absorbed the one affordance only this panel
+// had: the "Whole course" row that clears a narrowed focus (H6's rule rides along — a row click
+// passes a FocusScope and nothing else). `ObjectivesPanel` left in the same cut: nothing had
+// mounted it since objectives left the header on 2026-08-20.
 
 // ---------------------------------------------------------------- session menu
 
@@ -1205,233 +843,25 @@ function MenuItem({
   );
 }
 
-// ---------------------------------------------------------------- voice mode
-
-/**
- * Voice mode on or off, and the one-time question about the microphone.
- *
- * 🔴 A MODE THE LEARNER TURNS ON, NEVER A THING THAT STARTS TALKING. Somebody who opened a canvas
- * to read must not be spoken at, so `DEFAULT_VOICE_MODE` is off and this is the only way in.
- *
- * 🔴 IT DISAPPEARS DURING A RETRIEVAL WITH THE OTHER CONTROLS, AND THAT IS DELIBERATE. The rule at
- * the top of this file — every glyph on screen during a fast recall is read before the answer is
- * produced — applies to this button exactly as it does to Sources. Voice is session management,
- * not answering. What replaces it mid-question is not chrome: the learner starting to answer stops
- * the speech, which is what "do not talk over someone who is thinking" means in code.
- *
- * The ask about auto-dictation lives here rather than in a dialog because it is a preference about
- * this control, and because a modal over a canvas is the second card the composer's own header
- * spends a paragraph refusing.
- */
-/**
- * Everything the canvas can be told to do that is not "here is the material" or "here is where you
- * are" — behind one `\u22ef`, the way the reference puts its own session options.
- *
- * 🔴 THIS EXISTS BECAUSE THE HEADER LOST THREE BUTTONS, NOT INSTEAD OF THEM. Owner call,
- * 2026-08-19: the header is `\u00d7` on the left, Sources and outputs, and Progress. Objectives, the
- * session record and voice came out of that row — and voice in particular was the ONLY way into
- * voice mode, so deleting the glyph without giving it a home would have shipped a feature that
- * exists, is deployed, and cannot be reached. That is the specific way this codebase loses things,
- * so the menu landed in the same change that removed the icons rather than after it.
- *
- * 🔴 THE TWO VOICE PREFERENCES ARE BOTH STATED, AND THE ONE-TIME QUESTION IS GONE. `VoiceControl`
- * asked "open the microphone after each question?" in a popover the first time voice was switched
- * on, because there was nowhere to put a second preference. A menu is that somewhere: both are
- * rows, both show their current state, and a learner who wants to change their mind has somewhere
- * to go rather than having to remember what they answered once.
- */
-/**
- * Read responses aloud: one button, no menu.
- *
- * 🔴🔴 THE `⋮` IS GONE — owner, 2026-08-25, circling it on screen. What made removing it safe is
- * that the menu behind it had been reduced to a SINGLE row: Objectives and the session record left
- * on 2026-08-20, the mic option and its hint line left on 2026-08-25, and what remained was one
- * toggle behind a click that existed only to reveal it. This file already states the rule, about
- * the composer's `+`: *a one-item menu is a second click charged for nothing.*
- *
- * 🔴 SO THE TOGGLE MOVED OUT, IT WAS NOT DELETED. Removing the button and its one row would have
- * taken read-aloud with it — a feature reachable from nowhere, which is this codebase's
- * most-repeated defect wearing the other face. The control is now what the menu contained.
- *
- * 🔴 THE GLYPH REPORTS STATE, AND IT HAS TO. Voice is the one thing on this surface that acts on
- * its own, afterwards — a learner who left it on deserves to see that without opening anything.
- * Speaking, on-but-quiet and off are three distinct marks.
- */
-
-// ---------------------------------------------------------------- the options menu
-
-/**
- * The `⋯`: everything about HOW the canvas behaves, in one menu — the view switch, read-aloud,
- * and the teaching style (Direct, Guided or Socratic, from `@nemesis/shared`'s
- * `learning-style.ts`, which owns why style is a learner-chosen preference and never a mode).
- *
- * 🔴🔴 OWNER RULING, 2026-08-30: "Why are there so many icons? ... they should only show up
- * when they are actually needed." The row had grown to six glyphs, and two of the six had
- * prescribed their own removal: the view switch shipped saying "if the row is now too busy, THIS
- * is the icon to move, not the feature to cut", and read-aloud only became its own glyph on
- * 2026-08-25 because the menu behind the `⋯` had emptied to one row. The menu is a real menu
- * again (the style picker gave it three rows on 2026-08-30), so both move IN, and the row
- * returns to the shape the owner set on 2026-08-19: sources and outputs, progress, and a `⋯`
- * for options — each of the first three appearing only when it has something to show.
- *
- * 🔴 WHAT THE GLYPH LOST BY MOVING IN, AND WHY THAT IS PAID FOR: the read-aloud button showed
- * on/off without a click. Now the `⋯` TINTS whenever anything non-default is on (voice on, or a
- * non-Direct style), the transport bar still appears whenever audio actually plays, and every
- * answer keeps its own play button — so the states that matter stay visible, and only the
- * quiet-idle distinction costs a click.
- *
- * 🔴 THE VIEW ROW'S WORDS NAME THE DESTINATION, never where you already are —
- * `canvasViewAction` owns that wording, exactly as it did when the switch was a glyph.
- *
- * 🔴 THE STYLE PREFERENCE IS THE STORAGE KEY, NOT THIS COMPONENT'S STATE. `canvas-chat.ts`
- * reads `LEARNING_STYLE_STORAGE_KEY` fresh on every send, so the localStorage write IS the
- * feature and the state here only paints the check mark — which moves ONLY after a write
- * succeeds, because a check on a row that changed nothing is the dead control this codebase
- * keeps re-filing.
- */
-export function OptionsMenu({
-  onToggleView,
-  view,
-  voice,
-}: {
-  /** Swap the one-answer view for the whole conversation. Absent until there is one to show. */
-  onToggleView?: () => void;
-  view?: CanvasView;
-  /** 🔴 THE HOOK'S OWN TYPE, NOT A COPY — see CanvasHeader's prop comment. */
-  voice?: CanvasVoiceState["header"];
-}) {
-  const [open, setOpen] = useState(false);
-  const [style, setStyle] = useState<LearningStyle>(DEFAULT_LEARNING_STYLE);
-  const holder = useDismiss(open, () => setOpen(false));
-
-  // Read once on mount, client-side only — a server render must not touch localStorage, and the
-  // first paint showing Direct for a beat is invisible behind a closed menu.
-  useEffect(() => {
-    try {
-      setStyle(readLearningStyle(window.localStorage.getItem(LEARNING_STYLE_STORAGE_KEY)));
-    } catch {
-      // Storage denied: the default stands, which is also what canvas-chat will read.
-    }
-  }, []);
-
-  const choose = (next: LearningStyle) => {
-    try {
-      window.localStorage.setItem(LEARNING_STYLE_STORAGE_KEY, next);
-      setStyle(next);
-    } catch {
-      // See the header: an unpersisted choice would not change any answer, so the UI does not
-      // pretend it did.
-    }
-    setOpen(false);
-  };
-
-  const voiceOn = voice?.mode === "on";
-  // The row's words name the DESTINATION, never where you already are — `canvasViewAction` owns
-  // the wording so the label, the tooltip and a screen reader cannot drift apart.
-  const action = view && onToggleView ? canvasViewAction(view) : null;
-
-  return (
-    <div className="pointer-events-auto shrink-0" ref={holder}>
-      <button
-        aria-expanded={open}
-        aria-label="Options"
-        className={cn(
-          CONTROL,
-          (voiceOn || style !== DEFAULT_LEARNING_STYLE) && "text-(--ui-action) hover:text-(--ui-action)",
-        )}
-        onClick={() => setOpen((current) => !current)}
-        title="Options"
-        type="button"
-      >
-        <Codicon name="ellipsis" size="20px" />
-      </button>
-
-      {open && (
-        <div className={cn(PANEL, "w-[17rem]")}>
-          {action && onToggleView && (
-            <MenuItem
-              icon="comment-discussion"
-              label={action}
-              onClick={() => {
-                setOpen(false);
-                onToggleView();
-              }}
-            />
-          )}
-          {/* 🔴 A TOGGLE ROW STAYS OPEN ON CLICK: flipping a checkbox and having the menu
-              vanish reads as the menu misfiring, and the learner reopens it to check what
-              happened. Choosing a style CLOSES, because a radio choice is a completed errand. */}
-          {voice && (
-            <ToggleItem
-              checked={voiceOn}
-              label="Read responses aloud"
-              onClick={() => voice.onToggle(voiceOn ? "off" : "on")}
-            />
-          )}
-          <p className="px-2 pb-1 pt-2 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
-            Teaching style
-          </p>
-          {LEARNING_STYLES.map((option) => (
-            <ToggleItem
-              checked={style === option.id}
-              hint={option.hint}
-              key={option.id}
-              label={option.label}
-              onClick={() => choose(option.id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A preference that is on or off, showing which it currently is. Separate from `MenuItem` because
- *  a row that reports state and a row that performs an action are different things, and a check
- *  mark that sometimes means "selected" and sometimes means nothing is how a menu stops being
- *  readable. */
-function ToggleItem({
-  checked,
-  label,
-  onClick,
-  disabled,
-  hint,
-}: {
-  checked: boolean;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  hint?: string;
-}) {
-  return (
-    <button
-      aria-checked={checked}
-      className={cn(
-        "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left text-[length:var(--canvas-text-small)] transition-colors",
-        disabled
-          ? "cursor-not-allowed text-(--ui-text-quaternary)"
-          : "text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)",
-      )}
-      disabled={disabled}
-      onClick={onClick}
-      role="menuitemcheckbox"
-      title={hint}
-      type="button"
-    >
-      <span className="mt-[2px] flex h-[12px] w-[12px] shrink-0 items-center justify-center">
-        {checked && <Codicon name="check" size="0.6875rem" />}
-      </span>
-      <span className="leading-snug">
-        {label}
-        {hint && (
-          <span className="mt-0.5 block text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-            {hint}
-          </span>
-        )}
-      </span>
-    </button>
-  );
-}
+// ---------------------------------------------------------------- voice mode / options menu
+//
+// 🔴🔴 THE `⋯` OPTIONS MENU IS GONE ENTIRELY — owner, 2026-08-30, pointing at it on screen:
+// *"remove this entire panel, deepseek should decide how to best teach material … also remove
+// the read outloud … why is latest output option even there in the first place?"* All three of
+// its rows died with their features in the same change, so nothing here survives unreachable
+// (this codebase's most-repeated defect):
+//
+//   - Teaching style (Direct/Guided/Socratic): deleted from `@nemesis/shared` and from the turn
+//     packet. The model picks its own pedagogy; a learner who wants to be quizzed or led asks in
+//     words, and `thinking-stance.ts` still answers the question by default.
+//   - Read responses aloud (autoplay): the mode is gone from `use-canvas-voice.ts`. Every answer
+//     keeps its own play button and the transport bar still appears while audio plays — manual
+//     playback was always the same path autoplay pressed play on.
+//   - Focus on the latest output: the one-answer view is gone with `canvas-view.ts`. The
+//     conversation is the only view, which ends the answer-view family of "history is missing"
+//     reports for good.
+//
+// `MenuItem` below survives because `SessionControl` (kept, unrendered) still uses it.
 
 // ---------------------------------------------------------------- session record
 

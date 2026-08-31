@@ -26,8 +26,6 @@ export * from "./writing-voice.ts";
 // product WRITES and the other is how it THINKS. See thinking-stance.ts.
 export * from "./thinking-stance.ts";
 // How much Nemesis hands over: the learner's own choice of Direct, Guided or Socratic.
-// The stance is the DEFAULT; this is the door out of it. See learning-style.ts.
-export * from "./learning-style.ts";
 // The one rule of that voice a prompt could not hold on its own, so trusted code finishes it.
 export * from "./plain-dashes.ts";
 // What a student MEANT, read once for the whole product. The phone used to carry its own copy of
