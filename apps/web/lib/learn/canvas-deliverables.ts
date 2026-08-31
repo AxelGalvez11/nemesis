@@ -430,7 +430,7 @@ export async function makeNoteDeliverable(
   const title = (canvas.title || "Canvas summary").slice(0, 120);
   let saved: { path: string; title: string };
   try {
-    saved = await writeLibraryNote({ content, folder: CANVAS_NOTE_FOLDER, title, userId: uid });
+    saved = await writeLibraryNote({ content, folder: CANVAS_NOTE_FOLDER, madeBy: "nemesis", title, userId: uid });
   } catch {
     return { error: "Couldn't save the note to your library." };
   }
@@ -813,7 +813,7 @@ export async function makeReportDeliverable(
   const title = reportTitle(outcome.question);
   let saved: { path: string; title: string };
   try {
-    saved = await writeLibraryNote({ content: reportMarkdown(outcome), folder: RESEARCH_FOLDER, title, userId: uid });
+    saved = await writeLibraryNote({ content: reportMarkdown(outcome), folder: RESEARCH_FOLDER, madeBy: "nemesis", title, userId: uid });
   } catch {
     return { error: "The research finished but I couldn't save it to your library." };
   }

@@ -108,6 +108,16 @@ test("🔴 the two surfaces differ by where they are opened from", () => {
   // against; on the Library page there is no thread, so it takes the whole surface.
   assert.match(PREVIEW, /initialMode\?: "docked" \| "full"/, "the reader has one shape for both surfaces");
   const library = code("../../components/workspace/library/library-outputs.tsx");
+  // 🔴🔴 AND A DOCUMENT OPENED FROM THE SHELF CAN BE COMMENTED ON. This mount shipped without
+  // `comments`, so the Library had the whole annotate layer built and unreachable — a Download
+  // button and nothing else. Owner, 2026-08-31: *"the comment function should work like in claude
+  // design where users drop in a bubble of a comment."* A prop that is easy to forget is exactly
+  // the kind a guard should hold.
+  assert.match(
+    library,
+    /<OutputPreview[\s\S]{0,200}comments=\{\{ preview: Boolean\(preview\), uid: userId \}\}/,
+    "the Library's document reader lost comment mode again",
+  );
   assert.match(library, /initialMode="full"/, "the Library opens a docked panel with nothing beside it");
 });
 

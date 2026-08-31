@@ -54,10 +54,14 @@ const PREVIEW: LibraryPreview = {
     { createdAt: "2026-06-11T09:00:00.000Z", id: "f-thermo", name: "Thermodynamics", parentId: null },
     { createdAt: "2026-03-19T09:00:00.000Z", id: "f-phcy", name: "PHCY 2105", parentId: null },
   ],
+  // 🔴 BOTH ORIGINS ON THE BOARD ON PURPOSE. `madeBy` decides whether the reader is handed a
+  // revise door at all, so a fixture carrying only one value would show half the behaviour and
+  // look complete. n3 is the learner's own writing: it takes comments and is never offered a
+  // rewrite.
   notes: [
-    { folderId: "f-thermo", id: "n1", path: "notes/diesel.md", title: "How a four-stroke diesel engine works", updatedAt: "2026-08-24T08:00:00.000Z" },
-    { folderId: null, id: "n2", path: "notes/power.md", title: "Statistical power and sample size", updatedAt: "2026-08-12T15:00:00.000Z" },
-    { folderId: "f-torts", id: "n3", path: "notes/ceilings.md", title: "Supply, demand and price ceilings", updatedAt: "2025-12-03T09:00:00.000Z" },
+    { folderId: "f-thermo", id: "n1", madeBy: "nemesis" as const, path: "notes/diesel.md", title: "How a four-stroke diesel engine works", updatedAt: "2026-08-24T08:00:00.000Z" },
+    { folderId: null, id: "n2", madeBy: "nemesis" as const, path: "notes/power.md", title: "Statistical power and sample size", updatedAt: "2026-08-12T15:00:00.000Z" },
+    { folderId: "f-torts", id: "n3", madeBy: "learner" as const, path: "notes/ceilings.md", title: "Supply, demand and price ceilings", updatedAt: "2025-12-03T09:00:00.000Z" },
   ],
   slides: [
     { assetId: "s1", canvasId: "c1", createdAt: "2026-08-23T12:00:00.000Z", folderId: "f-thermo", title: "Beam deflection under a distributed load" },

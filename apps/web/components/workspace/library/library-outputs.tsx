@@ -55,7 +55,10 @@ import { DeckReview } from "@/components/workspace/study/deck-review";
 import { DeckShare } from "./deck-share";
 import { deckFileName, deckToAnkiText } from "@/lib/workspace/deck-export";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
+import { applyRevision, reviseOutputMarkdown, undoRevision, type ReviseAsk } from "@/lib/learn/revise-output";
 import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
+import { readLibraryNote } from "@/lib/workspace/library-note-read";
+import { replaceLibraryNoteBody } from "@/lib/workspace/library-write";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { supabase } from "@/lib/supabase";
@@ -75,6 +78,8 @@ interface NoteRow {
   title: string;
   updatedAt: string;
   folderId: string | null;
+  /** 🔴 Who wrote it. Only a `nemesis` note is offered the revise door — see the reader mount. */
+  madeBy: "learner" | "nemesis";
 }
 
 interface Card {
@@ -427,7 +432,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           .limit(200),
         supabase
           .from("readable_library_documents")
-          .select("id,path,title,updated_at,folder_id")
+          .select("id,path,title,updated_at,folder_id,made_by")
           .eq("kind", "note")
           .eq("deleted", false)
           .order("updated_at", { ascending: false })
@@ -461,9 +466,12 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
       }
       if (!noteRes.error && noteRes.data) {
         setNotes(
-          (noteRes.data as { id: string; path: string; title: string; updated_at: string; folder_id: string | null }[]).map((row) => ({
+          (noteRes.data as { id: string; path: string; title: string; updated_at: string; folder_id: string | null; made_by: string | null }[]).map((row) => ({
             folderId: row.folder_id,
             id: row.id,
+            // 🔴 ANYTHING BUT THE EXACT WORD READS AS THE LEARNER'S. A null (a row written before
+            // the column existed) must not open a door onto somebody's own writing.
+            madeBy: row.made_by === "nemesis" ? ("nemesis" as const) : ("learner" as const),
             path: row.path,
             title: row.title,
             updatedAt: row.updated_at,
@@ -497,6 +505,57 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     // dependency: the shelves still load on the account and nothing else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  /**
+   * Nemesis revising a note it wrote, asked for from a pin on the page.
+   *
+   * 🔴🔴 THE CANVAS COULD NOT LEND THIS. Its `reviseOutput` ends at `session.updateOutput(...)`,
+   * which moves a canvas's in-memory row and never touches `readable_library_documents`. On the
+   * shelf there is no session and the note IS the database row, so the write has to be real:
+   * ask the model, save the row, then show the new words. Same model call either way
+   * (`reviseOutputMarkdown`), different landing place.
+   *
+   * 🔴 THE DOCUMENT IS FETCHED AGAIN AT THE MOMENT OF THE ASK, never revised from the copy the
+   * reader happens to be showing. A note opened, left on screen, and edited elsewhere would
+   * otherwise be rewritten from a stale body and the other edit would vanish inside the revision.
+   *
+   * 🔴 NOTHING IS SHOWN UNTIL THE ROW IS WRITTEN. The reverse order — paint it, then save — is how
+   * a learner ends up reading a revision that only ever existed on their screen.
+   *
+   * Returns an error sentence, or null when the note was rewritten.
+   */
+  const reviseNote = useCallback(
+    async (output: CanvasOutput, ask: ReviseAsk): Promise<string | null> => {
+      if (!userId) return "Sign in to ask for changes.";
+      if (!output.notePath) return "This note can't be revised yet.";
+      const current = await readLibraryNote(output.notePath);
+      if (current === null) return "That note couldn't be read, so nothing was changed.";
+      const result = await reviseOutputMarkdown(userId, { markdown: current, title: output.title }, ask);
+      if ("error" in result) return result.error;
+      const failed = await replaceLibraryNoteBody({ content: result.markdown, id: output.id, userId });
+      if (failed) return failed;
+      // `applyRevision` pushes the OUTGOING body onto `revisions`, which is what Undo pops. It
+      // lives on the open object only: the row keeps the current text, and closing the reader
+      // ends the undo history — a stack that outlived the screen it belongs to would be a
+      // surprise waiting weeks to happen.
+      setReadingNote((was) => (was && was.id === output.id ? applyRevision({ ...was, markdown: current }, { markdown: result.markdown }) : was));
+      setNotes((was) => was.map((row) => (row.id === output.id ? { ...row, updatedAt: new Date().toISOString() } : row)));
+      return null;
+    },
+    [userId],
+  );
+
+  /** Put back what Nemesis replaced. 🔴 THE ROW IS WRITTEN TOO — an Undo that only repaints the
+   *  screen leaves the Library holding the version the learner just rejected. */
+  const undoNote = useCallback(
+    (output: CanvasOutput) => {
+      const back = undoRevision(output);
+      if (back.markdown === output.markdown || !userId) return;
+      setReadingNote((was) => (was && was.id === output.id ? back : was));
+      void replaceLibraryNoteBody({ content: back.markdown ?? "", id: output.id, userId });
+    },
+    [userId],
+  );
 
   /**
    * Move a row, and show it moved without refetching the page.
@@ -1365,7 +1424,35 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           conversation the reader docks so the thread that asked for the artifact stays on screen to
           check it against. On this page there is no thread, so the reference gives the reader the
           whole surface with the close on the left beside a breadcrumb — measured at x=193. */}
-      {readingNote && <OutputPreview initialMode="full" onClose={() => setReadingNote(null)} output={readingNote} />}
+      {/* 🔴🔴 THE LIBRARY CAN BE COMMENTED ON TOO, AND ITS ABSENCE HERE WAS THE WHOLE OF THE
+          OWNER'S REPORT (2026-08-31): *"the comment function should work like in claude design
+          where users drop in a bubble of a comment or edit (if its nemesis made)."* Every piece
+          already existed — `CommentLayer`, the pin, the two-button note — and this one mount
+          simply never passed `comments`, so a document opened from the shelf had a Download
+          button and nothing else. `canvas-controls.tsx` states the rule this relies on: comments
+          do NOT wait for the revise wiring, because only "Send to Nemesis" follows `onRevise`.
+          The pin and "Add comment" work here now; the send half arrives with a Library write path.
+
+          🔴 THE SAME DOCUMENT KEEPS ONE SET OF COMMENTS. They key to the ledger id (`assetId ?? id`),
+          so a note pinned inside a canvas shows those pins here and the other way round. */}
+      {readingNote && (
+        <OutputPreview
+          comments={{ preview: Boolean(preview), uid: userId }}
+          initialMode="full"
+          onClose={() => setReadingNote(null)}
+          // 🔴🔴 THE SECOND HALF OF THE OWNER'S SENTENCE: *"a comment or edit (IF ITS NEMESIS
+          // MADE)"*. `onRevise` is passed only for a note this app wrote, so a document the
+          // learner typed keeps the pin and "Add comment" and is never offered a rewrite. The
+          // reader treats an absent `onRevise` as "no send button", so the door is closed by
+          // NOT EXISTING rather than by a disabled control.
+          //
+          // 🔴 THE ORIGIN IS LOOKED UP FRESH FROM THE LIST rather than copied onto the opened
+          // object, so a refresh that re-reads `made_by` is what decides, not a stale snapshot.
+          onRevise={notes.find((row) => row.id === readingNote.id)?.madeBy === "nemesis" ? reviseNote : undefined}
+          onUndo={undoNote}
+          output={readingNote}
+        />
+      )}
 
       {/* 🔴 NO CARD, NO SHADOW — the reference draws neither anywhere on this page. The hint keeps
           its hairline, at the measured divider colour, so it belongs to the same drawing as the
