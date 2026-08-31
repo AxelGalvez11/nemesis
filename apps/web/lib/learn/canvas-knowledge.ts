@@ -433,11 +433,7 @@ export async function ensureKnowledgeForCanvas(
   // says nothing about the other.
   const mechanisms = await mechanismsFor({ canvas, contexts, material, signal, sourceIds, stored: storedTerritory, userId });
 
-  const fromDocument: ResolvedObjective[] = [];
-  for (const knowledge of [...extracted, ...mechanisms]) {
-    const stored = await saveKnowledge(userId, knowledge);
-    for (const objective of stored) fromDocument.push({ knowledge, objective });
-  }
+  const fromDocument = await resolveObjectives(userId, [...extracted, ...mechanisms]);
   const resolved = mergeObjectives(fromDocument, carried);
 
   // 🔴 ORDERED BY IDENTITY, EXPLICITLY. The runtime acts on the first objective that is owed
@@ -929,6 +925,62 @@ async function groundedTerritory(input: {
 }
 
 /**
+ * How many knowledge objects are written at once.
+ *
+ * 🔴🔴 THIS NUMBER IS THE DIFFERENCE BETWEEN OPENING A CANVAS IN TWO SECONDS AND IN FOURTEEN.
+ * Owner, 2026-08-30: *"Going back to old pages should take user back to the most recent chat or
+ * output... It should be quick not laggy."* Measured on production, opening one saved canvas:
+ * **48 writes to `knowledge_objects` and 48 to `learning_objectives`, one at a time, the last
+ * finishing 13.8 seconds in**, with the conversation not readable until about 8. A second open
+ * seconds later did exactly the same thing, because the territory cache saves the MODEL CALL and
+ * then replays every object anyway to resolve the objective rows the evidence layer attaches to.
+ *
+ * 🔴 THE REPLAY IS NOT THE WASTE — THE `await` IN THE LOOP WAS. Each object is independent: a
+ * different identity key, its own upsert, its own read-back. They were run one after another for no
+ * reason beyond how the loop was written, so 96 round trips of ~140ms each were served in series.
+ *
+ * 🔴 EIGHT, NOT UNBOUNDED. `Promise.all` over the whole list would open 48 connections at once
+ * against one PostgREST origin, where the browser's own per-host cap turns most of them into a
+ * queue anyway — and the ones that do land arrive as a burst on the learner's own database. Eight
+ * lanes is six waves for a typical territory, which is where the wall-clock stops improving.
+ */
+const WRITE_LANES = 8;
+
+/**
+ * Every knowledge object written and resolved to its objective rows, in the order they were given.
+ *
+ * 🔴 THE ORDER OF THE RESULT IS THE ORDER OF THE INPUT, EXACTLY. Results land in indexed slots
+ * rather than being pushed as they finish, so this returns byte-identical output to the sequential
+ * loop it replaces. That matters twice over: `mergeObjectives` keeps the first of a duplicated
+ * identity, and both callers sort afterwards on a key that can tie. Speed here must not be able to
+ * change which question Nemesis asks first.
+ *
+ * 🔴 AND IT STILL WRITES THROUGH `saveKnowledge`, ONE OBJECT AT A TIME. A batched upsert would be
+ * faster still and would be a SECOND implementation of the step the whole cross-canvas evidence
+ * claim rests on — see `storeTerritory`'s own note about shortcuts. This changes how many are in
+ * flight, and nothing else.
+ */
+async function resolveObjectives(
+  userId: string,
+  objects: readonly KnowledgeObject[],
+): Promise<ResolvedObjective[]> {
+  const slots: ResolvedObjective[][] = new Array(objects.length);
+  let next = 0;
+  const lane = async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= objects.length) return;
+      const knowledge = objects[index]!;
+      const stored = await saveKnowledge(userId, knowledge);
+      slots[index] = stored.map((objective) => ({ knowledge, objective }));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WRITE_LANES, objects.length) }, lane));
+  return slots.filter(Boolean).flat();
+}
+
+/**
  * Persist a territory's objects and resolve their objectives.
  *
  * 🔴 THE SAME CALL ON BOTH PATHS, WHICH IS WHAT MAKES A REPLAY EQUIVALENT TO A BUILD. A cached
@@ -938,11 +990,7 @@ async function groundedTerritory(input: {
  * implementation of the step the cross-canvas claim rests on.
  */
 async function storeTerritory(userId: string, objects: readonly KnowledgeObject[]): Promise<ResolvedObjective[]> {
-  const resolved: ResolvedObjective[] = [];
-  for (const knowledge of objects) {
-    const stored = await saveKnowledge(userId, knowledge);
-    for (const objective of stored) resolved.push({ knowledge, objective });
-  }
+  const resolved = await resolveObjectives(userId, objects);
   // Ordered by identity for the same reason the source path is: which question is asked first must
   // not depend on the order rows came back in.
   resolved.sort((a, b) => a.objective.identityKey.localeCompare(b.objective.identityKey));
