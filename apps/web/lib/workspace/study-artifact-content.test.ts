@@ -7,7 +7,10 @@ import {
   buildTestGenMessages,
   deckMaterial,
   isTypedQuestion,
+  hardenedMaterial,
+  missedFacts,
   missedQuestionCards,
+  mixedReviewMaterial,
   normalisedAnswer,
   outlineToMermaidMindmap,
   parseGeneratedMindmap,
@@ -124,6 +127,74 @@ test("a missed typed question becomes a recall flashcard with the written-out an
   const questions = parseGeneratedTest(JSON.stringify({ questions: [TYPED_WIRE] }));
   const cards = missedQuestionCards(questions, [{ picked: "estoppel", questionIndex: 0 }]);
   assert.equal(cards[0]?.back, "Consideration\n\nNo consideration, no contract.");
+});
+
+// ── the Examiner package (owner 2026-08-31, from the post-exam report) ───────
+
+test("🔴🔴 the examiner decides the paper — the prompt hands over a record, never a recipe", () => {
+  // Owner 2026-08-31: "it should not be hardcoded — DeepSeek should know what
+  // to do based on the given prompts... what the best path for this user is."
+  // Calibration: put a commanded composition back — a fixed ladder, a fixed
+  // share of scenario questions, a fixed re-ask order — and the
+  // no-directives assertions redden.
+  const material = deckMaterial("Contracts", [{ back: "b", front: "f" }]);
+  const prompt = buildTestGenMessages(material, 10)[1]?.content ?? "";
+  assert.ok(prompt.includes("YOU decide the paper's composition"), "the judgment was taken back from the model");
+  assert.ok(prompt.includes("Let the record overrule your defaults"), "the record no longer outranks the charter's defaults");
+  const charter = prompt.split("Material:")[0] ?? "";
+  assert.ok(!/at least a third|exactly (one|a) third|FIRST write/i.test(charter), "a commanded composition crept back in");
+  // 🔴 Field-agnostic: the charter names no field.
+  assert.ok(!/patient|clinical|drug|dose/i.test(charter), "a subject crept into the prompt");
+  // The record rides along verbatim when a caller has one.
+  const withRecord = buildTestGenMessages(material, 10, { record: "The student pressed harder." })[1]?.content ?? "";
+  assert.ok(withRecord.includes("The record of this student's performance:\nThe student pressed harder."));
+});
+
+test("🔴 a mixed paper carries the misses back, with the student's own diagnosis attached", () => {
+  const material = mixedReviewMaterial(
+    [deckMaterial("Contracts", [{ back: "b", front: "f" }])],
+    [{ answer: "Consideration", q: "Name the doctrine.", why: "forgot" }],
+  );
+  assert.ok(material.text.includes("Previously missed:"), "the re-ask section is gone from the material");
+  // The tag is the examiner's most useful line: "forgot" and "never knew" call
+  // for different questions, and only the student knows which it was.
+  assert.ok(material.text.includes('the student\'s own diagnosis: "Forgot it"'), "the diagnosis no longer reaches the model");
+  assert.ok(material.label.includes("mixed review"), "the label no longer says what this paper is");
+});
+
+test("🔴 under the material cap, the sources get truncated — never the re-asks", () => {
+  // Calibration: append the missed section after slicing to the cap and this
+  // reddens — dropping exactly the failed questions is the old failure back.
+  const huge = { label: "note \"everything\"", text: "x".repeat(1_000_000) };
+  const material = mixedReviewMaterial([huge, huge], [{ answer: "A", q: "Q?" }]);
+  assert.ok(material.text.includes("Previously missed:"));
+  assert.ok(material.text.includes("Q? — correct answer: A"));
+});
+
+test("an aced paper's facts become material for a harder one, typed answers included", () => {
+  const questions = parseGeneratedTest(JSON.stringify({ questions: [QUESTION, TYPED_WIRE] }));
+  const material = hardenedMaterial("Receptors — practice test", questions);
+  assert.ok(material.text.includes("Which receptor? — Beta"));
+  assert.ok(material.text.includes("Consideration"));
+  assert.ok(material.label.includes("already answered correctly"));
+});
+
+test("missedFacts reads the LATEST sitting, and the miss diagnosis survives the jsonb round trip", () => {
+  const questions = parseGeneratedTest(JSON.stringify({ questions: [QUESTION, TYPED_WIRE] }));
+  const first = asChoice(questions[0]);
+  const older = scoreAttempt(questions, [first.answer === 1 ? 0 : 1, "consideracion"], "2026-08-30T00:00:00Z");
+  const latest = scoreAttempt(questions, [first.answer, "estoppel"], "2026-08-31T00:00:00Z");
+  const facts = missedFacts(questions, [older, latest]);
+  assert.deepEqual(facts, [{ answer: "Consideration", q: TYPED_WIRE.q }]);
+  // The one-tap "why" is part of the record, not screen state — and it rides
+  // out through missedFacts so the examiner model can read it.
+  const classified = { ...latest, missed: latest.missed.map((miss) => ({ ...miss, why: "mixed-up" as const })) };
+  const stored = parseTestContent({ attempts: [classified], questions });
+  assert.equal(stored?.attempts[0]?.missed[0]?.why, "mixed-up");
+  assert.equal(missedFacts(questions, [classified])[0]?.why, "mixed-up");
+  // An unknown label is dropped, never stored.
+  const junk = parseTestContent({ attempts: [{ ...latest, missed: [{ picked: "x", questionIndex: 1, why: "cosmic-rays" }] }], questions });
+  assert.equal(junk?.attempts[0]?.missed[0]?.why, undefined);
 });
 
 test("the generation prompt offers the typed shape without demanding it", () => {
