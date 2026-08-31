@@ -6,7 +6,7 @@
 // restart from the beginning of the sentence. Speed is a property of LISTENING. It belongs to the
 // audio element, where it is instant and free, and nothing here ever reaches a provider.
 //
-// 🔴 THE STEPS GO BELOW 1 NOW, AND THAT REVERSES AN EARLIER RULE ON PURPOSE. `voice-preferences.ts`
+// 🔴 THE STEPS GO BELOW 1 NOW, AND THAT REVERSES AN EARLIER RULE ON PURPOSE. `voice-preferences.ts` (since deleted with the autoplay mode, 2026-08-30)
 // refused anything under natural pace because a SYNTHESIS rate below 1 teaches a rhythm nobody
 // speaks — connected speech and stress timing are what disappear when a synthesiser is slowed. That
 // argument is about generating audio, and it does not apply to a listener slowing down a paragraph

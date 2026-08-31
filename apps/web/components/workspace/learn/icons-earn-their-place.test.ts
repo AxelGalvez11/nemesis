@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 // 🔴🔴 OWNER RULING, 2026-08-30: "Why are there so many icons? ... they should only show up when
-// they are actually needed." This file pins the canvas header's side of that ruling; the
-// sidebar's side is pinned in lib/workspace/sidebar-nav.test.ts. The row's shape is the owner's
-// own 2026-08-19 design: sources and outputs, progress, and one `⋯` for options — each of the
-// first three appearing only when it has something to show.
+// they are actually needed." — and, hours later, the second half of the same instinct: *"remove
+// this entire panel … remove the 'progress' map since the course map is pretty much the same
+// thing."* This file pins the canvas header's side of both rulings; the sidebar's side is pinned
+// in lib/workspace/sidebar-nav.test.ts. The row is AT MOST three gated glyphs — Sources &
+// outputs, the course map, and (that same evening's third ruling: *"there should be a way to
+// chat mode to canvas mode"*) the view door — and a brand-new canvas shows none at all.
 
 const HEADER = readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8");
 const CONTROLS = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
@@ -19,28 +21,37 @@ test("🔴 Sources renders only when the panel has something to say", () => {
   );
 });
 
-test("🔴 the maps still appear only where there is something to map", () => {
-  // The owner's 2026-08-24 rule, restated here so this file describes the WHOLE row.
+test("🔴 the map still appears only where there is something to map — and it is the ONLY map", () => {
+  // The owner's 2026-08-24 gate, kept; his 2026-08-30 merge, enforced. One `planTitle` gate for
+  // one control. A second gate reappearing is `MinimapControl` ("Progress") growing back.
   const gates = HEADER.match(/minimap\.planTitle !== null/g) ?? [];
-  assert.ok(gates.length >= 2, "Progress and the course map lost their course gate");
+  assert.equal(gates.length, 1, "the corner holds a second course panel again");
+  assert.ok(!/<MinimapControl/.test(HEADER), "Progress is mounted again");
 });
 
-test("🔴 the view door is a gated glyph again; read-aloud stays in the menu (owner 2026-08-30)", () => {
-  // Two rulings in one day, both his: the morning sweep folded the switch into the `⋯`; by
-  // evening — *"there should be a way to chat mode to canvas mode"* — he could not find it. The
-  // door came back out as `CanvasViewControl`, wearing the same rule as every glyph on this row:
-  // absent until there is a conversation to leave, then present for the whole session.
+test("🔴🔴 there is NO unconditional control left — no `⋯`, no menu, nothing on a bare canvas", () => {
+  // Owner, 2026-08-30, on the open panel: *"remove this entire panel."* Its three rows died with
+  // their features (teaching style, read-aloud autoplay, the view switch); the tombstone in
+  // canvas-controls.tsx says where each went. A fresh canvas shows a bare title.
+  assert.ok(!/<OptionsMenu/.test(HEADER), "the `⋯` menu is mounted again");
+  assert.ok(!/export function OptionsMenu/.test(CONTROLS), "the options menu came back to the controls file");
+  assert.ok(!/"ellipsis"/.test(CONTROLS), "an ellipsis glyph is back in the controls file");
+});
+
+test("🔴 the map keeps the way back OUT of a narrowed focus", () => {
+  // Progress carried the only widening row; the map absorbed it. Cutting this strands a learner
+  // narrowed for ever — see course-map.tsx's `onWhole` prop comment for the full account.
+  const map = readFileSync(new URL("./course-map.tsx", import.meta.url), "utf8");
+  assert.match(map, /Whole course/, "the Whole course row is gone from the map");
+  assert.match(map, /onWhole: \(\) => void/, "the map lost its widening callback");
+  const canvas = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(canvas, /onClearCourseScope: \(\) => policy\.setFocus\(WHOLE_CANVAS\)/, "widening no longer reaches setFocus");
+});
+
+test("🔴 the view door is gated exactly like everything else on the row", () => {
+  // The evening ruling of 2026-08-30 put the switch BACK — as a glyph, not the buried menu row
+  // the morning cut was aimed at. Same law as Sources and the map: absent until it has something
+  // to do (a conversation to leave), then present for the session.
   assert.match(HEADER, /\{view && onToggleView && <CanvasViewControl /, "the view door lost its conversation gate");
-  assert.ok(!/<OptionsControl/.test(HEADER), "the standalone read-aloud glyph is back");
-  assert.match(HEADER, /<OptionsMenu voice=\{voice\} \/>/, "the menu lost its voice input");
-});
-
-test("🔴 the `⋯` is the row's ONE unconditional control, and it reports non-default state", () => {
-  const menu = CONTROLS.slice(CONTROLS.indexOf("export function OptionsMenu"));
-  assert.ok(menu.length > 0, "the options menu is gone");
-  assert.match(
-    menu,
-    /\(voiceOn \|\| style !== DEFAULT_LEARNING_STYLE\) && "text-\(--ui-action\)/,
-    "a non-default state no longer lights the glyph, so it is invisible without a click",
-  );
+  assert.match(CONTROLS, /export function CanvasViewControl/, "the door's control left the controls file");
 });

@@ -1,0 +1,34 @@
+# .github/workflows/speech-live.yml
+# Manual acceptance for the DEPLOYED pronunciation lane (see scripts/live-speech-acceptance.ts).
+# Not on PRs: each run spends real Azure speech quota and proves the deployment, not the diff.
+name: speech-live
+on:
+  workflow_dispatch: {}
+concurrency:
+  group: speech-live
+  cancel-in-progress: false
+jobs:
+  live-speech:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Pronunciation round trip against the deployed app
+        env:
+          SB_URL: ${{ secrets.SB_URL }}
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+          ANON_KEY: ${{ secrets.ANON_KEY }}
+          # The custom domain first (what learners hit); the project's vercel.app alias
+          # second, because the custom domain's bot check may challenge a plain API call.
+          APP_ORIGINS: https://app.enternemesis.com,https://nemesis-web-axelgalvez1121-4954s-projects.vercel.app
+        run: deno run --allow-net --allow-env --allow-read --allow-write --allow-run=ffmpeg scripts/live-speech-acceptance.ts
+      - name: Remove the run's test account, even if the run was cancelled
+        if: always()
+        timeout-minutes: 2
+        env:
+          SB_URL: ${{ secrets.SB_URL }}
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+        run: deno run --allow-net --allow-env --allow-read --allow-write scripts/ci-cleanup.ts

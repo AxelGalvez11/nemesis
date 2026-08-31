@@ -88,20 +88,26 @@ test("🔴🔴🔴 the rail has ONE geometry — hovering it may not move a sing
   // reddens, which is the only edit that could bring the movement back.
   const rowHeights = [...RAIL_CODE.matchAll(/className=\{cn\(([\s\S]*?)\n      \)\}/g)];
   assert.ok(!/h-\[36px\]/.test(RAIL_CODE), "the 36px open row is back — the column will grow on hover again");
-  assert.ok(/"group relative flex h-2 shrink-0/.test(RAIL_CODE), "the marker is no longer one fixed height");
+  // 🔴 14px SINCE 2026-08-30 (owner: "still feels a bit small"; was 9px). The number may move
+  // again; what may not exist is a SECOND one — the h-[36px] check above holds that half.
+  assert.ok(/"group relative flex h-\[14px\] shrink-0/.test(RAIL_CODE), "the marker is no longer one fixed height");
   assert.ok(rowHeights.length >= 1, "the marker stopped composing its classes, so this guard cannot read it");
 });
 
 test("🔴🔴 the label is a TOOLTIP, out of flow, carrying the reference's list type", () => {
-  // The 2026-08-26 measurements are not discarded — they moved onto the tooltip, which is where the
-  // label now lives: 14px on a 20px line, truncated at 200px (the same share of a title ChatGPT's
-  // 260px sidebar shows inside its 10px row padding).
+  // The label wears ChatGPT's own TOOLTIP, measured in the owner's signed-in account 2026-08-30:
+  // a fully-rounded pill, 5px 12px padding, 14px type on an 18px line at weight 600, shadow and no
+  // ring. Truncated at 200px (the same share of a title its 260px sidebar shows inside 10px row
+  // padding). The rail itself has no ChatGPT counterpart to copy — a 79-turn conversation there
+  // carries no edge rail at all — so the ergonomics are matched where counterparts exist.
   //
   // 🔴 `absolute` IS THE WHOLE FIX. Out of flow, a label cannot change the row's height, the
   // column's height, or where any other marker is — so the thing being pointed at stays put. A
   // label that reserved space in ANY form would reintroduce the report.
   assert.ok(/pointer-events-none absolute right-full/.test(RAIL_CODE), "the label is back in flow and can move the column");
-  assert.ok(/leading-\[20px\]/.test(RAIL_CODE), "the label is not on the reference's 20px line");
+  assert.ok(/rounded-full/.test(RAIL_CODE), "the label lost the reference's pill shape");
+  assert.ok(/leading-\[18px\]/.test(RAIL_CODE), "the label is not on the reference tooltip's 18px line");
+  assert.ok(/font-semibold/.test(RAIL_CODE), "the label lost the reference tooltip's 600 weight");
   assert.ok(/max-w-\[200px\]/.test(RAIL_CODE), "the label lost the measured truncation width");
   // 🔴 IT MUST NOT EAT THE CLICK IT DESCRIBES: it overlaps the reading column and sits over the
   // marker's own hit target.
@@ -234,7 +240,12 @@ test("🔴 a collapsed marker still has an accessible name", () => {
 
 test("the active marker is both longer and brighter", () => {
   // Length survives low opacity; brightness survives a peek where every marker is the same length.
-  assert.ok(/h-0\.5 w-4 bg-\(--ui-text-primary\)/.test(RAIL_CODE), "the active marker is not emphasised");
+  // Pinned as an INEQUALITY, not as pixels — the 2026-08-30 size-up tripped the exact-value form
+  // of this guard while leaving its truth intact, which is this file's own recorded trap.
+  const active = /w-\[(\d+)px\] bg-\(--ui-text-primary\)/.exec(RAIL_CODE);
+  const resting = /w-\[(\d+)px\] bg-\(--ui-text-tertiary\)/.exec(RAIL_CODE);
+  assert.ok(active && resting, "the two marker states stopped declaring widths this guard can read");
+  assert.ok(Number(active[1]) > Number(resting[1]), "the active marker is no longer LONGER than a resting one");
 });
 
 test("🔴 the rail listens to no scroll event", () => {

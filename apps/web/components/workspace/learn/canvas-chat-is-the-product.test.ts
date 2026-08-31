@@ -2,12 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import {
-  CANVAS_VIEW_STORAGE_KEY,
-  DEFAULT_CANVAS_VIEW,
-  canvasViewAction,
-  otherCanvasView,
-} from "@/lib/learn/canvas-view";
 
 // 🔴🔴🔴 NEMESIS IS A CHATBOT, AND THE CANVAS IS A WAY OF LOOKING AT IT.
 //
@@ -40,14 +34,44 @@ const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^
 const CANVAS = strip(read("./learning-canvas.tsx"));
 const TURN = read("./canvas-thread-turn.tsx");
 const TURN_CODE = strip(TURN);
-const HOOK = strip(read("./use-canvas-view.ts"));
-const MODEL = strip(readFileSync(new URL("../../../lib/learn/canvas-view.ts", import.meta.url), "utf8"));
 
 // ── the chat is the front door ──────────────────────────────────────────────────────────────
 
-test("🔴🔴🔴 the chat is the default, and the Canvas is the option", () => {
-  // The owner's reversal, in one value. Calibration: put `answer` back and this reddens alone.
-  assert.equal(DEFAULT_CANVAS_VIEW, "conversation");
+test("🔴🔴 the chat is the DEFAULT view, and the second one is a door, not a pin", () => {
+  // Two owner rulings, hours apart, 2026-08-30. Morning (#937): *"why is latest output option
+  // even there in the first place?"* — the view died with its buried menu row. Evening: *"also
+  // there should be a way to chat mode to canvas mode"* — the view came back with a VISIBLE,
+  // gated glyph. What must never come back is the part that generated three defect reports: the
+  // stored pin. The view is in-memory per visit; every canvas opens on the conversation.
+  const HOOK = strip(readFileSync(new URL("./use-canvas-view.ts", import.meta.url), "utf8"));
+  const MODEL = strip(readFileSync(new URL("../../../lib/learn/canvas-view.ts", import.meta.url), "utf8"));
+  assert.match(MODEL, /DEFAULT_CANVAS_VIEW: CanvasView = "conversation"/, "the chat stopped being the default");
+  assert.match(HOOK, /useState<CanvasView>\(DEFAULT_CANVAS_VIEW\)/, "the view no longer starts at the default");
+  assert.ok(!/getItem|setItem/.test(HOOK), "the stored view pin is back — the three-report defect returns");
+  assert.match(HOOK, /removeItem\(CANVAS_VIEW_STORAGE_KEY\)/, "old browsers' pins are no longer healed on mount");
+  assert.match(CANVAS, /const threadOpen = view === "conversation" && !viewing;/, "the thread gate lost the view");
+});
+
+test("🔴 the view door is a gated header glyph, wording owned by canvasViewAction", () => {
+  const CONTROLS = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
+  const HEADER = strip(readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8"));
+  const at = CONTROLS.indexOf("export function CanvasViewControl");
+  assert.ok(at > 0, "the view control is gone");
+  const body = CONTROLS.slice(at, at + 900);
+  assert.match(body, /canvasViewAction\(view\)/, "the control no longer writes its wording through canvasViewAction");
+  assert.match(body, /aria-label=\{action\}/, "the control's accessible name is not the action's own words");
+  assert.match(body, /onClick=\{onToggleView\}/, "the control does not actually switch the view");
+  assert.match(body, /view === "conversation" \? "output" : "comment-discussion"/, "the door's glyphs changed — repoint the font check below");
+  const css = readFileSync(new URL("../../../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url), "utf8");
+  for (const name of ["output", "comment-discussion"]) {
+    assert.ok(css.includes(`.codicon-${name}:before`), `codicon-${name} is not in the font`);
+  }
+  assert.match(
+    HEADER,
+    /\{view && onToggleView && <CanvasViewControl onToggleView=\{onToggleView\} view=\{view\} \/>\}/,
+    "the header stopped gating the door on a conversation existing",
+  );
+  assert.match(CANVAS, /onToggleView=\{conversationOffered \? toggleView : undefined\}/, "the canvas stopped withholding the door");
 });
 
 test("🔴🔴 the thread is in the SAME scroller as the live answer, not an overlay over it", () => {
@@ -194,81 +218,20 @@ test("🔴🔴 the newest stored turn is held back ONLY when the session put it 
   assert.match(CANVAS, /const liveShowsLast = canvas\.blocks\.length === 0;/, "the hold-back is unconditional again");
 });
 
-// ── the choice lasts while you look, and nothing else ───────────────────────────────────────
-//
-// 🔴🔴🔴 THE STORED VIEW IS DEAD, AND THESE TESTS ARE WRITTEN SO RESTORING IT REDDENS THEM.
-// Persisting the toggle produced the same owner report three times over four days ("chat mode not
-// showing conversation history"): one click of "Focus on the latest output" pinned `answer` for
-// every canvas on every visit, invisibly, while the thread worked the whole time. Reproduced on
-// screen 2026-08-30 — four recorded turns, none drawn. The account lives on
-// `CANVAS_VIEW_STORAGE_KEY`'s doc; what follows is the enforcement.
-
-test("🔴🔴🔴 every canvas opens on the conversation, because nothing stored can say otherwise", () => {
-  // Both halves matter. The default IS the conversation — and the hook has no way to start
-  // anywhere else, because its state initialises from the constant and nothing reads storage.
-  assert.equal(DEFAULT_CANVAS_VIEW, "conversation");
-  assert.match(HOOK, /useState<CanvasView>\(DEFAULT_CANVAS_VIEW\)/, "the view no longer starts on the default");
-  assert.ok(!/getItem/.test(HOOK), "the hook is reading a stored view again — the invisible pin is back");
-  assert.ok(!/readCanvasView/.test(HOOK) && !MODEL.includes("readCanvasView"), "the stored-view reader has been rebuilt");
-});
-
-test("🔴🔴 the toggle is never persisted, anywhere", () => {
-  // To the browser: one click must not outlive the visit. To the canvas: merely looking at a
-  // canvas must not modify it (the History Rail's own rule for `rewound`).
-  assert.ok(!/setItem/.test(HOOK), "the toggle writes to storage again — one click will outlive the visit");
-  assert.ok(!/update\(\{[^}]*view/.test(CANVAS), "the view is being written into the canvas document");
-  assert.ok(!MODEL.includes("canvas.document"), "the view model reaches into the canvas document");
-});
-
-test("🔴🔴 the old pin is deleted on mount, and that is the ONE storage access left", () => {
-  // Browsers that ran the persisting build still hold `answer` under the key. Leaving it there
-  // invites some future reader to trust it; removal heals every one of them, including the three
-  // reports' own browser.
-  assert.match(HOOK, /removeItem\(CANVAS_VIEW_STORAGE_KEY\)/, "the healer is gone and stale pins live for ever");
-  assert.equal((HOOK.match(/window\.localStorage/g) ?? []).length, 1, "a second storage access appeared — this feature is allowed exactly one, the healer");
-  assert.match(MODEL, new RegExp(`"${CANVAS_VIEW_STORAGE_KEY.replace(/\./g, "\\.")}"`), "the key moved, so the healer deletes the wrong thing");
-});
-
-test("🔴🔴 the one storage access is guarded, because localStorage THROWS", () => {
-  // Not "returns null" — throws, in a private window, with site data blocked, and inside a
-  // cross-origin frame. An unguarded touch takes out the product's front door to tidy a dead key.
-  const touches = (HOOK.match(/window\.localStorage/g) ?? []).length;
-  const guards = (HOOK.match(/\btry \{/g) ?? []).length;
-  assert.ok(touches > 0, "the healer no longer touches storage");
-  assert.equal(guards, touches, `${touches} storage accesses, ${guards} guards — one can take the Canvas down`);
-});
-
-// ── the model, as a pure function ───────────────────────────────────────────────────────────
-
-test("the switch is symmetric", () => {
-  assert.equal(otherCanvasView("answer"), "conversation");
-  assert.equal(otherCanvasView("conversation"), "answer");
-});
-
-test("🔴 the control's words name the DESTINATION, never where you already are", () => {
-  assert.match(canvasViewAction("answer"), /whole conversation/i);
-  assert.match(canvasViewAction("conversation"), /focus/i);
-  assert.notEqual(canvasViewAction("answer"), canvasViewAction("conversation"));
-});
-
-test("🔴 the view switch is a glyph on the row again, wording intact (owner 2026-08-30)", () => {
-  // The morning fold into the `⋯` lasted one day — by evening: *"there should be a way to chat
-  // mode to canvas mode"*; a door is not a door when it is behind another door. What must not
-  // move: `canvasViewAction` still writes the words (the tooltip and a screen reader name the
-  // DESTINATION), and the header still withholds the control until a conversation exists.
+test("🔴 the options menu did not survive anywhere, and neither did its rows' machinery", () => {
+  // Owner, 2026-08-30, pointing at the open panel: *"remove this entire panel."* Every row's
+  // feature died with it — the tombstone in canvas-controls.tsx carries the words. This pins the
+  // ABSENCES a partial revert would resurrect first.
   const controls = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
-  const at = controls.indexOf("export function CanvasViewControl");
-  assert.ok(at > 0, "the view control is gone");
-  const body = controls.slice(at, at + 900);
-  assert.match(body, /canvasViewAction\(view\)/, "the control no longer writes its wording through canvasViewAction");
-  assert.match(body, /aria-label=\{action\}/, "the control's accessible name is not the action's own words");
-  assert.match(body, /onClick=\{onToggleView\}/, "the control does not actually switch the view");
   const header = strip(readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8"));
-  assert.match(
-    header,
-    /\{view && onToggleView && <CanvasViewControl onToggleView=\{onToggleView\} view=\{view\} \/>\}/,
-    "the header stopped gating the door on a conversation existing",
-  );
+  assert.ok(!/export function OptionsMenu/.test(controls), "the options menu is back");
+  assert.ok(!/OptionsMenu|MinimapControl/.test(header.replace(/import[^;]+;/g, "")), "the header mounts a dead control again");
+  assert.ok(!/LEARNING_STYLE|LearningStyle/.test(controls), "the teaching-style picker is back");
+  // 🔴 The view switch is deliberately NOT on this list any more: the owner ordered it back the
+  // same evening (*"there should be a way to chat mode to canvas mode"*) — as a visible header
+  // glyph, never as a menu. The two tests above this one are its fence; what stays banned here
+  // is the MENU it used to hide in.
+  assert.ok(!/MenuItem[\s\S]{0,200}canvasViewAction/.test(controls), "the view switch crawled back into a menu row");
 });
 
 test("🔴🔴 every control in the floating strip can actually be clicked", () => {
@@ -283,14 +246,18 @@ test("🔴🔴 every control in the floating strip can actually be clicked", () 
   assert.match(controls.slice(at, at + 200), /pointer-events-auto/, "the header controls are dead again");
 });
 
-test("🔴 every glyph the row's controls draw exists in the icon font", () => {
+test("🔴 every glyph on the header's surviving controls exists in the icon font", () => {
   // A `Codicon` whose name is not in the font still measures, still takes clicks, and draws
-  // nothing. The view door's two names sit in a ternary, so they are checked by name.
-  const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
-  const viewControl = controls.slice(controls.indexOf("export function CanvasViewControl"));
-  assert.match(viewControl, /view === "conversation" \? "output" : "comment-discussion"/, "the door's glyphs changed — repoint the font check");
+  // nothing. This used to check the one glyph inside the `⋯` menu; the menu is gone
+  // (2026-08-30), so it now sweeps every named glyph in the two files that draw this corner —
+  // strictly wider than what it replaces.
   const css = readFileSync(new URL("../../../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url), "utf8");
-  for (const name of ["ellipsis", "output", "comment-discussion"]) {
-    assert.ok(css.includes(`.codicon-${name}:before`), `codicon-${name} is not in the font`);
+  for (const file of ["./canvas-controls.tsx", "./course-map.tsx"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    const names = [...source.matchAll(/<Codicon name="([a-z-]+)"/g)].map((hit) => hit[1]);
+    assert.ok(names.length > 0, `${file} draws no named glyph at all`);
+    for (const name of names) {
+      assert.ok(css.includes(`.codicon-${name}:before`), `codicon-${name} (${file}) is not in the font`);
+    }
   }
 });

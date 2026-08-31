@@ -70,9 +70,9 @@ import { CanvasFade } from "./canvas-fade";
 import { CanvasThreadTurnView } from "./canvas-thread-turn";
 import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
+import { WHOLE_CANVAS } from "@/lib/learn/canvas-focus";
 import { fileTurn, turnHasContent, type CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { LearnerUtterance } from "./learner-utterance";
-import { useCanvasView } from "./use-canvas-view";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
 import { replySegments } from "@/lib/learn/reply-visuals";
@@ -84,6 +84,7 @@ import { CanvasRecorder } from "./canvas-recorder";
 import { takePending } from "./pending-attachment";
 import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
+import { useCanvasView } from "./use-canvas-view";
 import { useCanvasVoice } from "./use-canvas-voice";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
@@ -127,6 +128,26 @@ const CANVAS_EXIT_ROUTE = "/learn";
  * about to land is a visible regression on every slow connection.
  */
 const STRANDED_MS = 2_000;
+
+/**
+ * How long after this canvas mounts an arriving surface still counts as ARRIVING.
+ *
+ * 🔴🔴 WITHOUT THIS THE FADE FIRES TWICE, AND THE SECOND ONE IS MID-SESSION. `LearningCanvas` has
+ * two surfaces: a pre-ready one while the canvas is still being read out of the database, and the
+ * real one after. They are different trees, so React mounts the second — and an arrival animation
+ * on it would play whenever that happens, not when the learner arrived.
+ *
+ * Measured against the dev seed: from the front door the real surface is up within tens of ms of
+ * the mount, because the canvas was just minted. On a DEEP LINK or a refresh the pre-ready surface
+ * holds for **five to nine seconds** first — so the learner has been looking at a character for
+ * most of ten seconds when the swap happens, and fading it in there would read as the page
+ * glitching rather than as anything arriving.
+ *
+ * 1.2s sits an order of magnitude clear of the first case and nowhere near the second, and it is
+ * comfortably past the animation's own 440ms (320 plus its 120 delay) so the class is only ever
+ * dropped from an element that has already finished.
+ */
+const ARRIVING_MS = 1_200;
 
 /** What "send" means when a passage is staged and nothing was typed.
  *
@@ -255,6 +276,23 @@ export function LearningCanvas({
    * holding it is still on screen, which is the definition of the push not having worked, and it
    * is cancelled on unmount by the effect below.
    */
+  /**
+   * When this canvas mounted, and therefore whether what is on screen is an ARRIVAL.
+   *
+   * 🔴 `useState` WITH A LAZY INITIALISER, NOT A REF, AND NOT AN EFFECT. An effect runs after the
+   * browser has painted, so the class would land a frame late and the content would flash at full
+   * opacity before restarting the animation — the exact flicker this is here to remove. A lazy
+   * initialiser is evaluated once, during the first render, which is early enough.
+   */
+  const [mountedAt] = useState(() => Date.now());
+  /**
+   * `canvas-enter` while this is still an arrival, and nothing once it is not.
+   *
+   * 🔴 IT IS SAFE TO STOP RETURNING THE CLASS. `ARRIVING_MS` is nearly three times the animation's
+   * own length, so by the time a later render drops it the element has finished and is sitting at
+   * its natural opacity. Removing a finished `both` animation changes nothing on screen.
+   */
+  const arriving = Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
   const strandedTimer = useRef<number | null>(null);
   const leave = useCallback(() => {
     router.push(CANVAS_EXIT_ROUTE);
@@ -1232,7 +1270,7 @@ export function LearningCanvas({
    * and the learner would hear the beginning of the answer over and over. It is the same signal the
    * row of controls under an answer keys on, for the same reason: half an answer is not an answer.
    */
-  const voice = useCanvasVoice(policy, turnInFlight ? null : spokenReply);
+  const voice = useCanvasVoice(turnInFlight ? null : spokenReply);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //
@@ -1361,21 +1399,14 @@ export function LearningCanvas({
    */
   const [rewound, setRewound] = useState<string | null>(null);
 
-  /**
-   * WHICH OF THE TWO VIEWS IS ON SCREEN — owner, 2026-08-26: *"a different view, a different way to
-   * view outputs."*
-   *
-   * 🔴🔴 UNLIKE `rewound` ABOVE, THIS ONE PERSISTS, AND THE DIFFERENCE IS WHAT KIND OF FACT EACH IS.
-   * Where you scrolled BACK to is about this visit and must not survive it — reopening tomorrow has
-   * to land on now. How you like to read is about you, and a preference that reset on every reload
-   * would be a control rather than a preference. It is kept in the browser and never on the canvas,
-   * so looking at a canvas still cannot modify it; see `lib/learn/canvas-view.ts`.
-   *
-   * 🔴 PERSISTING IS ONLY SAFE BECAUSE THE CONVERSATION VIEW ENDS AT THE PRESENT. The dangerous
-   * state this feature could have — old content reading as live — is exactly what `rewound` guards
-   * against with a banner and a `turnInFlight` reset. There is no such state here: the newest thing
-   * on the page is the newest thing that happened, and a new answer lands at the bottom of it.
-   */
+  // 🔴🔴 THE SECOND VIEW IS BACK, BY THE SAME OWNER, THE SAME DAY. The morning cut (#937) read
+  // *"why is latest output option even there in the first place?"* as the VIEW being unnecessary
+  // and deleted it whole. By evening, looking at the chat: *"also there should be a way to chat
+  // mode to canvas mode"*. What was actually unnecessary was the DOOR he was shown — a wordy row
+  // buried in a menu — not the place it led. The view returns with a visible, gated glyph in the
+  // header (`CanvasViewControl`) and none of what made it a defect factory: no localStorage pin
+  // (#930's in-memory rule stands, fenced below in canvas-chat-is-the-product.test.ts), and the
+  // conversation is the default on every visit.
   const { toggle: toggleView, view } = useCanvasView();
 
 
@@ -1483,18 +1514,21 @@ export function LearningCanvas({
   }, [session.aside, session.madeArtifact]);
 
   /**
-   * Whether the thread is on screen.
+   * Whether the thread is on screen — which is always, except while rewound.
    *
    * 🔴 A REWIND STILL OUTRANKS IT. `CanvasHistoryView` is an opaque overlay aimed at ONE moment;
    * leaving the thread painting underneath would put two readings of the same canvas on screen.
    *
-   * 🔴 IT IS NOT GATED ON HAVING CONTENT. The thread is the DEFAULT surface now, and an empty one
-   * is simply a new conversation — the same thing an empty chat looks like anywhere. What is gated
-   * is the SWITCH, below, which has nothing to offer until a turn has happened.
+   * 🔴 IT IS NOT GATED ON HAVING CONTENT. An empty thread is simply a new conversation — the same
+   * thing an empty chat looks like anywhere. And it is no longer gated on a view: the view switch
+   * died on 2026-08-30 (see the note above `rewound`'s sibling state), so `!viewing` is the whole
+   * condition.
    */
   const threadOpen = view === "conversation" && !viewing;
+  // The door is withheld until there is a conversation to switch away from, and monotonic within
+  // a session — the 2026-08-19 rule: chrome may arrive and stay, never come and go.
+  const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
 
-  /** Whether there is anything to read back through at all — see `ConversationControl`. */
   /**
    * Re-ask a question and let the answer land as a new turn.
    *
@@ -1504,8 +1538,6 @@ export function LearningCanvas({
    * something was said that no longer is.
    */
   const retryTurn = useCallback((said: string) => { void converse(said); }, [converse]);
-
-  const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
 
   /**
    * 🔴 A NEW TURN RETURNS THE LEARNER TO NOW. Leaving the canvas rewound while an answer arrives
@@ -1592,7 +1624,10 @@ export function LearningCanvas({
   if (!session.ready) {
     return (
       <CanvasSurface onExit={leave}>
-        <div className="flex h-full items-center justify-center">
+        {/* 🔴 UNCONDITIONAL, UNLIKE THE REAL SURFACE'S. This branch exists only while the canvas is
+            being read out of the database, which is only ever on the way in — there is no
+            mid-session render of it to protect against, so it needs no `ARRIVING_MS` window. */}
+        <div className="canvas-enter flex h-full items-center justify-center">
           {/* Nothing is docked yet — there is no composer to stand above — so the character
               simply holds the middle, which is where it would have walked to anyway.
               🔴🔴 `station` IS PASSED, AND THE COMMENT ABOVE WAS A LIE WITHOUT IT. The dock falls back
@@ -1883,6 +1918,8 @@ export function LearningCanvas({
       onExit={leave}
       chrome={
       <CanvasHeader
+        onToggleView={conversationOffered ? toggleView : undefined}
+        view={conversationOffered ? view : undefined}
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
         // 🔴 THE SOURCES PANEL HAS TO BE ABLE TO SAY "THE MODEL" (N10), AND IT ASKS THE CLAIMS
@@ -1899,19 +1936,18 @@ export function LearningCanvas({
         outputTools={{ onRevise: reviseOutput, onUndo: undoOutput, uid }}
         replyAudio={voice.replyAudio}
         transcript={transcript}
-        voice={voice.header}
         // 🔴 THE NARROW SLICE, NOT `policy` ITSELF — see the prop's own comment in
-        // canvas-header.tsx. `decidedObjectiveKey` is derived here rather than handing the whole
-        // `decision` down, so nothing below this line can reach into it for anything but the one
-        // fact the Minimap's "recommended" row needs (§H3).
+        // canvas-header.tsx. The slice shrank with `MinimapControl` (owner, 2026-08-30): the
+        // course map is the one panel left in that corner, and these are exactly its inputs.
         minimap={{
-          coverage: policy.coverage,
-          decidedObjectiveKey: policy.decision?.objective.identityKey ?? null,
           evidence: policy.evidence,
           focus: policy.focus,
-          outcome: policy.outcome,
+          // 🔴 WIDENING IS THE SAME DOOR NARROWING USES — `setFocus`, with the whole-canvas
+          // scope. The map's "Whole course" row exists because the panel that used to carry the
+          // way back out (Progress) is gone; see course-map.tsx's `onWhole` prop comment.
+          onClearCourseScope: () => policy.setFocus(WHOLE_CANVAS),
           // 🔴 THE COURSE, RESOLVED AGAINST WHAT THIS CANVAS ACTUALLY HOLDS — see `planRows` above.
-          // Null on the ordinary canvas, in which case the panel is exactly what it was yesterday.
+          // Null on the ordinary canvas, in which case there is no map control at all.
           onPickCourseScope: (scope) => policy.setFocus({ kind: "selection", ...scope }),
           plan: planRows,
           planTitle: session.coursePlan?.title ?? null,
@@ -1921,8 +1957,6 @@ export function LearningCanvas({
           // the panel.
           planCredit:
             session.coursePlan?.sources?.length === 1 ? (session.coursePlan.sources[0] ?? null) : null,
-          setFocus: policy.setFocus,
-          territories: policy.territories,
         }}
         onDelete={() => {
           void session.remove().then(() => router.push(CANVAS_EXIT_ROUTE));
@@ -1945,11 +1979,6 @@ export function LearningCanvas({
         // continuous across question and feedback, never quiet over a document.
         onFiles={attachWithChips}
         onRename={session.rename}
-        // 🔴 WITHHELD UNTIL THERE IS A CONVERSATION TO READ, which is what keeps a fresh canvas's
-        // control row exactly as it is today. `CanvasHeader` renders the control only when both
-        // arrive, so this is one condition rather than a prop the header has to second-guess.
-        onToggleView={conversationOffered ? toggleView : undefined}
-        view={conversationOffered ? view : undefined}
       />
       }
     >
@@ -2017,7 +2046,12 @@ export function LearningCanvas({
       )}
 
       <SourceTabPane />
-      <div className={`relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
+      {/* 🔴 `canvas-enter` — THE ANSWER REGION FADES IN WITH THE CONTROLS RATHER THAN APPEARING
+          WITH THEM. Owner, 2026-08-30: *"i want a smooth fade in of everything."* The question
+          chip, the thinking caption and the thread all used to land on the same frame as the route
+          swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
+          the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
@@ -2199,7 +2233,7 @@ export function LearningCanvas({
                     locale={segment.locale}
                     onSpeak={() => voice.speakExample(`s${index}`, segment.locale, segment.text)}
                     onStop={voice.stopSpeaking}
-                    // 🔴 THIS ROW, NOT ANY ROW. `voice.header.speaking` is one boolean for the whole
+                    // 🔴 THIS ROW, NOT ANY ROW. `voice.speaking` is one boolean for the whole
                     // surface, and handing it to every example turned all of them into stop buttons
                     // the moment one played (owner, 2026-08-21).
                     speaking={voice.speakingExample === `s${index}`}
@@ -2669,6 +2703,15 @@ export function LearningCanvas({
           outside the flow — it cannot reflow the lesson it is sitting on, and it cannot swallow
           a press meant for the composer behind it. */}
       <CharacterDock
+        // 🔴🔴 `canvas-enter` IS WHAT MAKES THE ARRIVAL SMOOTH, AND IT IS THE ONLY THING THAT COULD.
+        // Owner, 2026-08-30: *"the mascot seems to move to the bottom then back to the middle then
+        // back to the chat composer super quickly."* Measured: at the swap this dock appears at
+        // (400,778) at 76px on the same frame the front door's character vanishes from (746,378) at
+        // 159px, then walks 50px and jumps 24px over the next 120ms while it finds its anchor and
+        // the rail collapses. The fade's 120ms delay covers that whole window, so what is left to
+        // see is a character fading into the place it belongs. Trying to make it TRAVEL there
+        // instead has been attempted twice and is why those corrections exist — see globals.css.
+        className={arriving}
         // 🔴 THE COMPOSER, AND ON TOP OF IT (owner 2026-08-26, evening: *"I want it to be on top on
         // the left of the chat composer"*, and then, asked to be exact: *"make sure its on top of
         // the composer not in inside it, top left"*). This reverses that same morning's *"make the
@@ -2807,7 +2850,7 @@ export function LearningCanvas({
           forceOpen={!text.selection && Boolean(term)}
           onAsk={(request) => void ask(request)}
           onSpeak={(text) => voice.speakAloud(text)}
-          speaking={voice.header.speaking}
+          speaking={voice.speaking}
           onDismiss={dismissSelection}
           rect={pointed.rect}
           selection={pointed.selection}

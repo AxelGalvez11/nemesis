@@ -69,6 +69,7 @@ export function CourseMapControl({
   credit = null,
   evidence,
   onPick,
+  onWhole,
   plan,
   title,
 }: {
@@ -81,6 +82,18 @@ export function CourseMapControl({
   evidence: readonly LearnerEvidence[];
   /** Focus the canvas on one part of the course. */
   onPick: (scope: { label: string; identityKeys: readonly string[] }) => void;
+  /**
+   * Back to the whole course.
+   *
+   * 🔴 THIS ROW MOVED HERE WHEN `MinimapControl` WAS CUT (owner, 2026-08-30: *"remove the
+   * 'progress' map since the course map is pretty much the same thing"*), AND IT IS LOAD-BEARING,
+   * NOT A COURTESY. The map's own rows only ever NARROW; the Progress panel carried the one
+   * "Whole canvas" row that widened back out. Deleting that panel without rehoming the row would
+   * have left a learner who picked a section narrowed for ever, with the composer as the only
+   * accidental way out. Same rule as before the move: clearing focus and choosing the whole
+   * course are one action, so it is one row in the list it clears, not a separate control.
+   */
+  onWhole: () => void;
   plan: readonly PlanTerritory[];
   title: string;
 }) {
@@ -124,6 +137,25 @@ export function CourseMapControl({
           <p className="truncate px-2 pb-1 pt-1 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
             {title}
           </p>
+
+          {/* `activeLabel === null` IS "the whole course" — the same fact the header uses to decide
+              this panel's badge, read here to mark the row current instead of a second flag. */}
+          <button
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-bg-tertiary)",
+              activeLabel === null && "bg-(--ui-bg-tertiary)",
+            )}
+            onClick={() => {
+              onWhole();
+              setOpen(false);
+            }}
+            type="button"
+          >
+            <span className="min-w-0 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
+              Whole course
+              <span className="sr-only">{activeLabel === null ? ". Currently here." : ""}</span>
+            </span>
+          </button>
 
           {chapters.map((chapter) => {
             const isOpen = chapter.label === here ? !shut.has(chapter.label) : shut.has(chapter.label);

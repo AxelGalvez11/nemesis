@@ -16,12 +16,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { shouldSpeakAction, speechChunks, SPEECH_CHAR_LIMIT, type SpokenMoment } from "@/lib/learn/canvas-speech";
 import { ANSWER_SPEED, LOCALE_UNSPECIFIED, routeSpeech } from "@/lib/learn/speech-route";
-import {
-  DEFAULT_VOICE_MODE,
-  readVoiceMode,
-  type VoiceMode,
-  writeVoiceMode,
-} from "@/lib/learn/voice-preferences";
 
 import { correctionLead } from "./correction-copy";
 import {
@@ -32,15 +26,8 @@ import {
 } from "@/lib/speech/reading-voice";
 import { useCanvasSpeech, type CanvasSpeech, type SpokenVoice } from "./use-canvas-speech";
 import { useResponseAudio, type ResponseAudio } from "./use-response-audio";
-import type { PolicyRuntime } from "./use-policy-runtime";
 
 export interface CanvasVoice {
-  /** Straight onto `<CanvasHeader voice={…}>`. */
-  header: {
-    mode: VoiceMode;
-    speaking: boolean;
-    onToggle: (next: VoiceMode) => void;
-  };
   /**
    * The audio of the answer on screen: fetch, playback, and every control over it.
    *
@@ -70,68 +57,21 @@ export interface CanvasVoice {
    * The learner asking to hear a phrase again (§47).
    *
    * 🔴 EXPOSED SEPARATELY FROM EVERYTHING ABOVE, BECAUSE IT OBEYS DIFFERENT RULES. Everything else
-   * here is governed by voice mode — whether Nemesis narrates unprompted. This is a press, on a
-   * phrase in a language being learned, and it works with voice mode off: "do not read my questions
-   * aloud" and "never let me hear how this word sounds" are different preferences, and conflating
-   * them would put the pronunciation of a foreign word behind a setting about narration.
+   * above answers a press. This is a press on a phrase in a language being learned, and it kept
+   * working when the narration mode existed and was off — hearing how a word sounds was never a
+   * preference about narration, which is also why it survived the mode's removal untouched.
    */
   replay: CanvasSpeech["replay"];
   /** True while any audio is playing, so a replay control can disable itself rather than overlap. */
   speaking: boolean;
 }
 
-/**
- * What this decision would say out loud, if anything.
- *
- * Returns the moment and its identity together so they cannot be computed from different renders —
- * the identity is what stops a re-render reading the same question twice, and an identity derived
- * separately from the text is an identity that can drift from it.
- */
-function momentFor(runtime: PolicyRuntime, reply: SpokenReply | null): { key: string; moment: SpokenMoment } | null {
-  // 🔴🔴 A REPLY SILENCES THIS LANE RATHER THAN BEING READ BY IT (§48). An answer on screen has
-  // DISPLACED whatever the policy was showing (see `canvas-hosting.ts`), so narrating the question
-  // underneath it would be reading a screen nobody is looking at. What it does NOT do any more is
-  // borrow this lane to speak itself: an answer is the one utterance a learner wants to pause,
-  // rewind and scrub, and this lane is fire-and-forget by design. `replyAudio` owns it instead.
-  if (reply) return null;
-
-  const { decision, feedback, prompt } = runtime;
-  // A verdict is on screen; the decision underneath has already moved on. Reading the next
-  // question over the learner's own result is the loudest possible version of getting this wrong.
-  if (feedback) return null;
-  if (!decision) return null;
-
-  // An exposition short enough to be a remark is read; a paragraph stays on screen where it can be
-  // skimmed and re-read. See `shouldSpeakAction`.
-  if (decision.action.type === "teach" || decision.action.type === "simplify") {
-    // The same text the teach/simplify branch renders: `decision.knowledge.statement`.
-    // 🔴 NOT `runtime.exposition` — that is a MODE (transient/held plus a duration), not words.
-    const said = decision.knowledge.statement ?? "";
-    if (!shouldSpeakAction({ actionType: decision.action.type, text: said })) return null;
-    return {
-      key: `${decision.action.type}:${decision.objective.identityKey}`,
-      moment: { kind: "question", text: said },
-    };
-  }
-
-  if (!shouldSpeakAction({ actionType: decision.action.type, text: "" })) return null;
-
-  if (decision.action.type === "retrieve") {
-    if (!prompt) return null;
-    return { key: `retrieve:${prompt.id}`, moment: { kind: "question", text: prompt.prompt } };
-  }
-
-  // `cue → answer` on screen; the arrow is a pause when spoken, never the word "arrow".
-  const { answer, cue, identityKey } = decision.objective;
-  return {
-    key: `correction:${identityKey}`,
-    moment: {
-      answer: cue ? `${cue}. ${answer}` : answer,
-      kind: "correction",
-      lead: correctionLead(decision.state.status),
-    },
-  };
-}
+// 🔴🔴 `momentFor` AND THE AUTOMATIC NARRATION LANE ARE GONE — owner, 2026-08-30: *"also remove
+// the read outloud."* "Read responses aloud" was the only door into voice mode, and this file's
+// own rule (stated when the mic option died the same way on 2026-08-25) is that a lane whose only
+// gate is gone goes entirely rather than sitting in the file unable to run. What remains is
+// everything a learner PRESSES for: the answer's own play button (`replyAudio`), `speakAloud`,
+// the language-example lane, and `replay` — none of which ever depended on the mode.
 
 /**
  * The learner's chosen voice, as the fields an utterance travels with.
@@ -165,8 +105,8 @@ export interface SpokenReply {
   text: string;
 }
 
-export function useCanvasVoice(runtime: PolicyRuntime, reply: SpokenReply | null = null): CanvasVoice {
-  const [mode, setMode] = useState<VoiceMode>(DEFAULT_VOICE_MODE);
+// 🔴 THE `runtime` PARAMETER LEFT WITH THE NARRATION LANE — `momentFor` was its only reader.
+export function useCanvasVoice(reply: SpokenReply | null = null): CanvasVoice {
   /** Counts presses of the on-demand Speak control, so each one is a new utterance key. */
   const aloudPress = useRef(0);
   /**
@@ -187,7 +127,7 @@ export function useCanvasVoice(runtime: PolicyRuntime, reply: SpokenReply | null
    * Canvas speaks — the automatic lane, the read-aloud row, a highlighted passage — uses this one
    * value, which is what "used everywhere Nemesis reads content aloud" means in code.
    *
-   * 🔴 STARTS AT THE DEFAULT AND IS CORRECTED AFTER THE FIRST PAINT, exactly like `mode` above.
+   * 🔴 STARTS AT THE DEFAULT AND IS CORRECTED AFTER THE FIRST PAINT.
    * Reading `localStorage` during render is a hydration mismatch; this file already solved that once
    * and the answer is the effect below, not a second pattern.
    */
@@ -237,7 +177,6 @@ export function useCanvasVoice(runtime: PolicyRuntime, reply: SpokenReply | null
   // Browser-only facts, corrected after the first paint. See the file header.
   useEffect(() => {
     const storage = typeof window === "undefined" ? null : window.localStorage;
-    setMode(readVoiceMode(storage));
     setReadingVoice(readReadingVoice(storage));
   }, []);
 
@@ -260,15 +199,6 @@ export function useCanvasVoice(runtime: PolicyRuntime, reply: SpokenReply | null
     };
   }, []);
 
-  const onToggle = useCallback((next: VoiceMode) => {
-    setMode(next);
-    writeVoiceMode(typeof window === "undefined" ? null : window.localStorage, next);
-    // Turning it off must silence what is already playing, not merely stop the next one.
-    // 🔴 BOTH LANES. Autoplay off with an answer still reading itself aloud is the setting visibly
-    // not working; the player is dismissed with the narration.
-    if (next === "off") { speech.stop(); replyAudio.stop(); }
-  }, [replyAudio, speech]);
-
   /**
    * The answer that has already been started, so it is never started twice.
    *
@@ -289,55 +219,14 @@ export function useCanvasVoice(runtime: PolicyRuntime, reply: SpokenReply | null
     // 🔴 ONLY WHEN THE ANSWER IS NEW, NEVER WHEN THE SETTING CHANGES. Switching autoplay on while an
     // answer is already on screen would make the toggle read the paragraph you are in the middle of
     // reading — a preference about what happens NEXT, narrating the present retroactively.
-    if (!arrived || !replyKey || !reply) return;
-    // 🔴 THE ONLY THING AUTOPLAY DECIDES IS WHETHER TO PRESS PLAY. Everything after this point —
-    // which provider, which voice, how it streams, how it is controlled — is identical to what a
-    // learner gets by pressing the button themselves. One path, two ways in.
-    if (mode !== "on") return;
-    replyAudio.start(reply.text);
-    // Keyed on the answer, never on `replyAudio`: the controller's identity changes as its own
-    // state does, and depending on it would restart the audio on every tick.
+    // 🔴 AUTOPLAY ITSELF DIED WITH THE MODE (owner, 2026-08-30) — this effect used to press play
+    // here when the setting was on. Stopping the OLD answer's audio above is what survives: it
+    // belongs to the answer being replaced, not to any setting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replyKey]);
 
-  const spokenMoment = mode === "on" ? momentFor(runtime, reply) : null;
-  const key = spokenMoment?.key ?? null;
-
-  useEffect(() => {
-    if (!spokenMoment) return;
-    // 🔴 THE ROUTER RATHER THAN `speechFor` DIRECTLY (§43). It still delegates the text decision to
-    // `speechFor`, so nothing about what gets said has changed; what it adds is the locale, the pace
-    // and the provider travelling WITH the utterance. This lane is `canvas` and passes no locale, so
-    // the request body is byte-identical to what shipped before — the seam exists, and the day a
-    // language session exists it passes the other purpose and a target locale here.
-    const route = routeSpeech({ key: spokenMoment.key, moment: spokenMoment.moment, purpose: "canvas" });
-    // A refusal is a real outcome: notation, or too long. The screen still shows it; Nemesis simply
-    // does not read it aloud.
-    if (route.decision !== "speak") return;
-
-    // 🔴 NOTHING FOLLOWS THE UTTERANCE ANY MORE, AND THAT IS THE OWNER'S CALL OF 2026-08-25:
-    // *"remove … the 'open mic after each question' option"*. A `.then()` used to sit here and open
-    // the microphone once Nemesis stopped talking, gated on a preference whose only switch was that
-    // menu row. With the row gone the gate could never open, so the whole lane went rather than
-    // being left in the file unable to run. The composer's own microphone button is untouched.
-    void speech
-      // 🔴 THE ROUTER STILL DECIDES THE TEXT, THE LOCALE AND THE PACE; THE LEARNER DECIDES WHO SAYS
-      // IT (§48). `route.provider` is the right answer for the target-language lane, where the
-      // variety is the material and Azure's catalogue is the only thing that can name it. It is the
-      // wrong answer here: the Canvas lane reads instruction aloud, and which voice reads it is a
-      // preference the learner set in Settings.
-      .speak(route.utterance.key, route.utterance.text, utteranceVoice(readingVoice, route.locale, route.speed));
-    // Keyed on the MOMENT, not on `speech`: the hook's own identity changes as its state does, and
-    // depending on it would restart the utterance every time `speaking` flipped.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
 
   return {
-    header: {
-      mode,
-      onToggle,
-      speaking: speech.speaking,
-    },
     replyAudio,
     // 🔴 THE PLAYER YIELDS TO A REPLAY PRESS, like every other cross-lane start. Delegates the
     // repeat itself to the speech lane, which owns the fresh-key rule.
