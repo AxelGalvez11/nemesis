@@ -114,7 +114,7 @@ test("🔴 the finished notice is a Record, because the chain it replaced was al
   // spreadsheet therefore announced a note, saved somewhere it had never been. A chain of ternaries
   // has no missing case for a compiler to find; a Record over the union does.
   const session = code("../../components/workspace/learn/use-canvas-session.ts");
-  assert.match(session, /const MADE_NOTICE: Record<DeliverableKind, string>/, "the notice can fall through to the wrong kind again");
+  assert.match(session, /const MADE_NOTICE: Record<DeliverableKind, string \| null>/, "the notice can fall through to the wrong kind again");
   assert.match(session, /MADE_NOTICE\[kind\]/, "the notice is not read from the record");
   // 🔴 AND IT MUST NOT SEND ANYBODY TO THE LIBRARY FOR A FILE THAT IS NOT THERE. Documents, PDFs
   // and spreadsheets live on the canvas as artifacts; only the other three are filed.
@@ -123,6 +123,11 @@ test("🔴 the finished notice is a Record, because the chain it replaced was al
     const line = notice.split("\n").find((l) => l.trim().startsWith(`${kind}:`)) ?? "";
     assert.ok(!/Library/.test(line), `🔴 the ${kind} notice sends the learner to the Library, where it is not`);
   }
+  // 🔴 AND FLASHCARDS SAY NOTHING, BECAUSE THE TURN ALREADY DID. Owner, 2026-08-31: *"remove the
+  // 'flashcards saved' chip, that's not needed"* — the transcript prints "Flashcards ready: <name>"
+  // with the deck row beneath it, so the strip was a second announcement of the same event.
+  const cards = notice.split("\n").find((l) => l.trim().startsWith("flashcards:")) ?? "";
+  assert.match(cards, /flashcards: null,/, "🔴 the flashcards notice is back, on top of the row the turn already printed");
 });
 
 test("only Course reaches the turn model; the rest are decisions already made", () => {
