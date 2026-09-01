@@ -43,6 +43,7 @@ import { ComposerSend } from "./composer-controls";
 import { ProjectPicker } from "./project-picker";
 import { FileDropOverlay } from "./file-drop-overlay";
 import { CanvasRecorder } from "./canvas-recorder";
+import { LearnHeading } from "./learn-heading";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { IDLE_REPLY_AUDIO, VoiceBarsGlyph, VoiceSessionGlow, VoiceStopButton } from "./canvas-composer";
 import { useVoiceConversation } from "./use-voice-conversation";
@@ -710,15 +711,10 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               />
             </div>
           </div>
-          <h1
-            className="text-[length:var(--canvas-text-title)] font-medium tracking-[-0.01em] text-(--ui-text-primary)"
-            style={{
-              opacity: departing ? 0 : 1,
-              transition: `opacity ${Math.round(DOCK_MS * 0.55)}ms ease-out`,
-            }}
-          >
-            What are you working on?
-          </h1>
+          {/* 🔴 THE GREETING NAMES THE THING THE PRODUCT DOES — owner, 2026-09-01. It asked a
+              question and waited; it now says "Learn calculus" with the subject changing under it,
+              across ten faculties. See learn-heading.tsx for why the list is what it is. */}
+          <LearnHeading departing={departing} />
           <div
             className="mt-9 flex w-full flex-col items-center"
             ref={composerBox}
