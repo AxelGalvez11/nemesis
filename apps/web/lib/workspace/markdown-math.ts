@@ -11,7 +11,29 @@ export function normalizeMathDelimiters(markdown: string): string {
         // math OFF (so "$0.20 … $1.20" prices stay prose), and `$$x$$` is
         // the inline form remark-math still honors in that mode. Notes keep
         // single-dollar math on, where $$…$$ inline is equally valid.
-        .replace(/\\\(([\s\S]*?)\\\)/g, (_match, body: string) => `$$${body.trim()}$$`);
+        .replace(/\\\(([\s\S]*?)\\\)/g, (_match, body: string) => `$$${body.trim()}$$`)
+        // 🔴🔴 A FORMULA ALONE ON ITS LINE IS A DISPLAY EQUATION, AND remark-math DOES NOT AGREE.
+        // `$$x$$` written on one line parses as INLINE math: KaTeX renders it flush left at body
+        // size, sitting in the paragraph flow, where a display equation is centred and set larger.
+        // Only `$$` on lines of THEIR OWN opens a math block.
+        //
+        // Models emit the one-line form constantly, and the difference is invisible in the source —
+        // the owner spotted it in a canvas answer on 2026-09-01, where the half-life formula sat
+        // small and hard against the left margin under a paragraph about it. Measured through this
+        // exact pipeline: block form -> `katex-display`, one-line form -> `katex`.
+        //
+        // 🔴 ONLY WHEN IT IS THE WHOLE LINE. `$$x$$` genuinely inside a sentence stays inline, and
+        // it has to: `\(…\)` is rewritten to that form two lines above, precisely because chat
+        // runs with single-dollar math OFF and `$$…$$` is the inline shape remark-math still
+        // honours there. Expanding those would push every inline variable onto its own centred
+        // line.
+        // 🔴 THE BODY MAY NOT CONTAIN `$$`, or a line holding TWO inline formulas matches as one.
+        // Caught by its own test before it shipped: `$$a$$ and $$b$$` starts and ends with `$$`, so
+        // a lazy `[^\n]+?` swallowed `a$$ and $$b` as the formula and centred the English between
+        // them. Two variables in one sentence is the commonest shape there is.
+        .replace(/^[ \t]*\$\$(?!\s*$)((?:(?!\$\$)[^\n])+)\$\$[ \t]*$/gm, (match, body: string) =>
+          body.trim() ? `\n$$\n${body.trim()}\n$$\n` : match,
+        );
     })
     .join("");
 }

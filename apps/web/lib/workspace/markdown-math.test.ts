@@ -76,3 +76,27 @@ const misdelimited = "For $0 < r < \\pi/2: z rises smoothly to its maximum of 1 
 assert.equal(escapeCurrencyDollars(misdelimited), misdelimited.replace("$0", "\\$0"));
 
 console.log("markdown-math.test.ts OK");
+
+// 🔴🔴 A FORMULA ALONE ON ITS LINE IS A DISPLAY EQUATION, NOT INLINE MATH.
+// The owner spotted this in a canvas answer (2026-09-01): the half-life formula sat small and hard
+// against the left margin under a paragraph about it. Cause: remark-math only opens a math BLOCK
+// when `$$` sit on lines of their own. `$$x$$` written on ONE line — which is what models emit
+// constantly — parses as inline math, so KaTeX sets it at body size in the paragraph flow instead
+// of centred and larger. The two forms are indistinguishable in the source.
+//
+// Measured through the real pipeline before and after: the one-line form produced `class="katex"`,
+// the block form produced `katex-display`.
+assert.equal(normalizeMathDelimiters("$$E = mc^2$$"), "\n$$\nE = mc^2\n$$\n");
+assert.equal(normalizeMathDelimiters("   $$E = mc^2$$   "), "\n$$\nE = mc^2\n$$\n");
+assert.equal(normalizeMathDelimiters("Text.\n\n$$a+b$$\n\nAfter."), "Text.\n\n\n$$\na+b\n$$\n\n\nAfter.");
+
+// 🔴🔴 AND INLINE `$$…$$` INSIDE A SENTENCE STAYS INLINE. This is not a nicety: it is what `\(…\)`
+// is rewritten to above, precisely because chat runs with single-dollar math OFF and `$$…$$` is the
+// inline shape remark-math still honours there. Expanding these would push every inline variable
+// onto its own centred line, turning "where $$V_d$$ is the volume" into three paragraphs.
+assert.equal(normalizeMathDelimiters("Where $$V_d$$ is the volume."), "Where $$V_d$$ is the volume.");
+assert.equal(normalizeMathDelimiters("$$a$$ and $$b$$"), "$$a$$ and $$b$$");
+
+// A real block's own fence lines are `$$` with nothing after them. Rewriting one would nest a block
+// inside a block and lose the formula between them.
+assert.equal(normalizeMathDelimiters("$$\na+b\n$$"), "$$\na+b\n$$");
