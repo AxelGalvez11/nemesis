@@ -49,10 +49,11 @@ export const LEARN_SUBJECTS = [
   "welding",
 ] as const;
 
-/** How long each subject holds, once it has arrived. */
+/** How long each subject holds, once it has fully arrived. */
 const HOLD_MS = 2600;
+
 /**
- * Each half of the swap: the old word fades out, and only then does the new one fade in.
+ * Leaving is quicker than arriving, and the asymmetry is the whole feel of this.
  *
  * 🔴🔴 SEQUENTIAL, NOT A CROSSFADE, AND THAT IS THE DIFFERENCE BETWEEN CLEAN AND MUDDY. The words
  * are stacked in one grid cell so the line cannot jump, which also means a crossfade renders two
@@ -61,21 +62,27 @@ const HOLD_MS = 2600;
  * incoming one starts means only one word is ever on screen, and it is also the plainest reading of
  * what was asked for: the x fades between subjects.
  *
- * 🔴 THE WIDTH MOVES DURING THE GAP, WHICH IS THE FREE HALF OF THE SAME DECISION. The slot resizes
- * while nothing is visible in it, so the line never resizes under a word somebody is reading.
+ * 🔴 THE ARRIVAL IS THE PART ANYBODY WATCHES — owner, 2026-09-01: *"make it even slower and
+ * smoother for the fade ins"*. A word that has finished being read can go without ceremony; a word
+ * appearing is the thing the eye follows, so the two halves are no longer the same length. The
+ * outgoing word clears the slot in well under half a second and the incoming one takes more than
+ * twice as long to settle.
  */
-const FADE_MS = 520;
+const FADE_OUT_MS = 420;
+const FADE_IN_MS = 1100;
 
+/** Leaving: eased at both ends, so the word does not snap away on its first frame. */
+const EASE_OUT = "cubic-bezier(0.4, 0, 0.2, 1)";
 /**
- * The curve both halves of the swap ride.
+ * Arriving: a long, even climb.
  *
- * 🔴 SLOW AT BOTH ENDS — owner, 2026-09-01: *"make the transitions smoother and fade smoother
- * slower"*. `ease-out` starts at full speed and only decelerates, which is right for something
- * arriving from a press and wrong for something dissolving on its own: the first frames of the
- * fade are the fastest, so the word appears to snap before it drifts. Easing in as well as out
- * means the word leaves and arrives from nothing at both ends, which is what reads as smooth.
+ * 🔴 NOT `ease-out`, WHICH IS WHAT MADE THE OLD ONE LOOK ABRUPT. `ease-out` spends its speed
+ * immediately, so most of the opacity arrives in the first fifth of the duration and lengthening it
+ * only stretched the part nobody sees. This curve gives up its start, holds a near-even middle, and
+ * settles into full without a stop, which is what makes a slow fade read as smooth rather than as
+ * slow.
  */
-const EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
+const EASE_IN = "cubic-bezier(0.33, 0, 0.35, 1)";
 
 export function LearnHeading({ departing }: { departing: boolean }) {
   const [index, setIndex] = useState(0);
@@ -125,7 +132,7 @@ export function LearnHeading({ departing }: { departing: boolean }) {
     let swap = 0;
     const timer = window.setInterval(() => {
       // Out first: the word on screen goes to nothing, and only when it is gone does the next one
-      // take the slot. See FADE_MS for why the two halves may not overlap.
+      // take the slot. See FADE_OUT_MS for why the two halves may not overlap.
       setLit(false);
       // 🔴 THE NEXT WORD STARTS AT 85% OF THE FADE, NOT AT 100%. Measured on screen: the outgoing
       // word is already under 2% opacity by then, so nothing overlaps, but waiting for the curve's
@@ -134,8 +141,8 @@ export function LearnHeading({ departing }: { departing: boolean }) {
       swap = window.setTimeout(() => {
         setIndex((current) => (current + 1) % LEARN_SUBJECTS.length);
         setLit(true);
-      }, Math.round(FADE_MS * 0.85));
-    }, HOLD_MS + FADE_MS * 2);
+      }, Math.round(FADE_OUT_MS * 0.85));
+    }, HOLD_MS + FADE_OUT_MS + FADE_IN_MS);
     return () => {
       window.clearInterval(timer);
       window.clearTimeout(swap);
@@ -166,7 +173,7 @@ export function LearnHeading({ departing }: { departing: boolean }) {
             width: slotWidth,
             // Only animated once the widths are known; with `max-content` there is nothing to
             // animate between and a transition on `auto` does nothing anyway.
-            transition: widths && !still ? `width ${FADE_MS}ms ${EASE}` : undefined,
+            transition: widths && !still ? `width ${FADE_OUT_MS}ms ${EASE_OUT}` : undefined,
           }}
         >
           {LEARN_SUBJECTS.map((subject, at) => (
@@ -196,9 +203,11 @@ export function LearnHeading({ departing }: { departing: boolean }) {
                 visibility: at === index ? "visible" : "hidden",
                 transition: still
                   ? undefined
-                  : at === index
-                    ? `opacity ${FADE_MS}ms ${EASE}, transform ${FADE_MS}ms ${EASE}, visibility 0s`
-                    : `opacity ${FADE_MS}ms ${EASE}, transform ${FADE_MS}ms ${EASE}, visibility 0s linear ${FADE_MS}ms`,
+                  : at === index && lit
+                    ? `opacity ${FADE_IN_MS}ms ${EASE_IN}, transform ${FADE_IN_MS}ms ${EASE_IN}, visibility 0s`
+                    : at === index
+                      ? `opacity ${FADE_OUT_MS}ms ${EASE_OUT}, transform ${FADE_OUT_MS}ms ${EASE_OUT}, visibility 0s`
+                      : `opacity ${FADE_OUT_MS}ms ${EASE_OUT}, transform ${FADE_OUT_MS}ms ${EASE_OUT}, visibility 0s linear ${FADE_OUT_MS}ms`,
               }}
             >
               {subject}

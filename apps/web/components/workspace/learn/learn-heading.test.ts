@@ -79,5 +79,19 @@ test("🔴🔴 only the LIVE subject is text — the other nine are hidden, not 
   // and selecting the line copied all ten. `visibility` removes them; the delay keeps the
   // crossfade a crossfade rather than a cut.
   assert.match(HEADING, /visibility: at === index \? "visible" : "hidden"/, "the inactive subjects are text again");
-  assert.match(HEADING, /visibility 0s linear \$\{FADE_MS\}ms/, "the outgoing word vanishes on the first frame of its own fade");
+  assert.match(HEADING, /visibility 0s linear \$\{FADE_OUT_MS\}ms/, "the outgoing word vanishes on the first frame of its own fade");
+});
+
+test("🔴 arriving is slower than leaving, and on its own curve (2026-09-01)", () => {
+  // Owner: "make it even slower and smoother for the fade ins". The arrival is the half anybody
+  // watches, so the two are no longer the same length, and the incoming word does NOT ride an
+  // ease-out — that curve spends its opacity in the first fifth of the duration, so lengthening it
+  // only stretches the part nobody sees.
+  const out = /const FADE_OUT_MS = (\d+);/.exec(HEADING);
+  const arrive = /const FADE_IN_MS = (\d+);/.exec(HEADING);
+  assert.ok(out && arrive, "the two halves of the swap lost their own durations");
+  assert.ok(Number(arrive[1]) > Number(out[1]) * 2, "the fade in is no longer meaningfully slower than the fade out");
+  assert.match(HEADING, /opacity \$\{FADE_IN_MS\}ms \$\{EASE_IN\}/, "the arriving word is not on the slow curve");
+  // The slot must settle while the word is still faint, so it never resizes under something legible.
+  assert.match(HEADING, /width \$\{FADE_OUT_MS\}ms \$\{EASE_OUT\}/, "the width now moves for as long as the word takes to arrive");
 });
