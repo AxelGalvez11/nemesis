@@ -126,3 +126,21 @@ test("🔴 spoken is remembered: filed with the turn, stored in the moment, seed
   const moment = strip(read("../../../lib/learn/canvas-moment.ts"));
   assert.match(moment, /\.\.\.\(said && input\.spoken \? \{ spoken: true \} : \{\}\),/, "a typed moment's stored record is no longer byte-identical");
 });
+
+test("🔴 a sent turn is spent: the box keeps no copy, and the next answer's modality stays honest (2026-08-31)", () => {
+  // Owner: *"once it sends things, the chat composer should be empty until they continue
+  // speaking."* `dictation.stop()` keeps the transcript (✓'s review contract), and the sync
+  // effect writes any surviving transcript back into the box, so without the reset the sent
+  // words reappeared for the length of the reply — and the same stray effect run fired
+  // `captured via "spoken"` AFTER `submitted`, mislabelling the next answer's modality for the
+  // judge's leniency instruction and §23's response clock. The reset must ride the same batch
+  // as the send's own clear.
+  const composer = strip(COMPOSER);
+  assert.match(composer, /setText\(""\);\s*if \(dictation\.transcript\) dictation\.reset\(\);/, "the send no longer spends the transcript — the sent words refill the box and re-mark the modality");
+  // A conversation begins from an empty box; a cancelled dictation's `typedBefore` must not be
+  // stitched into the first spoken turn.
+  assert.match(composer, /typedBefore\.current = "";\s*voiceLoop\.begin\(\);/, "the voice door resurrects a cancelled dictation's words");
+  // And the held verdict still keeps the words: a graded answer stays in the box for the
+  // learner's own review — the reset lives in the send, which a held turn never reaches.
+  assert.match(strip(HOOK), /else if \(verdict === "held"\) \{\s*stage\.current = "held";/, "the held verdict no longer holds the graded words");
+});
