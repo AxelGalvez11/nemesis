@@ -247,6 +247,7 @@ export interface CanvasSession {
   stage: TurnStage;
   /** A real step running inside the turn — the caption's fallback when no milestone covers it. */
   work: string | null;
+  workApp: string | null;
   /** Words the learner has already asked the meaning of, for `lookedUpMarks`. Sitting-scoped. */
   lookedUp: readonly string[];
   /** The id of the prompt whose answer is being read, or null. */
@@ -585,6 +586,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * two different questions and had been sharing one answer.
    */
   const [work, setWork] = useState<string | null>(null);
+  /** The connected app the current step is running against, for the mark beside the caption. */
+  const [workApp, setWorkApp] = useState<string | null>(null);
   /** The kind that arrived WITH `work`, when its author knew one. Null for a label that did not
    *  bring one, which is what keeps a mark from ever being guessed from words. */
   const [error, setError] = useState<string | null>(null);
@@ -1580,6 +1583,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       let lastLabel: string | null = null;
       const narrate = (label: string) => {
         lastLabel = label;
+        // 🔴 CLEARED BEFORE THE LABEL, AND OUTSIDE THE BRANCH. This step is Nemesis's own research
+        // work and has no app, so a favicon left over from a previous tool call would sit beside a
+        // sentence that has nothing to do with it. Kept as its own statement so the shape
+        // `research-progress.test.ts` pins on the next line is untouched.
+        setWorkApp(null);
         if (background) setWork(label);
         else setBusy({ blockIds: [], kind: "command", label });
       };
@@ -1801,7 +1809,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 A REAL STEP, REPORTED WHILE IT RUNS, AND IT DOES NOT LOCK THE COMPOSER. The preview
       // prefers a milestone over it, so this shows only where the model had nothing to say about
       // the stage the turn is in.
-      (label) => setWork(label),
+      (label, app) => {
+        setWork(label);
+        setWorkApp(app ?? null);
+      },
       // The one-shot capability, as a FACT in the packet. Never a branch in this function.
       capability === "course",
       // …and the one that IS a branch, over there rather than here: a declared Web search is the
@@ -1811,6 +1822,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setMilestones([]);
       setStage("decided");
       setWork(null);
+      setWorkApp(null);
       // 🔴🔴 GATED BEFORE ANYTHING READS IT — owner ruling, 2026-08-23: a course builds ONLY behind
       // the Course chip. The contract says so too, but "teach me" over a fat PDF read as a course
       // order once already, and the cost was a minutes-long research pass and a canvas renamed
@@ -2894,6 +2906,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     milestones,
     stage,
     work,
+    workApp,
     lookedUp,
     /** The decision Nemesis is waiting on, or null. See `clarify-question.ts`. */
     clarifying: clarifying?.question ?? null,

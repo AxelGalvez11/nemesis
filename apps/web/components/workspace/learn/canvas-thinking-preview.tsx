@@ -33,11 +33,29 @@
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
 
+import { logoFor } from "@/lib/workspace/app-logos";
+
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
 
 export function CanvasThinkingPreview({
+  app = null,
   label = null,
 }: {
+  /**
+   * The connected app this step is running against, as its toolkit slug.
+   *
+   * 🔴🔴 THIS IS NOT THE MARK THAT WAS DELETED, AND THE MEASUREMENT SAYS SO. What died on
+   * 2026-08-30 was a set of GENERIC glyphs beside every caption, removed the day the reference was
+   * read as a bare shimmering sentence. That reading was taken with NO app connected and it is
+   * still exactly right: plain thinking gets nothing beside it, and `app` is null for every step
+   * Nemesis runs on its own.
+   *
+   * Re-measured 2026-08-31 in the owner's account with Google Calendar connected: a step that
+   * reaches an app shows THAT APP'S OWN FAVICON at 20px, an 8px gap, then the sentence. So the
+   * mark is an identity for a specific app, not decoration on a caption, and it appears on exactly
+   * the steps that have one.
+   */
+  app?: string | null;
   label?: string | null;
   /** Kept for callers mid-migration; the visible split it used to select is gone. */
   mascot?: boolean;
@@ -66,13 +84,25 @@ export function CanvasThinkingPreview({
   // 🔴 THE SHIMMER IS THE SAME `canvas-thinking-word` THE DOCK USED, not a second treatment. The
   // rule it obeys is unchanged and is stated at the top of this file: the caption names the step
   // that is genuinely running, never a sequence on a timer.
+  //
+  // 🔴 AND THE SHIMMER STAYS ON THE WORDS ONLY. Wrapping the row would paint the favicon
+  // transparent between sweeps, which is the same trap `thinking-marks.test.ts` records two
+  // sessions independently finding with the domain chips.
+  const appLogo = app ? logoFor(app) : null;
   return (
     <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-2" data-canvas-thinking-line="">
       <p
         aria-live="polite"
-        className="text-[length:var(--canvas-text-body)] leading-[24px] text-(--ui-text-secondary)"
+        className="flex items-center gap-[8px] text-[length:var(--canvas-text-body)] leading-[24px] text-(--ui-text-secondary)"
         role="status"
       >
+        {/* 🔴 20px AND AN 8px GAP, BOTH MEASURED OFF THE REFERENCE'S OWN ROW. Its natural file is
+            256px, so it is drawn down rather than up and stays sharp. `aria-hidden` because the
+            sentence beside it already says which app this is — the icon repeats it for the eye
+            only, and a screen reader announcing "Google Calendar Searching your Google Calendar"
+            is the same fact twice.
+            eslint-disable-next-line @next/next/no-img-element */}
+        {appLogo ? <img alt="" aria-hidden="true" className="size-[20px] shrink-0" height={20} src={appLogo} width={20} /> : null}
         <span className="canvas-thinking-word">{label ? label.replace(/…$/, "") : "Thinking"}</span>
       </p>
     </div>

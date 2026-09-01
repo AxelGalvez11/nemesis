@@ -2475,7 +2475,7 @@ export function LearningCanvas({
             appears, only WHERE. `turnInFlight` covers an ordinary answer; `preparing` covers the
             first wait on a canvas that has nothing on it yet. */}
         {threadOpen && (turnInFlight || presence === "preparing") && !replyText.trim() && (
-          <CanvasThinkingPreview label={preparingLabel} />
+          <CanvasThinkingPreview app={session.workApp} label={preparingLabel} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
