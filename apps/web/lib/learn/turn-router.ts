@@ -1848,17 +1848,44 @@ export function turnRouterMessages(input: {
     ...(context.spokenConversation
       ? [{
         content:
-          "SPOKEN CONVERSATION. The learner said this out loud, and your answer will be read "
-          + "aloud to them by a voice, then the microphone opens again. Answer the way a person "
-          + "speaks: the shortest complete answer, a few conversational sentences, and stop. No "
-          + "headings, no bullet lists, no tables, no fenced blocks, no bracketed markers; a "
-          + "voice would have to read that punctuation out loud. If the subject honestly needs "
-          + "the long form, give the spoken-size answer and offer to put the full version on "
-          + "screen. This changes the SHAPE of your reply only: what you verify, refuse, or hold "
-          + "your ground on does not change.\n\n"
+          "SPOKEN CONVERSATION. The learner said this out loud, your answer will be read aloud to "
+          + "them by a voice, and then the microphone opens again for them to reply.\n\n"
+          // 🔴🔴 THE LENGTH RULE IS MEASURED IN SECONDS OF TALKING, AND THAT FRAMING IS THE FIX
+          // ITSELF. Owner, 2026-09-01: *"its still giving long responses, i want shorter responses
+          // since that saves tokens and feels more natural."* The paragraph this replaces asked
+          // for "the shortest complete answer, a few conversational sentences, and stop" — polite,
+          // unfalsifiable, and measured at 123 words and 8 sentences a turn, about a minute of
+          // speech. Four wordings were measured against the live model through this very packet
+          // (8 asks each, repeated): a WORD budget landed at 76 words, seconds-of-speech at 46,
+          // and seconds-of-speech WITH the worked example below at 41 words and 2.4 sentences,
+          // with the longest answer in any run at 80 words. Output tokens fell from 176 a turn to
+          // 55, which is the same saving the owner named.
+          //
+          // 🔴 THE EXAMPLE SENTENCE IS NOT DECORATION — it is the single biggest thing holding the
+          // CEILING down (the worst case fell from 116 words to 80 when it was added). The
+          // contract's own repeated lesson, third file to learn it: what sits in the packet as a
+          // concrete shape is what the model produces; prose about being brief is what it agrees
+          // with and then ignores.
+          + "LENGTH IS THE THING LEARNERS NOTICE MOST HERE, so measure your answer in SECONDS OF "
+          + "TALKING rather than in words. Aim for about ten seconds, which is two sentences. "
+          + "Twenty seconds, or three sentences, is the ceiling and most turns should be under "
+          + "it. Nobody waiting to speak can listen to a paragraph.\n\n"
+          + "Start with the answer itself: the first sentence must contain it, never a "
+          + "restatement of the question, never a windup, never background nobody asked for, and "
+          + "never a closing offer to help. If the subject genuinely needs more than three "
+          + "sentences, give the two-sentence version and say you can put the full version on "
+          + "screen. They can always ask you to go on, and they will. This is the size: "
+          + "\"Because oxygen is the last stop for the electrons. Without something to hand them "
+          + "to, the whole chain backs up and stops making energy.\"\n\n"
+          + "No headings, no bullet lists, no tables, no fenced blocks, no bracketed markers; a "
+          + "voice would have to read that punctuation out loud. This changes the SHAPE of your "
+          + "reply only: what you verify, refuse, or hold your ground on does not change.\n\n"
           + "Because every second before the voice starts is silence the learner sits through: "
           + "keep the decision block itself minimal on this turn. Still ALWAYS open with the "
-          + "fenced json block — never skip it — but write in it only the fields whose values are "
+          // 🔴 COMMAS, NOT DASHES, and this line carried two of its own for a day. The standing
+          // rule (owner, 2026-08-25) is that the ban applies to the PROMPT STRINGS as well as to
+          // the output: a contract that models the punctuation it forbids teaches it.
+          + "fenced json block, never skip it, but write in it only the fields whose values are "
           + "not false, null, or empty, so on an ordinary spoken answer the whole block is "
           + 'exactly {"then": "reply"}, and begin your answer immediately after it. Omitted '
           + "fields mean exactly what writing them as false, null, or empty would; a field you "
@@ -2136,9 +2163,71 @@ export function courseGate(decision: TurnDecision, courseAttached: boolean): Tur
  * has still answered it, and throwing that away to show an error would be strictly worse for the
  * learner. Only genuinely empty text has nothing to fall back to.
  */
+/**
+ * The decision object written WITHOUT its code fence, with the answer after it, put back into the
+ * canonical fenced shape so the one real parser can read it.
+ *
+ * 🔴🔴 THIS IS A WHOLE TURN THAT WAS BEING THROWN AWAY, MEASURED 2026-09-01: 1 run in 8 of the same
+ * spoken question came back as `{"then": "reply"}` followed by a blank line and a perfectly good
+ * answer, with no ```json fence around the object. `readTurnDecision` requires the fence, so the
+ * turn fell through to `looksLikeEnvelope` (true: it starts with `{` and carries `"then":`) and
+ * then to `salvageSay`, which looks for a `"say"` FIELD, finds none in an object that never had
+ * one, and returns null. Null is "that turn did not work" — so the learner lost an answer that was
+ * sitting right there in the string. In a voice conversation that is a turn of pure silence.
+ *
+ * 🔴 IT NORMALISES AND RE-READS RATHER THAN PARSING A SECOND WAY. Every field, every gate and every
+ * refusal in `readTurnDecision` applies unchanged; a second reader would be a second contract to
+ * keep in step, which is the exact drift `answer-prepare.ts`'s own header records.
+ *
+ * 🔴 PROSE AFTER THE OBJECT IS REQUIRED. An object with nothing after it is the OLD all-in-one
+ * shape, which `salvageSay` already owns and which needs its `say` field read out; taking it here
+ * would hand back a decision with an empty answer.
+ */
+function fenceLeadingObject(raw: string): string | null {
+  const text = raw.trimStart();
+  if (!text.startsWith("{")) return null;
+
+  // Walk to the object's own closing brace, respecting strings and their escapes. A brace counter
+  // that ignored quoting would end the object early on any `}` inside a sentence.
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let end = -1;
+  for (let at = 0; at < text.length; at += 1) {
+    const character = text[at]!;
+    if (escaped) { escaped = false; continue; }
+    if (character === "\\") { escaped = true; continue; }
+    if (character === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (character === "{") depth += 1;
+    else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) { end = at; break; }
+    }
+  }
+  if (end === -1) return null;
+
+  const object = text.slice(0, end + 1);
+  const rest = text.slice(end + 1);
+  if (!rest.trim()) return null;
+  if (!extractJson(object)) return null;
+  return `\`\`\`json\n${object}\n\`\`\`\n${rest}`;
+}
+
 export function decisionOrReply(raw: string): TurnDecision | null {
   const read = readTurnDecision(raw);
   if (read) return read;
+
+  // 🔴 THE UNFENCED DECISION IS RECOVERED BEFORE ANYTHING IS GIVEN UP ON. See `fenceLeadingObject`:
+  // this is our own format missing its punctuation, not a model that ignored the contract, and the
+  // answer after it is the answer. A shape that still says nothing (no `then`, no `say`) falls
+  // through to the paths below exactly as before.
+  const refenced = fenceLeadingObject(raw);
+  if (refenced) {
+    const recovered = readTurnDecision(refenced);
+    if (recovered) return recovered;
+  }
+
   const prose = raw.trim();
   if (!prose) return null;
 
