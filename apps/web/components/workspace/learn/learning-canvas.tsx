@@ -107,6 +107,7 @@ import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
+import { openableDocuments } from "@/lib/learn/source-pill";
 import { SourceTabPane, SourceTabsProvider, useSourceTabsState } from "./source-tab-viewer";
 
 /**
@@ -2526,7 +2527,7 @@ export function LearningCanvas({
         </div>
       )}
 
-      <SourceTabPane />
+      <SourceTabPane documents={openableDocuments(canvas.sources)} />
       {/* 🔴 `canvas-enter` — THE ANSWER REGION FADES IN WITH THE CONTROLS RATHER THAN APPEARING
           WITH THEM. Owner, 2026-08-30: *"i want a smooth fade in of everything."* The question
           chip, the thinking caption and the thread all used to land on the same frame as the route

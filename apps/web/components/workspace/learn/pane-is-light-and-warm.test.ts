@@ -15,6 +15,8 @@ const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf
 const PANE = read("./source-tab-viewer.tsx");
 const BAR = readFileSync(new URL("../reader/reader-top-bar.tsx", import.meta.url), "utf8");
 const TABS = readFileSync(new URL("../../../lib/learn/source-tabs.ts", import.meta.url), "utf8");
+const CANVAS = read("./learning-canvas.tsx");
+const PILL = readFileSync(new URL("../../../lib/learn/source-pill.ts", import.meta.url), "utf8");
 
 test("🔴🔴 every open tab stays mounted, so switching back does not re-read the PDF", () => {
   // Rendering only the active tab unmounted the reader on every switch: the file was fetched,
@@ -48,4 +50,23 @@ test("🔴 the pane's toolbar drops what the pane already says, and MOVES the re
   // 🔴 NOTHING IS DELETED. Every one of those is still reachable from the "…" menu — a reader who
   // needs to zoom a scan can still zoom it. Trading one complaint for a worse one is not a win.
   assert.match(BAR, /aria-label="Actions and details"/, "the menu that still holds them is gone");
+});
+
+test("🔴🔴 the pane has a door that does not depend on the model citing anything", () => {
+  // 🔴 MEASURED ON PRODUCTION, 2026-09-01. Asked to quote a line from a dropped lecture, the canvas
+  // quoted it VERBATIM and emitted no citation — so `CanvasSourcePills` rendered nothing (correctly:
+  // `knowledge-citation.ts` insists an empty citation list reaches the surface as silence, never as
+  // a greyed-out pill), and the document it had just read could not be opened at all.
+  //
+  // The pane, its tabs and the whole comment layer were reachable only when an answer happened to
+  // cite. A learner must not need the model's cooperation to look at their own file.
+  assert.match(PANE, /data-testid="source-tabs-open"/, "the pane's only door is a citation pill again");
+  assert.match(PANE, /const unopened = documents\.filter\(\(pill\) => !open\.has\(tabKey\(pill\)\)\)/,
+    "the list offers documents that are already open");
+  assert.match(CANVAS, /<SourceTabPane documents=\{openableDocuments\(canvas\.sources\)\} \/>/,
+    "the canvas stopped handing the pane its own documents");
+
+  // 🔴 DE-DUPLICATED ON THE TAB KEY, so opening from this list and opening from a pill land on the
+  // SAME tab rather than two tabs onto one file.
+  assert.match(PILL, /const key = `doc:\$\{title\.toLowerCase\(\)\}`;/, "the list can produce a duplicate tab");
 });
