@@ -121,7 +121,43 @@ test("🔴 the runtime actually passes it — the field is not decorative", () =
   const runtime = readFileSync(new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url), "utf8");
 
   assert.match(session, /setOpening\(said\);/, "the session never records what was said");
-  assert.match(canvas, /usePolicyRuntime\(canvas, policyOverride, strategyOverride, session\.opening, notAnAttempt\)/,
+  // 🔴 THE SIXTH ARGUMENT ARRIVED 2026-08-31 — the teaching loop is opt-in now (owner: *"hide
+  // canvas, chat by default"*), so the call carries `session.coursePlan !== null` after
+  // `notAnAttempt`. This assertion pins the OPENING's position, which is what the test is about,
+  // and must not be so exact that adding a later parameter reads as the opening going missing.
+  assert.match(canvas, /usePolicyRuntime\(canvas, policyOverride, strategyOverride, session\.opening, notAnAttempt[,)]/,
     "the canvas does not hand the opening to the runtime");
   assert.match(runtime, /^\s+opening,$/m, "the runtime does not put the opening on the teaching context");
+});
+
+test("🔴🔴 the teaching loop is OPT-IN: it does not arm itself on a canvas that only has content", () => {
+  // Owner, 2026-08-31, choosing between three directions with all of them in front of him: *"hide
+  // canvas, chat by default"* — and on the canvas as it was, *"it just kinda seems annoying."*
+  //
+  // The loop used to run whenever `policyAllowed(override)` was true, and that function only ever
+  // answered the URL: its single "no" is `?policy=off`. So asking a plain question, getting a
+  // document, and having any block on the canvas was enough to arm a diagnostic that would then
+  // take the surface with a question card nobody asked for.
+  const runtime = readFileSync(new URL("../../components/workspace/learn/use-policy-runtime.ts", import.meta.url), "utf8");
+  const canvas = readFileSync(new URL("../../components/workspace/learn/learning-canvas.tsx", import.meta.url), "utf8");
+
+  assert.match(
+    runtime,
+    /const enabled = policyAllowed\(override\) && \(teachingRequested \|\| forced\)/,
+    "the runtime arms itself again without being asked",
+  );
+  // 🔴 IT GATES `enabled`, NOT THE PAINT. Gating only what renders would leave the controller
+  // resolving knowledge and calling the model on every canvas to produce decisions nobody sees.
+  assert.ok(!/teachingRequested \? /.test(runtime), "the gate moved to the presentation, which still pays for the work");
+  // 🔴 `?policy=force` MUST STILL RUN IT, or the teaching loop has no way to be exercised at all.
+  assert.match(runtime, /teachingRequested \|\| forced/, "force no longer runs the loop, so nothing can test it");
+
+  // 🔴 AND THE REQUEST IS THE COURSE CHIP, NOT A READING OF THE LEARNER'S WORDS. `courseGate` is
+  // the one sanctioned teaching door; a classifier in front of the model is what #689 removed and
+  // what the standing rule against keyword scoping forbids.
+  assert.match(canvas, /notAnAttempt, session\.coursePlan !== null\)/, "the explicit door is no longer the course the learner asked for");
+  assert.ok(
+    !/(said|opening|text)\.(toLowerCase|includes|match)\([^)]*teach/i.test(canvas),
+    "something started scanning the learner's words for teaching intent",
+  );
 });

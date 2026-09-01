@@ -451,7 +451,11 @@ export function LearningCanvas({
     void converseRef.current?.(said);
   }, []);
 
-  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride, session.opening, notAnAttempt);
+  // 🔴🔴 THE TEACHING LOOP IS OPT-IN (owner, 2026-08-31: *"hide canvas, chat by default"*). A course
+  // built through the Course chip is the request; everything else is a conversation, however much
+  // material is on the canvas. See `usePolicyRuntime`'s last parameter for why this gates the
+  // runtime rather than what it paints, and why no one reads the learner's words to decide it.
+  const policy = usePolicyRuntime(canvas, policyOverride, strategyOverride, session.opening, notAnAttempt, session.coursePlan !== null);
   // Voice mode. 🔴 `policy.judging` is the composer-busy signal: while an answer is being read the
   // learner is waiting on a verdict, and opening a microphone at them is asking for an answer to a
   // question they already gave.
