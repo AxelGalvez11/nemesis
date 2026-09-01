@@ -92,15 +92,18 @@ test("🔴🔴 the 'Folders' section draws `visibleFolders`, not the raw `folder
   // them, newest first); the invariant here is unchanged — it still filters on nonEmptyFolders.
   assert.match(OUTPUTS, /folders\s*\.filter\(\(folder\) => nonEmptyFolders\.has\(folder\.id\)\)/);
   assert.match(OUTPUTS, /folderModified\.get\(b\.id\)/, "the Folders section lost its recency ordering");
-  // Since the 2026-08-30 recency rework the folder row is one shared renderer, drawn on a kind
-  // shelf AND leading the merged "All" list — same element, two homes, so they cannot drift.
+  // Since the 2026-08-30 recency rework the folder row is one shared renderer; since 2026-09-01 it
+  // leads EVERY shelf's list rather than sitting in a table of its own on a kind pill. One element,
+  // four homes, so they cannot drift.
   assert.match(OUTPUTS, /const folderRow = \(folder: Folder\) => \(/, "the shared folder renderer is gone");
-  assert.ok((OUTPUTS.match(/visibleFolders\.map\(folderRow\)/g) ?? []).length >= 2, "the folder rows stopped drawing from visibleFolders in both homes");
-  assert.match(
-    OUTPUTS,
-    /openFolder === null && \(visibleFolders\.length > 0 \|\| naming !== null\)/,
-    "the section's own visibility guard reverted to the raw folders array",
+  assert.equal(
+    (OUTPUTS.match(/openFolder === null && visibleFolders\.map\(folderRow\)/g) ?? []).length,
+    4,
+    "a shelf stopped leading its list with the folders, or grew a folder table of its own again",
   );
+  // 🔴 AND NOT INSIDE AN OPEN FOLDER. Listing the folders again while standing in one is how a
+  // learner walks in circles; every home is gated on the same expression.
+  assert.ok(!/(?<!openFolder === null && )visibleFolders\.map\(folderRow\)/.test(OUTPUTS), "a folder list escaped the openFolder gate");
 });
 
 test("🔴 the move-to-folder menu and the open-folder breadcrumb keep the FULL list", () => {

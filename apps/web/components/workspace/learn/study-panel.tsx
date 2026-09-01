@@ -42,6 +42,7 @@ import { useDockWidth } from "./use-dock-width";
 export function StudyPanel({
   children,
   crumb = "Study",
+  initialMode = "docked",
   onClose,
   open,
   title,
@@ -49,12 +50,29 @@ export function StudyPanel({
   children: React.ReactNode;
   /** The muted first half of the header path. */
   crumb?: string;
+  /**
+   * 🔴🔴 THE DOOR DECIDES, AND BOTH OWNER RULINGS ARE SATISFIED BY THAT ONE WORD. On 2026-08-31 he
+   * reported the opposite of today: *"the flashcard open full screen, and it did not open in the
+   * sidebar, like the test. I thought I already asked for that."* On 2026-09-01, of the Library:
+   * *"when I click on the flashcards it just pulls up a sidebar, which is not how it's supposed to
+   * be in the library — for the library it should just be full screen immediately."*
+   *
+   * Those are not a contradiction, they are a scope. Docked exists to keep something ELSE on
+   * screen: inside a canvas, the conversation the deck came out of. The Library shelf is not a
+   * conversation — docking there squeezes a list of file names beside the thing you opened, which
+   * is the one arrangement that helps nobody. So the caller says which it is, and the two doors
+   * stop disagreeing about the same object.
+   *
+   * Full screen is still one button away from docked, and docked one button away from full: this
+   * only decides where you land.
+   */
+  initialMode?: "docked" | "full";
   onClose: () => void;
   /** False keeps the children mounted and takes the panel off screen. */
   open: boolean;
   title: string;
 }) {
-  const [mode, setMode] = useState<"docked" | "full">("docked");
+  const [mode, setMode] = useState<"docked" | "full">(initialMode);
   // 🔴 THE `study` SLOT, NOT THE READER'S. Same hook and same drag; a different remembered width,
   // because a card is not a document. See the note on DOCK_SLOTS — this was measured on screen.
   const { dragging, onDragStart, width: dock } = useDockWidth("study");

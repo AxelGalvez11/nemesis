@@ -59,11 +59,15 @@ export const REVIEW_DEFAULTS: StudyReviewSettings = { flashcardOutline: false, f
 export function DeckReview({
   deckId,
   onClose,
+  initialMode = "docked",
   surface = "panel",
 }: {
   /** The deck to review. The component is expected to be mounted only while this is set. */
   deckId: string;
   onClose: () => void;
+  /** Where the panel LANDS — see StudyPanel's own note. The Library opens full screen; a canvas
+   *  docks, so the conversation the deck came out of stays on screen beside it. */
+  initialMode?: "docked" | "full";
   /** `panel` docks beside a conversation; `full` takes the screen, for surfaces with no
    *  conversation to sit beside. */
   surface?: "panel" | "full";
@@ -107,7 +111,7 @@ export function DeckReview({
   }
 
   return (
-    <StudyPanel crumb="Flashcards" onClose={onClose} open title={deck?.name ?? "Flashcards"}>
+    <StudyPanel crumb="Flashcards" initialMode={initialMode} onClose={onClose} open title={deck?.name ?? "Flashcards"}>
       {loading ? (
         <p className="p-6 text-sm text-(--ui-text-secondary)">Opening the deck…</p>
       ) : (

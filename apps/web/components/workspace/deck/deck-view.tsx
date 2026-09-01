@@ -15,6 +15,9 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { Codicon } from "@/components/desktop-ui/codicon";
+import { CHROME } from "@/components/workspace/learn/reader-chrome";
+import { cn } from "@/lib/utils";
 import { composeSlide, composeReferences } from "@/lib/export/deck-compose";
 import { deckDesign } from "@/lib/export/deck-designs";
 import { signDeckFigures } from "@/lib/learn/deck-figures";
@@ -28,9 +31,13 @@ interface Props {
   credit?: string;
   /** The design picker and the .pptx download, supplied by whichever surface mounts this. */
   actions?: ReactNode;
+  /** The muted first half of the header path — the surface you came from. */
+  crumb?: string;
+  /** Leave the deck. Absent draws no close, for a host that has its own way out. */
+  onClose?: () => void;
 }
 
-export function DeckView({ plan, designId, credit = "Made with Nemesis", actions }: Props) {
+export function DeckView({ plan, designId, credit = "Made with Nemesis", actions, crumb = "Library", onClose }: Props) {
   const [slides, setSlides] = useState<string[]>([]);
   const [at, setAt] = useState(0);
   const [presenting, setPresenting] = useState(false);
@@ -124,8 +131,27 @@ export function DeckView({ plan, designId, credit = "Made with Nemesis", actions
       {/* Every slide, stacked, for printing. The screen shows one at a time. */}
       <div aria-hidden="true" className="dk-print-only hidden" dangerouslySetInnerHTML={{ __html: slides.join("") }} />
 
-      <div className="dk-print-hide flex items-center justify-between gap-3 border-b border-(--ui-stroke-tertiary) px-4 py-2">
-        <p className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">{plan.title}</p>
+      {/* 🔴🔴 THE SAME HEADER BAND AS EVERY OTHER OPENED ARTIFACT, AND IT WAS THE ONE THAT WAS NOT.
+          Owner, 2026-09-01: *"it's kinda weird because all of them have different settings… the
+          slides and the documents, they both have like different top header settings."* He was
+          right, and it was not a near miss. This band was `px-4 py-2` — which is 18px and 9px at
+          this app's 112.5% root, against the readers' measured 12px and 5.5px — with the title as
+          14px SECONDARY body text where they draw a primary crumb behind a quaternary path, and no
+          way out at all. `CHROME` is the one set of numbers the document reader and the flashcard
+          panel already share; a third hand-written copy is how three surfaces come to disagree
+          about what an open artifact looks like.
+          🔴 AND IT GAINS A CLOSE, which it simply never had: this is a PAGE, so the only exit was
+          the browser's own back button. */}
+      <div className={cn("dk-print-hide border-b border-(--ui-stroke-tertiary)", CHROME.header)}>
+        {onClose && (
+          <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
+            <Codicon name="close" size={CHROME.icon} />
+          </button>
+        )}
+        <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={plan.title}>
+          <span className="text-(--ui-text-quaternary)">{crumb}&nbsp;/&nbsp;</span>
+          {plan.title}
+        </span>
         <div className="flex shrink-0 items-center gap-1">
           {actions}
           <button

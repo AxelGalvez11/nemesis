@@ -147,6 +147,34 @@ test("🔴🔴 an artifact opens itself, and a deck is opened by pressing its ca
   assert.match(canvas, /openedArtifactId\.current === made\.id\) return;/, "the reader re-opens itself after being closed");
 });
 
+test("🔴🔴 all three opened artifacts wear ONE header band", () => {
+  // Owner, 2026-09-01: *"it's kinda weird because all of them have different settings… the slides
+  // and the documents, they both have like different top header settings."* Two of the three
+  // already shared `CHROME`; the deck page had hand-written its own — `px-4 py-2`, which is 18px
+  // and 9px at this app's 112.5% root against the readers' measured 12px and 5.5px — with the title
+  // as secondary body text instead of a crumb, and no close at all.
+  //
+  // 🔴 THE CHECK IS THAT THEY IMPORT THE SAME NUMBERS, NOT THAT THEY LOOK ALIKE. Three files can
+  // each measure 47px today and drift the first time one is adjusted; one module cannot.
+  const view = code("../../components/workspace/deck/deck-view.tsx");
+  for (const [name, source] of [
+    ["output-preview", PREVIEW],
+    ["study-panel", code("../../components/workspace/learn/study-panel.tsx")],
+    ["deck-view", view],
+  ] as const) {
+    assert.match(source, /reader-chrome"/, `${name}: this surface measures its own header instead of importing CHROME`);
+    assert.match(source, /className=\{CHROME\.header\}|CHROME\.header\)/, `${name}: the header band is not the shared one`);
+    assert.match(source, /CHROME\.crumb/, `${name}: the title is not drawn as the shared crumb`);
+    assert.match(source, /CHROME\.button/, `${name}: the header controls are not the shared 36px squares`);
+  }
+  assert.ok(!/px-4 py-2/.test(view), "the deck page went back to its own padding, which is 18px and 9px here");
+  // 🔴 AND IT HAS A WAY OUT NOW. It is a PAGE, so before this the only exit was the browser's own
+  // back button — and `router.back()` alone does nothing at all on a pasted URL.
+  assert.match(view, /aria-label="Close"/, "the deck page lost the close it never used to have");
+  const page = code("../../app/(workspace)/deck/page.tsx");
+  assert.match(page, /window\.history\.length > 1 \? router\.back\(\) : router\.push\("\/library"\)/, "closing a deck opened by URL does nothing");
+});
+
 test("🔴🔴 flashcards and the check open in the side panel, with full screen one button away", () => {
   // 🔴 THIS REVERSES AN EARLIER RULE, DELIBERATELY. Until 2026-08-30 this file pinned the opposite,
   // quoting the owner in August: *"Except for flashcards… full screen just like an Anki with an x
@@ -175,17 +203,32 @@ test("🔴🔴 flashcards and the check open in the side panel, with full screen
   assert.match(canvas, /open=\{checkOpen\}/, "the check panel does not follow its own open flag");
   assert.doesNotMatch(canvas, /checkOpen && \(\s*<StudyPanel/, "the check is unmounted when the panel closes, losing the learner's answers");
 
-  // 🔴 A DECK OPENS IN THE PANEL FROM EVERY DOOR. The Library used to pass surface="full" on the
-  // argument that a shelf has no conversation to sit beside. The owner rejected that on
-  // 2026-08-31 — he had asked for flashcards in the sidebar "like the test", and meeting it in
-  // one place only reads as not having done it. `surface="full"` still EXISTS for a caller with
-  // no shell to dock into; nothing in the app passes it, and this guard is what notices if
-  // something starts.
+  // 🔴🔴 THE DOOR DECIDES WHERE A DECK LANDS, AND BOTH OWNER RULINGS SURVIVE THAT. This guard used
+  // to read "a deck opens in the panel from EVERY door", because on 2026-08-31 he rejected the
+  // Library opening one full screen — *"the flashcard open full screen, and it did not open in the
+  // sidebar, like the test. I thought I already asked for that."* On 2026-09-01 he asked for the
+  // opposite, in so many words, and scoped it: *"when I click on the flashcards it just pulls up a
+  // sidebar, which is not how it's supposed to be in the library — for the library it should just
+  // be full screen immediately."*
+  //
+  // The two are only a contradiction while the rule is about the OBJECT. Docking exists to keep
+  // something else on screen; in a canvas that is the conversation the deck came out of, and on the
+  // shelf it is a list of file names. So: canvas docks, Library lands full, and full screen stays
+  // one button away from either.
+  //
+  // `surface="full"` — the OTHER full-screen path, which drops the panel chrome entirely — is
+  // still unused. It is for a caller with no shell to dock into, and this guard notices if
+  // anything starts passing it, because that door loses the header the other two share.
   assert.match(deck, /<StudyPanel/, "a deck no longer opens beside the conversation");
   assert.match(deck, /surface="bare"/, "the docked deck mounts a dialog inside a panel");
+  assert.match(deck, /initialMode=\{initialMode\}/, "DeckReview stopped passing the door's choice through");
+  assert.match(panel, /useState<"docked" \| "full">\(initialMode\)/, "the panel ignores where it was told to land");
   const library = code("../../components/workspace/library/library-outputs.tsx");
-  assert.doesNotMatch(library, /<DeckReview[\s\S]{0,140}surface="full"/, "the Library is back to opening a deck full screen, which is the one rule flashcards have");
-  assert.match(library, /<DeckReview deckId=\{reviewing\} onClose=\{\(\) => setReviewing\(null\)\} \/>/, "the Library's deck no longer opens through the docked default");
+  assert.doesNotMatch(library, /<DeckReview[\s\S]{0,140}surface="full"/, "the Library took the chrome-less full-screen path instead of the panel's own");
+  assert.match(library, /<DeckReview deckId=\{reviewing\} initialMode="full"/, "the Library's deck is back to sliding in as a sidebar");
+  // 🔴 AND THE CANVAS IS STILL THE OTHER HALF OF THE RULE — asserted, not assumed, because "the
+  // Library is full screen" passes just as well in a build where everything is.
+  assert.doesNotMatch(canvas, /<DeckReview[\s\S]{0,160}initialMode="full"/, "a canvas now opens its deck full screen, over the conversation it came from");
 
   // 🔴 ONE REVIEW SCREEN, TWO SHELLS. `bare` may only drop the dialog; if it ever grows its own
   // card, counts or grade buttons there are two review screens to keep in step and they will drift.

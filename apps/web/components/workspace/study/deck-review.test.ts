@@ -105,18 +105,21 @@ test("🔴 the whole-account study load waits for a real intent to review", () =
   assert.match(DECK_REVIEW, /status !== "loaded"/, "DeckReview stopped waiting for the store to load");
 });
 
-test("🔴🔴 pressing a deck reviews it; the text list is demoted to a peek", () => {
+test("🔴🔴 pressing a deck reviews it, and there is no second way to read the answers", () => {
   // Calibration: point the row back at toggleDeck and the first line reddens.
   assert.match(OUTPUTS, /onClick=\{\(\) => setReviewing\(deck\.id\)\}/, "a deck row no longer starts a review");
   assert.match(OUTPUTS, /aria-label=\{`Review \$\{deck\.name\}`\}/, "the review row lost its accessible name");
   // The peek survives — it is useful for checking what Nemesis made — but only behind its own control.
-  assert.match(OUTPUTS, /onClick=\{\(\) => void toggleDeck\(deck\.id\)\}/, "the card list can no longer be opened at all");
-  // 🔴 2026-09-01: THE PEEK IS A MENU ITEM NOW, NOT A CHEVRON, so it names its state in WORDS
-  // instead of `aria-expanded` — the owner cleared the Library's rows of standing controls (*"the
-  // documents in library have these options that i dont want"*) and everything a row can do moved
-  // into one ⋯. A menu item that toggles must still say which way it will go, or the learner
-  // presses it to find out.
-  assert.match(OUTPUTS, /"Hide the cards" : "Show the cards"/, "the peek control does not say which way it will go");
+  // 🔴🔴 AND LATER THE SAME DAY THE PEEK WENT ENTIRELY. Owner, 2026-09-01: *"the option to show the
+  // flashcard I don't think that's really necessary in the library."* It existed as the consolation
+  // for making the row REVIEW the deck instead of listing it (2026-08-24); now that pressing a deck
+  // opens it FULL SCREEN from the shelf, where the cards are the whole screen, a second way to read
+  // them is a door onto the room you are already standing in.
+  //
+  // The first half of this test is untouched and is the part that mattered: pressing a deck starts
+  // a review. What is gone is the alternative nobody needed.
+  assert.ok(!/toggleDeck/.test(OUTPUTS), "the peek came back to the Library");
+  assert.ok(!/"Hide the cards"|"Show the cards"/.test(OUTPUTS), "the peek came back to the Library's row menu");
 });
 
 test("🔴 a canvas linking to a deck means 'go study this'", () => {
