@@ -282,3 +282,102 @@ test("a cancelled lecture stops colliding with what replaced it", () => {
   ]);
   assert.equal(issues.exact_duplicates.length, 0, "the cancelled one is still being counted as a duplicate");
 });
+
+// ------------------------------------------------------------ stage 4: people
+
+test("🔴 guests, reminders, permissions and extras all survive storage", () => {
+  const event: CalendarEvent = base({
+    attachments: [{ fileUrl: "https://drive.example/x", title: "Reading list" }],
+    attendees: [{ email: "supervisor@uni.example", responseStatus: "accepted" }],
+    conference: { label: "Join", url: "https://meet.example/abc" },
+    eventType: "focusTime",
+    guestsCanInviteOthers: false,
+    guestsCanModify: true,
+    reminders: { overrides: [{ method: "popup", minutes: 30 }] },
+    sourceTitle: "Module handbook",
+    sourceUrl: "https://uni.example/handbook",
+  });
+  const back = decodeCalendarEvent(encodeCalendarEvent(event, "user-1", "manual"));
+  assert.ok(back);
+  for (const key of [
+    "attendees", "reminders", "guestsCanModify", "guestsCanInviteOthers",
+    "conference", "attachments", "eventType", "sourceTitle", "sourceUrl",
+  ] as const) {
+    assert.deepEqual(back[key], event[key], `${key} did not survive storage`);
+  }
+});
+
+test("🔴 a guest with no email address is dropped, not stored blank", () => {
+  // An address is the only thing identifying a guest. A blank one cannot be
+  // matched to a reply, cannot be removed by the person it names, and would
+  // eventually be handed to Google as an invitation to nobody.
+  const back = decodeCalendarEvent({
+    attendees: [{ displayName: "Somebody" }, { email: "real@uni.example" }],
+    date: "2026-03-02", id: "x", kind: "class", title: "T",
+  });
+  assert.deepEqual(back?.attendees, [{ email: "real@uni.example" }]);
+});
+
+test("🔴 an attachment or a call link that is not http is refused", () => {
+  // These are rendered as links a student clicks in their own calendar, so a
+  // javascript: url would be a script they run on themselves.
+  const back = decodeCalendarEvent({
+    attachments: [{ fileUrl: "javascript:alert(1)" }, { fileUrl: "https://ok.example/f" }],
+    conference: { url: "javascript:alert(2)" },
+    date: "2026-03-02", id: "x", kind: "class",
+    source_url: "data:text/html,<script>",
+    title: "T",
+  });
+  assert.deepEqual(back?.attachments?.map((f) => f.fileUrl), ["https://ok.example/f"]);
+  assert.equal(back?.conference, undefined, "a non-http call link was kept");
+  assert.equal(back?.sourceUrl, undefined, "a non-http source link was kept");
+});
+
+test("a reminder outside what any calendar accepts is dropped", () => {
+  const back = decodeCalendarEvent({
+    date: "2026-03-02", id: "x", kind: "class",
+    reminders: { overrides: [
+      { method: "popup", minutes: -5 },
+      { method: "carrier-pigeon", minutes: 10 },
+      { method: "popup", minutes: 999_999 },
+      { method: "email", minutes: 60 },
+    ] },
+    title: "T",
+  });
+  assert.deepEqual(back?.reminders?.overrides, [{ method: "email", minutes: 60 }]);
+});
+
+test("runaway lists are cut to what the database will accept", () => {
+  const back = decodeCalendarEvent({
+    attachments: Array.from({ length: 40 }, (_, i) => ({ fileUrl: `https://x.example/${i}` })),
+    attendees: Array.from({ length: 300 }, (_, i) => ({ email: `p${i}@x.example` })),
+    date: "2026-03-02", id: "x", kind: "class", title: "T",
+  });
+  assert.equal(back?.attendees?.length, 200);
+  assert.equal(back?.attachments?.length, 25);
+});
+
+test("🔴 nothing in the guest editor sends an email", () => {
+  const editor = readFileSync(new URL("../../components/workspace/calendar/guests-editor.tsx", import.meta.url), "utf8");
+  // Adding a guest in Google mails them immediately. Here it appends to a list.
+  // A student who has used Google has every reason to assume otherwise, so the
+  // screen says so — and nothing here may quietly start doing it.
+  assert.match(editor, /Nemesis does not email anyone/, "the notice that nothing is sent is gone");
+  assert.ok(!/fetch\(|sendUpdates|mailto:/i.test(editor), "the guest editor gained a way to send something");
+  // Response status is the provider's answer, never ours to record.
+  assert.match(editor, /only the provider knows/);
+});
+
+test("🔴 every column the codec writes exists in a migration", () => {
+  const dir = new URL("../../../../supabase/migrations/", import.meta.url);
+  const all = ["20260901T10_calendar_google_parity_time.sql", "20260901T20_calendar_google_parity_fields.sql",
+    "20260901T30_calendars.sql", "20260901T40_calendar_people_and_extras.sql"]
+    .map((name) => readFileSync(new URL(name, dir), "utf8")).join("\n");
+  for (const column of [
+    "attendees", "reminders", "guests_can_modify", "guests_can_invite_others",
+    "guests_can_see_other_guests", "conference", "attachments", "event_type",
+    "source_title", "source_url", "calendar_id",
+  ]) {
+    assert.match(all, new RegExp(`add column if not exists ${column}\\b`), `${column} is in the code but not the schema`);
+  }
+});

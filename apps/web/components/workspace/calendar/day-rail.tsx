@@ -24,7 +24,7 @@ import { parseDateKey } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
 import { formatEventTime } from "./format";
-import { paintFor } from "@/lib/workspace/event-colors";
+import { paintForEvent } from "@/lib/workspace/event-colors";
 
 import { KIND_META } from "./kind-meta";
 import { clockOf, layoutDay } from "./time-grid";
@@ -40,6 +40,7 @@ import { clockOf, layoutDay } from "./time-grid";
 const GAP_MINUTES = 90;
 
 interface DayRailProps {
+  calendarHex: (calendarId: string | undefined) => string | null;
   dateKey: string;
   events: CalendarEvent[];
   onOpenEvent: (event: CalendarEvent) => void;
@@ -47,7 +48,7 @@ interface DayRailProps {
   onClose: () => void;
 }
 
-export function DayRail({ dateKey, events, onAddOnDate, onClose, onOpenEvent }: DayRailProps) {
+export function DayRail({ calendarHex, dateKey, events, onAddOnDate, onClose, onOpenEvent }: DayRailProps) {
   const date = parseDateKey(dateKey);
   const { allDay, timed } = layoutDay(events);
   const total = allDay.length + timed.length;
@@ -80,7 +81,7 @@ export function DayRail({ dateKey, events, onAddOnDate, onClose, onOpenEvent }: 
       ) : (
         <div className="flex flex-col gap-1">
           {allDay.map((event) => (
-            <RailRow event={event} key={event.id} onOpen={onOpenEvent} when="All day" />
+            <RailRow calendarHex={calendarHex} event={event} key={event.id} onOpen={onOpenEvent} when="All day" />
           ))}
           {timed.map((item, index) => {
             // The gap is measured from the END of the previous block, which is
@@ -92,6 +93,7 @@ export function DayRail({ dateKey, events, onAddOnDate, onClose, onOpenEvent }: 
               <div className="contents" key={item.event.id}>
                 {gap >= GAP_MINUTES && <FreeGap from={previous!.endMinute} to={item.startMinute} />}
                 <RailRow
+                  calendarHex={calendarHex}
                   event={item.event}
                   onOpen={onOpenEvent}
                   when={formatEventTime(item.event.time ?? clockOf(item.startMinute))}
@@ -114,15 +116,17 @@ export function DayRail({ dateKey, events, onAddOnDate, onClose, onOpenEvent }: 
 }
 
 function RailRow({
+  calendarHex,
   event,
   onOpen,
   when,
 }: {
+  calendarHex: (calendarId: string | undefined) => string | null;
   event: CalendarEvent;
   onOpen: (event: CalendarEvent) => void;
   when: string;
 }) {
-  const paint = paintFor(event.colorId);
+  const paint = paintForEvent(event, calendarHex);
   const cancelled = event.status === "cancelled";
   // The rail has room for the line a month cell never does, so location goes here
   // rather than into a tooltip nobody hovers on a touchscreen.

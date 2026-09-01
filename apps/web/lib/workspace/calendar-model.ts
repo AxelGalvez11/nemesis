@@ -57,6 +57,14 @@ export interface CalendarEvent {
    */
   timeZone?: string;
   kind: CalendarEventKind;
+  /**
+   * Which calendar this is on. Absent = the primary one.
+   *
+   * 🔴 ABSENT IS A REAL ANSWER, NOT A MISSING ONE. Every event written before
+   * calendars existed has none, and that is exactly true of them: they are on
+   * the primary calendar. See lib/workspace/calendars.ts.
+   */
+  calendarId?: string;
   /** Where it happens. Free text, the way every calendar treats it. */
   location?: string;
   /**
@@ -79,6 +87,41 @@ export interface CalendarEvent {
   transparency?: "opaque" | "transparent";
   /** Google's `visibility`. Absent means the calendar's default. */
   visibility?: "default" | "public" | "private" | "confidential";
+  /**
+   * Who is invited, and what they said.
+   *
+   * 🔴 A RECORD, NEVER AN INSTRUCTION. Adding a guest in Google SENDS THEM AN
+   * EMAIL. Nemesis stores the list and mails nobody: `responseStatus` is
+   * read-only here because only Google can know whether somebody accepted, and
+   * inventing one would be Nemesis telling a student their supervisor said yes.
+   */
+  attendees?: EventAttendee[];
+  /**
+   * When to be warned.
+   *
+   * 🔴 DECORATIVE UNTIL NEMESIS CAN NOTIFY. There is no notification system, so
+   * a reminder stored here fires only if the event also lives in Google, where
+   * Google fires it. The form says so rather than letting it read as a promise.
+   */
+  reminders?: EventReminders;
+  guestsCanModify?: boolean;
+  guestsCanInviteOthers?: boolean;
+  guestsCanSeeOtherGuests?: boolean;
+  /** A video-call link. Nemesis can hold and show one; only Google can mint one. */
+  conference?: { url?: string; label?: string; id?: string };
+  /** Files pinned to the event. Held and shown; created by Drive. */
+  attachments?: EventAttachment[];
+  /** Google's `eventType`. Absent means an ordinary event. */
+  eventType?: "default" | "outOfOffice" | "focusTime" | "workingLocation";
+  /**
+   * Google's own "where this came from" pair.
+   *
+   * 🔴 NOT THE SAME AS `origin`/`sourceRefs`, which say which lecture and which
+   * page a DATE was read off — a Nemesis idea Google has no field for. Two
+   * different questions; neither set can answer the other.
+   */
+  sourceTitle?: string;
+  sourceUrl?: string;
   course?: string;
   note?: string;
   /** 'agent' events are read-only in the UI. */
@@ -134,6 +177,31 @@ export interface CalendarEvent {
   /** UI-only: which day of a multi-day run this is (1-based), and how many in all. */
   spanIndex?: number;
   spanLength?: number;
+}
+
+export interface EventAttendee {
+  email: string;
+  displayName?: string;
+  optional?: boolean;
+  /** Read-only: only the provider knows. */
+  responseStatus?: "needsAction" | "declined" | "tentative" | "accepted";
+  comment?: string;
+  organizer?: boolean;
+  self?: boolean;
+}
+
+export interface EventReminders {
+  /** Take the calendar's default reminders rather than the list below. */
+  useDefault?: boolean;
+  overrides?: { method: "popup" | "email"; minutes: number }[];
+}
+
+export interface EventAttachment {
+  fileUrl: string;
+  title?: string;
+  mimeType?: string;
+  iconLink?: string;
+  fileId?: string;
 }
 
 export interface CalendarState {
@@ -402,8 +470,42 @@ export function addYears(date: Date, delta: number): Date {
   return addMonths(date, delta * 12);
 }
 
-export function startOfWeek(date: Date): Date {
-  return addDays(date, -date.getDay());
+/**
+ * Which day a week starts on. 0 = Sunday, 1 = Monday.
+ *
+ * 🔴 SUNDAY WAS HARD-CODED, AND MOST OF THE WORLD IS NOT ON IT. Google, Apple
+ * and every paper diary outside North America start the week on Monday, and both
+ * grids were built on `-date.getDay()`, which can only mean Sunday. Read from
+ * the browser where it can be, so a student in London opens a Monday-first
+ * calendar without configuring anything.
+ */
+export type WeekStart = 0 | 1;
+
+export const WEEK_START_STORAGE_KEY = "nemesis.calendar.weekStart";
+
+/**
+ * The browser's own answer, where the runtime has one.
+ *
+ * `Intl.Locale#getWeekInfo` is the standard way to ask, and it is missing on
+ * older engines — hence the guard and the Sunday fallback, which is exactly the
+ * behaviour everything had before this.
+ */
+export function localeWeekStart(): WeekStart {
+  try {
+    const locale = new Intl.Locale(new Intl.DateTimeFormat().resolvedOptions().locale) as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number };
+      weekInfo?: { firstDay: number };
+    };
+    const info = typeof locale.getWeekInfo === "function" ? locale.getWeekInfo() : locale.weekInfo;
+    // The standard numbers days 1..7 from Monday, so 7 is Sunday.
+    return info?.firstDay === 7 ? 0 : 1;
+  } catch {
+    return 0;
+  }
+}
+
+export function startOfWeek(date: Date, weekStart: WeekStart = 0): Date {
+  return addDays(date, -((date.getDay() - weekStart + 7) % 7));
 }
 
 export interface MonthDay {
@@ -414,9 +516,9 @@ export interface MonthDay {
 }
 
 // 6x7 Sunday-first grid, padded with adjacent-month days (42 cells total).
-export function monthGrid(year: number, month: number, today: Date): MonthDay[] {
+export function monthGrid(year: number, month: number, today: Date, weekStart: WeekStart = 0): MonthDay[] {
   const first = new Date(year, month, 1);
-  const start = new Date(year, month, 1 - first.getDay());
+  const start = new Date(year, month, 1 - ((first.getDay() - weekStart + 7) % 7));
   const todayKey = dateKey(today);
   const days: MonthDay[] = [];
   for (let i = 0; i < 42; i++) {
@@ -426,8 +528,8 @@ export function monthGrid(year: number, month: number, today: Date): MonthDay[] 
   return days;
 }
 
-export function weekGrid(anchor: Date, today: Date): MonthDay[] {
-  const start = startOfWeek(anchor);
+export function weekGrid(anchor: Date, today: Date, weekStart: WeekStart = 0): MonthDay[] {
+  const start = startOfWeek(anchor, weekStart);
   const todayKey = dateKey(today);
   return Array.from({ length: 7 }, (_, i) => {
     const date = addDays(start, i);

@@ -28,7 +28,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
-import { paintFor } from "@/lib/workspace/event-colors";
+import { type ColorPaint, paintForEvent } from "@/lib/workspace/event-colors";
 import { type CellMetrics, fitEvents, orderForCell } from "@/lib/workspace/month-cell";
 import { cn } from "@/lib/utils";
 
@@ -45,11 +45,16 @@ interface MonthGridProps {
   onSelectDay: (dateKeyStr: string) => void;
   /** Which day the rail is currently showing, so the grid can mark it. */
   selectedKey: string | null;
+  /** A calendar's colour, for the event > calendar > kind fall-through. */
+  calendarHex: CalendarHex;
 }
+
+/** Resolves a calendar id to its colour, or null when it has none. */
+export type CalendarHex = (calendarId: string | undefined) => string | null;
 
 /** Short capitals, the way Google heads its columns. WEEKDAY_LABELS are "Sun",
  *  "Mon" …; uppercasing in CSS keeps one list rather than a parallel array. */
-export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay, onSelectDay, selectedKey }: MonthGridProps) {
+export function MonthGrid({ calendarHex, days, eventsByDay, onOpenEvent, onPickDay, onSelectDay, selectedKey }: MonthGridProps) {
   // monthGrid() always hands over 42 cells — six weeks — but many months fit
   // in five (or four). Rendering a whole trailing week of grey next-month days
   // was a sixth of the height the view did not need, and height is exactly
@@ -86,18 +91,24 @@ export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay, onSelectD
       {/* Pinned for the rare window too short even for the relaxed grid.
           Needs its own background and the frame's top radius, or it paints
           square corners over the rounded card. */}
+      {/* 🔴 THE HEADINGS COME FROM THE GRID'S OWN FIRST WEEK, not from a
+          Sunday-first constant. The week can start on Monday now, and a fixed
+          list would have labelled the Monday column "Sun" — a calendar that is
+          wrong about which day is which is worse than one that starts on the
+          wrong day. */}
       <div className="sticky top-0 z-10 grid shrink-0 grid-cols-7 rounded-t-[inherit] border-b border-(--ui-stroke-tertiary) bg-background">
-        {WEEKDAY_LABELS.map((label, index) => (
+        {visibleDays.slice(0, 7).map((headDay) => (
           <div
             className={cn(
               "px-2 py-1.5 text-center text-[0.6875rem] font-semibold uppercase tracking-[0.07em] text-(--ui-text-tertiary)",
               // Google tints only today's column heading, which is how you find
               // the current week without hunting for the filled date circle.
-              visibleDays.some((day) => day.isToday && day.date.getDay() === index) && "text-(--theme-primary)",
+              visibleDays.some((day) => day.isToday && day.date.getDay() === headDay.date.getDay())
+                && "text-(--theme-primary)",
             )}
-            key={label}
+            key={headDay.key}
           >
-            {label}
+            {WEEKDAY_LABELS[headDay.date.getDay()]}
           </div>
         ))}
       </div>
@@ -111,6 +122,7 @@ export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay, onSelectD
       >
         {visibleDays.map((day) => (
           <DayCell
+            calendarHex={calendarHex}
             day={day}
             events={eventsByDay.get(day.key) ?? []}
             key={day.key}
@@ -128,7 +140,7 @@ export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay, onSelectD
           Settings → Appearance changes the root font size, so every one of
           these heights moves with the student's Scaling setting. */}
       <div aria-hidden className="pointer-events-none invisible absolute -z-10 w-40" ref={metrics.probeRef}>
-        <EventLine event={PROBE_EVENT} onOpen={noop} />
+        <EventLine calendarHex={noHex} event={PROBE_EVENT} onOpen={noop} />
         <MoreLink hidden={1} onOpen={noop} />
       </div>
     </div>
@@ -137,6 +149,8 @@ export function MonthGrid({ days, eventsByDay, onOpenEvent, onPickDay, onSelectD
 
 const PROBE_EVENT: CalendarEvent = { date: "2026-01-01", id: "probe", kind: "class", title: "Probe", time: "09:00" };
 function noop() {}
+/** The ruler measures a line's HEIGHT; its colour cannot change that. */
+const noHex: CalendarHex = () => null;
 
 /**
  * Measures a real cell and a real line, and re-measures when either could have
@@ -200,6 +214,7 @@ function useCellMetrics() {
 }
 
 interface DayCellProps {
+  calendarHex: CalendarHex;
   day: MonthDay;
   events: CalendarEvent[];
   metrics: CellMetrics;
@@ -209,7 +224,7 @@ interface DayCellProps {
   selected: boolean;
 }
 
-function DayCell({ day, events, metrics, onOpenEvent, onPick, onSelectDay, selected }: DayCellProps) {
+function DayCell({ calendarHex, day, events, metrics, onOpenEvent, onPick, onSelectDay, selected }: DayCellProps) {
   const ordered = orderForCell(events);
   const fit = fitEvents(ordered.length, metrics);
 
@@ -270,7 +285,7 @@ function DayCell({ day, events, metrics, onOpenEvent, onPick, onSelectDay, selec
       <div className="relative z-10 min-h-0 flex-1" data-cell-stack>
         <div className="pointer-events-none absolute inset-0 flex flex-col gap-0.5 overflow-hidden">
           {ordered.slice(0, fit.show).map((event) => (
-            <EventLine event={event} key={event.id} onOpen={onOpenEvent} />
+            <EventLine calendarHex={calendarHex} event={event} key={event.id} onOpen={onOpenEvent} />
           ))}
           {fit.hidden > 0 && <MoreLink hidden={fit.hidden} onOpen={() => onSelectDay(day.key)} />}
         </div>
@@ -286,11 +301,19 @@ function DayCell({ day, events, metrics, onOpenEvent, onPick, onSelectDay, selec
  * Google's own treatment, and the reason six events in a day stay readable.
  * An all-day deadline (and every exam) is a solid bar instead: see drawsAsBar.
  */
-function EventLine({ event, onOpen }: { event: CalendarEvent; onOpen: (event: CalendarEvent) => void }) {
+function EventLine({
+  calendarHex,
+  event,
+  onOpen,
+}: {
+  calendarHex: CalendarHex;
+  event: CalendarEvent;
+  onOpen: (event: CalendarEvent) => void;
+}) {
   const meta = KIND_META[event.kind];
-  // A chosen colour overrides the kind's, exactly as an event colour overrides a
-  // calendar colour in Google. Inline because the value is data — see event-colors.ts.
-  const paint = paintFor(event.colorId);
+  // Event colour, then the calendar's, then the kind's own classes. Inline
+  // because the value is data — see event-colors.ts.
+  const paint: ColorPaint | null = paintForEvent(event, calendarHex);
   // 🔴 A CANCELLED EVENT IS SHOWN, NOT HIDDEN. "Cancelled" is information: a
   // student looking at Tuesday needs to know the lecture WAS there and is off,
   // which is the opposite of the row quietly disappearing. Struck through and

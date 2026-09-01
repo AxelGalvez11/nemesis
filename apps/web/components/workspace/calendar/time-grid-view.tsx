@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
-import { paintFor } from "@/lib/workspace/event-colors";
+import { paintForEvent } from "@/lib/workspace/event-colors";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime, hourLabel } from "./format";
@@ -77,6 +77,7 @@ function gmtLabel(): string {
 }
 
 interface TimeGridViewProps {
+  calendarHex: (calendarId: string | undefined) => string | null;
   days: MonthDay[];
   eventsByDay: Map<string, CalendarEvent[]>;
   onAddOnDate: (dateKeyStr: string) => void;
@@ -87,7 +88,7 @@ interface TimeGridViewProps {
   onMoveEvent: (event: CalendarEvent, result: GestureResult) => void;
 }
 
-export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOpenEvent, onPickSlot }: TimeGridViewProps) {
+export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMoveEvent, onOpenEvent, onPickSlot }: TimeGridViewProps) {
   const [now, setNow] = useState<Date | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -206,13 +207,13 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
                   <button
                     className={cn(
                       "truncate rounded px-1.5 py-0.5 text-left text-[0.6875rem] font-medium leading-tight",
-                      !paintFor(event.colorId) && KIND_META[event.kind].chip,
+                      !paintForEvent(event, calendarHex) && KIND_META[event.kind].chip,
                       event.status === "cancelled" && "line-through opacity-55",
                       event.status === "tentative" && "border border-dashed border-current",
                     )}
                     key={event.id}
                     onClick={() => onOpenEvent(event)}
-                    style={paintFor(event.colorId)?.block}
+                    style={paintForEvent(event, calendarHex)?.block}
                     title={hintFor(event)}
                     type="button"
                   >
@@ -286,6 +287,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
 
             {days.map((day, index) => (
               <DayColumn
+                calendarHex={calendarHex}
                 key={day.key}
                 layout={layouts[index]}
                 onOpenEvent={onOpenEvent}
@@ -340,6 +342,7 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
 }
 
 interface DayColumnProps {
+  calendarHex: (calendarId: string | undefined) => string | null;
   day: MonthDay;
   layout: ReturnType<typeof layoutDay> | undefined;
   window: HourWindow;
@@ -348,7 +351,7 @@ interface DayColumnProps {
   onResizeStart: (nativeEvent: React.PointerEvent, event: CalendarEvent) => void;
 }
 
-function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStart }: DayColumnProps) {
+function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent, onResizeStart }: DayColumnProps) {
   const timed = layout?.timed ?? [];
 
   return (
@@ -394,7 +397,7 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
                 detail === "stacked" && "flex-col py-1 text-[0.6875rem]",
                 detail === "inline" && "items-baseline gap-1 py-0.5 text-[0.6875rem]",
                 detail === "title" && "items-center py-0 text-[0.625rem] leading-none",
-                !paintFor(item.event.colorId) && KIND_META[item.event.kind].chip,
+                !paintForEvent(item.event, calendarHex) && KIND_META[item.event.kind].chip,
                 item.event.status === "cancelled" && "line-through opacity-55",
                 item.event.status === "tentative" && "border-dashed",
               )}
@@ -408,7 +411,7 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
                 pointerEvent.stopPropagation();
                 onMoveStart(pointerEvent, item.event);
               }}
-              style={paintFor(item.event.colorId)?.block}
+              style={paintForEvent(item.event, calendarHex)?.block}
               title={hintFor(item.event)}
               type="button"
             >
