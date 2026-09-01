@@ -1244,7 +1244,7 @@ Text is a renderer too, and often the right one. The question is never "which li
 | **JSXGraph** | interactive 2D math — geometry, coordinate planes, functions, calculus, vectors, sliders, transformations, tangent/secant lines |
 | **Mermaid** | conceptual diagrams — pathways, mechanisms, causal chains, flowcharts, hierarchies, timelines, state and sequence relationships. **Shipped 2026-08-30** (owner: "flow charts, diagrams, graphs, mind maps in chat, that's literally all I want") — as ```` ```mermaid ```` fences in answer PROSE, rendered by `lib/workspace/mermaid-diagram.tsx`: parse-gated, `securityLevel: "strict"`, lazy-loaded, falling back to a plain code block. Deliberately NOT a router route: the fence carries no accuracy claim, the typed `visuals` array stays preferred for anything with numbers or grading behind it, and the router's own Mermaid slot stays open for the day a conceptual route needs validation. |
 | **Vega-Lite** | quantitative data — bar, line, scatter, histogram, distribution, box plot, heatmap, area, pie/donut, dose–response, time series |
-| **React Three Fiber / Three.js** | genuine 3D — molecules, stereochemistry, anatomy, geometric solids, spatial physics, 3D vectors |
+| **React Three Fiber / Three.js** | genuine 3D — molecules, stereochemistry, geometric solids, spatial physics, 3D vectors (anatomy left this row when the atlas was retired, 2026-09-01) |
 | **D3 / custom SVG / React** | escape hatch for bespoke interactive teaching objects the above cannot express cleanly |
 
 ## 🔴 THE CONSTRAINED INTERFACE — the load-bearing rule of this section
@@ -1367,84 +1367,28 @@ title stay printed beside the viewer — the same inspectability a SMILES string
 model-written accession is refused by construction: four opaque characters are the remembered-
 SMILES danger with fewer ways to notice, so only the resolver mints them.
 
-🔴 **The anatomy atlas shipped 2026-08-24, on the owner's order ("what I would like is z anatomy…
-finish the entire atlas, I don't just want bones"), and it is the ladder reaching the body.**
-`{"kind":"anatomy","structure":"liver"}` resolves against `anatomy-atlas.ts` — a registry GENERATED
-at harvest time from the atlas models' own node names ("Atlas (C1)", "Liver", "Deltoid muscle"), so
-the vocabulary of askable structures is the atlas authors', never ours and never the model's.
-**Fourteen regions, 3,209 outlinable structures and 568 landmarks: the skeleton, three skulls, both
-limbs and the hand from the university project, and the muscular, cardiovascular, nervous, lymphoid,
-visceral and joint systems exported from Z-Anatomy's own Blender file.** The viewer
-(`anatomy-viewer.tsx`, three.js in its own chunk, the Mol* discipline: render on gesture, dispose on
-unmount) ghosts everything the stamp did not name and frames the camera on what it did — a teacher's
-pointer, done with the camera.
+🔴🔴 **THE 3D ANATOMY ATLAS SHIPPED 2026-08-24 AND WAS RETIRED 2026-09-01. ANATOMY IS A FIGURE.**
+Owner: *"could you retire the z anatomy and prefer the use of the corpus figures for anatomy?"*
+`{"kind":"anatomy","structure":"liver"}` no longer exists; a bone, muscle, vessel, nerve, organ or
+region is asked for as `{"kind":"figure","subject":"…"}` and answered from the same licensed corpus
+every other subject uses. What went with it: the harvested registry, the three-file resolver seam,
+the API route, the three.js viewer, seventeen Draco-compressed meshes (29 MB), the Draco decoder
+copy in `prebuild`, and the harvest and Blender export scripts. `git log` holds all of it.
 
-🔴 **THE REGISTRY IS SERVER-SIDE ONLY, AND THAT WAS A CORRECTION, NOT A DESIGN.** The first version
-imported the atlas straight into the resolve pass — and `prepareAnswer` runs in the BROWSER, so
-every learner reading a history lesson downloaded the name of every bone, muscle, nerve and vessel
-to discover their answer named none of them. `anatomy-resolve.ts` is now a pure walk that names
-what was asked, `app/api/learn/anatomy/route.ts` owns the registry and the matcher, and
-`anatomy-lookup.ts` is the seam between them — the same three-file shape the figure and macromolecule
-lanes already had, for the same reason §45 keeps mathjs off the learner's bundle.
+🔴 **THE RETIREMENT WAS MEASURED BEFORE IT WAS DONE, AND THE NUMBERS ARE WHY IT IS AN UPGRADE.**
+The atlas offered seventeen regions and 3,831 node names, all of one CC BY-SA lineage plus the NIH
+female organs. The corpus offers 5,829 harvested rows and 29 hand-picked ones, of which **844 are
+the CNX Anatomy and Physiology textbook and 1,036 are Blausen medical illustrations**, with a live
+licensed provider behind them for anything the frozen shelf does not hold. Twenty-two of the
+atlas's own twenty-six subjects find a licensed figure in the frozen shelf alone; the four that do
+not fall through to the live lane, which is the designed path for a concept the shelf lacks.
 
-🔴 **MATCHING IS COVERAGE, AND EVERY RULE IN IT WAS A MEASURED DEFECT FIRST.** How much of a
-candidate name the ask accounts for decides the match, banded against the strongest match anywhere
-in the atlas: plain containment let "sacrum" lose to "Art cart of sacrum art process.r" in the leg.
-A low floor under that band is what lets an organ named only by its parts answer at all — the atlas
-has no node called "Lung", only five lobes. Breadth decides structure from category without a word
-list: measured, a specific ask touches at most a dozen candidates and "bone" touches sixty, so past
-the cap the honest picture is the region itself. And a named LANDMARK with no geometry — "Apex of
-heart", "Coronary sulcus" — answers with the region it is marked on rather than a dead end, because
-refusing outright reported the heart as absent from a model that is almost entirely heart.
-
-🔴 **THE MESHES ARE HARVESTED, LICENCE-CLEANED, AND SERVED FROM OUR OWN DEPLOYMENT.**
-`scripts/anatomy-harvest.mts` downloads named regions from the Open3DModel project (Dutch/Belgian
-university revisions of Z-Anatomy, itself descended from BodyParts3D), **exports the body systems
-from Z-Anatomy's own 306 MB Blender file** via `scripts/anatomy-export-systems.py`, and **assembles
-the female organs from the NIH Human Reference Atlas**. The first two are CC BY-SA 4.0 and the third
-is CC BY 4.0, so each region records which atlas it came from and the viewer prints THAT atlas's
-attribution and THAT atlas's terms — printing one licence under another's mesh is exactly what a
-share-alike licence exists to prevent. Open3DModel's TEXTURES are CC BY-NC-SA — NC is refused across
-this codebase by design — so the harvest strips every texture, image and UV channel before anything
-reaches the repo. What ships is geometry in our own material: **29 MB across seventeen files**,
-Draco-compressed, none of it loaded until a lesson asks for that region, and decoded by the decoder
-`copy-draco-decoder.mjs` copies out of our own three.js dependency at build time. The validator holds
-the asset to a same-origin `/anatomy/….glb` path — there is no external host in this lane at all, and
-a model-written URL refuses by name.
-
-🔴 **BLENDER IS A HARVEST-TIME TOOL AND NEVER A BUILD-TIME ONE.** The export runs once, its output is
-committed, and nobody needs Blender to build or run Nemesis. `ANATOMY_BLEND` is required rather than
-optional when the harvest runs, so a regenerated registry is never silently half an atlas.
-
-🔴🔴 **THE THIRD ATLAS EXISTS BECAUSE THE FIRST TWO ARE ONE MALE BODY, AND THAT WAS NEVER FIXABLE BY
-MATCHING HARDER.** Both descend from BodyParts3D, whose own parts list carries fifteen entries for
-prostate, testis and penis and **zero** for uterus, ovary or uterine tube; Z-Anatomy's published
-to-do list puts "CREATE A FEMALE HUMAN MODEL" behind a fresh CT and MRI, and Open3DModel's pelvic
-floor model contains a prostate. So for three days this section recorded "the upstream model is
-male" as a source gap — accurate, and still a statement that half the learners Nemesis serves cannot
-see their own anatomy. The NIH's Human Reference Atlas is a different body: reference organs
-segmented from the Visible Human **female** dataset, published as glTF under CC BY 4.0. Three
-regions are assembled from it — **Female reproductive system** (uterus with its twelve named parts,
-both ovaries, both uterine tubes), **Breast**, and **Placenta, full term** — 54 structures and 2.7 MB.
-Merging separate organ files into one figure works only because HRA's files share a body coordinate
-space, which is measured rather than assumed: the uterus sits at the origin, the ovaries to either
-side, the breasts at chest height.
-
-🔴 **THE BONY FEMALE PELVIS IS DELIBERATELY LEFT OUT, AND THAT IS A MATCHER DECISION.** HRA publishes
-one, and taking it would put a second "Sacrum", "Ilium" and "Pubis" into the registry competing with
-the skeleton's own — the tie-break falls to the smallest region, so a three-organ model would win a
-whole-body bone ask. Sex differences in the pelvis are worth teaching; not at the price of breaking
-every bone ask that already works. A test pins `sacrum`, `femur`, `liver` and `prostate` to where
-they resolved before the third atlas arrived.
-
-🔴 **WHAT THE ATLAS STILL DOES NOT HAVE, SAID PLAINLY.** No external female genitalia and no vagina —
-HRA's reproductive set stops at the cervix. The oesophagus is named only as a landmark on the liver.
-Individual named arteries below the heart's own vessels live in Z-Anatomy's bonus collections, not
-the system collections harvested here. HRA node names carry the source's own spellings, so its
-"fibria of uterine tube" does not answer to *fimbriae* — correcting an atlas by hand is where
-invented vocabularies start, and the general fix is HRA's ontology terms rather than a typo list.
-Each is a source gap rather than a wiring one, and each is one line in `SYSTEMS`, `REGIONS` or
-`COMPOSITES` away.
+🔴 **WHAT WAS GENUINELY LOST, SAID PLAINLY.** Rotation. A figure is a picture of one view, so
+"turn it and see where this sits behind that" is gone, and with it the ghost-everything-else
+framing that worked as a teacher's pointer. What is gained is coverage, labels drawn by the
+textbook's own authors, and one lane instead of two. A stored canvas carrying the old shape does
+not crash: the validator has no renderer for `anatomy`, so it refuses with `unknown-kind` and the
+block keeps its prose, which is the rule every retired kind must follow.
 
 🔴 **The resolver was wired on 2026-08-21, and until then this section described something no
 learner had ever seen.** `chem-resolver.ts` was built, tested and merged, and `grep -r
@@ -1601,7 +1545,7 @@ provenance rather than about subject matter.
 | Generated illustration | a prompt | **router rule only — not wired to `nemesis-media`** |
 | Macromolecular structure | `{"kind":"macromolecule","molecule":"…"}` — a name, resolved to a PDB accession | **shipped** (Mol* viewer, RCSB resolver) |
 | Electron-pushing arrows on a structure | `arrows: [{from, to}]` — heavy-atom indices, the `highlight` index space | **shipped 2026-08-24** (curly arrows drawn over the depiction's own computed atom positions) |
-| Anatomy (3D body) | `{"kind":"anatomy","structure":"…"}` — a name, resolved against the harvested atlas registry | **shipped 2026-08-24** (17 regions, 3,831 askable terms — bones, muscles, vessels, nerves, organs, and the female organs from a second body; same-origin, textures stripped for licence) |
+| Anatomy (3D body) | was `{"kind":"anatomy","structure":"…"}` | **shipped 2026-08-24, RETIRED 2026-09-01** (owner order; anatomy is a `figure` now, answered from the corpus — see the rung-three note above for the numbers that made it an upgrade) |
 
 ## 🔴 CHEMICAL STRUCTURES ARE THE EQUATION LANE WITH A DIFFERENT NOTATION
 

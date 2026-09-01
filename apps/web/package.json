@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/copy-pdf-worker.mjs && node scripts/copy-draco-decoder.mjs && node scripts/build-parse-thread.mjs",
+    "predev": "node scripts/copy-pdf-worker.mjs && node scripts/build-parse-thread.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-pdf-worker.mjs && node scripts/copy-draco-decoder.mjs && node scripts/build-parse-thread.mjs",
+    "prebuild": "node scripts/copy-pdf-worker.mjs && node scripts/build-parse-thread.mjs",
     "build": "next build",
     "start": "next start",
     "pdf-worker": "node scripts/copy-pdf-worker.mjs",
@@ -87,16 +87,12 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@gltf-transform/core": "^4.4.2",
-    "@gltf-transform/extensions": "^4.4.2",
-    "@gltf-transform/functions": "^4.4.2",
     "@tailwindcss/postcss": "^4.2.4",
     "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "0.185.0",
-    "draco3dgltf": "^1.5.7",
     "postcss": "^8.5.15",
     "sql.js": "^1.14.1",
     "tailwindcss": "^4.2.4",
