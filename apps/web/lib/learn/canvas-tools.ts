@@ -235,6 +235,7 @@ export function labelFor(name: string, app: string | undefined): WorkNote {
   if (name.startsWith("delete_calendar")) return { label: "Checking before deleting" };
   if (name === "get_study_record") return { label: "Reading your study record" };
   if (name === "make_practice_test") return { label: "Writing a practice test" };
+  if (name === "find_figure") return { label: "Looking for a picture in your lectures" };
   return { label: app ? `Working in ${app}` : "Working in a connected app" };
 }
 

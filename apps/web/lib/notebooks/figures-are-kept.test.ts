@@ -129,3 +129,101 @@ test("🔴 parsing a real PDF with an embedded picture returns the picture, join
     "the interactive lane decoded figures it was told not to look at",
   );
 });
+
+/**
+ * 🔴 WORD, WHICH KNEW EVERY PICTURE'S NAME AND NEVER FETCHED ONE. `extractDocxStructure` reads
+ * `word/_rels/document.xml.rels`, so each figure block already carried its part —
+ * `word/media/image3.png` — and then the zip was discarded. Measured on the owner's corpus: 207
+ * placed pictures across 46 real course files, every one named in the model and invisible.
+ *
+ * The three assertions are the three ways this goes wrong: nothing comes back, the wrong things
+ * come back (header crests and numbering bullets live in the same folder), or what comes back
+ * cannot be joined to the figure it belongs to.
+ */
+test("🔴 a Word document hands over the pictures it places, and only those", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { readDocxDocument } = await import("./office");
+  const { attachFigureAssets, figureAssetPath, figuresWithAssets } = await import("./figure-assets");
+  const bytes = new Uint8Array(readFileSync(new URL("./fixtures/office/figure-report.docx", import.meta.url)));
+
+  const { figures, model } = readDocxDocument(bytes);
+  assert.ok(figures.length > 0, "a Word document named its pictures and fetched none of them");
+
+  // 🔴 EXACTLY THE PLACED SET. `word/media/` also holds header crests, footer rules and numbering
+  // bullets. Storing those costs money per document and shows the learner a school logo when they
+  // asked for a diagram, so the media is filtered by the refs the MODEL carries.
+  const placed = new Set(model.blocks.map((b) => b.figure?.ref).filter(Boolean));
+  for (const figure of figures) {
+    assert.ok(placed.has(figure.entry), `${figure.entry} is stored but nothing in the body places it`);
+    assert.ok(figure.bytes.byteLength > 0, `${figure.entry} was stored empty`);
+    assert.ok(figure.mime.startsWith("image/"), `${figure.entry} has no readable mime`);
+  }
+
+  // The join, which is the half that silently goes wrong: a stored picture nothing points at is
+  // indistinguishable from no picture at all.
+  const attached = attachFigureAssets(model, new Map(figures.map((f) => [f.entry, {
+    bytes: f.bytes.byteLength, contentKey: f.contentKey, mime: f.mime,
+    path: figureAssetPath("uid", f.contentKey, f.mime),
+  }])));
+  assert.equal(figuresWithAssets(attached), figures.length, "a stored Word picture reached no figure block");
+});
+
+/**
+ * 🔴 THE VENDOR LANE, WHICH WAS THE LAST ONE STILL DROPPING PIXELS. A vendor returns a figure's
+ * COORDINATES and refuses its bytes, so `parseWithVendor` renders the figures itself from the
+ * original file — it is the only thing in the whole process that ever decodes a vendor-parsed
+ * PDF's diagrams. It used them to describe the figures and then dropped them.
+ *
+ * Measured on the owner's library, 2026-08-31: after the native lane learned to keep its pictures,
+ * `PHCY_1202_..._pharmacokinetics_part_1.pdf` was the ONLY file still at zero showable figures out
+ * of 27 — because it is Mistral-parsed. One lane fixed and one not is what makes a feature look
+ * unreliable rather than absent.
+ */
+test("🔴 a vendor-parsed PDF keeps the pixels the vendor made us decode ourselves", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { parseWithVendor } = await import("./parse-document");
+  const bytes = new Uint8Array(readFileSync(new URL("./fixtures/embedded-raster.pdf", import.meta.url)));
+
+  // A stub vendor, so this proves the LANE keeps its figures rather than proving a network works.
+  const outcome = await parseWithVendor(
+    bytes, "lecture.pdf", "application/pdf", "pdf",
+    { lookAtFigures: true },
+    {
+      readWithLlama: async () => ({ durationMs: 1, ok: false, reason: "not-configured" }) as never,
+      readWithMistral: async () => ({
+        durationMs: 1,
+        ok: true,
+        response: {
+          model: "mistral-ocr-latest",
+          // 🔴 THE FIGURE HAS TO COME BACK, OR THE FIGURE-LOSS GATE REJECTS THE READ AND THIS TEST
+          // PROVES NOTHING. Calibrated: with `images: []` the stub is refused outright
+          // (`vendor_quality_rejected`, missing: "figures"), which is the gate working correctly —
+          // a vendor read that dropped the page's only diagram must never be accepted. The box
+          // below is the fixture's real one: `readPdfStructure` puts its figure at x 0.098,
+          // y 0.141, w 0.327, h 0.253 of a 612x792 page, which is exactly (60,112)-(260,312).
+          //
+          // 🔴 AND THE MARKDOWN DELIBERATELY DOES NOT REFERENCE THE IMAGE. Adding `![img-0](img-0)`
+          // makes this test fail, and the cause is a real defect elsewhere rather than anything
+          // about figure storage: a markdown-named image is skipped by `locatedFigures`, so its
+          // figure block comes from the markdown parse and carries NO rect, and the geometric
+          // accounting then reports the painted region as never having arrived. That read falls
+          // back to the native lane, so nothing is lost — but the vendor read that was paid for is
+          // discarded. Tracked separately; do not "fix" it by weakening the gate.
+          pages: [{
+            dimensions: { dpi: 72, height: 792, width: 612 },
+            images: [{ bottom_right_x: 260, bottom_right_y: 312, id: "img-0", top_left_x: 60, top_left_y: 112 }],
+            index: 0,
+            markdown: "# Bending stress\n\nStress varies across the depth of the section.",
+          }],
+          usage_info: { pages_processed: 1 },
+        },
+      }) as never,
+    },
+  );
+
+  assert.ok(outcome, "the stubbed vendor read was rejected outright");
+  assert.ok(
+    ((outcome as { figures?: unknown[] }).figures ?? []).length > 0,
+    "the vendor lane decoded the figures to describe them and then threw the pixels away",
+  );
+});

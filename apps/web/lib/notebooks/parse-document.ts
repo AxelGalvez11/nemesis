@@ -54,7 +54,7 @@ import { readTextDocument } from "./text-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
 import { capturedFigures, normalizedFigures, type NormalizedFigure } from "./figure-assets";
-import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
+import { readDocxDocument, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
 import { escalatePdfPages } from "@/lib/pdf/page-escalation";
@@ -650,12 +650,25 @@ export async function parseWithVendor(
     title: model.title,
   };
 
+  // 🔴 THE PIXELS LEAVE THIS LANE TOO, AND UNTIL NOW THEY DID NOT. `pdfFigures.images` holds the
+  // figures this function ALREADY decoded — it had to, because a vendor returns coordinates and
+  // refuses bytes, so the render above is the only thing in the whole process that ever sees a
+  // vendor-parsed PDF's diagrams. They were used to describe the figures and then dropped.
+  //
+  // Measured on the owner's library, 2026-08-31: `PHCY_1202_..._pharmacokinetics_part_1.pdf` is
+  // Mistral-parsed, holds 27 figures, and had 0 showable — the only file in his account still at
+  // zero after the native lane learned to keep its pictures. One lane fixed and one not is the
+  // shape that makes a feature look unreliable rather than absent.
+  const figures = pdfFigures ? capturedFigures(pdfFigures.images) : [];
+
   // The same refusal the local lanes make, for the same reason: a document with structure and no
   // readable text is worth remembering even though there is nothing to show a student yet.
   if (!text) {
-    return hasStructure(model) ? { document, kind, ok: false, reason: "no-text" } : null;
+    return hasStructure(model)
+      ? { document, ...(figures.length ? { figures } : {}), kind, ok: false, reason: "no-text" }
+      : null;
   }
-  return { document, ok: true };
+  return { document, ...(figures.length ? { figures } : {}), ok: true };
 }
 
 /**
@@ -792,7 +805,12 @@ export async function parseDocument(
     // either appears or it does not, `word/media/` either holds pictures or it does not. Reading
     // it is free and local, so the question "is there anything a vendor could restore" is
     // answerable before anyone is billed to answer it.
-    model = extractDocxModel(bytes);
+    // 🔴 THE MODEL AND ITS PICTURES FROM ONE INFLATE. `extractDocxModel` is the same call with the
+    // media discarded; a Word lecture's figures were named in the model and never fetched, so 207
+    // placed pictures across the owner's corpus were invisible to everything downstream.
+    const read = readDocxDocument(bytes);
+    model = read.model;
+    if (read.figures.length > 0) normalized = read.figures;
     text = documentToText(model);
     const decision = preflightOffice("docx", claimOf("docx", bytes), model, text);
     console.info(JSON.stringify({

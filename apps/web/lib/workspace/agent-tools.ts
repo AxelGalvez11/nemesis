@@ -21,6 +21,7 @@ import {
   type PendingDelete,
 } from "@nemesis/shared";
 import { EXAM_ITEM_RULES_SHORT } from "./item-writing";
+import { figureAssetUrl } from "@/lib/learn/figure-asset-url";
 import { supabase } from "@/lib/supabase";
 import { refreshStudyAfterExternalWrite, type CreateArtifactInput, type StudyArtifact } from "@/lib/workspace/study-cloud-store";
 import {
@@ -203,6 +204,30 @@ export const AGENT_TOOLS = [
           },
         },
         required: ["source"],
+        type: "object",
+      },
+    },
+    type: "function",
+  },
+  {
+    function: {
+      description: toolDescription("find_figure", EXAM_ITEM_RULES_SHORT),
+      name: "find_figure",
+      parameters: {
+        properties: {
+          limit: { description: "How many pictures to return (default 3, max 6)", type: "number" },
+          query: {
+            description:
+              'What the picture SHOWS, in ordinary words — "loop of Henle", "steroid ring structure", '
+              + '"insulin release curve". Not a file name. Leave empty with `source` set to see what '
+              + "pictures one lecture holds.",
+            type: "string",
+          },
+          source: {
+            description: "Part of one lecture's file name, to look inside that lecture only",
+            type: "string",
+          },
+        },
         type: "object",
       },
     },
@@ -958,6 +983,96 @@ async function pendingDeleteFor(name: string, args: Record<string, unknown>): Pr
   };
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Showing a picture from the learner's own lectures                   */
+/* (owner 2026-08-31: "it should be able to pull images that it has    */
+/*  stored into chat when necessary")                                  */
+/* ------------------------------------------------------------------ */
+
+/** Enough to answer with, few enough that a reply is not a gallery. */
+const FIGURE_LIMIT_DEFAULT = 3;
+const FIGURE_LIMIT_MAX = 6;
+
+/** Descriptions are a paragraph of vision output; the model needs the gist, not the essay. */
+const FIGURE_DESCRIPTION_CHARS = 320;
+
+interface FigureRow {
+  source_id: string;
+  file_name: string;
+  unit: number | null;
+  description: string;
+  path: string;
+  width: number | null;
+  height: number | null;
+}
+
+/**
+ * Pictures from this student's own uploaded lectures.
+ *
+ * 🔴 THE `markdown` FIELD IS THE WHOLE INTERFACE, AND IT IS PRE-BUILT ON PURPOSE. Handing the model
+ * a bare URL and trusting it to assemble an image link is the failure this avoids: it writes
+ * `[see figure](url)` (a link, not a picture), or re-types a 300-character signed URL and corrupts
+ * the signature, or describes the diagram in prose and never shows it. A finished string it is told
+ * to paste verbatim has one way to go right and no interesting ways to go wrong.
+ *
+ * 🔴 THE SEARCH RUNS IN POSTGRES, NOT HERE. `search_figures` walks the jsonb; the alternative is
+ * downloading every parsed structure the learner owns — tens to hundreds of kilobytes each — to
+ * return one picture. It is SECURITY INVOKER, so row-level security scopes it to the caller and no
+ * ownership check is written in this file where it could be forgotten.
+ *
+ * 🔴 A FAILURE TO SIGN DROPS THE ROW RATHER THAN RETURNING IT WITHOUT A PICTURE. A result that
+ * carries a description and no image is exactly what makes the model promise a diagram it cannot
+ * show. Better a shorter list, or an empty one the description tells it to admit to.
+ */
+async function findFigure(args: Record<string, unknown>): Promise<unknown> {
+  const query = typeof args.query === "string" ? args.query.trim() : "";
+  const source = typeof args.source === "string" ? args.source.trim() : "";
+  const asked = typeof args.limit === "number" && Number.isFinite(args.limit)
+    ? Math.round(args.limit)
+    : FIGURE_LIMIT_DEFAULT;
+  const limit = Math.max(1, Math.min(asked, FIGURE_LIMIT_MAX));
+
+  const { data, error } = await supabase.rpc("search_figures", {
+    p_limit: limit,
+    p_query: query,
+    p_source: source,
+  });
+  if (error) return { error: `Could not look through your lectures: ${error.message}` };
+
+  const rows = (data ?? []) as FigureRow[];
+  const found: unknown[] = [];
+  for (const row of rows) {
+    const url = await figureAssetUrl(row.path);
+    if (!url) continue;
+    const description = clip(row.description.trim(), FIGURE_DESCRIPTION_CHARS);
+    found.push({
+      description,
+      from: row.file_name,
+      // 🔴 THE ALT TEXT IS THE DESCRIPTION, TRIMMED TO ONE LINE. A markdown image whose alt text
+      // contains a newline or an unbalanced bracket stops being an image mid-render.
+      markdown: `![${description.replace(/[\r\n]+/g, " ").replace(/[[\]]/g, "")}](${url})`,
+      ...(row.unit !== null ? { page: row.unit + 1 } : {}),
+      ...(row.width && row.height ? { size: `${row.width}x${row.height}` } : {}),
+    });
+  }
+
+  if (found.length === 0) {
+    return {
+      figures: [],
+      note: query || source
+        ? "No picture in this student's own lectures matches that. Say so plainly rather than describing one from memory."
+        : "This student has no stored lecture pictures yet.",
+    };
+  }
+  return {
+    figures: found,
+    // Repeated at the point of use because a rule in a tool description competes with everything
+    // else in the system prompt, and this one has exactly one chance to be followed.
+    note: "Paste each `markdown` value verbatim on its own line, beside the point it illustrates. Do not rewrite the URL.",
+  };
+}
+
 /**
  * Tools that CHANGE the student's Study page.
  *
@@ -1272,6 +1387,7 @@ async function dispatchTool(
     case "delete_calendar_event": return await deleteCalendarEventTool(args);
     case "get_study_record": return await getStudyRecord();
     case "make_practice_test": return await makePracticeTest(args);
+    case "find_figure": return await findFigure(args);
     default: return { error: `Unknown tool '${call.name}'.` };
   }
 }
