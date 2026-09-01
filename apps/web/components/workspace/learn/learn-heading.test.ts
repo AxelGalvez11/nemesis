@@ -104,3 +104,16 @@ test("🔴 the pace is the owner's, and it is a floor (2026-09-01)", () => {
   assert.ok(ms("FADE_OUT_MS") >= 700, "the exit was sped back up");
   assert.ok(ms("HOLD_MS") >= 3200, "a subject no longer holds long enough to be read without hurry");
 });
+
+test("🔴 every subject is capitalised, and none of them shouts (2026-09-01)", () => {
+  // Owner: "dont titles have capitalization unless its an article, idk it just feels wierd seeing
+  // lowercase". Each word is the name of a thing you can pick rather than a word in a sentence, so
+  // all nine agree. Every WORD is capitalised, not just the first: "Contract Law", not "Contract
+  // law" — there is no article or preposition among them to leave lowercase.
+  for (const subject of LEARN_SUBJECTS) {
+    for (const word of subject.split(" ")) {
+      assert.match(word, /^[A-Z]/, `"${subject}" is not capitalised`);
+      assert.ok(word !== word.toUpperCase() || word.length === 1, `"${subject}" is shouting`);
+    }
+  }
+});

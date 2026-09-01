@@ -23,9 +23,17 @@ import { useEffect, useRef, useState } from "react";
 /**
  * What the front door offers to teach, one per faculty.
  *
- * 🔴 REAL COURSE NAMES, NOT CATEGORIES. "Science" or "the humanities" is a shelf label; "contract
- * law" is a thing somebody is sitting an exam in on Thursday, and it is what makes the line read as
+ * 🔴 REAL COURSE NAMES, NOT CATEGORIES. "Science" or "the humanities" is a shelf label; "Contract
+ * Law" is a thing somebody is sitting an exam in on Thursday, and it is what makes the line read as
  * an offer rather than as branding.
+ *
+ * 🔴🔴 CAPITALISED, AND THE GRAMMAR ARGUMENT LOSES TO THE READING (owner, 2026-09-01: *"dont titles
+ * have capitalization unless its an article, idk it just feels wierd seeing lowercase"*). Strictly,
+ * these are common nouns inside a sentence, and "Learn calculus" is the correct English; only
+ * "Spanish" has to be capitalised, being a language. But the line is not read as a sentence. Each
+ * word is the NAME OF A THING YOU CAN PICK, and lowercase made them read as description while the
+ * one capitalised entry looked like a mistake next to eight that were not. Title case makes the
+ * nine agree with each other and makes each one look like a course rather than a word.
  *
  * 🔴🔴 THE HEALTH SLOT IS "anatomy", AND THE FIRST DRAFT'S "pharmacology" WAS CAUGHT BY THE GUARD
  * THAT EXISTS FOR EXACTLY THIS. `field-agnostic.test.ts` bans that word from every shipping
@@ -38,15 +46,15 @@ import { useEffect, useRef, useState } from "react";
  * rule this serves is breadth rather than any one entry.
  */
 export const LEARN_SUBJECTS = [
-  "calculus",
-  "biology",
-  "contract law",
-  "thermodynamics",
-  "art history",
-  "macroeconomics",
+  "Calculus",
+  "Biology",
+  "Contract Law",
+  "Thermodynamics",
+  "Art History",
+  "Macroeconomics",
   "Spanish",
-  "data structures",
-  "anatomy",
+  "Data Structures",
+  "Anatomy",
 ] as const;
 
 /** How long each subject holds, once it has fully arrived. */
