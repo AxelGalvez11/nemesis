@@ -83,6 +83,13 @@ test("what is NOT deleted, because it is not the learner choosing what happens n
   assert.match(composer, /aria-label="Add material"/, "the composer's attach affordance survives (§2)");
   assert.match(composer, /Finish dictation/, "dictation's ✓ survives — owner-specified");
   assert.match(composer, /Cancel dictation/, "and its ×");
-  const surface = learn("canvas-surface.tsx");
-  assert.match(surface, /aria-label="Leave the canvas"/, "navigation survives");
+  // 🔴 NAVIGATION STILL SURVIVES — IT MOVED OFF THIS SURFACE. This asserted the canvas's own `×`,
+  // which was navigation's only representative while §38.1 kept the rail off a canvas. Both
+  // reversed on 2026-08-31: the rail is back and collapses rather than disappearing (#995), and
+  // the × went with the machinery behind it. The claim is the same, so it is asserted where it is
+  // now true rather than deleted.
+  const shell = readFileSync(new URL("../../lib/workspace/shell-navigation.ts", import.meta.url), "utf8");
+  assert.match(shell, /const sidebarVisible = sidebarOpen && !focusMode && !sidePanelOpen && !canvasRunning;/,
+    "a canvas suppresses navigation again instead of collapsing it");
+  assert.ok(!/immersiveClaimed \|\|\s*IMMERSIVE_ROUTES/.test(shell), "a canvas is claiming focus mode again — §38.1 is back");
 });

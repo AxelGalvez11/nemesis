@@ -84,51 +84,35 @@ test("🔴 the dev-preview harness gets the identical boundary, not a second one
   assert.match(preview, /export \{ default \} from "\.\.\/\.\.\/\(workspace\)\/learn\/error";/);
 });
 
-test("🔴🔴 the × starts a departure rather than navigating on the spot", () => {
-  assert.match(
-    SURFACE,
-    /<CanvasExit onExit=\{beginExit\} \/>/,
-    "the × is calling onExit directly again — the departure animation has nothing to trigger it",
-  );
-  assert.equal(
-    /<CanvasExit onExit=\{onExit\} \/>/.test(SURFACE),
-    false,
-    "the × went back to the raw prop, skipping beginExit entirely",
-  );
+test("🔴🔴 THE × IS GONE, AND SO IS EVERYTHING THAT SERVED IT", () => {
+  // Owner, 2026-08-31: *"since chat is default, the '×' should be gone from the chats."*
+  //
+  // The four tests that stood here guarded the departure: that the × called `beginExit` rather
+  // than `onExit`, that the animation was capped at 200ms, that reduced motion and a second press
+  // both skipped the wait, and that the pending navigation could not fire twice. Every one of them
+  // was correct and every one described a control that no longer exists.
+  //
+  // 🔴 THE MACHINERY WENT WITH THE BUTTON, DELIBERATELY. `beginExit` had exactly one caller. Left
+  // behind it would have been a state machine, a timer, a cleanup effect and a CSS class nothing
+  // on the surface could reach — dead code wearing the comments of a live feature, which is the
+  // most expensive kind to read. `learning-canvas.tsx`'s `leave` and its #936 stranded-reload
+  // fallback went for the same reason: they existed to serve this press.
+  //
+  // 🔴 AND THE WAY OUT IS NOT WEAKER, IT MOVED. §38.1 took the rail off a canvas, which is what
+  // made the × the only exit and this file necessary. #995 reversed that: the sidebar collapses to
+  // the rail and the rail stays, so leaving is clicking any of its destinations. `shell-navigation.
+  // test.ts` holds that end up now, and the error boundary above still catches a wedged render.
+  // 🔴 STRIP THE COMMENTS FIRST. The note explaining the removal names `beginExit` and
+  // `.canvas-exit-out` in order to say they are gone, and a guard that reads its own explanation
+  // as the offence fails the moment the removal is documented. This repo has paid for that twice
+  // already today.
+  const code = SURFACE.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  assert.ok(!/CanvasExit/.test(code), "the × is back — leaving a chat is the rail's job now");
+  assert.ok(!/beginExit/.test(code), "the departure machinery is back without a control to start it");
+  assert.ok(!/canvas-exit-out/.test(code), "the exit animation has a trigger again, or a dead class was left in the markup");
+  assert.ok(!/onExit/.test(code), "the surface takes an onExit prop nothing can call");
 });
 
-test("🔴 the departure is capped, never a reason the press feels slower", () => {
-  // Owner: "never make the exit SLOWER TO RESPOND ... must still feel instant to the press ...
-  // cap it tight (about 200ms)". This is a ceiling on THIS surface's own animation, not the
-  // arrival's 320ms `DOCK_MS` — that trip has a measured destination to aim at; see
-  // `.canvas-exit-out`'s own comment in globals.css for why this one does not try to replicate it.
-  assert.match(SURFACE, /const EXIT_MS = 200;/, "the exit's own timing budget moved or was removed");
-});
-
-test("🔴🔴 reduced motion skips the departure, and a second press skips the wait", () => {
-  assert.match(
-    SURFACE,
-    /window\.matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches/,
-    "beginExit stopped checking the same preference canvas-home.tsx's own arrival honours",
-  );
-  // Both guards live on one branch: an in-flight departure OR reduced motion skip straight to
-  // `onExit()` rather than animating. Losing either half re-opens a way to strand the learner —
-  // reduced motion behind a 200ms wait it asked not to have, or a second press stacking a second
-  // timer behind the first instead of overriding it.
-  assert.match(SURFACE, /if \(leaving \|\| still\) \{/, "the second-press / reduced-motion short-circuit is gone");
-  assert.match(SURFACE, /window\.clearTimeout\(exitTimer\.current\)/, "the pending departure timer is no longer cancelled");
-});
-
-test("🔴 the pending navigation cannot fire twice, or after the surface holding it is gone", () => {
-  assert.match(
-    SURFACE,
-    /exitTimer\.current = window\.setTimeout\(onExit, EXIT_MS\)/,
-    "the departure stopped delaying onExit — the animation would be racing a navigation already under way",
-  );
-  // Cleared on unmount: a route change from anywhere else (the browser's own Back) must not leave
-  // a stale timer calling `router.push` a second time on a surface that is already gone.
-  assert.match(SURFACE, /useEffect\(\(\) => \(\) => \{\s*if \(exitTimer\.current !== null\) window\.clearTimeout\(exitTimer\.current\);/);
-});
 
 test("🔴🔴 the departure is the arrival's own curve, not a new effect invented to match the brief", () => {
   // Owner: "the exit should read as the reverse of the arrival." canvas-home.tsx flies the
