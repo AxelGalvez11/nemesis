@@ -97,6 +97,9 @@ const EASE_OUT = "cubic-bezier(0.4, 0, 0.2, 1)";
  */
 const EASE_IN = "cubic-bezier(0.33, 0, 0.35, 1)";
 
+/** Room for the last glyph's ink to sit outside its own advance width. See `slotWidth`. */
+const SLOT_SLACK_PX = 2;
+
 export function LearnHeading({ departing }: { departing: boolean }) {
   const [index, setIndex] = useState(0);
   /**
@@ -162,7 +165,15 @@ export function LearnHeading({ departing }: { departing: boolean }) {
     };
   }, [departing, still]);
 
-  const slotWidth = widths ? `${Math.ceil(widths[index] ?? 0)}px` : "max-content";
+  /**
+   * 🔴🔴 THE MEASURED WIDTH PLUS SLACK, AND THE SLACK IS NOT SUPERSTITION. Owner, 2026-09-01: *"the
+   * last letter gets cuttoff now"*. `getBoundingClientRect()` returns the text's ADVANCE width, and
+   * a glyph's ink can sit outside its own advance: the heading also runs `tracking-[-0.01em]`, which
+   * pulls the final character's advance in while its shape stays put. Measured: "Thermodynamics"
+   * advances 181.91px, so the slot was 182px and the final letter had its right edge shaved. The
+   * clip is gone from the slot as well (see the class list), so this is belt and braces.
+   */
+  const slotWidth = widths ? `${Math.ceil(widths[index] ?? 0) + SLOT_SLACK_PX}px` : "max-content";
 
   return (
     <h1
@@ -181,7 +192,11 @@ export function LearnHeading({ departing }: { departing: boolean }) {
       <span aria-hidden="true" className="inline-flex items-baseline">
         Learn&nbsp;
         <span
-          className="relative inline-grid overflow-hidden text-left align-baseline"
+          // 🔴 NO `overflow-hidden`. It was clipping the last glyph of every subject (see
+          // `slotWidth`), and nothing here needs it: the words are hidden with `visibility`
+          // rather than by being moved out of a box, and the only transform is 0.12em of
+          // vertical drift that is meant to be seen.
+          className="relative inline-grid text-left align-baseline"
           style={{
             width: slotWidth,
             // Only animated once the widths are known; with `max-content` there is nothing to
