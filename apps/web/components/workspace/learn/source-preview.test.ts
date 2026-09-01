@@ -116,7 +116,14 @@ test("🔴🔴 the panel HAS a chat lane now, and the reader still hides its too
   assert.match(PREVIEW, /onSendToChat=\{onSendToChat\}/, "the panel no longer forwards a way to ask about a selection");
   const reader = strip(readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8"));
   assert.match(reader, /onSendToChat\?: \(prompt: string, files: File\[\]\) => void;/, "the reader requires a chat lane again, which forces a dead toolbar wherever there is none");
-  assert.match(reader, /\{onSendToChat && \(selection \?\? region\) && \(/, "the toolbar mounts without somewhere to send");
+  // 🔴 REPOINTED 2026-09-01. The bar this line pinned is gone — a highlight opens a comment box now
+  // (owner: *"only comment like 'send to nemesis' or 'add comment'"*). The property it protected is
+  // NOT gone and is asserted in its new form: without a chat lane the Send button is not rendered
+  // at all, while "Add comment" still works, because keeping a note needs no lane. Absent, never
+  // inert — the same rule, one level down.
+  const layer = strip(readFileSync(new URL("../reader/comment-layer.tsx", import.meta.url), "utf8"));
+  assert.match(reader, /onSend=\{onSendToChat \? sendComment : null\}/, "the note box is handed a send route that may not exist");
+  assert.match(layer, /\{onSend && \([\s\S]{0,400}?data-testid="reader-comment-send"/, "the send button mounts without somewhere to send");
 });
 
 test("🔴🔴 the panel never files the same document into the same canvas twice", () => {

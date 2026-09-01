@@ -40,6 +40,16 @@ export interface CommentAnchor {
   y?: number;
   box?: { x: number; y: number; width: number; height: number };
   block?: number;
+  /**
+   * The words the comment was made on, when it started as a highlight.
+   *
+   * 🔴 THE TEXT ITSELF, NOT A CHARACTER OFFSET. A document is re-read whenever the parser improves,
+   * and offsets from the previous read point at different words afterwards — silently, with the pin
+   * still rendering. A quote can at worst fail to match, which is visible; an offset moves, which is
+   * not. It rides beside `x`/`y` rather than replacing them: the position is what pins the mark,
+   * the quote is what the comment is ABOUT, and the two answer different questions.
+   */
+  quote?: string;
 }
 
 export interface DocumentComment {
@@ -265,6 +275,7 @@ export function describeCommentSpot(comment: DocumentComment, unitLabel: string)
   const parts: string[] = [];
   if (comment.unit !== null) parts.push(`${unitLabel} ${comment.unit}`);
   if (comment.anchor.box) parts.push("marked area");
+  else if (comment.anchor.quote) parts.push("highlighted");
   else if (comment.anchor.block !== undefined) parts.push(`paragraph ${comment.anchor.block + 1}`);
   return parts.join(", ");
 }
@@ -310,11 +321,17 @@ export function commentAskPrompt(input: {
   cropAttached: boolean;
 }): string {
   const where = input.unit !== null ? ` on ${input.unitLabel} ${input.unit}` : "";
-  const gesture = input.anchor.box
-    ? "I marked an area"
-    : input.anchor.block !== undefined
-      ? `I pointed at paragraph ${input.anchor.block + 1}`
-      : "I pointed at a spot";
+  // 🔴 A QUOTE BEATS A POSITION EVERY TIME. "I pointed at a spot on page 14" tells the model where
+  // the learner's finger was and nothing about what is under it; the model cannot see the page. The
+  // words are the only part of this that makes the answer about the right thing.
+  const quoted = input.anchor.quote?.replace(/\s+/g, " ").trim();
+  const gesture = quoted
+    ? `I highlighted "${quoted.replace(/"/g, "'")}"`
+    : input.anchor.box
+      ? "I marked an area"
+      : input.anchor.block !== undefined
+        ? `I pointed at paragraph ${input.anchor.block + 1}`
+        : "I pointed at a spot";
   const picture = input.cropAttached ? " The marked area is attached as a picture." : "";
   return `In "${input.fileName}", ${gesture}${where} and wrote: "${input.body.trim()}".${picture} Respond to my note about that exact spot.`;
 }

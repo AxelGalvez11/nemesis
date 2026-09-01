@@ -37,6 +37,8 @@ export interface CommentDraftSpot {
   unit: number;
   anchor: CommentAnchor;
   at: { left: number; top: number };
+  /** Opened by highlighting rather than by the mode. See the `commenting` effect. */
+  fromSelection?: boolean;
 }
 
 export function CommentLayer({
@@ -50,6 +52,8 @@ export function CommentLayer({
   onSend,
   onResolve,
   onDelete,
+  request = null,
+  onRequestTaken,
 }: {
   /** The mode. Off = this layer draws saved pins and nothing else captures the pointer. */
   commenting: boolean;
@@ -73,6 +77,18 @@ export function CommentLayer({
   onSend: ((draft: { unit: number; anchor: CommentAnchor; body: string }) => void) | null;
   onResolve: (comment: DocumentComment) => void;
   onDelete: (comment: DocumentComment) => void;
+  /**
+   * A draft opened from OUTSIDE the mode — today, by highlighting text.
+   *
+   * 🔴 THE MODE IS FOR GESTURES THE BROWSER DOES NOT ALREADY HAVE. Clicking a spot and dragging a
+   * box both need the page covered by a capture surface, which is exactly what kills text
+   * selection — hence a mode. Highlighting needs none of that: the browser hands it over for free,
+   * and it is the commonest way a person marks a line. So a highlight opens a draft directly, with
+   * no mode to find first, and this prop is how the reader hands one in.
+   */
+  request?: CommentDraftSpot | null;
+  /** Fired once the request has been taken, so the host can forget it. */
+  onRequestTaken?: () => void;
 }) {
   const [draft, setDraft] = useState<CommentDraftSpot | null>(null);
   const [openThread, setOpenThread] = useState<{ comment: DocumentComment; at: { left: number; top: number } } | null>(null);
@@ -80,8 +96,22 @@ export function CommentLayer({
   // Leaving the mode abandons an unsent draft — the reference behaves the same way, and it is
   // the "nothing saved until a button" rule wearing its other face.
   useEffect(() => {
-    if (!commenting) setDraft(null);
+    // 🔴 ONLY A DRAFT THE MODE ITSELF CREATED. A highlight opens a draft with the mode OFF, so
+    // clearing on every `commenting` change would close the box the moment it appeared. Turning
+    // the mode ON is still an abandon — that is a deliberate switch of gesture.
+    if (!commenting) setDraft((current) => (current?.fromSelection ? current : null));
+    else setDraft(null);
   }, [commenting]);
+
+  // 🔴 KEYED ON THE REQUEST OBJECT, NOT ON ITS CONTENTS. Highlighting the same words twice must
+  // reopen the box; comparing anchors would make the second highlight a no-op because nothing
+  // "changed". The host passes a fresh object per gesture and clears it through `onRequestTaken`.
+  useEffect(() => {
+    if (!request) return;
+    setOpenThread(null);
+    setDraft(request);
+    onRequestTaken?.();
+  }, [request, onRequestTaken]);
 
   const takeDraft = useCallback((spot: CommentDraftSpot) => {
     setOpenThread(null);

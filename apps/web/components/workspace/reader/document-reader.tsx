@@ -48,7 +48,7 @@ import { describeCoverage } from "@nemesis/shared";
 import { courseOf, describeSource, type ReaderSource } from "@/lib/reader/reader-source";
 import { FIT_WIDTH, zoomIn, zoomOut, type ZoomMode } from "@/lib/reader/reader-zoom";
 
-import { CommentLayer } from "./comment-layer";
+import { CommentLayer, type CommentDraftSpot } from "./comment-layer";
 import { cropFrom } from "./use-region-drag";
 import { DocxDocumentView } from "./docx-document-view";
 import { ImageDocumentView, type ImageRegion } from "./image-document-view";
@@ -56,7 +56,6 @@ import { PdfDocumentView, type PdfReadyPayload, type ReaderViewHandle } from "./
 import { ReaderSidebar, type SidebarTab } from "./reader-sidebar";
 import { ReaderTopBar, type LinkedNote, type ReaderMode } from "./reader-top-bar";
 import { ReadingView } from "./reading-view";
-import { SelectionActions, type SelectionAnchor } from "./selection-actions";
 import { SheetDocumentView, type SheetsReadyPayload } from "./sheet-document-view";
 import { SlidesDocumentView, type SlideTab } from "./slides-document-view";
 
@@ -140,10 +139,25 @@ export function DocumentReader({
   // sidebar (owner 2026-08-05), which the host page keeps rendering around this
   // component — so a document opens without losing the tree it was filed in.
   const [railOpen, setRailOpen] = useState(!isDialog);
-  const [selection, setSelection] = useState<{ text: string; unit: number | null; anchor: SelectionAnchor } | null>(null);
+  /**
+   * Viewport coordinates of a selection's bounding box — where a box about it should open.
+   *
+   * 🔴 DECLARED HERE SINCE `selection-actions.tsx` WAS DELETED. That component was the five-button
+   * bar a highlight used to open (Ask about this, Explain, Add to notes, Make flashcards, Find
+   * related); the owner cut it to one action on 2026-09-01, and one action does not need a menu to
+   * choose it from. The whole-document versions of those four still live in the top bar's "…",
+   * where they read as "do this to the file" rather than "do this to what I just highlighted".
+   */
+  const [selection, setSelection] = useState<{
+    text: string;
+    unit: number | null;
+    anchor: { left: number; top: number; width: number };
+    /** Where in its own page the highlight sits, 0-1, so a pin can be dropped on it. */
+    spot: { x: number; y: number } | null;
+  } | null>(null);
   /** A boxed part of a page: the box in fractions, the cut-out, and the page it was cut from.
    *  `unit` is null on a single picture, where "image 1" would be furniture rather than a location. */
-  const [region, setRegion] = useState<{ region: ImageRegion; preview: string | null; unit: number | null; anchor: SelectionAnchor } | null>(null);
+  const [region, setRegion] = useState<{ region: ImageRegion; preview: string | null; unit: number | null; anchor: { left: number; top: number; width: number } } | null>(null);
   /**
    * Comment mode: clicks pin a note, drags draw a box, and text selection is handed back the
    * moment it is off. One drag cannot mean two things, which is why it is a mode at all — the
@@ -283,10 +297,24 @@ export function DocumentReader({
       // guessed and never asked of a model.
       const pageElement = element.closest<HTMLElement>("[data-page]");
       const measured = pageElement ? Number.parseInt(pageElement.dataset.page ?? "", 10) : Number.NaN;
+      // 🔴 MEASURED HERE, WHERE THE ELEMENT IS ALREADY IN HAND. The pin is portalled into the page
+      // and positioned by fractions of it, so the reading has to happen against that element while
+      // the selection still exists — after `selectionchange` clears, there is nothing to measure.
+      let spot: { x: number; y: number } | null = null;
+      if (pageElement) {
+        const page = pageElement.getBoundingClientRect();
+        if (page.width > 0 && page.height > 0) {
+          spot = {
+            x: Math.min(Math.max((box.left + box.width / 2 - page.left) / page.width, 0), 1),
+            y: Math.min(Math.max((box.top - page.top) / page.height, 0), 1),
+          };
+        }
+      }
       setSelection({
+        anchor: { left: box.left, top: box.top, width: box.width },
+        spot,
         text,
         unit: Number.isInteger(measured) ? measured : unitCount > 0 && source.kind !== "document" ? unit : null,
-        anchor: { left: box.left, top: box.top, width: box.width },
       });
       setRegion(null);
     };
@@ -350,7 +378,7 @@ export function DocumentReader({
    * silently acted on only one of them. `setSelection(null)` moves our own bar; only
    * `removeAllRanges` moves the paint.
    */
-  const takeRegion = useCallback((picked: ImageRegion, preview: string | null, anchor: SelectionAnchor, at: number | null) => {
+  const takeRegion = useCallback((picked: ImageRegion, preview: string | null, anchor: { left: number; top: number; width: number }, at: number | null) => {
     setRegion({ anchor, preview, region: picked, unit: at });
     setSelection(null);
     if (typeof window !== "undefined") window.getSelection()?.removeAllRanges();
@@ -488,6 +516,53 @@ export function DocumentReader({
 
   /** "Send to Nemesis": the note is KEPT and handed over — one gesture, both destinations, which
    *  is how the reference behaves (docs/claude-design-reference.md). */
+  // 🔴 DECLARED BEFORE THE HIGHLIGHT HOOK BELOW READS IT. Left where it was, the effect that turns
+  // a selection into a comment draft closed over a `const` declared later in the same body — a
+  // temporal dead zone that `tsc` catches and a runtime would throw on.
+  const canComment = Boolean(commentsDoc) && ["pdf", "slides", "sheet", "image", "document"].includes(source.kind);
+
+  /**
+   * The comment box a highlight opens.
+   *
+   * 🔴 IT IS A REQUEST, NOT STATE THE LAYER READS. `CommentLayer` owns the draft — it has to, since
+   * the mode's own click and drag produce drafts too and there can only be one open at a time. So
+   * this hands one over and is cleared the moment it is taken, which also means highlighting the
+   * same words twice reopens the box instead of doing nothing.
+   *
+   * 🔴 A NEW OBJECT PER GESTURE, DELIBERATELY. The effect that consumes it keys on identity; two
+   * structurally equal drafts would be one event.
+   */
+  const [commentRequest, setCommentRequest] = useState<CommentDraftSpot | null>(null);
+  const clearCommentRequest = useCallback(() => setCommentRequest(null), []);
+
+  const commentOnSelection = useCallback(() => {
+    if (!canComment || !selection) return;
+    // A flowing document has no page to pin to and no `spot` to measure against; its comments are
+    // block-anchored, which only the mode's own click can work out. Highlighting there still
+    // selects text normally — it just does not offer a comment yet.
+    if (selection.spot === null || selection.unit === null) return;
+    setCommentRequest({
+      anchor: { quote: selection.text, x: selection.spot.x, y: selection.spot.y },
+      at: { left: selection.anchor.left + selection.anchor.width / 2, top: selection.anchor.top },
+      fromSelection: true,
+      unit: selection.unit,
+    });
+  }, [canComment, selection]);
+
+  // 🔴 ON `mouseup`, NOT ON `selectionchange`. The selection changes on every pixel of a drag, so
+  // opening the box from it would flash a composer under the cursor for the whole gesture and
+  // steal the focus mid-drag. The release is the moment the learner has finished choosing.
+  useEffect(() => {
+    if (!canComment) return;
+    const onRelease = () => {
+      // Deferred one tick: `mouseup` fires BEFORE the selection settles, so reading it now gives
+      // the previous one.
+      window.setTimeout(commentOnSelection, 0);
+    };
+    document.addEventListener("mouseup", onRelease);
+    return () => document.removeEventListener("mouseup", onRelease);
+  }, [canComment, commentOnSelection]);
+
   const sendComment = useCallback(
     (draft: { unit: number; anchor: CommentAnchor; body: string }) => {
       void keepComment(draft);
@@ -546,7 +621,6 @@ export function DocumentReader({
    * no view at all. Boxes are drawable only where geometry is fixed — a flowing document reflows
    * with the panel width, so there a click snaps to the paragraph instead.
    */
-  const canComment = Boolean(commentsDoc) && ["pdf", "slides", "sheet", "image", "document"].includes(source.kind);
   const boxesDrawable = source.kind === "pdf" || source.kind === "slides" || source.kind === "image";
   /** Only some documents have anything to list in a contents rail. */
   const hasContents = source.kind === "pdf" || source.kind === "slides" || source.kind === "document" || source.kind === "sheet";
@@ -763,15 +837,6 @@ export function DocumentReader({
         )}
       </div>
 
-      {/* 🔴 ONLY WHERE THERE IS SOMEWHERE TO SEND. See `onSendToChat`. */}
-      {/* 🔴 A MARKED AREA GETS THE SAME BAR A HIGHLIGHT DOES. Its actions used to live only in the
-          "…" menu, which meant boxing part of a diagram and then hunting through a dropdown for
-          what to do with it. One selection can only be one thing, so the two anchors are exclusive
-          and the text one wins — `setRegion(null)` runs on every selection change. */}
-      {onSendToChat && (selection ?? region) && (
-        <SelectionActions anchor={(selection ?? region)!.anchor} onAction={runAction} />
-      )}
-
       {canComment && (
         <CommentLayer
           blockSnap={source.kind === "document"}
@@ -781,7 +846,9 @@ export function DocumentReader({
           onDelete={removeComment}
           onKeep={keepComment}
           onResolve={resolveComment}
+          onRequestTaken={clearCommentRequest}
           onSend={onSendToChat ? sendComment : null}
+          request={commentRequest}
           unitLabel={unitLabel}
           units={unitElements}
         />
