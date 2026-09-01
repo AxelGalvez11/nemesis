@@ -66,17 +66,17 @@ export interface ReaderTopBarProps {
   onOpenOriginal: () => void;
   onBack?: () => void;
   /**
-   * The pane's toolbar, cut to what a reader beside a conversation actually needs.
+   * The canvas pane's toolbar, cut to what a reader beside a conversation needs.
    *
-   * 🔴 THE PANE IS 360px WIDE AND THE FULL BAR HAS TWELVE CONTROLS. Owner, 2026-09-01: *"the
-   * current viewer is too clunky (the toolbar is too much) ... it needs to be more minimalist"*.
-   * Dense drops what the pane already says another way — the file name (the TAB is the name), the
-   * back button (the tab has a close) — and folds the page number, the zoom cluster and the
-   * Source/Reading switch behind the existing "…". Search collapses to its magnifier until pressed.
+   * 🔴 THE PANE IS A COLUMN AND THE FULL BAR HAS TWELVE CONTROLS. Owner, 2026-09-01: *"the current
+   * viewer is too clunky (the toolbar is too much)"*, then, item by item: no search, no outline, and
+   * the "…" carries *"outdated actions that arent necessary"*. Dense drops the file name (the TAB
+   * is the name), the back button (the tab has a close), search, the contents rail, the page field,
+   * the zoom cluster, the Source/Reading switch, and the five ask-about-this menu items.
    *
-   * 🔴 NOTHING IS REMOVED, ONLY MOVED. Every control is still reachable from the menu; a reader who
-   * needs to zoom a scan can still zoom it. Deleting them outright would trade one complaint for a
-   * worse one.
+   * 🔴 WHAT SURVIVES IS THE FILE ITSELF: comment, download, open in a new tab, rotate. Those are
+   * things you do TO the document and have nowhere else to live. Everything removed is either said
+   * another way on this surface or is a slower version of typing into the conversation beside it.
    */
   dense?: boolean;
   /** The reader's own contents rail, on the right. Omitted for file types that
@@ -187,13 +187,12 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         />
       )}
 
-      <div className={cn(
-        "flex shrink-0 items-center gap-1 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2 py-1",
-        // 🔴 COLLAPSED, NOT REMOVED. A field 24px wide next to eleven other controls is the clutter
-        // being complained about; a search someone cannot find is a worse product. It opens on
-        // focus and stays open while there is a query, so a search in progress never snaps shut.
-        dense && !query.trim() && "nemesis-reader-search-dense",
-      )}>
+      {/* 🔴 NO SEARCH IN THE PANE (owner, 2026-09-01: *"remove the search magnifying glass icon"*).
+          It was collapsed to a magnifier first; he asked for it gone. A reader beside a
+          conversation is scanned, not searched — the conversation is where you ask. It stays in
+          full on the standalone reader, where a 47-page lecture is the whole screen. */}
+      {!dense && (
+      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2 py-1">
         <Codicon className="text-(--ui-text-quaternary)" name="search" size="0.75rem" />
         <input
           aria-label={`Search this ${unitLabel === "image" ? "image" : "document"}`}
@@ -235,6 +234,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           </>
         )}
       </div>
+      )}
 
       {unitCount > 1 && !dense && (
         <div className="nemesis-reader-counter flex shrink-0 items-center gap-1 text-[0.75rem] text-(--ui-text-tertiary)">
@@ -312,7 +312,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </button>
       )}
 
-      {onToggleRail && (
+      {onToggleRail && !dense && (
         <button
           aria-label={railOpen ? "Hide contents" : "Show contents"}
           aria-pressed={railOpen}
@@ -344,16 +344,26 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
             the document's contents — and because these are things you DO once,
             not things you read alongside the page. */}
         <DropdownMenuContent align="end" className="max-h-[70vh] w-72 overflow-y-auto">
-          <DropdownMenuLabel className="font-normal text-(--ui-text-tertiary)">
-            Ask Nemesis about <span className="text-(--ui-text-secondary)">{actionScope}</span>
-          </DropdownMenuLabel>
-          {READER_ACTIONS.map((action) => (
-            <DropdownMenuItem disabled={actionsDisabled} key={action.id} onSelect={() => onAction(action.id)}>
-              <Codicon name={action.icon} size="0.8rem" /> {action.label}
-            </DropdownMenuItem>
-          ))}
+          {/* 🔴 THE FIVE ASK-ABOUT-THIS ACTIONS ARE GONE FROM THE PANE. Same set cut from the
+              highlight bar in #1015, named again here (owner, 2026-09-01: *"the three dots icon
+              contains outdated actions that arent necessary"*). Highlighting leaves a comment now,
+              and the conversation is one column to the left — a menu that fires a canned prompt is
+              a slower way to type what you were going to type anyway. The standalone reader keeps
+              them, because there the chat is not on screen. */}
+          {!dense && (
+            <>
+              <DropdownMenuLabel className="font-normal text-(--ui-text-tertiary)">
+                Ask Nemesis about <span className="text-(--ui-text-secondary)">{actionScope}</span>
+              </DropdownMenuLabel>
+              {READER_ACTIONS.map((action) => (
+                <DropdownMenuItem disabled={actionsDisabled} key={action.id} onSelect={() => onAction(action.id)}>
+                  <Codicon name={action.icon} size="0.8rem" /> {action.label}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
 
-          {linkedNotes.length > 0 && onOpenNote && (
+          {!dense && linkedNotes.length > 0 && onOpenNote && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="font-normal text-(--ui-text-tertiary)">Notes from this file</DropdownMenuLabel>
