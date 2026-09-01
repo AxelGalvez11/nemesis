@@ -44,8 +44,15 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useS
  * changes is the entire point.
  */
 interface SidePanelActions {
-  claim(id: string, inset: number): void;
+  claim(id: string, inset: number, live: boolean): void;
   release(id: string): void;
+}
+
+/** What one docked panel is asking of the surface: how much room, and whether it is moving now. */
+interface Claim {
+  readonly inset: number;
+  /** True while the learner is dragging this panel's edge. */
+  readonly live: boolean;
 }
 
 const SidePanelActionsContext = createContext<SidePanelActions | null>(null);
@@ -62,19 +69,36 @@ const SidePanelOpenContext = createContext(false);
  * 🔴 ZERO WHILE FULL SCREEN. A reader covering the whole surface has nothing to push.
  */
 const SidePanelInsetContext = createContext(0);
+/**
+ * Whether the inset is being DRAGGED right now.
+ *
+ * 🔴🔴 THE SURFACE HAS TO KNOW, OR ITS EDGE TRAILS THE POINTER BY A WHOLE TRANSITION. Owner,
+ * 2026-09-01: *"no lagg in sizing adjustment for chat and sidebar."* The canvas carries
+ * `transition: width var(--pane-slide)` so the push reads as the panel arriving — and that same
+ * transition applied to every intermediate width a drag produces. The panel's own edge followed the
+ * pointer exactly; the conversation's right edge eased toward it 220ms behind, all the way through
+ * the drag, and then caught up after the button came up. Two edges that are the same edge, visibly
+ * apart the entire time you are holding it.
+ *
+ * The panels already knew — `useDockWidth` returns `dragging` and each of them drops its own
+ * animation with it. This is the same fact, published to the one element that needed it and did not
+ * have it.
+ */
+const SidePanelLiveContext = createContext(false);
 
 export function SidePanelProvider({ children }: { children: React.ReactNode }) {
-  const [ids, setIds] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [ids, setIds] = useState<ReadonlyMap<string, Claim>>(() => new Map());
 
   // 🔴 NO DEPENDENCIES, DELIBERATELY. The updater form reads the current set, so neither callback
   // needs to close over it — which is what keeps their identity stable for the effect above.
   const actions = useMemo<SidePanelActions>(
     () => ({
-      claim: (id: string, inset: number) =>
+      claim: (id: string, inset: number, live: boolean) =>
         setIds((current) => {
-          if (current.get(id) === inset) return current;
+          const held = current.get(id);
+          if (held && held.inset === inset && held.live === live) return current;
           const next = new Map(current);
-          next.set(id, inset);
+          next.set(id, { inset, live });
           return next;
         }),
       release: (id: string) =>
@@ -91,13 +115,22 @@ export function SidePanelProvider({ children }: { children: React.ReactNode }) {
   return (
     <SidePanelActionsContext.Provider value={actions}>
       <SidePanelOpenContext.Provider value={ids.size > 0}>
-        <SidePanelInsetContext.Provider value={Math.max(0, ...ids.values())}>{children}</SidePanelInsetContext.Provider>
+        <SidePanelInsetContext.Provider value={Math.max(0, ...[...ids.values()].map((claim) => claim.inset))}>
+          <SidePanelLiveContext.Provider value={[...ids.values()].some((claim) => claim.live)}>
+            {children}
+          </SidePanelLiveContext.Provider>
+        </SidePanelInsetContext.Provider>
       </SidePanelOpenContext.Provider>
     </SidePanelActionsContext.Provider>
   );
 }
 
-/** Whether anything is docked. Read by the shell. */
+/**
+ * Whether anything is docked BESIDE the surface. Read by the shell.
+ *
+ * 🔴 "Docked" means taking width. A panel that is closed, or full screen, takes none and is not
+ * counted — see `useDeclareSidePanel`, which releases on a zero inset rather than registering one.
+ */
 export function useSidePanelOpen(): boolean {
   return useContext(SidePanelOpenContext);
 }
@@ -107,6 +140,11 @@ export function useSidePanelInset(): number {
   return useContext(SidePanelInsetContext);
 }
 
+/** Whether that room is being dragged right now, so the surface should follow instead of easing. */
+export function useSidePanelLive(): boolean {
+  return useContext(SidePanelLiveContext);
+}
+
 /**
  * Declare that this component is a docked side panel, for as long as it is mounted.
  *
@@ -114,12 +152,32 @@ export function useSidePanelInset(): number {
  * change or an error rather than by its own close button. A panel that could leave the claim behind
  * would leave the sidebar collapsed with nothing on screen explaining why.
  */
-export function useDeclareSidePanel(inset = 0): void {
+export function useDeclareSidePanel(inset = 0, live = false): void {
   const actions = useContext(SidePanelActionsContext);
   const id = useId();
   useEffect(() => {
     if (!actions) return;
-    actions.claim(id, inset);
+    // 🔴🔴 A ZERO INSET IS NOT A CLAIM, AND BELIEVING OTHERWISE LOCKED THE SIDEBAR SHUT FOR EVERY
+    // CONVERSATION. Owner, 2026-09-01: *"the left sidebar does not open in chat sessions."*
+    // `canvas-controls.tsx` mounts `<SourcePreview>` unconditionally and it calls this hook BEFORE
+    // its own `if (!active) return null` — the standard shape, since a hook cannot sit behind a
+    // return. Closed, it passed 0. `ids.size > 0` counted that as a docked panel, so
+    // `sidebarVisible` was false from the moment a canvas rendered and the rail's "Expand sidebar"
+    // button did nothing at all, for ever.
+    //
+    // 🔴 EVERY CALL SITE ALREADY MEANT THIS. All three are written `<condition> ? width : 0` and
+    // all three say so in their own comment: *"zero while closed"*, *"claim nothing while full
+    // screen … or while closed"*. The hook was the one place that read 0 as "docked, pushing
+    // nothing", and nothing on screen could tell you which reading was in force.
+    //
+    // 🔴 FULL SCREEN IS THE ONE HONEST ZERO, and releasing there is right too: a reader covering
+    // the entire viewport has nothing beside it, so whether the sidebar behind it is open or
+    // collapsed is invisible either way.
+    if (inset <= 0) {
+      actions.release(id);
+      return;
+    }
+    actions.claim(id, inset, live);
     return () => actions.release(id);
-  }, [actions, id, inset]);
+  }, [actions, id, inset, live]);
 }

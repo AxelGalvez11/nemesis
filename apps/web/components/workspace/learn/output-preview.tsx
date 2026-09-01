@@ -122,7 +122,7 @@ export function OutputPreview({
 
   // Collapses the left sidebar to the rail while this is open, and pushes the surface by exactly
   // the docked width — see side-panel.tsx. Full screen pushes nothing: it covers everything.
-  useDeclareSidePanel(mode === "docked" ? dock : 0);
+  useDeclareSidePanel(mode === "docked" ? dock : 0, dragging);
   /**
    * A note's body, fetched on open.
    *
@@ -355,9 +355,15 @@ export function OutputPreview({
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
         full ? "left-0" : "border-l border-(--ui-stroke-tertiary)",
-        // 🔴 THE SLIDE IS DROPPED WHILE DRAGGING: an animation running during a resize makes the
-        // edge lag the pointer by its own duration, which reads as the panel fighting you.
-        !dragging && "reader-dock-in",
+        // The opening slide, on the shared `--pane-slide` clock.
+        // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
+        // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
+        // and putting it back is how you restart a CSS animation, so releasing the drag handle made
+        // the panel jump to `translateX(4%)` at opacity 0 and slide in again. Watched live on
+        // /dev-preview/exports: the class went true → false on pointerdown → true on pointerup.
+        // The gate was guarding against nothing: this keyframe moves `transform` and `opacity`, not
+        // width, and it has finished long before anybody can reach the handle.
+        "reader-dock-in",
       )}
       // 🔴🔴 THE STAMP TRAVELS WITH THE PORTAL, AND WITHOUT IT EVERY BUTTON IN HERE GOES ACID GREEN.
       // `globals.css` carries `button:where(:not([data-workspace] *)) { background: var(--acid) }`,

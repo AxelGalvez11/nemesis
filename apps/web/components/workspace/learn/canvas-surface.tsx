@@ -51,7 +51,7 @@ import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { useDeclareImmersiveSurface } from "@/components/workspace/shell/immersive-surface";
-import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
+import { useSidePanelInset, useSidePanelLive } from "@/components/workspace/shell/side-panel";
 
 import { FileDropOverlay } from "./file-drop-overlay";
 
@@ -169,6 +169,14 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
   //
   // Seen on screen, not reasoned about: the document reflowed and the composer did not.
   const inset = useSidePanelInset();
+  // 🔴🔴 AND WHETHER IT IS BEING DRAGGED. Owner, 2026-09-01: *"no lagg in sizing adjustment for
+  // chat and sidebar."* The transition below is what makes an OPENING panel read as an arrival; on
+  // the intermediate widths a drag produces it is the opposite — the panel's edge tracks the
+  // pointer exactly while the conversation's edge eases toward it 220ms behind, so the two sides of
+  // one seam are visibly apart for as long as the button is held, then snap together on release.
+  // The panels already drop their own animation while dragging; this is the same fact reaching the
+  // element that was still easing.
+  const draggingPanel = useSidePanelLive();
 
   return (
     <main
@@ -240,8 +248,10 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
       data-canvas-surface=""
       style={{
         ["--canvas-column" as string]: CANVAS_COLUMN_PX,
-        // The transition is what makes the push read as the panel arriving rather than the page jumping.
-        transition: "width 200ms ease-out",
+        // The transition is what makes the push read as the panel arriving rather than the page
+        // jumping — and it is the SHARED clock now (`--pane-slide`, globals.css), so the canvas,
+        // the panel and the nav column all settle on the same frame instead of 40ms apart.
+        transition: draggingPanel ? "none" : "width var(--pane-slide)",
         width: inset ? `calc(100% - ${inset}px)` : undefined,
       }}
     >

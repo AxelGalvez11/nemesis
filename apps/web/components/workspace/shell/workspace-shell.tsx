@@ -142,11 +142,38 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
   // rail rather than taking navigation away. See shell-navigation.ts for the owner's reversal of
   // §38.1 and ChatGPT's measured tiny bar, which is never absent.
   const canvasRunning = useImmersiveClaimed();
+  /**
+   * 🔴🔴 A CANVAS COLLAPSES THE SIDEBAR; IT DOES NOT LOCK IT SHUT. Owner, 2026-09-01: *"the left
+   * sidebar does not open in chat sessions please fix."* `sidebarVisible` read `sidebarOpen &&
+   * … && !canvasRunning`, so inside a conversation the rail's "Expand sidebar" button called
+   * `setSidebarOpen(true)` — quietly rewriting the learner's stored preference — and NOTHING
+   * happened on screen. A control that changes state and paints nothing is worse than a missing
+   * one: it teaches you the app is broken.
+   *
+   * 🔴 THE COLLAPSE IS A DEFAULT NOW, AND THIS IS THE EXPLICIT PRESS THAT BEATS IT. `canvasRunning`
+   * still folds the sidebar to the rail on arrival (owner 2026-08-31, the §38.1 reversal) — it just
+   * stops outranking a learner who then asks for it back.
+   *
+   * 🔴 TRANSIENT, LIKE THE CLAIM IT OVERRIDES. It is cleared on leaving the canvas, so the next
+   * conversation opens quiet again; the standing rule is unchanged and only this visit is.
+   */
+  const [reopenedOverCanvas, setReopenedOverCanvas] = useState(false);
+  useEffect(() => {
+    if (!canvasRunning) setReopenedOverCanvas(false);
+  }, [canvasRunning]);
+  const openSidebar = () => {
+    setSidebarOpen(true);
+    setReopenedOverCanvas(true);
+  };
+  const collapseSidebar = () => {
+    setSidebarOpen(false);
+    setReopenedOverCanvas(false);
+  };
   // A document docked on the right collapses the sidebar to the rail while it is open. Transient:
   // the learner's stored preference is neither read nor written — see side-panel.tsx.
   const sidePanelOpen = useSidePanelOpen();
   const { focusMode, navToggleShowing, railVisible, sidebarVisible } = shellNavigation({
-    canvasRunning,
+    canvasRunning: canvasRunning && !reopenedOverCanvas,
     libraryFullScreen,
     narrowViewport,
     pathname,
@@ -232,7 +259,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
       }}
     >
       <SettingsModalProvider>
-      {navToggleShowing && <TitlebarControls onToggleSidebar={() => setSidebarOpen(true)} />}
+      {navToggleShowing && <TitlebarControls onToggleSidebar={openSidebar} />}
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
         <div
           className="relative grid h-full min-h-0"
@@ -251,7 +278,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
           style={{ gridTemplateColumns: narrowViewport ? "minmax(0,1fr)" : "var(--pane-chat-sidebar-width) minmax(0,1fr)" }}
         >
           {narrowViewport && sidebarVisible && (
-            <button aria-label="Close sidebar" className="absolute inset-0 z-50 bg-black/35 backdrop-blur-[1px]" onClick={() => setSidebarOpen(false)} type="button" />
+            <button aria-label="Close sidebar" className="absolute inset-0 z-50 bg-black/35 backdrop-blur-[1px]" onClick={collapseSidebar} type="button" />
           )}
           <div
             className={cn(
@@ -300,7 +327,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
                 >
                   <ChatSidebar
                     accountEmail={accountEmail}
-                    onCollapse={() => setSidebarOpen(false)}
+                    onCollapse={collapseSidebar}
                     onNavigate={() => narrowViewport && setSidebarOpen(false)}
                   />
                 </div>
@@ -316,7 +343,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
                   )}
                   inert={!railVisible}
                 >
-                  <NavRail accountEmail={accountEmail} onExpand={() => setSidebarOpen(true)} />
+                  <NavRail accountEmail={accountEmail} onExpand={openSidebar} />
                 </div>
               </>
             )}

@@ -48,9 +48,23 @@ test("🔴🔴 the docked panel is two thirds of the viewport, measured — not 
     // 🔴 NOT PINNED TO THE ARGUMENT: the artifact reader passes 0 while full-screen, which is
     // correct — full screen covers everything and pushes nothing. What matters is that it declares.
     assert.match(source, /useDeclareSidePanel\(/, `${name}: the panel covers the canvas instead of pushing it`);
-    // 🔴 AND THE OPENING SLIDE IS DROPPED WHILE DRAGGING, or the edge lags the pointer by the
-    // animation's own duration and reads as the panel fighting you.
-    assert.match(source, /!dragging && "reader-dock-in"/, `${name}: the slide runs during a resize`);
+    // 🔴🔴 THE OPENING SLIDE IS UNCONDITIONAL, AND THIS GUARD USED TO DEMAND THE OPPOSITE. It
+    // pinned `!dragging && "reader-dock-in"`, on the reasoning that "the slide is dropped while
+    // dragging, or the edge lags the pointer by the animation's own duration". That was wrong
+    // twice: the keyframe moves `transform` and `opacity`, never width, so it cannot lag a resize;
+    // and taking a class off and putting it back is exactly how you RESTART a CSS animation, so
+    // every release of the drag handle replayed the 220ms entrance. Watched live on
+    // /dev-preview/exports, 2026-09-01: the class went true → false on pointerdown → true on
+    // pointerup, and the panel jumped to `translateX(4%)` at opacity 0 and slid in again. Owner,
+    // the same day: *"there also seems to be flickering."*
+    //
+    // 🔴 THE REAL EDGE-LAG WAS SOMEWHERE ELSE ENTIRELY — on the CANVAS, whose `width` transition
+    // did apply to every intermediate width a drag produces. Measured with the old rule forced back
+    // on: the conversation's right edge sat 400px, 250px and 100px inside the panel through a
+    // three-step drag. `useSidePanelLive` publishes the drag so the surface can follow instead.
+    assert.match(source, /^\s*"reader-dock-in",$/m, `${name}: the entrance is conditional again, so it will replay after a resize`);
+    assert.ok(!/!dragging && "reader-dock-in"/.test(source), `${name}: the drag re-arms the entrance animation`);
+    assert.match(source, /useDeclareSidePanel\([^)]*, dragging\)/, `${name}: the surface is never told the panel is being dragged`);
   }
 });
 

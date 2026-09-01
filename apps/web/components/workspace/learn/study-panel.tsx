@@ -62,7 +62,7 @@ export function StudyPanel({
 
   // Push the surface by exactly the docked width; claim nothing while full screen (it covers
   // everything) or while closed (there is nothing beside the canvas).
-  useDeclareSidePanel(open && !full ? dock : 0);
+  useDeclareSidePanel(open && !full ? dock : 0, dragging);
 
   // Escape closes, same as every transient surface on the canvas. Only while open, or a closed
   // panel would eat the key from whatever is actually on screen.
@@ -88,7 +88,14 @@ export function StudyPanel({
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
         full ? "left-0" : "border-l border-(--ui-stroke-tertiary)",
-        !dragging && "reader-dock-in",
+        // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
+        // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
+        // and putting it back is how you restart a CSS animation, so releasing the drag handle made
+        // the panel jump to `translateX(4%)` at opacity 0 and slide in again. Watched live on
+        // /dev-preview/exports: the class went true → false on pointerdown → true on pointerup.
+        // The gate was guarding against nothing: this keyframe moves `transform` and `opacity`, not
+        // width, and it has finished long before anybody can reach the handle.
+        "reader-dock-in",
       )}
       // 🔴 THE STAMP TRAVELS WITH THE PORTAL, OR EVERY BUTTON IN HERE GOES ACID GREEN. `globals.css`
       // gives `button:where(:not([data-workspace] *))` a marketing fill, and moving this subtree to
