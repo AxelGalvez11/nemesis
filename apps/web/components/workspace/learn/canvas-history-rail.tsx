@@ -108,9 +108,11 @@ import { DRAWER_TITLE_LIMIT, TITLE_LIMIT, shortTitle } from "@/lib/learn/canvas-
  */
 export const RAIL_MARKERS = 24;
 
-/** How far the panel stands clear of the strip. Kept from the tooltip it replaces: the reference's
- *  rail ends at 52 and its floating label starts at 72. */
-const PANEL_GAP_PX = 20;
+/* 🔴 THERE IS NO CLEARANCE ANY MORE, AND `PANEL_GAP_PX` IS GONE WITH IT. It was 20px, taken from
+ * the reference's own rail-to-tooltip gap and correct for a panel that stood BESIDE the strip. The
+ * owner picked the panel that opens ON the strip instead (2026-09-01, four placements on screen),
+ * and a gap is the one thing that placement cannot have: any clearance at all is the panel reaching
+ * back into the answer column, which is what he was asking to stop. */
 
 /**
  * How long the panel survives the pointer leaving.
@@ -232,16 +234,27 @@ export function CanvasHistoryRail({
               AGAIN. Out of flow, in its own layer, anchored to this box: it cannot change the
               strip's height, the pitch between markers, or where the marker under the pointer is.
               The old pop-up was not a panel problem, it was the STRIP growing 288px to 864px.
-              🔴 IT OPENS TO THE LEFT because this rail is pinned to the right edge of the window
-              and a panel to its right would be off screen. `PANEL_GAP_PX` is the reference's own
-              clearance, kept from the tooltip this replaces.
+              🔴 IT OPENS LEFTWARD FROM THE STRIP because this rail is pinned to the right edge of
+              the window and a panel to its right would be off screen. It now starts ON the strip
+              rather than clear of it — see the placement note below.
               🔴 EVERY ROW IS A REAL DOOR. The panel is how you read the column, and reading it
               without being able to act on what you read is the "dead control" this file has been
               caught by before — so a row selects the moment, exactly as its marker does. */}
           {open && (
             <div
               className={cn(
-                "absolute right-full top-1/2 z-20 -translate-y-1/2",
+                // 🔴 `right-0`, NOT `right-full`: THE PANEL OPENS OVER THE STRIP. Owner chose this
+                // from four live placements, 2026-09-01: *"i need C"* — the panel on top of the
+                // rail rather than held clear of it. `right-full` put its right edge at the
+                // strip's LEFT edge and then pushed it 20px further, so it reached into the answer
+                // column; `right-0` lands it on the strip itself, which is the one place on this
+                // surface that is not prose.
+                //
+                // 🔴 `absolute` IS STILL THE POINT, AND IT IS UNCHANGED. What must never come back
+                // is a hover that resizes the STRIP (2026-08-29: 288px to 864px, markers sliding
+                // out from under the pointer). Out of flow means the panel cannot touch a marker's
+                // height or position wherever it is anchored.
+                "absolute right-0 top-1/2 z-20 -translate-y-1/2",
                 // 🔴🔴 THE DOCUMENT RAIL'S PANEL, SAME NUMBERS. 287px on a 12px radius, 20px of
                 // padding, a quiet uppercase heading, and rows that are text rather than list
                 // items with their own furniture. Was 288px / rounded-2xl / 36px rows carrying a
@@ -250,13 +263,12 @@ export function CanvasHistoryRail({
                 "bg-(--ui-bg-elevated) shadow-lg ring-1 ring-(--ui-stroke-secondary)",
               )}
               data-canvas-history-panel=""
-              style={{ marginRight: PANEL_GAP_PX }}
             >
-              {/* 🔴 A HEADING, LIKE THE DOCUMENT RAIL'S "TABLE OF CONTENTS". This one indexes a
-                  conversation rather than a document, so it says what it actually lists. */}
-              <p className="m-0 mb-[12px] text-[length:var(--canvas-text-meta)] font-medium uppercase tracking-wide text-(--ui-text-quaternary)">
-                Earlier in this canvas
-              </p>
+              {/* 🔴 NO HEADING. Owner, 2026-09-01: *"dont add 'earlier in this canvas'"*. The panel
+                  only ever opens from the history strip, so a line telling the learner that this
+                  lists the history is a label on the thing they just pointed at. The document
+                  rail's "Table of contents" heading stays where it is; that panel opens from a
+                  document where the same words are not already implied. */}
               <div className="flex flex-col gap-[12px]">
                 {shown.map((entry) => {
                   const current = entry.momentId === activeMomentId;
