@@ -12,7 +12,7 @@
 // fires in CI on the commit that introduces it.
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -99,15 +99,27 @@ test("🔴 no client component can reach the module that holds the key", () => {
   }
 });
 
-test("🔴 the token route returns a minted token and has no field a key could occupy", () => {
-  const route = readFileSync(join(WEB_ROOT, "app/api/speech/token/route.ts"), "utf8");
-  assert.ok(route.includes("verifyBearer"), "the token endpoint is unauthenticated");
-  assert.ok(!/config\.key/.test(route.split("return new Response")[1] ?? ""), "the response body can reach the key");
-  assert.match(route, /Cache-Control[^\n]*no-store/, "a credential response is cacheable");
+test("🔴🔴 no route hands a provider credential to a browser at all", () => {
+  // 🔴 THIS TEST USED TO CHECK THAT THE TOKEN ROUTE LEAKED NO KEY. It leaked no key and was still
+  // the hole: a ten-minute Azure token is spendable by whoever holds it, at a provider this server
+  // never sees again, so the route could not be metered even in principle. Nothing in the product
+  // ever called it — the audio has always been proxied through `/api/speech/tts` — so it was pure
+  // exposure, and it was deleted on 2026-08-31 when the language lane was metered.
+  //
+  // The invariant is now stronger than the one it replaces: not "the credential response is
+  // careful" but "there is no credential response".
+  assert.ok(
+    !existsSync(join(WEB_ROOT, "app/api/speech/token/route.ts")),
+    "the Azure token endpoint is back; anything it mints is spent where no meter can see it",
+  );
+  for (const name of ["voices", "tts", "pronunciation"]) {
+    const route = readFileSync(join(WEB_ROOT, `app/api/speech/${name}/route.ts`), "utf8");
+    assert.ok(!/issueToken|tokenEndpoint|authorizationToken/.test(route), `/api/speech/${name} is minting a provider token`);
+  }
 });
 
 test("every Azure route requires a signed-in user", () => {
-  for (const name of ["token", "voices", "tts", "pronunciation"]) {
+  for (const name of ["voices", "tts", "pronunciation"]) {
     const route = readFileSync(join(WEB_ROOT, `app/api/speech/${name}/route.ts`), "utf8");
     assert.ok(route.includes("verifyBearer"), `/api/speech/${name} does not verify the caller`);
   }

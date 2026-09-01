@@ -19,6 +19,7 @@ import { fetchVoiceCatalogue } from "@/lib/speech/azure/voice-catalog";
 import { selectVoice } from "@/lib/speech/voice-selection";
 import { SPEECH_CHAR_LIMIT } from "@/lib/learn/canvas-speech";
 import { json, verifyBearer } from "@/lib/server";
+import { chargeVoice, quotaResponse, secondsForCharacters } from "@/lib/speech/meter";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -85,6 +86,20 @@ export async function POST(request: Request) {
   // telling us; what must be checked is that the value cannot be anything but an identifier, since
   // it goes into a request body under our own credential. A retired id gets a 502 from Azure rather
   // than a 404 from us, and the id in question came from this same catalogue via Settings.
+  // 🔴🔴 CHARGED HERE: after the text is known and validated, before Azure is called on ANY branch.
+  // Until 2026-08-31 this route reached a paid provider with the server's key and counted nothing,
+  // so a signed-in free account could spend without limit (see lib/speech/meter.ts). The charge is
+  // the exact character count of the text we are about to send, converted at the speaking rate the
+  // rest of the product meters by.
+  //
+  // 🔴 IT SITS ABOVE THE `named` BRANCH ON PURPOSE. That branch returns early with its own
+  // `synthesise` call, so a charge placed after it would leave the picker's path free.
+  const charged = await chargeVoice(user.id, secondsForCharacters(text.length), "tts");
+  if (!charged.allowed) {
+    console.log(JSON.stringify({ chars: text.length, event: "azure_tts_refused", locale, reason: charged.reason }));
+    return json(quotaResponse(charged.reason), 429);
+  }
+
   const named = typeof body.voice === "string" ? body.voice.trim() : "";
   if (named && AZURE_VOICE_SHAPE.test(named)) {
     const direct = await synthesise(

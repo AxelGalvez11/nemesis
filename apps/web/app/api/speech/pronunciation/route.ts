@@ -16,6 +16,7 @@ import { compareAttempts } from "@/lib/speech/pronunciation-progress";
 import { diagnose } from "@/lib/speech/pronunciation-diagnosis";
 import type { PronunciationEvidence } from "@/lib/learn/pronunciation-evidence";
 import { json, verifyBearer } from "@/lib/server";
+import { chargeVoice, quotaResponse, secondsForAttemptBytes } from "@/lib/speech/meter";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -77,6 +78,20 @@ export async function POST(request: Request) {
   const locale = String(form.get("locale") ?? "").trim();
   if (!referenceText) return json({ error: "Nothing to compare against.", reason: "no-target" }, 400);
   if (!locale) return json({ error: "A locale is required.", reason: "locale-malformed" }, 400);
+
+  // 🔴🔴 CHARGED BEFORE AZURE IS ASKED ANYTHING. Assessment bills as real-time transcription plus
+  // the prosody add-on ($1.30 an hour, read 2026-08-31), and until that day this route reached it
+  // with the server's key and counted nothing — see lib/speech/meter.ts for what that was worth.
+  //
+  // 🔴 THE ATTEMPT'S OWN BYTES, NOT THE SCORE'S REPORTED DURATION. Azure reports how long it heard
+  // only in the answer, and a charge made from the answer is a charge made after the money is
+  // spent. Bytes are known now, and they are converted on the same rate this route already sizes
+  // `MAX_AUDIO_BYTES` from, so anything that passes the size check above is chargeable within it.
+  const charged = await chargeVoice(user.id, secondsForAttemptBytes(audioField.size), "stt");
+  if (!charged.allowed) {
+    console.log(JSON.stringify({ bytes: audioField.size, event: "azure_score_refused", locale, reason: charged.reason }));
+    return json(quotaResponse(charged.reason), 429);
+  }
 
   const audio = await audioField.arrayBuffer();
   const result = await assessPronunciation(
