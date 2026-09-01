@@ -59,7 +59,7 @@ test("🔴🔴 the width is measured ONCE, and zero is never used as a width", (
   // screen from the first paint, one pass at mount reads them all, and a headless or font-less pass
   // that reports 0 leaves the slot at max-content rather than collapsing it.
   assert.match(HEADING, /measured\.some\(\(width\) => width <= 0\)\) return;/, "a zero width can now reach the slot");
-  assert.match(HEADING, /widths \? `\$\{Math\.ceil\(widths\[index\] \?\? 0\)\}px` : "max-content"/, "the unmeasured fallback is gone");
+  assert.match(HEADING, /widths \? `\$\{Math\.ceil\(widths\[index\] \?\? 0\)[^`]*\}px` : "max-content"/, "the unmeasured fallback is gone");
   assert.match(HEADING, /useEffect\(\(\) => \{\s*const measured = words\.current\.map/, "the measuring pass is no longer a one-shot mount effect");
 });
 
@@ -116,4 +116,16 @@ test("🔴 every subject is capitalised, and none of them shouts (2026-09-01)", 
       assert.ok(word !== word.toUpperCase() || word.length === 1, `"${subject}" is shouting`);
     }
   }
+});
+
+test("🔴🔴 the last letter of a subject is never shaved (2026-09-01)", () => {
+  // Owner: "the last letter gets cuttoff now". The slot's width comes from getBoundingClientRect,
+  // which is the text's ADVANCE width, and a glyph's ink can sit outside its own advance — the more
+  // so under this heading's negative tracking. Measured: "Thermodynamics" advances 181.91px, the
+  // slot was 182px, and the final letter lost its right edge to the clip.
+  const slotClass = /className="relative inline-grid[^"]*"/.exec(HEADING);
+  assert.ok(slotClass, "the slot's class list moved");
+  assert.ok(!/overflow-hidden/.test(slotClass[0]), "the slot is clipping its own text again");
+  assert.match(HEADING, /const SLOT_SLACK_PX = [1-9]/, "the slot fits the advance width exactly, with nothing spare for the ink");
+  assert.match(HEADING, /Math\.ceil\(widths\[index\] \?\? 0\) \+ SLOT_SLACK_PX/, "the slack never reaches the width");
 });
