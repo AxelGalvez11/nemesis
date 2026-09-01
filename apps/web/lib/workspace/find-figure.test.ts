@@ -83,3 +83,23 @@ test("🔴 the number of pictures is bounded at both ends, whatever the model as
   assert.match(SOURCE, /Math\.max\(1, Math\.min\(asked, FIGURE_LIMIT_MAX\)\)/, "the limit is not clamped");
   assert.match(SOURCE, /FIGURE_LIMIT_MAX = 6/, "the ceiling moved without this guard noticing");
 });
+
+test("🔴 a picture nobody described is still showable, and never gets empty alt text", () => {
+  // 🔴 FOUND BY DRIVING THE REAL APP, NOT BY READING THE CODE. A learner dropped a lecture, the
+  // picture was decoded, stored and correctly joined — and "show me the picture from my Bending
+  // stress lecture" returned nothing, because both this file and `search_figures` assumed every
+  // stored figure carries a description. Vision had recorded `skipped: "examined-empty"`, so the
+  // picture existed, was reachable, and was invisible to the only tool that can show it.
+  //
+  // Requiring a description is right for a SEARCH and wrong for a BROWSE: "a picture from my X
+  // lecture" has no search terms, so there is nothing to match and nothing to be missing.
+  assert.match(SOURCE, /row\.description\?\.trim\(\) \?\? ""/, "an undescribed row would throw");
+  assert.match(SOURCE, /Picture from \$\{row\.file_name\}/, "an undescribed picture gets empty alt text");
+
+  const migration = readFileSync(
+    new URL("../../../../supabase/migrations/20260901T20_search_figures_browse.sql", import.meta.url),
+    "utf8",
+  );
+  // The browse case must not require a description, and the search case still must.
+  assert.match(migration, /trim\(p_query\) = ''\s*\n\s*or \(description is not null/, "browse and search share one filter again");
+});
