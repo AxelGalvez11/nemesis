@@ -5,7 +5,7 @@
 // events, not through the pure helpers alone.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { decodeCalendarEvent, encodeCalendarEvent } from "./calendar-codec";
@@ -357,15 +357,22 @@ test("runaway lists are cut to what the database will accept", () => {
   assert.equal(back?.attachments?.length, 25);
 });
 
-test("🔴 nothing in the guest editor sends an email", () => {
-  const editor = readFileSync(new URL("../../components/workspace/calendar/guests-editor.tsx", import.meta.url), "utf8");
-  // Adding a guest in Google mails them immediately. Here it appends to a list.
-  // A student who has used Google has every reason to assume otherwise, so the
-  // screen says so — and nothing here may quietly start doing it.
-  assert.match(editor, /Nemesis does not email anyone/, "the notice that nothing is sent is gone");
-  assert.ok(!/fetch\(|sendUpdates|mailto:/i.test(editor), "the guest editor gained a way to send something");
-  // Response status is the provider's answer, never ours to record.
-  assert.match(editor, /only the provider knows/);
+test("🔴 nothing in the calendar sends an email", () => {
+  // Adding a guest in Google mails them immediately. Nemesis has never sent
+  // anything, and the guest editor that said so out loud was deleted on
+  // 2026-09-01 with the rest of the fields the owner cut ("I don't think we need
+  // guess ... I don't think we even have a function for that" — he was right).
+  //
+  // The invariant outlived the screen, so it is asserted across the whole
+  // calendar now rather than against one file: attendees still ride on the row,
+  // still come back from an import, and still must never be mailed.
+  const dir = new URL("../../components/workspace/calendar/", import.meta.url);
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".tsx") && !name.endsWith(".ts")) continue;
+    if (name.endsWith(".test.ts")) continue;
+    const source = readFileSync(new URL(name, dir), "utf8");
+    assert.ok(!/sendUpdates|mailto:/i.test(source), `${name} gained a way to send something`);
+  }
 });
 
 test("🔴 every column the codec writes exists in a migration", () => {

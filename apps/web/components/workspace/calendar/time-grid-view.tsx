@@ -19,7 +19,7 @@ import { paintForEvent } from "@/lib/workspace/event-colors";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime, hourLabel } from "./format";
-import { KIND_META } from "./kind-meta";
+import { DEFAULT_PAINT } from "./kind-meta";
 import {
   blockDetail,
   blockGeometry,
@@ -262,7 +262,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
                     className={cn(
                       // Google's stacked chip: 22px tall, 12px/15px text.
                       "truncate rounded-[0.375rem] px-1.5 py-0.5 text-left text-[0.75rem] font-medium leading-[0.9375rem]",
-                      !paintForEvent(event, calendarHex) && KIND_META[event.kind].chip,
+                      !paintForEvent(event, calendarHex) && DEFAULT_PAINT.chip,
                       event.status === "cancelled" && "line-through opacity-55",
                       event.status === "tentative" && "border border-dashed border-current",
                     )}
@@ -479,7 +479,7 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
                 detail === "stacked" && "flex-col py-1 text-[0.75rem]",
                 detail === "inline" && "items-baseline gap-1 py-0.5 text-[0.75rem]",
                 detail === "title" && "items-center py-0 text-[0.75rem] leading-none",
-                !paintForEvent(item.event, calendarHex) && KIND_META[item.event.kind].chip,
+                !paintForEvent(item.event, calendarHex) && DEFAULT_PAINT.chip,
                 item.event.status === "cancelled" && "line-through opacity-55",
                 item.event.status === "tentative" && "border-dashed",
               )}

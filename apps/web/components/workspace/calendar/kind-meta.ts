@@ -31,6 +31,30 @@ export interface KindMeta {
   label: string;
 }
 
+/**
+ * How an event is drawn when nobody has given it a colour.
+ *
+ * 🔴 THE CALENDAR NO LONGER PAINTS BY KIND. Owner 2026-09-01: "I don't want
+ * anything like type, you know, like assignment exam rotation. That's too
+ * specific to school ... the only differentiating thing should be like filtering
+ * by color, that's pretty much it."
+ *
+ * An event painted by a field nothing on screen shows is a colour nobody can
+ * change and nobody can filter on — it would look red and filter under "no
+ * colour". So every event without a colour of its own is drawn the same, and the
+ * palette in the editor is the only thing that makes one stand out.
+ *
+ * `KIND_META` survives for the syllabus import preview, which reviews what an
+ * import decided and is the one place the kind is still a thing a person reads.
+ */
+export const DEFAULT_PAINT: KindMeta = {
+  bar: "bg-(--ui-text-tertiary) text-background",
+  block: "bg-(--ui-bg-quaternary) text-foreground border-l-(--ui-text-tertiary)",
+  chip: "bg-(--ui-bg-quaternary) text-foreground",
+  dot: "bg-(--ui-text-tertiary)",
+  label: "Event",
+};
+
 export const KIND_META: Record<CalendarEventKind, KindMeta> = {
   assignment: {
     bar: "bg-(--ui-blue) text-white",

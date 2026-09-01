@@ -19,18 +19,19 @@ import {
 import { ChevronDown, ChevronLeft, ChevronRight, Plus } from "@/lib/workspace/icons";
 import { dateKey } from "@/lib/workspace/calendar-model";
 
-import type { CalendarEventKind } from "@/lib/workspace/calendar-model";
 
 import { VIEW_OPTIONS, VIEW_UNIT_LABEL, viewLabel, type CalendarViewMode } from "./format";
-import { KindFilter } from "./kind-filter";
+import { ColorFilter } from "./color-filter";
 
 interface CalendarHeaderProps {
   view: CalendarViewMode;
   cursor: Date;
   today: Date;
-  hiddenKinds: ReadonlySet<CalendarEventKind>;
+  /** Colours present on the calendar, in palette order. */
+  colours: readonly string[];
+  hiddenColors: ReadonlySet<string>;
   onChangeView: (view: CalendarViewMode) => void;
-  onChangeHiddenKinds: (next: Set<CalendarEventKind>) => void;
+  onChangeHiddenColors: (next: Set<string>) => void;
   onStep: (delta: 1 | -1) => void;
   onToday: () => void;
   onAddEvent: (dateKeyStr: string) => void;
@@ -40,9 +41,10 @@ export function CalendarHeader({
   view,
   cursor,
   today,
-  hiddenKinds,
+  colours,
+  hiddenColors,
   onChangeView,
-  onChangeHiddenKinds,
+  onChangeHiddenColors,
   onStep,
   onToday,
   onAddEvent,
@@ -91,7 +93,7 @@ export function CalendarHeader({
         {viewLabel(view, cursor)}
       </h1>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-        <KindFilter hidden={hiddenKinds} onChange={onChangeHiddenKinds} />
+        <ColorFilter colours={colours} hidden={hiddenColors} onChange={onChangeHiddenColors} />
         {/* A dropdown on the right, where Google keeps it — the four-way
             segmented control sat in the middle of the bar and took the space
             the date range needs on a narrow window. */}

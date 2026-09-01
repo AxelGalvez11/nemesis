@@ -33,7 +33,7 @@ import { type CellMetrics, fitEvents, orderForCell } from "@/lib/workspace/month
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime, WEEKDAY_LABELS } from "./format";
-import { drawsAsBar, KIND_META } from "./kind-meta";
+import { DEFAULT_PAINT, drawsAsBar } from "./kind-meta";
 
 interface MonthGridProps {
   days: MonthDay[];
@@ -310,7 +310,7 @@ function EventLine({
   event: CalendarEvent;
   onOpen: (event: CalendarEvent) => void;
 }) {
-  const meta = KIND_META[event.kind];
+  const meta = DEFAULT_PAINT;
   // Event colour, then the calendar's, then the kind's own classes. Inline
   // because the value is data — see event-colors.ts.
   const paint: ColorPaint | null = paintForEvent(event, calendarHex);

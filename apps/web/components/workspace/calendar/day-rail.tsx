@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import { formatEventTime } from "./format";
 import { paintForEvent } from "@/lib/workspace/event-colors";
 
-import { KIND_META } from "./kind-meta";
+import { DEFAULT_PAINT } from "./kind-meta";
 import { clockOf, layoutDay } from "./time-grid";
 
 /**
@@ -138,7 +138,7 @@ function RailRow({
       <span
         className={cn(
           "min-w-0 flex-1 rounded-md border-l-2 px-2 py-1 text-[0.6875rem] font-medium leading-tight",
-          !paint && KIND_META[event.kind].block,
+          !paint && DEFAULT_PAINT.block,
           cancelled && "opacity-55",
           event.status === "tentative" && "border-dashed",
         )}

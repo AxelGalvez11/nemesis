@@ -22,13 +22,16 @@ const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace
 const FORM_CODE = code(FORM);
 const CARD_CODE = code(CARD);
 
-test("there is exactly one row of colour swatches", () => {
-  // There were two, stacked and unlabelled, answering different questions: the
-  // event's TYPE and its colour. Both survive — "it is an exam" is not a matter
-  // of taste and the calendar filters on it — but they no longer look alike.
+test("there is exactly one row of colour swatches, and no type row at all", () => {
+  // There were two stacked rows of unlabelled dots answering different
+  // questions: the event's TYPE and its colour. The type row was labelled on
+  // 2026-09-01 in the morning and DELETED the same afternoon — owner: "I don't
+  // want anything like type, you know, like assignment exam rotation. That's too
+  // specific to school. This should be generalist as possible."
   assert.equal((FORM_CODE.match(/EVENT_COLORS\.map/g) ?? []).length, 1, "a second colour palette appeared");
   assert.match(FORM_CODE, /<Row icon=\{Palette\} label="Colour">/, "the colour row lost its label");
-  assert.match(FORM_CODE, /<Row label="Type">/, "the type row lost its label");
+  assert.doesNotMatch(FORM_CODE, /label="Type"/, "the type picker came back");
+  assert.doesNotMatch(FORM_CODE, /KIND_ORDER/, "the editor can set a kind again");
 });
 
 test("no swatch is dimmed until it is chosen", () => {
@@ -48,11 +51,26 @@ test("no swatch is dimmed until it is chosen", () => {
   assert.match(FORM_CODE, /rounded-full transition-transform hover:scale-110/);
 });
 
-test("the type picker says the names, in both places", () => {
-  // Bare dots meant the picker could only be used by someone who had learned
-  // the palette. Both surfaces now draw the same named chip.
-  assert.match(FORM_CODE, /\{KIND_META\[option\]\.label\}/, "the editor's type chips lost their names");
-  assert.match(CARD_CODE, /\{KIND_META\[option\]\.label\}/, "the quick-create card's type chips lost their names");
+test("neither surface asks anyone to pick a type", () => {
+  // The field is still WRITTEN — imports and the agent tools set it, and the
+  // editor carries it through on save so opening an event cannot erase it. It is
+  // simply never asked for, and nothing on the calendar shows it.
+  for (const [name, source] of [["editor", FORM_CODE], ["quick-create card", CARD_CODE]] as const) {
+    assert.doesNotMatch(source, /KIND_ORDER/, `${name}: a type picker came back`);
+    assert.doesNotMatch(source, /setKind/, `${name}: the type is settable again`);
+  }
+  assert.match(FORM_CODE, /kind: event\?\.kind \?\? "other"/, "the editor stopped carrying the existing kind");
+  assert.match(CARD_CODE, /kind: "other"/, "the quick-create card invents a type again");
+});
+
+test("🔴 the fields that lost their controls did not lose their data", () => {
+  // `built` starts empty, so anything this form stops editing is erased the
+  // first time an event is opened and saved. Guests, location, reminders,
+  // course, status, free/busy, visibility and the timezone all lost their
+  // controls on 2026-09-01; every one of them is carried from the event.
+  for (const field of ["location", "attendees", "reminders", "course", "status", "transparency", "visibility", "timeZone"]) {
+    assert.match(FORM_CODE, new RegExp(`event\\?\\.${field}`), `${field} is dropped on save`);
+  }
 });
 
 test("the selects wear the app's control chrome, not the platform's", () => {

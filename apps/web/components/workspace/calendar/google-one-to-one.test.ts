@@ -115,5 +115,5 @@ test("the Calendars control is gone, and its filter went with it", () => {
   // one ticked off before the control was removed would stay invisible forever.
   assert.doesNotMatch(workspace, /hiddenCalendars/, "a per-calendar filter no one can reach is back");
   assert.doesNotMatch(workspace, /primaryHidden/, "the primary calendar can be hidden with no way back");
-  assert.match(workspace, /const shownEvents = useMemo\(\(\) => visibleEvents\(events, hiddenKinds\), \[events, hiddenKinds\]\);/);
+  assert.match(workspace, /const shownEvents = useMemo\(\(\) => visibleEvents\(events, hiddenColors\), \[events, hiddenColors\]\);/);
 });

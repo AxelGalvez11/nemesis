@@ -10,20 +10,23 @@
 // card sits next to the slot, is pre-filled from where the click landed, and
 // needs a title and the Return key.
 //
-// It is deliberately NOT a smaller copy of the form. Everything past a title
-// and a type — course, notes, repeats — is behind "Details", which hands what
-// has been typed to the real dialog rather than throwing it away.
+// It is deliberately NOT a smaller copy of the form. Everything past a title —
+// colour, repeats, a description — is behind "Details", which hands what has
+// been typed to the real dialog rather than throwing it away.
+//
+// It briefly asked for a TYPE as well (assignment/exam/rotation), first as five
+// bare dots and then as named chips. Both are gone: owner 2026-09-01, "that's
+// too specific to school ... this should be generalist as possible".
 
 import { useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Input } from "@/components/desktop-ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/desktop-ui/popover";
-import type { CalendarEvent, CalendarEventKind } from "@/lib/workspace/calendar-model";
+import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime } from "./format";
-import { KIND_META, KIND_ORDER } from "./kind-meta";
 
 /** A slot the student pointed at: always a date, plus a time range when the
  *  click landed on the time grid rather than a month cell. */
@@ -48,7 +51,7 @@ interface QuickCreatePopoverProps {
   onCancel: () => void;
   onCreate: (event: CalendarEvent) => Promise<void>;
   /** Hands the half-written event to the full dialog. */
-  onOpenDetails: (draft: QuickCreateDraft, title: string, kind: CalendarEventKind) => void;
+  onOpenDetails: (draft: QuickCreateDraft, title: string) => void;
 }
 
 const newEventId = () =>
@@ -66,7 +69,7 @@ function slotLabel(draft: QuickCreateDraft): string {
 
 export function QuickCreatePopover({ anchor, draft, onCancel, onCreate, onOpenDetails }: QuickCreatePopoverProps) {
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<CalendarEventKind>("assignment");
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +80,12 @@ export function QuickCreatePopover({ anchor, draft, onCancel, onCreate, onOpenDe
     const built: CalendarEvent = {
       date: draft.date,
       id: newEventId(),
-      kind,
+      // 🔴 "other", NOT a type the card asks for. Owner 2026-09-01: "I don't
+      // want anything like type, you know, like assignment exam rotation.
+      // That's too specific to school." The column still exists — imports and
+      // the agent tools write it — but nothing in the product asks a person to
+      // pick one, and "other" is the value that claims nothing.
+      kind: "other",
       source: "manual",
       title: title.trim(),
       ...(draft.time ? { time: draft.time } : {}),
@@ -106,9 +114,7 @@ export function QuickCreatePopover({ anchor, draft, onCancel, onCreate, onOpenDe
       </PopoverAnchor>
       <PopoverContent
         align="start"
-        // w-72, up from w-64: the type row is named chips now, and at the
-        // narrower width "Assignment" and "Rotation" wrapped one word per line.
-        className="w-72 p-3"
+        className="w-64 p-3"
         onKeyDown={(keyEvent) => {
           if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
             keyEvent.preventDefault();
@@ -131,39 +137,12 @@ export function QuickCreatePopover({ anchor, draft, onCancel, onCreate, onOpenDe
           />
           <p className="px-0.5 text-[0.6875rem] tabular-nums text-muted-foreground">{slotLabel(draft)}</p>
 
-          {/* 🔴 NAMED CHIPS, THE SAME ONES THE FULL EDITOR DRAWS. This was five
-              bare dots at `opacity-45`, and the editor behind it had two more
-              rows of dots that looked identical and meant something else. Owner
-              2026-09-01: "there's different buttons for the colors ... why are
-              they so bland". A picker whose options cannot be told apart by
-              anyone who has not learned the palette is not a picker, and the
-              answer to that is the name, not a brighter dot. */}
-          <div className="flex flex-wrap gap-1" role="group">
-            {KIND_ORDER.map((option) => (
-              <button
-                aria-pressed={kind === option}
-                className={cn(
-                  "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.6875rem] transition-colors",
-                  kind === option
-                    ? "border-(--ui-stroke-primary) bg-(--ui-control-hover-background) font-medium text-foreground"
-                    : "border-(--ui-stroke-tertiary) text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
-                )}
-                key={option}
-                onClick={() => setKind(option)}
-                type="button"
-              >
-                <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", KIND_META[option].dot)} />
-                {KIND_META[option].label}
-              </button>
-            ))}
-          </div>
-
           {error && <p className="text-[0.6875rem] text-(--ui-red)">{error}</p>}
 
           <div className="flex items-center justify-between gap-2">
             <Button
               className="px-1.5 text-[0.6875rem]"
-              onClick={() => onOpenDetails(draft, title, kind)}
+              onClick={() => onOpenDetails(draft, title)}
               size="sm"
               variant="ghost"
             >
