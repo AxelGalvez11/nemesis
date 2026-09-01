@@ -14,6 +14,7 @@ import test from "node:test";
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8");
 const PANE = read("./source-preview.tsx");
 const BAR = readFileSync(new URL("../reader/reader-top-bar.tsx", import.meta.url), "utf8");
+const READER = readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8");
 const TABS = readFileSync(new URL("../../../lib/learn/source-tabs.ts", import.meta.url), "utf8");
 const TABPANE = read("./source-tab-viewer.tsx");
 const CONTROLS = read("./canvas-controls.tsx");
@@ -42,24 +43,36 @@ test("🔴🔴 recently-read documents stay mounted, so switching back does not 
   assert.match(PANE, /if \(states\[source\.id\] \|\| !mounted\.has\(source\.id\)\) continue;/, "documents are re-fetched on every open");
 });
 
-test("🔴 the pane's toolbar drops what the pane already says, and MOVES the rest", () => {
-  // The pane is 360px wide and the full bar carries twelve controls. Dense drops the file name (the
-  // TAB is the name) and the back button (the tab has a close), and folds the page field, the zoom
-  // cluster and the Source/Reading switch away.
+test("🔴 the pane's toolbar keeps only what acts on the FILE", () => {
+  // Owner, 2026-09-01, item by item: *"remove the search magnifying glass icon, the outline is not
+  // really necessary for this, the three dots icon contains outdated actions that arent
+  // necessary"*, then *"also remove the slides, notes, outline options"*.
+  //
+  // 🔴 REPOINTED FROM "MOVES THE REST". The first pass folded these behind the "…" on the reasoning
+  // that moving beats deleting. He then named the "…" itself, which settles it: on a column beside
+  // a conversation these are not misplaced, they are surplus. What survives acts on the FILE and
+  // has nowhere else to live — comment, download, open in a new tab, rotate.
   assert.match(PANE, /\n\s+dense\n/, "the panel asks for the full toolbar");
   for (const [what, pattern] of [
     ["the back button", /\{onBack && !dense && \(/],
+    ["search", /\{!dense && \(\n\s+<div className="flex shrink-0 items-center gap-1 rounded-lg/],
+    ["the contents rail", /\{onToggleRail && !dense && \(/],
     ["the zoom cluster", /\{showZoom && !dense && \(/],
     ["the Source\/Reading switch", /\{modeAvailable && !dense && \(/],
     ["the page field", /\{unitCount > 1 && !dense && \(/],
   ] as const) {
     assert.match(BAR, pattern, `${what} is not trimmed in the pane`);
   }
+  // The five ask-about-this items — the same set cut from the highlight bar in #1015.
+  assert.match(BAR, /\{!dense && \(\n\s+<>\n\s+<DropdownMenuLabel[\s\S]{0,120}?Ask Nemesis about/, "the stale menu actions are back in the pane");
+  // And the slides/outline/notes row under the tab strip.
+  assert.match(READER, /source\.kind === "slides" && loadState === "ready" && !dense && \(/, "the second tab row is back");
 
-  // 🔴 NOTHING IS DELETED. Every one of those is still reachable from the "…" menu — a reader who
-  // needs to zoom a scan can still zoom it. Trading one complaint for a worse one is not a win.
-  assert.match(BAR, /aria-label="Actions and details"/, "the menu that still holds them is gone");
+  // 🔴 THE STANDALONE READER KEEPS ALL OF IT. There the document is the whole screen and the chat
+  // is not beside it, so search and the actions are the only way to do those things at all.
+  assert.match(BAR, /dense = false,/, "dense stopped defaulting off, which strips the full reader too");
 });
+
 
 test("🔴 the door into a document is the header's Sources list, and there is only one", () => {
   // 🔴 A `+` WAS ADDED TO THE CITATION PANE'S TAB STRIP AND THEN REMOVED. It rendered only once a

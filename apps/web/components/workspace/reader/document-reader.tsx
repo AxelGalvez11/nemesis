@@ -714,7 +714,16 @@ export function DocumentReader({
         unitLabel={unitLabel}
       />
 
-      {source.kind === "slides" && loadState === "ready" && (
+      {/* 🔴 NOT IN THE PANE (owner, 2026-09-01: *"also remove the slides, notes, outline options"*).
+          A second row of tabs directly under the document's own tab strip reads as chrome about
+          chrome, and the two things it switches to are not what someone glancing at a lecture beside
+          a conversation came for: the outline is the deck's headings, which the canvas already has,
+          and the speaker notes are the lecturer's, which the parse already carries into what
+          Nemesis knows. The slides themselves are the point, so `slideTab` stays "slides".
+
+          🔴 THE ROW SURVIVES ON THE STANDALONE READER, where the deck is the whole screen and
+          reading the lecturer's notes beside it is a real thing to want. */}
+      {source.kind === "slides" && loadState === "ready" && !dense && (
         <div className="flex shrink-0 gap-0.5 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-chrome) px-3 py-1.5">
           {(["slides", "outline", "notes"] as const).map((tab) => (
             <button
