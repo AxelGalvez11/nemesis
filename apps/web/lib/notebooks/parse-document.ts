@@ -53,6 +53,7 @@ import { readCsv } from "./csv-structure";
 import { readTextDocument } from "./text-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
+import { alignFiguresToModel } from "./figure-alignment";
 import { capturedFigures, normalizedFigures, type NormalizedFigure } from "./figure-assets";
 import { readDocxDocument, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
@@ -627,6 +628,27 @@ export async function parseWithVendor(
   // even when it differs from what we asked for — especially then.
   coverage = { ...coverage, parserVersion: readBy };
 
+  // 🔴 THE PIXELS LEAVE THIS LANE TOO, AND THEY HAVE TO BE RE-KEYED FIRST. `pdfFigures.images` holds
+  // figures this function ALREADY decoded — it had to, because a vendor returns coordinates and
+  // refuses bytes, so the render above is the only thing in the whole process that ever sees a
+  // vendor-parsed PDF's diagrams.
+  //
+  // The pixels are named by OUR structural read (`0:img_p0_1`); the model that gets STORED is the
+  // vendor's, whose figures are named `img-0` or not at all. Joining those on refs cannot work, and
+  // shipping it that way stored 14 objects for the owner's pharmacokinetics lecture while it still
+  // reported 0 showable figures out of 27 — pictures in the bucket, nothing pointing at them.
+  // `alignFiguresToModel` matches them by where the ink is, the one thing the two reads agree on,
+  // and mints a ref for any vendor figure that arrived without one.
+  //
+  // 🔴 IT RUNS BEFORE `document` IS BUILT, BECAUSE IT REWRITES `model`. Placed after, the minted
+  // refs are computed and thrown away and the join fails exactly as it did before — which is the
+  // mistake this comment exists to stop being made twice.
+  const aligned = pdfFigures
+    ? alignFiguresToModel(capturedFigures(pdfFigures.images), pdfFigures.model, model)
+    : { figures: [], model };
+  const figures = aligned.figures;
+  model = aligned.model;
+
   const full = documentToText(model);
   const capped = capText(full, TEXT_CAP);
   coverage = withTruncation(coverage, extractCut(TEXT_CAP, capped.text.length, full.length));
@@ -649,17 +671,6 @@ export async function parseWithVendor(
     text,
     title: model.title,
   };
-
-  // 🔴 THE PIXELS LEAVE THIS LANE TOO, AND UNTIL NOW THEY DID NOT. `pdfFigures.images` holds the
-  // figures this function ALREADY decoded — it had to, because a vendor returns coordinates and
-  // refuses bytes, so the render above is the only thing in the whole process that ever sees a
-  // vendor-parsed PDF's diagrams. They were used to describe the figures and then dropped.
-  //
-  // Measured on the owner's library, 2026-08-31: `PHCY_1202_..._pharmacokinetics_part_1.pdf` is
-  // Mistral-parsed, holds 27 figures, and had 0 showable — the only file in his account still at
-  // zero after the native lane learned to keep its pictures. One lane fixed and one not is the
-  // shape that makes a feature look unreliable rather than absent.
-  const figures = pdfFigures ? capturedFigures(pdfFigures.images) : [];
 
   // The same refusal the local lanes make, for the same reason: a document with structure and no
   // readable text is worth remembering even though there is nothing to show a student yet.
