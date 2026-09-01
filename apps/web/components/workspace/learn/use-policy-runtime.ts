@@ -476,11 +476,33 @@ export function usePolicyRuntime(
    * route into `askCanvasChat` and a second place that decides what a turn means.
    */
   notAnAttempt: ((said: string) => void) | null = null,
+  /**
+   * Whether the learner has actually asked to be TAUGHT, rather than to be answered.
+   *
+   * 🔴🔴 THE RUNTIME IS OPT-IN NOW, AND THIS IS THE OPT (owner, 2026-08-31): *"hide canvas, chat by
+   * default."* Until this parameter existed the teaching loop ran on every canvas that had any
+   * content at all — `policyAllowed` only ever answered the URL override, whose only "no" is
+   * `?policy=off` — so asking a plain question and getting a document back was enough to arm a
+   * diagnostic that would then take the surface with a question card. That is the behaviour he
+   * described as *"just kinda seems annoying"*.
+   *
+   * 🔴 IT GATES `enabled`, NOT THE PRESENTATION, and the difference is money. Gating only what
+   * paints would leave the controller resolving knowledge and calling the model on every canvas to
+   * produce decisions nobody would ever see. Off here means it does not run.
+   *
+   * 🔴 NOTHING READS THE LEARNER'S WORDS TO DECIDE THIS. The signal is a course the learner built
+   * through the Course chip — the one sanctioned teaching door (`courseGate`, turn-router.ts) —
+   * because a classifier in front of the model is exactly what #689 removed and what the standing
+   * rule against keyword scoping forbids.
+   */
+  teachingRequested = false,
 ): PolicyRuntime {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
-  const enabled = policyAllowed(override);
   const forced = policyForced(override);
+  // 🔴 `forced` STILL RUNS IT. `?policy=force` is how the teaching loop is exercised without
+  // building a course first, and taking that away would leave no way to test it at all.
+  const enabled = policyAllowed(override) && (teachingRequested || forced);
   /**
    * 🔴 DERIVED ON EVERY RENDER, NEVER STORED, WHICH IS THE WHOLE OF "THE ARM MUST NOT SILENTLY SWITCH
    * HALFWAY THROUGH". Held in `useState` it would survive re-renders and die on a reload, so a
