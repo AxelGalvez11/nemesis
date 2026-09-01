@@ -149,9 +149,28 @@ export const MAX_USER_TEXT = 400;
  */
 export const MAX_ASSISTANT_TEXT = 2000;
 
-/** Collapse runs of whitespace and trim. Stored text is read back into a narrow drawer. */
+/**
+ * Trim, and close up runs of blank lines. 🔴🔴 IT NO LONGER COLLAPSES WHITESPACE, AND THAT ONE
+ * CHARACTER CLASS WAS THE "EVERYTHING COMES OUT AS A BLOCK OF TEXT" REPORT.
+ *
+ * This was `replace(/\s+/g, " ")`, justified as "stored text is read back into a narrow drawer".
+ * That was true when a moment only fed the history rail's one-line labels. It stopped being true
+ * when the canvas document became the conversation's ONLY record: there is no `thread` key in a
+ * stored document, so on reload — and on rewind — the thread is rebuilt from these moments, and
+ * this line was flattening every answer on its way to disk.
+ *
+ * 🔴 THE DAMAGE WAS PERMANENT, NOT COSMETIC. Measured on the owner's own canvas 2026-08-31: a
+ * 1,675-character answer stored with ZERO newlines. The model had written a heading and a
+ * four-item list; the bold survived because `**` is inline, and every line break that made those
+ * into a list was gone before the row was written. Nothing downstream could have recovered it.
+ *
+ * 🔴 AND IT WAS BREAKING THE VERY DRAWER IT CLAIMED TO SERVE. `canvas-history.ts` splits on "\n"
+ * to find where a title ends, with a comment saying the order is load-bearing — it never saw a
+ * newline to split on. Flattening for a narrow row is the ROW's job, at the moment of drawing,
+ * where the full text is still available if something else needs it.
+ */
 function tidy(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export interface NewCanvasMoment {
