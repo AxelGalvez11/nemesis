@@ -71,10 +71,42 @@
   animation: nemesis-record-processing 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+/* The read-aloud player's live bars (canvas-audio-bar.tsx, owner's design D, 2026-09-01).
+   🔴🔴 THEY SAY "SOUND IS COMING OUT", NOT WHAT THE SOUND CONTAINS. Nothing here reads the audio,
+   and that is deliberate rather than lazy: a bar drawn to look like the answer's own waveform while
+   being a sine wave on a timer is precisely the theatre §38's thinking rules ban elsewhere in this
+   product. Four bars on a stagger say "playing" honestly, the way every music app's now-playing
+   glyph does, and they stop dead when the audio is paused.
+   🔴 `scaleY` RATHER THAN `height`, so the animation stays on the compositor and a player sitting
+   in the canvas chrome never lays anything out sixty times a second. */
+@keyframes nemesis-audio-bar {
+  0%, 100% { transform: scaleY(0.42); }
+  50% { transform: scaleY(1); }
+}
+
+/* 🔴 THE RESTING HEIGHT IS 0.58, NOT THE TROUGH OF THE ANIMATION. Squashed to the trough, a paused
+   player read as a row of dots rather than as bars that had stopped — the state was legible only by
+   comparison with a playing one, which is never on screen at the same time. */
+.audio-bars > span {
+  transform-origin: center bottom;
+  transform: scaleY(0.58);
+}
+
+.audio-bars[data-playing="true"] > span {
+  animation: nemesis-audio-bar 900ms ease-in-out infinite;
+}
+
+/* Four different periods, so the group never pulses as one block. */
+.audio-bars[data-playing="true"] > span:nth-child(2) { animation-duration: 1150ms; animation-delay: 120ms; }
+.audio-bars[data-playing="true"] > span:nth-child(3) { animation-duration: 780ms; animation-delay: 240ms; }
+.audio-bars[data-playing="true"] > span:nth-child(4) { animation-duration: 1020ms; animation-delay: 60ms; }
+
 @media (prefers-reduced-motion: reduce) {
   .record-workspace-enter { animation: none; }
   /* Still has to read as "busy", so the bar stays — it simply stops moving. */
   .record-processing-track::after { animation: none; inline-size: 100%; opacity: 0.55; }
+  /* Same rule as the mascot's STILL frames: hold a characteristic shape, do not flatten. */
+  .audio-bars[data-playing="true"] > span { animation: none; transform: scaleY(0.78); }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

@@ -26,11 +26,22 @@
 // paragraph nothing, and the owner asked for it by name. `reply-actions.test.ts` still forbids it
 // UNDER an answer, which is where the original objection was.
 //
-// 🔴 NO CARD, NO BORDER, NO PILL. The reference is ChatGPT's floating dark capsule, which is dark
-// because it hovers over white body text at the bottom of the page. This sits inside the canvas's
-// own 56px chrome strip (`canvas-surface.tsx` paints it in `--ui-bg-editor`), so it is already on
-// an opaque ground and a capsule would make it the only boxed thing on a surface whose whole
-// argument is that it has no toolbar.
+// 🔴🔴 IT IS A PILL NOW, AND THAT REVERSES THIS FILE'S OWN ARGUMENT — owner, 2026-09-01, choosing
+// between six designs drawn at real size in this exact row: *"give me D but remove the 'reading
+// aloud'"*. What stood here said no card, no border, no pill, because a capsule would be the only
+// boxed thing on a surface whose whole argument is that it has no toolbar. He looked at that
+// argument rendered beside five alternatives and picked the boxed one; five loose glyphs in the
+// chrome did not read as one object.
+//
+// 🔴 THE NO-CARD RULE IS NOT DEAD, IT IS SCOPED. It still governs the row UNDER an answer, which is
+// where the 2026-08-22 complaint came from (*"quiet, compact, only prominent while relevant… the
+// main content should remain the focus"*) and where `reply-actions.test.ts` still enforces it. That
+// row is one glyph. This is the transport, it exists only while something is playing, and it is in
+// the chrome rather than over the reading.
+//
+// 🔴 THE WORDS WENT WITH THE OWNER'S OWN EDIT. Design D carried "Reading aloud" beside the bars; he
+// removed it in the same sentence that chose it. The bars now carry that meaning alone, which is
+// why they had to become honest about what they do and do not know (see globals.css).
 
 import { PLAYBACK_RATES, SEEK_STEP_SECONDS } from "@/lib/learn/playback";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -51,7 +62,7 @@ import type { ResponseAudio } from "./use-response-audio";
  * anything in it that is meant to be pressed has to opt back in, one control at a time.
  */
 const BUTTON =
-  "pointer-events-auto flex h-[36px] shrink-0 items-center justify-center rounded-[8px] px-2 "
+  "pointer-events-auto flex h-[24px] shrink-0 items-center justify-center rounded-full px-1 "
   + "text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary) "
   + "disabled:opacity-40 disabled:hover:bg-transparent";
 
@@ -67,9 +78,9 @@ const BUTTON =
  * 🔴 `dominantBaseline="central"` RATHER THAN A HAND-PICKED `y`. A baseline offset guessed for one
  * font size is wrong at the next, which is exactly how the overlap above got in.
  */
-function JumpIcon({ back }: { back: boolean }) {
+function JumpIcon({ back, size = 20 }: { back: boolean; size?: number }) {
   return (
-    <svg aria-hidden="true" fill="none" height="20" viewBox="0 0 20 20" width="20">
+    <svg aria-hidden="true" fill="none" height={size} viewBox="0 0 20 20" width={size}>
       <g transform={back ? undefined : "translate(20 0) scale(-1 1)"}>
         <path
           d="M10 4.6a6.6 6.6 0 1 0 6.4 8.1"
@@ -91,6 +102,24 @@ function JumpIcon({ back }: { back: boolean }) {
         {SEEK_STEP_SECONDS}
       </text>
     </svg>
+  );
+}
+
+/**
+ * Four bars that move while sound is coming out.
+ *
+ * 🔴 THEY DO NOT READ THE AUDIO, AND THE COMMENT IN globals.css SAYS WHY THAT IS THE HONEST CHOICE
+ * rather than the lazy one. What they claim is exactly what is true: something is playing, or it is
+ * paused. `aria-hidden`, because the play/pause button beside them already says this to a screen
+ * reader and a second announcement of the same fact is noise.
+ */
+function LiveBars({ playing }: { playing: boolean }) {
+  return (
+    <span aria-hidden="true" className="audio-bars flex h-[14px] w-[17px] shrink-0 items-end justify-between" data-playing={playing}>
+      {[9, 14, 7, 12].map((height, at) => (
+        <span key={at} className="w-[2px] rounded-full bg-(--ui-action)" style={{ height: `${height}px` }} />
+      ))}
+    </span>
   );
 }
 
@@ -117,17 +146,22 @@ export function CanvasAudioBar({ audio }: { audio: ResponseAudio }) {
         open ? "grid-cols-[1fr] opacity-100" : "grid-cols-[0fr] opacity-0",
       )}
     >
-      <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+      {/* 🔴 THE PILL. Height, radius, border and fill are design D as drawn and measured; the
+          `min-w-0`/`overflow-hidden` pair survives from the collapsing wrapper above it, which is
+          what lets the whole group animate to no width at all when nothing is playing. */}
+      <div className="flex h-[34px] min-w-0 items-center gap-[7px] overflow-hidden rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) pl-[10px] pr-[5px]">
+        <LiveBars playing={audio.playing} />
+        <span className="h-[14px] w-px shrink-0 bg-(--ui-stroke-secondary)" />
         <button
           aria-label={audio.playing ? "Pause" : "Play"}
-          className={cn(BUTTON, "text-(--ui-text-secondary)")}
+          className={cn(BUTTON, "w-[24px] text-(--ui-text-secondary)")}
           disabled={!open || loading}
           onClick={audio.toggle}
           tabIndex={open ? 0 : -1}
           title={audio.playing ? "Pause" : "Play"}
           type="button"
         >
-          <Codicon name={loading ? "loading" : audio.playing ? "debug-pause" : "play"} size="20px" spinning={loading} />
+          <Codicon name={loading ? "loading" : audio.playing ? "debug-pause" : "play"} size="14px" spinning={loading} />
         </button>
 
         {/* 🔴 A LABEL, NOT AN ICON, BECAUSE THE VALUE IS THE POINT. A speaker-with-a-dial glyph says
@@ -138,7 +172,7 @@ export function CanvasAudioBar({ audio }: { audio: ResponseAudio }) {
           // 🔴 A CANVAS TYPE TOKEN, NOT A PIXEL. §46.3 gives this surface five sizes and
           // `canvas-shell.test.ts` fails the build on any sixth; `--canvas-text-small` is the same
           // step the canvas title beside it uses, which is what makes the row read as one group.
-          className={cn(BUTTON, "text-[length:var(--canvas-text-small)] font-medium tabular-nums")}
+          className={cn(BUTTON, "px-[6px] text-[length:var(--canvas-text-meta)] font-medium tabular-nums")}
           disabled={!open || loading}
           onClick={audio.cycleRate}
           tabIndex={open ? 0 : -1}
@@ -159,7 +193,7 @@ export function CanvasAudioBar({ audio }: { audio: ResponseAudio }) {
           title={`Back ${SEEK_STEP_SECONDS} seconds`}
           type="button"
         >
-          <JumpIcon back />
+          <JumpIcon back size={16} />
         </button>
 
         <button
@@ -171,7 +205,7 @@ export function CanvasAudioBar({ audio }: { audio: ResponseAudio }) {
           title={`Forward ${SEEK_STEP_SECONDS} seconds`}
           type="button"
         >
-          <JumpIcon back={false} />
+          <JumpIcon back={false} size={16} />
         </button>
 
         {/* 🔴 STOP, NOT PAUSE, AND THEY ARE DIFFERENT WISHES. Pause keeps your place; this puts the
@@ -185,7 +219,7 @@ export function CanvasAudioBar({ audio }: { audio: ResponseAudio }) {
           title="Stop reading"
           type="button"
         >
-          <Codicon name="close" size="20px" />
+          <Codicon name="close" size="14px" />
         </button>
       </div>
     </div>
