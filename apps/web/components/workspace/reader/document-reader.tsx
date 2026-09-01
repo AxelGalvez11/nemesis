@@ -152,8 +152,6 @@ export function DocumentReader({
     text: string;
     unit: number | null;
     anchor: { left: number; top: number; width: number };
-    /** Where in its own page the highlight sits, 0-1, so a pin can be dropped on it. */
-    spot: { x: number; y: number } | null;
   } | null>(null);
   /** A boxed part of a page: the box in fractions, the cut-out, and the page it was cut from.
    *  `unit` is null on a single picture, where "image 1" would be furniture rather than a location. */
@@ -297,22 +295,8 @@ export function DocumentReader({
       // guessed and never asked of a model.
       const pageElement = element.closest<HTMLElement>("[data-page]");
       const measured = pageElement ? Number.parseInt(pageElement.dataset.page ?? "", 10) : Number.NaN;
-      // 🔴 MEASURED HERE, WHERE THE ELEMENT IS ALREADY IN HAND. The pin is portalled into the page
-      // and positioned by fractions of it, so the reading has to happen against that element while
-      // the selection still exists — after `selectionchange` clears, there is nothing to measure.
-      let spot: { x: number; y: number } | null = null;
-      if (pageElement) {
-        const page = pageElement.getBoundingClientRect();
-        if (page.width > 0 && page.height > 0) {
-          spot = {
-            x: Math.min(Math.max((box.left + box.width / 2 - page.left) / page.width, 0), 1),
-            y: Math.min(Math.max((box.top - page.top) / page.height, 0), 1),
-          };
-        }
-      }
       setSelection({
         anchor: { left: box.left, top: box.top, width: box.width },
-        spot,
         text,
         unit: Number.isInteger(measured) ? measured : unitCount > 0 && source.kind !== "document" ? unit : null,
       });
@@ -535,19 +519,55 @@ export function DocumentReader({
   const [commentRequest, setCommentRequest] = useState<CommentDraftSpot | null>(null);
   const clearCommentRequest = useCallback(() => setCommentRequest(null), []);
 
+  /**
+   * The comment box a highlight opens, measured from the LIVE selection.
+   *
+   * 🔴🔴 IT READS THE DOM, NOT THE `selection` STATE, AND THAT IS A RACE FIX RATHER THAN A STYLE
+   * CHOICE. The first version closed over `selection`, which the `selectionchange` handler sets.
+   * The browser fires `selectionchange` and then `mouseup` back to back at the end of a drag, and
+   * React need not have committed the state update in between — so `mouseup` ran with the previous
+   * render's closure, saw `selection === null`, and silently did nothing.
+   *
+   * Found on production: the highlight landed ("Clearance is the volume of plasma cleare"), the old
+   * bar was gone, and no box opened. It would have been intermittent in real use, which is the
+   * worst kind of nothing to debug. The live selection is the same object the state was going to be
+   * built from, one render earlier.
+   */
   const commentOnSelection = useCallback(() => {
-    if (!canComment || !selection) return;
-    // A flowing document has no page to pin to and no `spot` to measure against; its comments are
-    // block-anchored, which only the mode's own click can work out. Highlighting there still
-    // selects text normally — it just does not offer a comment yet.
-    if (selection.spot === null || selection.unit === null) return;
+    if (!canComment) return;
+    const active = typeof window === "undefined" ? null : window.getSelection();
+    const text = active?.toString().trim() ?? "";
+    if (!active || active.rangeCount === 0 || text.length < 2) return;
+
+    const range = active.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    const element = container.nodeType === Node.ELEMENT_NODE ? (container as Element) : container.parentElement;
+    if (!element?.closest("[data-reader-document]")) return;
+
+    const box = range.getBoundingClientRect();
+    if (box.width === 0 && box.height === 0) return;
+
+    // A flowing document has no page to pin to; its comments are block-anchored, which only the
+    // mode's own click can work out. Highlighting there still selects text normally — it just does
+    // not offer a comment yet.
+    const pageElement = element.closest<HTMLElement>("[data-page]");
+    if (!pageElement) return;
+    const page = pageElement.getBoundingClientRect();
+    if (page.width <= 0 || page.height <= 0) return;
+    const measured = Number.parseInt(pageElement.dataset.page ?? "", 10);
+    if (!Number.isInteger(measured)) return;
+
     setCommentRequest({
-      anchor: { quote: selection.text, x: selection.spot.x, y: selection.spot.y },
-      at: { left: selection.anchor.left + selection.anchor.width / 2, top: selection.anchor.top },
+      anchor: {
+        quote: text,
+        x: Math.min(Math.max((box.left + box.width / 2 - page.left) / page.width, 0), 1),
+        y: Math.min(Math.max((box.top - page.top) / page.height, 0), 1),
+      },
+      at: { left: box.left + box.width / 2, top: box.top },
       fromSelection: true,
-      unit: selection.unit,
+      unit: measured,
     });
-  }, [canComment, selection]);
+  }, [canComment]);
 
   // 🔴 ON `mouseup`, NOT ON `selectionchange`. The selection changes on every pixel of a drag, so
   // opening the box from it would flash a composer under the cursor for the whole gesture and
