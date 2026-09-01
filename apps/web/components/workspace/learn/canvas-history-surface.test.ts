@@ -86,7 +86,12 @@ test("🔴🔴🔴 the rail has ONE geometry — hovering it may not move a sing
   // 36px on hover, so 24 markers went 288px to 864px and slid out from under the pointer. What
   // must never come back is a hover that changes the STRIP. So this now forbids the mechanism
   // rather than the trigger: the panel is out of flow, and the marker keeps one height.
-  assert.match(RAIL_CODE, /absolute right-full top-1\/2 z-20/, "the panel is in flow and can move the markers again");
+  // 🔴 THE PLACEMENT MOVED, THE INVARIANT DID NOT. `right-full` became `right-0` when the owner
+  // picked the panel that opens ON the strip (2026-09-01, four placements on screen: *"i need C"*).
+  // What this guard is about is `absolute` — out of flow, unable to touch a marker's height or
+  // position — and that is unchanged. Pinning the side as well made a guard about MOVEMENT fail on
+  // a change of placement, which is the trap this file's own header records twice.
+  assert.match(RAIL_CODE, /absolute right-0 top-1\/2 z-20/, "the panel is in flow and can move the markers again");
   assert.match(RAIL_CODE, /data-canvas-history-panel/, "the panel lost the handle its geometry is measured by");
   // The surface that faded in with it — this is the literal "pop up".
   assert.ok(!/backdrop-blur/.test(RAIL_CODE), "the rail paints a panel behind itself again");
@@ -136,10 +141,16 @@ test("🔴🔴 the labels live in a PANEL, out of flow, carrying the reference's
   // is a door to its own moment. The tooltip had to be transparent to clicks precisely because it
   // was not one.
   assert.match(RAIL_CODE, /onClick=\{\(\) => onSelect\(entry\.momentId\)\}/, "the panel's rows are dead controls");
-  // 🔴 20px CLEAR OF THE STRIP, measured in the owner's signed-in ChatGPT on 2026-08-29: its rail
-  // ends at 52 and its tooltip starts at 72. The number is theirs; the side is ours, because this
-  // rail is on the right edge and a tooltip to its right would be off screen.
-  assert.ok(/PANEL_GAP_PX = 20/.test(RAIL_CODE), "the panel's clearance is no longer the measured 20px");
+  // 🔴 THERE IS NO CLEARANCE NOW, BY THE OWNER'S PICK. It was 20px — the reference's own
+  // rail-to-tooltip gap, right for a panel standing BESIDE the strip. He chose the one that opens
+  // ON it, and any gap at all is that panel reaching back into the answer column, which is the
+  // thing he asked to stop. So the guard inverts: a clearance coming back is the regression.
+  assert.ok(!/PANEL_GAP_PX/.test(RAIL_CODE), "the panel stands clear of the strip again");
+  assert.ok(!/marginRight/.test(RAIL_CODE), "the panel is being pushed off the strip again");
+
+  // 🔴 AND NO HEADING. Owner, 2026-09-01: *"dont add 'earlier in this canvas'"*. The panel only
+  // ever opens from the history strip, so naming it is a label on the thing just pointed at.
+  assert.ok(!/Earlier in this canvas/.test(RAIL_CODE), "the panel's heading came back");
 });
 
 test("🔴 no synthesised 'Canvas started' row reaches any surface", () => {
