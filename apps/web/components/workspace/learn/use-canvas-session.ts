@@ -49,7 +49,7 @@ import { isMakerCapability } from "@/lib/learn/composer-capability";
 import { researchStepLabel } from "@/lib/research/research-progress";
 import { planResearch } from "@/lib/research/run-research";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
-import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes } from "@/lib/learn/canvas-sources";
+import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes, storedCoverageNote } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
@@ -1081,7 +1081,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // now, because renaming ids is a migration for every stored canvas and every anchor
           // already written against one.
           const sourceId = `s${latest.current.sources.length + 1}`;
-          const note = coverageNote(extracted.coverage);
 
           // 🔴 READ BACK WHAT SURVIVED, RATHER THAN TRUSTING WHAT WAS RETURNED. The upload
           // response carries the model the parser produced in that request; the canvas has to
@@ -1092,6 +1091,24 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           const canonical = extracted.librarySourceId
             ? await loadCanonicalSource(extracted.librarySourceId)
             : { ok: false as const, reason: "not-found" as const };
+
+          // 🔴🔴 THE DISCLOSURE READS THE STORED PARSE, NOT THE UPLOAD'S OWN VIEW OF ITSELF, and the
+          // comment directly above is the reason — it was already true for the CONTENT and was
+          // quietly false for the SENTENCE beside it. Measured on the owner's account 2026-08-31:
+          // a lecture whose stored parse describes all 28 of its pictures was attached with
+          // "Incomplete source: 28 pictures were not read", because the request that filed it does
+          // not look at figures and reported its own blindness as the document's. The model was
+          // handed that sentence and dutifully repeated it to him.
+          //
+          // Same rule as `refreshedCoverageNotes`, which re-derives this on every canvas load for
+          // exactly this reason. Two readers of "what could this document not read" must not answer
+          // from two different records.
+          //
+          // 🔴 THE RESPONSE IS STILL THE FALLBACK, for a source with no filed row: nothing is stored
+          // to read back, and saying nothing there would be a silent upgrade from partial to whole.
+          const note = extracted.librarySourceId
+            ? ((await storedCoverageNote(extracted.librarySourceId)) ?? undefined)
+            : (coverageNote(extracted.coverage) ?? undefined);
 
           const source: CanvasSource = {
             id: sourceId,

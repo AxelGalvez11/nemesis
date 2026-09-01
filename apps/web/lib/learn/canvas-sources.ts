@@ -176,6 +176,10 @@ export async function loadCanonicalSource(librarySourceId: string): Promise<Cano
  * sentence, on every canvas load, for every attached source. Paying for a full context to render a
  * disclosure would make the cheapest thing on the page the most expensive.
  */
+export async function storedCoverageNote(librarySourceId: string): Promise<string | null> {
+  return coverageNote(await loadStoredCoverage(librarySourceId));
+}
+
 async function loadStoredCoverage(librarySourceId: string): Promise<unknown> {
   const { data, error } = await supabase
     .from("library_sources")

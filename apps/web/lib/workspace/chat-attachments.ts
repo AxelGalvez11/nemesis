@@ -556,6 +556,25 @@ export async function extractFile(
     error?: string;
   } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
+  // 🔴🔴 PICTURES NOBODY LOOKED AT GET LOOKED AT. Figure DETECTION runs on the upload path and
+  // figure READING does not — `lookAtFigures` is off there on purpose, because up to 40 vision
+  // calls in the request is latency the student waits through (see ParseOptions). The background
+  // worker does read them, and NOTHING EVER ASKED IT TO: measured 2026-08-31, nine of the owner's
+  // documents sat with "not-examined" figures for weeks, `parse_enqueued_at` null on every one.
+  // Queuing one by hand described all eight of its pictures in 14 seconds.
+  //
+  // 🔴 A DATABASE FUNCTION, NOT `enqueueParse`. That path needs SUPABASE_SERVICE_ROLE_KEY, which is
+  // a revoked legacy JWT on Vercel awaiting rotation; this is the #918 pattern — the privileged
+  // step lives in Postgres, granted to `authenticated`, driven by the learner's own session. It is
+  // a no-op unless the row is theirs and genuinely has unexamined figures.
+  //
+  // 🔴 FIRE AND FORGET, DELIBERATELY. The document is already usable; this only improves it. A
+  // failure here must never turn a successful upload into a failed one.
+  const unexamined = readCoverage(body.coverage)?.figures.reasons["not-examined"] ?? 0;
+  if (filedSourceId && unexamined > 0) {
+    void supabase.rpc("request_figure_pass", { p_source_id: filedSourceId }).then(undefined, () => undefined);
+  }
+
   return {
     bytes: body.bytes,
     kind: body.kind,
