@@ -1837,6 +1837,14 @@ export function turnRouterMessages(input: {
     // The reply will be READ ALOUD and the microphone reopens after it; a full written treatment
     // with headings and lists is exactly the lag he is naming, and a voice reading markdown says
     // the punctuation. Absent on every typed turn, so those packets stay byte-identical.
+    //
+    // 🔴 THE MINIMAL DECISION BLOCK IS A LATENCY INSTRUCTION, AND THE NUMBERS ARE WHY (measured
+    // 2026-08-31, live model, this very packet): the full field set streams ~344 bytes of JSON
+    // before the first word of the answer exists — half a second of preamble at the model's own
+    // pace — and on a spoken turn the first sentence is synthesised the moment it appears
+    // (`spoken-opener.ts`). Every omitted field parses identically: `readTurnDecision` defaults
+    // absent fields exactly as written-out false/null/empty, which is what makes this safe to ask
+    // for. Typed turns are untouched — their block is unchanged and nothing streams.
     ...(context.spokenConversation
       ? [{
         content:
@@ -1847,7 +1855,14 @@ export function turnRouterMessages(input: {
           + "voice would have to read that punctuation out loud. If the subject honestly needs "
           + "the long form, give the spoken-size answer and offer to put the full version on "
           + "screen. This changes the SHAPE of your reply only: what you verify, refuse, or hold "
-          + "your ground on does not change.",
+          + "your ground on does not change.\n\n"
+          + "Because every second before the voice starts is silence the learner sits through: "
+          + "keep the decision block itself minimal on this turn. Still ALWAYS open with the "
+          + "fenced json block — never skip it — but write in it only the fields whose values are "
+          + "not false, null, or empty, so on an ordinary spoken answer the whole block is "
+          + 'exactly {"then": "reply"}, and begin your answer immediately after it. Omitted '
+          + "fields mean exactly what writing them as false, null, or empty would; a field you "
+          + "need (a search, a tool, a test) is still yours to write.",
         role: "system" as const,
       }]
       : []),

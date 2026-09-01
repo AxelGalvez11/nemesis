@@ -205,3 +205,45 @@ test("🔴 the silence rule submits the PRESENT text — the last word of a spok
   assert.match(hook, /const verdict = submitRef\.current\(\);/, "the silence rule stopped reading the present");
   assert.ok(!/const verdict = submit\(\);/.test(hook), "a direct stale call came back beside the ref");
 });
+
+test("🔴 the voice speaks while the model is still writing — the head start chain holds (2026-08-31)", () => {
+  // Owner: "voice mode still has a 'thinking' and doesnt answer quickly." Measured with the
+  // product's own packet: the first sentence exists on the stream at 1.6–2.2s; the full reply at
+  // 2.7–4.7s; the shipped player waited for all of it, behind four SEQUENTIAL context reads.
+  // The chain: canvas-chat streams spoken turns into spoken-opener.ts's watcher → learning-canvas
+  // primes the player with the first sentence → start() CONTINUES the primed timeline when its
+  // plan opens with that exact text. Break any link and voice is slow again while every test
+  // beside this one stays green.
+  const chat = strip(read("./canvas-chat.ts"));
+  assert.match(chat, /await Promise\.all\(\[\s*pinnedCommentsBlock\(uid, canvas\),\s*loadMemory\(uid\),\s*loadProjectInstructions\(uid, canvas\.id\),\s*loadToolCatalogue\(\),\s*\]\)/, "the four context reads run one after another again — a quarter to a full second of queue time is back on every turn");
+  assert.match(chat, /surroundings\.spokenConversation && onSpokenOpener \? spokenOpenerWatch\(\) : null/, "the stream watcher lost its gate — either typed turns stream for nothing, or spoken turns never stream at all");
+  assert.match(chat, /const opener = watch\.feed\(accumulated\);\s*if \(opener\) onSpokenOpener\?\.\(opener\);/, "the watcher's opener no longer reaches the caller");
+
+  const audio = strip(read("./use-response-audio.ts"));
+  assert.match(audio, /prime: \(text: string\) => void;/, "the player lost prime() — nothing can start the reply's audio early");
+  assert.match(audio, /parts\[0\]\?\.text === head\.text/, "the continuation no longer proves the primed text is the plan's own opener — a mismatch would double-speak or truncate");
+  assert.match(audio, /primed\.current = null;\s*teardown\(\);/, "stop() no longer kills a primed head start");
+
+  const voice = strip(VOICE);
+  const primeGate = /primeReply: \(opener: string\) => \{\s*if \(!alwaysSpeak\) return;/;
+  assert.match(voice, primeGate, "the head start lost its session gate — audio could start uninvited outside a voice conversation");
+  assert.match(voice, /if \(arrived && player\.primedOpener\(\) === null\) replyAudio\.stop\(\);/, "the autoplay effect stops the very audio the head start began — the opener is cut mid-word on every voice turn");
+
+  const canvas = CANVAS;
+  assert.match(canvas, /\(opener\) => voiceRef\.current\?\.primeReply\(opener\)/, "converse no longer hands the opener to the voice");
+  assert.match(canvas, /concludePrime\(Boolean\(decision\?\.say\)\)/, "a primed turn that dies silent strands the conversation in 'speaking' for ever");
+
+  const loop = strip(HOOK);
+  assert.match(loop, /\(stage\.current === "waiting" \|\| stage\.current === "speaking"\) && !busy && replyAudio\.status === "idle"/, "the speaking-with-idle-player grace is gone — a failed head start stalls the loop with no way back to the microphone");
+});
+
+test("🔴 spoken turns ask for the minimal decision block, typed turns are untouched (2026-08-31)", () => {
+  // ~344 bytes of JSON preamble streamed before the first word of a spoken answer; the lean
+  // block measured at 29–77. The instruction lives INSIDE the spokenConversation packet block,
+  // so a typed turn's packet stays byte-identical.
+  const router = read("../../../lib/learn/turn-router.ts");
+  const spoken = /context\.spokenConversation\s*\?[\s\S]*?role: "system" as const,\s*\}\]\s*:\s*\[\]\),/.exec(router);
+  assert.ok(spoken, "the spoken-conversation packet block is gone");
+  assert.match(spoken[0], /keep the decision block itself minimal/, "the lean-block ask left the packet — half a second of JSON preamble is back before every spoken answer");
+  assert.match(spoken[0], /\{"then": "reply"\}/, "the worked example is gone, and the contract's own lesson is that the model sends what the shape shows");
+});

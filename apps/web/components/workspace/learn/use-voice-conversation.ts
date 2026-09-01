@@ -210,11 +210,18 @@ export function useVoiceConversation(input: {
     // and the turn over gets a short grace (the force-play effect runs a beat after `busy`
     // falls), and then the microphone opens again. Without this the conversation stalls exactly
     // once and looks broken for ever after.
-    if (stage.current === "waiting" && !busy && replyAudio.status === "idle" && !replyAudio.playing) {
+    //
+    // 🔴 "speaking" WITH THE PLAYER IDLE IS THE SAME STRANDING, REACHED THE NEW WAY. A primed
+    // head start (see `prime` in use-response-audio.ts) moves this loop to "speaking" the moment
+    // the opener begins loading; if that one request then fails before any sound, the player
+    // resets to idle and no "playback finished" is ever coming — the same grace reopens the
+    // microphone. Unreachable from "speaking" on the shipped path: finished playback keeps the
+    // player active (complete, not playing), never idle.
+    if ((stage.current === "waiting" || stage.current === "speaking") && !busy && replyAudio.status === "idle" && !replyAudio.playing) {
       if (quietTurn.current === null) {
         quietTurn.current = window.setTimeout(() => {
           quietTurn.current = null;
-          if (!alive.current || stage.current !== "waiting") return;
+          if (!alive.current || (stage.current !== "waiting" && stage.current !== "speaking")) return;
           stage.current = "listening";
           dictation.reset();
           dictation.start();

@@ -975,6 +975,10 @@ export function LearningCanvas({
     said: null,
   });
 
+  /** The voice controller, where `converse` can reach it — assigned beside `useCanvasVoice` below,
+   *  which is defined after `converse` because their cycle is real (see that assignment). */
+  const voiceRef = useRef<ReturnType<typeof useCanvasVoice> | null>(null);
+
   const converse = useCallback(
     async (asked: string, staged: CanvasBlock | null = null, withCapability: ComposerCapability | null = null) => {
       const trimmed = asked.trim();
@@ -1022,7 +1026,15 @@ export function LearningCanvas({
           // moves on. The action in flight is stamped rather than a bare `true`, which is what makes
           // attention return by itself; see `materialOwnsAttention`.
           setMaterialRequestedDuring(actionKey(policy.decision?.action ?? null));
-        }, staged, withCapability);
+        }, staged, withCapability, true,
+        // 🔴 THE VOICE HEAD START: the reply's first sentence, off the model's stream, starts
+        // speaking while the rest is still being written. Only a live voice session acts on it —
+        // `primeReply` is a no-op otherwise, and the stream watcher only runs on spoken turns.
+        (opener) => voiceRef.current?.primeReply(opener));
+        // A primed sentence whose turn produced no reply must still finish (seal the timeline so
+        // the conversation loop's playback-finished rule fires); one whose reply is coming is
+        // continued by the autoplay effect and must NOT be sealed here. No-op when nothing primed.
+        voiceRef.current?.concludePrime(Boolean(decision?.say));
         remember({ replied: decision?.say ?? "", said: trimmed });
         // 🔴🔴 THE ONE THING ON THIS CANVAS THAT EXISTED NOWHERE DURABLE. `conversation` above is a
         // ref, capped at six turns, and its own comment says it is deliberately not persisted — so
@@ -1536,6 +1548,11 @@ export function LearningCanvas({
   // inside callbacks whose dependency lists must not grow a re-render per session toggle.
   const voiceConversingRef = useRef(spokenArrival);
   const voice = useCanvasVoice(turnInFlight ? null : spokenReply, voiceConversing);
+  // 🔴 THE HEAD-START CALLS REACH `converse` THROUGH A REF, the same seam `onScreen` uses and for
+  // the same reason: `converse` is a `useCallback` defined ABOVE this hook (their cycle is real —
+  // the voice needs the reply, the reply comes from converse) and must not re-create on every
+  // answer. Written every render, so whatever `voice` is by the time a stream speaks is what runs.
+  voiceRef.current = voice;
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
   //

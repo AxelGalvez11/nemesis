@@ -108,6 +108,19 @@ function proseFields(voice: ReadingVoice): { locale: string; provider: TtsProvid
 }
 
 /**
+ * One prose utterance in the learner's chosen voice — the shape `replySpeechPlan` gives every
+ * prose chunk, importable on its own.
+ *
+ * 🔴 THIS IS WHAT THE EARLY-SPOKEN OPENER IS SYNTHESISED AS (see `spoken-opener.ts`), and it lives
+ * HERE so the fields cannot drift from the plan's own prose branch: the continuation in
+ * `use-response-audio.ts` matches the primed opener against `plan[0]` by text, which is only sound
+ * while both were built by the same hands.
+ */
+export function openerUtterance(text: string, voice: ReadingVoice): ReplyUtterance {
+  return { ...proseFields(voice), speed: ANSWER_SPEED, text };
+}
+
+/**
  * The ordered synthesis plan for one answer.
  *
  * 🔴 FED THE RAW REPLY, NEVER A FLATTENED COPY. The split is what routes a marked sentence to the

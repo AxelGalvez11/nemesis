@@ -316,6 +316,9 @@ export interface CanvasSession {
     capability?: ComposerCapability | null,
     /** Whether this turn may be parked behind a clarification card. False on a resumed turn. */
     mayAsk?: boolean,
+    /** The reply's first sentence read off the model's stream, spoken turns only — the voice
+     *  head start. Forwarded verbatim to `askCanvasChat`; see the parameter there. */
+    onSpokenOpener?: (opener: string) => void,
   ) => Promise<TurnDecision | null>;
   /**
    * The course this canvas is working through, or null — loaded with the canvas, set the moment
@@ -1685,6 +1688,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
        * can. The turn still runs — the question is simply dropped and `then` happens.
        */
       mayAsk = true,
+      onSpokenOpener?: (opener: string) => void,
     ): Promise<TurnDecision | null> => {
       const id = requireUid();
       if (!id) return null;
@@ -1817,7 +1821,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       capability === "course",
       // …and the one that IS a branch, over there rather than here: a declared Web search is the
       // learner deciding, so it forces the first round rather than being argued for in the packet.
-      forceWeb);
+      forceWeb,
+      // The voice head start, riding through untouched — the gate (spoken turns only) is inside.
+      onSpokenOpener);
       setBusy({ kind: null });
       setMilestones([]);
       setStage("decided");
