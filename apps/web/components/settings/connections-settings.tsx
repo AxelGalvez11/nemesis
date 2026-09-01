@@ -15,7 +15,7 @@
 // that rather than showing three dead buttons — this codebase's most-repeated defect is a control
 // that does not do anything.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { beginConnect, connectionStatus, disconnect, NOT_CONFIGURED, type ConnectionStatus } from "@/lib/workspace/composio-client";
 import { groupApps } from "@/lib/workspace/composio-apps";
@@ -26,6 +26,8 @@ export function ConnectionsSettings() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Guards against the focus listener setting state after the panel is gone. */
+  const alive = useRef(true);
 
   const refresh = useCallback(async () => {
     // 🔴 THE CANVAS'S CACHED CATALOGUE GOES WITH EVERY REFRESH. It holds what this learner can ask
@@ -33,12 +35,29 @@ export function ConnectionsSettings() {
     // that list changes. Without this line, connecting Gmail and going straight to a canvas to ask
     // about your mail reads exactly like the connection not having worked.
     forgetToolCatalogue();
-    setStatus(await connectionStatus());
+    const next = await connectionStatus();
+    if (!alive.current) return;
+    setStatus(next);
     setLoaded(true);
   }, []);
 
   useEffect(() => {
+    alive.current = true;
     void refresh();
+    // 🔴 AND AGAIN WHEN THE TAB COMES BACK, WHICH IS THE WHOLE SHAPE OF THIS FLOW. Connecting opens
+    // the provider's page in ANOTHER tab, so this component never unmounts and never re-ran its
+    // one read. The learner authorised Google, returned, and the row still said "Connect" — the
+    // notice below used to tell them to reload the page themselves, which is a product asking a
+    // person to do its own bookkeeping. Owner, 2026-08-31: "I connected my Google Calendar ... but
+    // it doesn't say connected or anything when they go back."
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      // The listener must not outlive the panel, or it sets state on an unmounted component every
+      // time the window is focused for the rest of the session.
+      alive.current = false;
+      window.removeEventListener("focus", onFocus);
+    };
   }, [refresh]);
 
   const connect = useCallback(
@@ -53,7 +72,7 @@ export function ConnectionsSettings() {
       }
       // 🔴 `noopener` — the provider's page must not get a handle on this one.
       window.open(url, "_blank", "noopener,noreferrer");
-      setNotice("Finish signing in on the tab that just opened, then come back and refresh this page.");
+      setNotice("Finish signing in on the tab that just opened. This page updates itself when you come back.");
     },
     [],
   );

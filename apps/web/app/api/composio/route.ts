@@ -89,10 +89,21 @@ async function statusFor(uid: string): Promise<Response> {
   const res = await composio(`/connected_accounts?user_ids=${encodeURIComponent(uid)}`);
   if (!res.ok) return Response.json({ apps: APPS, configured: true, connected: [] });
   const payload = (await res.json()) as { items?: { toolkit?: { slug?: string }; status?: string }[] };
-  const connected = (payload.items ?? [])
-    .filter((item) => item.status === "ACTIVE")
-    .map((item) => item.toolkit?.slug ?? "")
-    .filter(Boolean);
+  // 🔴 DEDUPED, BECAUSE ONE APP CAN HAVE SEVERAL LIVE CONNECTIONS AND THE OWNER'S ACCOUNT DOES.
+  // Authorising twice (a first attempt that looked like it failed, then a second) leaves two ACTIVE
+  // rows for the same toolkit, and Composio is right to keep both. Passing the duplicate on is what
+  // is wrong: `toolsFor` loops over this list to fetch each app's catalogue, so a doubled slug
+  // fetched that toolkit twice and then took a DOUBLE SHARE of the round-robin budget, quietly
+  // starving whatever sorted last. Measured on the owner's account 2026-08-31: two ACTIVE
+  // googlecalendar rows for one user.
+  const connected = [
+    ...new Set(
+      (payload.items ?? [])
+        .filter((item) => item.status === "ACTIVE")
+        .map((item) => item.toolkit?.slug ?? "")
+        .filter(Boolean),
+    ),
+  ];
   return Response.json({ apps: APPS, configured: true, connected });
 }
 

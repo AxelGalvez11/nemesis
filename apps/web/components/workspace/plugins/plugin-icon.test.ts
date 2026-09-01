@@ -4,6 +4,8 @@ import { test } from "node:test";
 
 import { CONNECTABLE_APPS } from "@/lib/workspace/composio-apps";
 
+import { APP_LOGO } from "@/lib/workspace/app-logos";
+
 import { AWAITING_MARK } from "./marks";
 
 // The icon lane, guarded the way `plugins-page.test.ts` guards layout: by reading source rather
@@ -74,13 +76,14 @@ test("🔴 every offered app is accounted for: a real mark, or a listed decision
   // nobody looked. See that constant for why hand-drawing the missing ones is the wrong answer.
   for (const slug of slugs) {
     const drawn = new RegExp(`\\b${slug}:\\s*\\w+Mark\\b`).test(marksIndexCode);
+    const filed = typeof APP_LOGO[slug] === "string";
     const waiting = AWAITING_MARK.includes(slug);
     assert.ok(
-      drawn || waiting,
-      `"${slug}" is offered by /api/composio but has no mark and is not listed in AWAITING_MARK. ` +
-        "Add a real mark, or add it to that list and say why.",
+      drawn || filed || waiting,
+      `"${slug}" is offered by /api/composio but has no drawn mark, no logo file, and is not listed ` +
+        "in AWAITING_MARK. Add artwork, or add it to that list and say why.",
     );
-    assert.ok(!(drawn && waiting), `"${slug}" both has a mark and claims to be waiting for one`);
+    assert.ok(!(waiting && (drawn || filed)), `"${slug}" has artwork and also claims to be waiting for it`);
     if (drawn) assert.ok(slug in MARK_FILES, `"${slug}" has no marks/*-mark.tsx source file loaded by this test`);
   }
 
@@ -97,8 +100,24 @@ test("🔴 plugin-icon.tsx actually looks the slug up in MARKS, not a dead impor
 
 // ── Two: nothing hotlinks ─────────────────────────────────────────────────────────────────────
 
+test("🔴🔴 every logo file is served from our own origin, never a vendor's CDN", () => {
+  // A remote src is a request to a third party on every page load, a beacon telling them which of
+  // our users opened the page, and a broken square the day they re-cut the asset.
+  for (const [slug, src] of Object.entries(APP_LOGO)) {
+    assert.match(src, /^\/brand\//, `"${slug}" points at ${src}, which is not a path under our own /brand`);
+    assert.ok(!/^https?:/i.test(src), `"${slug}" hotlinks a remote logo`);
+  }
+});
+
 test("🔴🔴 no mark hotlinks a third-party image, and none loads a remote stylesheet URL", () => {
-  const sources = [["plugin-icon.tsx", iconCode], ["marks/index.ts", marksIndexCode]] as const;
+  // 🔴 NARROWED FOR `plugin-icon.tsx` ONLY, AND THE INTENT IS UNCHANGED. This banned `<img>`
+  // outright, which was right while every mark was inline. It is now the second tier: the vendors'
+  // own files, from OUR origin, because their internal ids collide when inlined (googlesheets.svg
+  // alone defines `a`, `b` and `c`). A local `/brand/…` src is not a hotlink and never was — the
+  // front door has drawn Google's four that way since #911. What still must never appear is a
+  // REMOTE url, and the `https?://` assertion below is what actually pins that, unchanged, for
+  // every file including this one. `marks/` keeps the absolute ban.
+  const sources = [["marks/index.ts", marksIndexCode]] as const;
   const markSources = Object.entries(MARK_FILES).map(([slug, source]) => [`marks (${slug})`, code(source)] as const);
   // `url(#clip-id)` is how an SVG points a `clipPath` at its own `<defs>` a few lines up: a
   // same-document fragment reference, zero network I/O, and the idiom `GmailMark` uses so two
@@ -106,6 +125,11 @@ test("🔴🔴 no mark hotlinks a third-party image, and none loads a remote sty
   // one hardcoded id. A hotlink is `url(` pointed at an actual address instead of a local `#id` or
   // an inlined `data:` URI, so only THAT shape is what this checks for.
   const externalUrlRef = /url\(\s*['"]?(?!#|data:)\S/i;
+  // plugin-icon.tsx is checked for the thing that actually matters — no remote address, and no
+  // url() pointing anywhere but a local #id — while being allowed its local <img> tier.
+  assert.ok(!/https?:\/\//i.test(iconCode), "plugin-icon.tsx references a network URL; that is a hotlink");
+  assert.ok(!externalUrlRef.test(iconCode), "plugin-icon.tsx points url() at something other than a local #id");
+  assert.match(iconCode, /src=\{src\}/, "the logo-file tier stopped drawing its source");
   for (const [name, source] of [...sources, ...markSources]) {
     assert.ok(!/<img\b/i.test(source), `${name} draws an <img> element; marks must be inline SVG`);
     assert.ok(!/https?:\/\//i.test(source), `${name} references a network URL; that is a hotlink`);

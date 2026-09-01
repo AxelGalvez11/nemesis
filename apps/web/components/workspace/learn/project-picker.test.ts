@@ -12,6 +12,7 @@ const PICKER = read("./project-picker.tsx");
 const HOME = read("./canvas-home.tsx");
 const CANVAS = read("./learning-canvas.tsx");
 const ENTRY = read("../../../lib/learn/learn-entry.ts");
+const LOGOS = read("../../../lib/workspace/app-logos.ts");
 const ROUTE = read("../../../app/(workspace)/learn/page.tsx");
 
 test("🔴🔴 the row is always under the composer, not only once you type", () => {
@@ -47,17 +48,33 @@ test("🔴 the row carries the connected apps beside the project, as the referen
   // add them"* — so the answer was to go and GET the artwork, not to approximate it. What the guard
   // protects now is the part that was never about taste: the files are OURS to serve and are
   // UNMODIFIED.
-  assert.match(PICKER, /const APP_LOGO: Record<string, string> = \{/, "the app logos are gone");
+  // 🔴 THE MAP MOVED TO `lib/workspace/app-logos.ts` AND THIS GUARD FOLLOWED IT. The Plugins page
+  // was about to keep a second copy, and two answers to "which file is Outlook's" drift silently:
+  // a row renders a letter instead of a mark and nobody can tell which map was stale. What is
+  // asserted is unchanged — the files are OURS to serve, and they are real and unmodified.
+  assert.match(LOGOS, /export const APP_LOGO: Readonly<Record<string, string>> = \{/, "the app logos are gone");
+  assert.match(PICKER, /import \{ APP_LOGO \} from "@\/lib\/workspace\/app-logos"/, "the row stopped reading the shared logo map");
   const code = PICKER.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   // 🔴 SELF-HOSTED, NEVER HOT-LINKED. A gstatic URL would put Google on the request path for every
   // page view and break silently the day they re-cut the set.
   assert.ok(!/https?:\/\//.test(code), "the row loads a logo from someone else's server");
+  const logoCode = LOGOS.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/https?:\/\//.test(logoCode), "the logo map points at someone else's server");
   for (const app of ["drive", "gmail", "calendar", "docs"]) {
-    assert.match(code, new RegExp(`/brand/google/${app}\\.svg`), `the ${app} logo is not wired`);
+    assert.match(logoCode, new RegExp(`/brand/google/${app}\\.svg`), `the ${app} logo is not wired`);
     const file = new URL(`../../../public/brand/google/${app}.svg`, import.meta.url);
     const svg = readFileSync(file, "utf8");
     assert.match(svg, /^<svg/, `${app}.svg is not an svg`);
     assert.ok(svg.length > 400, `${app}.svg looks truncated`);
+  }
+  // 🔴 AND THE SEVEN VENDORED 2026-08-31, BY THE SAME RULES. Every one is a real file on disk under
+  // our own public/, so a path typo cannot ship as a silently broken square.
+  for (const app of ["canvas", "google_classroom", "googlesheets", "notion", "one_drive", "outlook", "zoom"]) {
+    assert.match(logoCode, new RegExp(`/brand/apps/${app}\\.svg`), `the ${app} logo is not wired`);
+    const svg = readFileSync(new URL(`../../../public/brand/apps/${app}.svg`, import.meta.url), "utf8");
+    assert.match(svg, /^(<svg|<\?xml)/, `${app}.svg is not an svg`);
+    assert.ok(svg.length > 300, `${app}.svg looks truncated`);
+    assert.ok(!/https?:\/\/(?!www\.w3\.org)/.test(svg), `${app}.svg references an external URL`);
   }
   // 🔴🔴 `<img>`, NEVER INLINED, AND IT IS NOT A STYLE PREFERENCE. All four SVGs define internal ids
   // and TWO OF THEM USE `a` (`<mask id="a">`, `fill="url(#a)"`). Inlined together those ids collide

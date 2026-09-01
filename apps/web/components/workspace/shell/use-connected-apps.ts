@@ -33,20 +33,34 @@ export function useConnectedApps(): readonly string[] {
   const [connected, setConnected] = useState<readonly string[]>(readCache);
   useEffect(() => {
     let alive = true;
-    void connectionStatus().then(
-      (status) => {
-        if (!alive) return;
-        setConnected(status.connected);
-        try {
-          window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(status.connected));
-        } catch {
-          // A browser that refuses the cache costs one pop-in per load, nothing else.
-        }
-      },
-      () => {},
-    );
+    const read = () =>
+      void connectionStatus().then(
+        (status) => {
+          if (!alive) return;
+          // 🔴 UNIONED, NEVER REPLACED, BECAUSE THE RAIL'S RULE IS ARRIVE-AND-STAY. The owner's
+          // 2026-08-19 "why do the icons disappear?" is what `visibleNav` is built around: gates
+          // must be monotonic within a session, and flicker is the sin. Re-reading on focus could
+          // otherwise take Plugins away mid-session on one slow or half-failed response, which is
+          // a worse bug than the one this re-read fixes. A disconnection still takes effect on the
+          // next load; within a session the row only ever appears.
+          setConnected((had) => [...new Set([...had, ...status.connected])]);
+          try {
+            window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(status.connected));
+          } catch {
+            // A browser that refuses the cache costs one pop-in per load, nothing else.
+          }
+        },
+        () => {},
+      );
+    read();
+    // 🔴 AND AGAIN WHEN THE TAB COMES BACK. Connecting an app happens in ANOTHER tab, so nothing
+    // here unmounts and the single read above never ran again: the learner authorised Google
+    // Calendar, returned, and the Calendar row still was not there. Owner, 2026-08-31.
+    const onFocus = () => read();
+    window.addEventListener("focus", onFocus);
     return () => {
       alive = false;
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
   return connected;
