@@ -1706,15 +1706,16 @@ export function LearningCanvas({
    */
   const [rewound, setRewound] = useState<string | null>(null);
 
-  // 🔴🔴 THE SECOND VIEW IS BACK, BY THE SAME OWNER, THE SAME DAY. The morning cut (#937) read
-  // *"why is latest output option even there in the first place?"* as the VIEW being unnecessary
-  // and deleted it whole. By evening, looking at the chat: *"also there should be a way to chat
-  // mode to canvas mode"*. What was actually unnecessary was the DOOR he was shown — a wordy row
-  // buried in a menu — not the place it led. The view returns with a visible, gated glyph in the
-  // header (`CanvasViewControl`) and none of what made it a defect factory: no localStorage pin
-  // (#930's in-memory rule stands, fenced below in canvas-chat-is-the-product.test.ts), and the
-  // conversation is the default on every visit.
-  const { toggle: toggleView, view } = useCanvasView();
+  // 🪦 THE SECOND VIEW IS PARKED, AND ITS DOOR IS PULLED (2026-09-01). It died in the morning of
+  // #937, came back that same evening as a gated header glyph, and is now shut again — owner,
+  // shown that the glyph still worked: *"we hid the canvas view to work on it later"* / *"yeah
+  // pull the glyph"*. The tombstone in canvas-controls.tsx says what to put back.
+  //
+  // 🔴 THE HOOK STAYS, AND `view` IS STILL READ. Every gate below asks `view === "conversation"`
+  // and gets the honest answer; the value simply never changes now, because nothing can change
+  // it. Ripping the state out to delete a button would turn a parked view into a deleted one, and
+  // would take the localStorage healer with it — #930's pin is still in real browsers.
+  const { view } = useCanvasView();
 
 
   /**
@@ -1996,9 +1997,6 @@ export function LearningCanvas({
     hold();
     return release;
   }, [sendSeq, threadOpen]);
-  // The door is withheld until there is a conversation to switch away from, and monotonic within
-  // a session — the 2026-08-19 rule: chrome may arrive and stay, never come and go.
-  const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
 
   /**
    * Re-ask a question and let the answer land as a new turn.
@@ -2400,8 +2398,6 @@ export function LearningCanvas({
       onDropFiles={attachWithChips}
       chrome={
       <CanvasHeader
-        onToggleView={conversationOffered ? toggleView : undefined}
-        view={conversationOffered ? view : undefined}
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
         // 🔴 THE SOURCES PANEL HAS TO BE ABLE TO SAY "THE MODEL" (N10), AND IT ASKS THE CLAIMS

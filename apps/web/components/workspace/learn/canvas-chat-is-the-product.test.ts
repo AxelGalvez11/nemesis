@@ -52,26 +52,33 @@ test("🔴🔴 the chat is the DEFAULT view, and the second one is a door, not a
   assert.match(CANVAS, /const threadOpen = view === "conversation" && !viewing;/, "the thread gate lost the view");
 });
 
-test("🔴 the view door is a gated header glyph, wording owned by canvasViewAction", () => {
+test("🪦 the view door is PULLED — the canvas opens on the conversation and cannot leave it", () => {
+  // Owner, 2026-09-01: *"we hid the canvas view to work on it later"* / *"yeah pull the glyph"*.
+  //
+  // 🔴 THIS TEST WAS THE OPPOSITE ASSERTION UNTIL TODAY, and it was right both times — the door
+  // was correctly built and correctly gated. What changed is a PRODUCT decision about a parked
+  // view, not a defect in the control, so the control's own rules (glyph names the destination,
+  // `canvasViewAction` owns the words, gated on a conversation existing) are recorded in the
+  // tombstone rather than deleted. Restoring the door means restoring them too.
   const CONTROLS = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
   const HEADER = strip(readFileSync(new URL("./canvas-header.tsx", import.meta.url), "utf8"));
-  const at = CONTROLS.indexOf("export function CanvasViewControl");
-  assert.ok(at > 0, "the view control is gone");
-  const body = CONTROLS.slice(at, at + 900);
-  assert.match(body, /canvasViewAction\(view\)/, "the control no longer writes its wording through canvasViewAction");
-  assert.match(body, /aria-label=\{action\}/, "the control's accessible name is not the action's own words");
-  assert.match(body, /onClick=\{onToggleView\}/, "the control does not actually switch the view");
-  assert.match(body, /view === "conversation" \? "output" : "comment-discussion"/, "the door's glyphs changed — repoint the font check below");
-  const css = readFileSync(new URL("../../../../../node_modules/@vscode/codicons/dist/codicon.css", import.meta.url), "utf8");
-  for (const name of ["output", "comment-discussion"]) {
-    assert.ok(css.includes(`.codicon-${name}:before`), `codicon-${name} is not in the font`);
-  }
-  assert.match(
-    HEADER,
-    /\{view && onToggleView && <CanvasViewControl onToggleView=\{onToggleView\} view=\{view\} \/>\}/,
-    "the header stopped gating the door on a conversation existing",
-  );
-  assert.match(CANVAS, /onToggleView=\{conversationOffered \? toggleView : undefined\}/, "the canvas stopped withholding the door");
+  assert.ok(!/export function CanvasViewControl/.test(CONTROLS), "the view control is mounted again");
+  assert.ok(!/<CanvasViewControl/.test(HEADER), "the header draws the view door again");
+  assert.ok(!/onToggleView/.test(HEADER), "the header still takes the door's props");
+  assert.ok(!/onToggleView|conversationOffered/.test(CANVAS), "the canvas still offers the door");
+});
+
+test("🔴🔴 pulling the door did NOT delete the view — the machinery is parked, not gone", () => {
+  // The whole reason to keep this file's other tests meaningful. `threadOpen` still asks the view
+  // what it is; the hook still runs, still refuses storage, and still heals #930's pin, which is
+  // sitting in real browsers whether or not anything can set it today.
+  const HOOK = strip(readFileSync(new URL("./use-canvas-view.ts", import.meta.url), "utf8"));
+  assert.match(CANVAS, /const \{ view \} = useCanvasView\(\)/, "the canvas stopped reading the view at all");
+  assert.match(CANVAS, /const threadOpen = view === "conversation" && !viewing;/, "the thread gate lost the view");
+  assert.match(HOOK, /removeItem\(CANVAS_VIEW_STORAGE_KEY\)/, "the healer went out with the door");
+  const VIEW = strip(readFileSync(new URL("../../../lib/learn/canvas-view.ts", import.meta.url), "utf8"));
+  assert.match(VIEW, /export function canvasViewAction/, "the door's wording is gone — restoring the glyph now has no words");
+  assert.match(VIEW, /DEFAULT_CANVAS_VIEW: CanvasView = "conversation"/, "the unreachable default is no longer the conversation");
 });
 
 test("🔴🔴 the thread is in the SAME scroller as the live answer, not an overlay over it", () => {

@@ -31,7 +31,6 @@ import { deckDesign } from "@/lib/export/deck-designs";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
-import { canvasViewAction, type CanvasView } from "@/lib/learn/canvas-view";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { OutputPreview } from "./output-preview";
@@ -115,21 +114,22 @@ export const CONTROL =
   "pointer-events-auto relative flex h-[36px] w-[36px] items-center justify-center rounded-[8px] text-(--ui-text-tertiary) " +
   "transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
-/** The chat↔canvas door — a visible, gated glyph (owner, evening of 2026-08-30: *"there should
- *  be a way to chat mode to canvas mode"*, hours after the morning cut deleted the view with its
- *  buried menu row). The glyph names the DESTINATION: an output mark while the conversation is
- *  open, a speech mark while the focused output is; `canvasViewAction` owns the words so the
- *  tooltip and a screen reader cannot drift from what the click does. The header withholds both
- *  props until there is a conversation to leave — so a brand-new canvas still shows a bare
- *  title, and the no-unconditional-control rule of icons-earn-their-place.test.ts holds. */
-export function CanvasViewControl({ onToggleView, view }: { onToggleView: () => void; view: CanvasView }) {
-  const action = canvasViewAction(view);
-  return (
-    <button aria-label={action} className={cn(CONTROL, "shrink-0")} onClick={onToggleView} title={action} type="button">
-      <Codicon name={view === "conversation" ? "output" : "comment-discussion"} size="20px" />
-    </button>
-  );
-}
+// 🪦 `CanvasViewControl` — THE CHAT↔CANVAS DOOR, PULLED 2026-09-01 BY THE OWNER: *"yeah pull the
+// glyph"*, on being told the glyph was still in the header while the view it opens is parked
+// (*"we hid the canvas view to work on it later"*).
+//
+// 🔴 THE VIEW ITSELF IS NOT DELETED, AND THAT IS THE POINT. `useCanvasView`, `CanvasView`,
+// `canvasViewAction` and every `view === "conversation"` gate are untouched; the canvas simply
+// opens on the conversation and has no way to leave it. Deleting the machinery to remove a button
+// is how a parked feature becomes an unbuilt one.
+//
+// 🔴 IT ALSO CLOSES THE LAST DOOR TO THE FULL-PAGE REWIND. Going back on the rail scrolls the
+// conversation (#1011); the overlay only ever appeared on this view, or as the fallback for a
+// moment the thread does not draw. With the view unreachable, so is the first of those.
+//
+// Restoring it is: this component (glyph = destination, `canvasViewAction` owns the words), the
+// `view`/`onToggleView` props on `CanvasHeader`, and `conversationOffered` in learning-canvas —
+// the gate that kept it off a bare canvas. Its guards live in canvas-chat-is-the-product.test.ts.
 
 
 // 🔴🔴 EVERY PANEL HANGS OFF THE ROW, NOT OFF ITS OWN GLYPH (owner 2026-08-30: *"Can you make sure
