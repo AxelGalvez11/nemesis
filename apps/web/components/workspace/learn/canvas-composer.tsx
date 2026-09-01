@@ -81,6 +81,7 @@ export const IDLE_REPLY_AUDIO = {
   stop: () => {},
 } as const;
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
+import { backspaceClearsCapability, CapabilityChip } from "./capability-chip";
 import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 
@@ -931,7 +932,13 @@ export function CanvasComposer({
             />
 
             {(
-            <div className="relative shrink-0" ref={addMenu}>
+            // 🔴🔴 NOT `relative` — THE MENU HANGS OFF THE COMPOSER, NOT OFF THIS BUTTON. A fixed
+            // offset from the `+` was measured when this box was one 52px row, and the box grows: at
+            // three lines of typing, `bottom-[46px]` put the menu straight over the learner's own
+            // words. The card above is `relative`, so with nothing positioned in between, `bottom-full`
+            // means "clear of the whole pill" at every height it can take. The front door carries the
+            // same change with `top-full`; see its note for the report that found this.
+            <div className="shrink-0" ref={addMenu}>
               <button
                 aria-expanded={addOffers.length > 1 ? addOpen : undefined}
                 aria-haspopup={addOffers.length > 1 ? "menu" : undefined}
@@ -960,7 +967,7 @@ export function CanvasComposer({
 
               {addOffers.length > 1 && addOpen && (
                 <div
-                  className={cn("absolute bottom-[46px] left-0", ADD_MENU)}
+                  className={cn("absolute bottom-full left-0 mb-[8px]", ADD_MENU)}
                   // 🔴 A SENTINEL FOR THE CHARACTER'S DOCK, PRESENT ONLY WHILE THE MENU IS OPEN.
                   // The popover is absolutely positioned, so `#canvas-composer`'s bounding box —
                   // the one CharacterDock measures to float clear of — cannot see it, and the
@@ -990,29 +997,20 @@ export function CanvasComposer({
 
             {/* 🔴 THE CAPABILITY SITS IN THE INPUT ROW ITSELF, LIKE THE REFERENCE COMPOSER'S OWN
                 TOOL LABEL — the owner asked for exactly this composition (2026-08-23, screenshots):
-                icon and name inline where the text starts, in the accent, with the words flowing
-                after them. It declares what THIS submission is, so it lives where the submission is
-                typed — the chips row above is for material. Its × stays always visible: a
-                hover-only dismiss is a control that does not exist on touch. One-shot by
-                construction — `submit` clears it — so it can never harden into a mode indicator. */}
+                icon and name inline where the text starts, with the words flowing after them. It
+                declares what THIS submission is, so it lives where the submission is typed — the
+                chips row above is for material. One-shot by construction — `submit` clears it — so
+                it can never harden into a mode indicator.
+
+                🔴 THE ✕ IS GONE AND BACKSPACE REPLACES IT (owner, 2026-09-01, with the reference on
+                screen). The old note here defended the ✕ because "a hover-only dismiss does not
+                exist on touch" — true of a hover-only ✕, and beside the point: the reference has no
+                dismiss control at all. It makes the chip a character in the line and lets the
+                delete key do what the delete key does. `ml-[8px]` plus the chip's own 4px of
+                padding puts the icon at the 12px the words start at, so the line begins in the same
+                place whether or not anything is staged. */}
             {capability && !listening && (
-              <div className="ml-[12px] flex shrink-0 items-center gap-[6px] text-(--ui-action)">
-                <Codicon className="shrink-0" name={CAPABILITY_COPY[capability].icon} size="1rem" />
-                {/* §46.3-exempt: it shares the input's own line and must be exactly the input's
-                    size — and that size is the 16px iOS-zoom threshold, not a scale step. A token
-                    here would let the label and the text it sits beside drift apart. */}
-                <span className="text-[16px] font-medium leading-[26px]">
-                  {CAPABILITY_COPY[capability].label}
-                </span>
-                <button
-                  aria-label={`Remove ${CAPABILITY_COPY[capability].label}`}
-                  className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                  onClick={() => onCapability?.(null)}
-                  type="button"
-                >
-                  <Codicon name="close" size="0.75rem" />
-                </button>
-              </div>
+              <CapabilityChip capability={capability} className="ml-[8px]" />
             )}
 
             {listening ? (
@@ -1098,7 +1096,9 @@ export function CanvasComposer({
                     "transition-[height] duration-90 ease-out motion-reduce:transition-none",
                     // The attach control used to supply this gap. Without it the text would start
                     // hard against the pill's edge.
-                    capability ? "ml-[8px]" : "ml-[12px]",
+                    // The chip ends with the reference's own 4px of padding, so the caret needs no
+                    // second gap after it; with nothing staged the words keep their 12px.
+                    capability ? "ml-0" : "ml-[12px]",
                   )}
                   disabled={busy}
                   onChange={(event) => {
@@ -1132,6 +1132,15 @@ export function CanvasComposer({
                       }
                     }
                     if (event.key === "Escape" && selected.length > 0) onClearSelection();
+                    // 🔴 BACKSPACE AT THE HEAD OF THE LINE TAKES THE CAPABILITY OFF IT — the
+                    // reference's own gesture, and the reason its pill needs no ✕ (owner,
+                    // 2026-09-01: *"user should be able to backspace to delete the mode"*).
+                    // `preventDefault` so one keypress cannot also eat a character of a sentence
+                    // the learner walked the caret back through.
+                    if (capability && backspaceClearsCapability(event)) {
+                      event.preventDefault();
+                      onCapability?.(null);
+                    }
                   }}
                   // 🔴 A PASTED DOCUMENT BECOMES MATERIAL, NOT A WALL OF TEXT IN THE PILL (owner
                   // 2026-08-31). It goes through `onFiles`, the same door a real upload uses, so it

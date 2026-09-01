@@ -127,10 +127,38 @@ test("🔴 the picker wears each project's own icon and colour, at the reference
   assert.match(PICKER, /py-\[8px\]/, "the rows drifted from the measured 36px");
 });
 
-test("🔴 the character steps aside while the + menu is open (owner: 'should not go behind the mascot')", () => {
+test("🔴🔴 the + menu opens clear of the character instead of hiding it", () => {
+  // 🔴 THE GUARD THIS REPLACES ASSERTED THE BUG. It pinned `opacity: addOpen ? 0 : 1` on the
+  // greeter, written for the owner's 2026-08-30 report that the menu "should not go behind the
+  // mascot". Fading the character satisfied the words and produced the next report — owner,
+  // 2026-09-01: *"the plus menu causes the mascot to disappear (the plus icon menu show be infront
+  // of mascot)."* A guard that describes the workaround is what makes the workaround permanent.
+  //
+  // 🔴 AND THE MENU CANNOT SIMPLY BE RAISED OVER THE CHARACTER, which is why the fade looked
+  // unavoidable: the composer card is `relative z-[1]`, so it opens a stacking context and any
+  // popover inside it is pinned to level 1 against the greeter's `z-30`, whatever z-index the
+  // popover carries. The fix is placement, not order — the menu hangs BELOW the composer, which is
+  // also where the reference puts it on this same screen (measured 2026-09-01: card 768x128, menu
+  // top edge 8px under the card's bottom, left edges flush).
   const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
-  assert.match(home, /opacity: addOpen \? 0 : 1/, "the + menu covers the character again");
-  assert.match(home, /pointerEvents: addOpen \? "none"/, "a hidden character still takes pokes");
+  const source = home.replace(/\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  assert.ok(!/opacity: addOpen/.test(source), "the character is hidden for the + menu again");
+  assert.ok(!/pointerEvents: addOpen/.test(source), "the character is switched off for the + menu again");
+  assert.match(source, /absolute left-0 top-full mt-\[8px\]/, "the front door's + menu no longer hangs below the composer");
+  assert.ok(!/bottom-\[52px\]/.test(source), "the + menu is back on a fixed offset from the button");
+});
+
+test("🔴🔴 neither + menu is anchored to its button, because the composer is what it must clear", () => {
+  // Both offsets were measured against a ONE-ROW composer and both boxes grow: the front door's is
+  // 128px tall since #902, and the session's grows with every line typed. A popover placed a fixed
+  // distance from a button sitting on the FLOOR of a growing box moves into the box as it grows.
+  // Anchoring to the card instead makes `top-full` / `bottom-full` mean "clear of the whole pill"
+  // at any height, so this cannot come back the next time either composer changes size.
+  const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
+  const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
+  assert.match(home, /<div className="shrink-0 justify-self-start self-end \[grid-area:add\]" ref=\{addMenu\}>/, "the front door's + wrapper is positioned again, so the menu anchors to the button");
+  assert.match(composer, /<div className="shrink-0" ref=\{addMenu\}>/, "the session's + wrapper is positioned again, so the menu anchors to the button");
+  assert.match(composer, /absolute bottom-full left-0 mb-\[8px\]/, "the session's + menu no longer clears the whole composer");
 });
 
 test("🔴🔴 a stray ?folder= never decides the surface", () => {

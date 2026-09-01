@@ -37,6 +37,7 @@ import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
 import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU } from "./add-menu-row";
+import { backspaceClearsCapability, CapabilityChip } from "./capability-chip";
 import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 import { ProjectPicker } from "./project-picker";
@@ -666,14 +667,23 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 : undefined
             }
           >
-            {/* 🔴 THE CHARACTER STEPS ASIDE WHILE THE `+` MENU IS OPEN — owner, 2026-08-30:
-                "opening the plus icon ... should not go behind the mascot because it kinda looks
-                messy." The menu rises over the greeter's corner and the character half-peeked
-                from behind its edge. Faded, not moved: motion would race the handoff transform
-                above, and the menu closes on any choice, so this is a blink, not a scene. */}
+            {/* 🔴🔴 THE CHARACTER NO LONGER STEPS ASIDE FOR THE `+` MENU, AND THE REASON IS THAT THE
+                MENU NO LONGER REACHES IT. Owner, 2026-08-30, seeing the menu clip the greeter's
+                corner: *"opening the plus icon … should not go behind the mascot because it kinda
+                looks messy"*; the answer at the time was to fade the character out while the menu
+                was open. That answer was wrong in a way only the second report showed — owner,
+                2026-09-01: *"the plus menu causes the mascot to disappear (the plus icon menu show
+                be infront of mascot)."*
+
+                🔴 AND RAISING THE MENU'S Z-INDEX COULD NEVER HAVE FIXED IT, which is why hiding the
+                character looked like the only move. The composer card is `relative z-[1]`, so it
+                opens a stacking context; a popover INSIDE it is pinned to level 1 against this
+                greeter's `z-30` whatever z-index the popover gives itself. The menu now opens
+                DOWNWARD, below the composer, where the character is not — the reference's own
+                placement on this same screen — so there is nothing left to fade and no z-order to
+                win. See the `+` wrapper below. */}
             <div
               className={greeter.motion === "jump" ? "character-jump" : greeter.motion === "spin" ? "character-spin" : undefined}
-              style={{ opacity: addOpen ? 0 : 1, pointerEvents: addOpen ? "none" : undefined, transition: "opacity 160ms ease-out" }}
             >
               {/* 🔴 `facing` MUST MATCH THE DOCK'S, AND THE HAND-OFF IS WHY IT IS NOT OPTIONAL.
                   This character flies into the canvas and BECOMES the dock's character; if the two
@@ -870,7 +880,17 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
               The capability row STAGES and starts nothing — §38's rule that a capability is a
               declaration, never a mode. */}
-          <div className="relative shrink-0 justify-self-start self-end [grid-area:add]" ref={addMenu}>
+          {/* 🔴🔴 NOT `relative` — THE MENU IS ANCHORED TO THE COMPOSER, NOT TO THIS BUTTON, AND
+              THAT IS THE WHOLE FIX. Owner, 2026-09-01, circling this region: *"there is a spacing
+              issue as circled."* The popover was placed `bottom-[52px]` from the `+`, which was
+              correct while the front door's composer was one 52px row and became wrong the day
+              #902 made it 128px tall: 52px up from a button sitting on the FLOOR of a 128px box
+              lands INSIDE the box, so the menu covered its own composer, then the heading, then the
+              character. Dropping `relative` here makes the nearest positioned ancestor the composer
+              card itself, so `top-full` means "below the whole pill" at any height it ever grows
+              to. Measured on the reference the same day: card 768x128 at radius 28, menu top edge
+              exactly 8px below the card's bottom, left edges flush. */}
+          <div className="shrink-0 justify-self-start self-end [grid-area:add]" ref={addMenu}>
             <button
               aria-expanded={addOpen}
               aria-haspopup="menu"
@@ -883,7 +903,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
               <Codicon name="add" size="var(--composer-icon)" />
             </button>
             {addOpen && (
-              <div className={cn("absolute bottom-[52px] left-0", ADD_MENU)} role="menu">
+              <div
+                className={cn("absolute left-0 top-full mt-[8px]", ADD_MENU)}
+                // 🔴 THE SENTINEL THE CHARACTER'S DOCK MEASURES, carried here so the front door and
+                // the session composer describe an open menu the same way. See its note in
+                // `canvas-composer.tsx`; renaming it re-creates that clash silently.
+                data-canvas-composer-popover=""
+                role="menu"
+              >
                 <AddMenuRow
                   detail="From your computer"
                   icon="file"
@@ -948,9 +975,10 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             )
           ) : (
             <>
-              {/* The staged capability, inline where the words will start — the same composition
-                  the session composer's chip uses, because it is the same declaration one screen
-                  earlier. Always-visible ×: a hover-only dismiss does not exist on touch. */}
+              {/* The staged capability, inline where the words will start — the same COMPONENT the
+                  session composer uses now, because it is the same declaration one screen earlier
+                  and the two hand-written copies had already drifted. It is removed with Backspace,
+                  not with a ✕; see `capability-chip.tsx` for the measurement that decided that. */}
               {/* 🔴 ONE CELL FOR THE WHOLE TEXT LINE. The staged capability and the words share a
                   line; two grid items cannot share one area, so they share a wrapper instead. It is
                   a flex row in both forms, so the one-row composer is unchanged by it. */}
@@ -964,22 +992,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   departing ? "" : "mx-[10px] self-start [grid-area:text]",
                 )}
               >
-              {capability && (
-                <div className="flex shrink-0 items-center gap-[6px] text-(--ui-action)">
-                  <Codicon className="shrink-0" name={CAPABILITY_COPY[capability].icon} size="1rem" />
-                  {/* §46.3-exempt: shares the input's own line — 16px is the iOS-zoom threshold
-                      the input itself documents, and the label must not drift from it. */}
-                  <span className="text-[16px] font-medium">{CAPABILITY_COPY[capability].label}</span>
-                  <button
-                    aria-label={`Remove ${CAPABILITY_COPY[capability].label}`}
-                    className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                    onClick={() => setCapability(null)}
-                    type="button"
-                  >
-                    <Codicon name="close" size="0.75rem" />
-                  </button>
-                </div>
-              )}
+              {capability && <CapabilityChip capability={capability} />}
               <input
                 // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
                 // 🔴 A LITERAL, NOT `--canvas-text-body`, EVEN THOUGH THAT TOKEN IS ALSO 16px TODAY.
@@ -1009,6 +1022,15 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     start();
+                  }
+                  // 🔴 BACKSPACE AT THE HEAD OF THE LINE TAKES THE CAPABILITY OFF IT, which is the
+                  // reference's own gesture and the reason its pill needs no ✕ (owner, 2026-09-01:
+                  // *"user should be able to backspace to delete the mode"*). `preventDefault` so
+                  // the same keypress cannot also eat a character of a sentence the learner walked
+                  // the caret back through.
+                  if (capability && backspaceClearsCapability(event)) {
+                    event.preventDefault();
+                    setCapability(null);
                   }
                 }}
                 // 🔴 THE SAME PASTE RULE THE CANVAS COMPOSER CARRIES, FROM THE SAME FUNCTION. This
