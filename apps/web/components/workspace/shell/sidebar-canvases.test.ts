@@ -122,6 +122,20 @@ test("🔴 an expanded project shows five canvases, then Show more — the refer
   assert.match(SIDEBAR, /\{children\.map\(\(child\) => folderRow\(child, depth \+ 1\)\)\}/, "sub-projects fell under the canvas cap");
 });
 
+test("🔴 there is no door that makes a NEW sub-project", () => {
+  // Owner 2026-09-01: "the projects have this option to do a sub project. I
+  // don't get why that's there. I don't need that."
+  //
+  // The ROW still draws (the test above), because folders that already have a
+  // parent exist in the database and hiding them would lose them. What is gone
+  // is the menu item, and with it the only caller that ever passed a parent.
+  // Matched as a rendered text node (`>...<`), not as a bare phrase: the note
+  // at the call site explains what was removed and says the words to do it.
+  assert.doesNotMatch(SIDEBAR, />New sub-project</, "the sub-project menu item came back");
+  assert.doesNotMatch(SIDEBAR, /newFolder\(folder\.id\)/, "something is creating a folder under another again");
+  assert.match(SIDEBAR, /createFolder\(userId, "New project", null\)/, "new projects must be filed at the top level");
+});
+
 test("🔴 projects order by recency through buildProjects — one rollup, shared with /projects", () => {
   // The sidebar must never disagree with the Projects page about which project was worked last,
   // so it reads the SAME tree rather than sorting folders by name (the store's own order) or by

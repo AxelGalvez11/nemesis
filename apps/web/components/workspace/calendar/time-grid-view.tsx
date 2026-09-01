@@ -57,6 +57,18 @@ const NOW_TICK_MS = 60_000;
  *  3.75rem, wide enough that "11 AM" floated away from the grid it labels. */
 const GUTTER_WIDTH = "3.1875rem";
 
+/** Google puts an 8px lane with a rule on its right between the hour gutter and
+ *  the first day column (`.EDDeke`), which is what makes the leftmost column
+ *  start clear of its own labels. 8 x 18/16 = 9px. */
+const LEAD_WIDTH = "0.5rem";
+
+/** The grid's ruling. Google draws every line on the surface — hour rules,
+ *  column rules, the top edge — in ONE colour at 1px: `#dde3ea`, which is 13%
+ *  dark on white. This app's stroke scale is 18/12/8/5%, so `secondary` at 12%
+ *  is the match. It was `quaternary` at 5%, less than half Google's weight,
+ *  which is why our rules read as a suggestion of a grid rather than a grid. */
+const RULE = "border-(--ui-stroke-secondary)";
+
 /**
  * The timezone the grid is drawn in, as Google labels it: "GMT-05".
  *
@@ -125,6 +137,15 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
   const todayIndex = days.findIndex((day) => day.isToday);
   const nowTop = now && todayIndex >= 0 ? nowOffset(now, hours) : null;
 
+  // Google dims the date numeral on days that have already gone. Read off the
+  // SAME mounted-only clock as the now line rather than a fresh `new Date()`:
+  // a date compared during SSR renders different HTML on the server and the
+  // client and React throws the tree away. Null before mount means nothing is
+  // dimmed on the first paint, then the past greys, which is what the now line
+  // already does one line above.
+  const midnight = now ? new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() : null;
+  const isPast = (day: MonthDay) => midnight !== null && day.date.getTime() < midnight;
+
   const { beginCreate, beginMove, beginResize, gesture, gridRef, handlePointerMove, handlePointerUp, preview } =
     useTimeGridGestures({ days, hours, onCommit: onMoveEvent, onOpenEvent, onPickSlot });
 
@@ -141,33 +162,65 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
             another timezone needs to know which one these rows mean. Taken
             from the browser, never hardcoded. */}
         <div
-          className="flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-1.5 text-[0.625rem] font-medium tracking-[0.01em] text-(--ui-text-quaternary)"
+          className="flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-2 text-[0.6875rem] font-medium tracking-[0.01em] text-(--ui-text-quaternary)"
           style={{ width: GUTTER_WIDTH }}
         >
           {gmtLabel()}
         </div>
+        <div className={cn("shrink-0 border-r", RULE)} style={{ width: LEAD_WIDTH }} />
         <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
           {days.map((day) => (
             // STACKED, the way Google Calendar does it: a small uppercase
             // weekday sitting above a large date number, with today's number
             // filled into a full circle. Measured off calendar.google.com at
             // 1440px — weekday 11px, date 26px regular, today a 46px round chip
-            // — and converted by RATIO to this app's 20px root rather than
-            // pinned to Google's pixels, so the whole header still scales with
-            // the student's text-size setting.
-            <div className="group relative flex flex-col items-center justify-center border-l border-(--ui-stroke-quaternary) pb-1.5 pt-2" key={day.key}>
-              <span className="text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-(--ui-text-tertiary)">
+            // — and converted by RATIO to this app's root rather than pinned to
+            // Google's pixels, so the whole header still scales with the
+            // student's text-size setting.
+            //
+            // 🔴 THAT ROOT IS 18px, NOT 20 (`globals.css:530`). Comments here
+            // said 20px for a month and every conversion done from them is 11%
+            // out. The measured numbers for both sides live in
+            // `docs/google-calendar-reference.md`.
+            <div
+              className={cn(
+                // Google rules its columns on the RIGHT and paints the last
+                // one's rule in the page colour, so the week does not close
+                // with a line down its edge. Ours closed on both sides.
+                "group relative flex flex-col items-center justify-center border-r pb-[0.125rem] pt-[0.25rem] last:border-transparent",
+                RULE,
+              )}
+              key={day.key}
+            >
+              <span
+                className={cn(
+                  // 11px/32px, weight 500, 0.8px tracking at Google's 16px root.
+                  "text-[0.6875rem] font-medium uppercase leading-[2rem] tracking-[0.0727em]",
+                  day.isToday ? "text-foreground" : "text-(--ui-text-tertiary)",
+                )}
+              >
                 {day.date.toLocaleDateString(undefined, { weekday: "short" })}
               </span>
               <span
                 className={cn(
-                  // Owner 2026-08-02: "these numbers are too big". Was 1.625rem
-                  // in a 2.875rem circle — Google's proportions, but Google's
-                  // root is 16px and this app's is 20px, so copying the RATIO
-                  // (see the note above) landed a quarter larger than the thing
-                  // it was matching. Sized against this app's own text instead.
-                  "mt-0.5 grid size-[2.125rem] place-items-center rounded-full text-[1.125rem] font-normal leading-none tabular-nums",
-                  day.isToday ? "bg-foreground text-background" : "text-foreground",
+                  // 🔴 THIS NUMBER HAS BEEN REVERSED TWICE. READ BEFORE MOVING IT.
+                  // Google draws a 26px numeral in a 46px disc; converted to
+                  // this app's 18px root that is 1.625rem in 2.875rem, which is
+                  // what stands here.
+                  //   - 2026-08-02, owner: "these numbers are too big" -> cut to
+                  //     1.125rem in 2.125rem.
+                  //   - 2026-09-01, owner: "it all needs to match one to one"
+                  //     -> back to Google's proportion.
+                  // The note that sat here claimed the ratio "landed a quarter
+                  // larger than the thing it was matching". It did not: a copied
+                  // rem value is the same relative size by construction. What
+                  // WAS wrong was the root it assumed (20px, actually 18).
+                  // Google: 26px numeral in a 46px disc, i.e. 1.625rem in
+                  // 2.875rem. Past days drop to the secondary text colour;
+                  // today and everything after it stay at full strength.
+                  "grid size-[2.875rem] place-items-center rounded-full text-[1.625rem] font-normal leading-none tabular-nums",
+                  day.isToday && "bg-foreground text-background",
+                  !day.isToday && (isPast(day) ? "text-(--ui-text-tertiary)" : "text-foreground"),
                 )}
               >
                 {day.date.getDate()}
@@ -195,18 +248,20 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
       {hasAllDay && (
         <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary)/30">
           <div
-            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.625rem] uppercase tracking-[0.06em] text-(--ui-text-quaternary)"
+            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.6875rem] uppercase tracking-[0.06em] text-(--ui-text-quaternary)"
             style={{ width: GUTTER_WIDTH }}
           >
             All day
           </div>
+          <div className={cn("shrink-0 border-r", RULE)} style={{ width: LEAD_WIDTH }} />
           <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
             {layouts.map((layout, index) => (
-              <div className="flex flex-col gap-0.5 border-l border-(--ui-stroke-quaternary) p-1" key={days[index]?.key ?? index}>
+              <div className={cn("flex flex-col gap-0.5 border-r p-1 last:border-transparent", RULE)} key={days[index]?.key ?? index}>
                 {layout.allDay.map((event) => (
                   <button
                     className={cn(
-                      "truncate rounded px-1.5 py-0.5 text-left text-[0.6875rem] font-medium leading-tight",
+                      // Google's stacked chip: 22px tall, 12px/15px text.
+                      "truncate rounded-[0.375rem] px-1.5 py-0.5 text-left text-[0.75rem] font-medium leading-[0.9375rem]",
                       !paintForEvent(event, calendarHex) && KIND_META[event.kind].chip,
                       event.status === "cancelled" && "line-through opacity-55",
                       event.status === "tentative" && "border border-dashed border-current",
@@ -241,20 +296,24 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
           <div className="relative shrink-0" style={{ height: gridHeight, width: GUTTER_WIDTH }}>
             {labels.map((hour, index) => {
               const { suffix, value } = hourLabel(hour);
+              // 🔴 THE MIDNIGHT LABEL IS NOT DRAWN, which is what Google does
+              // (`.XsRa1c:first-child > .wO6pL { display: none }`). It has no
+              // rule of its own to sit against — it would be labelling the top
+              // edge of the grid — and centring it there pushed half of it up
+              // into the all-day strip.
+              if (index === 0) return null;
               return (
                 <div
-                  className={cn(
-                    "absolute right-2 flex items-baseline gap-0.5 whitespace-nowrap text-[0.625rem] tabular-nums text-(--ui-text-quaternary)",
-                    // Every label is centred on its own hour rule — except the
-                    // first, which sits ON the top edge, where centring pushed
-                    // half of it up into the all-day strip.
-                    index === 0 ? "translate-y-0" : "-translate-y-1/2",
-                  )}
+                  className="absolute right-2 flex items-baseline gap-1 whitespace-nowrap text-[0.6875rem] font-medium leading-[1rem] tabular-nums text-(--ui-text-quaternary)"
                   key={hour}
-                  style={{ top: offsetFor(hour * 60, hours) }}
+                  // Google offsets the label -6px against a 16px line, so its
+                  // middle lands just under the rule it names. -6 x 18/16.
+                  style={{ top: offsetFor(hour * 60, hours) - 6.75 }}
                 >
                   <span>{value}</span>
-                  {suffix && <span className="text-[0.5rem] tracking-[0.03em]">{suffix}</span>}
+                  {/* Same size as the number. It was set smaller, which Google
+                      does not do — the label is one run of text. */}
+                  {suffix && <span className="tracking-[0.03em]">{suffix}</span>}
                 </div>
               );
             })}
@@ -265,6 +324,8 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
               sets how long it runs. The per-column transparent "add" button
               that used to sit here could only ever produce an untimed event,
               because a click target has no idea where inside itself it was hit. */}
+          <div className={cn("shrink-0 border-r", RULE)} style={{ width: LEAD_WIDTH }} />
+
           <div
             className={cn("relative grid flex-1", gesture && "cursor-ns-resize select-none")}
             onPointerDown={beginCreate}
@@ -278,7 +339,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
             <div aria-hidden className="pointer-events-none absolute inset-0">
               {labels.map((hour) => (
                 <div
-                  className="absolute inset-x-0 border-t border-(--ui-stroke-quaternary)"
+                  className={cn("absolute inset-x-0 border-t", RULE)}
                   key={hour}
                   style={{ top: offsetFor(hour * 60, hours) }}
                 />
@@ -324,14 +385,20 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
             {nowTop !== null && (
               <div
                 aria-hidden
-                className="pointer-events-none absolute z-10 border-t border-(--theme-primary)"
+                // 2px, and a 12px dot (both Google's, the dot converted to
+                // 0.75rem). It was 1px with a 6px dot and read as a stray
+                // hairline. The COLOUR stays this app's neutral rather than
+                // Google's red: --theme-primary was retired to a neutral by the
+                // owner on 2026-07-28 and a second hue that agrees with nothing
+                // else on the page is exactly what that removed.
+                className="pointer-events-none absolute z-10 border-t-2 border-(--theme-primary)"
                 style={{
                   left: `${(todayIndex / days.length) * 100}%`,
                   top: nowTop,
                   width: `${(1 / days.length) * 100}%`,
                 }}
               >
-                <span className="absolute -left-0.5 -top-1 size-1.5 rounded-full bg-(--theme-primary)" />
+                <span className="absolute -left-[0.375rem] -top-[0.4375rem] size-[0.75rem] rounded-full bg-(--theme-primary)" />
               </div>
             )}
           </div>
@@ -355,8 +422,16 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
   const timed = layout?.timed ?? [];
 
   return (
-    <div className="relative border-l border-(--ui-stroke-quaternary)">
-      {timed.map((item) => {
+    // Google keeps a 12px lane clear down the right of every column
+    // (`.BiKU4b { padding-right: 12px }`) and puts the rule on that edge, so a
+    // block stops short of the next day instead of touching its line. 12 x 18/16.
+    <div className={cn("relative border-r pr-[0.75rem] last:border-transparent", RULE)}>
+      {/* The blocks live INSIDE the padding, which is the whole point of it: an
+          absolutely positioned child resolves its percentages against the
+          padding box, so without this wrapper the lane above would be reserved
+          and then drawn straight over. */}
+      <div className="relative size-full">
+        {timed.map((item) => {
         const top = offsetFor(item.startMinute, window);
         const height = offsetFor(item.endMinute, window) - top;
         const geometry = blockGeometry(item.column, item.columns);
@@ -374,7 +449,10 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
           // blocks stayed 15% translucent. Staggered blocks sit ON TOP of each
           // other, so a see-through one reads as a muddy colour, not a stack.
           <div
-            className="absolute overflow-hidden rounded-md bg-background shadow-sm"
+            // 🔴 rounded-[0.375rem], NOT rounded-md. This app's `md` is 0.625rem,
+            // which on a block this short reads as a pill rather than a card.
+            // Google's block corner is 6px; 6 x 18/16 = 6.75px.
+            className="absolute overflow-hidden rounded-[0.375rem] bg-background shadow-sm"
             key={item.event.id}
             style={{
               height: boxHeight,
@@ -391,12 +469,16 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
                 the student just finished moving. */}
             <button
               className={cn(
-                "flex size-full cursor-grab overflow-hidden rounded-md border border-(--ui-stroke-tertiary) px-1.5 text-left font-medium leading-tight transition-shadow hover:shadow-md active:cursor-grabbing",
+                "flex size-full cursor-grab overflow-hidden rounded-[0.375rem] border border-(--ui-stroke-tertiary) px-1.5 text-left font-medium leading-[1.0625rem] transition-shadow hover:shadow-md active:cursor-grabbing",
                 // Each tier pays for its extra line by giving up padding, so the
                 // content always fits the box rather than being sliced by it.
-                detail === "stacked" && "flex-col py-1 text-[0.6875rem]",
-                detail === "inline" && "items-baseline gap-1 py-0.5 text-[0.6875rem]",
-                detail === "title" && "items-center py-0 text-[0.625rem] leading-none",
+                // One size for all three tiers: Google sets every block's text
+                // at 12px/15px whatever its height, and only the LAYOUT changes.
+                // Ours shrank the type as the box shrank, so a short block was
+                // hard to read exactly when it had least room to explain itself.
+                detail === "stacked" && "flex-col py-1 text-[0.75rem]",
+                detail === "inline" && "items-baseline gap-1 py-0.5 text-[0.75rem]",
+                detail === "title" && "items-center py-0 text-[0.75rem] leading-none",
                 !paintForEvent(item.event, calendarHex) && KIND_META[item.event.kind].chip,
                 item.event.status === "cancelled" && "line-through opacity-55",
                 item.event.status === "tentative" && "border-dashed",
@@ -426,7 +508,9 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
               {detail !== "title" && item.event.time && (
                 <span
                   className={cn(
-                    "truncate text-[0.625rem] tabular-nums opacity-70",
+                    // Google sets the time at the title's size and a lighter
+                    // weight (`.cpCWFd .EWOIrf { font-weight: 400 }`).
+                    "truncate text-[0.75rem] font-normal tabular-nums opacity-70",
                     detail === "inline" ? "shrink-0" : "block w-full",
                   )}
                 >
@@ -449,7 +533,8 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
             )}
           </div>
         );
-      })}
+        })}
+      </div>
     </div>
   );
 }

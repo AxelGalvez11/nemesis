@@ -30,6 +30,7 @@ import { Trash2 } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime } from "./format";
+import { clockOf, minutesOf, SNAP_MINUTES } from "./time-grid";
 import { KIND_META, KIND_ORDER } from "./kind-meta";
 import { type GuestPermissions, GuestsEditor } from "./guests-editor";
 import { RepeatEditor } from "./repeat-editor";
@@ -92,6 +93,40 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
   const [date, setDate] = useState(event?.date ?? draft?.date ?? "");
   const [time, setTime] = useState(event?.time ?? draft?.time ?? "");
   const [endTime, setEndTime] = useState(event?.endTime ?? draft?.endTime ?? "");
+
+  /**
+   * The two time fields, kept in an order that can exist.
+   *
+   * 🔴 THE FORM USED TO SAVE AN END BEFORE ITS START. Both inputs were bare
+   * setState, so an event could be stored running from 11:45 to 11:30. Nothing
+   * complained: `durationOf` in time-grid.ts only trusts an end when
+   * `end > start` and otherwise falls back to the default length, so the block
+   * DREW as a normal 45 minutes while the row underneath said something
+   * impossible and the form said it back to you on reopening.
+   *
+   * Google's editor cannot express that state — its end-time list only offers
+   * times after the start, and moving the start carries the end along. These
+   * two handlers are that behaviour.
+   */
+  const moveStart = (next: string) => {
+    setTime(next);
+    // Carry the end so the length survives, which is what Google does and what
+    // makes dragging a lecture an hour later a single edit rather than two.
+    const from = minutesOf(time);
+    const to = minutesOf(next);
+    const end = minutesOf(endTime);
+    if (from === null || to === null || end === null) return;
+    setEndTime(clockOf(Math.min(24 * 60 - 1, end + (to - from))));
+  };
+
+  const moveEnd = (next: string) => {
+    const start = minutesOf(time);
+    const end = minutesOf(next);
+    // Nothing to compare against yet (an all-day draft, or a half-typed field):
+    // take it as given rather than inventing a constraint out of a blank.
+    if (start === null || end === null) return setEndTime(next);
+    setEndTime(end > start ? next : clockOf(Math.min(24 * 60 - 1, start + SNAP_MINUTES)));
+  };
   const [endDate, setEndDate] = useState(event?.endDate ?? "");
   // Undefined on an existing row means "guess from the time", which is what the
   // whole product did before there was a flag — so the box starts where the
@@ -229,8 +264,8 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
               />
             ) : (
               <>
-                <Input aria-label="Start time" onChange={(e) => setTime(e.target.value)} type="time" value={time} />
-                <Input aria-label="End time" onChange={(e) => setEndTime(e.target.value)} type="time" value={endTime} />
+                <Input aria-label="Start time" onChange={(e) => moveStart(e.target.value)} type="time" value={time} />
+                <Input aria-label="End time" onChange={(e) => moveEnd(e.target.value)} type="time" value={endTime} />
               </>
             )}
           </div>

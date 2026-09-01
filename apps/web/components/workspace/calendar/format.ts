@@ -56,14 +56,17 @@ export function formatEventTime(time: string): string {
   return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-/** Does this browser's locale write clock times as 3 PM rather than 15:00? */
-const usesMeridiem = (): boolean =>
-  new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ?? false;
-
 export interface HourLabelParts {
-  /** The number, or "Noon". */
+  /** The hour number. */
   value: string;
-  /** "AM"/"PM" where the locale uses one, so it can be set smaller. */
+  /**
+   * "AM"/"PM" where the locale uses one.
+   *
+   * 🔴 SPLIT FOR THE LOCALE, NOT FOR THE TYPE SIZE. It used to be set smaller
+   * than the number beside it; Google draws the whole label as one uniform run
+   * and so do we now. The split survives because a 24-hour locale has no
+   * suffix at all and the gutter has to narrow accordingly.
+   */
   suffix?: string;
 }
 
@@ -77,12 +80,15 @@ export interface HourLabelParts {
  * An hour marker only ever needs the hour.
  *
  * Locale-aware rather than hand-built: a 24-hour locale gets "15" and no
- * suffix. "Noon" is Apple's word for midday and only makes sense on a
- * 12-hour clock, so it is spelled out only there.
+ * suffix.
+ *
+ * 🔴 MIDDAY IS "12 PM", NOT "Noon". It was "Noon" — Apple's word for it — until
+ * 2026-09-01, when the owner asked for the grid to match Google one to one.
+ * Google spells every hour the same way, midday included, and a single word
+ * sitting in a column of numerals is the one label your eye stops on.
+ * `docs/google-calendar-reference.md` section 2.
  */
 export function hourLabel(hour: number): HourLabelParts {
-  const meridiem = usesMeridiem();
-  if (hour === 12 && meridiem) return { value: "Noon" };
   const formatted = new Date(2000, 0, 1, hour).toLocaleTimeString(undefined, { hour: "numeric" });
   const [value, ...rest] = formatted.split(" ");
   return { value: value ?? String(hour), ...(rest.length > 0 ? { suffix: rest.join(" ") } : {}) };

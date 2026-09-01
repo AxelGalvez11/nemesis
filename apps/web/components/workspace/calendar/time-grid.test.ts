@@ -336,8 +336,9 @@ test("a tall block stacks the title and the time", () => {
 test("THE REPORTED BUG: a default-length event does not try to stack", () => {
   // Owner screenshot 2026-07-31: an event at 10:00 with no end time drew its
   // title AND its time, and the second line was sliced through the glyphs.
-  // At 36px an hour a 45-minute event is 27px laid out, 25px rendered — room
-  // for one line, not two.
+  // At 54px an hour a 45-minute event is 40.5px laid out, 38.5px rendered —
+  // room for one line, not two. (It was 36px an hour until 2026-09-01, when
+  // the grid was matched to Google; the tier the event lands in is unchanged.)
   const laidOut = (DEFAULT_MINUTES / 60) * HOUR_HEIGHT;
   const box = renderedBlockHeight(laidOut);
   assert.ok(box < STACKED_MIN_PX, `a default event is ${box}px, which cannot stack`);

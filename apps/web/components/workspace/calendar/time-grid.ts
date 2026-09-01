@@ -25,19 +25,34 @@ import { type CalendarEvent, isAllDay } from "@/lib/workspace/calendar-model";
 /**
  * Height of one hour, in pixels. The single knob for grid density.
  *
- * 36, down from 48 (owner 2026-07-31: "the calendar feels too zoomed in at
- * default 100%", pointing at Google Calendar).
+ * 54: Google's 48px hour converted to this app's root (48 x 18/16). Owner
+ * 2026-09-01, "it all needs to match one to one".
  *
- * MEASURED against Google Calendar side by side: its rows are 24px on a 16px
- * root font, i.e. one and a half times the base text size. This app's root is
- * 20px, so the like-for-like figure is 30px — and it was drawing 48. A whole
- * day was 1,152 pixels of scrolling; it is now 864.
+ * It was 36 for a month, from 48 (owner 2026-07-31: "the calendar feels too
+ * zoomed in at default 100%", pointing at Google Calendar). That instinct was
+ * right and the number it produced was not, because the Google figure it was
+ * aiming at had been read wrong:
  *
- * Deliberately not the full way down to 30: every piece of text on this page is
- * a quarter larger than Google's, so Google's exact density would leave a
- * half-hour block too short to read its own title.
+ * 🔴 THE MEASUREMENT THIS WAS BUILT ON WAS WRONG, TWICE. It used to read: "its
+ * rows are 24px on a 16px root font ... this app's root is 20px, so the
+ * like-for-like figure is 30px". Both numbers are false, and they compounded:
+ *
+ *   - Google's hour row is 48px, not 24. It is `--cal-timed-grid-cell-height`,
+ *     re-measured on the live app 2026-09-01 and confirmed against the whole
+ *     day's scroll height (24 x 48 = 1152px). The 24px figure came from a
+ *     hidden duplicate of the hour labels that Google renders offscreen.
+ *   - This app's root is 18px, not 20 (`globals.css:530`, `font-size: 112.5%`).
+ *
+ * The like-for-like figure is therefore 48 x (18/16) = 54px, not 30. Google's
+ * own density ladder runs 40 / 48 / 60 / 72 / 80 / 96 / 116, so 36 was BELOW
+ * even its compact setting once the root difference is taken out — which is
+ * why blocks could not show their own titles.
+ *
+ * Everything measured, both sides, is in `docs/google-calendar-reference.md`,
+ * and `measure-calendar.mjs` re-checks it against our grid. Change this number
+ * there and here together, or the file rots.
  */
-export const HOUR_HEIGHT = 36;
+export const HOUR_HEIGHT = 54;
 /** Drawn length of an event, until the data can say how long it really is. */
 export const DEFAULT_EVENT_MINUTES = 45;
 /** Never draw a block too short to read its title. */

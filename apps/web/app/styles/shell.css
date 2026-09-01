@@ -1216,7 +1216,21 @@
 
 /* ── confirm dialog (destructive actions, e.g. delete chat) — a compact centered modal above the
    rail/drawers/row-menu/settings overlay. Reuses the app tokens + the modal fade-in. ── */
-.confirm-overlay { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; animation: app-modal-in 0.15s both; }
+/* 🔴 150, ABOVE THE DIALOGS IT IS RAISED FROM. This was 80, which is under
+   desktop-ui's dialog overlay (120) and content (130): asking to delete an
+   event opened the confirmation BEHIND the editor that asked for it, and its
+   Delete button could not be clicked at all. Found 2026-09-01 by driving the
+   calendar; the same trap sat under every delete offered from inside a dialog.
+   150 also clears menus and selects (140) so a confirm raised with a dropdown
+   open still covers it, and stays under tooltips (200).
+
+   🔴 `pointer-events: auto` IS THE OTHER HALF, and on its own the z-index does
+   nothing. Radix sets `pointer-events: none` on <body> for as long as a modal
+   Dialog is open, so this overlay — a plain div in the React tree rather than
+   one of Radix's own portals — inherited it and swallowed every click no matter
+   how high it sat. desktop-ui/dialog.tsx carries the same `pointer-events-auto`
+   on its overlay and content for exactly this reason. */
+.confirm-overlay { position: fixed; inset: 0; z-index: 150; pointer-events: auto; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; animation: app-modal-in 0.15s both; }
 .confirm-card { width: min(400px, 100%); background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius-menu); box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); padding: 20px 20px 16px; animation: app-modal-in 0.15s both; }
 .confirm-title { font-size: 16px; font-weight: 650; color: var(--text); margin: 0 0 8px; }
 .confirm-body { font-size: 14px; line-height: 1.55; color: var(--text-2); margin: 0 0 18px; }
