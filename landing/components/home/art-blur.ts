@@ -25,6 +25,9 @@ export const LEARN_BLUR =
 /* The two computed washes. Everything else in this file is a downsample of a
    GENERATED render; these two are downsamples of a gradient this repo draws
    itself, so they have no grain in them at any size. See scripts/art-wash.py. */
+export const VOICE_WASH_BLUR =
+  "data:image/webp;base64,UklGRm4AAABXRUJQVlA4IGIAAABQBACdASooACgAPu10sFEppySiqrqoATAdiWUAyFwK5g88Rs5RZAjLePRAAM1EXdas68UbIL+JtIucQvdgII8O2DZ06yaf928+81V4GYO9qzd4vdr/95HiuJMjWTjA0KyAAA==";
+
 export const SEE_WASH_BLUR =
   "data:image/webp;base64,UklGRowAAABXRUJQVlA4IIAAAABwBgCdASooACgAPtlYok2oJSMiONtoAQAbCWMAgeEY6MZlUK+IrmrwWZB1EdsGyyr3e8u+ncqJE+Q0kWAA/vV60mjAnfu+M1EMmysLls0GslIn1oolFB0gk+tCWDEZNBAxkoPPOSoXLLl55jVj+GewuGo1cmOUWA+drr20AAAAAA==";
 

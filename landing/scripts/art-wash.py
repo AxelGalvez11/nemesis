@@ -88,10 +88,21 @@ CLOSE = [
     (0.50, 0.86, 0.62, 0.34, PALE,   0.55),
 ]
 
+# ── "Voice" ───────────────────────────────────────────────────────────────────
+# Fourth band, data-side left, so the mask shows the LEFT third of this square:
+# a cobalt field down that edge with a pale core beside it — the same family as
+# the others, mirrored to the band's own lit edge.
+VOICE = [
+    (-0.10, 0.10, 0.52, 0.58, COBALT, 0.90),
+    (-0.04, 0.92, 0.46, 0.44, DEEP,   0.78),
+    (0.20, 0.55, 0.34, 0.32, PALE,   0.80),
+]
+
 out = sys.argv[1]
 render(550, 550, SEE, out + "/see-wash.ppm")
 render(550, 550, EVIDENCE, out + "/evidence-wash.ppm")
 render(1000, 550, CLOSE, out + "/close-wash.ppm")
+render(550, 550, VOICE, out + "/voice-wash.ppm")
 
 # Encode (from this directory, writing into public/nemesis/art):
 #   python3 art-wash.py .
@@ -101,4 +112,6 @@ render(1000, 550, CLOSE, out + "/close-wash.ppm")
 #   magick see-wash.webp      -resize 40x40 -quality 40 see-wash-blur.webp
 #   magick evidence-wash.webp -resize 40x40 -quality 40 evidence-wash-blur.webp
 #   magick close-wash.webp -resize 40x22 -quality 40 close-wash-blur.webp
+#   magick voice-wash.ppm -resize 1100x1100! -define webp:method=6 -quality 92 voice-wash.webp
+#   magick voice-wash.webp -resize 40x40 -quality 40 voice-wash-blur.webp
 # then base64 the two -blur files into components/home/art-blur.ts.
