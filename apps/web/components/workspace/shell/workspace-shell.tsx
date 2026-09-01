@@ -138,12 +138,15 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
   // 🔴 §38.1 — INSIDE A CANVAS THERE IS NO RAIL AT ALL, not a collapsed one with a toggle. The
   // claim comes from `CanvasSurface`, which is also what guarantees the `×` that replaces it; see
   // immersive-surface.tsx for why this is a declaration rather than a route or a query read.
-  const immersiveClaimed = useImmersiveClaimed();
+  // 🔴 THE SAME CLAIM, A DIFFERENT EFFECT since 2026-08-31: a canvas COLLAPSES the sidebar to the
+  // rail rather than taking navigation away. See shell-navigation.ts for the owner's reversal of
+  // §38.1 and ChatGPT's measured tiny bar, which is never absent.
+  const canvasRunning = useImmersiveClaimed();
   // A document docked on the right collapses the sidebar to the rail while it is open. Transient:
   // the learner's stored preference is neither read nor written — see side-panel.tsx.
   const sidePanelOpen = useSidePanelOpen();
   const { focusMode, navToggleShowing, railVisible, sidebarVisible } = shellNavigation({
-    immersiveClaimed,
+    canvasRunning,
     libraryFullScreen,
     narrowViewport,
     pathname,
