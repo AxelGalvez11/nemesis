@@ -26,7 +26,7 @@ test("🔴🔴 the learner's own figure outranks anything retrieved, and needs n
   const own = { assetPath: "uid/figures/abc.png", provenance: "source_figure" as const };
   const licensed = {
     assetPath: "shelf/xyz.png",
-    licence: { attribution: "Someone", licence: "CC BY 4.0" },
+    licence: { attribution: "Someone", licence: "CC BY 4.0", source: "Wikimedia Commons" },
     provenance: "reference_image" as const,
   };
 
