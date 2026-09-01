@@ -62,3 +62,21 @@ test("🔴🔴 the column STEPS the way theirs does, and it is a container query
   // surface sets `--canvas-column` inline, which no rule on that same element could beat.
   assert.match(rule, /\[data-canvas-surface\] > \* \{\s*--canvas-column: 694px;/, "the narrow step stopped reaching the children that read it");
 });
+
+test("🔴 the actions under an answer are their 32px squares with 20px glyphs", () => {
+  // Measured in the owner's account 2026-08-31: every action under an answer is a 32x32 box with an
+  // 8px radius holding a 20px icon, the boxes sit FLUSH, and the strip starts 12px under the last
+  // line of prose and 10px LEFT of the column.
+  //
+  // 🔴 THE OVERHANG IS DELIBERATE AND IS THE ONLY WAY THE GLYPHS LINE UP. A 20px icon centred in a
+  // 32px box sits 6px in from its edge, so a box flush with the text column puts the glyph 6px
+  // right of every line above it. Theirs hangs left so the ICON aligns, not the box.
+  const ACTIONS = strip(read("./reply-actions.tsx"));
+  assert.match(ACTIONS, /h-\[32px\] w-\[32px\]/, "the action buttons left the reference's 32px square");
+  assert.match(ACTIONS, /rounded-\[8px\]/, "the action buttons left the reference's 8px radius");
+  assert.match(ACTIONS, /size="20px"/, "the action glyphs left the reference's 20px");
+  assert.match(ACTIONS, /-ml-\[10px\] mt-\[12px\]/, "the strip left the reference's 12px drop and 10px overhang");
+  assert.ok(!/gap-0\.5/.test(ACTIONS), "the buttons are spaced again; theirs sit flush");
+  // The rem trap, one more time: `mt-2` is 18px at this app's root, `px-1.5` is 6.75.
+  assert.ok(!/\bmt-2\b/.test(ACTIONS), "mt-2 is back, which is 18px here against their 12");
+});

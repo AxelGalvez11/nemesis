@@ -102,10 +102,18 @@ export function ReplyActions({
     }
   };
 
-  const button = "flex h-[28px] shrink-0 items-center justify-center gap-1 rounded-[6px] px-1.5 text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)";
+  // 🔴 A 32px SQUARE WITH A 20px GLYPH, MEASURED, NOT A 28px PILL WITH A 15px ONE. Read off the
+  // reference in the owner's account 2026-08-31: every action under an answer is 32x32 with an 8px
+  // radius and a 20px icon, and they sit FLUSH — the 6px of padding around each glyph is the only
+  // thing between them, which is what makes the row read as one strip rather than separate chips.
+  // 🔴 12px UNDER THE LAST LINE, AND THE STRIP HANGS 10px LEFT OF THE TEXT. Both measured. The
+  // overhang is not a mistake: a 20px glyph centred in a 32px box needs the box to start left of
+  // the column for the GLYPH to line up with the prose above it. `mt-2` was 18px here (112.5%
+  // root) against their 12, and `gap-0.5` put 2px between boxes that theirs leaves touching.
+  const button = "flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[8px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)";
 
   return (
-    <div className="mt-2 flex w-full min-w-0 items-center gap-0.5">
+    <div className="-ml-[10px] mt-[12px] flex w-full min-w-0 items-center gap-0">
       <button
         aria-label={copied ? "Copied" : "Copy"}
         className={cn(button, copied && "text-(--ui-text-secondary)")}
@@ -113,14 +121,14 @@ export function ReplyActions({
         title={copied ? "Copied" : "Copy"}
         type="button"
       >
-        <Codicon name={copied ? "check" : "copy"} size="15px" />
+        <Codicon name={copied ? "check" : "copy"} size="20px" />
       </button>
 
       {audio && <ResponseAudioControls audio={audio} text={spoken} />}
 
       {onRetry && (
         <button aria-label="Retry" className={cn(button)} onClick={onRetry} title="Retry" type="button">
-          <Codicon name="refresh" size="15px" />
+          <Codicon name="refresh" size="20px" />
         </button>
       )}
 
