@@ -75,6 +75,17 @@ const KNOWN = new Set([
   "time",
   "endTime",
   "end_time",
+  "endDate",
+  "end_date",
+  "allDay",
+  "all_day",
+  "timeZone",
+  "time_zone",
+  "rrule",
+  "overrideOf",
+  "override_of",
+  "originalDate",
+  "original_date",
   "kind",
   "course",
   "note",
@@ -156,6 +167,13 @@ function refs(value: unknown): SourceRef[] | undefined {
  *  🔴 THE ONLY DECODER. Both the cloud reader and the localStorage reader call this. Adding a
  *  field here makes it survive on both paths at once, which is the entire point — there is no
  *  longer a second list to forget. */
+/** An array of non-empty strings, or null. Used for the RRULE/EXDATE/RDATE lines. */
+function lines(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out = raw.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return out.length > 0 ? out : null;
+}
+
 export function decodeCalendarEvent(raw: unknown): DecodedCalendarEvent | null {
   if (typeof raw !== "object" || raw === null) return null;
   const row = raw as Record<string, unknown>;
@@ -178,6 +196,24 @@ export function decodeCalendarEvent(raw: unknown): DecodedCalendarEvent | null {
   if (time) event.time = time;
   const endTime = str(row.endTime) ?? str(row.end_time);
   if (endTime) event.endTime = endTime;
+  const endDate = str(row.endDate) ?? str(row.end_date);
+  // A malformed end must not shorten the event to nothing — it is dropped and
+  // the row reads as the single day it starts on.
+  if (endDate && DATE_KEY.test(endDate) && endDate >= date) event.endDate = endDate;
+  const allDay = row.allDay ?? row.all_day;
+  if (typeof allDay === "boolean") event.allDay = allDay;
+  const timeZone = str(row.timeZone) ?? str(row.time_zone);
+  if (timeZone) event.timeZone = timeZone;
+  const rrule = lines(row.rrule);
+  if (rrule) event.rrule = rrule;
+  const overrideOf = str(row.overrideOf) ?? str(row.override_of);
+  const originalDate = str(row.originalDate) ?? str(row.original_date);
+  // Both or neither: an override with no date it replaces would silently fail to
+  // suppress anything, and the moved lecture would be drawn twice.
+  if (overrideOf && originalDate && DATE_KEY.test(originalDate)) {
+    event.overrideOf = overrideOf;
+    event.originalDate = originalDate;
+  }
   const course = str(row.course);
   if (course) event.course = course;
   const note = str(row.note);
@@ -232,6 +268,12 @@ export function encodeCalendarEvent(
     date: event.date,
     time: event.time ?? null,
     end_time: event.endTime ?? null,
+    end_date: event.endDate ?? null,
+    all_day: event.allDay ?? null,
+    time_zone: event.timeZone ?? null,
+    rrule: event.rrule && event.rrule.length > 0 ? event.rrule : null,
+    override_of: event.overrideOf ?? null,
+    original_date: event.originalDate ?? null,
     kind: event.kind,
     course: event.course ?? null,
     note: event.note ?? null,
