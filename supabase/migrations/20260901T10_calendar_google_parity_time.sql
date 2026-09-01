@@ -27,9 +27,13 @@
 --                cancel it, so a lecture moved to Friday had to be deleted and
 --                re-created as an unrelated event.
 --
--- 🔴 NOT YET APPLIED — this is a production database change and needs the owner's
--- go-ahead, the same as 20260724200000_calendar_end_time_recurrence.sql before it.
--- Everything shipped alongside it works without it:
+-- APPLIED 2026-09-01, on the owner's go-ahead. Verified after applying: all six
+-- columns present, both constraints and the index in place, 0 rows carrying any
+-- of them (nothing is backfilled — that is what additive means for data that
+-- already exists).
+--
+-- 🔴 IT SHIPPED BEFORE IT WAS APPLIED, AND THAT ORDER IS THE POINT. Everything
+-- alongside it works without it:
 --   - the decoder reads each column only if present, and every reader has a
 --     defined meaning for absent (one day, local zone, the old weekly shape);
 --   - `recurrence` is still written whenever the rule is simple enough to fit it,
@@ -54,10 +58,10 @@ alter table public.calendar_events
   -- jsonb rather than text[] so the shape matches what the API hands over and
   -- nothing has to re-encode it on the way through.
   add column if not exists rrule jsonb,
-  -- Which series this row stands in for, and on which of its dates. No FK: the
-  -- parent may be deleted while the moved lecture stays true, and expansion
-  -- treats an orphan override as an ordinary one-off event.
-  add column if not exists override_of text,
+  -- Which series this row stands in for, and on which of its dates. uuid, to
+  -- match `id`. No FK: the parent may be deleted while the moved lecture stays
+  -- true, and expansion treats an orphan override as an ordinary one-off event.
+  add column if not exists override_of uuid,
   add column if not exists original_date date;
 
 -- Both or neither. An override naming no date would suppress nothing, and the

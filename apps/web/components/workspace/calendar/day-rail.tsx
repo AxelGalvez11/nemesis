@@ -24,6 +24,8 @@ import { parseDateKey } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
 import { formatEventTime } from "./format";
+import { paintFor } from "@/lib/workspace/event-colors";
+
 import { KIND_META } from "./kind-meta";
 import { clockOf, layoutDay } from "./time-grid";
 
@@ -120,17 +122,29 @@ function RailRow({
   onOpen: (event: CalendarEvent) => void;
   when: string;
 }) {
+  const paint = paintFor(event.colorId);
+  const cancelled = event.status === "cancelled";
+  // The rail has room for the line a month cell never does, so location goes here
+  // rather than into a tooltip nobody hovers on a touchscreen.
+  const under = [event.location, event.course].filter(Boolean).join(" · ");
+
   return (
     <button className="flex items-start gap-2 text-left" onClick={() => onOpen(event)} type="button">
       <span className="w-[3.25rem] shrink-0 pt-1 text-[0.625rem] tabular-nums text-(--ui-text-tertiary)">{when}</span>
       <span
         className={cn(
           "min-w-0 flex-1 rounded-md border-l-2 px-2 py-1 text-[0.6875rem] font-medium leading-tight",
-          KIND_META[event.kind].block,
+          !paint && KIND_META[event.kind].block,
+          cancelled && "opacity-55",
+          event.status === "tentative" && "border-dashed",
         )}
+        style={paint?.block}
       >
-        <span className="block truncate">{event.title}</span>
-        {event.course && <span className="block truncate text-[0.625rem] opacity-70">{event.course}</span>}
+        <span className={cn("block truncate", cancelled && "line-through")}>{event.title}</span>
+        {under && <span className="block truncate text-[0.625rem] opacity-70">{under}</span>}
+        {cancelled && (
+          <span className="block text-[0.625rem] font-semibold uppercase tracking-[0.06em] opacity-80">Cancelled</span>
+        )}
       </span>
     </button>
   );

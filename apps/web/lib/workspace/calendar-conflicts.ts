@@ -301,6 +301,12 @@ export function findCalendarIssues(
   const occurrences = range
     ? expandRecurringEvents([...events], parseDateKey(range.from), parseDateKey(range.to))
         .filter((event) => event.date >= range.from && event.date <= range.to)
+        // 🔴 A CANCELLED EVENT IS NOT A CLASH. It is still drawn on the calendar
+        // — struck through, because "this was here and is off" is information a
+        // student needs — but reporting it as a conflict, a duplicate, or an
+        // exam with nothing booked before it would be reporting on a thing that
+        // is not happening. Every finding below reads this list.
+        .filter((event) => event.status !== "cancelled")
     : [];
 
   // Exact duplicates: same normalized title on the same date.

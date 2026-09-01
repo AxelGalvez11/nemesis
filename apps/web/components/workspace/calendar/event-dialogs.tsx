@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import { type CalendarEvent, type CalendarEventKind, isAllDay } from "@/lib/workspace/calendar-model";
+import { EVENT_COLORS } from "@/lib/workspace/event-colors";
 import { formatRecurrenceLines, parseRecurrenceLines, specFromLegacy, specToLegacy } from "@/lib/workspace/rrule";
 import { Trash2 } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,8 @@ const TIME_ZONES: readonly string[] = (() => {
   // The reader's own zone first: it is the answer nine times in ten.
   return [local, ...all.filter((zone) => zone !== local)];
 })();
+
+const SELECT = "h-8 min-w-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-xs text-foreground";
 
 // ── Add / Edit form ──────────────────────────────────────────────────────────
 
@@ -87,6 +90,11 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
   const [timeZone, setTimeZone] = useState(
     event?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "",
   );
+  const [location, setLocation] = useState(event?.location ?? "");
+  const [colorId, setColorId] = useState(event?.colorId ?? "");
+  const [status, setStatus] = useState<NonNullable<CalendarEvent["status"]>>(event?.status ?? "confirmed");
+  const [busy, setBusy] = useState(event?.transparency !== "transparent");
+  const [visibility, setVisibility] = useState<NonNullable<CalendarEvent["visibility"]>>(event?.visibility ?? "default");
   const [rrule, setRrule] = useState<string[] | undefined>(
     event?.rrule ?? (event?.recurrence ? formatRecurrenceLines(specFromLegacy(event.recurrence)) : undefined),
   );
@@ -129,6 +137,14 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
       const legacy = spec ? specToLegacy(spec) : null;
       if (legacy) built.recurrence = legacy;
     }
+    if (location.trim()) built.location = location.trim();
+    if (colorId) built.colorId = colorId;
+    // Only stored when it is not the default: writing "confirmed", "opaque" and
+    // "default" onto every row would fill three columns with the absence of a
+    // decision, and absent already means exactly that everywhere that reads them.
+    if (status !== "confirmed") built.status = status;
+    if (!busy) built.transparency = "transparent";
+    if (visibility !== "default") built.visibility = visibility;
     if (course.trim()) built.course = course.trim();
     if (note.trim()) built.note = note.trim();
 
@@ -200,10 +216,50 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
             )}
           </div>
           <RepeatEditor onChange={setRrule} startDate={date} value={rrule} />
+          <Input onChange={(e) => setLocation(e.target.value)} placeholder="Location (optional)" value={location} />
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Status"
+              className={SELECT}
+              onChange={(e) => setStatus(e.target.value as NonNullable<CalendarEvent["status"]>)}
+              value={status}
+            >
+              <option value="confirmed">Confirmed</option>
+              <option value="tentative">Tentative</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <select
+              aria-label="Shows you as"
+              className={SELECT}
+              onChange={(e) => setBusy(e.target.value === "busy")}
+              value={busy ? "busy" : "free"}
+            >
+              <option value="busy">Busy</option>
+              <option value="free">Free</option>
+            </select>
+            <select
+              aria-label="Visibility"
+              className={SELECT}
+              onChange={(e) => setVisibility(e.target.value as NonNullable<CalendarEvent["visibility"]>)}
+              value={visibility}
+            >
+              <option value="default">Default visibility</option>
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+              <option value="confidential">Confidential</option>
+            </select>
+          </div>
           {/* Colour dots, not a labeled type dropdown (owner 2026-08-04:
               "remove the 'assignment,exam etc.' picker and replace with color
               selectors") — the same row the quick-create card uses. The name
               survives as the tooltip and accessible label. */}
+          {/* 🔴 TWO COLOUR ROWS, AND THEY ARE NOT THE SAME QUESTION. The first is
+              WHAT THIS IS — exam, assignment, class — which Nemesis reasons
+              about and Google has no field for. The second is Google's own
+              eleven-colour palette, which overrides the first for this one
+              event, exactly as an event colour overrides a calendar colour
+              there. Merging them would make "it is an exam" and "make it red"
+              the same act, and the first is not a matter of taste. */}
           <div aria-label="Event color" className="flex flex-wrap gap-1.5 px-0.5" role="group">
             {KIND_ORDER.map((option) => (
               <button
@@ -219,6 +275,38 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
                 key={option}
                 onClick={() => setKind(option)}
                 title={KIND_META[option].label}
+                type="button"
+              />
+            ))}
+          </div>
+          <div aria-label="Colour" className="flex flex-wrap items-center gap-1.5 px-0.5" role="group">
+            <button
+              aria-label="Use the type colour"
+              aria-pressed={colorId === ""}
+              className={cn(
+                "grid size-5 place-items-center rounded-full border border-dashed border-(--ui-stroke-primary) text-[0.5rem] text-(--ui-text-tertiary)",
+                colorId === "" && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
+              )}
+              onClick={() => setColorId("")}
+              title="Use the type colour"
+              type="button"
+            >
+              ×
+            </button>
+            {EVENT_COLORS.map((color) => (
+              <button
+                aria-label={color.name}
+                aria-pressed={colorId === color.id}
+                className={cn(
+                  "size-5 rounded-full transition-opacity",
+                  colorId === color.id
+                    ? "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)"
+                    : "opacity-70 hover:opacity-100",
+                )}
+                key={color.id}
+                onClick={() => setColorId(color.id)}
+                style={{ backgroundColor: color.hex }}
+                title={color.name}
                 type="button"
               />
             ))}

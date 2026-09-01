@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
+import { paintFor } from "@/lib/workspace/event-colors";
 import { type CellMetrics, fitEvents, orderForCell } from "@/lib/workspace/month-cell";
 import { cn } from "@/lib/utils";
 
@@ -287,16 +288,30 @@ function DayCell({ day, events, metrics, onOpenEvent, onPick, onSelectDay, selec
  */
 function EventLine({ event, onOpen }: { event: CalendarEvent; onOpen: (event: CalendarEvent) => void }) {
   const meta = KIND_META[event.kind];
+  // A chosen colour overrides the kind's, exactly as an event colour overrides a
+  // calendar colour in Google. Inline because the value is data — see event-colors.ts.
+  const paint = paintFor(event.colorId);
+  // 🔴 A CANCELLED EVENT IS SHOWN, NOT HIDDEN. "Cancelled" is information: a
+  // student looking at Tuesday needs to know the lecture WAS there and is off,
+  // which is the opposite of the row quietly disappearing. Struck through and
+  // faded is how every calendar says it.
+  const cancelled = event.status === "cancelled";
+  const tentative = event.status === "tentative";
 
   if (drawsAsBar(event.kind, event.time)) {
     return (
       <button
         className={cn(
           "pointer-events-auto flex items-baseline gap-1 rounded px-1.5 py-0.5 text-left text-[0.6875rem] font-semibold leading-tight",
-          meta.bar,
+          !paint && meta.bar,
+          cancelled && "line-through opacity-50",
+          // A dashed edge on a tentative item, the way a provisional booking
+          // reads: present, and not yet a promise.
+          tentative && "border border-dashed border-current",
         )}
         onClick={() => onOpen(event)}
-        title={event.title}
+        style={paint?.bar}
+        title={eventTitleHint(event)}
         type="button"
       >
         {event.time && <span className="shrink-0 tabular-nums font-medium opacity-80">{formatEventTime(event.time)}</span>}
@@ -307,16 +322,37 @@ function EventLine({ event, onOpen }: { event: CalendarEvent; onOpen: (event: Ca
 
   return (
     <button
-      className="pointer-events-auto flex items-center gap-1.5 rounded px-1 py-0.5 text-left text-[0.6875rem] leading-tight text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
+      className={cn(
+        "pointer-events-auto flex items-center gap-1.5 rounded px-1 py-0.5 text-left text-[0.6875rem] leading-tight text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
+        cancelled && "line-through opacity-50",
+      )}
       onClick={() => onOpen(event)}
-      title={`${formatEventTime(event.time ?? "")} ${event.title}`.trim()}
+      title={eventTitleHint(event)}
       type="button"
     >
-      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", meta.dot)} />
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          !paint && meta.dot,
+          tentative && "opacity-50 ring-1 ring-current",
+        )}
+        style={paint?.dot}
+      />
       <span className="shrink-0 tabular-nums text-(--ui-text-tertiary)">{formatEventTime(event.time ?? "")}</span>
       <span className="truncate font-medium">{event.title}</span>
     </button>
   );
+}
+
+/** The hover text: the time, the title, and the two facts a glance cannot show. */
+function eventTitleHint(event: CalendarEvent): string {
+  const parts = [formatEventTime(event.time ?? ""), event.title].filter(Boolean);
+  let hint = parts.join(" ").trim();
+  if (event.location) hint += ` · ${event.location}`;
+  if (event.status === "cancelled") hint += " · Cancelled";
+  if (event.status === "tentative") hint += " · Tentative";
+  return hint;
 }
 
 function MoreLink({ hidden, onOpen }: { hidden: number; onOpen: () => void }) {
