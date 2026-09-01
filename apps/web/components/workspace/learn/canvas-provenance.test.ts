@@ -86,9 +86,15 @@ test("the Sources panel discloses model origin instead of only 'Nothing attached
   // the bare sentence, with no mention of model provenance anywhere in the panel.
   assert.match(
     source,
-    /Generated from model knowledge/,
+    /This was answered from Nemesis's own knowledge\./,
     "the sources panel must state where model-sourced knowledge came from",
   );
+  // 🔴🔴 AND IT MUST NOT BE A ROW IN THE LIST. Owner, 2026-09-01: *"sources will sometimes say
+  // 'generated with model knowledge'. I don't want it showing its own model knowledge as a source.
+  // That's not a source."* He is right and the disclosure was not wrong to exist — it was FILED
+  // wrongly. A source list with one entry that is not a source teaches a learner that our citations
+  // are decorative, which costs more than the disclosure buys.
+  assert.ok(!/Generated from model knowledge/.test(source), "model knowledge is listed as a source again");
 
   // 🔴🔴 THE CONTRADICTION IS NOW IMPOSSIBLE BY LAYOUT, WHICH IS WHY THIS ASSERTION KEEPS CHANGING
   // SHAPE RATHER THAN GOING AWAY. Three versions, one invariant — the panel must never deny and
@@ -102,14 +108,22 @@ test("the Sources panel discloses model origin instead of only 'Nothing attached
   //       Inputs sentence is gone entirely, because a shelf with nothing in it no longer renders.
   //       So there is no denial left to contradict anything.
   //
-  // What survives untouched is the half that matters: the disclosure exists, and the shelf carrying
-  // it cannot be overwritten by an empty state. Calibration: drop `filled` and this reddens.
-  assert.match(source, /filled=\{modelKnowledge\}/, "the Sources shelf can call itself empty while disclosing model knowledge");
-  assert.match(source, /filled = false/, "PanelSection lost the override that keeps the disclosure from being overwritten");
+  //   v4  owner, 2026-09-01, cut the row. The disclosure MOVED INTO the empty sentence, so denial
+  //       and disclosure are now literally the same string and the contradiction is unstateable —
+  //       which is what `filled` was working around. The flag is gone with the row it protected.
+  //
+  // What survives untouched is the half that matters: the disclosure exists, and it cannot be
+  // overwritten by an empty state. Calibration: make `empty` unconditional and this reddens.
+  assert.match(
+    source,
+    /empty=\{\s*modelKnowledge\s*\?/,
+    "the empty sentence stopped depending on whether the canvas holds model knowledge",
+  );
+  assert.ok(!/filled/.test(source), "the `filled` workaround is back, so there are two answers for one state again");
   // 🔴 AND THE SHELF HOLDING THE DISCLOSURE MUST BE THE ONE THAT ALWAYS RENDERS. If Sources ever
   // became conditional like the other two, a canvas taught entirely from model knowledge would
   // disclose nothing at all — N10's original failure, arriving by a new route.
-  assert.match(source, /empty="Nothing read from the web yet\."/, "the Sources shelf can now vanish, taking the disclosure with it");
+  assert.match(source, /"Nothing read from the web yet\."/, "the Sources shelf can now vanish, taking the disclosure with it");
 });
 
 test("no per-sentence provenance badge is introduced inline", () => {

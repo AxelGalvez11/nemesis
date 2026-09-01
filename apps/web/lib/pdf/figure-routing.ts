@@ -51,10 +51,35 @@ export const THIN_UNIT_CHARS = 120;
  * 🔴 A CAP THAT TRUNCATES MUST SAY SO. Everything beyond it keeps the
  * `not-examined` reason it already has, which coverage counts as lost — so a
  * document that hit the ceiling reports a gap rather than reporting completion.
- * Sized from the measurement: 1,089 unexamined figures across 120 files averages
- * ~9 per file, and 40 covers all but the outliers.
+ *
+ * 🔴🔴🔴 IT WAS 40, SIZED ON AN AVERAGE, AND AN AVERAGE IS THE WRONG STATISTIC FOR A CEILING.
+ * The old note read: "1,089 unexamined figures across 120 files averages ~9 per file, and 40
+ * covers all but the outliers." Measured on the owner's own canvas 2026-09-01
+ * (`5330d682-9449-40f1-b454-5d477ddea950`, "06. Antigen Processing and Presentation"): **77
+ * pictures were not read**. A lecture deck exported to PDF is not an outlier, it is the shape of
+ * the corpus this product exists to read, and the tail is where every one of them lives. The
+ * owner, on that canvas: *"I want it to read everything… I need to see important figures, the
+ * graphs, the tables."*
+ *
+ * 🔴🔴 AND THE FIGURES IT DROPPED HAD ALREADY PASSED THE FURNITURE FILTER. `WORTH_LOOKING_AREA`
+ * declines a small image on a text-dense page as `too-small` BEFORE this cap is reached, so
+ * everything counted here is a figure large enough to be worth a call. The 77 were diagrams, not
+ * logos. Sorting by area and taking the first 40 is not a quality filter; it is losing the
+ * smallest three-quarters of a lecture's real content.
+ *
+ * 🔴 RAISING IT COSTS NOTHING, WHICH IS WHY IT IS 120 AND NOT A NUMBER CHOSEN FOR NERVE.
+ * `vision-budget.ts` added `DEFAULT_DOCUMENT_UNIT_CAP` (120 units, every lane, every attempt)
+ * AFTER this constant was written, and its own header says this one "is a good rule, but it is
+ * three things short of a budget" — then builds the budget. A second, tighter, UNPRICED ceiling
+ * below the priced one does not save money the ledger was not already going to save; it only
+ * decides, silently and on one lane, which content is lost first. Matching the two makes the
+ * priced ceiling the ONLY ceiling, which is where a cost decision belongs.
+ *
+ * 🔴 SO THE SPEND IS UNCHANGED. A document could already spend 120 units on pages; it can now
+ * spend them on figures instead. What moved is which lane may reach the ceiling, never the
+ * ceiling. Raising THAT is still the priced decision `docs/vision-cost.md` describes.
  */
-export const MAX_FIGURES_PER_DOC = 40;
+export const MAX_FIGURES_PER_DOC = 120;
 
 export interface FigureCandidate {
   /** Index into `model.blocks`, so a description can be written back exactly. */

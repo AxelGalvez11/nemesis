@@ -100,7 +100,14 @@
     transparent 100%
   );
   background-size: 200% 100%;
-  animation: nemesis-reading-sweep 1800ms linear infinite;
+  /* 🔴 3000ms, NOT 1800. Owner, 2026-09-01, after dropping two documents: *"I like the animation
+     now, it looks nice and clean. But the shimmering animation, I feel like it should be slower.
+     It's too fast right now and it feels annoying."* The gesture was right and the tempo was not.
+     A sweep that crosses in under two seconds reads as ACTIVITY, which is what a spinner does and
+     what #1035 removed spinners for; a slower one reads as WAITING, which is the true thing. Still
+     `linear`: an eased loop pulses at the seam, and a pulse is a heartbeat, which is activity
+     again. */
+  animation: nemesis-reading-sweep 3000ms linear infinite;
 }
 
 /* The read-aloud player's live bars (canvas-audio-bar.tsx, owner's design D, 2026-09-01).

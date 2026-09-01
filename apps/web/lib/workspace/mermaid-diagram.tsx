@@ -114,8 +114,20 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   return (
     <div
       className={cn(
-        "my-2 flex justify-center overflow-x-auto",
-        "[&_svg]:h-auto [&_svg]:max-w-full",
+        // 🔴🔴 A DIAGRAM IS A FIGURE INSIDE PROSE, NOT A PAGE. Owner, 2026-09-01: *"the mermaid
+        // diagrams are too big, they take away from the flow of reading."* With only `max-w-full`
+        // and `h-auto`, a wide flowchart grows to the full reading column and its height follows
+        // the aspect ratio — at this canvas's 822px column a 4:3 chart is over 600px tall, so the
+        // sentence that introduces it and the sentence after it cannot be on screen together. That
+        // is what "takes away from the flow" means: the reader loses the thread to look at the
+        // picture explaining the thread.
+        //
+        // 🔴 THE CAP IS ON HEIGHT, WITH `w-auto`, SO THE SHAPE IS UNCHANGED. Constraining width
+        // instead would leave a tall diagram tall; both bounds with both dimensions on `auto` lets
+        // the SVG scale down inside the box and keep its proportions. Anything that still will not
+        // fit scrolls sideways, which this wrapper already allowed.
+        "my-[16px] flex justify-center overflow-x-auto",
+        "[&_svg]:h-auto [&_svg]:max-h-[340px] [&_svg]:w-auto [&_svg]:max-w-full",
       )}
       // Sanitised by mermaid under securityLevel "strict" — see the header.
       dangerouslySetInnerHTML={{ __html: svg }}

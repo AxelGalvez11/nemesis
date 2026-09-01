@@ -335,25 +335,30 @@ export function SourcesControl({
               typing a topic holds no files and a great deal of knowledge, and this shelf answering
               "nothing read from the web" while fifty model-minted facts sit behind it is true about
               web pages and false about provenance — on the one surface a learner opens to ask where
-              something came from. `filled` is what stops the empty sentence printing over it. */}
+              something came from. The empty sentence now CARRIES that disclosure rather than being
+              suppressed by a flag, so there is one line saying one thing. */}
+          {/* 🔴🔴 THE MODEL'S OWN KNOWLEDGE IS NOT A SOURCE, AND LISTING IT AS ONE WAS THE DEFECT.
+              Owner, 2026-09-01: *"sources will sometimes say 'generated with model knowledge'. I
+              don't want it showing its own model knowledge as a source. That's not a source."*
+              He is right, and the line was not wrong to exist: a canvas taught entirely from what
+              the model knows, answering "nothing read from the web", is true about web pages and
+              false about provenance — which is the one question this shelf is opened to ask.
+              Both hold. It was FILED wrongly, not written wrongly.
+
+              🔴 SO IT MOVES INTO THE EMPTY SENTENCE RATHER THAN BEING DELETED. That line is
+              already the place this panel says "there is nothing here", and it is the only place
+              where saying where the answer DID come from cannot be mistaken for a row you could
+              open, cite or click. A source list with one entry that is not a source teaches a
+              learner that our citations are decorative. */}
           <PanelSection
-            empty="Nothing read from the web yet."
-            filled={modelKnowledge}
+            empty={
+              modelKnowledge
+                ? "Nothing read from the web. This was answered from Nemesis's own knowledge."
+                : "Nothing read from the web yet."
+            }
             label="Sources"
             onAdd={() => filePicker.current?.click()}
           >
-            {modelKnowledge && (
-              // 🔴 ONE LINE, AND IT IS THE DISCLOSURE RATHER THAN A LABEL WITH THE DISCLOSURE UNDER
-              // IT. It used to read "Nemesis knowledge" over "Generated from model knowledge",
-              // which is the same fact stated twice, the second time in grey. Collapsed to the
-              // sentence that actually answers the question this shelf is opened to ask.
-              <div className={cn(PANEL_ROW, "flex items-center gap-1.5")}>
-                <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="lightbulb" size="0.75rem" />
-                <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">
-                  Generated from model knowledge
-                </span>
-              </div>
-            )}
             {websites.map((source) => (
               <SourceRow key={source.id} onPreview={openDocument} source={source} />
             ))}
@@ -443,7 +448,6 @@ export function SourcesControl({
 function PanelSection({
   children,
   empty,
-  filled = false,
   label,
   onAdd,
 }: {
@@ -458,10 +462,6 @@ function PanelSection({
    * the code happened to check first would win silently.
    */
   empty?: string;
-  /** Treat the section as non-empty even though it has no rows of its own — the Sources shelf
-   *  carries a model-knowledge line that is a child rather than a row, and an empty sentence
-   *  printed above it would contradict the thing directly beneath it. */
-  filled?: boolean;
   label: string;
   /** Adds the reference's `+`. Absent on Outputs, deliberately — see the note at the call site. */
   onAdd?: () => void;
@@ -480,7 +480,7 @@ function PanelSection({
   const shown = all ? rows : rows.slice(0, SECTION_ROWS);
 
   // A shelf with nothing in it and nothing to say about that is not a shelf.
-  if (rows.length === 0 && !filled && !empty) return null;
+  if (rows.length === 0 && !empty) return null;
 
   return (
     // 🔴 THE DIVIDER IS `first:border-t-0`, NOT A SEPARATOR THE PARENT PLACES BETWEEN SIBLINGS. Two
@@ -525,7 +525,7 @@ function PanelSection({
       </div>
       {open && (
         <>
-          {rows.length === 0 && !filled ? (
+          {rows.length === 0 ? (
             <p className="m-0 px-2 pb-1 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-quaternary)">{empty}</p>
           ) : (
             shown
