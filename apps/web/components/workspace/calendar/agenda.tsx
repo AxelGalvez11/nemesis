@@ -6,7 +6,7 @@ import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime } from "./format";
-import { KIND_META } from "./kind-meta";
+import { DEFAULT_PAINT } from "./kind-meta";
 
 interface AgendaProps {
   events: CalendarEvent[];
@@ -44,7 +44,7 @@ export function Agenda({ events, hasAnyEvents, loaded, onOpenEvent }: AgendaProp
                 onClick={() => onOpenEvent(event)}
                 type="button"
               >
-                <span className={cn("mt-1 size-1.5 shrink-0 rounded-full", KIND_META[event.kind].dot)} />
+                <span className={cn("mt-1 size-1.5 shrink-0 rounded-full", DEFAULT_PAINT.dot)} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-medium">{event.title}</span>
                   <span className="block text-[0.6875rem] text-muted-foreground">

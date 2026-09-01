@@ -37,8 +37,10 @@ import {
 } from "@/lib/workspace/calendars";
 import {
   CALENDAR_FILTER_STORAGE_KEY,
-  parseHiddenKinds,
-  serializeHiddenKinds,
+  coloursInUse,
+  LEGACY_KIND_FILTER_STORAGE_KEY,
+  parseHiddenColors,
+  serializeHiddenColors,
   visibleEvents,
 } from "@/lib/workspace/calendar-filter";
 
@@ -86,7 +88,7 @@ export function CalendarWorkspace() {
   const [quickCreate, setQuickCreate] = useState<QuickCreateState | null>(null);
   /** Kinds the student has switched OFF. Empty by default, so a category added
    *  later is visible rather than silently filtered out — see calendar-filter.ts. */
-  const [hiddenKinds, setHiddenKinds] = useState<Set<CalendarEventKind>>(() => new Set());
+  const [hiddenColors, setHiddenColors] = useState<Set<string>>(() => new Set());
   /**
    * The day opened out beside the month grid, or null for none.
    *
@@ -129,7 +131,15 @@ export function CalendarWorkspace() {
     } catch {
       // Private mode: there was nothing stored to begin with.
     }
-    setHiddenKinds(parseHiddenKinds(window.localStorage.getItem(CALENDAR_FILTER_STORAGE_KEY)));
+    setHiddenColors(parseHiddenColors(window.localStorage.getItem(CALENDAR_FILTER_STORAGE_KEY)));
+    // The kind filter's stored value, cleared rather than left behind. It could
+    // hide whole categories of event and there is no longer any control that
+    // could bring them back — the same trap `nemesis.calendar.weekStart` was.
+    try {
+      window.localStorage.removeItem(LEGACY_KIND_FILTER_STORAGE_KEY);
+    } catch {
+      // Private mode: there was nothing stored to begin with.
+    }
     const requested = new URLSearchParams(window.location.search).get("date");
     const parsed = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? new Date(`${requested}T12:00:00`) : null;
     if (parsed && !Number.isNaN(parsed.getTime())) setCursor(parsed);
@@ -177,13 +187,16 @@ export function CalendarWorkspace() {
     [calendars],
   );
 
-  const shownEvents = useMemo(() => visibleEvents(events, hiddenKinds), [events, hiddenKinds]);
+  const shownEvents = useMemo(() => visibleEvents(events, hiddenColors), [events, hiddenColors]);
+  /** Read from ALL events, not the filtered ones — a colour must stay in the
+   *  control after it is switched off, or there is no way to switch it back. */
+  const colours = useMemo(() => coloursInUse(events), [events]);
   const byDate = useMemo(() => eventsByDate(shownEvents), [shownEvents]);
 
-  function changeHiddenKinds(next: Set<CalendarEventKind>) {
-    setHiddenKinds(next);
+  function changeHiddenColors(next: Set<string>) {
+    setHiddenColors(next);
     try {
-      window.localStorage.setItem(CALENDAR_FILTER_STORAGE_KEY, serializeHiddenKinds(next));
+      window.localStorage.setItem(CALENDAR_FILTER_STORAGE_KEY, serializeHiddenColors(next));
     } catch {
       // best-effort; the filter still applies for this session
     }
@@ -331,9 +344,10 @@ export function CalendarWorkspace() {
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <CalendarHeader
           cursor={cursor}
-          hiddenKinds={hiddenKinds}
+          colours={colours}
+          hiddenColors={hiddenColors}
           onAddEvent={openAdd}
-          onChangeHiddenKinds={changeHiddenKinds}
+          onChangeHiddenColors={changeHiddenColors}
           onChangeView={setView}
           onStep={goStep}
           onToday={() => setCursor(new Date())}
@@ -417,9 +431,9 @@ export function CalendarWorkspace() {
             await handleSave(created);
             setQuickCreate(null);
           }}
-          onOpenDetails={(draft, title, kind) => {
+          onOpenDetails={(draft, title) => {
             setQuickCreate(null);
-            setDialog({ draft: { ...draft, kind, ...(title.trim() ? { title: title.trim() } : {}) }, mode: "add" });
+            setDialog({ draft: { ...draft, ...(title.trim() ? { title: title.trim() } : {}) }, mode: "add" });
           }}
         />
       )}

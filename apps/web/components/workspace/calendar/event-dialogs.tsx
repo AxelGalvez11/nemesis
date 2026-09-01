@@ -18,22 +18,16 @@ import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import {
   type CalendarEvent,
-  type CalendarEventKind,
-  type EventAttendee,
-  type EventReminders,
   isAllDay,
 } from "@/lib/workspace/calendar-model";
 import type { Calendar } from "@/lib/workspace/calendars";
 import { EVENT_COLORS } from "@/lib/workspace/event-colors";
 import { formatRecurrenceLines, parseRecurrenceLines, specFromLegacy, specToLegacy } from "@/lib/workspace/rrule";
-import { Bell, Check, Clock, FileText, Palette, Pin, RefreshCw, Trash2, Users } from "@/lib/workspace/icons";
+import { Clock, FileText, Layers3, LinkIcon, Palette, RefreshCw, Trash2 } from "@/lib/workspace/icons";
 import { controlVariants } from "@/components/desktop-ui/control";
 import { cn } from "@/lib/utils";
 
-import { formatEventDate, formatEventTime } from "./format";
 import { clockOf, minutesOf, SNAP_MINUTES } from "./time-grid";
-import { KIND_META, KIND_ORDER } from "./kind-meta";
-import { type GuestPermissions, GuestsEditor } from "./guests-editor";
 import { RepeatEditor } from "./repeat-editor";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
@@ -142,7 +136,6 @@ export interface EventDraft {
   title?: string;
   time?: string;
   endTime?: string;
-  kind?: CalendarEventKind;
 }
 
 interface EventFormDialogProps {
@@ -204,27 +197,11 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
   // whole product did before there was a flag — so the box starts where the
   // guess would have landed and the student can disagree with it.
   const [allDay, setAllDay] = useState(event ? isAllDay(event) : !(draft?.time));
-  const [timeZone, setTimeZone] = useState(
-    event?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "",
-  );
-  const [location, setLocation] = useState(event?.location ?? "");
   const [colorId, setColorId] = useState(event?.colorId ?? "");
   const [calendarId, setCalendarId] = useState(event?.calendarId ?? "");
-  const [attendees, setAttendees] = useState<EventAttendee[]>(event?.attendees ?? []);
-  const [reminders, setReminders] = useState<EventReminders | undefined>(event?.reminders);
-  const [permissions, setPermissions] = useState<GuestPermissions>({
-    invite: event?.guestsCanInviteOthers,
-    modify: event?.guestsCanModify,
-    seeOthers: event?.guestsCanSeeOtherGuests,
-  });
-  const [status, setStatus] = useState<NonNullable<CalendarEvent["status"]>>(event?.status ?? "confirmed");
-  const [busy, setBusy] = useState(event?.transparency !== "transparent");
-  const [visibility, setVisibility] = useState<NonNullable<CalendarEvent["visibility"]>>(event?.visibility ?? "default");
   const [rrule, setRrule] = useState<string[] | undefined>(
     event?.rrule ?? (event?.recurrence ? formatRecurrenceLines(specFromLegacy(event.recurrence)) : undefined),
   );
-  const [kind, setKind] = useState<CalendarEventKind>(event?.kind ?? draft?.kind ?? "assignment");
-  const [course, setCourse] = useState(event?.course ?? "");
   const [note, setNote] = useState(event?.note ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -238,7 +215,18 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
       id: mode === "edit" && event ? event.id : newEventId(),
       title: title.trim(),
       date,
-      kind,
+      /**
+       * 🔴 CARRIED, NEVER EDITED. Owner 2026-09-01: "I don't want anything like
+       * type, you know, like assignment exam rotation. That's too specific to
+       * school. This should be generalist as possible, like Google Calendar."
+       *
+       * The FIELD stays: a syllabus import, `schedule-to-calendar` and the agent
+       * tools all still set it, and dropping it here would erase it from every
+       * row the owner opened. It simply has no control any more, and nothing on
+       * the calendar shows it. New events are "other", which is the one value
+       * that claims nothing about what the event is.
+       */
+      kind: event?.kind ?? "other",
       source: "manual",
     };
     if (!allDay && time) built.time = time;
@@ -248,9 +236,7 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
     // Only worth storing when it differs from the reader's own zone: writing the
     // browser's zone onto every event would make a student's whole calendar look
     // like it came from somewhere, and pin it there if they moved.
-    if (!allDay && timeZone && timeZone !== Intl.DateTimeFormat().resolvedOptions().timeZone) {
-      built.timeZone = timeZone;
-    }
+    if (!allDay && event?.timeZone) built.timeZone = event.timeZone;
     if (rrule && rrule.length > 0) {
       built.rrule = rrule;
       // 🔴 THE OLD SHAPE IS WRITTEN TOO, BUT ONLY WHEN IT CAN HOLD THE RULE.
@@ -262,22 +248,25 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
       const legacy = spec ? specToLegacy(spec) : null;
       if (legacy) built.recurrence = legacy;
     }
-    if (location.trim()) built.location = location.trim();
     if (colorId) built.colorId = colorId;
     // Empty means the primary calendar, which is what null means in the database
     // and what every event written before calendars existed already is.
     if (calendarId) built.calendarId = calendarId;
-    if (attendees.length > 0) built.attendees = attendees;
-    if (reminders?.overrides?.length) built.reminders = reminders;
-    // Only when there is somebody for them to apply to: three booleans on a
-    // solo event are three columns recording nothing.
-    if (attendees.length > 0) {
-      if (permissions.modify !== undefined) built.guestsCanModify = permissions.modify;
-      if (permissions.invite !== undefined) built.guestsCanInviteOthers = permissions.invite;
-      if (permissions.seeOthers !== undefined) built.guestsCanSeeOtherGuests = permissions.seeOthers;
-    }
-    // Carried through untouched: Nemesis can hold and show these, and only the
-    // provider that made them can change them.
+    /**
+     * 🔴 EVERYTHING BELOW IS CARRIED, NOT REBUILT — and that is the whole reason
+     * this block exists. `built` starts empty, so a field this form stops
+     * editing is a field that gets ERASED the first time the owner opens an
+     * event and presses Save. Guests, reminders, location and the rest lost
+     * their controls on 2026-09-01 ("I don't think we need guess ... location is
+     * like just another fancy thing"); they did not lose their data.
+     */
+    if (event?.location) built.location = event.location;
+    if (event?.attendees?.length) built.attendees = event.attendees;
+    if (event?.reminders?.overrides?.length) built.reminders = event.reminders;
+    if (event?.guestsCanModify !== undefined) built.guestsCanModify = event.guestsCanModify;
+    if (event?.guestsCanInviteOthers !== undefined) built.guestsCanInviteOthers = event.guestsCanInviteOthers;
+    if (event?.guestsCanSeeOtherGuests !== undefined) built.guestsCanSeeOtherGuests = event.guestsCanSeeOtherGuests;
+    if (event?.course) built.course = event.course;
     if (event?.conference) built.conference = event.conference;
     if (event?.attachments) built.attachments = event.attachments;
     if (event?.eventType) built.eventType = event.eventType;
@@ -286,10 +275,9 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
     // Only stored when it is not the default: writing "confirmed", "opaque" and
     // "default" onto every row would fill three columns with the absence of a
     // decision, and absent already means exactly that everywhere that reads them.
-    if (status !== "confirmed") built.status = status;
-    if (!busy) built.transparency = "transparent";
-    if (visibility !== "default") built.visibility = visibility;
-    if (course.trim()) built.course = course.trim();
+    if (event?.status && event.status !== "confirmed") built.status = event.status;
+    if (event?.transparency === "transparent") built.transparency = "transparent";
+    if (event?.visibility && event.visibility !== "default") built.visibility = event.visibility;
     if (note.trim()) built.note = note.trim();
 
     try {
@@ -326,9 +314,23 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col">
-          {/* The title carries the dialog, so it is set like a title rather than
-              like the eleventh field. Borderless until focused, which is what
-              Google does and what stops the form opening on a row of boxes. */}
+          {/* 🔴 SIX FIELDS. Owner 2026-09-01: "basically, I just need a way to map
+              events onto a calendar ... Google Calendar has all these extra
+              things, I need ours to have just the basics — maybe changing events
+              calendars, repeating maybe, and the title ... maybe a description
+              for it, that's about it."
+
+              Gone with that: the type picker (assignment/exam/rotation — "too
+              specific to school", and this product is field-agnostic), guests
+              ("too Google Calendar-like, and I don't think we even have a
+              function for that" — correct, Nemesis has never emailed anyone),
+              reminders, location, course, status, free/busy, visibility and the
+              timezone picker.
+
+              Every one of those fields is still CARRIED on save (see `built`
+              above). Removing a control is not the same as deleting the column,
+              and an editor that silently erased a location on Save would be a
+              worse bug than the clutter it replaced. */}
           <input
             aria-label="Title"
             autoFocus
@@ -358,71 +360,30 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
                 </>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-(--ui-text-secondary)">
-                <input checked={allDay} className="accent-(--ui-text-primary)" onChange={(e) => setAllDay(e.target.checked)} type="checkbox" />
-                All day
-              </label>
-              {!allDay && (
-                <select
-                  aria-label="Timezone"
-                  className={cn(FIELD, "flex-1")}
-                  onChange={(e) => setTimeZone(e.target.value)}
-                  style={CHEVRON_STYLE}
-                  value={timeZone}
-                >
-                  {TIME_ZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
-                </select>
-              )}
-            </div>
+            <label className="flex w-fit cursor-pointer items-center gap-1.5 text-xs text-(--ui-text-secondary)">
+              <input checked={allDay} className="accent-(--ui-text-primary)" onChange={(e) => setAllDay(e.target.checked)} type="checkbox" />
+              All day
+            </label>
           </Row>
 
           <Row icon={RefreshCw}>
             <RepeatEditor onChange={setRrule} startDate={date} value={rrule} />
           </Row>
 
-          <Row icon={Pin}>
-            <Input className="h-8" onChange={(e) => setLocation(e.target.value)} placeholder="Add a location" value={location} />
-            {calendars.length > 1 && (
-              <select
-                aria-label="Calendar"
-                className={FIELD}
-                onChange={(e) => setCalendarId(e.target.value)}
-                style={CHEVRON_STYLE}
-                value={calendarId}
-              >
-                {calendars.map((entry) => (
-                  <option key={entry.id || "primary"} value={entry.id}>{entry.name}</option>
-                ))}
-              </select>
-            )}
-          </Row>
-
-          {/* 🔴 ONE ROW OF COLOURS, NOT TWO. Owner 2026-09-01: "you can choose
-              colors for events, but it's not consistent, like there's different
-              buttons for the colors ... why are they so bland?"
-              He was looking at two rows of identical unlabelled dots that
-              answered different questions — the first was the event's TYPE
-              (exam, assignment), the second its colour. Both are still here,
-              because "it is an exam" is not a matter of taste and Nemesis
-              filters on it, but they no longer wear the same clothes: type is
-              named chips, colour is swatches, and each row says what it is.
-
-              And the swatches are at FULL STRENGTH now. Every unselected one
-              carried `opacity-70` (the types, `opacity-45`), which is exactly
-              what "bland" was — the palette itself is Google's own, and its
-              Tomato is #d50000. */}
+          {/* One row of colours, and it is the only thing that tells two events
+              apart at a glance now — which is exactly what the owner asked for:
+              "the only differentiating thing should be filtering by color". */}
           <Row icon={Palette} label="Colour">
             <div className="flex flex-wrap items-center gap-2" role="group">
               <button
-                aria-label="Use the type colour"
+                aria-label="Default colour"
                 aria-pressed={colorId === ""}
                 className={cn(
                   "grid size-[1.375rem] place-items-center rounded-full border border-dashed border-(--ui-stroke-primary) text-[0.625rem] text-(--ui-text-tertiary) transition-transform hover:scale-110",
                   colorId === "" && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
                 )}
                 onClick={() => setColorId("")}
-                title="Use the type colour"
+                title="Default colour"
                 type="button"
               >
                 ×
@@ -445,110 +406,40 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
             </div>
           </Row>
 
-          <Row label="Type">
-            <div className="flex flex-wrap gap-1.5" role="group">
-              {KIND_ORDER.map((option) => (
-                <button
-                  aria-pressed={kind === option}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.75rem] transition-colors",
-                    kind === option
-                      ? "border-(--ui-stroke-primary) bg-(--ui-control-hover-background) font-medium text-foreground"
-                      : "border-(--ui-stroke-tertiary) text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
-                  )}
-                  key={option}
-                  onClick={() => setKind(option)}
-                  type="button"
-                >
-                  <span aria-hidden className={cn("size-2 shrink-0 rounded-full", KIND_META[option].dot)} />
-                  {KIND_META[option].label}
-                </button>
-              ))}
-            </div>
-          </Row>
-
-          <Row icon={Check} label="Shows as">
-            <div className="flex flex-wrap gap-1.5">
+          {calendars.length > 1 && (
+            <Row icon={Layers3} label="Calendar">
               <select
-                aria-label="Status"
-                className={cn(FIELD, "flex-1")}
-                onChange={(e) => setStatus(e.target.value as NonNullable<CalendarEvent["status"]>)}
+                aria-label="Calendar"
+                className={FIELD}
+                onChange={(e) => setCalendarId(e.target.value)}
                 style={CHEVRON_STYLE}
-                value={status}
+                value={calendarId}
               >
-                <option value="confirmed">Confirmed</option>
-                <option value="tentative">Tentative</option>
-                <option value="cancelled">Cancelled</option>
+                {calendars.map((entry) => (
+                  <option key={entry.id || "primary"} value={entry.id}>{entry.name}</option>
+                ))}
               </select>
-              <select
-                aria-label="Shows you as"
-                className={cn(FIELD, "flex-1")}
-                onChange={(e) => setBusy(e.target.value === "busy")}
-                style={CHEVRON_STYLE}
-                value={busy ? "busy" : "free"}
-              >
-                <option value="busy">Busy</option>
-                <option value="free">Free</option>
-              </select>
-              <select
-                aria-label="Visibility"
-                className={cn(FIELD, "flex-1")}
-                onChange={(e) => setVisibility(e.target.value as NonNullable<CalendarEvent["visibility"]>)}
-                style={CHEVRON_STYLE}
-                value={visibility}
-              >
-                <option value="default">Default</option>
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-                <option value="confidential">Confidential</option>
-              </select>
-            </div>
-          </Row>
-
-          <Row icon={Users}>
-            <GuestsEditor
-              attendees={attendees}
-              onAttendees={setAttendees}
-              onPermissions={setPermissions}
-              onReminders={setReminders}
-              permissions={permissions}
-              reminders={reminders}
-            />
-          </Row>
+            </Row>
+          )}
 
           {/* Held and shown, never made here: only the provider that minted a
-              Meet link or pinned a Drive file can change one. */}
+              Meet link or pinned a Drive file can change one. Drawn only when
+              one exists, so an ordinary event never sees it. */}
           {(event?.conference?.url || event?.attachments?.length || event?.sourceUrl) && (
-            <Row icon={Bell}>
+            <Row icon={LinkIcon}>
               <div className="flex flex-col gap-1 rounded-lg border border-(--ui-stroke-tertiary) p-2.5 text-xs">
                 {event?.conference?.url && (
-                  <a
-                    className="truncate text-(--ui-learner) hover:underline"
-                    href={event.conference.url}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
+                  <a className="truncate text-(--ui-learner) hover:underline" href={event.conference.url} rel="noopener noreferrer" target="_blank">
                     {event.conference.label || "Join the video call"}
                   </a>
                 )}
                 {event?.attachments?.map((file) => (
-                  <a
-                    className="truncate text-(--ui-learner) hover:underline"
-                    href={file.fileUrl}
-                    key={file.fileUrl}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
+                  <a className="truncate text-(--ui-learner) hover:underline" href={file.fileUrl} key={file.fileUrl} rel="noopener noreferrer" target="_blank">
                     {file.title || file.fileUrl}
                   </a>
                 ))}
                 {event?.sourceUrl && (
-                  <a
-                    className="truncate text-(--ui-text-tertiary) hover:underline"
-                    href={event.sourceUrl}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
+                  <a className="truncate text-(--ui-text-tertiary) hover:underline" href={event.sourceUrl} rel="noopener noreferrer" target="_blank">
                     {event.sourceTitle || "Where this came from"}
                   </a>
                 )}
@@ -557,7 +448,6 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
           )}
 
           <Row icon={FileText}>
-            <Input className="h-8" onChange={(e) => setCourse(e.target.value)} placeholder="Course (optional)" value={course} />
             <Textarea
               className="min-h-16"
               onChange={(e) => setNote(e.target.value)}
