@@ -48,10 +48,11 @@ test("🔴 the map keeps the way back OUT of a narrowed focus", () => {
   assert.match(canvas, /onClearCourseScope: \(\) => policy\.setFocus\(WHOLE_CANVAS\)/, "widening no longer reaches setFocus");
 });
 
-test("🔴 the view door is gated exactly like everything else on the row", () => {
-  // The evening ruling of 2026-08-30 put the switch BACK — as a glyph, not the buried menu row
-  // the morning cut was aimed at. Same law as Sources and the map: absent until it has something
-  // to do (a conversation to leave), then present for the session.
-  assert.match(HEADER, /\{view && onToggleView && <CanvasViewControl /, "the view door lost its conversation gate");
-  assert.match(CONTROLS, /export function CanvasViewControl/, "the door's control left the controls file");
+test("🪦 the view door is pulled — the row is Sources and the map, and nothing else", () => {
+  // It was put back as a glyph on the evening of 2026-08-30 and gated like its neighbours; it
+  // comes off on 2026-09-01 because the view behind it is parked (owner: *"we hid the canvas view
+  // to work on it later"* / *"yeah pull the glyph"*). The gating rule it obeyed is unchanged and
+  // still governs Sources and the map — this file's subject was never this one control.
+  assert.ok(!/CanvasViewControl/.test(HEADER), "the view door is back in the header");
+  assert.ok(!/export function CanvasViewControl/.test(CONTROLS), "the door's control is back in the controls file");
 });

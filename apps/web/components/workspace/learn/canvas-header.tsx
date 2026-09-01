@@ -22,7 +22,7 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
-import { CanvasViewControl, SourcesControl } from "./canvas-controls";
+import { SourcesControl } from "./canvas-controls";
 import { CourseMapControl } from "./course-map";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -31,10 +31,6 @@ import type { CanvasVoice as CanvasVoiceState } from "./use-canvas-voice";
 
 interface CanvasHeaderProps {
   canvas: LearningCanvas;
-  /** The chat↔canvas door's inputs. Withheld by the canvas until a conversation exists; the
-   *  control renders only when both arrive. See CanvasViewControl. */
-  view?: import("@/lib/learn/canvas-view").CanvasView;
-  onToggleView?: () => void;
   onFiles: (files: FileList | File[]) => void;
   /** Threaded straight to SourcesControl — see its own prop comments. */
   outputTools?: import("./canvas-controls").OutputTools;
@@ -96,8 +92,6 @@ export function CanvasHeader({
   minimap,
   transcript = [],
   replyAudio,
-  view,
-  onToggleView,
 }: CanvasHeaderProps) {
   return (
     <>
@@ -185,11 +179,11 @@ export function CanvasHeader({
           {/* 🔴 NO `⋯` ANY MORE. The options menu and every row in it died on 2026-08-30 — the
               tombstone in canvas-controls.tsx carries the owner's words and where each row's
               feature went. A brand-new canvas still shows a bare title and nothing else. */}
-          {/* 🔴 THE VIEW DOOR CAME BACK THE SAME EVENING THE MENU DIED — owner: *"there should be
-              a way to chat mode to canvas mode"*. A glyph this time, not a buried row, and gated
-              like everything else here: both props arrive only once there is a conversation to
-              leave, and then the control stays for the session. */}
-          {view && onToggleView && <CanvasViewControl onToggleView={onToggleView} view={view} />}
+          {/* 🪦 AND NO VIEW DOOR EITHER, PULLED 2026-09-01 — owner: *"yeah pull the glyph"*, the
+              canvas view being parked (*"we hid the canvas view to work on it later"*). It had
+              come back the evening the menu died and was correctly gated the whole time; a door
+              is not worth keeping open onto a room nobody is finished building. The tombstone in
+              canvas-controls.tsx says exactly what to restore. */}
       </div>
     </>
   );
