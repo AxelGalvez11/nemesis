@@ -26,11 +26,69 @@ export interface CalendarEvent {
   date: string;
   time?: string;
   endTime?: string;
+  /**
+   * The last day this event covers, for something that runs over several.
+   *
+   * 🔴 WITHOUT THIS A THREE-DAY CONFERENCE HAD TO BE THREE EVENTS. Every real
+   * calendar stores one row with a start and an end date; Nemesis stored one
+   * `date` and nothing else, so a placement block or a reading week arrived from
+   * a syllabus as five unrelated rows that could not be moved or deleted
+   * together. Absent means "one day", which is what every existing row is.
+   */
+  endDate?: string;
+  /**
+   * Said outright, rather than guessed from `time` being empty.
+   *
+   * 🔴 THE GUESS WAS WRONG IN ONE DIRECTION AND THE PRODUCT COULD NOT TELL.
+   * "Essay due Friday" has no clock time and IS an all-day item; a lecture whose
+   * time simply was not captured has no clock time and is NOT. Both looked
+   * identical, so a half-read import landed in the all-day strip looking
+   * deliberate. Undefined keeps the old behaviour — see `isAllDay`.
+   */
+  allDay?: boolean;
+  /**
+   * IANA zone the clock times are written in, e.g. "Europe/London".
+   *
+   * 🔴 A BARE LOCAL TIME IS A BUG FOR ANYONE WHO MOVES. The whole calendar
+   * stored "09:00" with no zone, so a student flying home for reading week saw
+   * their 9am seminar at 9am local — an hour or eight from when it actually
+   * runs. Absent means the browser's own zone, which is what every existing row
+   * has always meant.
+   */
+  timeZone?: string;
   kind: CalendarEventKind;
   course?: string;
   note?: string;
   /** 'agent' events are read-only in the UI. */
   source?: "agent" | "manual";
+  /**
+   * The repeat rule, in the format every real calendar speaks (RFC 5545).
+   *
+   * 🔴 THIS SUPERSEDES `recurrence` BELOW, WHICH COULD SAY ONLY ONE THING.
+   * The old shape meant "these weekdays, weekly, until this date" and nothing
+   * else — no fortnightly seminar, no first-Monday-of-the-month lab, no "twelve
+   * sessions". It also could not RECEIVE a rule: anything from Google arrives as
+   * an RRULE, and flattening one into weekly puts a student in a lab that is not
+   * running. Read and written only through lib/workspace/rrule.ts.
+   *
+   * Both fields are kept in step where the old one can hold the rule, so a
+   * client running last week's deploy still sees a weekly class. Where it
+   * cannot, `recurrence` is left empty rather than approximated.
+   */
+  rrule?: string[];
+  /**
+   * Which series occurrence this row replaces, and on which date.
+   *
+   * 🔴 THIS IS "THIS WEEK'S LECTURE MOVED TO FRIDAY". Before it, the only thing
+   * that could be done to one meeting of a series was to cancel it — so a moved
+   * class had to be cancelled and re-created as an unrelated event, losing the
+   * link to its series. `overrideOf` is the parent event's id; `originalDate` is
+   * the date in the parent's series that this row stands in for, and expansion
+   * skips it there.
+   */
+  overrideOf?: string;
+  originalDate?: string;
+  /** @deprecated Superseded by `rrule`. Still read so existing rows keep working. */
   recurrence?: {
     /** 0 = Sunday … 6 = Saturday. */
     days: number[];
@@ -51,6 +109,9 @@ export interface CalendarEvent {
   };
   /** UI-only identity for an expanded recurrence occurrence. */
   seriesId?: string;
+  /** UI-only: which day of a multi-day run this is (1-based), and how many in all. */
+  spanIndex?: number;
+  spanLength?: number;
 }
 
 export interface CalendarState {
@@ -80,7 +141,15 @@ export const CALENDAR_STORAGE_KEY = "nemesis.web.calendar.v1";
 // (or re-upload) another account's data. A per-uid flag would have left the
 // legacy key sitting there for every subsequent sign-in to also claim.
 const CALENDAR_CLOUD_MIGRATED_KEY = "nemesis.web.calendar.cloudmigrated.v1";
-const CALENDAR_EVENT_COLUMNS = "id,title,date,time,end_time,kind,course,note,source,recurrence";
+import {
+  expandSpec,
+  parseRecurrenceLines,
+  type RecurrenceSpec,
+  specFromLegacy,
+} from "./rrule";
+
+const CALENDAR_EVENT_COLUMNS =
+  "id,title,date,time,end_time,end_date,all_day,time_zone,rrule,override_of,original_date,kind,course,note,source,recurrence";
 
 /** The ONGOING per-account warm-cache key — every signed-in user's cache
  *  lives at its own key, so switching accounts on the same browser can never
@@ -344,40 +413,106 @@ export function weekGrid(anchor: Date, today: Date): MonthDay[] {
   });
 }
 
-/** Expand a compact recurrence rule into UI-only occurrences. Stored rows stay
- * singular and editable; occurrence ids carry `seriesId` so the workspace can
- * open the original rule rather than creating dozens of independent events. */
+/**
+ * The repeat rule for an event, whichever shape it is stored in.
+ *
+ * 🔴 ONE READER, TWO SHAPES, AND THE NEW ONE WINS. Rows written before RRULE
+ * carry `recurrence`; rows written since carry `rrule`. Both are kept in step
+ * when the rule is simple enough for the old shape to hold, so an older client
+ * still sees a weekly class — but where they disagree, the standard rule is the
+ * truth, because it is the only one that can express what was actually meant.
+ */
+export function recurrenceSpecOf(event: CalendarEvent): RecurrenceSpec | null {
+  if (event.rrule && event.rrule.length > 0) {
+    const parsed = parseRecurrenceLines(event.rrule);
+    if (parsed) return parsed;
+  }
+  if (event.recurrence) return specFromLegacy(event.recurrence);
+  return null;
+}
+
+/** Whether this event covers whole days rather than a slot on the clock. */
+export function isAllDay(event: CalendarEvent): boolean {
+  return event.allDay ?? !event.time;
+}
+
+/** How many days an event covers. 1 unless it carries a later `endDate`. */
+export function spanLengthOf(event: CalendarEvent): number {
+  if (!event.endDate || event.endDate <= event.date) return 1;
+  const days = Math.round((parseDateKey(event.endDate).getTime() - parseDateKey(event.date).getTime()) / 86_400_000);
+  // A typo in an import must not produce a hundred-thousand-day event.
+  return Math.min(days + 1, 366);
+}
+
+/**
+ * One entry per day an occurrence covers.
+ *
+ * 🔴 A THREE-DAY EVENT HAS TO APPEAR ON THREE DAYS, and every surface in this
+ * app looks events up by a single date key. Rather than teach the month grid,
+ * the week grid, the agenda and the conflict checker each to notice `endDate`,
+ * the expansion hands them what they already understand: separate days, each
+ * carrying `spanIndex`/`spanLength` so a view that wants to draw one continuous
+ * bar still can.
+ */
+function spreadAcrossDays(event: CalendarEvent, startKey: string): CalendarEvent[] {
+  const length = spanLengthOf(event);
+  if (length === 1) return [{ ...event, date: startKey }];
+  const start = parseDateKey(startKey);
+  return Array.from({ length }, (_, index) => {
+    const key = dateKey(addDays(start, index));
+    return {
+      ...event,
+      date: key,
+      id: index === 0 ? event.id : `${event.id}~${key}`,
+      spanIndex: index + 1,
+      spanLength: length,
+      // Only the first day keeps a start time and the last an end time: a
+      // conference that begins at 2pm on Monday does not begin at 2pm on Tuesday.
+      ...(index === 0 ? {} : { time: undefined }),
+      ...(index === length - 1 ? {} : { endTime: undefined }),
+    };
+  });
+}
+
+/** Expand recurrence rules and multi-day runs into UI-only occurrences. Stored
+ * rows stay singular and editable; occurrence ids carry `seriesId` so the
+ * workspace can open the original rule rather than dozens of independent
+ * events. */
 export function expandRecurringEvents(events: CalendarEvent[], from?: Date, to?: Date): CalendarEvent[] {
+  // A moved occurrence stands in for its parent's date, so that date must not
+  // also be drawn from the rule. Collected first because a parent may be listed
+  // before or after the row that overrides it.
+  const overridden = new Map<string, Set<string>>();
+  for (const event of events) {
+    if (!event.overrideOf || !event.originalDate) continue;
+    const dates = overridden.get(event.overrideOf) ?? new Set<string>();
+    dates.add(event.originalDate);
+    overridden.set(event.overrideOf, dates);
+  }
+
   const out: CalendarEvent[] = [];
   for (const event of events) {
-    if (!event.recurrence) {
-      out.push(event);
+    const spec = recurrenceSpecOf(event);
+    if (!spec) {
+      out.push(...spreadAcrossDays(event, event.date));
       continue;
     }
-    const start = parseDateKey(event.date);
     // Callers often pass a live `Date` carrying the current clock time. Work
     // entirely in local calendar days so an occurrence on the first/last day
     // is not dropped merely because midnight sorts before 3:42 PM.
-    const requestedStart = from ? parseDateKey(dateKey(from)) : start;
-    const hardEnd = addMonths(start, 18);
-    const ruleEnd = parseDateKey(event.recurrence.until);
-    const requestedEnd = to ? parseDateKey(dateKey(to)) : ruleEnd;
-    const first = requestedStart > start ? requestedStart : start;
-    const end = requestedEnd < ruleEnd ? requestedEnd : ruleEnd;
-    const boundedEnd = end < hardEnd ? end : hardEnd;
-    // A cancelled meeting is not a meeting. Kept as a Set so a term's worth of
-    // holidays costs nothing per day.
-    const skipped = new Set(event.recurrence.except ?? []);
-    for (let cursor = new Date(first); cursor <= boundedEnd; cursor = addDays(cursor, 1)) {
-      if (!event.recurrence.days.includes(cursor.getDay())) continue;
-      const occurrenceDate = dateKey(cursor);
-      if (skipped.has(occurrenceDate)) continue;
-      out.push({
-        ...event,
-        date: occurrenceDate,
-        id: `${event.id}@${occurrenceDate}`,
-        seriesId: event.id,
-      });
+    const moved = overridden.get(event.id);
+    const window = {
+      ...(from ? { from: dateKey(from) } : {}),
+      ...(to ? { to: dateKey(to) } : {}),
+    };
+    for (const occurrenceDate of expandSpec(spec, event.date, window)) {
+      if (moved?.has(occurrenceDate)) continue;
+      out.push(
+        ...spreadAcrossDays(
+          { ...event, id: `${event.id}@${occurrenceDate}`, seriesId: event.id },
+          occurrenceDate,
+        ),
+      );
     }
   }
   return out;
