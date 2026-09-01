@@ -88,6 +88,9 @@ export const MAX_SEARCH_ROUNDS = 4;
 export interface TurnSurroundings {
   /** Whether the teaching policy is contributing anything right now. */
   lessonInProgress: boolean;
+  /** This turn was spoken inside a live voice conversation; the reply will be read aloud.
+   *  See `TurnContext.spokenConversation` for what it may and may not change. */
+  spokenConversation: boolean;
   objectives: number;
   demonstrated: number;
   history: readonly TurnExchange[];
@@ -373,6 +376,7 @@ export async function askCanvasChat(
         // packet builder so `turnRouterMessages` stays pure and its tests stay deterministic.
         today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
         lessonInProgress: surroundings.lessonInProgress,
+        spokenConversation: surroundings.spokenConversation,
         courseRequested,
         projectInstructions,
         searchesLeft,

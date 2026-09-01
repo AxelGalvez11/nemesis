@@ -90,6 +90,7 @@ const FRESH: TurnContext = {
   history: [],
   courseRequested: false,
   lessonInProgress: false,
+  spokenConversation: false,
   materialContext: "",
   memory: "",
   projectInstructions: "",

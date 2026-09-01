@@ -30,6 +30,7 @@ const EMPTY: TurnContext = {
   history: [],
   courseRequested: false,
   lessonInProgress: false,
+  spokenConversation: false,
   materialContext: "",
   memory: "",
   projectInstructions: "",
@@ -136,6 +137,7 @@ test("the state block states what the canvas holds", () => {
     canvasTitle: "Pharmacokinetics",
     demonstrated: 3,
     lessonInProgress: true,
+    spokenConversation: false,
     objectives: 9,
     passages: 14,
     sources: 2,
@@ -1027,4 +1029,23 @@ test("🔴 project instructions ride the packet as the learner's standing orders
   assert.match(packet, /your rules above still win/, "the stance lost its precedence over project instructions");
   const bare = turnRouterMessages({ context: EMPTY, utterance: "hello" }).map((m) => m.content).join("\n");
   assert.ok(!bare.includes("PROJECT INSTRUCTIONS"), "an unfiled canvas grew an empty instructions block");
+});
+
+// ── The spoken shape ────────────────────────────────────────────────────────
+
+test("🔴 a spoken turn carries the spoken-size instruction; a typed turn is byte-identical without it", () => {
+  // Owner, 2026-08-31: voice mode *"gives faster answers by not fuller answers... just quick text
+  // to speech and speech to text."* The block rides the packet only when the turn arrived by
+  // voice inside a live conversation, and it may change the SHAPE of the reply only.
+  const spoken = turnRouterMessages({ context: { ...EMPTY, spokenConversation: true }, utterance: "hello" });
+  const block = spoken.find((message) => message.content.startsWith("SPOKEN CONVERSATION."));
+  assert.ok(block, "the spoken turn lost its instruction block");
+  assert.equal(block?.role, "system");
+  for (const said of ["read aloud", "shortest complete answer", "No headings", "SHAPE of your reply only"]) {
+    assert.ok(block?.content.includes(said), `the spoken block no longer says "${said}"`);
+  }
+  // The typed packet is BYTE-IDENTICAL to what shipped before the flag existed — the
+  // teaching-style precedent: an absent modality emits nothing, not an empty something.
+  const typed = JSON.stringify(turnRouterMessages({ context: EMPTY, utterance: "hello" }));
+  assert.ok(!typed.includes("SPOKEN CONVERSATION"), "a typed turn is carrying the spoken block");
 });

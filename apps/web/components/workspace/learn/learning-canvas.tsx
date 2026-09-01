@@ -763,6 +763,10 @@ export function LearningCanvas({
       history: conversation.current,
       lessonInProgress: policy.decision !== null,
       objectives: policy.claims.length,
+      // 🔴 READ OFF THE REF, AT SEND TIME. A voice conversation shapes every turn sent while it
+      // runs (auto-sent or typed): the reply will be read aloud either way, so it should be
+      // spoken-size either way. See TurnContext.spokenConversation.
+      spokenConversation: voiceConversingRef.current,
     };
   }, [policy.awaitingAnswer, policy.claims.length, policy.decision, policy.evidence, session.clarified]);
 
@@ -1479,6 +1483,9 @@ export function LearningCanvas({
   // play left in the product. See `alwaysSpeak` in use-canvas-voice.ts for why it is an argument
   // and not the preference returning.
   const [voiceConversing, setVoiceConversing] = useState(false);
+  // The same fact, readable at SEND time without a stale closure: `surroundings()` is called
+  // inside callbacks whose dependency lists must not grow a re-render per session toggle.
+  const voiceConversingRef = useRef(false);
   const voice = useCanvasVoice(turnInFlight ? null : spokenReply, voiceConversing);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
@@ -3176,7 +3183,10 @@ export function LearningCanvas({
       {showComposer && !recording && (
         <CanvasComposer
           busy={intent.kind === "answer" && intent.sink === "policy" ? policy.judging : busy.kind === "command"}
-        onVoiceConversation={setVoiceConversing}
+        onVoiceConversation={(active) => {
+          voiceConversingRef.current = active;
+          setVoiceConversing(active);
+        }}
         voiceReplyAudio={voice.replyAudio}
           // 🔴 THE SAME COMPOSER, CARRYING A DIFFERENT MEANING — not a second answer box built for
           // the policy. What a submission IS comes from whether something is currently being
