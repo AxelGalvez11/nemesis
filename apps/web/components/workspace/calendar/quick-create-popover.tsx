@@ -106,7 +106,9 @@ export function QuickCreatePopover({ anchor, draft, onCancel, onCreate, onOpenDe
       </PopoverAnchor>
       <PopoverContent
         align="start"
-        className="w-64 p-3"
+        // w-72, up from w-64: the type row is named chips now, and at the
+        // narrower width "Assignment" and "Rotation" wrapped one word per line.
+        className="w-72 p-3"
         onKeyDown={(keyEvent) => {
           if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
             keyEvent.preventDefault();
@@ -129,28 +131,30 @@ export function QuickCreatePopover({ anchor, draft, onCancel, onCreate, onOpenDe
           />
           <p className="px-0.5 text-[0.6875rem] tabular-nums text-muted-foreground">{slotLabel(draft)}</p>
 
-          <div className="flex flex-wrap gap-1">
-            {/* Colour only, per the owner. The name survives as the tooltip and
-                the accessible name — a picker whose options cannot be told
-                apart by anyone who has not learned the palette is not a picker.
-                The chosen one is ringed rather than merely brighter: opacity
-                alone is not a state you can see against five bright dots. */}
+          {/* 🔴 NAMED CHIPS, THE SAME ONES THE FULL EDITOR DRAWS. This was five
+              bare dots at `opacity-45`, and the editor behind it had two more
+              rows of dots that looked identical and meant something else. Owner
+              2026-09-01: "there's different buttons for the colors ... why are
+              they so bland". A picker whose options cannot be told apart by
+              anyone who has not learned the palette is not a picker, and the
+              answer to that is the name, not a brighter dot. */}
+          <div className="flex flex-wrap gap-1" role="group">
             {KIND_ORDER.map((option) => (
               <button
-                aria-label={KIND_META[option].label}
                 aria-pressed={kind === option}
                 className={cn(
-                  "size-5 rounded-full transition-opacity",
-                  KIND_META[option].dot,
+                  "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.6875rem] transition-colors",
                   kind === option
-                    ? "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)"
-                    : "opacity-45 hover:opacity-100",
+                    ? "border-(--ui-stroke-primary) bg-(--ui-control-hover-background) font-medium text-foreground"
+                    : "border-(--ui-stroke-tertiary) text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
                 )}
                 key={option}
                 onClick={() => setKind(option)}
-                title={KIND_META[option].label}
                 type="button"
-              />
+              >
+                <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", KIND_META[option].dot)} />
+                {KIND_META[option].label}
+              </button>
             ))}
           </div>
 
