@@ -20,7 +20,6 @@
 
 import { quotedExcerpt } from "./canvas-grounding";
 import type { CanvasSource, SourceRef } from "./canvas-model";
-import type { DocumentPill } from "./source-tabs";
 
 export type SourcePill =
   /** A live page. Pressing it opens the page. */
@@ -152,46 +151,3 @@ export function sourcePills(
   return pills;
 }
 
-/**
- * Every document on this canvas, as something the reading pane can open.
- *
- * 🔴 THE PANE'S ONLY DOOR WAS A CITATION PILL, AND CITATIONS ARE NOT GUARANTEED. `sourcePills`
- * builds from `PolicyRuntime.citations`, and `CanvasSourcePills` renders nothing when that list is
- * empty — correctly: `knowledge-citation.ts` insists an empty list reaches the surface as silence
- * rather than as a greyed-out pill. So an answer that cites nothing offers no way in.
- *
- * Measured on production, 2026-09-01: asked to quote a line from a dropped lecture, the canvas
- * quoted it verbatim and emitted NO citation, so the document it had just read could not be opened
- * at all. The pane, the tabs and the comment layer were all reachable only by luck.
- *
- * This is the deliberate door: the canvas's own documents, listed, whether or not an answer
- * happened to cite them. A web source is excluded for the same reason `sourcePill` excludes it —
- * a page opens in the browser, which reads better than a 360px column.
- *
- * PURE, and de-duplicated on the same key the tabs use, so opening from here and opening from a
- * pill land on the SAME tab rather than two.
- */
-export function openableDocuments(sources: readonly CanvasSource[]): DocumentPill[] {
-  const seen = new Set<string>();
-  const out: DocumentPill[] = [];
-  for (const source of sources) {
-    const title = (source.title ?? "").trim();
-    if (!title) continue;
-    if ((source.sourceUrl ?? "").trim() && siteName(source.sourceUrl ?? "")) continue;
-    const key = `doc:${title.toLowerCase()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
-      // 🔴 NO EXCERPT, WHICH IS HONEST RATHER THAN LAZY. An excerpt on a pill means "this is the
-      // passage the answer used"; opened from this list there is no such passage, and inventing
-      // the source's first one would put a quotation mark around something nothing cited.
-      excerpt: "",
-      kind: "document",
-      librarySourceId: source.librarySourceId ?? null,
-      label: title,
-      section: null,
-      title,
-    });
-  }
-  return out;
-}

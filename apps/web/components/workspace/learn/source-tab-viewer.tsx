@@ -33,7 +33,6 @@ import {
   activateTab as focusTabIn,
   openTab as openTabIn,
   type DocumentPill,
-  tabKey,
   type SourceTab,
   type SourceTabState,
 } from "@/lib/learn/source-tabs";
@@ -94,11 +93,8 @@ export function useSourceTabs(): SourceTabsApi | null {
   return useContext(SourceTabsContext);
 }
 
-function TabStrip({ api, documents }: { api: SourceTabsApi; documents: readonly DocumentPill[] }) {
+function TabStrip({ api }: { api: SourceTabsApi }) {
   const { state } = api;
-  const [picking, setPicking] = useState(false);
-  const open = new Set(state.tabs.map((tab) => tab.key));
-  const unopened = documents.filter((pill) => !open.has(tabKey(pill)));
   return (
     // 🔴 `pr-[56px]`: THE CANVAS EXIT `×` FLOATS AT z-30 OVER THIS CORNER. Without the reserve the
     // last tab's close control sits underneath it and the wrong thing closes.
@@ -141,55 +137,6 @@ function TabStrip({ api, documents }: { api: SourceTabsApi; documents: readonly 
         );
       })}
 
-      {/* 🔴 THE DELIBERATE DOOR INTO THE PANE. Until this, the only way in was a citation pill —
-          and `CanvasSourcePills` renders nothing when an answer cites nothing, which
-          `knowledge-citation.ts` insists on. Measured on production 2026-09-01: asked to quote a
-          line from a dropped lecture, the canvas quoted it verbatim, cited nothing, and the
-          document could not be opened at all. A learner should not need the model's cooperation to
-          look at their own file. */}
-      {unopened.length > 0 && (
-        <div className="relative flex shrink-0 items-center">
-          <button
-            aria-expanded={picking}
-            aria-label="Open a document"
-            className="grid size-7 place-items-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-            data-testid="source-tabs-open"
-            onClick={() => setPicking((current) => !current)}
-            type="button"
-          >
-            <svg fill="none" height="13" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16" width="13">
-              <path d="M8 3.4v9.2M3.4 8h9.2" />
-            </svg>
-          </button>
-          {picking && (
-            <>
-              {/* Click-away, so the menu never strands itself open over the document. */}
-              <button
-                aria-label="Close"
-                className="fixed inset-0 z-40 cursor-default"
-                onClick={() => setPicking(false)}
-                type="button"
-              />
-              <div className="absolute left-0 top-8 z-50 max-h-64 w-56 overflow-y-auto rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-1 shadow-lg">
-                {unopened.map((pill) => (
-                  <button
-                    className="block w-full truncate rounded px-2 py-1.5 text-left text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-                    key={tabKey(pill)}
-                    onClick={() => {
-                      api.open(pill);
-                      setPicking(false);
-                    }}
-                    title={pill.title}
-                    type="button"
-                  >
-                    {pill.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -237,7 +184,7 @@ function TabBody({ tab }: { tab: SourceTab }) {
  * The pane. Renders nothing at all when no source is open, so the canvas keeps its full width
  * until a learner actually presses a citation.
  */
-export function SourceTabPane({ documents = [] }: { documents?: readonly DocumentPill[] }) {
+export function SourceTabPane() {
   const api = useSourceTabs();
   const tab = api ? activeTab(api.state) : null;
   const onScrim = useCallback(() => api?.closeAll(), [api]);
@@ -256,7 +203,7 @@ export function SourceTabPane({ documents = [] }: { documents?: readonly Documen
         aria-label="Sources"
         className="absolute inset-y-0 right-0 z-40 flex w-full max-w-[520px] flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) shadow-[-14px_0_30px_rgba(0,0,0,0.13)] xl:w-[360px] xl:max-w-none xl:shadow-none"
       >
-        <TabStrip api={api} documents={documents} />
+        <TabStrip api={api} />
         {/* 🔴🔴 EVERY OPEN TAB STAYS MOUNTED; ONLY THE FRONT ONE IS SHOWN. Rendering just the active
             tab meant switching back to a document UNMOUNTED the reader and mounted a fresh one, so
             the file was fetched, re-parsed by pdf.js and re-rendered from page one every single
