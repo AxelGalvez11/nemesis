@@ -73,13 +73,44 @@ test("🔴 the project row carries the reference's whole menu: settings, home, p
   assert.match(SIDEBAR, /setFolderPinned\(userId, folder\.id, !folder\.pinnedAt\)/, "Pin project no longer writes folders.pinned_at");
 });
 
-test("🔴 hover grammar is the reference's: pencil+⋯ on a project row, pin+⋯ on a canvas row", () => {
-  // Measured 2026-08-30: hovering a project row reveals a compose pencil (new chat in that
-  // project) and the ⋯; hovering a chat row reveals a pin toggle and the ⋯. The pencil rides
-  // the same ?folder= lane the front door uses, so instructions ride the first answer.
-  assert.match(SIDEBAR, /aria-label=\{`New canvas in \$\{folder\.name\}`\}/, "the project row lost its new-canvas pencil");
-  assert.match(SIDEBAR, /\/learn\?new=1&folder=\$\{encodeURIComponent\(folder\.id\)\}/, "the pencil no longer files through the ?folder= lane");
+test("🔴 hover grammar: ⋯ ALONE on a project row, pin+⋯ on a canvas row", () => {
+  // 🔴🔴 THE PENCIL WAS CUT BY THE OWNER, 2026-09-01: *"remove the pencil icon in the projects in
+  // sidebar, clicking on projects in sidebar should only open the project folder."* It started a
+  // canvas already filed in that project, and it was the reference's row grammar rather than a
+  // need of ours — the front door's project picker files a new canvas through the same `?folder=`
+  // lane, which is why removing this control takes no capability with it.
+  //
+  // Asserted as an ABSENCE as well as a presence: "the ⋯ is still there" would pass just as well
+  // with the pencil sitting beside it, so the guard that matters is the one that fails if it
+  // comes back.
+  assert.ok(!/aria-label=\{`New canvas in \$\{folder\.name\}`\}/.test(SIDEBAR), "the project row's pencil came back");
+  assert.ok(!/\/learn\?new=1&folder=/.test(SIDEBAR), "a second door onto the ?folder= lane reappeared in the rail");
+  assert.match(SIDEBAR, /aria-label="Project actions"/, "the project row lost its ⋯ as well, so it has no menu at all");
   assert.match(SIDEBAR, /aria-label=\{canvas\.pinnedAt \? "Unpin canvas" : "Pin canvas"\}/, "the canvas row lost its hover pin");
+  // With one control instead of two, the row's own trailing reserve halves. A row still padded for
+  // two would print its name stopping 26px short of nothing.
+  assert.match(SIDEBAR, /aria-expanded=\{isOpen\}[\s\S]{0,400}pr-\[30px\]/, "the project row still reserves room for the control it lost");
+});
+
+test("🔴🔴 a project opens by GROWING — the rail never jump-cuts", () => {
+  // Owner, 2026-09-01: *"clicking on projects in sidebar should only open the project folder and
+  // have a smooth animation."* Every disclosure in this rail was `{open ? <ul/> : null}`, so the
+  // rows appeared at full height in one frame and everything below them teleported.
+  assert.ok(
+    !/\{isOpen \? \(\s*<ul/.test(SIDEBAR) && !/closedSections\.has\("[a-z]+"\) \? \(?\s*<ul/.test(SIDEBAR),
+    "a disclosure went back to mounting and unmounting its rows",
+  );
+  assert.match(SIDEBAR, /function Reveal\(\{ children, open \}/, "the shared disclosure is gone");
+  assert.match(SIDEBAR, /gridTemplateRows: open \? "1fr" : "0fr"/, "the reveal stopped animating a grid track");
+  // 🔴 BOTH OR NEITHER. `0fr` cannot shrink a track whose content sets a floor, so a list without
+  // `min-h-0` AND `overflow-hidden` simply never closes — and it looks correct while open, which
+  // is the only state anyone screenshots.
+  assert.match(SIDEBAR, /<ul className="flex min-h-0 flex-col overflow-hidden">\{children\}<\/ul>/, "the reveal's list can no longer collapse");
+  assert.match(SIDEBAR, /motion-safe:transition-\[grid-template-rows\]/, "the growth is no longer gated on the learner wanting motion");
+  assert.match(SIDEBAR, /inert=\{!open\}/, "a closed project's rows are back in the tab order");
+  // One component, used by the project bodies AND all three section bodies: four hand-written
+  // copies is four chances for one to keep the old jump-cut.
+  assert.ok((SIDEBAR.match(/<Reveal /g) ?? []).length >= 4, "some disclosure in the rail is not using the shared reveal");
 });
 
 test("🔴 an expanded project shows five canvases, then Show more — the reference's own cap", () => {

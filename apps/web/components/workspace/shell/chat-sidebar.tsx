@@ -105,13 +105,12 @@ import { useConnectedApps } from "./use-connected-apps";
 // The reasoning above is why these four; the module is only where they are written down.
 
 interface ChatSidebarProps {
-  sidebarOpen: boolean;
   accountEmail: string;
   onCollapse: () => void;
   onNavigate?: () => void;
 }
 
-export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate }: ChatSidebarProps) {
+export function ChatSidebar({ accountEmail, onCollapse, onNavigate }: ChatSidebarProps) {
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
@@ -128,16 +127,19 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
   // (canvas-store), no second system.
 
   return (
+    // 🔴🔴 IT NO LONGER HIDES ITSELF, AND THAT WAS A REAL BUG, NOT TIDYING. This carried
+    // `sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"` AND `transition-none`, from
+    // the days when the shell swapped it out for the rail. Once the shell started keeping both
+    // panes mounted so they could cross-fade (workspace-shell.tsx, 2026-09-01), the two rules
+    // fought: the wrapper faded over 150ms while this SNAPPED to zero on the first frame, so the
+    // learner saw exactly the abrupt disappearance the fade exists to remove — and the wrapper's
+    // opacity read correctly all the way through, which is what makes it invisible to anything
+    // measuring the outside. One owner of "am I the visible pane", and it is the shell.
     <Sidebar
-      aria-hidden={!sidebarOpen}
       className={cn(
         "relative h-full min-w-0 overflow-hidden border-t-0 border-b-0 text-foreground transition-none",
-        "border-r border-l-0",
-        sidebarOpen
-          ? "border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background) opacity-100"
-          : "pointer-events-none border-transparent bg-transparent opacity-0",
+        "border-r border-l-0 border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background)",
       )}
-      inert={!sidebarOpen}
     >
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-[var(--nav-row-inset)]">
         {/* 🔴 THE BRAND BAND IS 52px AND ITS CONTROLS ARE 36px. It was `h-9` — which reads as 36 and

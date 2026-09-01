@@ -21,8 +21,11 @@
 //   * Every section header (Pinned / Projects / Canvases) is a COLLAPSIBLE button — 12px caret
 //     beside the label on hover, whole label toggles, state persisted like `openFolders` is.
 //   * A project row is icon + name, NO leading chevron (the reference marks expandability with
-//     nothing at rest), and clicking it expands in place. Hover reveals two quiet controls:
-//     a pencil that starts a canvas already filed here, and the ⋯ menu.
+//     nothing at rest), and clicking it expands in place — smoothly, on a `0fr → 1fr` grid row.
+//     Hover reveals ONE quiet control, the ⋯ menu. The pencil that started a canvas already
+//     filed here was cut by the owner on 2026-09-01 (*"remove the pencil icon in the projects
+//     in sidebar, clicking on projects in sidebar should only open the project folder"*); the
+//     `?folder=` lane it used is still how the front door's project picker files a new canvas.
 //   * An expanded project lists its FIVE most recent canvases, then a "Show more" row.
 //   * A canvas row's hover controls are pin + ⋯ (the reference's chat rows: pin + ⋯).
 //   * A pinned PROJECT (folders.pinned_at, 20260830T40) moves into Pinned — same row, same
@@ -38,7 +41,7 @@
 // from the territory jsonb, because a course deliberately has no column of its own.
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import {
@@ -89,6 +92,42 @@ const CLOSED_SECTIONS_KEY = "nemesis.sidebar.canvases.v1.closedSections";
 /** The reference's own cap, measured 2026-08-30: an expanded project lists its five most recent
  *  chats, then a tertiary "Show more" row reveals the rest in place. */
 const FOLDER_PREVIEW_ROWS = 5;
+
+/**
+ * A list that GROWS open instead of appearing — the sidebar's one disclosure.
+ *
+ * 🔴🔴 Owner, 2026-09-01: *"clicking on projects in sidebar should only open the project folder
+ * and have a smooth animation."* Every one of these was `{open ? <ul/> : null}`: the rows were
+ * mounted and unmounted, so opening a project was a jump-cut and everything below it teleported
+ * down the rail by however many canvases had just arrived.
+ *
+ * 🔴 A `0fr → 1fr` GRID ROW, WHICH IS THE ONLY WAY TO ANIMATE TO A HEIGHT NOBODY KNOWS. `height:
+ * auto` does not interpolate, and every alternative has to name a number it cannot know: a fixed
+ * max-height is wrong for every project that is not exactly that tall (too small clips it, too
+ * large spends the duration animating empty space), and measuring the list to write a pixel height
+ * back has to re-measure on every canvas added, renamed or filed. The track needs no number at
+ * all. The list inside carries `min-h-0` AND `overflow-hidden` — without both, it refuses to
+ * shrink below its own content and the fraction never bites.
+ *
+ * 🔴 THE ROWS STAY RENDERED WHEN IT IS CLOSED, SO `inert`. They sit in the document at zero
+ * height; without this they stay in the tab order and a keyboard learner walks into rows that are
+ * not on screen, with nothing to say where focus went.
+ *
+ * 🔴 ONE COMPONENT FOR THE PROJECT BODIES AND THE THREE SECTIONS. Four hand-written copies of a
+ * `0fr` grid is four chances for one of them to keep the old jump-cut, and the rail would then
+ * move two different ways depending on which triangle you pressed.
+ */
+function Reveal({ children, open }: { children: ReactNode; open: boolean }) {
+  return (
+    <div
+      className="grid motion-safe:transition-[grid-template-rows] motion-safe:duration-200 motion-safe:ease-out"
+      inert={!open}
+      style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+    >
+      <ul className="flex min-h-0 flex-col overflow-hidden">{children}</ul>
+    </div>
+  );
+}
 
 /** Stored as the CLOSED set, not the open one, so every section defaults to open — including a
  *  section (a first pin, a first project) that did not exist when the learner last touched one. */
@@ -481,7 +520,7 @@ export function SidebarCanvases({
               <button
                 aria-expanded={isOpen}
                 className={cn(
-                  "flex h-[var(--nav-row-height)] min-w-0 flex-1 items-center gap-[var(--nav-icon-gap)] rounded-[var(--nav-row-radius)] border border-transparent pr-[56px] text-left text-[length:var(--canvas-text-small)] text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none",
+                  "flex h-[var(--nav-row-height)] min-w-0 flex-1 items-center gap-[var(--nav-icon-gap)] rounded-[var(--nav-row-radius)] border border-transparent pr-[30px] text-left text-[length:var(--canvas-text-small)] text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none",
                   activeFolderId === folder.id &&
                     "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) hover:border-(--ui-stroke-tertiary)!",
                 )}
@@ -499,22 +538,6 @@ export function SidebarCanvases({
                   style={folder.color ? { color: folder.color } : undefined}
                 />
                 <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-              </button>
-              {/* The reference's project-row hover pair: a pencil that starts a canvas already
-                  filed here (its own quick action), then the ⋯. The pencil rides the same
-                  `?folder=` lane the front door's picker uses, so the project's instructions are
-                  already riding when the first answer lands. */}
-              <button
-                aria-label={`New canvas in ${folder.name}`}
-                className="absolute right-[30px] grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
-                onClick={() => {
-                  router.push(`/learn?new=1&folder=${encodeURIComponent(folder.id)}`);
-                  onNavigate?.();
-                }}
-                title={`New canvas in ${folder.name}`}
-                type="button"
-              >
-                <Codicon name="edit" size="0.8rem" />
               </button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -558,32 +581,30 @@ export function SidebarCanvases({
             </>
           )}
         </div>
-        {isOpen ? (
-          <ul className="flex flex-col">
-            {children.map((child) => folderRow(child, depth + 1))}
-            {revealed.map((canvas) => canvasRow(canvas, depth + 1))}
-            {hidden > 0 ? (
-              <li>
-                <button
-                  className="flex h-[var(--nav-row-height)] w-full items-center rounded-[var(--nav-row-radius)] border border-transparent text-left text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
-                  onClick={() => setShowAll((was) => new Set(was).add(folder.id))}
-                  style={{ paddingLeft: `calc(var(--nav-row-pad-x) - 1px + ${(depth + 1) * 26}px)` }}
-                  type="button"
-                >
-                  Show more
-                </button>
-              </li>
-            ) : null}
-            {children.length === 0 && contents.length === 0 ? (
-              <li
-                className="h-7 content-center truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"
-                style={{ paddingLeft: `calc(var(--nav-row-pad-x) + ${(depth + 1) * 26}px)` }}
+        <Reveal open={isOpen}>
+          {children.map((child) => folderRow(child, depth + 1))}
+          {revealed.map((canvas) => canvasRow(canvas, depth + 1))}
+          {hidden > 0 ? (
+            <li>
+              <button
+                className="flex h-[var(--nav-row-height)] w-full items-center rounded-[var(--nav-row-radius)] border border-transparent text-left text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
+                onClick={() => setShowAll((was) => new Set(was).add(folder.id))}
+                style={{ paddingLeft: `calc(var(--nav-row-pad-x) - 1px + ${(depth + 1) * 26}px)` }}
+                type="button"
               >
-                Empty
-              </li>
-            ) : null}
-          </ul>
-        ) : null}
+                Show more
+              </button>
+            </li>
+          ) : null}
+          {children.length === 0 && contents.length === 0 ? (
+            <li
+              className="h-7 content-center truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"
+              style={{ paddingLeft: `calc(var(--nav-row-pad-x) + ${(depth + 1) * 26}px)` }}
+            >
+              Empty
+            </li>
+          ) : null}
+        </Reveal>
       </li>
     );
   };
@@ -649,12 +670,10 @@ export function SidebarCanvases({
                   onToggle={() => toggleSection("pinned")}
                   open={!closedSections.has("pinned")}
                 />
-                {!closedSections.has("pinned") ? (
-                  <ul className="flex flex-col">
-                    {pinnedFolders.map((folder) => folderRow(folder, 0))}
-                    {pinned.map((canvas) => canvasRow(canvas, 0))}
-                  </ul>
-                ) : null}
+                <Reveal open={!closedSections.has("pinned")}>
+                  {pinnedFolders.map((folder) => folderRow(folder, 0))}
+                  {pinned.map((canvas) => canvasRow(canvas, 0))}
+                </Reveal>
               </>
             ) : null}
 
@@ -668,13 +687,15 @@ export function SidebarCanvases({
               onToggle={() => toggleSection("projects")}
               open={!closedSections.has("projects")}
             />
-            {closedSections.has("projects") ? null : rootFolders.length > 0 ? (
-              <ul className="flex flex-col">{rootFolders.map((folder) => folderRow(folder, 0))}</ul>
-            ) : (
-              <p className="h-7 content-center px-[var(--nav-row-pad-x)] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-                None yet.
-              </p>
-            )}
+            <Reveal open={!closedSections.has("projects")}>
+              {rootFolders.length > 0 ? (
+                rootFolders.map((folder) => folderRow(folder, 0))
+              ) : (
+                <li className="h-7 content-center px-[var(--nav-row-pad-x)] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                  None yet.
+                </li>
+              )}
+            </Reveal>
 
             {unfiled.length > 0 ? (
               <>
@@ -684,9 +705,9 @@ export function SidebarCanvases({
                   onToggle={() => toggleSection("canvases")}
                   open={!closedSections.has("canvases")}
                 />
-                {!closedSections.has("canvases") ? (
-                  <ul className="flex flex-col">{unfiled.map((canvas) => canvasRow(canvas, 0))}</ul>
-                ) : null}
+                <Reveal open={!closedSections.has("canvases")}>
+                  {unfiled.map((canvas) => canvasRow(canvas, 0))}
+                </Reveal>
               </>
             ) : null}
           </>

@@ -28,6 +28,8 @@ const OUTPUTS = strip(readFileSync(new URL("./library-outputs.tsx", import.meta.
 // explaining why there must never be a `redirect()` here, so an unstripped read of it would fail
 // the very guard those paragraphs exist to protect.
 const PAGE = strip(readFileSync(new URL("../../../app/(workspace)/library/page.tsx", import.meta.url), "utf8"));
+/** The slide design picker moved here; the guard below checks that claim rather than trusting it. */
+const DECK_PAGE = strip(readFileSync(new URL("../../../app/(workspace)/deck/page.tsx", import.meta.url), "utf8"));
 
 test("🔴🔴 the page sits on the measured ground, not on white", () => {
   // The reference's page background is its `--component-sidebar-bg`, #fcfcfc — a hair off white.
@@ -127,9 +129,16 @@ test("🔴 the row leads with the reference's 32px tile, and the glyph's colour 
   // draws #0285FF, their .pdf #FF3B30, their folders stay neutral. (The morning's bare-20px-icon
   // reading was the same page before this pass looked closer: the tile is invisible in dark mode
   // because its surface matches the page; the border was the tell.)
+  //
+  // 🔴🔴 AND THE SURFACE IS `--ui-bg-elevated`, NOT `--ui-bg-primary` — the same NAME means
+  // opposite things in the two products. Theirs is the page white; ours is a FILL, and measured on
+  // /dev-preview/library/outputs it composited to `color(srgb 0.182 0.182 0.182 / 0.244)`, a 24%
+  // dark wash. Owner, 2026-09-01: *"the library has the icons darkened."* Pinned by name because
+  // the two tokens differ by one word and the wrong one looks deliberate.
+  assert.ok(!/bg-\(--ui-bg-primary\)/.test(OUTPUTS), "the lead tile went back to a fill token and darkened every row");
   assert.match(
     OUTPUTS,
-    /const COL_TILE =\s*"mr-\[12px\] flex size-\[32px\] shrink-0 items-center justify-center rounded-\[8px\] border border-black\/\[0\.10\] bg-\(--ui-bg-primary\) dark:border-white\/\[0\.15\]"/,
+    /const COL_TILE =\s*"mr-\[12px\] flex size-\[32px\] shrink-0 items-center justify-center rounded-\[8px\] border border-black\/\[0\.10\] bg-\(--ui-bg-elevated\) dark:border-white\/\[0\.15\]"/,
     "the leading tile lost the measured geometry",
   );
   assert.match(OUTPUTS, /const KIND_COLOR = \{ deck: "#34C759", note: "#0285FF", slides: "#FF9500" \} as const;/, "the kind colours drifted");
@@ -206,18 +215,50 @@ test("🔴🔴 every behaviour the page had before the restyle still works", () 
   for (const kind of ["deck", "slides", "note"]) {
     assert.ok(OUTPUTS.includes(`{showing("${kind}") && (`), `the ${kind} shelf stopped rendering`);
   }
-  assert.match(OUTPUTS, /<FolderPicker\b/, "the move-to-folder menu is gone");
-  assert.match(OUTPUTS, /<DeckDesignPicker\b/, "the slide design picker is gone");
+  assert.match(OUTPUTS, /<RowMenu\b/, "the row menu is gone, so nothing can be filed, downloaded or shared");
+  assert.match(OUTPUTS, /Download for Anki/, "a deck can no longer be taken out of the app");
+  assert.match(OUTPUTS, />Share</, "the share door is gone from the row menu");
+  assert.match(OUTPUTS, /"Hide the cards" : "Show the cards"/, "the peek at a deck's answers is gone");
+  assert.match(OUTPUTS, /<DropdownMenuSubTrigger>Move to project<\/DropdownMenuSubTrigger>/, "filing is gone from the row menu");
   assert.match(OUTPUTS, /<DeckShare\b/, "the share sheet is gone");
   assert.match(OUTPUTS, /<OutputPreview\b/, "a document no longer opens in place");
   assert.match(OUTPUTS, /\{reviewing && <DeckReview /, "pressing a deck no longer reviews it");
   assert.match(OUTPUTS, /link\.download = deckFileName\(/, "a deck can no longer be downloaded");
   assert.match(OUTPUTS, /createFolder\(userId/, "a folder can no longer be made from the Library");
-  // 🔴 THE DESIGN CHIP IS ALLOWED TO SHRINK, and that is load-bearing rather than cosmetic. It is
-  // the one control the reference has no equivalent of, it carries a word rather than a glyph, and
-  // at its longest ("Schoolhouse") it outgrows the measured 112px trailing slot. Letting it give up
-  // width keeps the Modified column in the one place all three shelves agree on.
-  assert.match(OUTPUTS, /\[&>button\]:shrink/, "the design chip can push the Modified column out of the grid again");
+  // 🔴🔴 THE SLIDE DESIGN CHIP LEFT THIS PAGE, AND THE DOOR IT WAS IS STILL OPEN ELSEWHERE. It
+  // was the one control the reference has no equivalent of, it carried a WORD in a slot measured
+  // for glyphs, and it asked a learner to choose a look beside a row that shows none of it. The
+  // same picker sits on /deck, over the actual slides. Checked on the deck page rather than
+  // asserted in prose, because "it exists somewhere else" is exactly the claim that rots.
+  assert.ok(!/DeckDesignPicker/.test(OUTPUTS), "the design chip came back to a row that cannot show what it changes");
+  assert.match(DECK_PAGE, /<DeckDesignPicker\b/, "the design picker left the Library AND the deck page — nothing can pick a look now");
+});
+
+test("🔴🔴 a row shows NO control until it is hovered", () => {
+  // Owner, 2026-09-01, over a screenshot with the whole trailing column ringed: *"the documents in
+  // library have these options that i dont want."* Every row printed its controls at rest — up to
+  // four glyphs on a deck and a named chip on a slide deck — so a nine-row list carried eleven
+  // glyphs and two words before anyone reached for anything. This file's own measurement note has
+  // always called the 112px slot "the space its hover menu lives in"; the page filled it with a
+  // toolbar instead.
+  assert.match(OUTPUTS, /const ROW =\s*"group\/row /, "the row stopped being the hover group its control listens to");
+  assert.match(
+    OUTPUTS,
+    /const ROW_ACTION_QUIET =\s*"opacity-0 group-hover\/row:opacity-100 focus-visible:opacity-100 data-\[state=open\]:opacity-100"/,
+    "the trailing control is painted at rest again",
+  );
+  // 🔴 EVERY TRAILING CONTROL IS THE QUIET ONE. A single loud button left behind is the whole
+  // complaint back at one-quarter size, and it would read as the odd row rather than the odd rule.
+  assert.equal(
+    (OUTPUTS.match(/className=\{ROW_ACTION\b/g) ?? []).length + (OUTPUTS.match(/cn\(ROW_ACTION, ROW_ACTION_QUIET\)/g) ?? []).length,
+    1,
+    "a row grew a second trailing control, or one of them stopped being quiet",
+  );
+  assert.match(OUTPUTS, /cn\(ROW_ACTION, ROW_ACTION_QUIET\)/, "the row menu's own trigger is not the quiet control");
+  // 🔴 ONE `transition-property`, NOT TWO UTILITIES FIGHTING. `transition-colors` and a separate
+  // opacity transition both set the property and the later rule in the generated sheet wins,
+  // whatever order they are written in here — so one of them silently does nothing.
+  assert.match(OUTPUTS, /transition-\[background-color,color,opacity\]/, "the control's fade and its hover colour are back to overwriting each other");
 });
 
 test("🔴🔴🔴 the restyle did not put a redirect on the route the extension opens", () => {

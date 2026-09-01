@@ -262,19 +262,63 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
             data-pane-open={sidebarVisible ? "true" : "false"}
             data-pane-side="left"
           >
-            {/* 🔴 THE RAIL REPLACES THE SIDEBAR IN THE SAME COLUMN, rather than floating beside
-                it. `ChatSidebar` stays mounted-but-inert when closed (it fades via opacity and
-                keeps its own DOM), so rendering both would stack two elements in one grid cell.
-                One or the other. */}
-            {railVisible ? (
-              <NavRail accountEmail={accountEmail} onExpand={() => setSidebarOpen(true)} />
-            ) : (
-              <ChatSidebar
-                accountEmail={accountEmail}
-                onCollapse={() => setSidebarOpen(false)}
-                onNavigate={() => narrowViewport && setSidebarOpen(false)}
-                sidebarOpen={sidebarVisible}
-              />
+            {/* 🔴🔴 BOTH STATES ARE MOUNTED AND THEY CROSS-FADE — THE SWAP WAS THE ABRUPTNESS.
+                Owner, 2026-09-01: *"the sidebar should close and open smoothly like in chatgpt."*
+                The column already slid (`data-pane-shell-animate`, #2026-08-21); what did not was
+                the CONTENT. `railVisible ? <NavRail/> : <ChatSidebar/>` swapped at frame 0, so a
+                learner watched the 260px sidebar disappear instantly and then spent 240ms
+                watching an empty gap close beside a 52px rail. The slide was smooth and the thing
+                that slid was nothing.
+
+                🔴 MEASURED ON THE REFERENCE, 2026-09-01, in the owner's signed-in Chrome.
+                `#stage-slideover-sidebar` is `overflow-hidden` and holds BOTH children at once:
+                a `nav#stage-sidebar-tiny-bar` at `absolute inset-0` and the learner's own
+                260px panel in normal flow. Neither ever unmounts; they trade `opacity` over
+                150ms while the container's width travels. The panel keeps its full width and is
+                CLIPPED, which is why their labels never re-wrap mid-slide.
+
+                🔴 THE RAIL DOES NOT FADE, IT CUTS — and the direction of the cut is the trick.
+                The reference eases the rail's opacity with `steps(1, start)` in the collapsed
+                state and `steps(1, end)` in the expanded one, which means: closing, the rail
+                appears at t=0; opening, it holds until t=150ms and then vanishes. Either way the
+                leftmost 52px is painted the whole time, so the one part of the column that never
+                moves also never flickers. A plain fade there shows the panel's own left edge
+                through the rail and reads as two things dissolving into each other.
+
+                🔴 `inert` ON THE ONE THAT IS NOT THERE. Mounted-but-invisible controls are still
+                in the tab order, and a keyboard learner would fall into an unpainted sidebar with
+                nothing on screen to say where focus went. */}
+            {(railVisible || sidebarVisible) && (
+              <>
+                <div
+                  className={cn(
+                    "h-full w-(--sidebar-width)",
+                    animateNav && "motion-safe:transition-opacity motion-safe:duration-150 motion-safe:ease-linear",
+                    sidebarVisible ? "opacity-100" : "pointer-events-none opacity-0",
+                  )}
+                  inert={!sidebarVisible}
+                >
+                  <ChatSidebar
+                    accountEmail={accountEmail}
+                    onCollapse={() => setSidebarOpen(false)}
+                    onNavigate={() => narrowViewport && setSidebarOpen(false)}
+                  />
+                </div>
+                {/* Above the panel, not beside it: a positioned element paints over a static one,
+                    which is what lets the rail cover the panel's own left edge while it fades. */}
+                <div
+                  className={cn(
+                    "absolute inset-y-0 left-0 w-(--nav-rail-width)",
+                    animateNav && "motion-safe:transition-opacity motion-safe:duration-150",
+                    railVisible
+                      ? "opacity-100 motion-safe:ease-[steps(1,start)]"
+                      : "pointer-events-none opacity-0 motion-safe:ease-[steps(1,end)]",
+                  )}
+                  inert={!railVisible}
+                >
+                  <NavRail accountEmail={accountEmail} onExpand={() => setSidebarOpen(true)} />
+                </div>
+              </>
             )}
           </div>
           <div className="relative min-h-0 min-w-0 overflow-hidden">{children}</div>
