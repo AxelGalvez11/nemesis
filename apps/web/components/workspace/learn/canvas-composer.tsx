@@ -976,9 +976,28 @@ export function CanvasComposer({
 
             {listening ? (
               <>
+                {/* 🔴 IN A VOICE CONVERSATION THE WORDS THEMSELVES ARE THE FEEDBACK (owner
+                    2026-08-31, testing the reference: *"do the transcribed words appear on the
+                    chat bar and then get sent...?"*). The bar shows what is being heard, live, in
+                    the reference's own treatment for transcribed words: lighter and italic. The
+                    waveform stays the DICTATION treatment, where the learner reviews before
+                    sending and the meter is the reassurance; here the reassurance is the words.
+                    Bottom-anchored and clipped so a long thought shows its most recent lines. */}
+                {voiceLoop.active ? (
+                  <div className="ml-[12px] flex max-h-[78px] min-w-0 flex-1 items-end self-center overflow-hidden">
+                    {text.trim() ? (
+                      <p className="w-full text-[length:var(--canvas-text-body)] italic leading-[26px] [color:color-mix(in_srgb,var(--ui-text-primary)_72%,transparent)]">
+                        {text}
+                      </p>
+                    ) : (
+                      <p className="w-full text-[length:var(--canvas-text-body)] leading-[26px] text-(--ui-text-quaternary)">Listening…</p>
+                    )}
+                  </div>
+                ) : (
                 <div className="ml-[12px] flex min-w-0 flex-1 items-center">
                   <CanvasVoiceBars live />
                 </div>
+                )}
                 {/* 🔴 IN A VOICE CONVERSATION THE ONLY CONTROL IS STOP — measured on claude.ai
                     2026-08-30: while listening, their composer offers exactly one way out. The
                     dictation pair (cancel / finish) belongs to dictation, where the learner

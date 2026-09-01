@@ -34,10 +34,12 @@ export interface LearnerUtteranceProps {
   /**
    * How the words arrived.
    *
-   * 🔴 RECORDED, NOT DRAWN DIFFERENTLY. A spoken answer and a typed one demonstrate the same
-   * capability (§26), so styling them apart would invent a distinction the cognition layer
-   * deliberately does not make. It rides on the element as a data attribute so a later question
-   * ("do spoken answers score worse?") can be asked of the DOM without a second visual language.
+   * 🔴 DRAWN AS A RECEIPT SINCE 2026-08-31 (owner, with the reference open: *"the transcribed
+   * text is lighter and in itallics"*). A spoken utterance renders italic in a softened ink, the
+   * reference's own treatment — it says HOW the words arrived, the way a timestamp says when.
+   * What §26 forbade still holds in full: the treatment never keys to a verdict, never reaches
+   * the evidence log, and a spoken answer demonstrates exactly what a typed one does. The data
+   * attribute stays for the DOM question ("do spoken answers score worse?").
    *
    * 🔴 `null` IS "NOT OBSERVED", AND IT IS A REAL CASE RATHER THAN A GAP. A learner who taps an
    * option did not type, speak or write it, so every value of the union would be a false claim about
@@ -85,7 +87,12 @@ export function LearnerUtterance({ children, className, via = "typed" }: Learner
         // carry a distinct, unconditional ground that is never keyed to a verdict — and they do.
         // There is no verdict prop here and there must not be one.
         "inline-block max-w-[70%] rounded-[22px] px-4 py-2.5 text-left",
-        "text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-action-glyph)",
+        "text-[length:var(--canvas-text-body)] leading-relaxed",
+        // 🔴 THE COLOUR IS ONE BRANCH, NOT A BASE PLUS AN OVERRIDE. Two text-colour utilities on
+        // one element resolve by stylesheet order, not by which was written later here.
+        via === "spoken"
+          ? "italic [color:color-mix(in_srgb,var(--ui-action-glyph)_85%,transparent)]"
+          : "text-(--ui-action-glyph)",
         "bg-(--ui-action)",
         className,
       )}

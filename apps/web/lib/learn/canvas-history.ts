@@ -252,6 +252,8 @@ export function momentClock(iso: string, locale?: string): string {
 export interface HistoricalMoment {
   momentId: string;
   occurredAt: string;
+  /** The learner's words in this moment were spoken in a voice conversation. */
+  spoken?: boolean;
   kind: CanvasMomentKind;
   title: string;
   /** The learner's own question, for a conversational turn. */
@@ -304,6 +306,7 @@ export function reconstructMoment(
     occurredAt: moment.occurredAt,
     title: titleFor(moment, canvas, DRAWER_TITLE_LIMIT),
     ...(moment.userText ? { asked: moment.userText } : {}),
+    ...(moment.userText && moment.spoken ? { spoken: true } : {}),
     ...(moment.assistantText ? { said: moment.assistantText } : {}),
     ...(question ? { question: question.q } : {}),
     ...(response?.text ? { answer: response.text } : {}),

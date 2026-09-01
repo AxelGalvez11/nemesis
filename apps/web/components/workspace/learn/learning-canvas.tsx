@@ -928,6 +928,7 @@ export function LearningCanvas({
    * above the answer it produced; it does not disappear the instant the answer arrives.
    */
   const [currentSaid, setCurrentSaid] = useState<string | null>(null);
+  const [currentSaidVia, setCurrentSaidVia] = useState<"spoken" | null>(null);
   /**
    * What is on screen right now, mirrored where `converse` can read it without going stale.
    *
@@ -935,8 +936,9 @@ export function LearningCanvas({
    * `session.aside` in its dependencies would rebuild the callback on every streamed token, and
    * every consumer holding it would re-render with it.
    */
-  const onScreen = useRef<{ said: string | null; aside: typeof session.aside; output: CanvasOutput | null }>({
+  const onScreen = useRef<{ said: string | null; saidVia: "spoken" | null; aside: typeof session.aside; output: CanvasOutput | null }>({
     aside: null,
+    saidVia: null,
     output: null,
     said: null,
   });
@@ -968,13 +970,18 @@ export function LearningCanvas({
             output: outgoing.output,
             reply: outgoingReply,
             said: outgoing.said,
+            saidVia: outgoing.saidVia,
             sources: outgoing.aside?.sources ?? outgoing.aside?.consulted ?? [],
             visuals: outgoing.aside?.visuals ?? [],
           }),
         ]);
       }
-      onScreen.current = { aside: null, output: null, said: trimmed };
+      // 🔴 READ ONCE, BEFORE THE AWAIT. The session can end while the model answers; the words
+      // were spoken when they were said, not when the reply lands.
+      const spokenNow = voiceConversingRef.current ? ("spoken" as const) : null;
+      onScreen.current = { aside: null, output: null, said: trimmed, saidVia: spokenNow };
       setCurrentSaid(trimmed);
+      setCurrentSaidVia(spokenNow);
       try {
         const decision = await session.converse(trimmed, surroundings(), () => {
           // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
@@ -997,6 +1004,7 @@ export function LearningCanvas({
         session.recordMoment({
           kind: decision?.say ? "assistant" : "user",
           userText: trimmed,
+          ...(spokenNow ? { spoken: true } : {}),
           ...(decision?.say ? { assistantText: decision.say } : {}),
         });
         return decision;
@@ -1702,6 +1710,7 @@ export function LearningCanvas({
           id: moment.momentId,
           reply: moment.said ?? "",
           said: moment.asked ?? null,
+          saidVia: moment.spoken ? "spoken" : null,
         }),
         restored: true,
         ...(moment.truncated ? { truncated: true } : {}),
@@ -2311,7 +2320,7 @@ export function LearningCanvas({
             beneath it forms, which is also what makes a send feel acknowledged. */}
         {threadOpen && currentSaid?.trim() && (
           <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) justify-end px-6">
-            <LearnerUtterance via={null}>{currentSaid}</LearnerUtterance>
+            <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
           </div>
         )}
 

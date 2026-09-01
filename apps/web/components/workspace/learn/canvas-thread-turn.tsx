@@ -52,7 +52,7 @@ export function CanvasThreadTurnView({
           were typed or spoken, and `LearnerUtterance` defaults to `"typed"`. */}
       {turn.said?.trim() && (
         <div className="mb-4 flex justify-end">
-          <LearnerUtterance via={null}>{turn.said}</LearnerUtterance>
+          <LearnerUtterance via={turn.saidVia}>{turn.said}</LearnerUtterance>
         </div>
       )}
 
