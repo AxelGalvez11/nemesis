@@ -23,7 +23,6 @@ import {
   deleteCalendarEvent,
   eventsByDate,
   loadCalendarEvents,
-  localeWeekStart,
   monthGrid,
   saveCalendarEvent,
   weekGrid,
@@ -34,11 +33,7 @@ import {
 import {
   type Calendar,
   calendarList,
-  deleteCalendar,
-  hiddenCalendarIds,
   loadCalendars,
-  PRIMARY_CALENDAR,
-  saveCalendar,
 } from "@/lib/workspace/calendars";
 import {
   CALENDAR_FILTER_STORAGE_KEY,
@@ -50,7 +45,6 @@ import {
 import { CalendarHeader } from "./calendar-header";
 import { calendarColorOf } from "@/lib/workspace/calendar-colors";
 
-import { CalendarList } from "./calendar-list";
 import { DayRail } from "./day-rail";
 import { type EventDraft, EventFormDialog } from "./event-dialogs";
 import { CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
@@ -104,14 +98,22 @@ export function CalendarWorkspace() {
   const [railKey, setRailKey] = useState<string | null>(null);
   /** The student's own calendars. The primary one is never in here — see calendars.ts. */
   const [calendars, setCalendars] = useState<Calendar[]>([]);
-  /** Whether the primary calendar's own tick box is off. Tab-local, not stored. */
-  const [primaryHidden, setPrimaryHidden] = useState(false);
   /**
-   * Sunday or Monday. Read after mount only: the server has no locale and no
-   * localStorage, and a grid that starts on a different day on the server than
-   * in the browser is a hydration mismatch that throws the whole tree away.
+   * The week starts on Sunday. Always.
+   *
+   * Owner 2026-09-01: "remove the 'starts sunday', it should always start
+   * Sunday." It used to be a button that flipped between Sunday and Monday,
+   * seeded from the browser's locale and remembered per device under
+   * `nemesis.calendar.weekStart`.
+   *
+   * 🔴 THAT STORED KEY IS DELETED ON MOUNT, not merely ignored. A per-browser
+   * preference that quietly contradicts the product's shape is the third bug of
+   * its kind here — a pinned `nemesis.canvas.view` hid conversation history for
+   * three separate reports before anyone looked at what the BROWSER carried.
+   * Leaving a stale "1" in storage for a future reader to find is how that
+   * happens a fourth time.
    */
-  const [weekStart, setWeekStart] = useState<WeekStart>(0);
+  const weekStart: WeekStart = 0;
 
   // View mode: read from storage only after mount (SSR has no localStorage).
   // Also honour ?date= — the link every agent-written event carries. Without
@@ -121,8 +123,12 @@ export function CalendarWorkspace() {
   useEffect(() => {
     setMounted(true);
     setView(loadStoredView());
-    const stored = window.localStorage.getItem(WEEK_START_STORAGE_KEY);
-    setWeekStart(stored === "0" || stored === "1" ? (Number(stored) as WeekStart) : localeWeekStart());
+    // Heal a browser pinned to Monday by the control that used to be here.
+    try {
+      window.localStorage.removeItem(WEEK_START_STORAGE_KEY);
+    } catch {
+      // Private mode: there was nothing stored to begin with.
+    }
     setHiddenKinds(parseHiddenKinds(window.localStorage.getItem(CALENDAR_FILTER_STORAGE_KEY)));
     const requested = new URLSearchParams(window.location.search).get("date");
     const parsed = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? new Date(`${requested}T12:00:00`) : null;
@@ -163,7 +169,6 @@ export function CalendarWorkspace() {
   }, [userId, preview]);
 
   const allCalendars = useMemo(() => calendarList(calendars), [calendars]);
-  const hiddenCalendars = useMemo(() => hiddenCalendarIds(calendars), [calendars]);
 
   /** Event colour, then calendar colour, then the kind's own — see event-colors.ts. */
   const calendarHex = useCallback(
@@ -172,38 +177,7 @@ export function CalendarWorkspace() {
     [calendars],
   );
 
-  async function changeCalendar(next: Calendar) {
-    // 🔴 THE PRIMARY CALENDAR IS NOT A ROW, so its own tick box and colour live
-    // only in this tab. Writing it would create a calendar nothing points at and
-    // leave every existing event still pointing at null.
-    setCalendars((current) =>
-      next.id === PRIMARY_CALENDAR.id
-        ? current
-        : current.some((entry) => entry.id === next.id)
-          ? current.map((entry) => (entry.id === next.id ? next : entry))
-          : [...current, next],
-    );
-    if (next.id === PRIMARY_CALENDAR.id) {
-      setPrimaryHidden(next.hidden ?? false);
-      return;
-    }
-    await saveCalendar(next, { preview, userId });
-  }
-
-  async function removeCalendar(id: string) {
-    setCalendars((current) => current.filter((entry) => entry.id !== id));
-    // The events survive and fall back to the primary calendar: the column is
-    // ON DELETE SET NULL, and null already means primary.
-    setEvents((current) => current.map((event) => (event.calendarId === id ? { ...event, calendarId: undefined } : event)));
-    await deleteCalendar(id, { preview, userId });
-  }
-
-  const shownEvents = useMemo(() => {
-    const byKind = visibleEvents(events, hiddenKinds);
-    return byKind.filter((event) =>
-      event.calendarId ? !hiddenCalendars.has(event.calendarId) : !primaryHidden,
-    );
-  }, [events, hiddenKinds, hiddenCalendars, primaryHidden]);
+  const shownEvents = useMemo(() => visibleEvents(events, hiddenKinds), [events, hiddenKinds]);
   const byDate = useMemo(() => eventsByDate(shownEvents), [shownEvents]);
 
   function changeHiddenKinds(next: Set<CalendarEventKind>) {
@@ -355,37 +329,6 @@ export function CalendarWorkspace() {
           headings slid away with the hours. Day and week now scroll inside
           their own grid; month and year scroll here, below. */}
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center gap-2 px-5 pb-1 max-sm:px-2">
-          <CalendarList
-            calendars={allCalendars.map((entry) =>
-              entry.id === PRIMARY_CALENDAR.id ? { ...entry, hidden: primaryHidden } : entry,
-            )}
-            onCreate={(name) => void changeCalendar({ id: crypto.randomUUID(), name })}
-            onDelete={(id) => void removeCalendar(id)}
-            onSave={(next) => void changeCalendar(next)}
-            onToggleHidden={(entry) => void changeCalendar({ ...entry, hidden: !entry.hidden })}
-          />
-          {/* 🔴 A CONTROL, NOT JUST A LOCALE GUESS. The browser's answer is right
-              for most people and wrong for the student who moved country, keeps
-              their timetable the other way round, or simply prefers it. Stored
-              per device, like the view mode beside it. */}
-          <button
-            className="rounded-lg border border-(--ui-stroke-secondary) px-2.5 py-1 text-xs font-medium text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
-            onClick={() => {
-              const next: WeekStart = weekStart === 0 ? 1 : 0;
-              setWeekStart(next);
-              try {
-                window.localStorage.setItem(WEEK_START_STORAGE_KEY, String(next));
-              } catch {
-                // Private mode: the choice still holds for this session.
-              }
-            }}
-            title="Which day the week starts on"
-            type="button"
-          >
-            Starts {weekStart === 0 ? "Sunday" : "Monday"}
-          </button>
-        </div>
         <CalendarHeader
           cursor={cursor}
           hiddenKinds={hiddenKinds}

@@ -91,3 +91,29 @@ test("moving the start carries the end, the way Google does", () => {
   // So dragging a lecture an hour later is one edit, not two.
   assert.match(form, /setEndTime\(clockOf\(Math\.min\(24 \* 60 - 1, end \+ \(to - from\)\)\)\)/);
 });
+
+const workspace = readFileSync(new URL("./calendar-workspace.tsx", import.meta.url), "utf8");
+
+test("the week always starts on Sunday, with no control and no stored preference", () => {
+  // Owner 2026-09-01: "remove the 'starts sunday', it should always start
+  // Sunday." The button flipped Sunday/Monday, seeded from the browser locale
+  // and remembered per device.
+  assert.doesNotMatch(workspace, />Starts \{/, "the week-start toggle came back");
+  assert.doesNotMatch(workspace, /localeWeekStart/, "the locale is choosing the first day again");
+  assert.doesNotMatch(workspace, /setWeekStart/, "the first day is settable again");
+  assert.match(workspace, /const weekStart: WeekStart = 0;/, "the week no longer starts on Sunday");
+  // And the old value is cleared rather than merely ignored — a stale pin is
+  // how `nemesis.canvas.view` hid history through three separate reports.
+  assert.match(workspace, /removeItem\(WEEK_START_STORAGE_KEY\)/, "a browser pinned to Monday is left pinned");
+  assert.doesNotMatch(workspace, /setItem\(WEEK_START_STORAGE_KEY/, "something is writing the preference again");
+});
+
+test("the Calendars control is gone, and its filter went with it", () => {
+  // Owner 2026-09-01: "also remove the 'calendars'".
+  assert.doesNotMatch(workspace, /CalendarList/, "the Calendars control came back");
+  // `hidden` is a STORED column. A filter with no control can only lose events:
+  // one ticked off before the control was removed would stay invisible forever.
+  assert.doesNotMatch(workspace, /hiddenCalendars/, "a per-calendar filter no one can reach is back");
+  assert.doesNotMatch(workspace, /primaryHidden/, "the primary calendar can be hidden with no way back");
+  assert.match(workspace, /const shownEvents = useMemo\(\(\) => visibleEvents\(events, hiddenKinds\), \[events, hiddenKinds\]\);/);
+});

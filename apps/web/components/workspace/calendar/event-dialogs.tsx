@@ -26,7 +26,8 @@ import {
 import type { Calendar } from "@/lib/workspace/calendars";
 import { EVENT_COLORS } from "@/lib/workspace/event-colors";
 import { formatRecurrenceLines, parseRecurrenceLines, specFromLegacy, specToLegacy } from "@/lib/workspace/rrule";
-import { Trash2 } from "@/lib/workspace/icons";
+import { Bell, Check, Clock, FileText, Palette, Pin, RefreshCw, Trash2, Users } from "@/lib/workspace/icons";
+import { controlVariants } from "@/components/desktop-ui/control";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime } from "./format";
@@ -59,7 +60,78 @@ const TIME_ZONES: readonly string[] = (() => {
   return [local, ...all.filter((zone) => zone !== local)];
 })();
 
-const SELECT = "h-8 min-w-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-xs text-foreground";
+/**
+ * Native selects wearing the same chrome as every Input beside them.
+ *
+ * 🔴 THEY USED TO BE THE BROWSER'S OWN. Owner 2026-09-01: the editor "looks
+ * clunky, and it doesn't look finished ... it just showed default functions for
+ * the calendar stuff". A hand-rolled height and border that ALMOST matched the
+ * inputs, plus the platform's own dropdown arrow, is what that reads as. This
+ * takes `controlVariants` — the thing Input itself is built from — so the two
+ * cannot drift again, then replaces the platform arrow with a drawn one.
+ */
+const CHEVRON =
+  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>\")";
+
+const FIELD = cn(controlVariants(), "h-8 cursor-pointer appearance-none pr-7");
+
+/**
+ * Date and time inputs, with the platform's own glyph turned down.
+ *
+ * `::-webkit-calendar-picker-indicator` is the little calendar and clock the
+ * browser draws inside these fields. It cannot be replaced, only dimmed, and at
+ * full strength it is the loudest thing in the row — two saturated blue-grey
+ * glyphs against type this size. It still opens the picker on click.
+ */
+const DATE_FIELD = "h-8 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-35 [&::-webkit-calendar-picker-indicator]:hover:opacity-70";
+
+/**
+ * 🔴 THE WHOLE BACKGROUND SHORTHAND GOES INLINE, not just the image.
+ *
+ * `bg-[right_0.5rem_center]` and `bg-[length:0.75rem]` do not compile: Tailwind
+ * reads a bare `bg-[…]` as a colour or an image, never as a position or a size,
+ * so the arrow kept its natural size and TILED — six chevrons marching across
+ * the timezone field. Setting `backgroundImage` inline and leaving the rest to
+ * classes is the trap, because the half that silently failed is the half that
+ * makes one arrow one arrow.
+ */
+const CHEVRON_STYLE: React.CSSProperties = {
+  backgroundImage: CHEVRON,
+  backgroundPosition: "right 0.5rem center",
+  backgroundRepeat: "no-repeat",
+  backgroundSize: "0.75rem",
+};
+
+/**
+ * One line of the editor: a fixed icon column, then the control.
+ *
+ * Google's event editor is built this way, and it is why a form with a dozen
+ * fields still reads as a list rather than a wall. Ours was a flat stack of
+ * identical full-width boxes with no labels, so nothing said which box was
+ * which — two rows of coloured dots sat next to each other answering entirely
+ * different questions.
+ */
+function Row({
+  children,
+  icon: Icon,
+  label,
+}: {
+  children: React.ReactNode;
+  icon?: typeof Clock;
+  label?: string;
+}) {
+  return (
+    <div className="grid grid-cols-[1.125rem_minmax(0,1fr)] items-start gap-x-3">
+      <div className="grid h-8 place-items-center text-(--ui-text-tertiary)">{Icon ? <Icon size={15} /> : null}</div>
+      <div className="flex min-w-0 flex-col gap-1.5 py-0.5">
+        {label ? (
+          <span className="text-[0.6875rem] font-medium uppercase tracking-[0.05em] text-(--ui-text-tertiary)">{label}</span>
+        ) : null}
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // ── Add / Edit form ──────────────────────────────────────────────────────────
 
@@ -246,205 +318,253 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
       <DialogContent banner={error || undefined} bannerTone="error" className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{mode === "edit" ? "Edit event" : "Add event"}</DialogTitle>
-          <DialogDescription>Assignment, exam, rotation, class — anything with a due date.</DialogDescription>
+          {/* Radix wants a description for `aria-describedby`, so this says what
+              the dialog IS. It used to list "assignment, exam, rotation, class",
+              which is now a labelled Type row two inches below it. */}
+          <DialogDescription>
+            {mode === "edit" ? "Change anything here, or delete the event." : "Everything but a title is optional."}
+          </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-3">
-          <Input autoFocus onChange={(e) => setTitle(e.target.value)} placeholder="Title" value={title} />
-          <div className="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-2">
-            <Input onChange={(e) => setDate(e.target.value)} type="date" value={date} />
-            {allDay ? (
-              <Input
-                aria-label="Last day"
-                className="col-span-2"
-                min={date}
-                onChange={(e) => setEndDate(e.target.value)}
-                placeholder="Last day"
-                type="date"
-                value={endDate}
-              />
-            ) : (
-              <>
-                <Input aria-label="Start time" onChange={(e) => moveStart(e.target.value)} type="time" value={time} />
-                <Input aria-label="End time" onChange={(e) => moveEnd(e.target.value)} type="time" value={endTime} />
-              </>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs text-(--ui-text-secondary)">
-              <input checked={allDay} onChange={(e) => setAllDay(e.target.checked)} type="checkbox" />
-              All day
-            </label>
-            {!allDay && (
-              <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-(--ui-text-tertiary)">
-                <span className="shrink-0">Timezone</span>
+        <div className="flex flex-col">
+          {/* The title carries the dialog, so it is set like a title rather than
+              like the eleventh field. Borderless until focused, which is what
+              Google does and what stops the form opening on a row of boxes. */}
+          <input
+            aria-label="Title"
+            autoFocus
+            className="mb-1 w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[1.0625rem] font-medium text-foreground outline-none placeholder:text-(--ui-text-quaternary) hover:border-(--ui-stroke-tertiary) focus:border-(--ui-stroke-secondary)"
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Add a title"
+            value={title}
+          />
+
+          <Row icon={Clock}>
+            <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_6.5rem] gap-1.5">
+              <Input aria-label="Date" className={DATE_FIELD} onChange={(e) => setDate(e.target.value)} type="date" value={date} />
+              {allDay ? (
+                <Input
+                  aria-label="Last day"
+                  className={cn(DATE_FIELD, "col-span-2")}
+                  min={date}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  placeholder="Last day"
+                  type="date"
+                  value={endDate}
+                />
+              ) : (
+                <>
+                  <Input aria-label="Start time" className={DATE_FIELD} onChange={(e) => moveStart(e.target.value)} type="time" value={time} />
+                  <Input aria-label="End time" className={DATE_FIELD} onChange={(e) => moveEnd(e.target.value)} type="time" value={endTime} />
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-(--ui-text-secondary)">
+                <input checked={allDay} className="accent-(--ui-text-primary)" onChange={(e) => setAllDay(e.target.checked)} type="checkbox" />
+                All day
+              </label>
+              {!allDay && (
                 <select
-                  className="h-8 min-w-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-xs text-foreground"
+                  aria-label="Timezone"
+                  className={cn(FIELD, "flex-1")}
                   onChange={(e) => setTimeZone(e.target.value)}
+                  style={CHEVRON_STYLE}
                   value={timeZone}
                 >
                   {TIME_ZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
                 </select>
-              </label>
-            )}
-          </div>
-          <RepeatEditor onChange={setRrule} startDate={date} value={rrule} />
-          {calendars.length > 1 && (
-            <label className="flex items-center gap-2 text-xs text-(--ui-text-tertiary)">
-              <span className="shrink-0">Calendar</span>
-              <select className={SELECT} onChange={(e) => setCalendarId(e.target.value)} value={calendarId}>
+              )}
+            </div>
+          </Row>
+
+          <Row icon={RefreshCw}>
+            <RepeatEditor onChange={setRrule} startDate={date} value={rrule} />
+          </Row>
+
+          <Row icon={Pin}>
+            <Input className="h-8" onChange={(e) => setLocation(e.target.value)} placeholder="Add a location" value={location} />
+            {calendars.length > 1 && (
+              <select
+                aria-label="Calendar"
+                className={FIELD}
+                onChange={(e) => setCalendarId(e.target.value)}
+                style={CHEVRON_STYLE}
+                value={calendarId}
+              >
                 {calendars.map((entry) => (
                   <option key={entry.id || "primary"} value={entry.id}>{entry.name}</option>
                 ))}
               </select>
-            </label>
-          )}
-          <Input onChange={(e) => setLocation(e.target.value)} placeholder="Location (optional)" value={location} />
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              aria-label="Status"
-              className={SELECT}
-              onChange={(e) => setStatus(e.target.value as NonNullable<CalendarEvent["status"]>)}
-              value={status}
-            >
-              <option value="confirmed">Confirmed</option>
-              <option value="tentative">Tentative</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <select
-              aria-label="Shows you as"
-              className={SELECT}
-              onChange={(e) => setBusy(e.target.value === "busy")}
-              value={busy ? "busy" : "free"}
-            >
-              <option value="busy">Busy</option>
-              <option value="free">Free</option>
-            </select>
-            <select
-              aria-label="Visibility"
-              className={SELECT}
-              onChange={(e) => setVisibility(e.target.value as NonNullable<CalendarEvent["visibility"]>)}
-              value={visibility}
-            >
-              <option value="default">Default visibility</option>
-              <option value="public">Public</option>
-              <option value="private">Private</option>
-              <option value="confidential">Confidential</option>
-            </select>
-          </div>
-          {/* Colour dots, not a labeled type dropdown (owner 2026-08-04:
-              "remove the 'assignment,exam etc.' picker and replace with color
-              selectors") — the same row the quick-create card uses. The name
-              survives as the tooltip and accessible label. */}
-          {/* 🔴 TWO COLOUR ROWS, AND THEY ARE NOT THE SAME QUESTION. The first is
-              WHAT THIS IS — exam, assignment, class — which Nemesis reasons
-              about and Google has no field for. The second is Google's own
-              eleven-colour palette, which overrides the first for this one
-              event, exactly as an event colour overrides a calendar colour
-              there. Merging them would make "it is an exam" and "make it red"
-              the same act, and the first is not a matter of taste. */}
-          <div aria-label="Event color" className="flex flex-wrap gap-1.5 px-0.5" role="group">
-            {KIND_ORDER.map((option) => (
+            )}
+          </Row>
+
+          {/* 🔴 ONE ROW OF COLOURS, NOT TWO. Owner 2026-09-01: "you can choose
+              colors for events, but it's not consistent, like there's different
+              buttons for the colors ... why are they so bland?"
+              He was looking at two rows of identical unlabelled dots that
+              answered different questions — the first was the event's TYPE
+              (exam, assignment), the second its colour. Both are still here,
+              because "it is an exam" is not a matter of taste and Nemesis
+              filters on it, but they no longer wear the same clothes: type is
+              named chips, colour is swatches, and each row says what it is.
+
+              And the swatches are at FULL STRENGTH now. Every unselected one
+              carried `opacity-70` (the types, `opacity-45`), which is exactly
+              what "bland" was — the palette itself is Google's own, and its
+              Tomato is #d50000. */}
+          <Row icon={Palette} label="Colour">
+            <div className="flex flex-wrap items-center gap-2" role="group">
               <button
-                aria-label={KIND_META[option].label}
-                aria-pressed={kind === option}
+                aria-label="Use the type colour"
+                aria-pressed={colorId === ""}
                 className={cn(
-                  "size-5 rounded-full transition-opacity",
-                  KIND_META[option].dot,
-                  kind === option
-                    ? "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)"
-                    : "opacity-45 hover:opacity-100",
+                  "grid size-[1.375rem] place-items-center rounded-full border border-dashed border-(--ui-stroke-primary) text-[0.625rem] text-(--ui-text-tertiary) transition-transform hover:scale-110",
+                  colorId === "" && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
                 )}
-                key={option}
-                onClick={() => setKind(option)}
-                title={KIND_META[option].label}
+                onClick={() => setColorId("")}
+                title="Use the type colour"
                 type="button"
-              />
-            ))}
-          </div>
-          <div aria-label="Colour" className="flex flex-wrap items-center gap-1.5 px-0.5" role="group">
-            <button
-              aria-label="Use the type colour"
-              aria-pressed={colorId === ""}
-              className={cn(
-                "grid size-5 place-items-center rounded-full border border-dashed border-(--ui-stroke-primary) text-[0.5rem] text-(--ui-text-tertiary)",
-                colorId === "" && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
-              )}
-              onClick={() => setColorId("")}
-              title="Use the type colour"
-              type="button"
-            >
-              ×
-            </button>
-            {EVENT_COLORS.map((color) => (
-              <button
-                aria-label={color.name}
-                aria-pressed={colorId === color.id}
-                className={cn(
-                  "size-5 rounded-full transition-opacity",
-                  colorId === color.id
-                    ? "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)"
-                    : "opacity-70 hover:opacity-100",
-                )}
-                key={color.id}
-                onClick={() => setColorId(color.id)}
-                style={{ backgroundColor: color.hex }}
-                title={color.name}
-                type="button"
-              />
-            ))}
-          </div>
-          <GuestsEditor
-            attendees={attendees}
-            onAttendees={setAttendees}
-            onPermissions={setPermissions}
-            onReminders={setReminders}
-            permissions={permissions}
-            reminders={reminders}
-          />
+              >
+                ×
+              </button>
+              {EVENT_COLORS.map((color) => (
+                <button
+                  aria-label={color.name}
+                  aria-pressed={colorId === color.id}
+                  className={cn(
+                    "size-[1.375rem] rounded-full transition-transform hover:scale-110",
+                    colorId === color.id && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
+                  )}
+                  key={color.id}
+                  onClick={() => setColorId(color.id)}
+                  style={{ backgroundColor: color.hex }}
+                  title={color.name}
+                  type="button"
+                />
+              ))}
+            </div>
+          </Row>
+
+          <Row label="Type">
+            <div className="flex flex-wrap gap-1.5" role="group">
+              {KIND_ORDER.map((option) => (
+                <button
+                  aria-pressed={kind === option}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.75rem] transition-colors",
+                    kind === option
+                      ? "border-(--ui-stroke-primary) bg-(--ui-control-hover-background) font-medium text-foreground"
+                      : "border-(--ui-stroke-tertiary) text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)",
+                  )}
+                  key={option}
+                  onClick={() => setKind(option)}
+                  type="button"
+                >
+                  <span aria-hidden className={cn("size-2 shrink-0 rounded-full", KIND_META[option].dot)} />
+                  {KIND_META[option].label}
+                </button>
+              ))}
+            </div>
+          </Row>
+
+          <Row icon={Check} label="Shows as">
+            <div className="flex flex-wrap gap-1.5">
+              <select
+                aria-label="Status"
+                className={cn(FIELD, "flex-1")}
+                onChange={(e) => setStatus(e.target.value as NonNullable<CalendarEvent["status"]>)}
+                style={CHEVRON_STYLE}
+                value={status}
+              >
+                <option value="confirmed">Confirmed</option>
+                <option value="tentative">Tentative</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <select
+                aria-label="Shows you as"
+                className={cn(FIELD, "flex-1")}
+                onChange={(e) => setBusy(e.target.value === "busy")}
+                style={CHEVRON_STYLE}
+                value={busy ? "busy" : "free"}
+              >
+                <option value="busy">Busy</option>
+                <option value="free">Free</option>
+              </select>
+              <select
+                aria-label="Visibility"
+                className={cn(FIELD, "flex-1")}
+                onChange={(e) => setVisibility(e.target.value as NonNullable<CalendarEvent["visibility"]>)}
+                style={CHEVRON_STYLE}
+                value={visibility}
+              >
+                <option value="default">Default</option>
+                <option value="public">Public</option>
+                <option value="private">Private</option>
+                <option value="confidential">Confidential</option>
+              </select>
+            </div>
+          </Row>
+
+          <Row icon={Users}>
+            <GuestsEditor
+              attendees={attendees}
+              onAttendees={setAttendees}
+              onPermissions={setPermissions}
+              onReminders={setReminders}
+              permissions={permissions}
+              reminders={reminders}
+            />
+          </Row>
+
           {/* Held and shown, never made here: only the provider that minted a
               Meet link or pinned a Drive file can change one. */}
           {(event?.conference?.url || event?.attachments?.length || event?.sourceUrl) && (
-            <div className="flex flex-col gap-1 rounded-lg border border-(--ui-stroke-tertiary) p-2.5 text-xs">
-              {event?.conference?.url && (
-                <a
-                  className="truncate text-(--ui-learner) hover:underline"
-                  href={event.conference.url}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  {event.conference.label || "Join the video call"}
-                </a>
-              )}
-              {event?.attachments?.map((file) => (
-                <a
-                  className="truncate text-(--ui-learner) hover:underline"
-                  href={file.fileUrl}
-                  key={file.fileUrl}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  {file.title || file.fileUrl}
-                </a>
-              ))}
-              {event?.sourceUrl && (
-                <a
-                  className="truncate text-(--ui-text-tertiary) hover:underline"
-                  href={event.sourceUrl}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  {event.sourceTitle || "Where this came from"}
-                </a>
-              )}
-            </div>
+            <Row icon={Bell}>
+              <div className="flex flex-col gap-1 rounded-lg border border-(--ui-stroke-tertiary) p-2.5 text-xs">
+                {event?.conference?.url && (
+                  <a
+                    className="truncate text-(--ui-learner) hover:underline"
+                    href={event.conference.url}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {event.conference.label || "Join the video call"}
+                  </a>
+                )}
+                {event?.attachments?.map((file) => (
+                  <a
+                    className="truncate text-(--ui-learner) hover:underline"
+                    href={file.fileUrl}
+                    key={file.fileUrl}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {file.title || file.fileUrl}
+                  </a>
+                ))}
+                {event?.sourceUrl && (
+                  <a
+                    className="truncate text-(--ui-text-tertiary) hover:underline"
+                    href={event.sourceUrl}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {event.sourceTitle || "Where this came from"}
+                  </a>
+                )}
+              </div>
+            </Row>
           )}
-          <Input onChange={(e) => setCourse(e.target.value)} placeholder="Course (optional)" value={course} />
-          <Textarea
-            className="min-h-16"
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Notes (optional)"
-            value={note}
-          />
+
+          <Row icon={FileText}>
+            <Input className="h-8" onChange={(e) => setCourse(e.target.value)} placeholder="Course (optional)" value={course} />
+            <Textarea
+              className="min-h-16"
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Add a description"
+              value={note}
+            />
+          </Row>
         </div>
         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
           {mode === "edit" ? (
