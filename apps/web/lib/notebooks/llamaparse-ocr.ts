@@ -84,9 +84,18 @@ export function llamaTier(env: LlamaEnv = process.env): { tier: string; version:
   };
 }
 
-/** Which formats this vendor is asked for. PURE — see the header for why PDFs are not on it. */
+/**
+ * Which formats this vendor is asked for. PURE — see the header for why PDFs are not on it.
+ *
+ * 🔴 `"other"` IS EVERY FORMAT NEMESIS CANNOT OPEN ITSELF, AND THIS LINE IS WHAT OPENS THEM.
+ * Legacy Office binaries, Apple iWork, OpenDocument, RTF, EPUB, saved HTML and the image formats
+ * no vision model accepts all resolve to that kind (`VENDOR_ONLY_EXTENSIONS` in parse-document).
+ * Before it, every one of them was a 415 at the upload door that stored nothing and counted
+ * nothing. LlamaParse documents support for all of them, and unlike the pptx/docx cases above it
+ * is not competing with a local reader here — there is no local reader to compete with.
+ */
 export function llamaHandles(kind: string): boolean {
-  return kind === "pptx" || kind === "docx";
+  return kind === "pptx" || kind === "docx" || kind === "other";
 }
 
 /** Did anything readable come back? PURE. */

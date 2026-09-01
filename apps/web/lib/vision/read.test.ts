@@ -5,10 +5,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { readImage, visionConfigured } from "./read";
 
-// What this file proves: the ORDER (DeepSeek first, Gemini on failure), the routing facts that
+// What this file proves: the ORDER (Gemini first, DeepSeek on failure), the routing facts that
 // keep it honest (HEIC never wastes a DeepSeek call), and that exactly one spend row leaves the
 // door, priced from the meter when there is one. Fetch is mocked by HOST, the same technique
 // gemini's and pdf/vision's tests already use.
+//
+// 🔴 THE ORDER WAS DEEPSEEK-FIRST UNTIL 2026-08-31 AND EVERY ASSERTION BELOW SAID SO. It was
+// reversed by the owner ("use Gemini") after three lanes had each independently opted out of the
+// default: figure-occlusion passed `prefer: "gemini"`, the parse lane never used this door at all,
+// and the PDF figure describer went to Gemini directly. The measurement behind all three is in
+// read.ts's header — DeepSeek bills its own reasoning as output, so a diagram costs what the model
+// finds difficult rather than what it says. These tests are repointed, not deleted: the pair that
+// pins the DEFAULT is the pair that catches a silent flip back.
 
 const PNG = new Uint8Array([137, 80, 78, 71]);
 const BOTH = { DEEPSEEK_API_KEY: "dk", GEMINI_API_KEY: "gk" };
@@ -50,20 +58,46 @@ async function withFetch<T>(stub: (url: string) => Response | Promise<Response>,
   }
 }
 
-test("🔴 DeepSeek answers first when both doors are open, and one token-priced row is written", async () => {
+test("🔴🔴🔴 Gemini answers first when both doors are open, and DeepSeek is never woken", async () => {
+  // 🔴 THE DEFAULT IS THE WHOLE ASSERTION. `prefer: "gemini"` existed for a year before this and
+  // exactly ONE call site passed it, so every camera photo, handwriting page and notebook read
+  // still went the expensive way. Pinning the option without pinning the default is what let that
+  // stand, so this test omits `prefer` on purpose.
   const rows: unknown[] = [];
   const { calls, result } = await withFetch(
-    (url) => (url.includes("api.deepseek.com") ? deepseekReply("read it") : geminiReply("never")),
+    (url) => (url.includes("api.deepseek.com") ? deepseekReply("never") : geminiReply("read it")),
     () => readImage(PNG, "image/png", {
       env: BOTH,
       prompt: "p",
       spend: { admin: fakeAdmin(rows), scope: { operation: "occlusion" }, userId: "u1" },
     }),
   );
-  assert.equal(result?.provider, "deepseek");
+  assert.equal(result?.provider, "gemini");
   assert.equal(result?.text, "read it");
-  assert.equal(calls.length, 1, "Gemini was called even though DeepSeek answered");
+  assert.equal(calls.length, 1, "DeepSeek was called even though Gemini answered");
+  assert.ok(!calls[0]!.includes("api.deepseek.com"), "the reasoning provider was tried first anyway");
   assert.equal(rows.length, 1);
+  assert.equal((rows[0] as { event_type: string }).event_type, "ai_spend_gemini_vision");
+});
+
+test("🔴🔴 `prefer: deepseek` still reaches DeepSeek first, and one token-priced row is written", async () => {
+  // The price comparison that originally chose DeepSeek is still true for the case it was measured
+  // on: TRANSCRIBING a dense page is mostly output tokens and DeepSeek's output rate is a third of
+  // Google's. A lane reading words rather than interpreting a picture may still ask for it, and
+  // the token meter it reports is what makes that row priced rather than estimated.
+  const rows: unknown[] = [];
+  const { calls, result } = await withFetch(
+    (url) => (url.includes("api.deepseek.com") ? deepseekReply("transcribed") : geminiReply("never")),
+    () => readImage(PNG, "image/png", {
+      env: BOTH,
+      prefer: "deepseek",
+      prompt: "p",
+      spend: { admin: fakeAdmin(rows), scope: { operation: "handwriting" }, userId: "u1" },
+    }),
+  );
+  assert.equal(result?.provider, "deepseek");
+  assert.equal(result?.text, "transcribed");
+  assert.equal(calls.length, 1, "Gemini was called even though DeepSeek answered");
   const meta = (rows[0] as { event_type: string; metadata: Record<string, unknown> });
   assert.equal(meta.event_type, "ai_spend_deepseek_vision");
   assert.equal(meta.metadata.priced, true);
@@ -73,66 +107,46 @@ test("🔴 DeepSeek answers first when both doors are open, and one token-priced
   assert.equal(meta.metadata.cost_usd, 0.000352);
 });
 
-test("🔴🔴🔴 `prefer: gemini` asks Gemini FIRST, and never wakes DeepSeek when it answers", async () => {
-  // 🔴 THIS OPTION IS THE LINE THAT MADE IMAGE OCCLUSION WORK, and the reason is latency, not
-  // quality. DeepSeek REASONS over an image before answering — `deepseek.ts` records a diagram
-  // that burned 18,642 output tokens and **135 seconds** enumerating printed labels. A labelled
-  // diagram is exactly that pathological case, and "list the labelled boxes" is exactly the
-  // question where reasoning buys nothing. Measured live on the nephron figure, 2026-08-25:
-  // DeepSeek-first took 34s on a good run and blew a 38s budget on the next one.
-  const { calls, result } = await withFetch(
-    (url) => (url.includes("api.deepseek.com") ? deepseekReply("slow one") : geminiReply("boxes")),
-    () => readImage(PNG, "image/png", { env: BOTH, prefer: "gemini", prompt: "p" }),
+test("🔴🔴 `prefer` is a preference, not a lock — the other provider still catches a failure", async () => {
+  // A DeepSeek outage must cost latency, never the feature.
+  const { result } = await withFetch(
+    (url) => (url.includes("api.deepseek.com") ? new Response("{}", { status: 500 }) : geminiReply("gemini caught it")),
+    () => readImage(PNG, "image/png", { env: BOTH, prefer: "deepseek", prompt: "p" }),
   );
   assert.equal(result?.provider, "gemini");
-  assert.equal(result?.text, "boxes");
-  assert.equal(calls.length, 1, "DeepSeek was called even though Gemini answered");
-  assert.ok(!calls[0]!.includes("api.deepseek.com"), "the slow provider was tried first anyway");
+  assert.equal(result?.text, "gemini caught it");
 });
 
-test("🔴🔴 `prefer` is a preference, not a lock — the other provider still catches a failure", async () => {
-  // A Gemini outage must cost latency, never the feature.
-  const { result } = await withFetch(
-    (url) => (url.includes("api.deepseek.com") ? deepseekReply("deepseek caught it") : new Response("{}", { status: 500 })),
-    () => readImage(PNG, "image/png", { env: BOTH, prefer: "gemini", prompt: "p" }),
-  );
-  assert.equal(result?.provider, "deepseek");
-  assert.equal(result?.text, "deepseek caught it");
-});
-
-test("🔴 the default is unchanged, so every existing caller reads exactly as it did", async () => {
-  const { result } = await withFetch(
-    (url) => (url.includes("api.deepseek.com") ? deepseekReply("still first") : geminiReply("no")),
-    () => readImage(PNG, "image/png", { env: BOTH, prompt: "p" }),
-  );
-  assert.equal(result?.provider, "deepseek", "omitting `prefer` changed which provider answers");
-});
-
-test("🔴 a DeepSeek failure degrades to Gemini, and the row says who actually answered", async () => {
+test("🔴 a Gemini failure degrades to DeepSeek, and the row says who actually answered", async () => {
   const rows: unknown[] = [];
   const { calls, result } = await withFetch(
-    (url) => (url.includes("api.deepseek.com") ? new Response("{}", { status: 500 }) : geminiReply("gemini read it")),
+    (url) => (url.includes("api.deepseek.com") ? deepseekReply("deepseek read it") : new Response("{}", { status: 500 })),
     () => readImage(PNG, "image/png", {
       env: BOTH,
       prompt: "p",
       spend: { admin: fakeAdmin(rows), scope: { operation: "handwriting" }, userId: "u1" },
     }),
   );
-  assert.equal(result?.provider, "gemini");
-  assert.equal(result?.text, "gemini read it");
+  assert.equal(result?.provider, "deepseek");
+  assert.equal(result?.text, "deepseek read it");
   assert.ok(calls.length >= 2, "the fallback never ran");
   const meta = (rows[0] as { event_type: string });
-  assert.equal(meta.event_type, "ai_spend_gemini_vision");
+  assert.equal(meta.event_type, "ai_spend_deepseek_vision");
 });
 
-test("🔴 HEIC skips DeepSeek entirely — no wasted request before the provider that can read it", async () => {
+test("🔴 HEIC skips DeepSeek entirely, EVEN AS THE FALLBACK — it cannot read the format at all", async () => {
+  // 🔴 GEMINI IS MADE TO FAIL HERE ON PURPOSE. With Gemini first, a HEIC that Gemini reads never
+  // reaches the question, so a stub where Gemini succeeds would pass without proving anything.
+  // The claim worth pinning is about the FALLBACK: DeepSeek refuses HEIC locally, so even the
+  // degraded path must not spend a round trip discovering that. iPhone photos are the format
+  // students actually drop, so this is the common case, not an edge one.
   const { calls, result } = await withFetch(
     (url) => (url.includes("api.deepseek.com")
-      ? new Response("{}", { status: 400 })
-      : geminiReply("heic read")),
+      ? deepseekReply("should never be asked")
+      : new Response("{}", { status: 500 })),
     () => readImage(PNG, "image/heic", { env: BOTH, prompt: "p" }),
   );
-  assert.equal(result?.provider, "gemini");
+  assert.equal(result, null, "DeepSeek answered a format it cannot decode");
   assert.ok(calls.every((url) => !url.includes("api.deepseek.com")), "a HEIC reached DeepSeek");
 });
 

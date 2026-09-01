@@ -42,9 +42,14 @@ import {
   parseLibrarianPlan,
   LIBRARIAN_MODEL,
 } from "@/lib/workspace/library-librarian";
+import { READABLE_ACCEPT } from "@/lib/notebooks/readable-formats";
 
-export const LIBRARY_IMPORT_ACCEPT =
-  ".md,.markdown,.txt,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.heic,.heif,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/png,image/jpeg,image/webp,image/heic,image/heif";
+// 🔴 THE SAME LIST THE CANVAS OFFERS AND THE SAME LIST THE SERVER READS. This was its own
+// hand-written string and it was the SHORTEST of the three: no `.xlsx`, no `.csv`, so a learner
+// importing a spreadsheet into their Library was refused by the file dialog for a format the parser
+// had supported for months. One list now (`readable-formats.ts`), so the Library door and the
+// canvas door cannot offer different things.
+export const LIBRARY_IMPORT_ACCEPT = READABLE_ACCEPT;
 
 /** Below this much extracted text a document is a snippet, not a lecture —
  *  the librarian pass isn't worth a model call and the plain note is fine. */

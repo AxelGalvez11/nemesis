@@ -40,7 +40,7 @@ import {
 import { adminClient } from "@/lib/server";
 
 /** Matches `parsed_documents.doc_kind`'s CHECK constraint. */
-export type ParsedDocKind = "pdf" | "pptx" | "docx" | "xlsx" | "csv" | "image" | "text" | "html";
+export type ParsedDocKind = "pdf" | "pptx" | "docx" | "xlsx" | "csv" | "image" | "text" | "html" | "other";
 
 /**
  * Where the row sits in the PIPELINE — a different question from what the parse

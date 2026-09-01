@@ -55,7 +55,7 @@ import {
   visionSettlement,
   workerName,
 } from "@/lib/notebooks/parse-worker";
-import { kindFor, sniffKind, type ParsedDocument } from "@/lib/notebooks/parse-document";
+import { kindFor, resolveKind, sniffKind, type ParsedDocument } from "@/lib/notebooks/parse-document";
 import { doclingFormats, routeFor } from "@/lib/notebooks/parse-router";
 import {
   awaitDoclingTask,
@@ -518,7 +518,7 @@ async function runClaimed(
   // DOCLING_FORMATS set and no DOCLING_SERVE_URL configured, `routeFor` returns
   // "nemesis" and none of the code below runs. Production behaviour is unchanged
   // until somebody deliberately sets both.
-  const kind = kindFor(fileName, mimeType) ?? sniffKind(bytes);
+  const kind = resolveKind(fileName, mimeType, bytes);
   const service = doclingConfig();
   const routed =
     kind && kind !== "image"

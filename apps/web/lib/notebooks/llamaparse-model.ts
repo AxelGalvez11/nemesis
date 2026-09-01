@@ -90,7 +90,15 @@ function unitKindFor(format: DocFormat): DocUnit["kind"] {
 
 /** LlamaParse's answer as a `DocumentModel`, or null when nothing survived. */
 export function modelFromLlama(result: LlamaResult, format: DocFormat, title: string | null): DocumentModel | null {
-  const paged = format === "pdf" || format === "pptx";
+  // 🔴 `"other"` IS PAGED, AND THE ALTERNATIVE IS WORSE THAN THE IMPRECISION IT AVOIDS. `paged`
+  // false collapses every vendor page into ONE unit (see the `units.length === 0` guard below), so
+  // a 400-page EPUB textbook or a 60-slide legacy .ppt would come back as a single undifferentiated
+  // body and every citation into it would point at the whole file. The docx rule above exists
+  // because Word's pagination belongs to a renderer rather than to the document — a real objection,
+  // and a smaller loss than total locality, because a Word file is one continuous flow that reads
+  // sensibly whole. These formats are not: they are books and slide decks, where the page or slide
+  // IS the unit a student cites. The vendor's boundaries are the only ones anybody has here.
+  const paged = format === "pdf" || format === "pptx" || format === "other";
   const kind = unitKindFor(format);
   const stack: Array<{ level: number; text: string }> = [];
   const blocks: PendingBlock[] = [];

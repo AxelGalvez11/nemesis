@@ -15,6 +15,7 @@ import {
 } from "@nemesis/shared";
 
 import { ingestObjectKey, MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, maxSourceLabel } from "@/lib/notebooks/ingest-ref";
+import { READABLE_EXTENSIONS } from "@/lib/notebooks/readable-formats";
 import { supabase } from "@/lib/supabase";
 import { deviceKey } from "@/lib/workspace/chat-api";
 import { loadKnownCourses } from "@/lib/workspace/agent-tools";
@@ -58,11 +59,29 @@ export const MAX_ATTACHMENT_CHARS = MAX_TOTAL_CHARS;
  *  pdf/docx/pptx/images/audio as of 2026-08-05; until that is widened the upload
  *  is rejected and persistChatAttachment falls back to metadata-only — the same
  *  no-row behaviour as before, so this degrades safely rather than lying. */
-export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx", ".md", ".txt", ".xlsx", ".csv"];
 /** Pictures the server can read (lib/vision/gemini.ts). HEIC is here because it
  *  is what an iPhone writes, and a photo mailed to yourself and dropped in here
  *  is still a HEIC. */
 export const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"];
+
+/** The bare extensions above, for the filter that splits documents from pictures. `.gif`, `.bmp`
+ *  and the TIFFs are deliberately NOT here: no vision model accepts them, so they travel the
+ *  document lane to a reader that can rasterise them first.
+ *
+ *  🔴 DECLARED BEFORE `DOCUMENT_EXTENSIONS`, WHICH READS IT AT MODULE LOAD. It was written after,
+ *  and `tsc --noEmit` passed clean: a `const` used before its initialiser is a runtime temporal
+ *  dead zone, not a type error. Every test in this file died on import with one message. */
+const IMAGE_ONLY = new Set(IMAGE_EXTENSIONS.map((extension) => extension.slice(1)));
+
+// 🔴 DERIVED, BECAUSE A HAND-WRITTEN COPY OF THIS LIST IS THE GATE THAT SILENTLY DROPS FILES. This
+// is not merely what the picker offers — `persistChatAttachment` looks a dropped file up here, and
+// a file that is not found is attached to the message and NEVER STORED as a source. So an
+// extension missing from this list produces a chat that appears to work and a Library that never
+// learns the document exists. One list now: `readable-formats.ts`.
+export const DOCUMENT_EXTENSIONS = READABLE_EXTENSIONS
+  .filter((extension) => !IMAGE_ONLY.has(extension))
+  .map((extension) => `.${extension}`);
+
 
 export interface ChatAttachmentGroup {
   /** Stable for the lifetime of the selected File objects. */
@@ -168,10 +187,32 @@ export const DOCUMENT_MIME: Record<string, string> = {
   ".csv": "text/csv",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".md": "text/markdown",
+  ".markdown": "text/markdown",
   ".pdf": "application/pdf",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".txt": "text/plain",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  // The vendor-read formats. 🔴 THE REGISTERED TYPE, NOT A PLAUSIBLE ONE — the bucket allowlist
+  // matches this string exactly, and a near-miss is the silent no-row failure this map's header
+  // describes. Apple's three have no IANA registration at all, so the bundle types Finder writes
+  // are used; they are what arrives in `file.type` on a Mac.
+  ".doc": "application/msword",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".xls": "application/vnd.ms-excel",
+  ".pages": "application/vnd.apple.pages",
+  ".key": "application/vnd.apple.keynote",
+  ".numbers": "application/vnd.apple.numbers",
+  ".odt": "application/vnd.oasis.opendocument.text",
+  ".odp": "application/vnd.oasis.opendocument.presentation",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".rtf": "application/rtf",
+  ".epub": "application/epub+zip",
+  ".html": "text/html",
+  ".htm": "text/html",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
 };
 
 /** Which storage bucket a persisted attachment lives in — images have their

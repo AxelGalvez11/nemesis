@@ -136,6 +136,53 @@ export function figureAssetPath(uid: string, contentKey: string, mime: string): 
 }
 
 /**
+ * The pictures worth storing out of a parsed PDF: figures the structural reader already rasterised.
+ *
+ * 🔴 EVERY ONE OF THESE WAS DECODED, DESCRIBED, AND THEN DROPPED. `readPdfStructure` decodes each
+ * figure to PNG so vision can look at it, `lookAtFigures` writes the sentence it produces onto the
+ * model, and the pixels were then garbage collected. So a parsed lecture knew that page 12 holds
+ * "a nephron with the loop of Henle labelled" and had no way to show it — measured on production,
+ * 2026-08-31: 20 parsed PDFs, 0 stored figures, across the whole database.
+ *
+ * 🔴 THIS COSTS NOTHING EXTRA, AND THAT IS WHY IT BELONGS HERE RATHER THAN IN A SEPARATE PASS. The
+ * decode is already paid for — `captureFigures` is only true on the lane that was going to look at
+ * them anyway. Re-deriving these later means downloading the original file and parsing it again,
+ * which is exactly the working-set problem this module's header opens with.
+ *
+ * 🔴 THE KEY IS `unit:ref` AND IT IS CARRIED THROUGH UNCHANGED, WHICH IS NOT WHAT A PPTX ENTRY
+ * LOOKS LIKE. `readPdfStructure` qualifies each figure by its page because a PDF's XObject names
+ * are PER-PAGE: `/Im0` on page 1 and `/Im0` on page 5 are routinely two different pictures. Keying
+ * on the bare ref would silently attach page 1's diagram to page 5's figure — a stored picture,
+ * shown, and wrong, which is worse than no picture at all. `attachFigureAssets` tries the
+ * qualified key first for exactly this reason. PURE.
+ */
+export function capturedFigures(
+  images: ReadonlyMap<string, { png: Uint8Array; width: number; height: number }>,
+): NormalizedFigure[] {
+  const out: NormalizedFigure[] = [];
+  const seen = new Set<string>();
+  for (const [ref, captured] of images) {
+    if (!captured.png || captured.png.byteLength === 0) continue;
+    const contentKey = figureContentKey(captured.png);
+    // 🔴 THE SAME DIAGRAM ON EIGHT SLIDES IS ONE OBJECT. A recurring figure — a course template's
+    // header, a diagram the lecturer returns to — would otherwise be uploaded once per appearance
+    // to the identical content-addressed path.
+    if (seen.has(contentKey)) continue;
+    seen.add(contentKey);
+    out.push({
+      bytes: captured.png,
+      contentKey,
+      entry: ref,
+      height: captured.height || null,
+      // Always PNG: `readPdfStructure` encodes what it decodes, whatever the embedded format was.
+      mime: "image/png",
+      width: captured.width || null,
+    });
+  }
+  return out;
+}
+
+/**
  * The pictures worth storing out of a parsed deck, in slide order.
  *
  * Takes the media plan's own decisions rather than re-deciding: whatever
@@ -228,7 +275,17 @@ export function attachFigureAssets(
     blocks: model.blocks.map((block) => {
       const ref = block.figure?.ref;
       if (!ref) return block;
-      const asset = byEntry.get(ref);
+      // 🔴 THE PAGE-QUALIFIED KEY FIRST, THE BARE ONE SECOND, AND BOTH ARE LOAD-BEARING.
+      //
+      // A PDF's XObject names are scoped to their page, so `/Im0` appears on page 1 and page 5
+      // meaning two different pictures; `capturedFigures` therefore keys on `unit:ref`. A deck's
+      // entry names are already unique across the file (`ppt/media/image3.png`), so
+      // `normalizedFigures` keys on the bare name. Trying the qualified form first serves the PDF
+      // without asking PPTX to invent a page number it does not have.
+      //
+      // Falling back rather than choosing by format keeps this a pure function of its two
+      // arguments — it cannot be wrong about which lane produced the map, because it does not ask.
+      const asset = byEntry.get(`${block.unit}:${ref}`) ?? byEntry.get(ref);
       if (!asset) return block;
       return { ...block, figure: { ...block.figure, asset } };
     }),

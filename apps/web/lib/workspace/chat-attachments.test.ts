@@ -258,7 +258,7 @@ test("🔴 every importable document type has the mime its bucket needs", () => 
  * guards. It is a tripwire on OUR list drifting past a known-good allowlist, never a substitute
  * for the bucket itself.
  */
-const BUCKET_ALLOWLIST_2026_08_13 = new Set([
+const BUCKET_ALLOWLIST_2026_08_31 = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -266,6 +266,25 @@ const BUCKET_ALLOWLIST_2026_08_13 = new Set([
   "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav", "audio/webm", "audio/x-m4a",
   "image/heic", "image/heif", "image/jpeg", "image/png", "image/webp",
   "text/csv", "text/markdown", "text/plain",
+  // 🔴 ADDED TO THE LIVE BUCKET FIRST, THEN HERE, AND THAT ORDER IS THE WHOLE DISCIPLINE. These
+  // are the vendor-read formats (`VENDOR_EXTENSIONS`). Widening this copy first would turn the
+  // tripwire green while every one of them still died silently at the storage API -- precisely
+  // the failure the header above describes. Applied to `library-sources` on 2026-08-31 and read
+  // back from `storage.buckets.allowed_mime_types` to produce this list.
+  "application/msword", "application/vnd.ms-powerpoint", "application/vnd.ms-excel",
+  "application/vnd.apple.pages", "application/vnd.apple.keynote", "application/vnd.apple.numbers",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/rtf", "application/epub+zip", "text/html",
+  "image/gif", "image/bmp", "image/tiff",
+  // 🔴 THE CATCH-ALL, AND IT IS DELIBERATE RATHER THAN LAZY. A browser reports NO type for the
+  // formats it does not recognise -- every Apple bundle, most .epub, .rtf from some sources --
+  // and a drag from Finder often reports none at all. `DOCUMENT_MIME` supplies ours by extension,
+  // but a file arriving with a type we did not predict must still be storable, and the parser
+  // decides what it really is from its bytes anyway (`resolveKind`). Without this, an unguessed
+  // type is the silent no-row failure again.
+  "application/octet-stream",
 ]);
 
 test("🔴 every mime we would upload under is one the bucket actually accepts", () => {
@@ -276,7 +295,7 @@ test("🔴 every mime we would upload under is one the bucket actually accepts",
   for (const extension of DOCUMENT_EXTENSIONS) {
     const mime = DOCUMENT_MIME[extension]!;
     assert.ok(
-      BUCKET_ALLOWLIST_2026_08_13.has(mime),
+      BUCKET_ALLOWLIST_2026_08_31.has(mime),
       `${extension} would upload as ${mime}, which the bucket refuses -- the upload dies silently`,
     );
   }
@@ -290,7 +309,7 @@ test("the spreadsheet door is open at BOTH halves, not just the picker", () => {
   // nobody can find.
   for (const extension of [".xlsx", ".csv"]) {
     assert.ok(DOCUMENT_EXTENSIONS.includes(extension), `${extension} is not importable`);
-    assert.ok(BUCKET_ALLOWLIST_2026_08_13.has(DOCUMENT_MIME[extension]!), `${extension} mime is refused`);
+    assert.ok(BUCKET_ALLOWLIST_2026_08_31.has(DOCUMENT_MIME[extension]!), `${extension} mime is refused`);
   }
   assert.equal(DOCUMENT_MIME[".xlsx"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   assert.equal(DOCUMENT_MIME[".csv"], "text/csv");

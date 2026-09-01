@@ -53,7 +53,7 @@ import { readCsv } from "./csv-structure";
 import { readTextDocument } from "./text-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
-import { normalizedFigures, type NormalizedFigure } from "./figure-assets";
+import { capturedFigures, normalizedFigures, type NormalizedFigure } from "./figure-assets";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
@@ -69,6 +69,8 @@ import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { describeFiguresWithVision, readFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
 
+import { VENDOR_EXTENSIONS } from "./readable-formats";
+
 /**
  * 🔴 ONE OF THREE HAND-WRITTEN FORMAT LISTS, AND THEY HAVE DRIFTED BEFORE.
  * `DocFormat` (the model), `FORMATS` (the envelope's runtime allow-list) and
@@ -77,11 +79,41 @@ import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_
  * Adding a format means visiting all four; `document-envelope.test.ts` fails
  * loudly for the pair that can lose a whole document.
  */
-export type DocumentKind = "pdf" | "docx" | "pptx" | "xlsx" | "csv" | "image" | "text";
+export type DocumentKind = "pdf" | "docx" | "pptx" | "xlsx" | "csv" | "image" | "text" | "other";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/**
+ * Formats nothing here reads natively, but the extraction vendor does.
+ *
+ * 🔴 THE DEFECT THIS EXISTS FOR: EVERY ONE OF THESE USED TO BE A 415 AT THE DOOR, AND A 415 LEAVES
+ * NO TRACE. `kindFor` returned null, the upload route answered "Unsupported file", and nothing was
+ * stored — no `library_sources` row, no parse record, no counter. So the product could not answer
+ * "how often does a student drop something we refuse?" even in principle: the only evidence was a
+ * modal the student saw once. Routing these to a kind rather than to null is what makes the
+ * question answerable, and reading them is the point of asking.
+ *
+ * 🔴 A CURATED LIST, NOT A CATCH-ALL. "Anything unrecognised goes to the vendor" would send a
+ * disk image, an installer or a video to a per-page biller to discover it is not a document. These
+ * are the formats a student actually drops that we cannot open ourselves:
+ *
+ *   doc/ppt/xls    The OLE2 binaries. Twenty-year-old course material is still circulating, and
+ *                  a university handout written in 2004 is not a rare object.
+ *   pages/key      Apple iWork. A ZIP of Snappy-compressed protobuf — genuinely closed, and the
+ *   numbers        default save format for every Mac student who never installed Office.
+ *   odt/odp/ods    OpenDocument. What LibreOffice writes and what Google Docs exports by default.
+ *   rtf            The lowest common denominator export, still offered by every editor.
+ *   epub           Textbooks. The single highest-value format on this list per file.
+ *   html/htm       A saved course page. Canvas and Moodle both export this way.
+ *   gif/bmp/tif    Images no vision model accepts. Gemini takes PNG, JPEG, WEBP, HEIC and HEIF and
+ *   tiff           nothing else, so these need a reader that rasterises before it looks.
+ *
+ * 🔴 AND THE EXTENSION IS A CLAIM, NOT A VERDICT — see `resolveKind`, which lets the file's own
+ * bytes overrule it. A .pptx someone renamed to .ppt is read as the deck it is, natively and free.
+ */
+const VENDOR_ONLY_EXTENSIONS = VENDOR_EXTENSIONS;
 
 /** What a file claims to be, from its name and declared type. PURE. */
 export function kindFor(name: string, type: string): DocumentKind | null {
@@ -101,7 +133,35 @@ export function kindFor(name: string, type: string): DocumentKind | null {
   if (lower.endsWith(".md") || lower.endsWith(".markdown") || type === "text/markdown") return "text";
   if (lower.endsWith(".txt") || type === "text/plain") return "text";
   if (visionMime(name, type)) return "image";
+  // 🔴 LAST, SO IT NEVER SHADOWS A FORMAT WE READ FOR FREE. `.htm` and `.html` in particular must
+  // lose to nothing above, but a future `text/html` branch here would have to be placed ABOVE this
+  // line to take effect, which is the ordering mistake this comment exists to prevent.
+  const extension = lower.split(".").pop() ?? "";
+  if ((VENDOR_ONLY_EXTENSIONS as readonly string[]).includes(extension)) return "other";
   return null;
+}
+
+/**
+ * What a file IS, from its name, its declared type and its first bytes together.
+ *
+ * 🔴 ONE FUNCTION BECAUSE TWO DOORS KEPT DISAGREEING. `kindFor(name, type) ?? sniffKind(bytes)`
+ * was written out longhand at every entry point, and `format-doors.test.ts` exists because one of
+ * them once carried a private copy that fell a format behind. The composition is now the thing
+ * imported, so there is one place to change and one place to test.
+ *
+ * 🔴 THE BYTES OVERRULE THE NAME, BUT ONLY WHEN THE NAME SAID "other". A .pptx renamed to .ppt —
+ * which is what happens every time someone "saves as an older format" and the tool lies about it,
+ * and what a browser does to some downloads — carries `ppt/slides/` in its zip. Reading that
+ * natively is free and better; sending it to a per-page vendor would be paying to be told what the
+ * first 512 KB already said. The reverse override is deliberately NOT done: a real .doc has no
+ * signature `sniffKind` recognises, so a null sniff never demotes a confident extension.
+ */
+export function resolveKind(name: string, type: string, bytes: Uint8Array): DocumentKind | null {
+  const claimed = kindFor(name, type);
+  if (claimed && claimed !== "other") return claimed;
+  const sniffed = sniffKind(bytes);
+  if (sniffed) return sniffed;
+  return claimed;
 }
 
 /**
@@ -243,7 +303,18 @@ export type ParseOutcome =
     }
   | { ok: false; reason: "unsupported" }
   | { ok: false; reason: "too-large-image" }
-  | { ok: false; reason: "vision-unavailable" };
+  | { ok: false; reason: "vision-unavailable" }
+  /**
+   * A vendor-only format arrived and the vendor did not answer.
+   *
+   * 🔴 TRANSIENT, AND THAT IS THE ENTIRE REASON IT IS NOT `unsupported`. The formats that reach
+   * this have no local reader by definition, so "the vendor said no" is the only failure mode they
+   * have — an unset key, an outage, a timed-out job, a file the vendor itself refused. Every one
+   * of those is worth retrying, and `unsupported` is the one verdict in this union that means
+   * "stop trying". Collapsing them would turn one bad afternoon at a vendor into a permanent
+   * "Nemesis cannot read Keynote".
+   */
+  | { ok: false; reason: "vendor-unavailable"; kind: DocumentKind };
 
 /**
  * Did the parser find structure it could not read?
@@ -635,8 +706,8 @@ export async function parseDocument(
   options: ParseOptions = {},
 ): Promise<ParseOutcome> {
   // Name first (cheap and right almost always), contents second (right when a
-  // name has lost its extension).
-  const kind = kindFor(fileName, mimeType) ?? sniffKind(bytes);
+  // name has lost its extension, and when the name says a format the bytes deny).
+  const kind = resolveKind(fileName, mimeType, bytes);
   if (!kind) return { ok: false, reason: "unsupported" };
 
   // 🔴🔴 THE VENDOR NO LONGER GETS FIRST REFUSAL ON A PDF, AND THAT IS THE COST ARCHITECTURE'S
@@ -678,7 +749,25 @@ export async function parseDocument(
   /** Pixels, held only until a caller with storage takes them. See `ParseOutcome`. */
   let normalized: NormalizedFigure[] | undefined;
 
-  if (kind === "image") {
+  if (kind === "other") {
+    // 🔴 THE VENDOR IS THE WHOLE LANE HERE, WITH NOTHING BEHIND IT, AND THAT IS THE ONE PLACE IN
+    // THIS FILE WHERE THAT IS TRUE. Every other format has a local reader the vendor can lose to;
+    // these have none by definition — being unreadable locally is what put them on
+    // `VENDOR_ONLY_EXTENSIONS`. So there is no preflight to run (nothing to compare against), no
+    // quality gate that can bite (`claimOf` returns a claim of nothing for a kind whose zip parts
+    // we cannot read), and no fallthrough.
+    //
+    // 🔴 A FAILURE HERE IS `vendor-unavailable`, NOT `unsupported`, AND THE DIFFERENCE IS THE
+    // POINT OF THE WHOLE CHANGE. `unsupported` means "this is not a document Nemesis reads" and
+    // is permanent; a student seeing it should stop trying. This is "the reader for your file did
+    // not answer THIS TIME" — the key is unset, the vendor is down, the job timed out — and it is
+    // retryable, which is exactly what the parse queue's `parse_next_attempt_at` is for. Reporting
+    // a transient outage as a permanent refusal is how a working format gets written off.
+    if (options.vendorAllowed === false) return { ok: false, reason: "vendor-unavailable", kind };
+    const read = await parseWithVendor(bytes, fileName, mimeType, kind, options);
+    if (read) return read;
+    return { ok: false, reason: "vendor-unavailable", kind };
+  } else if (kind === "image") {
     const seen = await readWithVision(bytes, visionMime(fileName, mimeType) ?? "image/jpeg", {
       prompt: PHOTO_PROMPT,
     });
@@ -693,6 +782,11 @@ export async function parseDocument(
     if (routed.vendor) return routed.vendor;
     routeReason = routed.reason;
     ({ coverage, model, readBy, text, title } = routed.native);
+    // 🔴 THE PIXELS RIDE OUT WITH THE TEXT. Until now a PDF's figures were decoded for vision and
+    // then dropped, so a parsed lecture could describe its diagrams and never show one. `figures`
+    // is a sibling of the document rather than a field on it (see `ParseOutcome`), so a caller
+    // with storage picks them up and one without simply ignores them.
+    if (routed.native.figures.length > 0) normalized = routed.native.figures;
   } else if (kind === "docx") {
     // 🔴 OUR READ FIRST, AND THE VENDOR ONLY FOR WHAT IT LOST. Word XML is a manifest: `<w:tbl>`
     // either appears or it does not, `word/media/` either holds pictures or it does not. Reading
@@ -949,7 +1043,14 @@ async function parsePdfRouted(
 ): Promise<{
   vendor: ParseOutcome | null;
   reason: string;
-  native: { coverage: ExtractionCoverage; model: DocumentModel | undefined; readBy: string | undefined; text: string; title: string | null };
+  native: {
+    coverage: ExtractionCoverage;
+    figures: NormalizedFigure[];
+    model: DocumentModel | undefined;
+    readBy: string | undefined;
+    text: string;
+    title: string | null;
+  };
 }> {
   const structural = await readPdfNatively(bytes, options);
   const decision = preflightPdf(pdfEvidenceFrom(structural));
@@ -1008,6 +1109,7 @@ async function parsePdfRouted(
 /** Never read — the vendor branch that returns it always returns a non-null `vendor` beside it. */
 const EMPTY_NATIVE = {
   coverage: singleUnitCoverage({ method: "native" as const, read: false }),
+  figures: [] as NormalizedFigure[],
   model: undefined,
   readBy: undefined,
   text: "",
@@ -1115,6 +1217,8 @@ async function parsePdf(
   readBy: string | undefined;
   text: string;
   title: string | null;
+  /** Pixels the structural read already decoded. Empty unless `captureFigures` ran. */
+  figures: NormalizedFigure[];
 }> {
   const structural = prepared ? prepared.structural : await readPdfNatively(bytes, options);
   let model: DocumentModel | undefined = prepared?.model ?? structural?.model;
@@ -1273,6 +1377,11 @@ async function parsePdf(
         ...(unreadableRegions ? { unreadableRegions } : {}),
         unreadableRegionsByUnit,
       }),
+    // 🔴 TAKEN HERE, WHERE THEY ARE STILL IN MEMORY, AND NOWHERE ELSE. `structural.figureImages` is
+    // populated only when `captureFigures` ran, so this is empty on the cheap lane and free on the
+    // expensive one — the decode was already paid for by the vision pass. A caller with storage
+    // picks them up; a caller without one drops them exactly as before.
+    figures: structural ? capturedFigures(structural.figureImages) : [],
     model,
     readBy,
     text,
