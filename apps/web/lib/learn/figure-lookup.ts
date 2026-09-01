@@ -12,6 +12,7 @@ import {
   mightResolveFigure,
   type FigureResolution,
 } from "./figure-resolve";
+import { ownFigures } from "./own-figures";
 import { allowedAssetUrl } from "./reference-images";
 
 /** Our own route. The repositories are reached from the server, never from the learner's browser. */
@@ -22,6 +23,11 @@ export const REFERENCE_IMAGE_TIMEOUT_MS = 10000;
 
 export interface FigureLookupDeps {
   readonly fetch: typeof globalThis.fetch;
+  /**
+   * The learner's own stored figures, consulted BEFORE the open corpus. Injected so a test can
+   * prove the corpus was not asked, rather than only that it answered second.
+   */
+  readonly own?: (subjects: readonly string[]) => Promise<(import("./visual-provenance").CandidateAsset | null)[]>;
   readonly timeoutMs?: number;
   /** The session's bearer token, or null when there is none. The route requires a signed-in
    *  caller (a shelf lookup costs an embedding); tokenless degrades to no pictures, never a throw. */
@@ -30,6 +36,7 @@ export interface FigureLookupDeps {
 
 const REAL: FigureLookupDeps = {
   fetch: (...args) => globalThis.fetch(...args),
+  own: ownFigures,
   token: async () => {
     try {
       const { supabase } = await import("@/lib/supabase");
@@ -66,8 +73,31 @@ export async function resolveFigures(
   const subjects = collectFigureSubjects(parsed);
   if (subjects.length === 0) return text;
 
-  const results = await lookUp(subjects, deps, signal);
-  if (!results) return text;
+  // 🔴🔴 THE LEARNER'S OWN MATERIAL IS ASKED FIRST, AND WHAT IT ANSWERS NEVER LEAVES THE ACCOUNT.
+  // `PROVENANCE_LADDER` has ranked `source_figure` above everything since it was written; until now
+  // nothing could produce one for a figure request, so every subject went to the open corpus even
+  // when the student's own slide held it. Their lecture's diagram is the one they will be examined
+  // on, and it costs no third-party request to show.
+  //
+  // 🔴 A SUBJECT THEY OWN IS NOT SENT ONWARD AT ALL. The remaining subjects are what the route
+  // sees, so a learner asking about their own material does not have its wording handed to an
+  // image repository to satisfy a request already answered.
+  const mine = deps.own ? await deps.own(subjects).catch(() => subjects.map(() => null)) : subjects.map(() => null);
+  const missing = subjects.filter((_subject, index) => !mine[index]);
+
+  const fetched = missing.length > 0 ? await lookUp(missing, deps, signal) : [];
+  // A route failure loses only the subjects the route was for; the learner's own pictures stand.
+  if (!fetched && !mine.some(Boolean)) return text;
+
+  // Re-interleave by position: `applyResolvedFigures` pairs results to requests by index.
+  let next = 0;
+  const results: FigureResolution[] = subjects.map((subject, index) => {
+    const own = mine[index];
+    if (own) return { asset: own, ok: true };
+    const routed = fetched?.[next];
+    next += 1;
+    return routed ?? { detail: `no picture of "${subject}" could be looked up`, ok: false, reason: "lookup-failed" };
+  });
 
   try {
     return JSON.stringify(applyResolvedFigures(parsed, results));

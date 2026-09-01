@@ -163,9 +163,16 @@ export interface CandidateAsset {
   /** Where the pixels are, resolved to a signed URL at render time. Never bytes — see `FigureKnowledge`. */
   readonly assetPath: string;
   readonly caption?: string;
-  /** Absent on `generated_image`, required on `reference_image`. */
+  /** Absent on `generated_image` and `source_figure`, required on `reference_image`. */
   readonly licence?: AssetLicence;
-  readonly provenance: Extract<VisualProvenance, "generated_image" | "reference_image">;
+  /**
+   * 🔴 `source_figure` WAS MISSING HERE, AND THAT IS WHY THE TOP OF THE LADDER WAS UNREACHABLE.
+   * `PROVENANCE_LADDER` has put the learner's own material first since it was written — "evidence-
+   * backed and already familiar" — but a candidate could only ever be a retrieved or a generated
+   * image, so a `figure` request could not offer the learner's own lecture even when it held
+   * exactly the picture asked for. The ladder said the right thing and nothing could climb it.
+   */
+  readonly provenance: Extract<VisualProvenance, "generated_image" | "reference_image" | "source_figure">;
 }
 
 /**
@@ -261,6 +268,16 @@ export function chooseAsset(input: AssetChoiceInput): AssetChoice {
       }
       return { asset: candidate, ok: true };
     }
+
+    // 🔴 THE LEARNER'S OWN LECTURE NEEDS NO LICENCE, AND THAT IS NOT A HOLE IN THE GATE. Every
+    // rule below is about REUSING SOMEBODY ELSE'S picture — may we show it, and who must be
+    // credited. A `source_figure` is a page out of a file this learner uploaded, shown back to
+    // them and to nobody else: the asset lives under their own id in owner-scoped storage, and RLS
+    // means no other account can fetch it. There is no redistribution to license.
+    //
+    // 🔴 IT SITS ABOVE THE LICENCE CHECKS, NOT AS AN EXCEPTION INSIDE THEM, so no future edit to
+    // the reuse rules can accidentally start demanding a credit line for a student's own slide.
+    if (candidate.provenance === "source_figure") return { asset: candidate, ok: true };
 
     const licence = candidate.licence;
     if (!licence || !licence.licence.trim()) {
