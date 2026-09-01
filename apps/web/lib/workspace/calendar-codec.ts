@@ -25,6 +25,7 @@
 import type { SourceRef } from "@/lib/learn/canvas-model";
 
 import { type CalendarEvent, type CalendarEventKind, parseRecurrence } from "./calendar-model";
+import { eventColorOf } from "./event-colors";
 
 /** Why this event exists (§19). Distinct from `source`, which says who may edit it:
  *  `source: "agent"` is read-only in the UI, and that is a permissions fact, not a semantic one.
@@ -86,6 +87,12 @@ const KNOWN = new Set([
   "override_of",
   "originalDate",
   "original_date",
+  "location",
+  "colorId",
+  "color_id",
+  "status",
+  "transparency",
+  "visibility",
   "kind",
   "course",
   "note",
@@ -214,6 +221,20 @@ export function decodeCalendarEvent(raw: unknown): DecodedCalendarEvent | null {
     event.overrideOf = overrideOf;
     event.originalDate = originalDate;
   }
+  const location = str(row.location);
+  if (location) event.location = location;
+  const colorId = str(row.colorId) ?? str(row.color_id);
+  // Only an id the palette actually has: an unknown one would paint nothing and
+  // silently lose the kind colour it was overriding.
+  if (colorId && eventColorOf(colorId)) event.colorId = colorId;
+  const status = str(row.status);
+  if (status === "confirmed" || status === "tentative" || status === "cancelled") event.status = status;
+  const transparency = str(row.transparency);
+  if (transparency === "opaque" || transparency === "transparent") event.transparency = transparency;
+  const visibility = str(row.visibility);
+  if (visibility === "default" || visibility === "public" || visibility === "private" || visibility === "confidential") {
+    event.visibility = visibility;
+  }
   const course = str(row.course);
   if (course) event.course = course;
   const note = str(row.note);
@@ -275,6 +296,11 @@ export function encodeCalendarEvent(
     override_of: event.overrideOf ?? null,
     original_date: event.originalDate ?? null,
     kind: event.kind,
+    location: event.location ?? null,
+    color_id: event.colorId ?? null,
+    status: event.status ?? null,
+    transparency: event.transparency ?? null,
+    visibility: event.visibility ?? null,
     course: event.course ?? null,
     note: event.note ?? null,
     source,

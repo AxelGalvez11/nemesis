@@ -57,6 +57,28 @@ export interface CalendarEvent {
    */
   timeZone?: string;
   kind: CalendarEventKind;
+  /** Where it happens. Free text, the way every calendar treats it. */
+  location?: string;
+  /**
+   * Google's own event-colour id ("1".."11"), overriding the kind's colour.
+   *
+   * 🔴 AN OVERRIDE, NOT THE DEFAULT. Unset, an event is painted by its kind —
+   * exam, assignment, class — which is what Nemesis knows and Google does not.
+   * See lib/workspace/event-colors.ts for why the ids are Google's.
+   */
+  colorId?: string;
+  /**
+   * Confirmed, tentative, or cancelled. Absent means confirmed.
+   *
+   * 🔴 EARNS ITS PLACE BEYOND PARITY. A date read off a syllabus that hedged
+   * ("we'll probably test this in week 8") is exactly "tentative", and until now
+   * the only options were to write it down as fact or throw it away.
+   */
+  status?: "confirmed" | "tentative" | "cancelled";
+  /** Google's `transparency`: does this block out the time, or just sit there? */
+  transparency?: "opaque" | "transparent";
+  /** Google's `visibility`. Absent means the calendar's default. */
+  visibility?: "default" | "public" | "private" | "confidential";
   course?: string;
   note?: string;
   /** 'agent' events are read-only in the UI. */
@@ -149,7 +171,7 @@ import {
 } from "./rrule";
 
 const CALENDAR_EVENT_COLUMNS =
-  "id,title,date,time,end_time,end_date,all_day,time_zone,rrule,override_of,original_date,kind,course,note,source,recurrence";
+  "id,title,date,time,end_time,end_date,all_day,time_zone,rrule,override_of,original_date,location,color_id,status,transparency,visibility,kind,course,note,source,recurrence";
 
 /** The ONGOING per-account warm-cache key — every signed-in user's cache
  *  lives at its own key, so switching accounts on the same browser can never

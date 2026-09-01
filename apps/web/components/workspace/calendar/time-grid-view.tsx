@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
+import { paintFor } from "@/lib/workspace/event-colors";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime, hourLabel } from "./format";
@@ -35,6 +36,15 @@ import {
   windowHeight,
 } from "./time-grid";
 import { type GestureResult, useTimeGridGestures } from "./use-time-grid-gestures";
+
+/** Hover text: the title plus the two facts a block has no room to show. */
+function hintFor(event: CalendarEvent): string {
+  let hint = event.title;
+  if (event.location) hint += ` · ${event.location}`;
+  if (event.status === "cancelled") hint += " · Cancelled";
+  if (event.status === "tentative") hint += " · Tentative";
+  return hint;
+}
 
 /** How often the "now" line moves. A minute is the smallest visible step, and
  *  anything faster would re-render the grid for no reason. */
@@ -196,11 +206,14 @@ export function TimeGridView({ days, eventsByDay, onAddOnDate, onMoveEvent, onOp
                   <button
                     className={cn(
                       "truncate rounded px-1.5 py-0.5 text-left text-[0.6875rem] font-medium leading-tight",
-                      KIND_META[event.kind].chip,
+                      !paintFor(event.colorId) && KIND_META[event.kind].chip,
+                      event.status === "cancelled" && "line-through opacity-55",
+                      event.status === "tentative" && "border border-dashed border-current",
                     )}
                     key={event.id}
                     onClick={() => onOpenEvent(event)}
-                    title={event.title}
+                    style={paintFor(event.colorId)?.block}
+                    title={hintFor(event)}
                     type="button"
                   >
                     {event.title}
@@ -381,7 +394,9 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
                 detail === "stacked" && "flex-col py-1 text-[0.6875rem]",
                 detail === "inline" && "items-baseline gap-1 py-0.5 text-[0.6875rem]",
                 detail === "title" && "items-center py-0 text-[0.625rem] leading-none",
-                KIND_META[item.event.kind].chip,
+                !paintFor(item.event.colorId) && KIND_META[item.event.kind].chip,
+                item.event.status === "cancelled" && "line-through opacity-55",
+                item.event.status === "tentative" && "border-dashed",
               )}
               onKeyDown={(keyEvent) => {
                 if (keyEvent.key !== "Enter" && keyEvent.key !== " ") return;
@@ -393,7 +408,8 @@ function DayColumn({ day, layout, window, onMoveStart, onOpenEvent, onResizeStar
                 pointerEvent.stopPropagation();
                 onMoveStart(pointerEvent, item.event);
               }}
-              title={item.event.title}
+              style={paintFor(item.event.colorId)?.block}
+              title={hintFor(item.event)}
               type="button"
             >
               <span className={cn("truncate", detail === "inline" ? "min-w-0 flex-1" : "block w-full")}>

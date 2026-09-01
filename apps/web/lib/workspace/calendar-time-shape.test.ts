@@ -9,6 +9,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { decodeCalendarEvent, encodeCalendarEvent } from "./calendar-codec";
+import { findCalendarIssues } from "./calendar-conflicts";
+import { EVENT_COLORS, paintFor } from "./event-colors";
 import {
   type CalendarEvent,
   eventsByDate,
@@ -199,15 +201,84 @@ test("🔴 a multi-day run sits in the all-day strip on every day it covers", ()
   assert.match(grid, /isAllDay\(event\) \|\| \(event\.spanLength \?\? 1\) > 1/);
 });
 
-test("🔴 the migration is written but not applied", () => {
-  const sql = readFileSync(
-    new URL("../../../../supabase/migrations/20260901T10_calendar_google_parity_time.sql", import.meta.url),
-    "utf8",
-  );
-  // This repo's rule: a production database change waits for the owner. The code
-  // above must work without it, which every test in this file exercises.
-  assert.match(sql, /NOT YET APPLIED/, "the migration lost the note saying it is unapplied");
-  for (const column of ["end_date", "all_day", "time_zone", "rrule", "override_of", "original_date"]) {
-    assert.match(sql, new RegExp(`add column if not exists ${column}\\b`), `${column} is missing from the migration`);
+test("🔴 both migrations record every column the decoder reads", () => {
+  // Applied 2026-09-01 on the owner's go-ahead. The record of WHEN matters: this
+  // repo's rule is that a production change waits, and a migration that does not
+  // say which side of that line it is on cannot be checked against the database.
+  const dir = new URL("../../../../supabase/migrations/", import.meta.url);
+  const time = readFileSync(new URL("20260901T10_calendar_google_parity_time.sql", dir), "utf8");
+  const fields = readFileSync(new URL("20260901T20_calendar_google_parity_fields.sql", dir), "utf8");
+
+  for (const sql of [time, fields]) assert.match(sql, /APPLIED 2026-09-01/, "a migration does not say when it was applied");
+
+  // Every column the decoder reads has to exist somewhere in the migrations, or
+  // it silently reads null forever and nobody finds out.
+  const both = `${time}\n${fields}`;
+  for (const column of [
+    "end_date", "all_day", "time_zone", "rrule", "override_of", "original_date",
+    "location", "color_id", "status", "transparency", "visibility",
+  ]) {
+    assert.match(both, new RegExp(`add column if not exists ${column}\\b`), `${column} is in the code but not the schema`);
   }
+});
+
+// ------------------------------------------------------------ stage 2: the fields
+
+test("🔴 a chosen colour overrides the kind colour, and only a real one", () => {
+  assert.equal(paintFor(undefined), null, "no colour must leave the kind's own paint alone");
+  assert.equal(paintFor("99"), null, "an unknown id would paint nothing and lose the kind colour");
+  const paint = paintFor("11");
+  assert.equal(paint?.bar.backgroundColor, "#d50000", "Tomato is not Google's Tomato");
+  assert.equal(paint?.block.borderLeftColor, "#d50000");
+});
+
+test("the palette is Google's eleven, by Google's own ids", () => {
+  assert.equal(EVENT_COLORS.length, 11);
+  assert.deepEqual(EVENT_COLORS.map((c) => c.id), ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]);
+  // The names are Google's too: a student sees "Tomato" in both apps or the same
+  // colour has two names in two places they use.
+  assert.deepEqual(
+    EVENT_COLORS.map((c) => c.name),
+    ["Lavender", "Sage", "Grape", "Flamingo", "Banana", "Tangerine", "Peacock", "Graphite", "Blueberry", "Basil", "Tomato"],
+  );
+});
+
+test("location, colour, status, busy and visibility all survive storage", () => {
+  const event: CalendarEvent = base({
+    colorId: "5",
+    location: "Room 3.14",
+    status: "tentative",
+    transparency: "transparent",
+    visibility: "private",
+  });
+  const back = decodeCalendarEvent(encodeCalendarEvent(event, "user-1", "manual"));
+  assert.ok(back);
+  for (const key of ["location", "colorId", "status", "transparency", "visibility"] as const) {
+    assert.equal(back[key], event[key], `${key} did not survive storage`);
+  }
+});
+
+test("a value outside the allowed set is dropped rather than half-kept", () => {
+  const row = { date: "2026-03-02", id: "x", kind: "class", status: "maybe", title: "T", visibility: "whoever" };
+  const back = decodeCalendarEvent(row);
+  assert.equal(back?.status, undefined, "an unbranchable status reached the app");
+  assert.equal(back?.visibility, undefined);
+});
+
+test("🔴 a cancelled event is drawn but never reported as a problem", () => {
+  const grid = readFileSync(new URL("../../components/workspace/calendar/month-grid.tsx", import.meta.url), "utf8");
+  // Drawn: "this was here and is off" is exactly what a student needs on the day.
+  assert.match(grid, /cancelled && "line-through opacity-50"/, "a cancelled event stopped being struck through");
+
+  const conflicts = readFileSync(new URL("./calendar-conflicts.ts", import.meta.url), "utf8");
+  // Not reported: a clash with something that is not happening is not a clash.
+  assert.match(conflicts, /event\.status !== "cancelled"/, "cancelled events are being reported as conflicts again");
+});
+
+test("a cancelled lecture stops colliding with what replaced it", () => {
+  const issues = findCalendarIssues([
+    base({ id: "a", status: "cancelled", time: "09:00", title: "Contracts" }),
+    base({ id: "b", time: "09:00", title: "Contracts" }),
+  ]);
+  assert.equal(issues.exact_duplicates.length, 0, "the cancelled one is still being counted as a duplicate");
 });
