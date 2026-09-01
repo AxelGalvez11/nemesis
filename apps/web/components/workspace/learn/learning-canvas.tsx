@@ -91,6 +91,7 @@ import { CanvasDocument } from "./canvas-document";
 import { CanvasHeader } from "./canvas-header";
 import { useCanvasView } from "./use-canvas-view";
 import { useCanvasVoice } from "./use-canvas-voice";
+import { dictationEngine } from "./use-canvas-dictation";
 import { modelKnowledgeDisclosed } from "./canvas-provenance";
 import { CanvasPolicyView, screenKey } from "./canvas-policy-view";
 import { CharacterDock } from "@/components/character/character-dock";
@@ -263,6 +264,7 @@ function ContinueHotkey({ onContinue }: { onContinue: (() => void) | null }): nu
 export function LearningCanvas({
   canvasId,
   openingAsk = null,
+  openingSpoken = false,
   openingCapability = null,
   openingFolder = null,
   policyOverride = null,
@@ -275,6 +277,9 @@ export function LearningCanvas({
    *  the home has no canvas to send it to yet, so the instruction travels in the URL and is
    *  consumed exactly once here. */
   openingAsk?: string | null;
+  /** The opening ask was SPOKEN through the front door's voice conversation (`?voice=1`).
+   *  Meaningless without `openingAsk`, exactly as the capability is. */
+  openingSpoken?: boolean;
   /** The one-shot capability staged beside that typed instruction — the Course chip pressed on
    *  the front door (owner, 2026-08-23: course mode must be reachable from the landing page).
    *  Rides the same URL, consumed by the same effect, and meaningless without `openingAsk`:
@@ -1515,10 +1520,17 @@ export function LearningCanvas({
   // the stored autoplay preference died that same morning (#937), so this is the one automatic
   // play left in the product. See `alwaysSpeak` in use-canvas-voice.ts for why it is an argument
   // and not the preference returning.
-  const [voiceConversing, setVoiceConversing] = useState(false);
+  // 🔴 A SPOKEN ARRIVAL IS DECIDED BEFORE THE FIRST RENDER FINISHES, NOT IN AN EFFECT. The
+  // opening ask fires as soon as the session is ready, and its packet reads
+  // `voiceConversingRef.current` at send time — an effect would lose the race and the first
+  // reply of a spoken conversation would come back typed-sized and unspoken. Gated on the same
+  // engine check the composer's own `offered` uses, so a browser that cannot hold the loop
+  // (no recogniser) never claims the session it could not continue.
+  const spokenArrival = openingSpoken && openingAsk !== null && dictationEngine() === "browser";
+  const [voiceConversing, setVoiceConversing] = useState(spokenArrival);
   // The same fact, readable at SEND time without a stale closure: `surroundings()` is called
   // inside callbacks whose dependency lists must not grow a re-render per session toggle.
-  const voiceConversingRef = useRef(false);
+  const voiceConversingRef = useRef(spokenArrival);
   const voice = useCanvasVoice(turnInFlight ? null : spokenReply, voiceConversing);
 
   // 🔴 WHAT PAINTS AND WHETHER ANYTHING PAINTS ARE ONE DERIVATION NOW — see canvas-presence.ts.
@@ -3337,6 +3349,7 @@ export function LearningCanvas({
       {showComposer && !recording && (
         <CanvasComposer
           busy={intent.kind === "answer" && intent.sink === "policy" ? policy.judging : busy.kind === "command"}
+        voiceArrival={spokenArrival}
         onVoiceConversation={(active) => {
           voiceConversingRef.current = active;
           setVoiceConversing(active);

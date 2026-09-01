@@ -31,6 +31,12 @@ export interface LearnEntry {
   readonly c: string | null;
   /** `?ask=<text>` — a topic typed on the front door, entering a canvas that does not exist yet. */
   readonly ask: string | null;
+  /**
+   * `?voice=1` — the ask was SPOKEN, through the front door's voice conversation, and the canvas
+   * should adopt the session (speak the reply, re-arm the microphone). Meaningless without `ask`,
+   * exactly as `cap` is: a modality is a fact about a submission. 🔴 IT NEVER DECIDES THE SURFACE.
+   */
+  readonly spoken: boolean;
   /** `?new=1` — material dropped on the front door; the canvas is minted on arrival. */
   readonly isNew: string | null;
   /**
@@ -66,7 +72,7 @@ export interface LearnEntry {
 export function learnEntryFrom(params: {
   get(name: string): string | null;
 }): LearnEntry {
-  return { ask: params.get("ask"), c: params.get("c"), cap: params.get("cap"), folder: params.get("folder"), isNew: params.get("new") };
+  return { ask: params.get("ask"), c: params.get("c"), cap: params.get("cap"), folder: params.get("folder"), isNew: params.get("new"), spoken: params.get("voice") === "1" };
 }
 
 export function learnSurface({ ask, c, isNew }: LearnEntry): LearnSurface {

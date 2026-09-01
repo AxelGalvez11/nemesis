@@ -44,7 +44,11 @@ test("🔴🔴 a file that FAILED blocks it too — that is the case the owner n
 test("🔴🔴 the keyboard obeys the same gate as the button", () => {
   // Enter calls `start()` directly, so a check that lived only on `disabled` would leave the exact
   // route the original report came in through wide open.
-  const start = home.slice(home.indexOf("const start = () => {"), home.indexOf("const start = () => {") + 400);
+  // The signature grew an options object 2026-08-31 (the front door's voice conversation rides
+  // `{ spoken: true }` through the same gate — never around it).
+  const open = home.indexOf("const start = (options?: { spoken?: boolean }) => {");
+  assert.ok(open >= 0, "start()'s signature moved — repoint this pin at it");
+  const start = home.slice(open, open + 450);
   assert.match(start, /if \(blocked\) return;/);
 });
 

@@ -84,7 +84,9 @@ test("🔴 the session forces the reply spoken — as an argument, not a second 
   // `alwaysSpeak` alone and is the ONE self-press left (reply-actions.test.ts counts it).
   assert.match(VOICE, /alwaysSpeak = false/, "the session argument left the voice hook");
   assert.match(VOICE, /if \(!arrived \|\| !replyKey \|\| !reply \|\| !alwaysSpeak\) return;/, "the session no longer presses play");
-  assert.match(CANVAS, /const \[voiceConversing, setVoiceConversing\] = useState\(false\);/, "the canvas lost the session state");
+  // Initialised from `spokenArrival` since 2026-08-31: a conversation begun on the front door
+  // arrives with the session already on, so the FIRST packet and reply are spoken-shaped.
+  assert.match(CANVAS, /const \[voiceConversing, setVoiceConversing\] = useState\(spokenArrival\);/, "the canvas lost the session state");
   assert.match(CANVAS, /useCanvasVoice\(turnInFlight \? null : spokenReply, voiceConversing\)/, "the session state no longer reaches the voice hook");
   // The handler writes a ref BESIDE the state since 2026-08-31: surroundings() reads the fact at
   // SEND time, so a spoken turn's packet carries it without a stale closure.
@@ -155,4 +157,51 @@ test("🔴 the chosen glow: C tuned subtle — session-gated, borrowed meter, op
   assert.match(composer, /subscribeMicLevel\(/, "the glow stopped borrowing the shared meter");
   assert.ok(!/getUserMedia/.test(composer), "the composer opened a microphone of its own for a decoration");
   assert.match(composer, /String\(0\.35 \+ shown \* 0\.35\)/, "the reactive range left the subtle band the owner chose");
+});
+
+test("🔴 the front door speaks too — the webapp landing chat carries the same conversation (2026-08-31)", () => {
+  // Owner: *"by the landing page i meant the webapp landing chat."* The start screen's composer
+  // holds the same loop with the same microphone: bars in the empty send slot, the live italic
+  // transcript while listening, one Stop, the lamp — and the auto-send STARTS the canvas.
+  const home = strip(read("./canvas-home.tsx"));
+  assert.match(home, /useVoiceConversation\(\{/, "the front door lost the loop");
+  assert.match(home, /replyAudio: IDLE_REPLY_AUDIO,/, "the front door grew a player — no reply ever plays there");
+  assert.match(home, /busy: departing,/, "the quiet-turn grace can re-open the microphone mid-travel");
+  assert.match(home, /start\(\{ spoken: true \}\);\s*if \(dictation\.transcript\) dictation\.reset\(\);/, "the sent words refill the travelling pill (the #979 rule)");
+  assert.match(home, /\$\{options\?\.spoken \? "&voice=1" : ""\}/, "the spoken fact no longer rides the ask");
+  assert.match(home, /voiceLoop\.active \? \(\s*<VoiceStopButton className="self-end \[grid-area:send\]"/, "the running conversation lost its stop in the send slot");
+  assert.match(home, /typedBefore\.current = "";\s*voiceLoop\.begin\(\);/, "a cancelled dictation's words can be stitched into the first spoken turn");
+  assert.match(home, />Listening…</, "the front door's empty bar no longer says it is listening");
+  assert.match(home, /\{voiceLoop\.active && <VoiceSessionGlow \/>\}/, "the front door's session lost the lamp");
+  // One lamp, one stop, one glyph set: imported from the session composer, never redrawn.
+  assert.match(home, /import \{ IDLE_REPLY_AUDIO, VoiceBarsGlyph, VoiceSessionGlow, VoiceStopButton \} from "\.\/canvas-composer";/, "the front door redrew the session's controls");
+});
+
+test("🔴 the canvas ADOPTS a front-door conversation: reply first, microphone after (2026-08-31)", () => {
+  // The session must survive the route swap. `?voice=1` rides only beside the ask
+  // (learn-entry.ts), the canvas decides BEFORE its first render finishes (the opening ask's
+  // packet reads the ref at send time), and the composer's loop enters at "waiting" — the reply
+  // speaks before the microphone ever opens on the canvas side.
+  const entry = strip(read("../../../lib/learn/learn-entry.ts"));
+  assert.match(entry, /spoken: params\.get\("voice"\) === "1"/, "the entry parser dropped the spoken fact");
+  const canvas = CANVAS;
+  assert.match(canvas, /const spokenArrival = openingSpoken && openingAsk !== null && dictationEngine\(\) === "browser";/, "the arrival gate lost a clause — a deep link or a lame browser could claim a session it cannot hold");
+  assert.match(canvas, /useState\(spokenArrival\)/, "the first reply of a spoken arrival is not forced spoken");
+  assert.match(canvas, /useRef\(spokenArrival\)/, "the first packet of a spoken arrival reads a stale ref");
+  assert.match(canvas, /voiceArrival=\{spokenArrival\}/, "the composer is never told to adopt");
+  const hook = strip(HOOK);
+  const adopt = /const adopt = \(\) => \{[\s\S]*?\};/.exec(hook);
+  assert.ok(adopt, "the hook lost adopt()");
+  assert.match(adopt[0], /stage\.current = "waiting"/, "adoption no longer waits on the reply");
+  assert.ok(!/dictation\.start\(\)/.test(adopt[0]), "adoption opens the microphone while the reply is coming");
+});
+
+test("🔴 the silence rule submits the PRESENT text — the last word of a spoken turn is not dropped (2026-08-31)", () => {
+  // Found by the front-door harness: the ask arrived one word short. The timeout's closure held
+  // the submit from the render that armed it, where the composer's text lagged the transcript by
+  // one sync-effect pass. The hook re-reads through a ref written every render.
+  const hook = read("./use-voice-conversation.ts");
+  assert.match(hook, /const submitRef = useRef\(submit\);\s*submitRef\.current = submit;/, "the submit ref is gone — the timeout submits a stale render's text");
+  assert.match(hook, /const verdict = submitRef\.current\(\);/, "the silence rule stopped reading the present");
+  assert.ok(!/const verdict = submit\(\);/.test(hook), "a direct stale call came back beside the ref");
 });
