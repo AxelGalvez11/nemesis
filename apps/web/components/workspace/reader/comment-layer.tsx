@@ -36,7 +36,8 @@ import { useRegionDrag, type RegionAnchor, type RegionBox } from "./use-region-d
 export interface CommentDraftSpot {
   unit: number;
   anchor: CommentAnchor;
-  at: { left: number; top: number };
+  /** Where the note opens. `above` is the fallback y when there is no room below — see CommentNote. */
+  at: { left: number; top: number; above?: number };
   /** Opened by highlighting rather than by the mode. See the `commenting` effect. */
   fromSelection?: boolean;
 }
@@ -341,7 +342,7 @@ function CommentNote({
   onSend,
   onCancel,
 }: {
-  spot: { left: number; top: number };
+  spot: { left: number; top: number; above?: number };
   onKeep: (body: string) => void;
   onSend: ((body: string) => void) | null;
   onCancel: () => void;
@@ -350,17 +351,27 @@ function CommentNote({
   const boxRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
-  // Measured, then pulled back inside the window — the same clamp SelectionActions does, because
-  // a comment on the right edge of the last page still needs its note somewhere clickable.
+  // Measured, then pulled back inside the window, because a comment on the right edge of the last
+  // page still needs its note somewhere clickable.
+  //
+  // 🔴 AND IT FLIPS ABOVE RATHER THAN COVERING WHAT IT IS ABOUT. A note opened from a HIGHLIGHT
+  // passes `above`: the y to use when there is no room below. Without it the clamp slides the box
+  // back up over the very line the learner just selected — which is what shipped, and what the
+  // screenshot showed: three lines of the lecture hidden behind the box asking about them. A click
+  // comment passes no `above` and keeps its old behaviour, since a click has nothing to obscure.
   useLayoutEffect(() => {
     const box = boxRef.current?.getBoundingClientRect();
     if (!box) return;
     const margin = 8;
+    const roomBelow = window.innerHeight - spot.top - margin >= box.height;
+    const top = roomBelow || spot.above === undefined
+      ? Math.min(Math.max(margin, spot.top), window.innerHeight - box.height - margin)
+      : Math.max(margin, spot.above - box.height);
     setPosition({
       left: Math.min(Math.max(margin, spot.left), window.innerWidth - box.width - margin),
-      top: Math.min(Math.max(margin, spot.top), window.innerHeight - box.height - margin),
+      top,
     });
-  }, [spot.left, spot.top]);
+  }, [spot.above, spot.left, spot.top]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

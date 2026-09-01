@@ -65,6 +65,20 @@ export interface ReaderTopBarProps {
   onDownload: () => void;
   onOpenOriginal: () => void;
   onBack?: () => void;
+  /**
+   * The pane's toolbar, cut to what a reader beside a conversation actually needs.
+   *
+   * 🔴 THE PANE IS 360px WIDE AND THE FULL BAR HAS TWELVE CONTROLS. Owner, 2026-09-01: *"the
+   * current viewer is too clunky (the toolbar is too much) ... it needs to be more minimalist"*.
+   * Dense drops what the pane already says another way — the file name (the TAB is the name), the
+   * back button (the tab has a close) — and folds the page number, the zoom cluster and the
+   * Source/Reading switch behind the existing "…". Search collapses to its magnifier until pressed.
+   *
+   * 🔴 NOTHING IS REMOVED, ONLY MOVED. Every control is still reachable from the menu; a reader who
+   * needs to zoom a scan can still zoom it. Deleting them outright would trade one complaint for a
+   * worse one.
+   */
+  dense?: boolean;
   /** The reader's own contents rail, on the right. Omitted for file types that
    *  have nothing to list (a single image). */
   railOpen: boolean;
@@ -111,6 +125,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     onDownload,
     onOpenOriginal,
     onBack,
+    dense = false,
     railOpen,
     onToggleRail,
     commenting = false,
@@ -130,7 +145,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     // control you were reaching for. The title is the only thing allowed to
     // shrink, and the least-used controls hide first.
     <header className="nemesis-reader-bar flex h-11 shrink-0 items-center gap-2 overflow-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-chrome) px-3">
-      {onBack && (
+      {onBack && !dense && (
         <button
           aria-label="Back to Library"
           className="grid size-7 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground"
@@ -142,7 +157,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </button>
       )}
 
-      <div className="nemesis-reader-title mr-auto flex min-w-0 shrink flex-col leading-tight">
+      <div className={cn("nemesis-reader-title mr-auto flex min-w-0 shrink flex-col leading-tight", dense && "sr-only")}>
         <h1 className="truncate text-[0.8125rem] font-semibold text-foreground" title={fileName}>
           {fileName}
         </h1>
@@ -160,7 +175,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         )}
       </div>
 
-      {modeAvailable && (
+      {modeAvailable && !dense && (
         <SegmentedControl
           className="shrink-0"
           onChange={onModeChange}
@@ -172,7 +187,13 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         />
       )}
 
-      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2 py-1">
+      <div className={cn(
+        "flex shrink-0 items-center gap-1 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2 py-1",
+        // 🔴 COLLAPSED, NOT REMOVED. A field 24px wide next to eleven other controls is the clutter
+        // being complained about; a search someone cannot find is a worse product. It opens on
+        // focus and stays open while there is a query, so a search in progress never snaps shut.
+        dense && !query.trim() && "nemesis-reader-search-dense",
+      )}>
         <Codicon className="text-(--ui-text-quaternary)" name="search" size="0.75rem" />
         <input
           aria-label={`Search this ${unitLabel === "image" ? "image" : "document"}`}
@@ -215,7 +236,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         )}
       </div>
 
-      {unitCount > 1 && (
+      {unitCount > 1 && !dense && (
         <div className="nemesis-reader-counter flex shrink-0 items-center gap-1 text-[0.75rem] text-(--ui-text-tertiary)">
           <input
             aria-label={`${unitLabel} number`}
@@ -234,7 +255,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </div>
       )}
 
-      {showZoom && (
+      {showZoom && !dense && (
         <div className="nemesis-reader-zoom flex shrink-0 items-center gap-0.5">
           <button
             aria-label="Zoom out"

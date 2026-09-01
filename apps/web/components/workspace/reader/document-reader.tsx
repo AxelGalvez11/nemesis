@@ -105,11 +105,13 @@ export interface DocumentReaderProps {
    * store has a real lane and an in-memory one and only the host knows which this surface is on.
    */
   commentsDoc?: { ref: CommentDocRef; uid: string | null; preview: boolean };
+  /** Trim the toolbar for a narrow pane beside a conversation. See `ReaderTopBar`'s `dense`. */
+  dense?: boolean;
 }
 
 export function DocumentReader({
   source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page", grounded = false,
-  onUnitChange, commentsDoc,
+  onUnitChange, commentsDoc, dense = false,
 }: DocumentReaderProps) {
   const isDialog = variant === "dialog";
   const unitLabel = UNIT_LABELS[source.kind] ?? "part";
@@ -563,7 +565,11 @@ export function DocumentReader({
         x: Math.min(Math.max((box.left + box.width / 2 - page.left) / page.width, 0), 1),
         y: Math.min(Math.max((box.top - page.top) / page.height, 0), 1),
       },
-      at: { left: box.left + box.width / 2, top: box.top },
+      // 🔴 BELOW THE HIGHLIGHT, ALIGNED TO ITS START — never on top of it. The first version opened
+      // at the selection's own top-left, so the box covered the line it was asking about; the
+      // learner could not read what they had just picked. `above` lets it flip up near the foot of
+      // the window instead of being clamped back down over the text.
+      at: { above: box.top - 8, left: box.left, top: box.bottom + 8 },
       fromSelection: true,
       unit: measured,
     });
@@ -688,6 +694,7 @@ export function DocumentReader({
         onStepMatch={stepToMatch}
         onToggleRail={hasContents ? () => setRailOpen((open) => !open) : undefined}
         commenting={commenting}
+        dense={dense}
         onToggleCommenting={canComment && loadState === "ready" ? () => setCommenting((current) => !current) : undefined}
         onUnitChange={goToUnit}
         onZoomIn={() => setZoom({ kind: "fixed", scale: zoomIn(scale) })}

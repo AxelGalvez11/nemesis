@@ -30,6 +30,8 @@ import { DocumentReader } from "./document-reader";
 import type { LinkedNote } from "./reader-top-bar";
 
 interface LibrarySourceReaderProps {
+  /** Trim the toolbar for the canvas's narrow pane. See `ReaderTopBar`'s `dense`. */
+  dense?: boolean;
   sourceId: string;
   className?: string;
   /** Back out of the file — the host decides where that goes. */
@@ -37,7 +39,8 @@ interface LibrarySourceReaderProps {
   onOpenNote?: (path: string) => void;
 }
 
-export function LibrarySourceReader({ sourceId, className, onBack, onOpenNote }: LibrarySourceReaderProps) {
+export function LibrarySourceReader({
+  dense = false, sourceId, className, onBack, onOpenNote }: LibrarySourceReaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { session } = useAuth();
@@ -118,6 +121,7 @@ export function LibrarySourceReader({ sourceId, className, onBack, onOpenNote }:
         />
       )}
       <DocumentReader
+        dense={dense}
         commentsDoc={{ preview: preview || uid === null, ref: { id: readerSource.id, kind: "source" }, uid }}
         anchor={anchor}
         linkedNotes={linkedNotes}
