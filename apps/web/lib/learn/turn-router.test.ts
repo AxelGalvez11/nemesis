@@ -1166,3 +1166,37 @@ test("🔴🔴 the model cannot promise a drawing it has no way to deliver", () 
   assert.match(prompt, /Never write that you are about to draw something/, "the model may announce a drawing again");
   assert.match(prompt, /Draw it where you would have promised it/, "the rule forbids without offering the alternative");
 });
+
+test("🔴🔴🔴 the learner's own files are citable, by the id the model already holds", () => {
+  // Owner, 2026-09-01, with his canvas beside ChatGPT's reply to the same two uploads: ChatGPT
+  // pinned ~15 chips to specific claims, ours pinned none — while plainly USING the files ("the
+  // rule your slides give…"). The model was not at fault: the prompt gave web results a marker and
+  // the attached material none, so there was no way to say which sentence came from the lecture.
+  const prompt = readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  assert.match(prompt, /mark it with that excerpt's id in square /, "attached material is uncitable again");
+  assert.match(prompt, /\[s1:e4\]/, "the marker's shape is no longer shown to the model");
+  assert.match(prompt, /never invent one/, "nothing stops an invented excerpt id");
+
+  // 🔴 AND IT MUST STILL SAY WHEN **NOT** TO MARK. A citation on every sentence is the same as none:
+  // it stops distinguishing the learner's material from the model's own recall, which is the only
+  // reason the chip is worth drawing.
+  assert.match(prompt, /Leave a sentence unmarked when it comes from your own /, "the chip lost its meaning: everything is cited");
+
+  // The web rule is untouched — two citation systems, disjoint markers, neither renamed.
+  assert.match(prompt, /cite the numbered result inline like this: \[1\]/, "the web citation rule was disturbed");
+});
+
+test("🔴 a file pill is not a link, and the id never reaches the prose", () => {
+  // There is nowhere on the public internet to send anyone for a file the learner uploaded, and a
+  // pill that looks clickable and goes nowhere is worse than one that plainly is not. Opening the
+  // document belongs to the sources panel, which already does it.
+  const md = readFileSync(new URL("../workspace/chat-markdown.tsx", import.meta.url), "utf8");
+  const start = md.indexOf("const fileRef = href?.startsWith");
+  assert.ok(start > 0, "the file-pill branch is gone");
+  const body = md.slice(start, start + 1_800);
+  assert.ok(!/<a\b/.test(body), "the file pill became an anchor with nowhere to go");
+  assert.match(body, /data-cite-file=\{fileRef\}/, "the pill no longer says which document it stands for");
+});

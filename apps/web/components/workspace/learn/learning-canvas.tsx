@@ -1688,6 +1688,16 @@ export function LearningCanvas({
   const replySources =
     session.aside?.sources?.length ? session.aside.sources : session.aside?.consulted ?? [];
 
+  /** The attached documents an answer may cite, by the ids the model was shown in its material.
+   *
+   *  🔴 ID AND TITLE ONLY. Everything else on a `CanvasSource` — excerpts, coverage, durability —
+   *  is grounding for the model, not something a pill needs, and passing the whole object would
+   *  re-render the answer whenever any of it changed. */
+  const citableFiles = useMemo(
+    () => canvas.sources.map((source) => ({ id: source.id, title: source.title })),
+    [canvas.sources],
+  );
+
   /** The reply's own text and its index-aligned pages, hoisted out of the JSX.
    *
    * 🔴 HOISTED BECAUSE A CLOSURE LOSES THE NARROWING. `session.aside` is checked non-null by the
@@ -2561,7 +2571,7 @@ export function LearningCanvas({
         {threadOpen && thread.length > 0 && (
           <div className="flex flex-col gap-10 pb-10" data-canvas-thread="">
             {thread.map((turn) => (
-              <CanvasThreadTurnView key={turn.id} onOpenOutput={setOpenArtifact} onRetry={retryTurn} turn={turn} />
+              <CanvasThreadTurnView files={citableFiles} key={turn.id} onOpenOutput={setOpenArtifact} onRetry={retryTurn} turn={turn} />
             ))}
           </div>
         )}
@@ -2804,6 +2814,12 @@ export function LearningCanvas({
                       // kinetics or a proof meets `$k$` far more often than a dollar sign — and
                       // `$$…$$` display maths already rendered here regardless.
                       singleDollarMath
+                      // 🔴 THE CANVAS'S OWN DOCUMENTS, so an answer can say which of them a
+                      // sentence came from. Owner, 2026-09-01: ChatGPT pinned ~15 chips to claims
+                      // from his two uploads and ours pinned none. Passed unfiltered and in the
+                      // canvas's own order, because the model cites by ID (`[s1:e4]`) and not by
+                      // position: there is no numbering here that could drift out of step.
+                      files={citableFiles}
                       sources={replyConsulted}
                       text={segment.text}
                     />

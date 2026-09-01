@@ -638,6 +638,25 @@ const NEMESIS_SYSTEM = [
   + "material, and a question outside it should still get a real answer. When live web results are "
   + "supplied, use them for anything time-sensitive and cite the numbered result inline like this: [1].",
 
+  // 🔴🔴🔴 UNTIL 2026-09-01 THE LEARNER'S OWN FILES COULD NOT BE CITED AT ALL, AND THE MODEL WAS
+  // NOT AT FAULT. The rule above gives web results a marker and gives the attached material none,
+  // so an answer built from a lecture had no way to say which sentence came from it. Owner, with
+  // his canvas beside ChatGPT's reply to the same two uploads: ChatGPT pinned about fifteen chips
+  // to specific claims, ours pinned none — while plainly using the files ("the rule your slides
+  // give…", "your very first poll asks for the 19-position"). Nothing marked those as quotations
+  // of his own material rather than the model's recall, which is the difference between a claim a
+  // student can check and one they have to trust.
+  //
+  // 🔴 THE ID IT ALREADY HOLDS, NOT A NUMBER WE ASSIGN. `groundingBlock` labels every excerpt
+  // `[s1:e4]` in the material below, so this asks for an identifier the model is looking at.
+  // A number would have to be kept in step with a list built somewhere else, which is precisely
+  // the drift `canvas-chat.ts` warns about for `[n]`.
+  "When a sentence comes from the attached material, mark it with that excerpt's id in square "
+  + "brackets, like [s1:e4], at the end of the sentence. Use ONLY ids that appear in the material "
+  + "below, exactly as written, and never invent one. Mark the sentences that carry a real claim "
+  + "from the material, not every sentence. Leave a sentence unmarked when it comes from your own "
+  + "knowledge rather than their documents, the difference is the point.",
+
   // 🔴🔴 THE CANVAS CAN DRAW A MOLECULE, AND UNTIL THIS LINE EXISTED THE MODEL HAD NO WAY TO KNOW.
   // Reported 2026-08-20: "i asked it to create the chemical structures using the new tools we gave
   // it", and it answered "Alcohol: R-OH (hydroxyl group)" in prose. `ChemicalStructure` had been

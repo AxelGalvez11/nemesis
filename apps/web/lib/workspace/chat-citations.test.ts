@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { citationsToMarkdown } from "./chat-citations";
+import { citationsToMarkdown, fileRefsToMarkdown, groupFileRuns } from "./chat-citations";
 
 // The happy path: a marker the model was actually given becomes a pill link.
 assert.equal(
@@ -63,3 +63,55 @@ assert.equal(
 );
 
 console.log("chat-citations: all assertions passed");
+
+
+// ── Citing the learner's own files ──────────────────────────────────────────
+//
+// 🔴🔴 Owner, 2026-09-01, with his canvas beside ChatGPT's answer to the same prompt and the same
+// two uploads: ChatGPT pinned about fifteen chips to specific claims, ours pinned none. Not because
+// the model ignored the files — it plainly used them ("the rule your slides give…") — but because
+// there was no way to SAY so. A reader could not tell the lecture from the model's own memory.
+
+const FILES = [
+  { id: "s1", title: "IPT4 Steroid Med Chem Practice Questions Hevener 8 2026" },
+  { id: "s2", title: "Hevener Systemic and Inhalational Steroids Lecture 2026" },
+];
+
+// An excerpt id becomes a pill naming the DOCUMENT, because a document is what a learner
+// recognises and can open. Which excerpt carried the sentence is provenance the surface has no
+// room to show.
+assert.equal(
+  fileRefsToMarkdown("The slides give the numbering rule [s2:e14].", FILES),
+  "The slides give the numbering rule [Hevener Systemic and Inhalational Steroids Lecture 2026](#nemesis-file=s2).",
+);
+
+// 🔴 AN ID FOR A FILE THAT IS NOT ATTACHED IS DELETED, NEVER PRINTED — the rule
+// `citationsToMarkdown` learned when the owner reported "it's also made up citations". A bare
+// marker is not a smaller citation, it is a claim of evidence with nothing behind it.
+assert.equal(fileRefsToMarkdown("A claim [s9:e1] here.", FILES), "A claim here.");
+assert.equal(fileRefsToMarkdown("A claim [s1:e4] here.", []), "A claim here.");
+// And it takes its leading space with it, or "claim  here" keeps a double space.
+assert.ok(!fileRefsToMarkdown("A claim [s9:e1] here.", FILES).includes("  "));
+
+// 🔴 IT CANNOT COLLIDE WITH A WEB CITATION OR A DRAWING. `[1]` is bare digits and `[smiles: …]`
+// needs a notation word; this needs `sN:eN`. Disjoint by construction, in both directions.
+assert.equal(
+  fileRefsToMarkdown("Cited [1] and drawn [smiles: CCO].", FILES),
+  "Cited [1] and drawn [smiles: CCO].",
+);
+assert.equal(citationsToMarkdown("From [s1:e4].", 3), "From [s1:e4].");
+
+// 🔴 CODE IS UNTOUCHED, for the reason `[1]` inside a fence is: in a pasted snippet that bracket
+// is an index, not a citation.
+assert.equal(fileRefsToMarkdown("```\nconst x = arr[s1:e4];\n```", FILES), "```\nconst x = arr[s1:e4];\n```");
+assert.equal(fileRefsToMarkdown("`arr[s1:e4]`", FILES), "`arr[s1:e4]`");
+
+// 🔴🔴 THREE EXCERPTS OF ONE LECTURE COLLAPSE TO ONE PILL, WITH NO "+2". Otherwise a well-grounded
+// sentence ends in three identical chips naming the same document, and "Lecture+2" would be
+// claiming three documents where there is one.
+const oneDoc = groupFileRuns(fileRefsToMarkdown("The rule [s2:e1][s2:e2] [s2:e3] holds.", FILES));
+assert.equal(oneDoc.match(/#nemesis-file=/g)?.length, 1);
+assert.ok(!oneDoc.includes(".1") && !oneDoc.includes(".2"));
+
+// A run across TWO documents keeps the count.
+assert.match(groupFileRuns(fileRefsToMarkdown("Both say so [s1:e4][s2:e9].", FILES)), /#nemesis-file=s1\.1\)/);
