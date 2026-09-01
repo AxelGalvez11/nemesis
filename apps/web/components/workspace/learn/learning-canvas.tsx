@@ -76,6 +76,7 @@ import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
 import { WHOLE_CANVAS } from "@/lib/learn/canvas-focus";
 import { fileTurn, turnHasContent, type CanvasThreadTurn } from "@/lib/learn/canvas-thread";
+import { EditSentPrompt, SentPromptEditor } from "./edit-sent-prompt";
 import { LearnerUtterance } from "./learner-utterance";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
@@ -373,6 +374,8 @@ export function LearningCanvas({
    * same thing twice in a row, which is exactly what a person does when the first answer missed.
    */
   const [sendSeq, setSendSeq] = useState(0);
+  /** Whether the learner is amending the sentence they just sent. */
+  const [editingPrompt, setEditingPrompt] = useState(false);
   /**
    * Open at the foot of the conversation, the way every chat surface does.
    *
@@ -1031,6 +1034,7 @@ export function LearningCanvas({
       setCurrentSaidVia(spokenNow);
       // Owner picked option A from the mockup: the prompt goes to the top and stays there.
       setSendSeq((n) => n + 1);
+      setEditingPrompt(false);
       try {
         const decision = await session.converse(trimmed, surroundings(), () => {
           // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
@@ -2504,8 +2508,30 @@ export function LearningCanvas({
             replacing a reply. The learner's sentence does not swap; it stands while the answer
             beneath it forms, which is also what makes a send feel acknowledged. */}
         {threadOpen && currentSaid?.trim() && (
-          <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) justify-end px-6">
-            <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
+          <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
+            {/* 🔴 EDITING RE-ASKS, IT DOES NOT REWRITE HISTORY. `retryTurn` is `converse`, the one
+                path a turn has ever taken, so the exchange being edited files into the thread
+                exactly as it would have and the new sentence becomes the current turn. Nothing is
+                deleted. The reference forks at the edited message; doing that here would delete
+                turns the learner has already read, which is a much bigger claim than "add edit
+                prompt". Owner, 2026-09-01.
+                🔴 AND ONLY WHEN NOTHING IS IN FLIGHT. Offering an edit while the previous answer is
+                still forming invites two turns racing for the same surface. */}
+            {editingPrompt ? (
+              <SentPromptEditor
+                initial={currentSaid}
+                onCancel={() => setEditingPrompt(false)}
+                onSubmit={(next) => {
+                  setEditingPrompt(false);
+                  retryTurn(next);
+                }}
+              />
+            ) : (
+              <>
+                <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
+                {!turnInFlight && <EditSentPrompt onOpen={() => setEditingPrompt(true)} />}
+              </>
+            )}
           </div>
         )}
 
