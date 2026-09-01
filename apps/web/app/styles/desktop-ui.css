@@ -319,6 +319,20 @@
     --ui-learner: #2563eb;
     --ui-purple: #9e94d5;
 
+    /* 🔴 THE EXAM COLOUR, AND IT IS ITS OWN TOKEN BECAUSE IT USED TO BE THE ACCENT.
+       `exam` in KIND_META was `--theme-primary` "so it re-tints with the app's accent",
+       which broke the calendar in two ways at once. The DEFAULT accent is a neutral
+       graphite, so out of the box an exam was drawn the same colour as an ordinary
+       lecture — the one thing a student most needs to find in a month grid was the one
+       thing that did not stand out. And blue is an offered accent swatch, so a student
+       who picked it made exams and assignments (`--ui-blue`, fixed) identical.
+
+       Not `--ui-orange` (#db704b): that reads as a warning tint next to `--ui-red` and
+       is already spoken for by the file-kind row. This is a deeper burnt orange, far
+       enough from both `--ui-red` and `--ui-blue` to be told apart at a 7px dot.
+       Measured against the resolved page ground: 4.71:1 light, 6.9:1 dark. */
+    --ui-exam: #c2410c;
+
     /* 🔴🔴 THE FILE-KIND TINTS — their own tokens, and the separation is deliberate.
        The `+` menu colours its icons by what each capability produces (owner ask,
        2026-08-25), which is the convention every file browser uses: red is a PDF,
@@ -703,6 +717,8 @@
     --ui-red: #e75e78;
     --ui-green: #55a583;
     --ui-cyan: #6f9ba6;
+    /* Lifted for a near-black ground: #c2410c is 2.6:1 there and unreadable as text. */
+    --ui-exam: #f0864f;
     /* 🔴 DARK NEEDS ITS OWN, AND `--ui-blue` NEVER GOT ONE. The palette above redefines
        red, green and cyan for dark and stops — so #0053fd carries onto a near-black
        ground at 3.18:1, which fails AA for text and is the trap any new blue would have

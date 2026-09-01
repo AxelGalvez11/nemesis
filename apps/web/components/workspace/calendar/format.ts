@@ -27,10 +27,11 @@ export const VIEW_UNIT_LABEL: Record<CalendarViewMode, string> = {
 
 export const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// 3, not 4: with the month grid sized to FIT the window (owner 2026-08-03,
-// "the monthly view should be fully viewable... no scroll"), a busy day gets
-// about 100px — three chips and the "+N more" link is what actually fits.
-export const MAX_CHIPS_PER_DAY = 3;
+// 🔴 `MAX_CHIPS_PER_DAY = 3` USED TO LIVE HERE AND IS GONE ON PURPOSE. It decided
+// how many events a month cell showed, and it could not be right: the month grid
+// stretches to fill the window, and Settings → Appearance resizes every piece of
+// text in it, so the number that fits is a MEASUREMENT. It is taken at render
+// time now — see lib/workspace/month-cell.ts and the ruler in month-grid.tsx.
 export const AGENDA_WINDOW_DAYS = 30;
 
 export const CALENDAR_VIEW_STORAGE_KEY = "nemesis.calendar.view";

@@ -36,6 +36,7 @@ import {
 } from "@/lib/workspace/calendar-filter";
 
 import { CalendarHeader } from "./calendar-header";
+import { DayRail } from "./day-rail";
 import { type EventDraft, EventFormDialog } from "./event-dialogs";
 import { CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
 import { MonthGrid } from "./month-grid";
@@ -77,6 +78,15 @@ export function CalendarWorkspace() {
   /** Kinds the student has switched OFF. Empty by default, so a category added
    *  later is visible rather than silently filtered out — see calendar-filter.ts. */
   const [hiddenKinds, setHiddenKinds] = useState<Set<CalendarEventKind>>(() => new Set());
+  /**
+   * The day opened out beside the month grid, or null for none.
+   *
+   * 🔴 A DATE KEY, NOT AN EVENT LIST, so the rail re-reads `byDate` on every
+   * change. Holding the events themselves would show a stale day the moment one
+   * was added, edited or deleted from the rail — which is precisely where they
+   * are edited from.
+   */
+  const [railKey, setRailKey] = useState<string | null>(null);
 
   // View mode: read from storage only after mount (SSR has no localStorage).
   // Also honour ?date= — the link every agent-written event carries. Without
@@ -308,7 +318,30 @@ export function CalendarWorkspace() {
             />
           )}
           {view === "month" && (
-            <MonthGrid days={monthDays} eventsByDay={byDate} onOpenEvent={openEvent} onPickDay={pickDay} />
+            // 🔴 THE RAIL IS A SIBLING OF THE GRID, NOT AN OVERLAY (owner
+            // 2026-09-01, Option B). A popover covers the days either side —
+            // exactly the days you compare against when deciding when to study.
+            // Below `lg` it stacks under the grid instead, because 15rem of a
+            // narrow window is most of the month.
+            <div className="flex min-h-0 flex-1 gap-3 max-lg:flex-col">
+              <MonthGrid
+                days={monthDays}
+                eventsByDay={byDate}
+                onOpenEvent={openEvent}
+                onPickDay={pickDay}
+                onSelectDay={setRailKey}
+                selectedKey={railKey}
+              />
+              {railKey && (
+                <DayRail
+                  dateKey={railKey}
+                  events={byDate.get(railKey) ?? []}
+                  onAddOnDate={openAdd}
+                  onClose={() => setRailKey(null)}
+                  onOpenEvent={openEvent}
+                />
+              )}
+            </div>
           )}
           {view === "year" && (
             <YearGrid eventsByDay={byDate} onSelectMonth={openMonth} today={today} year={cursor.getFullYear()} />
