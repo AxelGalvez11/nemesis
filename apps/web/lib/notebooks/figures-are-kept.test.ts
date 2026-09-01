@@ -182,6 +182,7 @@ test("🔴 a Word document hands over the pictures it places, and only those", a
 test("🔴 a vendor-parsed PDF keeps the pixels the vendor made us decode ourselves", async () => {
   const { readFileSync } = await import("node:fs");
   const { parseWithVendor } = await import("./parse-document");
+  const { attachFigureAssets, figureAssetPath, figuresWithAssets } = await import("./figure-assets");
   const bytes = new Uint8Array(readFileSync(new URL("./fixtures/embedded-raster.pdf", import.meta.url)));
 
   // A stub vendor, so this proves the LANE keeps its figures rather than proving a network works.
@@ -222,8 +223,25 @@ test("🔴 a vendor-parsed PDF keeps the pixels the vendor made us decode oursel
   );
 
   assert.ok(outcome, "the stubbed vendor read was rejected outright");
-  assert.ok(
-    ((outcome as { figures?: unknown[] }).figures ?? []).length > 0,
-    "the vendor lane decoded the figures to describe them and then threw the pixels away",
+  const kept = ((outcome as { figures?: { entry: string; contentKey: string; mime: string }[] }).figures ?? []);
+  assert.ok(kept.length > 0, "the vendor lane decoded the figures to describe them and then threw the pixels away");
+
+  // 🔴🔴 AND THE PIXELS MUST BE JOINABLE TO THE MODEL THAT GETS STORED, WHICH IS THE HALF THAT
+  // SHIPPED BROKEN. Returning the figures is not the feature; pointing the document at them is.
+  // The pixels are named by OUR structural read (`0:img_p0_1`) and the stored model is the
+  // VENDOR'S (`img-0`, or no name at all), so a ref join silently matches nothing. Verified on
+  // production 2026-09-01: the first version of this stored 14 objects for the owner's
+  // pharmacokinetics lecture and left it at 0 showable figures out of 27 — pictures in the bucket
+  // that no document pointed at, which looks exactly like storing nothing.
+  const stored = (outcome as { document: { model?: import("@nemesis/shared").DocumentModel } }).document.model;
+  assert.ok(stored, "the vendor read produced no model to attach anything to");
+  const attached = attachFigureAssets(stored!, new Map(kept.map((f) => [f.entry, {
+    bytes: 1, contentKey: f.contentKey, mime: f.mime,
+    path: figureAssetPath("uid", f.contentKey, f.mime),
+  }])));
+  assert.equal(
+    figuresWithAssets(attached),
+    kept.length,
+    "the stored pixels reached no figure in the vendor's model — stored, and unreachable",
   );
 });
