@@ -53,9 +53,12 @@ test("🔴 grouping runs AFTER conversion, over real prose, and leaves code alon
   assert.match(grouped, /`const x = arr\[1\]`/, "a bracket inside code was rewritten");
 });
 
-test("out-of-range markers are left as text and cannot be grouped", () => {
-  // `citationsToMarkdown` leaves `[9]` alone when only 3 sources exist, so there is no link for the
-  // grouper to fold — a pill pointing at nothing is worse than a bare number.
+test("an out-of-range marker is gone by the time the grouper runs", () => {
+  // 🔴 THIS USED TO ASSERT `[9]` SURVIVED AS TEXT, on the reasoning that "a pill pointing at
+  // nothing is worse than a bare number". The owner rejected the premise on 2026-08-31 — *"it's
+  // also made up citations"*, *"citations should only show up as the pill form"* — so an
+  // unresolvable marker is deleted upstream and the grouper never sees one. Both are true at once:
+  // no pill points at nothing, AND no bracket number reaches the reader.
   const converted = citationsToMarkdown("a [1] b [9]", 3);
-  assert.equal(groupCitationRuns(converted), "a [1](#nemesis-cite=1) b [9]");
+  assert.equal(groupCitationRuns(converted), "a [1](#nemesis-cite=1) b");
 });
