@@ -301,8 +301,13 @@ export function SidebarCanvases({
     void refresh();
   };
 
-  const newFolder = async (parentId?: string | null) => {
-    const folder = await createFolder(userId, "New project", parentId ?? null);
+  // Always top level. "New sub-project" sat in the project menu until
+  // 2026-09-01, when the owner cut it: "I don't get why that's there. I don't
+  // need that." Nesting is not ripped out of the model — the database still
+  // caps it at two levels and any folder that already has a parent still draws
+  // under it — there is simply no longer a door that makes a new one.
+  const newFolder = async () => {
+    const folder = await createFolder(userId, "New project", null);
     if (!folder) return;
     setOpenFolders((was) => new Set(was).add(folder.id));
     setEditing({ kind: "folder", id: folder.id, value: folder.name });
@@ -566,9 +571,6 @@ export function SidebarCanvases({
                   >
                     Project home
                   </DropdownMenuItem>
-                  {depth === 0 ? (
-                    <DropdownMenuItem onClick={() => void newFolder(folder.id)}>New sub-project</DropdownMenuItem>
-                  ) : null}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void setFolderPinned(userId, folder.id, !folder.pinnedAt).then(refresh)}>
                     {folder.pinnedAt ? "Unpin project" : "Pin project"}
