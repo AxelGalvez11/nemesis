@@ -1001,7 +1001,7 @@ interface FigureRow {
   source_id: string;
   file_name: string;
   unit: number | null;
-  description: string;
+  description: string | null;
   path: string;
   width: number | null;
   height: number | null;
@@ -1045,9 +1045,18 @@ async function findFigure(args: Record<string, unknown>): Promise<unknown> {
   for (const row of rows) {
     const url = await figureAssetUrl(row.path);
     if (!url) continue;
-    const description = clip(row.description.trim(), FIGURE_DESCRIPTION_CHARS);
+    // 🔴 A PICTURE CAN HAVE NO DESCRIPTION AND STILL BE WORTH SHOWING. Vision records
+    // `skipped: "examined-empty"` for a figure it found nothing to say about, and browsing one
+    // lecture's pictures returns those too (see the `search_figures` browse case). An empty alt
+    // text would render as a blank-labelled image; naming the lecture and page is both true and
+    // the only thing known about it.
+    const described = row.description?.trim() ?? "";
+    const description = described
+      ? clip(described, FIGURE_DESCRIPTION_CHARS)
+      : `Picture from ${row.file_name}${row.unit !== null ? `, page ${row.unit + 1}` : ""}`;
     found.push({
       description,
+      ...(described ? {} : { note: "Nobody described this one; show it and let the student read it." }),
       from: row.file_name,
       // 🔴 THE ALT TEXT IS THE DESCRIPTION, TRIMMED TO ONE LINE. A markdown image whose alt text
       // contains a newline or an unbalanced bracket stops being an image mid-render.
