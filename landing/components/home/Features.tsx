@@ -4,10 +4,10 @@ import Image from "next/image";
 
 import { useParallax } from "@/components/use-parallax";
 import { FigureCarousel, type CarouselItem } from "@/components/home/FigureCarousel";
-import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR } from "./art-blur";
+import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR, VOICE_WASH_BLUR } from "./art-blur";
 
 /**
- * The four things the page claims, one band each.
+ * The things the page claims, one band each.
  *
  * ── THE ART IS GROUND, NOT A PICTURE IN A BOX ─────────────────────────────────
  *
@@ -41,9 +41,18 @@ import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR 
  * No LMS import and no "connect your apps" (owner, 2026-08-24: the only route to a
  * university LMS today is a browser extension, and it is not clean). No AP or
  * licensure exam scaffolds — that work is planned, and `scaffold-rung.ts` is
- * deliberately subject-agnostic today. Practice, Sources and Voice were cut as
- * separate blocks because the owner does not count them as differentiators;
- * retrieval practice survives inside `evidence`, where it is doing real work.
+ * deliberately subject-agnostic today. Practice and Sources were cut as separate
+ * blocks because the owner does not count them as differentiators; retrieval
+ * practice survives inside `evidence`, where it is doing real work.
+ *
+ * 🔴 VOICE WAS CUT WITH THEM AND CAME BACK BY OWNER ORDER (2026-08-31: *"the
+ * voice mode is not on the landing page"*). The cut predates the feature: when
+ * it was made, "voice" meant read-aloud and dictation. That night the voice
+ * CONVERSATION shipped (bars in the send slot, live transcript, auto-send on
+ * silence, spoken replies, the glow), and the owner asked for it here. The band
+ * follows the calendar band's shape: a computed wash and a REAL product shot —
+ * captured from /dev-preview/learn with the product's own components running
+ * (see scripts/voiceshot.mjs for the recapture recipe).
  */
 
 interface Band {
@@ -159,6 +168,19 @@ const BANDS: readonly Band[] = [
       alt: "A month of the Nemesis calendar: two courses, their assignments and exam, and the review blocks Nemesis scheduled between them.",
       w: 2400,
       h: 1509,
+    },
+  },
+  {
+    id: "voice",
+    art: "/nemesis/art/voice-wash.webp",
+    blur: VOICE_WASH_BLUR,
+    head: "Voice",
+    body: "Talk instead of typing. Your words appear as Nemesis hears them, send themselves when you pause, and the answer comes back read aloud, short enough to listen to.",
+    shot: {
+      name: "voice",
+      alt: "The Nemesis composer mid voice conversation: the learner's words shown live in the bar in italics, a stop control in the send slot, and a soft glow around the pill.",
+      w: 1824,
+      h: 360,
     },
   },
 ];
