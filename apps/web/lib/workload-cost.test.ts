@@ -36,6 +36,7 @@ import {
   RETIRED_RATES,
   SCENARIOS,
   syntheticProviders,
+  unmeteredLanguageBurn,
   type Channel,
 } from "./workload-cost";
 
@@ -370,19 +371,38 @@ test("the scenarios rise in cost, light through cap exhaustion", () => {
   assert.ok(language > heavy, "the language lane is supposed to cost MORE than the same month on the canvas lane");
 });
 
+test("🔴🔴🔴 the cap-exhaustion row spends NOTHING on Azure, because Azure has no cap to exhaust", () => {
+  // The row means "every meter at its cap". `/api/speech/token` mints a ten-minute Azure token to
+  // any signed-in browser and counts nothing, so there is no meter to put at a cap — and a figure
+  // invented for it makes the row read as a bound when it is a guess. The first attempt did exactly
+  // that: an arbitrary 10,000 phrases put $25 of Azure in the ceiling and reported a $24.91 loss
+  // that no entitlement could ever have produced.
+  const ceiling = modelStudentMonth(SCENARIOS.find((m) => m.label === "cap exhaustion")!);
+  const azure = ceiling.lines.filter((l) => l.provider.startsWith("azure")).reduce((sum, l) => sum + l.usd, 0);
+  assert.equal(azure, 0, "the ceiling is claiming a bound on the one lane that has none");
+});
+
+test("🔴🔴 the unmetered lane is reported as a RATE, and it is not small", () => {
+  // The honest shape for something unbounded. If this ever becomes metered, this test should be
+  // replaced by a cap in the ceiling above — not deleted.
+  const burn = unmeteredLanguageBurn();
+  assert.ok(burn.ttsPerHourUsd > 0.5, "continuous dialect speech should not read as free");
+  assert.equal(burn.scoringPerHourUsd, 1.3, "assessment is real-time STT plus the prosody add-on");
+  assert.ok(burn.bothPerDayUsd > 40, `one account running both all day is ${burn.bothPerDayUsd}, which is the number that matters`);
+});
+
 test("🔴 every scenario is flagged synthetic, because there is no paying cohort", () => {
   // 🔴 GEMINI CAME OFF THIS LIST AND THAT IS A REAL CHANGE, NOT A LOOSENED TEST.
   // Its rate was `assumed` at $0.002 and is now `published` at $0.0000258 --
   // 258 input tokens at Flash-Lite's rate -- and #681 gave it an actual meter in
   // the parse worker. Infrastructure stays synthetic: Vercel and Supabase are
   // still amortised guesses, so every scenario is still flagged.
-  // 🔴 AZURE JOINED THIS LIST ON 2026-08-31 AND THAT IS THE HONEST STATE, NOT A REGRESSION. The
-  // owner pointed out the model had no Azure line at all while the product routes every dialect
-  // voice and every pronunciation score through it. Its rates are PLANNING FIGURES at the public
-  // list price: Azure's speech pricing varies by region, commitment tier and voice class, and
-  // nobody has read which of those this account is on. They come off this list the day someone
-  // does, exactly as Gemini's did.
-  assert.deepEqual(syntheticProviders().sort(), ["azure_pronunciation", "azure_tts", "supabase", "vercel"]);
+  // 🔴 AZURE CAME BACK OFF THIS LIST THE SAME DAY IT WENT ON. It was added `assumed` when the owner
+  // pointed out the model had no Azure line at all, then read off the price page hours later at his
+  // request — neural TTS $16 per million characters, and assessment $1.30 an hour (real-time STT at
+  // $1.00 plus the $0.30 prosody add-on, which is why the planning figure of $1.00 was 30% light).
+  // Infrastructure stays: Vercel and Supabase are still amortised guesses.
+  assert.deepEqual(syntheticProviders().sort(), ["supabase", "vercel"]);
   for (const month of SCENARIOS) {
     assert.equal(modelStudentMonth(month).synthetic, true, `${month.label} must declare itself synthetic`);
   }
