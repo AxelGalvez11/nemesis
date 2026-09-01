@@ -33,6 +33,10 @@ export interface CanvasThreadTurn {
   at: string;
   /** The learner's own words, or null for a turn the app opened by itself. */
   said: string | null;
+  /** How those words arrived: "spoken" inside a live voice conversation, null when unobserved.
+   *  The bubble draws spoken words in the reference's treatment (lighter, italic); it never
+   *  means anything about their worth. */
+  saidVia: "spoken" | null;
   /** What Nemesis said, as markdown, with its `[figure n]` markers intact. */
   reply: string;
   /** Drawings this reply made, in the order its markers count into. */
@@ -82,6 +86,7 @@ export function fileTurn(input: {
   id: string;
   at: string;
   said: string | null;
+  saidVia?: "spoken" | null;
   reply: string;
   visuals?: readonly CanvasVisualRequest[];
   sources?: readonly ThreadSource[];
@@ -95,6 +100,7 @@ export function fileTurn(input: {
     output: input.output ?? null,
     reply: input.reply,
     said: input.said,
+    saidVia: input.saidVia ?? null,
     sources: input.sources ?? [],
     visuals: input.visuals ?? [],
   };

@@ -102,6 +102,11 @@ export interface CanvasMoment {
    * on refresh — see `learning-canvas.tsx`. There is no durable entity to point at.
    */
   userText?: string;
+  /** The words above arrived BY VOICE, in a live voice conversation. Stored only when true, so
+   *  every typed moment's record is byte-identical to before the flag existed. It is how the
+   *  reopened thread knows to draw the utterance in the spoken treatment (owner 2026-08-31,
+   *  matching the reference: spoken messages render lighter and italic). */
+  spoken?: boolean;
   /** What Nemesis said back. Same rule: stored because nothing else stores it. */
   assistantText?: string;
   /** Whether either text above was cut to fit the caps below, so a rewind can say so plainly. */
@@ -152,6 +157,11 @@ function tidy(text: string): string {
 export interface NewCanvasMoment {
   kind: CanvasMomentKind;
   userText?: string;
+  /** The words above arrived BY VOICE, in a live voice conversation. Stored only when true, so
+   *  every typed moment's record is byte-identical to before the flag existed. It is how the
+   *  reopened thread knows to draw the utterance in the spoken treatment (owner 2026-08-31,
+   *  matching the reference: spoken messages render lighter and italic). */
+  spoken?: boolean;
   assistantText?: string;
   teachingAction?: string;
   questionId?: string;
@@ -177,6 +187,7 @@ export function makeMoment(input: NewCanvasMoment, occurredAt: string, id: strin
     kind: input.kind,
     occurredAt,
     ...(said ? { userText: said.slice(0, MAX_USER_TEXT) } : {}),
+    ...(said && input.spoken ? { spoken: true } : {}),
     ...(replied ? { assistantText: replied.slice(0, MAX_ASSISTANT_TEXT) } : {}),
     ...(cutSaid || cutReplied ? { truncated: true } : {}),
     ...(input.teachingAction ? { teachingAction: input.teachingAction } : {}),

@@ -104,3 +104,25 @@ test("🔴 a quiet turn re-arms the microphone — the loop can never wait for e
   assert.match(HOOK, /replyAudio\.failure !== null/, "a failed synthesis strands the conversation");
   assert.match(HOOK, /replyAudio\.status === "idle" && !replyAudio\.playing/, "a turn with nothing to say strands the conversation");
 });
+
+test("🔴 the bar shows the words being heard, and the sent bubble wears the spoken treatment (2026-08-31)", () => {
+  // Owner, testing the reference himself: *"do the transcribed words appear on the chat bar and
+  // then get sent to the chat like in claude? ... the transcribed text is lighter and in
+  // itallics."* The live bar shows the transcript (not the dictation waveform) while a
+  // conversation listens; the utterance filed from it renders italic in a softened ink.
+  const composer = read("./canvas-composer.tsx");
+  assert.match(composer, /voiceLoop\.active \? \(\s*<div className="ml-\[12px\] flex max-h-\[78px\]/, "the conversation bar went back to the waveform");
+  assert.match(composer, />Listening…</, "the empty bar no longer says it is listening");
+  assert.match(composer, /text-\[length:var\(--canvas-text-body\)\] italic leading-\[26px\] \[color:color-mix\(in_srgb,var\(--ui-text-primary\)_72%,transparent\)\]/, "the live words lost the spoken treatment");
+  const bubble = read("./learner-utterance.tsx");
+  assert.match(bubble, /via === "spoken"\s*\? "italic \[color:color-mix\(in_srgb,var\(--ui-action-glyph\)_85%,transparent\)\]"/, "the spoken bubble lost its treatment");
+});
+
+test("🔴 spoken is remembered: filed with the turn, stored in the moment, seeded back on reopen", () => {
+  assert.match(CANVAS, /const spokenNow = voiceConversingRef\.current \? \("spoken" as const\) : null;/, "the modality is no longer read before the await");
+  assert.match(CANVAS, /saidVia: outgoing\.saidVia,/, "the thread files the utterance without how it arrived");
+  assert.match(CANVAS, /\.\.\.\(spokenNow \? \{ spoken: true \} : \{\}\),/, "the moment no longer stores the spoken fact");
+  assert.match(CANVAS, /saidVia: moment\.spoken \? "spoken" : null,/, "a reopened thread forgets which words were spoken");
+  const moment = strip(read("../../../lib/learn/canvas-moment.ts"));
+  assert.match(moment, /\.\.\.\(said && input\.spoken \? \{ spoken: true \} : \{\}\),/, "a typed moment's stored record is no longer byte-identical");
+});
