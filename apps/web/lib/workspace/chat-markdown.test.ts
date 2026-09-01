@@ -24,9 +24,14 @@ test("🔴🔴 the components map is memoised, not rebuilt on every render", () 
   // those ticks re-render whatever renders this component — so every one of them was tearing down
   // and rebuilding the whole answer, replaying its CSS entry animation (`canvas-answer-block` in
   // globals.css) each time. The learner saw that as the text blinking on and off.
+  // 🔴 THE IMPORT LIST GREW (2026-08-31) when the code block gained the reference's header strip:
+  // its copy control needs `useState` for the confirmation and `useRef` to read the block's text.
+  // What this guard is about is `useMemo` still being there, so it now asks for that rather than
+  // for the exact shape of the line — a list that cannot gain a member is a guard about imports,
+  // not about memoisation.
   assert.match(
     SOURCE,
-    /import \{ Children, isValidElement, useMemo \} from "react";/,
+    /import \{[^}]*\buseMemo\b[^}]*\} from "react";/,
     "useMemo is no longer imported — the components map cannot be memoised without it",
   );
   assert.match(

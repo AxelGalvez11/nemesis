@@ -97,3 +97,22 @@ test("🔴 a table in an answer is unboxed, the way theirs is", () => {
   // 🔴 THE SCROLL WRAPPER STAYS. A wide table must never make the whole answer scroll sideways.
   assert.match(MD, /overflow-x-auto/, "a wide table can now scroll the answer sideways");
 });
+
+test("🔴 a fenced code block wears the reference's header strip", () => {
+  // Measured 2026-08-31 on a fence ChatGPT wrote to order: a strip carrying the language and a
+  // copy control, then the code at 12.25px on a 20px line, 20px side padding, 12px underneath,
+  // 6px radius, and NO border around the whole thing.
+  const MD = strip(read("../../../lib/workspace/chat-markdown.tsx"));
+  assert.match(MD, /function CodeBlock\(/, "the code block lost its header strip");
+  assert.match(MD, /text-\[12\.25px\] leading-\[20px\]/, "the code left the reference's 12.25/20");
+  assert.match(MD, /px-\[20px\] pb-\[12px\]/, "the code body left the reference's padding");
+  assert.match(MD, /rounded-\[6px\]/, "the block left the reference's 6px radius");
+  assert.match(MD, /navigator\.clipboard\.writeText/, "the copy control stopped copying");
+
+  // 🔴 TWO DEFECTS THAT WERE ONLY VISIBLE ON SCREEN, AND BOTH ARE PINNED. The typography plugin
+  // gives `pre` a margin, which opened a band between the strip and the code so one block read as
+  // two; and its `prose-code:` rules dress INLINE code as a chip, which painted a lighter
+  // background behind the fenced text, ending mid-line.
+  assert.match(MD, /!my-0/, "the pre's own margin is back, which detaches the header from the code");
+  assert.match(MD, /!bg-transparent !p-0/, "the inline-code chip styling is leaking onto fenced code again");
+});

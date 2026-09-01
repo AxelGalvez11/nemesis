@@ -7,7 +7,7 @@
 // fallback that is byte-identical to the plain block every fence drew before).
 
 import type { Components } from "react-markdown";
-import { Children, isValidElement, useMemo } from "react";
+import { Children, isValidElement, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 // 🔴🔴🔴 CHEMICAL EQUATIONS. `\ce{2H2 + O2 -> 2H2O}` is how anybody writes a reaction in LaTeX, and
 // KaTeX only understands it once this extension has registered itself. It sat unimported in
@@ -54,6 +54,60 @@ const MARKDOWN_CONTAINER_CLASS_NAME =
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
 
 const CODE_BLOCK_LANGUAGE_RE = /language-/;
+
+/**
+ * A fenced code block, with the header the reference puts on one.
+ *
+ * 🔴 MEASURED IN THE OWNER'S ACCOUNT 2026-08-31, on a fence ChatGPT wrote to order: a header strip
+ * carrying the language and a copy control, then the code at 12.25px on a 20px line with 20px of
+ * side padding and 12px underneath. No border and no filled box around the whole thing — the strip
+ * is what separates it from the prose.
+ *
+ * 🔴 THE COPY CONTROL IS THE POINT OF THE STRIP, NOT DECORATION. A code block a learner cannot copy
+ * is a picture of code. Theirs also carries a Run button; that executes code and is a feature this
+ * app has not been asked for, so it is deliberately absent rather than faked.
+ *
+ * 🔴 `aria-live` ON THE LABEL, NOT A TOAST. The confirmation has to be announced where the action
+ * happened, and a screen reader that hears nothing after a copy cannot tell whether it worked.
+ */
+function CodeBlock({ children, language }: { children: React.ReactNode; language: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const body = useRef<HTMLPreElement | null>(null);
+
+  const copy = async () => {
+    const text = body.current?.innerText ?? "";
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // A browser that refuses the clipboard leaves the label alone: claiming a copy that did not
+      // happen is worse than saying nothing, because the learner pastes stale content.
+    }
+  };
+
+  return (
+    <div className="aui-md-code-block my-2 overflow-hidden rounded-[6px]">
+      <div className="flex items-center justify-between gap-2 bg-(--ui-bg-quaternary) py-[6px] pl-[20px] pr-[8px]">
+        <span className="font-mono text-[12px] text-(--ui-text-tertiary)">{language ?? "code"}</span>
+        <button
+          aria-live="polite"
+          className="flex h-[28px] items-center gap-[6px] rounded-[6px] px-[8px] text-[12px] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)"
+          onClick={() => void copy()}
+          type="button"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      {/* 🔴 `!my-0`: the typography plugin gives `pre` a margin of its own, which opened a visible
+          band between the header strip and the code and made one block read as two. */}
+      <pre className="!my-0 overflow-x-auto bg-(--ui-bg-quaternary) px-[20px] pb-[12px] pt-[8px] text-foreground" ref={body}>
+        {children}
+      </pre>
+    </div>
+  );
+}
+
 
 /** A web result the answer can cite. Structural, so SessionSource fits as-is. */
 export interface CitationSource {
@@ -241,7 +295,14 @@ function markdownComponents(
     code: ({ className, children, ...props }) => {
       if (CODE_BLOCK_LANGUAGE_RE.test(className ?? "")) {
         return (
-          <code className={cn("block overflow-x-auto whitespace-pre font-mono text-[0.8em]", className)} {...props}>
+          // 🔴 `!bg-transparent !p-0`: the `prose-code:` rules at the top of this file dress INLINE code
+        // as a chip — a background and a little padding — and they apply to fenced code too. Inside
+        // the block that painted a lighter band behind the text, ending mid-line, which read as a
+        // highlight nobody asked for.
+        <code
+          className={cn("block overflow-x-auto whitespace-pre !bg-transparent !p-0 font-mono text-[12.25px] leading-[20px]", className)}
+          {...props}
+        >
             {children}
           </code>
         );
@@ -282,14 +343,12 @@ function markdownComponents(
           return <MermaidDiagram chart={typeof fence.children === "string" ? fence.children : String(fence.children ?? "")} />;
         }
       }
-      return (
-        // text-foreground: typography's default pre-code color is a light gray
-        // meant for dark code backgrounds — on this light bg-muted/35 box it
-        // rendered plain (language-less) code blocks near-invisible.
-        <pre className="aui-md-code-block my-2 overflow-x-auto rounded-[0.375rem] border border-border bg-muted/35 p-2.5 text-foreground">
-          {children}
-        </pre>
-      );
+      // 🔴 THE FENCE'S LANGUAGE IS THE HEADER'S LABEL, and it is read from the same className the
+      // `code` renderer above keys on, so the two can never disagree about what a fence is.
+      const language = isValidElement(only)
+        ? /language-([\w+-]+)/.exec(((only.props as { className?: string }).className ?? ""))?.[1] ?? null
+        : null;
+      return <CodeBlock language={language}>{children}</CodeBlock>;
     },
     // 🔴🔴 UNBOXED, AND THAT IS THE REFERENCE'S OWN SHAPE. Measured in the owner's account
     // 2026-08-31: their table has NO wrapper border, NO radius and NO shaded header. It is 14px
