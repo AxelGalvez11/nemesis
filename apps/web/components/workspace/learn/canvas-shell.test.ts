@@ -427,7 +427,9 @@ test("🔴 §46.5: the front door is the composer, and nothing is filed below it
   // 🔴 AND THE GREEN HALF MUST STILL BE THERE. Every assertion above is satisfied by an empty
   // file, which is the failure mode this repo has already met: a guard that only forbids passes
   // perfectly against a deleted feature. So the surface must still hold what the owner kept.
-  assert.ok(/What are you working on\?/.test(source), "the greeting is gone");
+  // 🔴 THE GREETING IS "Learn <subject>" SINCE 2026-09-01 (owner), and it lives in its own file.
+  // What this line guards is unchanged: the front door still greets before it asks for anything.
+  assert.ok(/<LearnHeading/.test(source), "the greeting is gone");
   assert.ok(/ASK_PLACEHOLDER|Ask Nemesis/.test(source), "the composer is gone");
   assert.ok(/CanvasRecorder/.test(source), "dictation and recording left the composer");
 });

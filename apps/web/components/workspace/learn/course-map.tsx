@@ -129,7 +129,11 @@ export function CourseMapControl({
         title="Course map"
         type="button"
       >
-        <Codicon name="list-tree" size="20px" />
+        {/* 🔴 THE MAP, CHOSEN OFF THE OPTIONS BOARD — owner, 2026-09-01, shown five real glyphs at
+            real size in the real button: *"for course map could you use the map icon"*. It was
+            `list-tree`, an indented outline, which describes the panel's SHAPE; this one says the
+            thing the control is called, and the control's name is the owner's own word for it. */}
+        <Codicon name="map" size="20px" />
       </button>
 
       {open && (
