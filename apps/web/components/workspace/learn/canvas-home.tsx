@@ -18,6 +18,7 @@
 // So what remains is what the owner circled: the question, the composer, and the one line saying
 // what the composer accepts. Everything else was removed rather than rearranged.
 
+import { advance as advanceRead } from "@/lib/workspace/read-progress";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -151,6 +152,8 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   const reads = useRef(new Map<string, Promise<ExtractedFile>>());
   /** What each card should say about itself. Keyed identically to `reads`. */
   const [readState, setReadState] = useState<Record<string, AttachmentState>>({});
+  /** How far each card's arc has filled. Keyed identically to `readState`, and never rewound. */
+  const [readProgress, setReadProgress] = useState<Record<string, number>>({});
   /** The send is on its way out: the greeting fades and the composer travels down. */
   const [departing, setDeparting] = useState(false);
 
@@ -496,13 +499,24 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     const key = `${file.name}:${file.size}`;
     if (reads.current.has(key)) return;
     setReadState((current) => ({ ...current, [key]: "reading" }));
-    const run = extractFile(file, userId, { folderPath: CANVAS_FILING_FOLDER, keep: true });
+    setReadProgress((current) => ({ ...current, [key]: 0 }));
+    // 🔴 EVERY STOP IS A STEP THAT FINISHED, never a timer — see `lib/workspace/read-progress.ts`.
+    const run = extractFile(file, userId, {
+      folderPath: CANVAS_FILING_FOLDER,
+      keep: true,
+      onPhase: (phase) => setReadProgress((current) => ({ ...current, [key]: advanceRead(current[key] ?? 0, phase) })),
+    });
     reads.current.set(key, run);
     // 🔴 THE STATE HANDLER IS ALSO WHAT MARKS THE PROMISE HANDLED. Without it a read that fails
     // while the learner never sends would surface as an unhandled rejection in their console. The
     // rejection still reaches the canvas if they DO send, because that awaits `run` itself.
     void run.then(
-      () => setReadState((current) => ({ ...current, [key]: "ready" })),
+      () => {
+        setReadProgress((current) => ({ ...current, [key]: 1 }));
+        setReadState((current) => ({ ...current, [key]: "ready" }));
+      },
+      // 🔴 THE ARC STAYS WHERE IT DIED. A full circle behind "couldn't read" is a card arguing
+      // with itself; the failed state repaints the same arc red.
       () => setReadState((current) => ({ ...current, [key]: "failed" })),
     );
   };
@@ -802,6 +816,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   }}
                   // 🔴 THE CARD IS WHERE PROGRESS BELONGS, one line per file. A single composer-wide
                   // "reading your files" would be a lie the moment one of three finishes.
+                  progress={readProgress[`${file.name}:${file.size}`] ?? 0}
                   state={readState[`${file.name}:${file.size}`] ?? "ready"}
                 />
               ))}
@@ -1105,7 +1120,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 // an empty box: dimmed, still, and silent about which. `reading` is true only while
                 // a file is actually being extracted, never while one has failed — a failure is a
                 // thing to act on, not a thing to wait for.
-                busy={reading}
                 className="self-end [grid-area:send]"
                 disabled={blocked || (capability ? !text.trim() : !text.trim() && staged.length === 0)}
                 label={sendLabel}

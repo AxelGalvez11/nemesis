@@ -38,11 +38,15 @@ const session = code(SESSION);
 test("🔴🔴 dropping material starts reading it immediately", () => {
   const stage = home.slice(home.indexOf("const stageFiles ="), home.indexOf("const startDictation"));
   assert.match(stage, /beginRead\(file\)/, "stageFiles must start the read for each newly staged file");
-  assert.match(
-    home,
-    /const run = extractFile\(file, userId, \{ folderPath: CANVAS_FILING_FOLDER, keep: true \}\)/,
-    "the front door must read through the shared chokepoint with keep, so the row and parse are the real ones",
-  );
+  // 🔴 THE CALL AND ITS TWO LOAD-BEARING OPTIONS, NOT THE LINE THEY WERE ONCE WRITTEN ON. This
+  // asserted the whole single-line form until 2026-09-01, when the call grew an `onPhase` and
+  // wrapped across four lines — a formatting change reddened a test about where reads happen.
+  // Matching the pieces keeps the guarantee (shared chokepoint, `keep`, so the row and parse are
+  // the real ones) without pinning the prettier output.
+  const call = home.slice(home.indexOf("const run = extractFile(file, userId"), home.indexOf("reads.current.set(key, run)"));
+  assert.ok(call.length > 0, "the front door must read through the shared chokepoint");
+  assert.match(call, /folderPath: CANVAS_FILING_FOLDER/, "the read must file into the canvas folder");
+  assert.match(call, /keep: true/, "without keep the row and parse are not the real ones");
 });
 
 test("🔴 the read is started over the DEDUPED list, so one file is read once", () => {

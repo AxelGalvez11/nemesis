@@ -250,6 +250,8 @@ interface CanvasComposerProps {
     readonly id: string;
     readonly title: string;
     readonly state?: AttachmentState;
+    /** How much of that card's arc to draw, 0 to 1. See `lib/workspace/read-progress.ts`. */
+    readonly progress?: number;
   }[];
   /** Drop this file from the message being written. Absent for a surface with nothing staged. */
   onRemoveAttachment?: (id: string) => void;
@@ -886,6 +888,7 @@ export function CanvasComposer({
                   name={file.title}
                   {...(onRemoveAttachment ? { onRemove: () => onRemoveAttachment(file.id) } : {})}
                   {...(onRetryAttachment ? { onRetry: () => onRetryAttachment(file.id) } : {})}
+                  progress={file.progress ?? 0}
                   state={file.state ?? "ready"}
                 />
               ))}

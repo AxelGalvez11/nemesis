@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReadPhase } from "@/lib/workspace/read-progress";
 import {
   courseFolderSegment,
   coverageNoticeForModel,
@@ -517,10 +518,30 @@ export async function extractFile(
      * cross-session learning cannot work at all — so the caller says which it wants, explicitly.
      */
     keep?: boolean;
+    /**
+     * Called as each step of this read genuinely finishes, so a card can draw an arc.
+     *
+     * 🔴 THE CALLS ARE FACTS, NOT ESTIMATES. Each one fires immediately after the work it names
+     * has returned, and there is nothing between them: no timer creeping the arc forward while a
+     * step runs. `lib/workspace/read-progress.ts` argues why at length, and its own test refuses
+     * a clock. A caller that passes nothing costs nothing.
+     *
+     * 🔴 IT MUST NEVER THROW INTO THIS FUNCTION. A surface whose setState went wrong cannot be
+     * allowed to fail a read that has already succeeded, so every call is wrapped.
+     */
+    onPhase?: (phase: ReadPhase) => void;
   } = {},
 ): Promise<ExtractedFile> {
+  const say = (phase: ReadPhase) => {
+    try {
+      opts.onPhase?.(phase);
+    } catch {
+      // A reporting failure is never a read failure.
+    }
+  };
   const key = uid ? await deviceKey(uid) : null;
   if (!key || !uid) throw new Error("Sign in to read this attachment.");
+  say("authorised");
 
   // 🔴 AN OVERSIZED DECK IS REFUSED. IT IS NOT SILENTLY EMPTIED OF ITS PICTURES.
   //
@@ -568,6 +589,11 @@ export async function extractFile(
   // is what decides the lane. See `uploadLane`.
   if (!sourceId && opts.keep) {
     filedSourceId = await uploadForIngest(payload, uid, opts.folderPath ?? "");
+    // 🔴 REPORTED EVEN WHEN FILING CAME BACK NULL. The bytes went up and came back refused, which
+    // took exactly as long as a successful upload; the read then falls through to the inline lane
+    // and carries on. An arc that ignored the time a failed upload cost would stall on precisely
+    // the files that took longest.
+    say("uploaded");
   }
 
   if (uploadLane({ filedSourceId, size: payload.size, sourceId }) === "inline") {
@@ -578,6 +604,7 @@ export async function extractFile(
     const id = filedSourceId ?? (await uploadForIngest(payload, uid, opts.folderPath ?? ""));
     if (!id) throw new Error(`Couldn't upload ${file.name}. Check your connection and try again.`);
     filedSourceId = id;
+    say("uploaded");
     response = await fetch("/api/notebooks/extract/file", {
       body: JSON.stringify({ sourceId: id }),
       headers: { ...headers, "Content-Type": "application/json" },
@@ -597,6 +624,10 @@ export async function extractFile(
     error?: string;
   } | null;
   if (!response.ok || !body?.text) throw new Error(body?.error ?? extractErrorFor(response.status, file.name));
+  // 🔴 AFTER THE REFUSAL, NOT BEFORE IT. A failed extract must never complete the arc: the card is
+  // about to become the failed state, and a full circle behind a "couldn't read" is a card
+  // disagreeing with itself.
+  say("read");
   // 🔴🔴 PICTURES NOBODY LOOKED AT GET LOOKED AT. Figure DETECTION runs on the upload path and
   // figure READING does not — `lookAtFigures` is off there on purpose, because up to 40 vision
   // calls in the request is latency the student waits through (see ParseOptions). The background

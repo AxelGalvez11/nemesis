@@ -30,6 +30,7 @@
 // when the two sit side by side, is measured.
 
 import { cn } from "@/lib/utils";
+import { ARC_CIRCUMFERENCE, dashOffsetFor } from "@/lib/workspace/read-progress";
 
 /**
  * The type line under the name — "PDF", "DOCX", "PNG".
@@ -65,36 +66,48 @@ const INK: Readonly<Record<string, string>> = {
 };
 
 /**
- * A file being read, drawn as a ring turning around its own glyph.
+ * A filling arc where the file's own glyph used to sit.
  *
- * 🔴🔴 IT SHOWS THAT WORK IS HAPPENING, NOT HOW FAR IT HAS GOT, and the difference is forced by the
- * truth rather than chosen for ease: `extractFile` is a single awaited call and the parser is
- * silent until it returns, so there is no fraction to draw. An arc creeping toward full would be
- * this product inventing a number about somebody's document. See the note in globals.css, and the
- * identical ruling already recorded for audio transcription.
+ * 🔴🔴 IT FILLS, IT DOES NOT SPIN, AND EVERY STOP IS A COMPLETED FACT. Owner, 2026-09-01: *"remove
+ * the attachment icon and replace with a circular progress bar that doesnt spin but just does the
+ * progress indicator."* This replaces the turning ring shipped in #1027, whose own comment argued
+ * there was no fraction to draw. That argument was right about `extractFile` as a black box and
+ * wrong about `extractFile` as a sequence: it authorises, it uploads, and it gets an answer, and a
+ * browser can see each of those finish. `lib/workspace/read-progress.ts` owns the weights and its
+ * test refuses a clock, which is the part that keeps this honest.
  *
- * 🔴 THE GLYPH STAYS INSIDE IT. The learner is watching a specific file, so the thing that spins
- * has to be attached to that file rather than floating somewhere near it, and the card's own
- * "Reading…" line names the step in words underneath.
+ * 🔴 TWELVE O'CLOCK NEVER MOVES. The `-rotate-90` is on the whole svg and nothing inside it turns,
+ * so the sweep of the ink IS the reading. Rotating any part of this would put the spinner back.
+ *
+ * 🔴 `stroke-dashoffset`, NOT A TWO-VALUE `stroke-dasharray`. Only the offset animates the same way
+ * across engines; a dasharray pair snaps in some browsers and glides in others, so the arc would
+ * jump between stops for some learners and not others.
+ *
+ * 🔴 IT REPLACES THE GLYPH RATHER THAN WRAPPING IT, which is a REVERSAL of the rule #1027 shipped
+ * under ("the ring replaces nothing, it wraps"). What is lost is real and worth writing down: the
+ * card stops saying which KIND of file is being read at the moment somebody is staring at it, so
+ * five files dropped at once become five identical circles told apart only by a truncated name.
+ * The owner made that trade deliberately; the glyph returns the instant the read lands.
  */
-function ReadingRing({ children }: { children: React.ReactNode }) {
-  // r=15 on a 34 box leaves 1px clear of the 2px stroke at every edge; 94.2 is that circumference,
-  // and a 26/94.2 dash is a quarter turn of ink with the rest open.
+function ReadingArc({ progress }: { progress: number }) {
   return (
     <span aria-hidden="true" className="relative flex h-[34px] w-[34px] items-center justify-center">
-      <svg className="reading-ring absolute inset-0" fill="none" height={34} viewBox="0 0 34 34" width={34}>
-        <circle cx={17} cy={17} r={15} stroke="var(--ui-stroke-secondary)" strokeWidth={2} />
+      <svg className="-rotate-90" fill="none" height={34} viewBox="0 0 34 34" width={34}>
+        <circle cx={17} cy={17} r={15} stroke="var(--ui-stroke-secondary)" strokeWidth={2.5} />
         <circle
           cx={17}
           cy={17}
           r={15}
           stroke="var(--ui-action)"
-          strokeDasharray="26 68.2"
+          // 🔴 THE TRANSITION IS WHAT MAKES A THREE-STOP ARC READ AS PROGRESS RATHER THAN AS THREE
+          // JUMPS. Long enough to be seen travelling, short enough not to still be moving when the
+          // next stop lands.
+          style={{ strokeDashoffset: dashOffsetFor(progress), transition: "stroke-dashoffset 420ms ease-out" }}
+          strokeDasharray={ARC_CIRCUMFERENCE}
           strokeLinecap="round"
-          strokeWidth={2}
+          strokeWidth={2.5}
         />
       </svg>
-      {children}
     </span>
   );
 }
@@ -116,13 +129,14 @@ function DocGlyph({ tint }: { tint: string }) {
 }
 
 /**
- * How far this file has got, said on the card's own second line.
+ * Where this file has got to.
  *
- * 🔴 THE TYPE LINE CARRIES IT, RATHER THAN A SPINNER OR A BAR. §5 rules out a centred spinner and
- * a progress bar without real progress, and the reason applies at this size too: "Reading…" is a
- * step that is genuinely running, while a bar would have to invent a percentage nobody measured.
- * The line returns to the file's type the moment the read lands, so the card at rest is exactly
- * the card that was measured off the reference.
+ * 🔴 THE ARC CARRIES IT NOW, AND THE SECOND LINE IS EMPTY WHILE IT READS. This note used to argue
+ * the opposite ("the type line carries it, rather than a spinner or a bar... a bar would have to
+ * invent a percentage nobody measured"), which held only while the read was a single opaque call.
+ * It is a sequence with three observable ends, so the arc draws those and the caption is gone. The
+ * line returns to the file's type the moment the read lands, so the card at rest is exactly the
+ * card that was measured off the reference.
  */
 export type AttachmentState = "reading" | "ready" | "failed";
 
@@ -131,8 +145,18 @@ export function AttachmentCard({
   name,
   onRemove,
   onRetry,
+  progress = 0,
   state = "ready",
 }: {
+  /**
+   * How much of the arc to draw, 0 to 1. Ignored unless `state` is "reading".
+   *
+   * 🔴 THE CALLER OWNS IT BECAUSE THE CALLER OWNS THE READ. This component has no idea a file is
+   * being uploaded; `extractFile` reports its steps to whoever started it, and that surface holds
+   * the number. Defaulting to 0 means a caller that has not wired it yet draws an empty circle,
+   * which is honest, rather than a full one.
+   */
+  progress?: number;
   className?: string;
   name: string;
   /** Omitted for a file already sent — the reference's card has no × once it is committed. */
@@ -152,7 +176,9 @@ export function AttachmentCard({
   // 🔴 THE NAME OF THE STEP, NOT AN ADJECTIVE ABOUT THE FILE. "Reading…" is what Nemesis is doing;
   // "Couldn't read" says the one thing the learner can act on (remove it, or send anyway and ask
   // about the rest). Neither line is a status code dressed up as English.
-  const line = state === "reading" ? "Reading…" : state === "failed" ? "Couldn't read" : kind;
+  // 🔴 EMPTY WHILE READING, and the two other states are unchanged. A failure still says so in
+  // words, because a red arc frozen part-way is a symptom rather than an explanation.
+  const line = state === "reading" ? "" : state === "failed" ? "Couldn't read" : kind;
   return (
     <div
       className={cn(
@@ -162,22 +188,22 @@ export function AttachmentCard({
         // said `px-4`. Anywhere the reference states a pixel, this file states that pixel.
         "flex min-w-0 items-center gap-[12px] rounded-[16px] border border-(--ui-stroke-tertiary)",
         "bg-(--ui-bg-elevated) py-[12px] pl-[16px]",
+        // 🔴🔴 THE SWEEP IS WHY A PAUSED ARC IS NOT A STUCK ARC. The arc only moves when a step
+        // finishes, so it holds still through the longest part of a read; a card that were also
+        // still would read as a hang. The sweep is the app's own rewriting gesture, so waiting in
+        // the composer looks like waiting everywhere else in the product.
+        state === "reading" && "reading-sweep",
         onRemove ? "pr-[8px]" : "pr-[16px]",
         className,
       )}
       title={name}
     >
-      {/* 🔴 THE RING REPLACES NOTHING — it wraps. A card that swapped its document glyph for a
-          spinner would stop saying WHICH KIND of file is being read at exactly the moment the
-          learner is watching it. */}
+      {/* 🔴 THE ARC REPLACES THE GLYPH, which reverses what #1027 shipped under ("the ring replaces
+          nothing, it wraps"). The cost that comment named is real and is now paid on purpose: the
+          card stops saying which KIND of file is being read while it reads. The owner chose the
+          trade; the glyph returns the instant the read lands. */}
       <span className="shrink-0">
-        {state === "reading" ? (
-          <ReadingRing>
-            <DocGlyph tint={INK[kind] ?? "var(--ui-text-tertiary)"} />
-          </ReadingRing>
-        ) : (
-          <DocGlyph tint={INK[kind] ?? "var(--ui-text-tertiary)"} />
-        )}
+        {state === "reading" ? <ReadingArc progress={progress} /> : <DocGlyph tint={INK[kind] ?? "var(--ui-text-tertiary)"} />}
       </span>
       <span className="flex min-w-0 flex-col">
         {/* 🔴 THE SCALE'S OWN STEPS, WHICH HAPPEN TO BE THE REFERENCE'S NUMBERS EXACTLY.
@@ -194,14 +220,20 @@ export function AttachmentCard({
         <span className="truncate text-[length:var(--canvas-text-small)] font-medium leading-[20px] text-(--ui-text-primary)">
           {name}
         </span>
-        <span
-          className={cn(
-            "truncate text-[length:var(--canvas-text-meta)] leading-[16px]",
-            state === "failed" ? "text-(--destructive)" : "text-(--ui-text-secondary)",
-          )}
-        >
-          {line}
-        </span>
+        {/* 🔴 NOTHING UNDER THE NAME WHILE IT READS (owner 2026-09-01: *"remove the 'reading
+            text'"*). The arc says what the word used to, and a caption that only ever reads
+            "Reading…" is the least informative line on the card. The name centres itself in the
+            card's height because it is now the only child. */}
+        {line ? (
+          <span
+            className={cn(
+              "truncate text-[length:var(--canvas-text-meta)] leading-[16px]",
+              state === "failed" ? "text-(--destructive)" : "text-(--ui-text-secondary)",
+            )}
+          >
+            {line}
+          </span>
+        ) : null}
       </span>
       {onRetry && state === "failed" ? (
         <button

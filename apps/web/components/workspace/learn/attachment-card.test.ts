@@ -78,37 +78,63 @@ test("🔴 the glyph is coloured by type, which is half of what makes it read as
 
 // ── a document being read says so ──────────────────────────────────────────────────────────────
 
-test("🔴🔴 a file being read wears a turning ring, and it never claims to know how far", () => {
-  // Owner, 2026-09-01: "when the chat composer is reading and parsing documents there should be an
-  // animation or like a loading circular bar showing progress in processing."
-  //
-  // 🔴 INDETERMINATE BY NECESSITY, NOT BY LAZINESS. `extractFile` is one awaited call and the
-  // parser is silent until it returns, so there is no fraction to draw; an arc creeping toward full
-  // would be a number about somebody's document that nobody measured. The same ruling is already
-  // recorded for audio transcription in globals.css. Calibration: bind the arc to a percentage and
-  // this reddens.
+test("🔴🔴 a file being read wears a FILLING arc, and nothing on it spins", () => {
+  // 🔴🔴 THIS TEST PINNED THE OPPOSITE RULE UNTIL 2026-09-01, AND THE OLD ONE IS RECORDED RATHER
+  // THAN ERASED. It read "a file being read wears a turning ring, and it never claims to know how
+  // far", and argued: *"`extractFile` is one awaited call and the parser is silent until it
+  // returns, so there is no fraction to draw."* Right about `extractFile` as a black box, wrong
+  // about it as a sequence — it authorises, uploads and waits for one answer, and a browser sees
+  // each finish. Owner: *"remove the attachment icon and replace with a circular progress bar that
+  // doesnt spin but just does the progress indicator."*
   const card = read("./attachment-card.tsx");
-  assert.match(card, /state === "reading" \? \(\s*<ReadingRing>/, "a file being read has nothing moving on it");
-  assert.match(card, /strokeDasharray="26 68\.2"/, "the ring lost the fixed gap that makes it a spinner rather than a gauge");
-  // 🔴 CODE ONLY, COMMENTS STRIPPED. A rule of the form "this word must not appear" fails against
-  // the paragraph that explains the rule — this assertion caught its own note about not inventing a
-  // percentage, which is the third time in one evening a guard has read prose as behaviour.
+  assert.match(card, /state === "reading" \? <ReadingArc progress=\{progress\} \/>/, "a file being read is not drawing an arc");
+  assert.match(card, /strokeDashoffset: dashOffsetFor\(progress\)/, "the arc is not driven by the progress it was given");
+  assert.match(card, /strokeDasharray=\{ARC_CIRCUMFERENCE\}/, "the arc lost the full-circle dasharray that makes the offset mean anything");
+
+  // 🔴 NOTHING TURNS. Code only, comments stripped — a "must not appear" rule read against prose
+  // fails on the paragraph explaining the rule, which has now bitten this file four times.
   const code = card.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.ok(!/percent|progress=\{|\bvalue=\{/.test(code), "the ring is claiming to know how far the parse has got");
-  // The kind of file must still be readable while it is being read.
-  assert.match(card, /<ReadingRing>\s*<DocGlyph/, "the document glyph was swapped out for the spinner instead of wrapped");
+  assert.ok(!/animate-spin|rotate\(360|reading-ring/.test(code), "something on the reading card is spinning again");
+  // 🔴 THE ONE ROTATION ALLOWED IS THE STATIC QUARTER TURN that puts the arc's start at twelve
+  // o'clock. It is on the svg, it never changes, and without it the arc would begin at three.
+  assert.match(code, /className="-rotate-90"/, "the arc no longer starts at twelve o'clock");
+
+  // 🔴 THE GLYPH IS REPLACED, NOT WRAPPED — a deliberate reversal of what #1027 shipped, and the
+  // cost is written down beside `ReadingArc`: several files at once become identical circles.
+  assert.ok(!/<ReadingRing>|ReadingRing/.test(code), "the wrapping ring is back");
+  assert.match(code, /state === "reading" \? <ReadingArc[\s\S]*?: <DocGlyph/, "the glyph does not come back once the read lands");
+
+  // 🔴 AND NO SECOND LINE WHILE IT READS. Owner: *"remove the 'reading text'"*.
+  assert.match(code, /const line = state === "reading" \? ""/, "the card still captions itself while reading");
 
   const css = read("../../../app/globals.css");
-  assert.match(css, /@keyframes nemesis-reading-ring/, "the ring has no animation to run");
-  assert.match(css, /\.reading-ring \{ animation: none; \}/, "the ring keeps turning when motion is refused");
+  assert.match(css, /@keyframes nemesis-reading-sweep/, "the card has no sweep to run while the arc holds");
+  assert.match(css, /\.reading-sweep \{ animation: none; background-image: none; \}/, "the sweep keeps moving when motion is refused");
+  assert.ok(!/@keyframes nemesis-reading-ring/.test(css), "the spinner keyframes are still in the stylesheet");
 });
 
-test("🔴 the composer's own send button spins while a document is being read", () => {
-  // The control already had a spinner state; the front door simply never set it, so a send held
-  // open by a parse looked exactly like a send held open by an empty box.
+test("🔴 the arc is fed by finished steps, never by a clock", () => {
+  // The whole design rests on this. `read-progress.test.ts` proves the model itself is clock-free;
+  // this proves the two surfaces driving it report `extractFile`'s phases rather than ticking.
+  const extract = read("../../../lib/workspace/chat-attachments.ts");
+  for (const phase of ['say("authorised")', 'say("uploaded")', 'say("read")']) {
+    assert.ok(extract.includes(phase), `extractFile never reports ${phase}`);
+  }
+  for (const surface of ["./learning-canvas.tsx", "./canvas-home.tsx"]) {
+    const src = read(surface).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.match(src, /onPhase: \(phase\)/, `${surface} starts a read without asking for its steps`);
+    assert.match(src, /advanceRead\(/, `${surface} can let the arc travel backwards`);
+  }
+});
+
+test("🔴 the send button is simply off while a document is being read, never spinning", () => {
+  // 🔴 REVERSES THE RULE THIS FILE HELD FROM 2026-09-01 MORNING, which asserted `busy={reading}`
+  // on the front door so the send spun through a parse. Owner, the same day: *"make sure the send
+  // button for chat composer is just inactivated."* The spinner is for a turn in flight; a held
+  // send is a disabled control with a label that says why.
   const home = read("./canvas-home.tsx");
-  assert.match(home, /busy=\{reading\}/, "the send button is static while documents are being read");
-  // 🔴 `reading`, NOT `blocked`: a file that FAILED also blocks the send, and a spinner there would
-  // promise that waiting will fix it. That card carries Try again instead.
+  assert.ok(!/busy=\{reading\}/.test(home), "the send button is spinning through a parse again");
   assert.ok(!/busy=\{blocked\}/.test(home), "a failed read is being drawn as work still in progress");
+  // Still refused, and still for the stated reason: `blocked` covers reading AND failed.
+  assert.match(home, /disabled=\{blocked \|\|/, "a document still being read can now be sent");
 });
