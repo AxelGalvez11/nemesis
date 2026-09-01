@@ -81,3 +81,35 @@ test("🔴 the two doors a document title comes through both use this", () => {
   const store = readFileSync(new URL("./canvas-store.ts", import.meta.url), "utf8");
   assert.match(store, /documentTitle\(source\.title\)/, "a source can title a canvas without passing the shape tests");
 });
+
+test("🔴🔴 the name the learner dropped in wins, and two files stay TELLABLE APART", () => {
+  // Owner's own two uploads, 2026-09-01: *"the titles were changed to something that was simpler.
+  // And so it makes it more difficult to see what's actually the file that I'm looking for."*
+  //
+  // Each document's first line begins "Integrated Pharmacotherapy 4", so deriving from content
+  // produced two shelf rows that were indistinguishable — and the 72-character cut then deleted
+  // the words that were the ONLY difference between them.
+  const deck = documentTitle(
+    "Integrated Pharmacotherapy 4 Steroid Chemistry Systemic and Pulmonary Steroids Med Chem Practice Questions",
+    "IPT4_Steroid_Med_Chem_Practice_Questions_Hevener_8_2026.pptx",
+  );
+  const lecture = documentTitle(
+    "Integrated Pharmacotherapy 4",
+    "Hevener_Systemic_and_Inhalational_Steroids_Lecture_2026 (1).pdf",
+  );
+  assert.equal(deck, "IPT4 Steroid Med Chem Practice Questions Hevener 8 2026");
+  assert.equal(lecture, "Hevener Systemic and Inhalational Steroids Lecture 2026 (1)");
+  assert.notEqual(deck, lecture);
+  // The real bug was not length, it was collision: the first four words used to be identical.
+  assert.notEqual(deck.split(" ").slice(0, 4).join(" "), lecture.split(" ").slice(0, 4).join(" "));
+});
+
+test("🔴 a STUB file name still loses to a real title — the reversal is conditional", () => {
+  // The same defect pointing the other way: renaming a well-titled paper after `lecture.pdf`.
+  assert.equal(documentTitle("Cardiac action potentials", "lecture.pdf"), "Cardiac action potentials");
+  assert.equal(documentTitle("Cardiac action potentials", "x.pdf"), "Cardiac action potentials");
+  // Two words is enough to be a name someone chose.
+  assert.equal(documentTitle("Cardiac action potentials", "week 3.pdf"), "week 3");
+  // And a stub is still better than nothing when the document offered nothing usable.
+  assert.equal(documentTitle("| --- |", "scan.pdf"), "scan");
+});

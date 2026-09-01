@@ -141,13 +141,42 @@ export const MAX_USER_TEXT = 400;
 /**
  * How much of an answer is kept.
  *
- * 🔴 2000 RATHER THAN THE 4000 `learner_evidence.response_text` USES, AND THE ASYMMETRY IS
- * DELIBERATE. That column stores one row per demonstration and is read rarely; this array travels
- * inside a document on every autosave. A Nemesis reply is one short paragraph (contract rule 2), so
- * 2000 characters clears the ordinary answer whole and only bites on an unusual one — where
- * `truncated` makes the surface say so rather than showing a silently clipped answer.
+ * 🔴🔴🔴 IT WAS 2000, AND THAT BEHEADED EVERY REAL TEACHING ANSWER IN THE PRODUCT. Owner, 2026-09-01,
+ * comparing his own canvas against the same prompt in ChatGPT: ours ended mid-word — *"…is exactly
+ * the picture you need to h"* — on screen, with the copy button under it. Measured on that canvas:
+ * the stored answer was exactly 2000 characters, 362 words, against ChatGPT's ~1,200 complete.
+ *
+ * 🔴 THE OLD NUMBER'S REASONING NAMED A CONTRACT THAT IS DEAD. It read "a Nemesis reply is one
+ * short paragraph (contract rule 2), so 2000 characters clears the ordinary answer whole and only
+ * bites on an unusual one". The one-paragraph rule went when the canvas became a chat (see
+ * canvas-chat-is-the-product.test.ts, and the owner's *"it should be a chatbot first"*), and
+ * nothing came back to this constant. A cap justified by a rule that no longer exists is not a
+ * cap, it is data loss on a timer — and `truncated: true` made it silent-but-documented rather
+ * than loud.
+ *
+ * 16,000 clears any answer this product actually writes (the ChatGPT reply it was measured against
+ * is ~7,800 characters) and is a ceiling rather than a budget — the budget is below.
  */
-export const MAX_ASSISTANT_TEXT = 2000;
+export const MAX_ASSISTANT_TEXT = 16_000;
+
+/**
+ * How much answer text the whole list may hold.
+ *
+ * 🔴🔴 A PER-ANSWER CAP ALONE CANNOT BOUND THE ROW, AND RAISING ONE WITHOUT ADDING THE OTHER IS HOW
+ * THIS BECOMES A DIFFERENT BUG. `MAX_MOMENTS` is 80; at 16,000 characters each that is 1.2MB
+ * travelling on every autosave. So the newest moments are kept WHOLE until this budget is spent,
+ * and older ones are demoted to a preview instead of being dropped — the rail still has its label
+ * and the thread still has its shape, which is what an old turn is actually for.
+ *
+ * 120,000 holds roughly seven maximal answers, or forty ordinary ones, before anything is demoted.
+ *
+ * 🔴 THE FILE'S OWN STANDING ADVICE APPLIES AND IS UNCHANGED: if a real canvas ever presses on
+ * this, the answer is a TABLE, not a bigger number, because every save carries the whole document.
+ */
+export const MOMENT_TEXT_BUDGET = 120_000;
+
+/** What a demoted moment keeps: enough for the rail's label and to recognise the turn. */
+export const DEMOTED_ASSISTANT_TEXT = 400;
 
 /**
  * Trim, and close up runs of blank lines. 🔴🔴 IT NO LONGER COLLAPSES WHITESPACE, AND THAT ONE
@@ -234,7 +263,46 @@ export function appendMoment(
   occurredAt: string,
   id: string,
 ): CanvasMoment[] {
-  return [...moments, makeMoment(input, occurredAt, id)].slice(-MAX_MOMENTS);
+  return withinBudget([...moments, makeMoment(input, occurredAt, id)].slice(-MAX_MOMENTS));
+}
+
+/**
+ * Spend `MOMENT_TEXT_BUDGET` newest-first, demoting whatever does not fit.
+ *
+ * 🔴 NEWEST FIRST, BECAUSE RECENCY IS WHAT THE THREAD IS FOR. The turn a learner is reading, and
+ * the three above it, are the ones that must survive whole; a moment from forty turns ago earns
+ * its place by being findable on the rail, which needs a label, not a transcript.
+ *
+ * 🔴 DEMOTED, NOT DROPPED. Removing the moment would remove its marker, and a rail that silently
+ * loses its oldest marks is a memory that edits itself — the exact failure `canvas-history-rail`
+ * has been through twice. The moment stays, its text shrinks, and `truncated` says so.
+ *
+ * PURE.
+ */
+function withinBudget(moments: readonly CanvasMoment[]): CanvasMoment[] {
+  const kept: CanvasMoment[] = [];
+  let spent = 0;
+
+  for (let index = moments.length - 1; index >= 0; index--) {
+    const moment = moments[index]!;
+    const text = moment.assistantText ?? "";
+
+    if (spent + text.length <= MOMENT_TEXT_BUDGET) {
+      spent += text.length;
+      kept.push(moment);
+      continue;
+    }
+
+    const preview = text.slice(0, DEMOTED_ASSISTANT_TEXT);
+    spent += preview.length;
+    kept.push({
+      ...moment,
+      ...(preview ? { assistantText: preview } : {}),
+      ...(text.length > preview.length ? { truncated: true } : {}),
+    });
+  }
+
+  return kept.reverse();
 }
 
 /**
