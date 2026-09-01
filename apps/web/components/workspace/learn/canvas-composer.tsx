@@ -545,6 +545,18 @@ export function CanvasComposer({
     // typing is the learner answering "the obvious thing", and the caller resolves what that is.
     if (!value && !canStartFromAttachment && selected.length === 0) return;
     setText("");
+    // 🔴 AND THE TRANSCRIPT IS SPENT WITH IT (owner 2026-08-31: *"once it sends things, the chat
+    // composer should be empty until they continue speaking"*). `dictation.stop()` keeps its words,
+    // which is ✓'s contract, where the learner reviews before sending. So a voice turn's auto-send
+    // flipped `listening` with the transcript still full, and the sync effect above wrote the whole
+    // sent turn straight back into the box this line had just cleared; it sat there, looking
+    // editable, for the length of the spoken reply. Worse, that same stray run fired `captured via
+    // "spoken"` AFTER `submitted`, so the NEXT answer was filed as speech even when typed — judged
+    // under the speech-leniency instruction and timed on the speech clock (the exact defect
+    // answer-modality.ts exists to prevent). One reset, in the same batch as the clear: the effect
+    // re-runs against an empty transcript and does neither. The held verdict never reaches this
+    // line, so a graded answer's words still stay in the box.
+    if (dictation.transcript) dictation.reset();
     // 🔴🔴 ONE SWITCH ON ONE VALUE. Same box, same key, different meaning — and the meaning was
     // decided once, by `composerIntent`, from the live surface rather than from which handlers this
     // component happens to hold.
@@ -1183,7 +1195,13 @@ export function CanvasComposer({
                   <button
                     aria-label="Start a voice conversation"
                     className="ml-[8px] flex size-[var(--composer-control)] shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity hover:opacity-90"
-                    onClick={voiceLoop.begin}
+                    onClick={() => {
+                      // A conversation begins from an empty box; this button only exists then. But
+                      // `typedBefore` survives a cancelled dictation, and the sync effect would
+                      // stitch those thrown-away words into the first spoken turn's box.
+                      typedBefore.current = "";
+                      voiceLoop.begin();
+                    }}
                     title="Start a voice conversation"
                     type="button"
                   >
