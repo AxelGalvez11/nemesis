@@ -61,7 +61,17 @@ test("🔴 the front door is NOT inside a canvas, so it keeps its navigation", (
   assert.equal(canvasIsImmersive(learnEntryFromSearch("?import=coursework")), false);
 });
 
-test("🔴 every canvas entry path renders an exit, because nothing can branch around it", () => {
+test("🔴 every canvas entry path renders ONE sheet — the exit it used to guarantee is the rail's now", () => {
+  // 🔴🔴 THE SECOND HALF OF THIS TEST IS GONE, AND THE FIRST HALF IS WHY IT STAYS. It asserted that
+  // `CanvasSurface` renders `<CanvasExit />` unconditionally, because under §38.1 the rail was off
+  // and the × was the only way out of a canvas — a branch that missed it was a dead end. The owner
+  // removed the × on 2026-08-31 (*"since chat is default, the '×' should be gone from the chats"*),
+  // which is only safe because #995 reversed §38.1 the same day: the sidebar collapses to the rail
+  // and the rail stays, so navigation is on screen at all times.
+  //
+  // What is still worth holding is the ONE-SHEET rule underneath it: every branch of the canvas
+  // returns a `CanvasSurface`, never a bare `<main>`. That is what stopped the processing branch
+  // drifting into a surface of its own, and it outlives the control it was written to protect.
   const surface = read("canvas-surface.tsx");
 
   // Every canvas entry goes through LearningCanvas…
@@ -84,41 +94,35 @@ test("🔴 every canvas entry path renders an exit, because nothing can branch a
     assert.equal(tag, "CanvasSurface", `LearningCanvas returned <${tag}> directly; every branch must be a CanvasSurface`);
   }
 
-  // …and CanvasSurface renders the exit with no condition around it.
-  assert.match(surface, /aria-label="Leave the canvas"/, "the exit must keep the label other lanes probe by");
-  const call = /<CanvasExit[^>]*\/>/.exec(surface);
-  assert.ok(call, "CanvasSurface must render <CanvasExit />");
-  // The 200 characters before the call: no `&&`, no `?`, no `{cond`. A conditional exit is the
-  // defect, whatever the condition happens to be.
-  const before = surface.slice(Math.max(0, call.index - 200), call.index);
-  assert.ok(!/&&\s*$/.test(before.trimEnd() + " ".repeat(0)), "the exit must not sit behind `&&`");
+  // …and the surface carries no exit control of its own any more.
   assert.ok(
-    !/[?&|]\s*$/.test(before.trimEnd()),
-    `the exit must not sit behind a condition — found: ${JSON.stringify(before.slice(-60))}`,
-  );
-  // And it takes no prop that could switch it off.
-  assert.ok(
-    !/function CanvasExit\(\{[^}]*\b(hidden|show|visible|enabled)\b/.test(surface),
-    "CanvasExit must not accept a visibility prop; a switch is a branch with a nicer name",
+    !/aria-label="Leave the canvas"/.test(surface),
+    "the canvas grew its own exit again — leaving a chat is the rail's job since the × was removed",
   );
 });
 
-test("the exit is an ×, not a ←", () => {
+test("🔴 the canvas offers no back arrow either — the rail is the only navigation", () => {
   const surface = read("canvas-surface.tsx");
+  // §38.2 said the control inside a canvas is an `×` rather than a `←`, because a back arrow reads
+  // as "the previous canvas" and that is not navigation. Neither control exists now; the rule is
+  // kept as the narrower one it always was — this surface does not paint its own way out.
   assert.ok(
     !/name="arrow-left"/.test(surface),
-    "§38.2: the control inside a canvas is an ×; the back arrow is what it replaced",
+    "§38.2: a back arrow inside a canvas reads as the previous canvas, which is not navigation",
   );
-  // Two strokes crossing. Asserted on the path data rather than on a component name so that
-  // swapping icon libraries cannot quietly turn it back into an arrow.
-  assert.match(surface, /<svg/, "the exit draws an inline SVG, not a webfont glyph that can fail to load");
-  assert.match(surface, /M3\.5 3\.5 L12\.5 12\.5 M12\.5 3\.5 L3\.5 12\.5/, "expected the × to be two crossing strokes");
+  // 🔴 THE × ITSELF IS GONE TOO. The two assertions that stood here pinned its geometry — an inline
+  // SVG rather than a webfont glyph that can fail to load, drawn as two crossing strokes so a
+  // change of icon library could not quietly turn it back into an arrow. Both were right about a
+  // control the owner removed on 2026-08-31; what survives is the rule that this surface paints no
+  // exit of its own, asserted above and in `canvas-exit-reliability.test.ts`.
+  assert.ok(!/M3\.5 3\.5 L12\.5 12\.5/.test(surface), "the × came back — the rail is the way out of a chat now");
 });
 
 test("leaving a canvas lands on the front door, not on the chat surface", () => {
   // 🔴 A DELIBERATE CHANGE OF DESTINATION, PINNED HERE SO IT IS REVERSIBLE IN ONE LINE. `/sessions`
-  // is the chat page; canvases live at `/learn`. Tolerable while the rail was one click away from
-  // every canvas — not once this control is the only way out.
+  // is the chat page; canvases live at `/learn`. It no longer describes a `×` — that control and
+  // its `leave` went on 2026-08-31 — but `CANVAS_EXIT_ROUTE` is still where deleting a canvas
+  // sends you, and pointing that at the chat page would be the same mistake in a quieter place.
   const canvas = read("learning-canvas.tsx");
   assert.match(canvas, /const CANVAS_EXIT_ROUTE = "\/learn"/);
   assert.ok(

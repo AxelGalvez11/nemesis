@@ -421,6 +421,17 @@ export function LearningCanvas({
     return stop;
   }, [canvasId]);
   const strandedTimer = useRef<number | null>(null);
+  /**
+   * Go to the front door, and actually arrive.
+   *
+   * 🔴🔴 THIS OUTLIVED THE `×` IT WAS WRITTEN FOR, AND ALMOST DID NOT. The owner removed the ×
+   * on 2026-08-31 (*"since chat is default, the '×' should be gone from the chats"*) and this was
+   * its only caller, so deleting it looked like tidying dead code. It is not: the soft push is
+   * what #936 found wedging — *"exiting a canvas cause the screen to go blank"* — and the timer
+   * below is the fix, a real page load when the client router fails to land. **Deleting a canvas
+   * still performs exactly that navigation**, so the wedge is still reachable and this is still
+   * the only thing that catches it. It is wired there now instead.
+   */
   const leave = useCallback(() => {
     router.push(CANVAS_EXIT_ROUTE);
     if (strandedTimer.current !== null) window.clearTimeout(strandedTimer.current);
@@ -2005,7 +2016,7 @@ export function LearningCanvas({
   // branch, so this state cannot be reached without one.
   if (!session.ready) {
     return (
-      <CanvasSurface onExit={leave}>
+      <CanvasSurface>
         {/* 🔴 UNCONDITIONAL, UNLIKE THE REAL SURFACE'S. This branch exists only while the canvas is
             being read out of the database, which is only ever on the way in — there is no
             mid-session render of it to protect against, so it needs no `ARRIVING_MS` window. */}
@@ -2309,7 +2320,6 @@ export function LearningCanvas({
       // ("the composer should also have the drop into composer ability"). Two doors to one action
       // is how a fix lands on one of them.
       onDropFiles={attachWithChips}
-      onExit={leave}
       chrome={
       <CanvasHeader
         onToggleView={conversationOffered ? toggleView : undefined}
@@ -2353,7 +2363,10 @@ export function LearningCanvas({
             session.coursePlan?.sources?.length === 1 ? (session.coursePlan.sources[0] ?? null) : null,
         }}
         onDelete={() => {
-          void session.remove().then(() => router.push(CANVAS_EXIT_ROUTE));
+          // 🔴 `leave`, NOT A BARE PUSH. Deleting a canvas is the one remaining navigation away from
+          // this surface, so it is the one that can still strand the learner on a wedged router —
+          // the #936 defect. It gets the fallback the × used to.
+          void session.remove().then(() => leave());
         }}
         // 🔴 The whole policy runtime, not only the instant a question is on screen. Flipping the
         // title and the controls back on for the feedback beat and off again for the next question
@@ -3031,7 +3044,18 @@ export function LearningCanvas({
             re-render with the same sources, so the knowledge key would be unchanged and the policy
             would NOT look again — the button would appear to work and change nothing. Re-mounting
             is the whole mechanism by which reopening from the Library recovered. */}
-        {presence === "quiet" && !checkOwnsSurface && (
+        {/* 🔴🔴 NOT IN A CHAT, WHICH IS WHERE THE "EMPTY PAGE" CAME FROM (owner, 2026-08-31:
+            *"going back into old chats causes empty page"*). `quiet` renders "Nemesis hasn't found
+            anything to ask you about yet" with a Try again that reloads hunting for teaching
+            material — and a reopened conversation whose moments carry no assistant reply lands
+            exactly there. Verified by running `canvasPresentation` on the real shape of his stored
+            canvases (0 blocks, no material, nothing running): aside "reply" gives `reply`, aside
+            "none" gives `quiet`.
+            🔴 It was already reachable before teaching went opt-in; what changed is that it is now
+            indefensible. A product that answers questions must not greet a returning learner by
+            reporting it found nothing to quiz them on. With teaching off the thread and composer
+            are the whole surface, and an empty one is just a new conversation. */}
+        {presence === "quiet" && !checkOwnsSurface && session.coursePlan !== null && (
           <CanvasQuiet
             // 🔴 `relook=1` IS WHAT MAKES THIS BUTTON DO ANYTHING. Without it the reload re-resolves
             // and a remembered empty answer short-circuits before a lane runs — the identical screen,

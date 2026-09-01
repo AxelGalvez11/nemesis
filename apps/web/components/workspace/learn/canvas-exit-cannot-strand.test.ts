@@ -49,11 +49,13 @@ test("🔴 the deadline is cancelled by a working exit, and cannot fire twice", 
 
 test("🔴 it waits longer than a working exit takes, by a real margin", () => {
   const ms = Number(/const STRANDED_MS = ([\d_]+);/.exec(CANVAS)?.[1]?.replace(/_/g, ""));
-  const exitMs = Number(/const EXIT_MS = (\d+);/.exec(SURFACE)?.[1]);
-  assert.ok(Number.isFinite(ms) && Number.isFinite(exitMs), "one of the two timings is no longer readable");
-  // 🔴 THE DEPARTURE ANIMATION IS PART OF THE BUDGET, NOT BESIDE IT: `onExit` is not even called
-  // until `EXIT_MS` has run, so a deadline shorter than that would fire before the push happened.
-  assert.ok(ms > exitMs * 4, `${ms}ms is too close to the ${exitMs}ms departure to be a deadline`);
+  assert.ok(Number.isFinite(ms), "the stranded deadline is no longer readable");
+  // 🔴 THE DEPARTURE ANIMATION USED TO BE PART OF THIS BUDGET AND NO LONGER EXISTS. `EXIT_MS` was
+  // the 200ms the × spent playing `.canvas-exit-out` before `onExit` was called, so the deadline
+  // had to clear it or it would fire before the push happened. The × went on 2026-08-31 and the
+  // navigation is immediate now, which makes the margin larger rather than smaller — so the floor
+  // is asserted directly instead of against a constant that is gone.
+  assert.ok(ms >= 1_000, `${ms}ms is too short to tell a wedged router from a slow one`);
   // And not so long that anyone concludes the product is broken while waiting for it.
   assert.ok(ms <= 4_000, `${ms}ms is long enough for a learner to give up first`);
 });

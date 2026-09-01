@@ -44,7 +44,7 @@
 //
 // 🔴 THE DEPARTURE IS NOW ANIMATED, AND `beginExit` BELOW IS WHERE. It reads as the arrival's own
 // motion played backwards rather than a new effect — see `.canvas-exit-out` in globals.css, which
-// is the arrival's curve, time-reversed. Capped at `EXIT_MS` so the press still feels instant, and
+// was the arrival's curve, time-reversed, capped so the press still felt instant (removed with the
 // a second press while already leaving skips the remainder rather than queuing behind it.
 
 import type * as React from "react";
@@ -116,11 +116,9 @@ const CANVAS_COLUMN_STEP_PX = 856;
  * globals.css for why it does not try to fly the character to a guessed target), so there is
  * nothing here worth 320ms of the learner's attention. 200 is the number the brief names.
  */
-const EXIT_MS = 200;
 
 interface CanvasSurfaceProps {
   /** Leaves the canvas. Always wired; there is no state in which this control is absent. */
-  onExit: () => void;
   /** The rest of the floating control strip — title, sources, objectives. Optional because a
    *  canvas that has not loaded yet has nothing to title, and 🔴 that is precisely the state that
    *  used to render no exit either. */
@@ -131,7 +129,7 @@ interface CanvasSurfaceProps {
   onDropFiles?: (files: FileList) => void;
 }
 
-export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasSurfaceProps) {
+export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfaceProps) {
   // §38.1 — "Side bar should also not be visible when inside canvas." The whole rail, not the
   // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
   // the two live in the same component: you cannot take the claim without taking the `×` with it.
@@ -139,36 +137,18 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
   // 🔴🔴 A SMOOTH DEPARTURE, WHERE THE ARRIVAL HAD ONE AND THE EXIT USED TO HARD-CUT. Owner:
   // *"investigate exiting out of the canvas ... and make sure it has a smooth animation."* See
   // `.canvas-exit-out` in globals.css for the motion itself and why it is the arrival's own curve
-  // played backwards rather than a new effect, and `EXIT_MS` above for why it is capped at 200ms.
+  // played backwards rather than a new effect.
   //
   // 🔴 A REF FOR THE TIMER, NOT A CLOSURE `setTimeout` DISCARDS. `beginExit` has to be able to
   // CANCEL the wait it started — a second press must skip straight to leaving, never queue a
   // second one behind the first.
-  const [leaving, setLeaving] = useState(false);
-  const exitTimer = useRef<number | null>(null);
-  // Cleared on unmount so a route change from anywhere else (the browser's own Back, say) cannot
-  // leave a stale timer calling `onExit` — i.e. `router.push` — a second time after the surface
-  // holding it is already gone.
-  useEffect(() => () => {
-    if (exitTimer.current !== null) window.clearTimeout(exitTimer.current);
-  }, []);
-  const beginExit = () => {
-    // 🔴 REDUCED MOTION SKIPS THE DEPARTURE, NOT THE EXIT — the identical rule the front door's
-    // own arrival follows (canvas-home.tsx's `start`). Checked live, not cached at mount: this is
-    // read once per press, so a preference changed mid-session is honoured on the very next one.
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // 🔴 A SECOND PRESS WHILE ALREADY LEAVING IS NOT A SECOND DEPARTURE — it is the learner telling
-    // this one to hurry up. Cancels whatever is left of the wait and leaves now, which is what
-    // stops a double-press (or an impatient learner holding the key) from ever being able to
-    // strand anyone mid-animation: the worst case is the animation getting skipped, never extended.
-    if (leaving || still) {
-      if (exitTimer.current !== null) window.clearTimeout(exitTimer.current);
-      onExit();
-      return;
-    }
-    setLeaving(true);
-    exitTimer.current = window.setTimeout(onExit, EXIT_MS);
-  };
+  // 🔴🔴 THE DEPARTURE ANIMATION WENT WITH THE `×` (owner, 2026-08-31: *"since chat is default,
+  // the '×' should be gone from the chats"*). `beginExit` existed to play `.canvas-exit-out` for
+  // 200ms and then call `onExit`, and the `×` was its only caller — so keeping it would have left
+  // a state machine, a timer, a cleanup effect and a CSS class that nothing on the surface could
+  // ever reach, under a comment saying they were alive. You leave a chat by opening another one
+  // from the rail now, which is a route change this component never sees.
+  //
   // 🔴 THE CANVAS ACCEPTED DROPS AND SHOWED NOTHING, which is a worse bug than refusing them. The
   // handlers below landed on 2026-08-20 and were correct; the surface simply never said it was a
   // target, so a learner holding a PDF over a canvas saw a page that looked inert and had no way
@@ -192,10 +172,10 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
 
   return (
     <main
-      // 🔴 `.canvas-exit-out` ONLY, NEVER A THIRD CLASS FOR "ARRIVING". The masthead, the header's
-      // own `.canvas-chrome-in` fade and this share one surface without needing to coordinate: the
-      // arrival plays once at mount and is long finished by the time a learner can press the ×.
-      className={`relative h-full min-h-0 bg-(--ui-bg-editor)${leaving ? " canvas-exit-out" : ""}`}
+      // 🔴 THE ARRIVAL STILL ANIMATES; only the departure is gone. The masthead and the header's
+      // own `.canvas-chrome-in` fade share this surface without coordinating — each plays once at
+      // mount. See the note above for why `.canvas-exit-out` no longer has a trigger.
+      className="relative h-full min-h-0 bg-(--ui-bg-editor)"
       // 🔴🔴 DROPPING A FILE ON THE CANVAS DID NOTHING AT ALL UNTIL NOW. Owner, 2026-08-20: *"the
       // composer doesnt allow me to drop in multiple attachments before sending."* The FRONT DOOR
       // has had a drop handler since it was built (`canvas-home.tsx`); the canvas never did, so the
@@ -317,55 +297,17 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
         className="canvas-chrome-in pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
         style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
       >
-        <CanvasExit onExit={beginExit} />
+        {/* 🔴🔴 NO `×` ON A CHAT (owner, 2026-08-31: *"since chat is default, the '×' should be gone
+            from the chats"*). It existed because §38.1 took the rail away and made it the only way
+            out; the rail is back as of #995, so the × was a second exit sitting in the corner the
+            shell's own toggle also paints in. A conversation you leave by clicking another one in
+            the sidebar does not need a close button, and ChatGPT has none.
+            🔴 THE DEPARTURE MACHINERY WENT WITH IT — see the note in the body. It had exactly one
+            caller, and a timer nothing can start is not a feature in reserve, it is a lie. */}
         {chrome}
       </header>
 
       {children}
     </main>
-  );
-}
-
-/**
- * The `×`. §38.2: *"When inside a canvas the 'back button' should be an `×`."*
- *
- * 🔴 AN INLINE SVG, NOT THE ICON FONT THE REST OF THIS SURFACE USES. Every other glyph here is a
- * `Codicon`, which is a `<i class="codicon codicon-…">` styled by a webfont: if that font fails to
- * load the element still exists, still measures, still takes clicks — and draws nothing. For an
- * ordinary decorative glyph that is a cosmetic risk. For the only way out of a canvas it is the
- * dead end again, arriving through the asset pipeline instead of through a branch. An SVG cannot
- * fail to paint once the markup is on the page.
- *
- * 🔴 `aria-label` IS UNCHANGED — "Leave the canvas". The glyph changed, the control did not, and
- * other lanes probe this surface by that exact string.
- */
-function CanvasExit({ onExit }: { onExit: () => void }) {
-  return (
-    <button
-      aria-label="Leave the canvas"
-      className="pointer-events-auto flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[8px] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
-      onClick={onExit}
-      title="Leave the canvas"
-      type="button"
-    >
-      {/* 🔴 20px, MEASURED OFF CHATGPT (2026-08-20): its header glyphs are 20×20 inside a 36×36
-          button, and every one of ours was 14–15px inside 28×28. Written in px because every rem in
-          apps/web is 1.125× its number — `html{font-size:112.5%}` is deliberate and set three times.
-          🔴 THE STROKE THINS TO 1.75 AS THE GLYPH GROWS. A 2px stroke that read as crisp at 14px
-          reads as heavy at 20px, and this `×` would then be the boldest mark on a surface whose
-          whole argument is quiet. */}
-      <svg
-        aria-hidden="true"
-        fill="none"
-        height="20"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.75"
-        viewBox="0 0 16 16"
-        width="20"
-      >
-        <path d="M3.5 3.5 L12.5 12.5 M12.5 3.5 L3.5 12.5" />
-      </svg>
-    </button>
   );
 }

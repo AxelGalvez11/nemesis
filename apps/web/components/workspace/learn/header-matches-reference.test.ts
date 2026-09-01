@@ -32,8 +32,11 @@ const controls = code(CONTROLS);
 
 test("🔴 every header control is 36×36, the reference's box", () => {
   // Calibration: put either back to `h-[28px] w-[28px]` and this reddens.
+  // 🔴 THE `×` WAS THE OTHER HALF OF EVERY PAIR IN THIS FILE, and it was removed on 2026-08-31
+  // (owner: *"since chat is default, the '×' should be gone from the chats"*). Each assertion
+  // against `surface` measured that one control; the `controls` half still measures the header
+  // row the reference was taken from, and the 28px floor still covers both files.
   assert.match(controls, /h-\[36px\] w-\[36px\]/, "the sources/progress/options controls are not the reference size");
-  assert.match(surface, /h-\[36px\] w-\[36px\]/, "the exit is not the reference size");
   assert.ok(!/h-\[28px\] w-\[28px\]/.test(controls + surface), "a 28px control is back in the header");
 });
 
@@ -42,14 +45,12 @@ test("🔴 the glyphs are 20px, not the old 14–15", () => {
   // number, which is how `0.8125rem` was ever chosen and how it silently painted 14.6px.
   assert.match(controls, /size="20px"/);
   assert.ok(!/size="0\.8125rem"/.test(controls), "a rem-sized glyph is back, and it will not measure what it says");
-  assert.match(surface, /height="20"[\s\S]{0,200}?width="20"/, "the exit glyph is not 20px");
 });
 
 test("🔴🔴 the radius is a rounded SQUARE, not a pill", () => {
   // At 28px `rounded-lg` resolved to 13.5px — half the box — so these were circles. The reference
   // is 8px at 36px. Pinned in px so it cannot drift with the box size again.
   assert.match(controls, /rounded-\[8px\]/);
-  assert.match(surface, /rounded-\[8px\]/);
 });
 
 test("🔴 the row is tall enough to hold them", () => {
@@ -62,7 +63,6 @@ test("🔴 the colour is UNCHANGED, and that is a finding rather than an omissio
   // Within a hair, and both go to full-strength text on hover. Chasing three units of grey would be
   // a change nobody could see, and a guard that demanded a new token would be inventing work.
   assert.match(controls, /text-\(--ui-text-tertiary\)[\s\S]{0,160}?hover:text-\(--ui-text-primary\)/);
-  assert.match(surface, /text-\(--ui-text-tertiary\)[\s\S]{0,200}?hover:text-\(--ui-text-primary\)/);
 });
 
 // ── every panel on this row shares one right edge ────────────────────────────
