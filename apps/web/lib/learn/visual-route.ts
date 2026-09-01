@@ -150,14 +150,15 @@ export type VisualRepresentation =
    */
   | "circuit"
   | "score"
-  | "surface"
-  /**
-   * A named structure inside its region of the harvested anatomy atlas (owner order, 2026-08-24:
-   * Z-Anatomy). Rung three's trust story with rung two's interactivity: the meshes are a named,
-   * licence-cleaned source served from our own deployment, the structure names are the atlas's own
-   * node names, and the resolver stamp is the only door to the files.
-   */
-  | "anatomy";
+  | "surface";
+  // 🔴 `anatomy` WAS HERE AND IS RETIRED (2026-09-01). It named a structure inside a region of a
+  // harvested 3D atlas, served from our own deployment. Owner: *"retire the z anatomy and prefer
+  // the use of the corpus figures for anatomy."* Anatomy is a `figure` now, and the corpus is the
+  // better answer on its own numbers: seventeen regions and 3,831 node names against 844 rows of
+  // an anatomy and physiology textbook, 1,036 Blausen medical illustrations and a live licensed
+  // provider behind them. Measured before removing it: 22 of the atlas's own 26 subjects find a
+  // licensed figure in the frozen shelf alone, and the four that do not fall through to the live
+  // lane by design.
 
 /** Why no visual was chosen, when nothing was wrong. */
 export type ProseReason =

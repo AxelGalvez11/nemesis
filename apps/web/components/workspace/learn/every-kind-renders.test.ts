@@ -31,7 +31,10 @@ const SEMANTIC = readFileSync(new URL("./semantic-visual.tsx", import.meta.url),
 
 test("🔴 the kinds are read from the renderers, not from a list in this file", () => {
   assert.ok(RENDERABLE.length >= 15, `only ${RENDERABLE.length} kinds found — the source files moved or changed shape`);
-  for (const expected of ["figure", "anatomy", "circuit", "score", "surface"]) {
+  // 🔴 "anatomy" WAS IN THIS SAMPLE AND IS RETIRED (2026-09-01). It is not replaced here by another
+  // name: the sample exists to prove the READER still works, and `figure` is now the shape anatomy
+  // travels as, which this list already checks.
+  for (const expected of ["figure", "circuit", "score", "surface"]) {
     assert.ok(RENDERABLE.includes(expected), `${expected} is no longer discoverable from the renderer files`);
   }
 });

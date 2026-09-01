@@ -768,15 +768,19 @@ const NEMESIS_SYSTEM = [
   // 🔴 THE GUARD THAT LET THIS THROUGH NOW CHECKS SHAPES TOO — see `visuals-are-told.test.ts`. The
   // old one held "is this kind named?" and the answer was yes; the question that mattered was "can
   // the model actually write one?"
-  "Four of those take a NAME and nothing else, because the data is looked up rather than recalled: "
-  + "{\"kind\":\"anatomy\",\"structure\":\"uterus\"} shows an interactive 3D body region with that "
-  + "structure picked out and the rest ghosted, any bone, muscle, vessel, nerve or organ, male or "
-  + "female. {\"kind\":\"macromolecule\",\"accession\":\"1HHO\"} shows a rotatable protein. "
+  // 🔴 THREE, NOT FOUR: the 3D anatomy atlas was retired 2026-09-01 (owner: *"retire the z anatomy
+  // and prefer the use of the corpus figures for anatomy"*). Anatomy is named inside `figure`
+  // below, where the corpus already holds 844 rows of an anatomy and physiology textbook and 1,036
+  // Blausen medical illustrations against the atlas's seventeen regions.
+  "Three of those take a NAME and nothing else, because the data is looked up rather than recalled: "
+  + "{\"kind\":\"macromolecule\",\"accession\":\"1HHO\"} shows a rotatable protein. "
   + "{\"kind\":\"structure\",\"notation\":\"smiles\",\"value\":\"…\"} draws a molecule, and for a "
   + "NAMED compound prefer [compound: aspirin] so it is looked up instead. "
   + "{\"kind\":\"figure\",\"subject\":\"the stages of meiosis\"} finds a real licensed diagram or "
   + "photograph and shows it with its credit, thousands of them, across biology, biochemistry, "
-  + "microbiology, anatomy, chemistry, physics and astronomy. Reach for them whenever WHERE "
+  + "microbiology, anatomy, chemistry, physics and astronomy. ANATOMY IS A FIGURE: for a bone, a "
+  + "muscle, a vessel, a nerve or an organ, ask for a labelled diagram of it by name and one is "
+  + "found. Reach for them whenever WHERE "
   + "something sits or WHAT SHAPE it is are the thing to understand.",
 
   // 🔴🔴 THE POSITIVE INSTRUCTION FOR `figure`, BECAUSE THE OTHER FOURTEEN KINDS COMPUTE AND THIS

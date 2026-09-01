@@ -572,7 +572,6 @@ function RoutedVisual({ visual }: { visual: CanvasBlock["visual"] }) {
     && route.representation !== "score"
     && route.representation !== "circuit"
     && route.representation !== "surface"
-    && route.representation !== "anatomy"
   ) {
     return null;
   }

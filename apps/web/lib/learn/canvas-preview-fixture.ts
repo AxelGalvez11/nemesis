@@ -358,21 +358,27 @@ export function lessonSeed(): LearningCanvas {
         id: "b9m",
         type: "paragraph",
         content:
-          "And anatomy gets the whole body, not just the skeleton: here is the liver picked out among the abdominal organs, turned by hand. Ask for a muscle, a nerve, an artery or an organ and the atlas frames it the same way.",
+          "And anatomy is answered the way the rest of the corpus is: a licensed figure from an open textbook or medical atlas, credited under the picture. Here the liver sits among the organs it shares the upper abdomen with.",
         conceptIds: ["k5"],
-        // 🔴 THE ANATOMY LANE ON SOFT TISSUE, STAMPED AS THE ROUTE STAMPS IT: the atlas's own node
-        // name, a same-origin mesh path, and the ghost-everything-else highlight the viewer owes.
+        // 🔴 ANATOMY IS A FIGURE NOW, AND THIS BLOCK IS THE PROOF. It carried the retired 3D atlas
+        // lane until 2026-09-01 (owner: *"retire the z anatomy and prefer the use of the corpus
+        // figures for anatomy"*). The row below is a real shelf entry, licence and credit as
+        // harvested, so the harness draws anatomy through exactly the path a lesson now takes.
         visual: {
-          kind: "anatomy",
-          learningGoal: "Place the liver among the abdominal organs",
-          resolved: {
-            assetPath: "/anatomy/visceral-systems.glb",
-            region: "visceral-systems",
-            regionTitle: "Internal organs",
-            source: "z-anatomy",
-            structures: ["Liver"],
+          asset: {
+            assetPath: "https://upload.wikimedia.org/wikipedia/commons/0/07/Blausen_0428_Gallbladder-Liver-Pancreas_Location.png",
+            caption: "Gallbladder, liver and pancreas, and where each one sits.",
+            licence: {
+              attribution: "BruceBlaus",
+              licence: "CC-BY-3.0",
+              source: "Wikimedia Commons",
+              url: "https://commons.wikimedia.org/wiki/File:Blausen_0428_Gallbladder-Liver-Pancreas_Location.png",
+            },
+            provenance: "reference_image",
           },
-          structure: "liver",
+          kind: "figure",
+          learningGoal: "Place the liver among the abdominal organs",
+          subject: "liver gallbladder pancreas location",
         },
       },
       { id: "b10", type: "heading", content: "Why this matters" },

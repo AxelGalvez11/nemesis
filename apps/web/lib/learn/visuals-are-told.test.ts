@@ -84,8 +84,11 @@ const PHRASE_FOR_KIND: Record<string, RegExp> = {
  * has to reproduce exactly. A shape sentence that mentions a kind without naming its fields would
  * pass a prose match and still leave the model guessing.
  */
+// 🔴 `anatomy` LEFT THIS MAP ON 2026-09-01 WITH THE LANE ITSELF. A stale entry here is a
+// dead expectation, not a harmless one: it would keep asserting that the packet advertises a
+// shape the validator now refuses, which is the exact failure the `mechanism` note below
+// records in the other direction.
 const SHAPE_FOR_KIND: Record<string, RegExp> = {
-  anatomy: /"kind":"anatomy","structure"/,
   circuit: /circuit \{elements:\{arrangement/,
   code: /code \{language, source, trace\}/,
   construction: /construction \{points:\[\{id,x,y\}\], segments/,
@@ -139,7 +142,10 @@ test("🔴 the renderable kinds are read from the renderers, not from a list in 
   // If this ever reads a hardcoded array, the guard becomes a copy that drifts alongside the one
   // it is supposed to be checking.
   assert.ok(RENDERABLE.length >= 15, `only ${RENDERABLE.length} kinds found — the source files moved or changed shape`);
-  for (const expected of ["anatomy", "circuit", "score", "macromolecule", "surface"]) {
+  // 🔴 "anatomy" WAS IN THIS SAMPLE UNTIL THE LANE WAS RETIRED (2026-09-01). The sample proves the
+  // READER still works against the renderer files; `figure`, which anatomy travels as now, is
+  // checked by the whole-map tests below.
+  for (const expected of ["figure", "circuit", "score", "macromolecule", "surface"]) {
     assert.ok(RENDERABLE.includes(expected), `${expected} is no longer discoverable from the renderer files`);
   }
 });
