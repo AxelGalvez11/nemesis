@@ -106,8 +106,12 @@ test("🔴 every read and write survives the table not existing yet", () => {
 });
 
 test("🔴 memory is loaded once per turn, not once per search round", () => {
+  // 2026-08-31: the read rides the turn's one Promise.all gather now (four independent context
+  // reads that used to queue behind each other). Still exactly once, still before `ask` exists.
   const body = CHAT.slice(CHAT.indexOf("const materialContext"), CHAT.indexOf("const ask ="));
-  assert.match(body, /memoryBlock\(await loadMemory\(uid\)\)/, "memory moved inside the per-round call");
+  assert.match(body, /loadMemory\(uid\)/, "memory left the per-turn gather");
+  assert.match(body, /memoryBlock\(memoryRows\)/, "the gathered rows never become the packet block");
+  assert.ok(!/loadMemory/.test(CHAT.slice(CHAT.indexOf("const ask ="))), "memory moved inside the per-round call");
 });
 
 test("🔴 the migration ships with the code that needs it", () => {

@@ -50,6 +50,7 @@ import { groundingBlock } from "@/lib/learn/canvas-grounding";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { prepareAnswer } from "@/lib/learn/answer-prepare";
 import { fillMissingFigures } from "@/lib/learn/figure-fallback";
+import { spokenOpenerWatch } from "@/lib/learn/spoken-opener";
 import type { TurnStage } from "@/lib/learn/turn-preview";
 import {
   decisionOrReply,
@@ -330,74 +331,103 @@ export async function askCanvasChat(
    * only give the model a way to overrule somebody who was explicit.
    */
   forceWeb = false,
+  /**
+   * The reply's first sentence, the moment the STREAM proves it safe to speak — the voice
+   * conversation's head start. Fires at most once per turn, only on a spoken conversation, and
+   * only when `spoken-opener.ts`'s watcher can promise the sentence is exactly what the finished
+   * pipeline would speak first. Passing it turns the model call into a streamed one; not passing
+   * it leaves every request byte-identical to before this parameter existed.
+   */
+  onSpokenOpener?: (opener: string) => void,
 ): Promise<CanvasTurnReply> {
   const materialContext = groundingBlock(canvas.sources);
 
-  // The learner's own margin notes, riding every turn the way the material does. One read, and a
-  // failure means an empty block — a turn must never be lost to the comments table being slow.
-  const pinnedComments = await pinnedCommentsBlock(uid, canvas);
-  // 🔴 LOADED ONCE PER TURN, NOT ONCE PER ROUND. `ask` runs again when a web search comes back,
-  // and re-reading the learner's memory for the second round would be a second query for an
-  // answer that cannot have changed in the intervening seconds.
+  // 🔴 FOUR READS, ONE WAIT. These are four independent tables (and one provider catalogue), and
+  // they used to run one after another — a quarter to a full second of queue time before the
+  // model was even asked, on EVERY turn. Each still owns its own failure (all four return their
+  // empty shape rather than throwing), so the gather cannot lose a turn that the sequence
+  // would have kept.
   //
-  // 🔴 AND IT NEVER BLOCKS THE TURN. `loadMemory` swallows its own failures and returns [] —
-  // including when the table has not been migrated yet — so a canvas still answers with no
-  // memory rather than not answering at all.
-  const memory = memoryBlock(await loadMemory(uid));
-
-  // The standing instructions of the project this canvas is filed in (owner 2026-08-30, the
-  // reference's model). Same contract as memory: one read per turn, and every failure is an
-  // empty block — a turn is never lost to the folders table.
-  const project = await loadProjectInstructions(uid, canvas.id);
+  // The individual contracts are unchanged:
+  // · pinnedComments — the learner's own margin notes, riding every turn the way the material
+  //   does; a failure means an empty block, never a lost turn.
+  // · memory — loaded once per turn, not once per round (`ask` runs again when a search comes
+  //   back, and the answer cannot have changed in the intervening seconds); swallows its own
+  //   failures, including the table not having been migrated yet.
+  // · project instructions (owner 2026-08-30, the reference's model) — same contract as memory.
+  // · tool catalogue — one lookup for the whole turn, and it cannot fail the turn:
+  //   `composioTools()` returns an empty catalogue for every problem, and an empty catalogue
+  //   means the packet is exactly what it was before connected apps existed.
+  const [pinnedComments, memoryRows, project, catalogue] = await Promise.all([
+    pinnedCommentsBlock(uid, canvas),
+    loadMemory(uid),
+    loadProjectInstructions(uid, canvas.id),
+    loadToolCatalogue(),
+  ]);
+  const memory = memoryBlock(memoryRows);
   const projectInstructions = project
     ? `The project is called "${project.name}".\n${project.instructions}`
     : "";
 
-  /** One round of the envelope. `webContext` carries everything found so far; empty on the first. */
-  // 🔴 ONE LOOKUP FOR THE WHOLE TURN, AND IT CANNOT FAIL THE TURN. `composioTools()` returns an
-  // empty catalogue for every problem — no key, nothing connected, a network blip — and an empty
-  // catalogue means the packet is exactly what it was before connected apps existed.
-  const catalogue = await loadToolCatalogue();
-
-  const ask = (webContext: string, searchesLeft: number, toolContext: string, toolRoundsLeft: number) => postChatCompletion(
-    uid,
-    turnRouterMessages({
-      context: {
-        canvasTitle: canvas.title,
-        clarified: surroundings.clarified,
-        demonstrated: surroundings.demonstrated,
-        history: surroundings.history,
-        materialContext,
-        memory,
-        objectives: surroundings.objectives,
-        passages: canvas.blocks.length,
-        sources: canvas.sources.length,
-        // The learner's own day, formatted the way they would say it. Read here rather than inside the
-        // packet builder so `turnRouterMessages` stays pure and its tests stay deterministic.
-        today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
-        lessonInProgress: surroundings.lessonInProgress,
-        spokenConversation: surroundings.spokenConversation,
-        courseRequested,
-        projectInstructions,
-        searchesLeft,
-        pinnedComments,
-        stagedPassage,
-        toolCatalogue: catalogue.block,
-        toolContext,
-        toolRoundsLeft,
-        webContext,
-      },
-      sourceRule: sourceDisagreementInstruction({
-        hasAttachedMaterial: materialContext.trim().length > 0,
-        hasExternalEvidence: webContext.trim().length > 0,
+  const ask = (webContext: string, searchesLeft: number, toolContext: string, toolRoundsLeft: number) => {
+    // 🔴 ONE WATCHER PER ROUND, AND ONLY THE ANSWERING ROUND CAN FIRE. A round that decides to
+    // search or to call tools stands its own watcher down (the decision block says so before any
+    // prose), and the next round starts a fresh one — so the sentence handed to `onSpokenOpener`
+    // always comes from the round whose prose IS the final answer.
+    //
+    // 🔴 STREAMING RIDES ONLY THE SPOKEN LANE. Without the callback the request is byte-identical
+    // to what every typed turn has always sent — the valve meters a streamed completion exactly
+    // (it asks the provider for the final usage chunk), but there is no reason to change the wire
+    // shape of turns that gain nothing from it.
+    const watch = surroundings.spokenConversation && onSpokenOpener ? spokenOpenerWatch() : null;
+    return postChatCompletion(
+      uid,
+      turnRouterMessages({
+        context: {
+          canvasTitle: canvas.title,
+          clarified: surroundings.clarified,
+          demonstrated: surroundings.demonstrated,
+          history: surroundings.history,
+          materialContext,
+          memory,
+          objectives: surroundings.objectives,
+          passages: canvas.blocks.length,
+          sources: canvas.sources.length,
+          // The learner's own day, formatted the way they would say it. Read here rather than inside the
+          // packet builder so `turnRouterMessages` stays pure and its tests stay deterministic.
+          today: new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", weekday: "long", year: "numeric" }),
+          lessonInProgress: surroundings.lessonInProgress,
+          spokenConversation: surroundings.spokenConversation,
+          courseRequested,
+          projectInstructions,
+          searchesLeft,
+          pinnedComments,
+          stagedPassage,
+          toolCatalogue: catalogue.block,
+          toolContext,
+          toolRoundsLeft,
+          webContext,
+        },
+        sourceRule: sourceDisagreementInstruction({
+          hasAttachedMaterial: materialContext.trim().length > 0,
+          hasExternalEvidence: webContext.trim().length > 0,
+        }),
+        utterance: question,
       }),
-      utterance: question,
-    }),
-    {
-      decision: CHAT_DECISION,
-      signal,
-    },
-  );
+      {
+        decision: CHAT_DECISION,
+        signal,
+        ...(watch
+          ? {
+              onDelta: (_delta: string, accumulated: string) => {
+                const opener = watch.feed(accumulated);
+                if (opener) onSpokenOpener?.(opener);
+              },
+            }
+          : {}),
+      },
+    );
+  };
 
   /**
    * How far this turn has actually got.

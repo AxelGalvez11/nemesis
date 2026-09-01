@@ -189,7 +189,11 @@ test("🔴🔴 autoplay is DEAD; a voice CONVERSATION is the one session that st
   assert.ok(!existsSync(new URL("../../../lib/learn/voice-preferences.ts", import.meta.url)), "the mode's preference file is back");
   // 🔴 The half of the old autoplay effect that was never about the setting stays: a new answer
   // still silences the previous answer's audio, because that audio belongs to what it narrates.
-  assert.match(VOICE_HOOK, /if \(arrived\) replyAudio\.stop\(\);/, "a replaced answer keeps talking");
+  // (2026-08-31: one guard grew ON the same line — a voice conversation primes the reply's own
+  // first sentence mid-turn, and stopping THAT audio would cut the arriving answer mid-word.
+  // The previous answer is still silenced: the turn-start pass runs before any prime exists.
+  // The guard itself is pinned in voice-conversation.test.ts.)
+  assert.match(VOICE_HOOK, /if \(arrived && player\.primedOpener\(\) === null\) replyAudio\.stop\(\);/, "a replaced answer keeps talking");
   assert.match(
     VOICE_HOOK,
     /if \(!arrived \|\| !replyKey \|\| !reply \|\| !alwaysSpeak\) return;\n    replyAudio\.start\(reply\.text\)/,
@@ -244,8 +248,9 @@ test("🔴🔴 changing the playback speed touches the ELEMENT, never the provid
 test("🔴🔴 audio starts on the FIRST bytes, not on the last", () => {
   // The routes both stream and the client used to throw that away with `await res.blob()`, which
   // waits for the last byte before the first can be played. Calibration: replace `pumpInto` with a
-  // blob read and this reddens.
-  assert.match(AUDIO_HOOK, /pumpInto\(bag, response\.body, beginPlayback, stale\)/);
+  // blob read and this reddens. (2026-08-31: the loop moved into `speakInto` and the session owns
+  // the begin closure — same pump, same first-bytes start, shared now by `start` and `prime`.)
+  assert.match(AUDIO_HOOK, /pumpInto\(session\.bag, response\.body, session\.begin, stale\)/);
   const STREAM = readFileSync(new URL("../../../lib/learn/audio-stream.ts", import.meta.url), "utf8");
   assert.match(STREAM, /onFirstBytes\?\.\(\)/, "nothing reports the moment playback can start");
   assert.match(STREAM, /mp3StreamingSupported/, "there is no streaming path at all");

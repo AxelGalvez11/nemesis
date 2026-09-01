@@ -37,6 +37,25 @@ export interface CanvasVoice {
    * only possible control was play/stop. See `use-response-audio.ts`.
    */
   replyAudio: ResponseAudio;
+  /**
+   * The reply's first sentence, read out of the model's stream MID-TURN — the voice
+   * conversation's head start (measured 2026-08-31: the sentence exists 1.6–2.2s in, the full
+   * reply at 2.7–4.7s, and the player used to wait for all of it).
+   *
+   * 🔴 A NO-OP OUTSIDE A VOICE SESSION, AND THE GATE LIVES HERE. `spoken-opener.ts` only watches
+   * spoken turns, but this is the arbiter's floor: nothing may start audio uninvited, so the same
+   * `alwaysSpeak` that authorises the automatic play below authorises the head start — and it
+   * takes the same arbiter path, so a primed opener silences the narration lane exactly the way
+   * a pressed play does.
+   */
+  primeReply: (opener: string) => void;
+  /**
+   * The turn settled; `replyArrived` says whether a reply is coming to the autoplay effect. When
+   * none is — the turn failed, or acted without speaking — a primed head start is sealed so the
+   * opener plays out and the conversation loop's "playback finished" rule still fires. When one
+   * is, this does nothing: `start` continues the primed timeline itself.
+   */
+  concludePrime: (replyArrived: boolean) => void;
   /** Speak an arbitrary passage on demand; pressing again repeats it. */
   speakAloud: (text: string) => void;
   /**
@@ -222,8 +241,14 @@ export function useCanvasVoice(reply: SpokenReply | null = null, alwaysSpeak = f
     // A new answer replaces the old one on screen; its audio must go with it, whether or not the
     // next one will play. Leaving the previous player open under a different answer is the
     // "controls that do not belong to what you are looking at" failure.
+    //
+    // 🔴 EXCEPT WHEN THE ARRIVING ANSWER IS THE ONE ALREADY SPEAKING. A voice conversation primes
+    // the reply's first sentence mid-turn, so by the time the reply lands here its own audio is
+    // playing — stopping it would cut the sentence mid-word only to start it again. The primed
+    // record can only belong to this arrival: the turn-start pass through this effect (reply null)
+    // already stopped the PREVIOUS answer's audio before any prime existed.
     const arrived = autoplayed.current !== replyKey;
-    if (arrived) replyAudio.stop();
+    if (arrived && player.primedOpener() === null) replyAudio.stop();
     autoplayed.current = replyKey;
     // 🔴 ONLY WHEN THE ANSWER IS NEW, NEVER WHEN THE SETTING CHANGES. Switching autoplay on while an
     // answer is already on screen would make the toggle read the paragraph you are in the middle of
@@ -245,6 +270,18 @@ export function useCanvasVoice(reply: SpokenReply | null = null, alwaysSpeak = f
 
   return {
     replyAudio,
+    // The head start. Gated on the session, silenced like a press — see the interface note.
+    primeReply: (opener: string) => {
+      if (!alwaysSpeak) return;
+      hushNarration();
+      player.prime(opener);
+    },
+    concludePrime: (replyArrived: boolean) => {
+      // A reply is coming: the autoplay effect's `start` continues the primed timeline itself,
+      // and sealing here would race it — the sink must stay open for the rest of the plan.
+      if (replyArrived) return;
+      player.settleStream();
+    },
     // 🔴 THE PLAYER YIELDS TO A REPLAY PRESS, like every other cross-lane start. Delegates the
     // repeat itself to the speech lane, which owns the fresh-key rule.
     replay: (text, voice) => {
