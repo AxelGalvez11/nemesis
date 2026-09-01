@@ -79,7 +79,42 @@ export function SourcePreview({
   open: readonly CanvasSource[];
   uid: string | null;
 }) {
-  const [state, setState] = useState<PreviewState>({ kind: "loading" });
+  /**
+   * One state PER OPEN DOCUMENT, not one for whichever is in front.
+   *
+   * 🔴🔴 THE REMOUNT WAS THE SLOWNESS (owner, 2026-09-01: *"slow (it has to load each pdf
+   * continually)"*). A single state plus a reader keyed by source meant every tab switch threw the
+   * previous reader away and built a new one: the file fetched again, re-parsed by pdf.js,
+   * re-rendered from page one, with the scroll position, zoom and search going with it.
+   *
+   * 🔴 AND THE KEYING WAS RIGHT FOR THE REASON IT GAVE. One reader handed a different document
+   * would carry the previous one's zoom, mode and outline into it. Keeping a reader PER document
+   * answers both: each keeps its own state because each IS its own instance, and none is thrown
+   * away. Bounded by however many the learner opened, which is a handful.
+   */
+  const [states, setStates] = useState<Readonly<Record<string, PreviewState>>>({});
+
+  /**
+   * How many documents may be rendered at once.
+   *
+   * 🔴🔴 THREE, AND THE NUMBER IS A TRUCE BETWEEN TWO MEASURED FACTS. Rendering only the front tab
+   * meant every switch remounted the reader — fetch, re-parse, re-render from page one, scroll and
+   * zoom lost (owner, 2026-09-01: *"slow (it has to load each pdf continually)"*). But rendering
+   * ALL of them is what the previous design refused for a reason that is still true and still
+   * measured: `slides-document-view.tsx` puts a full-size slide at ~20 MB, so six decks alive at
+   * once is a seized browser.
+   *
+   * Three keeps the gesture people actually make — flipping between two documents, occasionally a
+   * third — instant, and bounds the worst case at roughly what one deck already costs. The rest
+   * remount, exactly as they did before, which is the old behaviour surviving where it was right.
+   */
+  const MOUNT_LIMIT = 3;
+  /** Most recently looked at first. */
+  const [recent, setRecent] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (!activeId) return;
+    setRecent((current) => [activeId, ...current.filter((id) => id !== activeId)].slice(0, MOUNT_LIMIT));
+  }, [activeId]);
   const { dragging, onDragStart, width } = useDockWidth();
   // 🔴 THE HARNESS MAKES NO NETWORK CALLS — `preview-context.tsx` says so in as many words, and this
   // panel was quietly breaking it: the dev preview signs a mock session, so `uid` is set, so the row
@@ -100,39 +135,48 @@ export function SourcePreview({
 
   const active = open.find((source) => source.id === activeId) ?? null;
 
+  // 🔴 RESOLVES EACH DOCUMENT ONCE AND NEVER AGAIN. Keyed on the ids so re-running for a newly
+  // opened tab does not re-fetch the ones already resolved — which would put the network cost back
+  // that keeping them mounted exists to remove.
+  // 🔴 ONLY WHAT IS MOUNTED IS FETCHED. Resolving all six would pay the download for documents
+  // nothing is going to render, which is the cost this whole change exists to remove.
+  const mounted = new Set(recent.slice(0, MOUNT_LIMIT));
+  const openIds = open.filter((source) => mounted.has(source.id)).map((source) => source.id).join(",");
   useEffect(() => {
-    if (!active) return;
     let live = true;
-    setState({ kind: "loading" });
-    void (async () => {
-      if (!active.librarySourceId) {
-        setState({
-          kind: "unavailable",
-          reason:
-            "This source wasn't filed to your Library, so the original file isn't kept to view.",
-        });
-        return;
-      }
-      const row = await loadLibrarySource(uid, active.librarySourceId, {
-        preview,
-      });
-      if (!live) return;
-      if (!row) {
-        setState({
-          kind: "unavailable",
-          reason: "The original file couldn't be reached just now.",
-        });
-        return;
-      }
-      // 🔴 THE LIBRARY'S OWN PROJECTION, NOT A SECOND READING OF THE FILENAME. `readerSourceFromLibrary`
-      // is what the Library page hands the reader; building a `ReaderSource` by hand here would be a
-      // second opinion about what kind a file is, free to disagree with the page next door.
-      setState({ kind: "ready", source: readerSourceFromLibrary(row) });
-    })();
+    for (const source of open) {
+      if (states[source.id] || !mounted.has(source.id)) continue;
+      const id = source.id;
+      const put = (next: PreviewState) => {
+        if (live) setStates((current) => ({ ...current, [id]: next }));
+      };
+      put({ kind: "loading" });
+      void (async () => {
+        if (!source.librarySourceId) {
+          put({
+            kind: "unavailable",
+            reason:
+              "This source wasn't filed to your Library, so the original file isn't kept to view.",
+          });
+          return;
+        }
+        const row = await loadLibrarySource(uid, source.librarySourceId, { preview });
+        if (!row) {
+          put({ kind: "unavailable", reason: "The original file couldn't be reached just now." });
+          return;
+        }
+        // 🔴 THE LIBRARY'S OWN PROJECTION, NOT A SECOND READING OF THE FILENAME.
+        // `readerSourceFromLibrary` is what the Library page hands the reader; building a
+        // `ReaderSource` by hand here would be a second opinion about what kind a file is, free to
+        // disagree with the page next door.
+        put({ kind: "ready", source: readerSourceFromLibrary(row) });
+      })();
+    }
     return () => {
       live = false;
     };
-  }, [active, preview, uid]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openIds, preview, uid]);
 
   // Escape closes, same as every transient surface on the canvas.
   useEffect(() => {
@@ -262,49 +306,70 @@ export function SourcePreview({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {state.kind === "loading" && (
-          <p className="py-8 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
-            Opening the document…
-          </p>
-        )}
-        {state.kind === "unavailable" && (
-          <p className="py-8 text-center text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
-            {state.reason}
-          </p>
-        )}
-        {/* 🔴🔴 `grounded`, BECAUSE THIS PANEL CAN ONLY EVER OPEN A SOURCE THE CANVAS ALREADY HOLDS.
-            The reader's default is to attach its own extracted text to every action, which is right
-            in the Library — that chat has never read the file. Here it would file the same document
-            into the same canvas twice on every "Explain this". Only genuinely new material travels:
-            the cut-out of a marked area. See `DocumentReader`'s prop.
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {/* 🔴🔴 EVERY OPEN DOCUMENT IS MOUNTED; ONLY THE FRONT ONE IS SHOWN. The previous version
+            rendered the active source alone, keyed by its id — a clean remount on every tab switch,
+            which is exactly the cost the owner reported as *"it has to load each pdf continually"*.
+            Hiding instead of unmounting keeps pdf.js's rendered canvases, the scroll position, the
+            zoom and the search alive, and each reader still owns its own state because each is
+            still its own instance. The reason the key was there is preserved; the remount is not.
 
-            🔴 The action bar appears only because `onSendToChat` is passed. Without it the reader
-            hides the bar rather than offering controls with nowhere to send.
+            🔴 `hidden` MUST NOT BE `display: none` ON A MOUNTING READER — pdf.js measures the
+            container to lay pages out, and a zero-size box makes it render nothing. `invisible` +
+            zero height keeps it measurable while taking no room and catching no clicks. */}
+        {open.filter((source) => mounted.has(source.id)).map((source) => {
+          const state = states[source.id] ?? { kind: "loading" as const };
+          const front = source.id === activeId;
+          return (
+            <div
+              aria-hidden={!front}
+              className={front ? "h-full" : "pointer-events-none invisible absolute inset-0"}
+              key={source.id}
+            >
+              {state.kind === "loading" && (
+                <p className="py-8 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+                  Opening the document…
+                </p>
+              )}
+              {state.kind === "unavailable" && (
+                <p className="py-8 text-center text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">
+                  {state.reason}
+                </p>
+              )}
+              {/* 🔴🔴 `grounded`, BECAUSE THIS PANEL CAN ONLY EVER OPEN A SOURCE THE CANVAS ALREADY
+                  HOLDS. The reader's default is to attach its own extracted text to every action,
+                  which is right in the Library — that chat has never read the file. Here it would
+                  file the same document into the same canvas twice on every "Explain this". Only
+                  genuinely new material travels: the cut-out of a marked area.
 
-            🔴 KEYED BY THE SOURCE, so switching tabs is a clean remount rather than one reader
-            being handed a different document with the previous one's zoom, mode and outline still
-            in its state. The remembered page comes back in as an anchor, which is the same door a
-            citation link uses. */}
-        {state.kind === "ready" && (
-          <DocumentReader
-            anchor={{ query: null, unit: lastUnit[active.id] ?? null }}
-            // 🔴 THE DURABLE ID, NOT THE CANVAS-LOCAL ONE. Comments must survive this canvas and be
-            // findable from the Library page, and "s1" means nothing outside this session —
-            // `canvas-model.ts` says so in as many words.
-            commentsDoc={
-              active.librarySourceId
-                ? { preview: preview || uid === null, ref: { id: active.librarySourceId, kind: "source" }, uid }
-                : undefined
-            }
-            grounded
-            key={active.id}
-            onSendToChat={onSendToChat}
-            onUnitChange={(unit) => rememberUnit(active.id, unit)}
-            source={state.source}
-            variant="dialog"
-          />
-        )}
+                  🔴 The action bar appears only because `onSendToChat` is passed. Without it the
+                  reader hides the bar rather than offering controls with nowhere to send.
+
+                  🔴 `dense`, because this panel is a column beside a conversation and the full bar
+                  carries twelve controls (owner: *"the toolbar is too much"*). Nothing is removed;
+                  the page field, zoom and Source/Reading move into the "…" already there. */}
+              {state.kind === "ready" && (
+                <DocumentReader
+                  anchor={{ query: null, unit: lastUnit[source.id] ?? null }}
+                  // 🔴 THE DURABLE ID, NOT THE CANVAS-LOCAL ONE. Comments must survive this canvas
+                  // and be findable from the Library page, and "s1" means nothing outside this
+                  // session — `canvas-model.ts` says so in as many words.
+                  commentsDoc={
+                    source.librarySourceId
+                      ? { preview: preview || uid === null, ref: { id: source.librarySourceId, kind: "source" }, uid }
+                      : undefined
+                  }
+                  dense
+                  grounded
+                  onSendToChat={onSendToChat}
+                  onUnitChange={(unit) => rememberUnit(source.id, unit)}
+                  source={state.source}
+                  variant="dialog"
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>,
     document.body,

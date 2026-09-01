@@ -40,15 +40,23 @@ test("🔴🔴 several documents stay open, and only the front one is mounted", 
   // Owner, 2026-08-28: *"it'd be nice if it could have, like, multiple tabs so that they could have
   // different PowerPoints or documents open at the same time."*
   //
-  // 🔴 ONLY THE FRONT ONE RENDERS, and that is the design rather than an optimisation. A deck held
-  // in memory costs about 20 MB per full-size slide — `slides-document-view.tsx` measured it — so
-  // six background tabs rendering quietly is a seized browser. A tab that is not in front is a name
-  // and a remembered page, which costs nothing and is why no cap is needed.
+  // 🔴 A BOUNDED SET RENDERS — REPOINTED 2026-09-01, AND THE OLD REASON IS STILL LOAD-BEARING.
+  // This used to assert that ONLY the front tab renders, because a deck held in memory costs about
+  // 20 MB per full-size slide (`slides-document-view.tsx` measured it) and six alive at once is a
+  // seized browser. That is still true and still the ceiling this guards.
   //
-  // Calibration: render `open.map(source => <DocumentReader …>)` and this reddens.
-  assert.ok(!/open\.map\([\s\S]{0,400}?<DocumentReader/.test(PREVIEW), "every open tab is mounting its own reader");
-  assert.match(PREVIEW, /const active = open\.find\(/, "the panel no longer picks one document to show");
-  assert.match(PREVIEW, /key=\{active\.id\}/, "switching tabs hands one reader a different document, keeping the last one's zoom and mode");
+  // What changed is the other half: rendering one meant every tab switch REMOUNTED the reader —
+  // fetch, re-parse, re-render from page one, scroll and zoom lost — which the owner reported as
+  // *"slow (it has to load each pdf continually)"*. Three mounted keeps the gesture people actually
+  // make instant and bounds the worst case at roughly one deck. So the assertion is now the CAP,
+  // not the count of one.
+  assert.match(PREVIEW, /const MOUNT_LIMIT = (\d+);/, "the mounted set is unbounded again, which is the seized browser");
+  const limit = Number(/const MOUNT_LIMIT = (\d+);/.exec(PREVIEW)?.[1]);
+  assert.ok(limit >= 2 && limit <= 4, `MOUNT_LIMIT is ${limit}: 2-4 is the range that is both quick and affordable`);
+  assert.match(PREVIEW, /open\.filter\(\(source\) => mounted\.has\(source\.id\)\)\.map/, "every open tab is mounting its own reader");
+  // And nothing outside the mounted set is even fetched.
+  assert.match(PREVIEW, /if \(states\[source\.id\] \|\| !mounted\.has\(source\.id\)\) continue;/,
+    "documents nobody will render are still downloaded");
 });
 
 test("🔴🔴 the list and the front tab move together, in one updater", () => {
@@ -67,8 +75,10 @@ test("🔴 a tab remembers the page it was left on", () => {
   // coming back to one is a fresh open; without this, a learner who marked something on page 40,
   // checked another file and came back would land on page 1 with no idea why. It arrives through
   // the same anchor a citation link uses, so there is one door into "open at this page".
-  assert.match(PREVIEW, /lastUnit\[active\.id\] \?\? null/, "a reopened tab no longer starts where it was left");
-  assert.match(PREVIEW, /onUnitChange=\{\(unit\) => rememberUnit\(active\.id, unit\)\}/, "nothing records the page a tab was on");
+  // 🔴 STILL NEEDED WITH THREE MOUNTED, because the fourth document evicts the first: a learner
+  // who opens four files and comes back to the first is remounting it, exactly as before.
+  assert.match(PREVIEW, /lastUnit\[source\.id\] \?\? null/, "a reopened tab no longer starts where it was left");
+  assert.match(PREVIEW, /onUnitChange=\{\(unit\) => rememberUnit\(source\.id, unit\)\}/, "nothing records the page a tab was on");
   const reader = strip(readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8"));
   // 🔴 AND IT COUNTS SCROLLING. Three things change the unit — the toolbar, a search step, and
   // simply scrolling — so a host told about only the first two reopens a scrolled document at the

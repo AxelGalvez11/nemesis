@@ -12,32 +12,41 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8");
-const PANE = read("./source-tab-viewer.tsx");
+const PANE = read("./source-preview.tsx");
 const BAR = readFileSync(new URL("../reader/reader-top-bar.tsx", import.meta.url), "utf8");
 const TABS = readFileSync(new URL("../../../lib/learn/source-tabs.ts", import.meta.url), "utf8");
-const CANVAS = read("./learning-canvas.tsx");
-const PILL = readFileSync(new URL("../../../lib/learn/source-pill.ts", import.meta.url), "utf8");
+const TABPANE = read("./source-tab-viewer.tsx");
+const CONTROLS = read("./canvas-controls.tsx");
 
-test("🔴🔴 every open tab stays mounted, so switching back does not re-read the PDF", () => {
-  // Rendering only the active tab unmounted the reader on every switch: the file was fetched,
-  // re-parsed by pdf.js and re-rendered from page one, losing the scroll position, the zoom and the
-  // search with it. `hidden` keeps the rendered canvases alive, which IS the cost being avoided —
-  // so this must never become a conditional render again.
-  assert.match(PANE, /api\.state\.tabs\.map\(\(open\) => \(/, "the pane renders one tab again");
-  assert.match(PANE, /open\.key === tab\.key \? "flex" : "hidden"/, "an inactive tab is unmounted rather than hidden");
+test("🔴🔴 recently-read documents stay mounted, so switching back does not re-read the PDF", () => {
+  // 🔴 THIS IS THE HEADER'S SOURCES PANEL, WHICH IS THE VIEWER IN USE. The citation pane
+  // (`source-tab-viewer`) is a different surface reached only from a pill; the owner's report was
+  // about this one. Guarding the wrong viewer is how a fix ships and the complaint stays.
+  //
+  // It rendered the ACTIVE source alone, keyed by its id — a clean remount on every tab switch,
+  // which is exactly the cost reported as "it has to load each pdf continually": fetched again,
+  // re-parsed by pdf.js, re-rendered from page one, losing scroll, zoom and search.
+  assert.match(PANE, /open\.filter\(\(source\) => mounted\.has\(source\.id\)\)\.map/, "the panel renders one document again");
+  // 🔴 BOUNDED, because a full-size slide costs ~20 MB and six decks alive is a seized browser —
+  // the measured reason the old design mounted only one. `source-preview.test.ts` owns the number.
+  assert.match(PANE, /const MOUNT_LIMIT = \d+;/, "the mounted set is unbounded");
+  assert.match(PANE, /const front = source\.id === activeId;/, "there is no front/back distinction, so all render");
+  assert.doesNotMatch(PANE, /key=\{active\.id\}/, "the reader is keyed by the active source again, which remounts it");
 
-  // 🔴 AND IT IS ONLY AFFORDABLE BECAUSE THE TABS ARE CAPPED. Six mounted readers is a bounded
-  // cost; an unbounded pile is the memory problem the one-at-a-time render was avoiding.
-  assert.match(TABS, /export const MAX_TABS = \d+;/, "the tab cap is gone, so mounted readers are unbounded");
-  const cap = Number(/export const MAX_TABS = (\d+);/.exec(TABS)?.[1]);
-  assert.ok(cap > 0 && cap <= 8, `MAX_TABS is ${cap}: too many readers to keep mounted`);
+  // 🔴 AND `invisible`, NOT `display: none`. pdf.js measures its container to lay pages out, so a
+  // zero-size box makes it render nothing at all — the hidden tab would come forward blank.
+  assert.match(PANE, /pointer-events-none invisible absolute inset-0/, "a hidden document is display:none and will render blank");
+
+  // Each document resolves ONCE. Re-running the effect for a newly opened tab must not re-fetch
+  // the ones already resolved, or the network cost comes straight back.
+  assert.match(PANE, /if \(states\[source\.id\] \|\| !mounted\.has\(source\.id\)\) continue;/, "documents are re-fetched on every open");
 });
 
 test("🔴 the pane's toolbar drops what the pane already says, and MOVES the rest", () => {
   // The pane is 360px wide and the full bar carries twelve controls. Dense drops the file name (the
   // TAB is the name) and the back button (the tab has a close), and folds the page field, the zoom
   // cluster and the Source/Reading switch away.
-  assert.match(PANE, /<LibrarySourceReader className="min-h-0 flex-1" dense/, "the pane asks for the full toolbar");
+  assert.match(PANE, /\n\s+dense\n/, "the panel asks for the full toolbar");
   for (const [what, pattern] of [
     ["the back button", /\{onBack && !dense && \(/],
     ["the zoom cluster", /\{showZoom && !dense && \(/],
@@ -52,21 +61,13 @@ test("🔴 the pane's toolbar drops what the pane already says, and MOVES the re
   assert.match(BAR, /aria-label="Actions and details"/, "the menu that still holds them is gone");
 });
 
-test("🔴🔴 the pane has a door that does not depend on the model citing anything", () => {
-  // 🔴 MEASURED ON PRODUCTION, 2026-09-01. Asked to quote a line from a dropped lecture, the canvas
-  // quoted it VERBATIM and emitted no citation — so `CanvasSourcePills` rendered nothing (correctly:
-  // `knowledge-citation.ts` insists an empty citation list reaches the surface as silence, never as
-  // a greyed-out pill), and the document it had just read could not be opened at all.
-  //
-  // The pane, its tabs and the whole comment layer were reachable only when an answer happened to
-  // cite. A learner must not need the model's cooperation to look at their own file.
-  assert.match(PANE, /data-testid="source-tabs-open"/, "the pane's only door is a citation pill again");
-  assert.match(PANE, /const unopened = documents\.filter\(\(pill\) => !open\.has\(tabKey\(pill\)\)\)/,
-    "the list offers documents that are already open");
-  assert.match(CANVAS, /<SourceTabPane documents=\{openableDocuments\(canvas\.sources\)\} \/>/,
-    "the canvas stopped handing the pane its own documents");
-
-  // 🔴 DE-DUPLICATED ON THE TAB KEY, so opening from this list and opening from a pill land on the
-  // SAME tab rather than two tabs onto one file.
-  assert.match(PILL, /const key = `doc:\$\{title\.toLowerCase\(\)\}`;/, "the list can produce a duplicate tab");
+test("🔴 the door into a document is the header's Sources list, and there is only one", () => {
+  // 🔴 A `+` WAS ADDED TO THE CITATION PANE'S TAB STRIP AND THEN REMOVED. It rendered only once a
+  // tab was ALREADY open — `SourceTabPane` returns null with none — so it could add a second
+  // document and never the first, which is not the door it claimed to be. The header's Sources
+  // panel already lists every document and opens one, so the `+` was a second control for a job
+  // that had one, on a surface the owner had just asked to simplify.
+  assert.doesNotMatch(TABPANE, /source-tabs-open/, "the redundant opener is back in the citation pane");
+  assert.match(CONTROLS, /<SourceRow key=\{source\.id\} onPreview=\{openDocument\} source=\{source\} \/>/,
+    "the Sources list stopped opening documents, which leaves no door at all");
 });

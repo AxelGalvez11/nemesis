@@ -104,8 +104,11 @@ test("🔴🔴 comments anchor to the DURABLE id, never the canvas-local one", (
   // "s1" means nothing outside its canvas — two canvases on the same lecture both call it s1
   // (canvas-model.ts says so in as many words). A comment keyed to it would vanish when the
   // panel opens the same file from anywhere else.
-  assert.match(PANEL, /active\.librarySourceId\s*\?\s*\{ preview/, "the panel keys comments to something");
-  assert.ok(!/ref: \{ id: active\.id/.test(PANEL), "comments are keyed to the canvas-local id again");
+  // 🔴 `source`, NOT `active`, SINCE 2026-09-01 — the panel mounts up to three documents at once
+  // rather than only the front one, so each reader is handed its OWN source. Same claim, one
+  // variable renamed: the DURABLE id or nothing.
+  assert.match(PANEL, /source\.librarySourceId\s*\?\s*\{ preview/, "the panel keys comments to something");
+  assert.ok(!/ref: \{ id: (active|source)\.id[^A-Za-z]/.test(PANEL), "comments are keyed to the canvas-local id again");
 });
 
 test("🔴🔴 open comments ride the turn packet, in the learner's own words", () => {
