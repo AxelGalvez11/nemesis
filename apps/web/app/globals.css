@@ -71,6 +71,25 @@
   animation: nemesis-record-processing 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+/* A document being read, on the attachment card (attachment-card.tsx, owner 2026-09-01: *"when the
+   chat composer is reading and parsing documents there should be an animation or like a loading
+   circular bar showing progress in processing"*).
+   🔴🔴 INDETERMINATE, AND THAT IS THE HONEST SHAPE RATHER THAN A SHORTCUT. `extractFile` is one
+   awaited call: the parser reports nothing at all until it returns, so there is no percentage to
+   draw and any arc that crept toward full would be invented. This product already made that exact
+   call once, for audio transcription, in the note above `.record-processing-track`: a sweep says
+   "working" without claiming to know how far. A ring that turns says the same thing about a file.
+   🔴 IT TURNS THE WHOLE RING RATHER THAN ANIMATING `stroke-dashoffset`, so the work stays on the
+   compositor beside a composer somebody is typing into. */
+@keyframes nemesis-reading-ring {
+  to { transform: rotate(360deg); }
+}
+
+.reading-ring {
+  animation: nemesis-reading-ring 1.05s linear infinite;
+  transform-origin: center;
+}
+
 /* The read-aloud player's live bars (canvas-audio-bar.tsx, owner's design D, 2026-09-01).
    🔴🔴 THEY SAY "SOUND IS COMING OUT", NOT WHAT THE SOUND CONTAINS. Nothing here reads the audio,
    and that is deliberate rather than lazy: a bar drawn to look like the answer's own waveform while
@@ -107,6 +126,8 @@
   .record-processing-track::after { animation: none; inline-size: 100%; opacity: 0.55; }
   /* Same rule as the mascot's STILL frames: hold a characteristic shape, do not flatten. */
   .audio-bars[data-playing="true"] > span { animation: none; transform: scaleY(0.78); }
+  /* Holds the gap where it is: still legible as a ring in progress, with nothing turning. */
+  .reading-ring { animation: none; }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

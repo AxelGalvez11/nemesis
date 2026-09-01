@@ -75,3 +75,40 @@ test("🔴 the glyph is coloured by type, which is half of what makes it read as
   // An unlisted type still draws, in the neutral ink.
   assert.match(CARD, /INK\[kind\] \?\? "var\(--ui-text-tertiary\)"/);
 });
+
+// ── a document being read says so ──────────────────────────────────────────────────────────────
+
+test("🔴🔴 a file being read wears a turning ring, and it never claims to know how far", () => {
+  // Owner, 2026-09-01: "when the chat composer is reading and parsing documents there should be an
+  // animation or like a loading circular bar showing progress in processing."
+  //
+  // 🔴 INDETERMINATE BY NECESSITY, NOT BY LAZINESS. `extractFile` is one awaited call and the
+  // parser is silent until it returns, so there is no fraction to draw; an arc creeping toward full
+  // would be a number about somebody's document that nobody measured. The same ruling is already
+  // recorded for audio transcription in globals.css. Calibration: bind the arc to a percentage and
+  // this reddens.
+  const card = read("./attachment-card.tsx");
+  assert.match(card, /state === "reading" \? \(\s*<ReadingRing>/, "a file being read has nothing moving on it");
+  assert.match(card, /strokeDasharray="26 68\.2"/, "the ring lost the fixed gap that makes it a spinner rather than a gauge");
+  // 🔴 CODE ONLY, COMMENTS STRIPPED. A rule of the form "this word must not appear" fails against
+  // the paragraph that explains the rule — this assertion caught its own note about not inventing a
+  // percentage, which is the third time in one evening a guard has read prose as behaviour.
+  const code = card.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/percent|progress=\{|\bvalue=\{/.test(code), "the ring is claiming to know how far the parse has got");
+  // The kind of file must still be readable while it is being read.
+  assert.match(card, /<ReadingRing>\s*<DocGlyph/, "the document glyph was swapped out for the spinner instead of wrapped");
+
+  const css = read("../../../app/globals.css");
+  assert.match(css, /@keyframes nemesis-reading-ring/, "the ring has no animation to run");
+  assert.match(css, /\.reading-ring \{ animation: none; \}/, "the ring keeps turning when motion is refused");
+});
+
+test("🔴 the composer's own send button spins while a document is being read", () => {
+  // The control already had a spinner state; the front door simply never set it, so a send held
+  // open by a parse looked exactly like a send held open by an empty box.
+  const home = read("./canvas-home.tsx");
+  assert.match(home, /busy=\{reading\}/, "the send button is static while documents are being read");
+  // 🔴 `reading`, NOT `blocked`: a file that FAILED also blocks the send, and a spinner there would
+  // promise that waiting will fix it. That card carries Try again instead.
+  assert.ok(!/busy=\{blocked\}/.test(home), "a failed read is being drawn as work still in progress");
+});

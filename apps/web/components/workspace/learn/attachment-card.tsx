@@ -64,6 +64,41 @@ const INK: Readonly<Record<string, string>> = {
   PPTX: "#e06c34",
 };
 
+/**
+ * A file being read, drawn as a ring turning around its own glyph.
+ *
+ * 🔴🔴 IT SHOWS THAT WORK IS HAPPENING, NOT HOW FAR IT HAS GOT, and the difference is forced by the
+ * truth rather than chosen for ease: `extractFile` is a single awaited call and the parser is
+ * silent until it returns, so there is no fraction to draw. An arc creeping toward full would be
+ * this product inventing a number about somebody's document. See the note in globals.css, and the
+ * identical ruling already recorded for audio transcription.
+ *
+ * 🔴 THE GLYPH STAYS INSIDE IT. The learner is watching a specific file, so the thing that spins
+ * has to be attached to that file rather than floating somewhere near it, and the card's own
+ * "Reading…" line names the step in words underneath.
+ */
+function ReadingRing({ children }: { children: React.ReactNode }) {
+  // r=15 on a 34 box leaves 1px clear of the 2px stroke at every edge; 94.2 is that circumference,
+  // and a 26/94.2 dash is a quarter turn of ink with the rest open.
+  return (
+    <span aria-hidden="true" className="relative flex h-[34px] w-[34px] items-center justify-center">
+      <svg className="reading-ring absolute inset-0" fill="none" height={34} viewBox="0 0 34 34" width={34}>
+        <circle cx={17} cy={17} r={15} stroke="var(--ui-stroke-secondary)" strokeWidth={2} />
+        <circle
+          cx={17}
+          cy={17}
+          r={15}
+          stroke="var(--ui-action)"
+          strokeDasharray="26 68.2"
+          strokeLinecap="round"
+          strokeWidth={2}
+        />
+      </svg>
+      {children}
+    </span>
+  );
+}
+
 function DocGlyph({ tint }: { tint: string }) {
   // A page with a folded corner, drawn rather than pulled from the icon font, because the font's
   // `file` glyph is a 14px UI mark and this is a 24px object with a colour of its own.
@@ -132,8 +167,17 @@ export function AttachmentCard({
       )}
       title={name}
     >
+      {/* 🔴 THE RING REPLACES NOTHING — it wraps. A card that swapped its document glyph for a
+          spinner would stop saying WHICH KIND of file is being read at exactly the moment the
+          learner is watching it. */}
       <span className="shrink-0">
-        <DocGlyph tint={INK[kind] ?? "var(--ui-text-tertiary)"} />
+        {state === "reading" ? (
+          <ReadingRing>
+            <DocGlyph tint={INK[kind] ?? "var(--ui-text-tertiary)"} />
+          </ReadingRing>
+        ) : (
+          <DocGlyph tint={INK[kind] ?? "var(--ui-text-tertiary)"} />
+        )}
       </span>
       <span className="flex min-w-0 flex-col">
         {/* 🔴 THE SCALE'S OWN STEPS, WHICH HAPPEN TO BE THE REFERENCE'S NUMBERS EXACTLY.

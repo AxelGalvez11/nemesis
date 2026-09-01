@@ -1098,6 +1098,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 </button>
               ) : (
               <ComposerSend
+                // 🔴 THE COMPOSER ITSELF SAYS IT IS WORKING — owner, 2026-09-01: *"when the chat
+                // composer is reading and parsing documents there should be an animation"*. The
+                // control already had a spinner state and this surface simply never set it, so a
+                // send held open by a document being read looked identical to a send held open by
+                // an empty box: dimmed, still, and silent about which. `reading` is true only while
+                // a file is actually being extracted, never while one has failed — a failure is a
+                // thing to act on, not a thing to wait for.
+                busy={reading}
                 className="self-end [grid-area:send]"
                 disabled={blocked || (capability ? !text.trim() : !text.trim() && staged.length === 0)}
                 label={sendLabel}
