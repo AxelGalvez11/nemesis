@@ -87,6 +87,24 @@ const KNOWN = new Set([
   "override_of",
   "originalDate",
   "original_date",
+  "calendarId",
+  "calendar_id",
+  "attendees",
+  "reminders",
+  "guestsCanModify",
+  "guests_can_modify",
+  "guestsCanInviteOthers",
+  "guests_can_invite_others",
+  "guestsCanSeeOtherGuests",
+  "guests_can_see_other_guests",
+  "conference",
+  "attachments",
+  "eventType",
+  "event_type",
+  "sourceTitle",
+  "source_title",
+  "sourceUrl",
+  "source_url",
   "location",
   "colorId",
   "color_id",
@@ -181,6 +199,102 @@ function lines(raw: unknown): string[] | null {
   return out.length > 0 ? out : null;
 }
 
+
+const RESPONSES = new Set(["needsAction", "declined", "tentative", "accepted"]);
+const REMINDER_METHODS = new Set(["popup", "email"]);
+const EVENT_TYPES = new Set(["default", "outOfOffice", "focusTime", "workingLocation"]);
+
+/**
+ * Guests, cleaned.
+ *
+ * 🔴 AN ENTRY WITH NO EMAIL IS DROPPED, not kept with a blank one. An address is
+ * the only thing that identifies a guest; a row without one cannot be matched to
+ * a reply, cannot be removed by the person it names, and would eventually be
+ * handed to Google as an invitation to nobody. Capped at the same 200 the
+ * database enforces, so a malformed import cannot make a row slow to read.
+ */
+function attendees(raw: unknown): CalendarEvent["attendees"] {
+  if (!Array.isArray(raw)) return undefined;
+  const out: NonNullable<CalendarEvent["attendees"]> = [];
+  for (const entry of raw.slice(0, 200)) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const email = str(row.email);
+    if (!email) continue;
+    const guest: NonNullable<CalendarEvent["attendees"]>[number] = { email };
+    const displayName = str(row.displayName) ?? str(row.display_name);
+    if (displayName) guest.displayName = displayName;
+    if (row.optional === true) guest.optional = true;
+    if (row.organizer === true) guest.organizer = true;
+    if (row.self === true) guest.self = true;
+    const response = str(row.responseStatus) ?? str(row.response_status);
+    if (response && RESPONSES.has(response)) {
+      guest.responseStatus = response as NonNullable<typeof guest.responseStatus>;
+    }
+    const comment = str(row.comment);
+    if (comment) guest.comment = comment;
+    out.push(guest);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function reminders(raw: unknown): CalendarEvent["reminders"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const row = raw as Record<string, unknown>;
+  const value: NonNullable<CalendarEvent["reminders"]> = {};
+  if (typeof row.useDefault === "boolean") value.useDefault = row.useDefault;
+  else if (typeof row.use_default === "boolean") value.useDefault = row.use_default;
+  const list = Array.isArray(row.overrides) ? row.overrides : [];
+  const overrides = list
+    .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === "object")
+    .map((entry) => ({ method: String(entry.method), minutes: Number(entry.minutes) }))
+    // Google caps a reminder at four weeks; anything beyond is a typo, and a
+    // negative one would fire before the event was created.
+    .filter((entry) => REMINDER_METHODS.has(entry.method) && Number.isInteger(entry.minutes)
+      && entry.minutes >= 0 && entry.minutes <= 40_320)
+    .map((entry) => ({ method: entry.method as "popup" | "email", minutes: entry.minutes }))
+    .slice(0, 5);
+  if (overrides.length > 0) value.overrides = overrides;
+  return value.useDefault === undefined && !value.overrides ? undefined : value;
+}
+
+function attachments(raw: unknown): CalendarEvent["attachments"] {
+  if (!Array.isArray(raw)) return undefined;
+  const out: NonNullable<CalendarEvent["attachments"]> = [];
+  for (const entry of raw.slice(0, 25)) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const fileUrl = str(row.fileUrl) ?? str(row.file_url);
+    // 🔴 http(s) ONLY. An attachment url is rendered as a link, and a
+    // `javascript:` one would be a script a student clicks in their own calendar.
+    if (!fileUrl || !/^https?:\/\//i.test(fileUrl)) continue;
+    const file: NonNullable<CalendarEvent["attachments"]>[number] = { fileUrl };
+    const title = str(row.title);
+    if (title) file.title = title;
+    const mimeType = str(row.mimeType) ?? str(row.mime_type);
+    if (mimeType) file.mimeType = mimeType;
+    const iconLink = str(row.iconLink) ?? str(row.icon_link);
+    if (iconLink && /^https?:\/\//i.test(iconLink)) file.iconLink = iconLink;
+    const fileId = str(row.fileId) ?? str(row.file_id);
+    if (fileId) file.fileId = fileId;
+    out.push(file);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function conference(raw: unknown): CalendarEvent["conference"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const row = raw as Record<string, unknown>;
+  const url = str(row.url);
+  const value: NonNullable<CalendarEvent["conference"]> = {};
+  if (url && /^https?:\/\//i.test(url)) value.url = url;
+  const label = str(row.label);
+  if (label) value.label = label;
+  const id = str(row.id);
+  if (id) value.id = id;
+  return Object.keys(value).length > 0 ? value : undefined;
+}
+
 export function decodeCalendarEvent(raw: unknown): DecodedCalendarEvent | null {
   if (typeof raw !== "object" || raw === null) return null;
   const row = raw as Record<string, unknown>;
@@ -221,6 +335,8 @@ export function decodeCalendarEvent(raw: unknown): DecodedCalendarEvent | null {
     event.overrideOf = overrideOf;
     event.originalDate = originalDate;
   }
+  const calendarId = str(row.calendarId) ?? str(row.calendar_id);
+  if (calendarId) event.calendarId = calendarId;
   const location = str(row.location);
   if (location) event.location = location;
   const colorId = str(row.colorId) ?? str(row.color_id);
@@ -235,6 +351,30 @@ export function decodeCalendarEvent(raw: unknown): DecodedCalendarEvent | null {
   if (visibility === "default" || visibility === "public" || visibility === "private" || visibility === "confidential") {
     event.visibility = visibility;
   }
+  const guests = attendees(row.attendees);
+  if (guests) event.attendees = guests;
+  const warn = reminders(row.reminders);
+  if (warn) event.reminders = warn;
+  for (const [key, column] of [
+    ["guestsCanModify", "guests_can_modify"],
+    ["guestsCanInviteOthers", "guests_can_invite_others"],
+    ["guestsCanSeeOtherGuests", "guests_can_see_other_guests"],
+  ] as const) {
+    const value = row[key] ?? row[column];
+    if (typeof value === "boolean") event[key] = value;
+  }
+  const call = conference(row.conference);
+  if (call) event.conference = call;
+  const files = attachments(row.attachments);
+  if (files) event.attachments = files;
+  const eventType = str(row.eventType) ?? str(row.event_type);
+  if (eventType && EVENT_TYPES.has(eventType)) {
+    event.eventType = eventType as NonNullable<CalendarEvent["eventType"]>;
+  }
+  const sourceTitle = str(row.sourceTitle) ?? str(row.source_title);
+  if (sourceTitle) event.sourceTitle = sourceTitle;
+  const sourceUrl = str(row.sourceUrl) ?? str(row.source_url);
+  if (sourceUrl && /^https?:\/\//i.test(sourceUrl)) event.sourceUrl = sourceUrl;
   const course = str(row.course);
   if (course) event.course = course;
   const note = str(row.note);
@@ -296,6 +436,17 @@ export function encodeCalendarEvent(
     override_of: event.overrideOf ?? null,
     original_date: event.originalDate ?? null,
     kind: event.kind,
+    calendar_id: event.calendarId ?? null,
+    attendees: event.attendees && event.attendees.length > 0 ? event.attendees : null,
+    reminders: event.reminders ?? null,
+    guests_can_modify: event.guestsCanModify ?? null,
+    guests_can_invite_others: event.guestsCanInviteOthers ?? null,
+    guests_can_see_other_guests: event.guestsCanSeeOtherGuests ?? null,
+    conference: event.conference ?? null,
+    attachments: event.attachments && event.attachments.length > 0 ? event.attachments : null,
+    event_type: event.eventType ?? null,
+    source_title: event.sourceTitle ?? null,
+    source_url: event.sourceUrl ?? null,
     location: event.location ?? null,
     color_id: event.colorId ?? null,
     status: event.status ?? null,

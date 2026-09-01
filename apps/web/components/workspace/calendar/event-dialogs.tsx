@@ -16,7 +16,14 @@ import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
-import { type CalendarEvent, type CalendarEventKind, isAllDay } from "@/lib/workspace/calendar-model";
+import {
+  type CalendarEvent,
+  type CalendarEventKind,
+  type EventAttendee,
+  type EventReminders,
+  isAllDay,
+} from "@/lib/workspace/calendar-model";
+import type { Calendar } from "@/lib/workspace/calendars";
 import { EVENT_COLORS } from "@/lib/workspace/event-colors";
 import { formatRecurrenceLines, parseRecurrenceLines, specFromLegacy, specToLegacy } from "@/lib/workspace/rrule";
 import { Trash2 } from "@/lib/workspace/icons";
@@ -24,6 +31,7 @@ import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime } from "./format";
 import { KIND_META, KIND_ORDER } from "./kind-meta";
+import { type GuestPermissions, GuestsEditor } from "./guests-editor";
 import { RepeatEditor } from "./repeat-editor";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
@@ -71,12 +79,14 @@ interface EventFormDialogProps {
    *  range and the type across instead of making the student type them again. */
   draft?: EventDraft;
   event?: CalendarEvent;
+  /** Everything the student can file this on, primary first. */
+  calendars?: Calendar[];
   onClose: () => void;
   onSave: (event: CalendarEvent) => Promise<void>;
   onDelete?: () => Promise<void>;
 }
 
-export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete }: EventFormDialogProps) {
+export function EventFormDialog({ mode, draft, event, calendars = [], onClose, onSave, onDelete }: EventFormDialogProps) {
   const confirm = useConfirm();
   const [title, setTitle] = useState(event?.title ?? draft?.title ?? "");
   const [date, setDate] = useState(event?.date ?? draft?.date ?? "");
@@ -92,6 +102,14 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
   );
   const [location, setLocation] = useState(event?.location ?? "");
   const [colorId, setColorId] = useState(event?.colorId ?? "");
+  const [calendarId, setCalendarId] = useState(event?.calendarId ?? "");
+  const [attendees, setAttendees] = useState<EventAttendee[]>(event?.attendees ?? []);
+  const [reminders, setReminders] = useState<EventReminders | undefined>(event?.reminders);
+  const [permissions, setPermissions] = useState<GuestPermissions>({
+    invite: event?.guestsCanInviteOthers,
+    modify: event?.guestsCanModify,
+    seeOthers: event?.guestsCanSeeOtherGuests,
+  });
   const [status, setStatus] = useState<NonNullable<CalendarEvent["status"]>>(event?.status ?? "confirmed");
   const [busy, setBusy] = useState(event?.transparency !== "transparent");
   const [visibility, setVisibility] = useState<NonNullable<CalendarEvent["visibility"]>>(event?.visibility ?? "default");
@@ -139,6 +157,25 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
     }
     if (location.trim()) built.location = location.trim();
     if (colorId) built.colorId = colorId;
+    // Empty means the primary calendar, which is what null means in the database
+    // and what every event written before calendars existed already is.
+    if (calendarId) built.calendarId = calendarId;
+    if (attendees.length > 0) built.attendees = attendees;
+    if (reminders?.overrides?.length) built.reminders = reminders;
+    // Only when there is somebody for them to apply to: three booleans on a
+    // solo event are three columns recording nothing.
+    if (attendees.length > 0) {
+      if (permissions.modify !== undefined) built.guestsCanModify = permissions.modify;
+      if (permissions.invite !== undefined) built.guestsCanInviteOthers = permissions.invite;
+      if (permissions.seeOthers !== undefined) built.guestsCanSeeOtherGuests = permissions.seeOthers;
+    }
+    // Carried through untouched: Nemesis can hold and show these, and only the
+    // provider that made them can change them.
+    if (event?.conference) built.conference = event.conference;
+    if (event?.attachments) built.attachments = event.attachments;
+    if (event?.eventType) built.eventType = event.eventType;
+    if (event?.sourceTitle) built.sourceTitle = event.sourceTitle;
+    if (event?.sourceUrl) built.sourceUrl = event.sourceUrl;
     // Only stored when it is not the default: writing "confirmed", "opaque" and
     // "default" onto every row would fill three columns with the absence of a
     // decision, and absent already means exactly that everywhere that reads them.
@@ -216,6 +253,16 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
             )}
           </div>
           <RepeatEditor onChange={setRrule} startDate={date} value={rrule} />
+          {calendars.length > 1 && (
+            <label className="flex items-center gap-2 text-xs text-(--ui-text-tertiary)">
+              <span className="shrink-0">Calendar</span>
+              <select className={SELECT} onChange={(e) => setCalendarId(e.target.value)} value={calendarId}>
+                {calendars.map((entry) => (
+                  <option key={entry.id || "primary"} value={entry.id}>{entry.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <Input onChange={(e) => setLocation(e.target.value)} placeholder="Location (optional)" value={location} />
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -311,6 +358,51 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
               />
             ))}
           </div>
+          <GuestsEditor
+            attendees={attendees}
+            onAttendees={setAttendees}
+            onPermissions={setPermissions}
+            onReminders={setReminders}
+            permissions={permissions}
+            reminders={reminders}
+          />
+          {/* Held and shown, never made here: only the provider that minted a
+              Meet link or pinned a Drive file can change one. */}
+          {(event?.conference?.url || event?.attachments?.length || event?.sourceUrl) && (
+            <div className="flex flex-col gap-1 rounded-lg border border-(--ui-stroke-tertiary) p-2.5 text-xs">
+              {event?.conference?.url && (
+                <a
+                  className="truncate text-(--ui-learner) hover:underline"
+                  href={event.conference.url}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  {event.conference.label || "Join the video call"}
+                </a>
+              )}
+              {event?.attachments?.map((file) => (
+                <a
+                  className="truncate text-(--ui-learner) hover:underline"
+                  href={file.fileUrl}
+                  key={file.fileUrl}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  {file.title || file.fileUrl}
+                </a>
+              ))}
+              {event?.sourceUrl && (
+                <a
+                  className="truncate text-(--ui-text-tertiary) hover:underline"
+                  href={event.sourceUrl}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  {event.sourceTitle || "Where this came from"}
+                </a>
+              )}
+            </div>
+          )}
           <Input onChange={(e) => setCourse(e.target.value)} placeholder="Course (optional)" value={course} />
           <Textarea
             className="min-h-16"

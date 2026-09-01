@@ -18,6 +18,8 @@
 // event, this particular colour", exactly as it works in Google, where an event
 // colour overrides its calendar's.
 
+import { inkOn } from "./calendar-colors";
+
 export interface EventColor {
   /** Google's own id. A string, because that is what the API sends. */
   id: string;
@@ -85,5 +87,34 @@ export function paintFor(colorId: string | undefined): ColorPaint | null {
     // rather than shouting over them.
     block: { backgroundColor: `${color.hex}22`, borderLeftColor: color.hex, color: color.hex },
     dot: { backgroundColor: color.hex },
+  };
+}
+
+/**
+ * The colour an event is actually drawn in, following Google's own order of
+ * precedence and then falling through to something Google does not have.
+ *
+ * 🔴 EVENT COLOUR, THEN CALENDAR COLOUR, THEN KIND — and the last step is the
+ * one worth explaining. Google stops at the calendar's colour because a Google
+ * event has no idea what KIND of thing it is; a Nemesis event does, and an exam
+ * being visibly an exam is the whole reason `--ui-exam` was untied from the
+ * accent. So a student who has coloured nothing still gets exams in orange and
+ * classes in grey, exactly as before this stage — and a student who colours a
+ * calendar has asked for Google's behaviour and gets it.
+ *
+ * Returns null for "no override — let the kind's own classes paint it".
+ */
+export function paintForEvent(
+  event: { colorId?: string; calendarId?: string },
+  calendarColorHex: (calendarId: string | undefined) => string | null,
+): ColorPaint | null {
+  const own = paintFor(event.colorId);
+  if (own) return own;
+  const hex = calendarColorHex(event.calendarId);
+  if (!hex) return null;
+  return {
+    bar: { backgroundColor: hex, color: inkOn(hex) },
+    block: { backgroundColor: `${hex}22`, borderLeftColor: hex, color: hex },
+    dot: { backgroundColor: hex },
   };
 }

@@ -24,7 +24,7 @@
 // thing that stands out.
 
 import type { CalendarEvent } from "@/lib/workspace/calendar-model";
-import { monthGrid } from "@/lib/workspace/calendar-model";
+import { monthGrid, type WeekStart } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
 import { WEEKDAY_LABELS } from "./format";
@@ -44,17 +44,19 @@ const BUSY_SOME = 3;
 
 interface YearGridProps {
   eventsByDay: Map<string, CalendarEvent[]>;
+  /** Sunday or Monday — the mini months must agree with the month view. */
+  weekStart: WeekStart;
   onSelectMonth: (year: number, month: number) => void;
   today: Date;
   year: number;
 }
 
-export function YearGrid({ eventsByDay, onSelectMonth, today, year }: YearGridProps) {
+export function YearGrid({ eventsByDay, onSelectMonth, today, weekStart, year }: YearGridProps) {
   return (
     <div className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto rounded-xl border border-(--ui-stroke-tertiary) bg-background p-3 shadow-[0_3px_12px_rgba(0,0,0,0.04)] sm:grid-cols-3 xl:grid-cols-4">
       {Array.from({ length: 12 }, (_, month) => (
         <MiniMonth
-          days={monthGrid(year, month, today)}
+          days={monthGrid(year, month, today, weekStart)}
           eventsByDay={eventsByDay}
           key={month}
           month={month}
@@ -89,13 +91,15 @@ function MiniMonth({ days, eventsByDay, month, onSelectMonth, year }: MiniMonthP
           calendar a student has used — Google, Apple, the one on the wall —
           puts them there. First letter only: seven of them have to fit across a
           quarter-width card. */}
+      {/* Derived from the month's own first week, so these letters cannot
+          disagree with the columns beneath them when the week starts Monday. */}
       <div className="grid grid-cols-7" aria-hidden>
-        {WEEKDAY_LABELS.map((label, index) => (
+        {days.slice(0, 7).map((headDay) => (
           <span
             className="text-center text-[0.5rem] font-semibold tracking-[0.02em] text-(--ui-text-quaternary)"
-            key={`${label}-${index}`}
+            key={headDay.key}
           >
-            {label.charAt(0)}
+            {WEEKDAY_LABELS[headDay.date.getDay()]!.charAt(0)}
           </span>
         ))}
       </div>

@@ -7,7 +7,7 @@
 // View mode persists to localStorage["nemesis.calendar.view"] (unrelated to
 // the event data itself, still local-only by design).
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
@@ -23,11 +23,23 @@ import {
   deleteCalendarEvent,
   eventsByDate,
   loadCalendarEvents,
+  localeWeekStart,
   monthGrid,
   saveCalendarEvent,
   weekGrid,
+  WEEK_START_STORAGE_KEY,
+  type WeekStart,
 } from "@/lib/workspace/calendar-model";
 
+import {
+  type Calendar,
+  calendarList,
+  deleteCalendar,
+  hiddenCalendarIds,
+  loadCalendars,
+  PRIMARY_CALENDAR,
+  saveCalendar,
+} from "@/lib/workspace/calendars";
 import {
   CALENDAR_FILTER_STORAGE_KEY,
   parseHiddenKinds,
@@ -36,6 +48,9 @@ import {
 } from "@/lib/workspace/calendar-filter";
 
 import { CalendarHeader } from "./calendar-header";
+import { calendarColorOf } from "@/lib/workspace/calendar-colors";
+
+import { CalendarList } from "./calendar-list";
 import { DayRail } from "./day-rail";
 import { type EventDraft, EventFormDialog } from "./event-dialogs";
 import { CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
@@ -87,6 +102,16 @@ export function CalendarWorkspace() {
    * are edited from.
    */
   const [railKey, setRailKey] = useState<string | null>(null);
+  /** The student's own calendars. The primary one is never in here — see calendars.ts. */
+  const [calendars, setCalendars] = useState<Calendar[]>([]);
+  /** Whether the primary calendar's own tick box is off. Tab-local, not stored. */
+  const [primaryHidden, setPrimaryHidden] = useState(false);
+  /**
+   * Sunday or Monday. Read after mount only: the server has no locale and no
+   * localStorage, and a grid that starts on a different day on the server than
+   * in the browser is a hydration mismatch that throws the whole tree away.
+   */
+  const [weekStart, setWeekStart] = useState<WeekStart>(0);
 
   // View mode: read from storage only after mount (SSR has no localStorage).
   // Also honour ?date= — the link every agent-written event carries. Without
@@ -96,6 +121,8 @@ export function CalendarWorkspace() {
   useEffect(() => {
     setMounted(true);
     setView(loadStoredView());
+    const stored = window.localStorage.getItem(WEEK_START_STORAGE_KEY);
+    setWeekStart(stored === "0" || stored === "1" ? (Number(stored) as WeekStart) : localeWeekStart());
     setHiddenKinds(parseHiddenKinds(window.localStorage.getItem(CALENDAR_FILTER_STORAGE_KEY)));
     const requested = new URLSearchParams(window.location.search).get("date");
     const parsed = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? new Date(`${requested}T12:00:00`) : null;
@@ -125,7 +152,58 @@ export function CalendarWorkspace() {
   /** Everything downstream — month chips, the week grid, the agenda — reads
    *  this, so a hidden kind disappears from every view at once rather than from
    *  whichever one remembered to filter. */
-  const shownEvents = useMemo(() => visibleEvents(events, hiddenKinds), [events, hiddenKinds]);
+  useEffect(() => {
+    let cancelled = false;
+    loadCalendars({ preview, userId }).then((next) => {
+      if (!cancelled) setCalendars(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, preview]);
+
+  const allCalendars = useMemo(() => calendarList(calendars), [calendars]);
+  const hiddenCalendars = useMemo(() => hiddenCalendarIds(calendars), [calendars]);
+
+  /** Event colour, then calendar colour, then the kind's own — see event-colors.ts. */
+  const calendarHex = useCallback(
+    (calendarId: string | undefined) =>
+      calendarColorOf(calendars.find((entry) => entry.id === calendarId)?.colorId)?.hex ?? null,
+    [calendars],
+  );
+
+  async function changeCalendar(next: Calendar) {
+    // 🔴 THE PRIMARY CALENDAR IS NOT A ROW, so its own tick box and colour live
+    // only in this tab. Writing it would create a calendar nothing points at and
+    // leave every existing event still pointing at null.
+    setCalendars((current) =>
+      next.id === PRIMARY_CALENDAR.id
+        ? current
+        : current.some((entry) => entry.id === next.id)
+          ? current.map((entry) => (entry.id === next.id ? next : entry))
+          : [...current, next],
+    );
+    if (next.id === PRIMARY_CALENDAR.id) {
+      setPrimaryHidden(next.hidden ?? false);
+      return;
+    }
+    await saveCalendar(next, { preview, userId });
+  }
+
+  async function removeCalendar(id: string) {
+    setCalendars((current) => current.filter((entry) => entry.id !== id));
+    // The events survive and fall back to the primary calendar: the column is
+    // ON DELETE SET NULL, and null already means primary.
+    setEvents((current) => current.map((event) => (event.calendarId === id ? { ...event, calendarId: undefined } : event)));
+    await deleteCalendar(id, { preview, userId });
+  }
+
+  const shownEvents = useMemo(() => {
+    const byKind = visibleEvents(events, hiddenKinds);
+    return byKind.filter((event) =>
+      event.calendarId ? !hiddenCalendars.has(event.calendarId) : !primaryHidden,
+    );
+  }, [events, hiddenKinds, hiddenCalendars, primaryHidden]);
   const byDate = useMemo(() => eventsByDate(shownEvents), [shownEvents]);
 
   function changeHiddenKinds(next: Set<CalendarEventKind>) {
@@ -136,8 +214,11 @@ export function CalendarWorkspace() {
       // best-effort; the filter still applies for this session
     }
   }
-  const monthDays = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth(), today), [cursor, today]);
-  const weekDays = useMemo(() => weekGrid(cursor, today), [cursor, today]);
+  const monthDays = useMemo(
+    () => monthGrid(cursor.getFullYear(), cursor.getMonth(), today, weekStart),
+    [cursor, today, weekStart],
+  );
+  const weekDays = useMemo(() => weekGrid(cursor, today, weekStart), [cursor, today, weekStart]);
   // Day view is the same grid with one column, so it takes the same shape.
   const dayColumn = useMemo(
     () => [{ date: cursor, inMonth: true, isToday: dateKey(cursor) === dateKey(today), key: dateKey(cursor) }],
@@ -274,6 +355,37 @@ export function CalendarWorkspace() {
           headings slid away with the hours. Day and week now scroll inside
           their own grid; month and year scroll here, below. */}
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center gap-2 px-5 pb-1 max-sm:px-2">
+          <CalendarList
+            calendars={allCalendars.map((entry) =>
+              entry.id === PRIMARY_CALENDAR.id ? { ...entry, hidden: primaryHidden } : entry,
+            )}
+            onCreate={(name) => void changeCalendar({ id: crypto.randomUUID(), name })}
+            onDelete={(id) => void removeCalendar(id)}
+            onSave={(next) => void changeCalendar(next)}
+            onToggleHidden={(entry) => void changeCalendar({ ...entry, hidden: !entry.hidden })}
+          />
+          {/* 🔴 A CONTROL, NOT JUST A LOCALE GUESS. The browser's answer is right
+              for most people and wrong for the student who moved country, keeps
+              their timetable the other way round, or simply prefers it. Stored
+              per device, like the view mode beside it. */}
+          <button
+            className="rounded-lg border border-(--ui-stroke-secondary) px-2.5 py-1 text-xs font-medium text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
+            onClick={() => {
+              const next: WeekStart = weekStart === 0 ? 1 : 0;
+              setWeekStart(next);
+              try {
+                window.localStorage.setItem(WEEK_START_STORAGE_KEY, String(next));
+              } catch {
+                // Private mode: the choice still holds for this session.
+              }
+            }}
+            title="Which day the week starts on"
+            type="button"
+          >
+            Starts {weekStart === 0 ? "Sunday" : "Monday"}
+          </button>
+        </div>
         <CalendarHeader
           cursor={cursor}
           hiddenKinds={hiddenKinds}
@@ -299,6 +411,7 @@ export function CalendarWorkspace() {
               be made twice. */}
           {view === "day" && (
             <TimeGridView
+              calendarHex={calendarHex}
               days={dayColumn}
               eventsByDay={byDate}
               onAddOnDate={openAdd}
@@ -309,6 +422,7 @@ export function CalendarWorkspace() {
           )}
           {view === "week" && (
             <TimeGridView
+              calendarHex={calendarHex}
               days={weekDays}
               eventsByDay={byDate}
               onAddOnDate={openAdd}
@@ -325,6 +439,7 @@ export function CalendarWorkspace() {
             // narrow window is most of the month.
             <div className="flex min-h-0 flex-1 gap-3 max-lg:flex-col">
               <MonthGrid
+                calendarHex={calendarHex}
                 days={monthDays}
                 eventsByDay={byDate}
                 onOpenEvent={openEvent}
@@ -334,6 +449,7 @@ export function CalendarWorkspace() {
               />
               {railKey && (
                 <DayRail
+                  calendarHex={calendarHex}
                   dateKey={railKey}
                   events={byDate.get(railKey) ?? []}
                   onAddOnDate={openAdd}
@@ -344,7 +460,7 @@ export function CalendarWorkspace() {
             </div>
           )}
           {view === "year" && (
-            <YearGrid eventsByDay={byDate} onSelectMonth={openMonth} today={today} year={cursor.getFullYear()} />
+            <YearGrid eventsByDay={byDate} onSelectMonth={openMonth} today={today} weekStart={weekStart} year={cursor.getFullYear()} />
           )}
         </div>
       </div>
@@ -366,10 +482,11 @@ export function CalendarWorkspace() {
       )}
 
       {dialog?.mode === "add" && (
-        <EventFormDialog draft={dialog.draft} mode="add" onClose={() => setDialog(null)} onSave={handleSave} />
+        <EventFormDialog calendars={allCalendars} draft={dialog.draft} mode="add" onClose={() => setDialog(null)} onSave={handleSave} />
       )}
       {dialog?.mode === "edit" && (
         <EventFormDialog
+          calendars={allCalendars}
           event={dialog.event}
           mode="edit"
           onClose={() => setDialog(null)}

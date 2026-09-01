@@ -130,7 +130,10 @@ test("🔴 the year view stopped drawing one dot for every kind of day", () => {
   const year = readFileSync(new URL("../../components/workspace/calendar/year-grid.tsx", import.meta.url), "utf8");
   assert.match(year, /busyClass/, "the year view stopped shading by how full a day is");
   assert.match(year, /--ui-exam/, "an exam day is invisible in the year view again");
-  assert.match(year, /label\.charAt\(0\)/, "the S M T W T F S letters are missing again");
+  // The letters, however they are derived. calendars.test.ts pins the stronger
+  // fact: they come from the grid's own first week, so they cannot disagree with
+  // the columns beneath them once the week can start on Monday.
+  assert.match(year, /charAt\(0\)/, "the S M T W T F S letters are missing again");
 });
 
 test("🔴 weekends are not tinted, and no cell paints its own ground", () => {

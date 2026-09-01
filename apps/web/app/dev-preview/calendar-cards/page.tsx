@@ -106,6 +106,8 @@ export default function CalendarCardsPreview() {
             {/* No rail here: this preview exists to photograph the grid itself,
                 and `selectedKey={null}` is the state it is photographed in. */}
             <MonthGrid
+              // No calendars in this harness: every event paints by its kind.
+              calendarHex={() => null}
               days={days}
               eventsByDay={eventsByDay}
               onOpenEvent={() => {}}
