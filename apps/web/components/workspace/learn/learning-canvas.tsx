@@ -3331,7 +3331,7 @@ export function LearningCanvas({
           recording panel offers a second one. Same position, same width — the surface transforms,
           it does not gain a layer. */}
       {showComposer && recording && (
-        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4 pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent${paneInset}`}>
+        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[24px] pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent${paneInset}`}>
           <div className="pointer-events-auto w-full">
             <CanvasRecorder
               // The canvas's ordinary attach path — the identical one a dropped file takes, which is
