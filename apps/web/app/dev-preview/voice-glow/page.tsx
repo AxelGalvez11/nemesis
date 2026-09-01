@@ -46,11 +46,19 @@ function ReplicaPill() {
   );
 }
 
-/** C. The glow that listens: level in from the shared meter, attack fast, release slow. */
+/** C. The glow that listens — CHOSEN AND SHIPPED 2026-08-31 ("C but make the reactivity be
+ *  subtle?"). This demo runs the shipped tuning: fixed shadow, opacity 0.35..0.70. */
 function AliveGlow() {
   const layer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const fixed = layer.current;
+    if (fixed) {
+      fixed.style.boxShadow = [
+        "0 0 3px 1px color-mix(in srgb, var(--ui-action) 45%, transparent)",
+        "0 0 18px 4px color-mix(in srgb, var(--ui-action) 28%, transparent)",
+      ].join(", ");
+    }
     let target = 0;
     let shown = 0;
     const off = subscribeMicLevel((level) => {
@@ -63,15 +71,9 @@ function AliveGlow() {
       last = now;
       // A word lights it instantly; a pause lets it breathe out instead of snapping dark. The
       // same asymmetry every audio meter uses, tuned so a sentence reads as one warm swell.
-      shown = target >= shown ? target : Math.max(target, shown - dt * 1.4);
+      shown = target >= shown ? shown + (target - shown) * Math.min(1, dt * 9) : Math.max(target, shown - dt * 1.1);
       const el = layer.current;
-      if (el) {
-        el.style.opacity = String(0.3 + shown * 0.7);
-        el.style.boxShadow = [
-          `0 0 ${(3 + shown * 4).toFixed(1)}px 1px color-mix(in srgb, var(--ui-action) 55%, transparent)`,
-          `0 0 ${(14 + shown * 26).toFixed(1)}px ${(3 + shown * 8).toFixed(1)}px color-mix(in srgb, var(--ui-action) ${Math.round(24 + shown * 30)}%, transparent)`,
-        ].join(", ");
-      }
+      if (el) el.style.opacity = String(0.35 + shown * 0.35);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -143,7 +145,7 @@ export default function VoiceGlowPreviewPage() {
       </Candidate>
 
       <Candidate
-        feel="The glow listens. Faint while the room is quiet, brighter the moment you speak, easing back when you pause. It reads the same level meter the dictation waveform already reads, so it costs no new microphone plumbing."
+        feel="The glow listens. Faint while the room is quiet, brighter the moment you speak, easing back when you pause. It reads the same level meter the dictation waveform already reads, so it costs no new microphone plumbing. Chosen and shipped 2026-08-31, in the quieter tuning this demo now runs."
         name="Alive"
         tag="C"
       >

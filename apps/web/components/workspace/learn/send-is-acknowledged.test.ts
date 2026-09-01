@@ -450,7 +450,10 @@ test("🔴🔴 the composer chips only what the learner picked, never the canvas
   // What this line is actually guarding is the `flex flex-col`; the fill just happens to sit in the
   // same string, so it has to be kept in step. See `answer-matches-reference.test.ts`, which owns
   // the fill and the edge.
-  assert.ok(composer.includes('"flex flex-col bg-(--composer-fill)"'), "the composer stopped being a column");
+  // 🔴 `relative` JOINED THE STRING 2026-08-31: the voice session's glow (VoiceSessionGlow) is an
+  // inset layer inside the capsule, and a layer needs its parent positioned. The column is still
+  // the thing this line guards.
+  assert.ok(composer.includes('"relative flex flex-col bg-(--composer-fill)"'), "the composer stopped being a column");
 });
 
 test("🔴🔴 the canvas scrolls past the composer, which floats over it", () => {

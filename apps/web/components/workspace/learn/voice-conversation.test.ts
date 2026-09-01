@@ -144,3 +144,15 @@ test("🔴 a sent turn is spent: the box keeps no copy, and the next answer's mo
   // learner's own review — the reset lives in the send, which a held turn never reaches.
   assert.match(strip(HOOK), /else if \(verdict === "held"\) \{\s*stage\.current = "held";/, "the held verdict no longer holds the graded words");
 });
+
+test("🔴 the chosen glow: C tuned subtle — session-gated, borrowed meter, opacity-only (2026-08-31)", () => {
+  // Owner picked from /dev-preview/voice-glow: *"C but make the reactivity be subtle?"* The lamp
+  // exists only while the conversation runs (never for plain dictation or typing), borrows the
+  // waveform's own level channel rather than opening anything, and its whole reactive range is
+  // one opacity inside 0.35..0.70 — the shadow is written once and never re-rasterised.
+  const composer = strip(COMPOSER);
+  assert.match(composer, /\{voiceLoop\.active && <VoiceSessionGlow \/>\}/, "the glow lost its session gate");
+  assert.match(composer, /subscribeMicLevel\(/, "the glow stopped borrowing the shared meter");
+  assert.ok(!/getUserMedia/.test(composer), "the composer opened a microphone of its own for a decoration");
+  assert.match(composer, /String\(0\.35 \+ shown \* 0\.35\)/, "the reactive range left the subtle band the owner chose");
+});
