@@ -68,6 +68,39 @@ test("🪦 the view door is PULLED — the canvas opens on the conversation and 
   assert.ok(!/onToggleView|conversationOffered/.test(CANVAS), "the canvas still offers the door");
 });
 
+test("🔴🔴🔴 the COURSE reaches the chat — nothing but the thread is gated on the view", () => {
+  // Owner, 2026-09-01, asked what "no canvas" should cost: *"the course minimap should be in chat
+  // mode."* It already is, and this test is what stops that from being a coincidence.
+  //
+  // 🔴 THE MINIMAP WAS NEVER A CANVAS-MODE THING. It is gated on the canvas HAVING A COURSE —
+  // `planTitle` and a non-empty plan — which is a fact about the material, not about how the page
+  // is being looked at. The same is true of the teaching screen: `canvasPresentation` decides
+  // `regions.policy` from the runtime and the blocks and is never handed a view at all.
+  //
+  // 🔴 SO THE RULE IS STATED AS AN EXHAUSTIVE LIST, NOT AS A PILE OF ABSENCES. "The map is not
+  // view-gated" would pass while someone quietly gated the policy screen instead. Every use of the
+  // identifier `view` in the canvas is enumerated here, so gating ANYTHING new on it reddens this
+  // and has to be argued for.
+  // The trailing `-` in both guards is not decoration: it excludes the kebab-case import paths
+  // (`./canvas-history-view`, `./use-canvas-view`), which are file names, not reads of the state.
+  const uses = (CANVAS.match(/(?<![A-Za-z0-9_$."'`-])view(?![A-Za-z0-9_$-])/g) ?? []).length;
+  assert.equal(uses, 4, `the canvas now reads \`view\` ${uses} times, not 4 — say what the new one gates`);
+  assert.match(CANVAS, /const \{ view \} = useCanvasView\(\)/, "1 of 4: the view is no longer read from the hook");
+  assert.match(CANVAS, /const threadOpen = view === "conversation" && !viewing;/, "2 of 4: the thread's gate changed");
+  assert.match(CANVAS, /if \(view === "conversation" && scroller && turn\)/, "3 of 4: going back stopped asking the view");
+  assert.match(CANVAS, /\[view\],/, "4 of 4: goToMoment dropped its dependency on the view");
+
+  // And the two course surfaces, gated on the course existing.
+  const HEADER = strip(read("./canvas-header.tsx"));
+  assert.match(
+    HEADER,
+    /\{minimap\.planTitle !== null && minimap\.plan && minimap\.plan\.length > 0 && \(/,
+    "the course map's gate is no longer 'this canvas has a course'",
+  );
+  assert.ok(!/view/.test(HEADER), "a view reached the header again — the map is one prop away from being mode-only");
+  assert.match(CANVAS, /\{regions\.policy && \(\s*<CanvasPolicyView/, "the teaching screen's gate is no longer the surface's own");
+});
+
 test("🔴🔴 pulling the door did NOT delete the view — the machinery is parked, not gone", () => {
   // The whole reason to keep this file's other tests meaningful. `threadOpen` still asks the view
   // what it is; the hook still runs, still refuses storage, and still heals #930's pin, which is
