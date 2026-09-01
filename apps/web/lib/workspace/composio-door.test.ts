@@ -192,8 +192,29 @@ test("🔴 upstream error bodies are never echoed to the learner", () => {
 
 test("🔴 the consent screen belongs to the provider, and opens away from the learner's work", () => {
   assert.match(SETTINGS, /window\.open\(url, "_blank", "noopener,noreferrer"\)/, "the OAuth page lost noopener or its own tab");
+
   // Nemesis must never be in the business of taking a password itself.
-  assert.ok(!/type="password"|password/i.test(SETTINGS), "a password field appeared on the connections screen");
+  //
+  // 🔴 THIS GUARD WAS NARROWED, NOT WEAKENED, AND THIS FILE ALREADY ARGUES FOR WHY. It matched the
+  // bare word `password` anywhere in the file, so it fired the moment the screen told learners
+  // "Nemesis never sees your password" — reassurance copy, which is the OPPOSITE of the thing
+  // being guarded against. The Apps-section test a few lines down records the same lesson from a
+  // different guard: "A guard that fires on edits it does not care about teaches people to edit
+  // the guard, and the next person doing that in a hurry deletes the assertion instead of
+  // narrowing it." So it now names the shapes a password INPUT actually takes, which is both
+  // immune to prose and stricter than the old single check.
+  for (const shape of [/type="password"/i, /<input[^>]*password/i, /name="password"/i, /id="password"/i, /autoComplete="(current|new)-password"/i]) {
+    assert.ok(!shape.test(SETTINGS), `a password field appeared on the connections screen (${shape})`);
+  }
+});
+
+test("🔴 the screen says a broker is involved, before the click rather than after", () => {
+  // Owner, 2026-08-31: "users should be aware that we're using the service to connect to apps."
+  // Signing in happens on the provider's page and Composio's name is on it. A learner told nothing
+  // meets an unfamiliar company at the exact moment they are handing over access to their mail.
+  // This is the last screen before that click, so it is where the sentence has to be.
+  assert.match(SETTINGS, /Sign-in is handled by Composio/, "the connections screen stopped disclosing the broker");
+  assert.match(SETTINGS, /never sees your password/i, "the screen stopped saying Nemesis does not see the password");
 });
 
 test("🔴 the screen states the safety line in the learner's own words", () => {

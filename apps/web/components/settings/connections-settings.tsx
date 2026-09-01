@@ -78,6 +78,16 @@ export function ConnectionsSettings() {
           something. Before it sends, posts, or deletes anything, it will always show you what it is about
           to do and wait for you to say yes.
         </p>
+        {/* 🔴 SAID HERE BECAUSE THIS IS THE LAST SCREEN BEFORE THE CLICK. Signing in happens on the
+            provider's page, brokered by Composio, so their name appears on it. A learner who was
+            never told that meets an unfamiliar company at the exact moment they are handing over
+            access to their mail, which is the worst possible moment to be surprised. Told first,
+            the same screen reads as confirmation instead. Owner, 2026-08-31: "users should be aware
+            that we're using the service to connect to apps." */}
+        <p className="mt-1.5 text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
+          Sign-in is handled by Composio, a service we use to connect apps, so you will see their name on
+          the sign-in page. Nemesis never sees your password.
+        </p>
       </header>
 
       {!loaded ? (
