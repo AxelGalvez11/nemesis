@@ -19,6 +19,31 @@ import { connectionStatus } from "@/lib/workspace/composio-client";
 
 const CACHE_KEY = "nemesis.nav.connectedApps.v1";
 
+/**
+ * Concurrent callers share one request.
+ *
+ * 🔴 THE SHELL MOUNTS TWO READERS NOW. Since 2026-09-01 the collapsed rail and the open sidebar
+ * are BOTH in the document at once so they can cross-fade (workspace-shell.tsx), and each one
+ * draws `visibleNav`, so each one calls this. Without the share that is two identical network
+ * reads on every load and two more on every window focus — for one answer, to draw one gate, in
+ * two places that must agree anyway.
+ *
+ * Cleared when it settles rather than cached: this only merges calls that overlap. A later mount,
+ * and every `focus` re-read the hook exists to do, still reads fresh.
+ */
+let inFlight: ReturnType<typeof connectionStatus> | null = null;
+function statusOnce(): ReturnType<typeof connectionStatus> {
+  if (!inFlight) {
+    const started = connectionStatus();
+    inFlight = started;
+    void started.then(
+      () => { if (inFlight === started) inFlight = null; },
+      () => { if (inFlight === started) inFlight = null; },
+    );
+  }
+  return inFlight;
+}
+
 function readCache(): readonly string[] {
   try {
     const raw = window.sessionStorage.getItem(CACHE_KEY);
@@ -34,7 +59,7 @@ export function useConnectedApps(): readonly string[] {
   useEffect(() => {
     let alive = true;
     const read = () =>
-      void connectionStatus().then(
+      void statusOnce().then(
         (status) => {
           if (!alive) return;
           // 🔴 UNIONED, NEVER REPLACED, BECAUSE THE RAIL'S RULE IS ARRIVE-AND-STAY. The owner's

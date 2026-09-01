@@ -25,22 +25,21 @@
 // reports earn a real home they earn a section; a section over an empty table would render
 // forever-empty shelves and read as broken (the §38.3 lesson).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   ChevronLeft,
-  Download,
   Folder as FolderIcon,
   GraduationCap,
   LayoutGrid,
   Layers,
   List,
   MonitorPlay,
+  MoreHorizontal,
   NotebookText,
   Plus,
   Search,
-  Share2,
 } from "lucide-react";
 
 import {
@@ -48,9 +47,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
-import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { DeckShare } from "./deck-share";
 import { deckFileName, deckToAnkiText } from "@/lib/workspace/deck-export";
@@ -184,7 +185,18 @@ const SHELVES: readonly { id: Shelf; label: string }[] = [
  * children said which one this page is. The wrong model is the expensive one — it put this page
  * and Projects 32px apart, and no arithmetic would have found it.
  */
-/* 🔴🔴 THE LEADING ICON GREW A TILE, AND THE COLOUR MOVED ONTO THE GLYPH — measured on the
+/* 🔴🔴 `--ui-bg-elevated`, NOT `--ui-bg-primary` — TWO PRODUCTS USE THAT NAME FOR OPPOSITE
+ * THINGS, and the tile paid for it. Owner, 2026-09-01: *"the library has the icons darkened."*
+ * The reference's `--bg-primary` is its page WHITE; ours is a FILL, `color-mix(--ui-base 10%,
+ * transparent)` over an accent, and measured on /dev-preview/library/outputs it composited to
+ * `color(srgb 0.182 0.182 0.182 / 0.244)` — a 24% dark wash, roughly #c9c9c9 on this page. So
+ * every row led with a grey chip where the reference has an all-but-invisible one, and the
+ * coloured glyph inside it was sitting on a shadow. `--ui-bg-elevated` is the SURFACE token
+ * (`color-mix(#fff 28%, #fcfcfc)` — the page itself), so what is left of the tile is its
+ * hairline border, which is exactly the tell the 2026-08-30 measurement described ("invisible in
+ * dark mode because its surface matches the page; the border was the tell").
+ *
+ * 🔴 THE LEADING ICON GREW A TILE, AND THE COLOUR MOVED ONTO THE GLYPH — measured on the
  * reference's library 2026-08-30 evening (owner: *"they should also have colors like in
  * chatgpt"*). Their every row leads with a 32px `rounded-[8px]` box: primary surface, hairline
  * border (`rgba(255,255,255,0.15)` dark), 20px glyph inside — and the GLYPH's colour names the
@@ -193,7 +205,7 @@ const SHELVES: readonly { id: Shelf; label: string }[] = [
  * model gave it. The old `COL_ICON` constant died here — nothing draws a bare 20px lead any
  * more. */
 const COL_TILE =
-  "mr-[12px] flex size-[32px] shrink-0 items-center justify-center rounded-[8px] border border-black/[0.10] bg-(--ui-bg-primary) dark:border-white/[0.15]";
+  "mr-[12px] flex size-[32px] shrink-0 items-center justify-center rounded-[8px] border border-black/[0.10] bg-(--ui-bg-elevated) dark:border-white/[0.15]";
 /* One colour per kind the Library holds, the way the reference colours file types. Chosen from
  * the same system family as its measured picks (#0285FF blue, #FF3B30 red): documents take the
  * reference's own document blue; slides and decks take two more from that family so the three
@@ -265,16 +277,42 @@ const COLUMN_HEAD =
  * do not light up with it is two objects pretending to be one.
  */
 const ROW =
-  "flex h-[60px] items-center border-b border-b-black/[0.05] py-[10px] pr-[8px] text-left transition-colors hover:bg-black/[0.05] dark:border-b-white/[0.05] dark:hover:bg-white/[0.10]";
+  "group/row flex h-[60px] items-center border-b border-b-black/[0.05] py-[10px] pr-[8px] text-left transition-colors hover:bg-black/[0.05] dark:border-b-white/[0.05] dark:hover:bg-white/[0.10]";
 /** The clickable part of a row: fills the band's 40px content box, never paints its own ground. */
 const ROW_MAIN = "flex h-full min-w-0 flex-1 items-center bg-transparent text-left";
 /** Name cell: 14px / 400 / `--text-primary`, truncating. */
 const ROW_NAME = "min-w-0 flex-1 truncate text-[14px] font-normal text-(--ui-text-primary)";
 /** Meta cell (dates, counts): 14px / `--text-secondary` — NOT the 12px quaternary this used. */
 const ROW_META = "text-[14px] text-(--ui-text-secondary)";
-/** A trailing control: 28x28, four of which fill `COL_ACTIONS` exactly. */
+/**
+ * The row's ONE trailing control, 28x28 inside the measured 112px slot.
+ *
+ * 🔴🔴 IT IS INVISIBLE UNTIL THE ROW IS HOVERED, AND THAT IS THE REFERENCE'S OWN RULE. Owner,
+ * 2026-09-01, over a screenshot with the whole trailing column ringed: *"the documents in library
+ * have these options that i dont want."* Every row was printing its controls at rest — a folder
+ * picker, a download, a share and a peek chevron on a deck; a folder picker on a document; a
+ * folder picker and a named design chip on a slide deck — so eleven glyphs and two words were
+ * standing on a list of nine rows before the learner had reached for anything. The 112px this file
+ * has always reserved is not a toolbar: the measurement note above it says outright that it is
+ * "the space its hover menu lives in", and this page filled it with a toolbar anyway.
+ *
+ * 🔴 NOTHING WAS TAKEN AWAY, IT MOVED ONE PRESS DEEPER. Download is the deck's only way out of a
+ * product where cards are output-only, and removing it would turn that rule into a cage; it, the
+ * share sheet, the peek and the filing menu are all in the ⋯. What is genuinely gone from this
+ * page is the slide DESIGN chip, and only because it already exists on `/deck`, where you can see
+ * the slides it changes — choosing a look from a list you cannot see the effect of is the worse
+ * of the two doors, not the better one.
+ *
+ * 🔴 `transition-[background-color,color,opacity]`, NOT `transition-colors` PLUS AN OPACITY ONE.
+ * Two utilities both set `transition-property` and the later rule in the generated sheet wins
+ * regardless of the order they are written in the class string, so one of the two silently does
+ * nothing — and which one depends on Tailwind's output order, not on this file.
+ */
 const ROW_ACTION =
-  "flex size-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-secondary) transition-colors hover:bg-black/[0.05] hover:text-(--ui-text-primary) disabled:opacity-40 dark:hover:bg-white/[0.10]";
+  "flex size-[28px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-secondary) transition-[background-color,color,opacity] hover:bg-black/[0.05] hover:text-(--ui-text-primary) disabled:opacity-40 dark:hover:bg-white/[0.10]";
+/** Held back until the row is hovered, the control is focused, or its own menu is open. */
+const ROW_ACTION_QUIET =
+  "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100";
 /** Empty-state and loading copy, at the same 14px the rows use. */
 const ROW_EMPTY = "py-[12px] text-[14px] text-(--ui-text-secondary)";
 
@@ -855,15 +893,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                     <span className={cn(COL_COUNT, ROW_META)}>{deck.cards}</span>
                   </button>
                   <span className={COL_ACTIONS}>
-                  {/* The peek. Deliberately secondary and deliberately still here: reading
-                      the answers is sometimes what you want (checking what Nemesis made
-                      before trusting it), it just must not be what pressing a deck does. */}
-                  <FolderPicker
-                    current={deck.folderId}
-                    folders={folders}
-                    label={`Move ${deck.name} to a folder`}
-                    onFile={(folderId) => void file("deck", deck.id, folderId)}
-                  />
                   {/* 🔴🔴 A HAND-AUTHORING DOOR STOOD HERE FOR ONE DAY, AND THE OWNER REVERSED IT
                       (2026-08-25): *"I don't want users to edit flashcards, really. Mainly just
                       download them if they want to… similar to notebook where you don't have to
@@ -878,34 +907,25 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                       🔴 IT IS REPLACED, NOT JUST REMOVED. Taking authoring away leaves a learner
                       with cards they cannot change and cannot take elsewhere, which is a cage
                       rather than a clean surface. Download is the way out: a deck leaves as a
-                      file Anki can import, so nothing here is a one-way door. */}
-                  <button
-                    aria-label={`Download ${deck.name}`}
-                    className={ROW_ACTION}
-                    disabled={downloading === deck.id}
-                    onClick={() => void takeDeck(deck)}
-                    title="Download for Anki"
-                    type="button"
+                      file Anki can import, so nothing here is a one-way door. It is one press
+                      deeper than it was (2026-09-01, see `ROW_ACTION`) and no further. */}
+                  <RowMenu
+                    current={deck.folderId}
+                    folders={folders}
+                    label={`Options for ${deck.name}`}
+                    onFile={(folderId) => void file("deck", deck.id, folderId)}
                   >
-                    <Download size={15} strokeWidth={1.8} />
-                  </button>
-                  <button
-                    aria-label={`Share ${deck.name}`}
-                    className={ROW_ACTION}
-                    onClick={() => setSharing(deck)}
-                    type="button"
-                  >
-                    <Share2 size={15} strokeWidth={1.8} />
-                  </button>
-                  <button
-                    aria-expanded={openDeck === deck.id}
-                    aria-label={openDeck === deck.id ? `Hide the cards in ${deck.name}` : `Show the cards in ${deck.name}`}
-                    className={ROW_ACTION}
-                    onClick={() => void toggleDeck(deck.id)}
-                    type="button"
-                  >
-                    <ChevronDown className={cn("transition-transform", openDeck === deck.id && "rotate-180")} size={15} strokeWidth={1.8} />
-                  </button>
+                    {/* The peek. Deliberately secondary and deliberately still here: reading the
+                        answers is sometimes what you want (checking what Nemesis made before
+                        trusting it), it just must not be what pressing a deck does. */}
+                    <DropdownMenuItem onClick={() => void toggleDeck(deck.id)}>
+                      {openDeck === deck.id ? "Hide the cards" : "Show the cards"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={downloading === deck.id} onClick={() => void takeDeck(deck)}>
+                      Download for Anki
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSharing(deck)}>Share</DropdownMenuItem>
+                  </RowMenu>
                   </span>
                 </div>
                 {openDeck === deck.id && (
@@ -944,22 +964,40 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   <span aria-hidden className={COL_COUNT} />
                 </button>
                 <span className={COL_ACTIONS}>
-                  <FolderPicker
+                  <RowMenu
                     current={note.folderId}
                     folders={folders}
-                    label={`Move ${note.title} to a folder`}
+                    label={`Options for ${note.title}`}
                     onFile={(folderId) => void file("note", note.id, folderId)}
                   />
                 </span>
               </li>
   );
   const slidesRow = (row: SlidesRow) => (
-    <SlidesShelfRow
-      folders={folders}
-      key={row.assetId}
-      onFile={(folderId) => void file("slides", row.assetId, folderId)}
-      row={row}
-    />
+              <li className={ROW} key={row.assetId}>
+                <a
+                  className={cn(ROW_MAIN, !row.canvasId && "pointer-events-none opacity-60")}
+                  href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
+                >
+                  <span className={COL_TILE}><MonitorPlay size={20} strokeWidth={1.8} style={{ color: KIND_COLOR.slides }} /></span>
+                  <span className={ROW_NAME}>{row.title}</span>
+                  <span className={cn(COL_MODIFIED, ROW_META)}>{when(row.createdAt)}</span>
+                  <span aria-hidden className={COL_COUNT} />
+                </a>
+                <span className={COL_ACTIONS}>
+                  {/* 🔴 NO DESIGN CHIP HERE ANY MORE. It was the one control the reference has no
+                      equivalent of, it carried a WORD in a slot measured for glyphs, and it asked
+                      the learner to pick a look beside a row that shows none of it. `/deck` has
+                      the same picker over the actual slides — see canvas-controls.tsx and the deck
+                      page — so this is a door closed where it was blind, not a feature removed. */}
+                  <RowMenu
+                    current={row.folderId}
+                    folders={folders}
+                    label={`Options for ${row.title}`}
+                    onFile={(folderId) => void file("slides", row.assetId, folderId)}
+                  />
+                </span>
+              </li>
   );
   const folderCard = (folder: Folder) => (
                 <button
@@ -1490,81 +1528,62 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 }
 
 /**
- * The move-to-folder menu that hangs off every row, on every shelf.
+ * The row's ⋯ — everything a row can do that is not "open me".
  *
- * 🔴 ONE COMPONENT FOR ALL THREE SHELVES, because the three tables are an accident of history and
- * the learner is not supposed to be able to tell. Three copies of this menu would be three places
- * for "No folder" to be spelled differently or to stop working.
+ * 🔴 ONE MENU, NOT A ROW OF BUTTONS. See `ROW_ACTION` above for the owner's ruling and what moved
+ * where. Each shelf passes the items only it has (a deck: peek, download, share) and the filing
+ * submenu is written once here, because it is the one action all three kinds share and three
+ * copies of it would eventually disagree about what "No project" means.
  *
- * 🔴 NO "NEW FOLDER…" HERE, DELIBERATELY. Making a folder from inside a move menu means naming it
- * in a prompt while a menu is open over the page, and the menu closing takes the row's context
- * with it. The folder bar at the top makes folders; this menu only files into ones that exist.
- * When there are none it says so rather than opening an empty menu.
+ * 🔴 IT FILES, IT DOES NOT CREATE. Making a folder needs a name, and asking for one while a menu
+ * is open over the page means the menu closes and takes the row's context with it. The folder bar
+ * at the top of the page makes projects; this only files into ones that exist, and says so plainly
+ * when there are none rather than opening an empty submenu that looks broken.
  */
-function FolderPicker({
+function RowMenu({
+  children,
   current,
   folders,
   label,
   onFile,
 }: {
+  /** Items this kind of row has and the others do not. Rendered above the filing submenu. */
+  children?: ReactNode;
   current: string | null;
   folders: readonly Folder[];
   label: string;
   onFile: (folderId: string | null) => void;
 }) {
-  if (folders.length === 0) return null;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label={label} className={ROW_ACTION}>
-        <FolderIcon size={15} strokeWidth={1.8} />
+      <DropdownMenuTrigger aria-label={label} className={cn(ROW_ACTION, ROW_ACTION_QUIET)}>
+        <MoreHorizontal size={15} strokeWidth={1.8} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem disabled={current === null} onClick={() => onFile(null)}>
-          No folder
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {folders.map((folder) => (
-          <DropdownMenuItem disabled={current === folder.id} key={folder.id} onClick={() => onFile(folder.id)}>
-            {folder.name}
-          </DropdownMenuItem>
-        ))}
+        {children}
+        {children ? <DropdownMenuSeparator /> : null}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Move to project</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {folders.length === 0 ? (
+              <DropdownMenuItem disabled>No projects yet</DropdownMenuItem>
+            ) : (
+              <>
+                <DropdownMenuItem disabled={current === null} onClick={() => onFile(null)}>
+                  No project
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {folders.map((folder) => (
+                  <DropdownMenuItem disabled={current === folder.id} key={folder.id} onClick={() => onFile(folder.id)}>
+                    {folder.name}
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-function SlidesShelfRow({
-  row,
-  folders,
-  onFile,
-}: {
-  row: SlidesRow;
-  folders: readonly Folder[];
-  onFile: (folderId: string | null) => void;
-}) {
-  const { choose, designId } = useDeckDesignChoice(row.assetId);
-  return (
-    <li className={ROW}>
-      <a
-        className={cn(ROW_MAIN, !row.canvasId && "pointer-events-none opacity-60")}
-        href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
-      >
-        <span className={COL_TILE}><MonitorPlay size={20} strokeWidth={1.8} style={{ color: KIND_COLOR.slides }} /></span>
-        <span className={ROW_NAME}>{row.title}</span>
-        <span className={cn(COL_MODIFIED, ROW_META)}>{when(row.createdAt)}</span>
-        <span aria-hidden className={COL_COUNT} />
-      </a>
-      {/* 🔴 THE DESIGN CHIP IS THE ONE CONTROL THE REFERENCE HAS NO EQUIVALENT OF, and it is a
-          label rather than an icon, so it is the only thing that can outgrow the measured 112px
-          trailing slot. It is made shrinkable here rather than widened for everyone: its own
-          label already truncates, so it gives up width instead of pushing the Modified column
-          out of the one place all three shelves agree on. */}
-      <span className={cn(COL_ACTIONS, "gap-[4px]")}>
-        <FolderPicker current={row.folderId} folders={folders} label={`Move ${row.title} to a folder`} onFile={onFile} />
-        <span className="flex min-w-0 shrink [&>button>span]:min-w-0 [&>button]:min-w-0 [&>button]:shrink">
-          <DeckDesignPicker designId={designId} onPick={choose} sampleTitle={row.title} />
-        </span>
-      </span>
-    </li>
-  );
-}

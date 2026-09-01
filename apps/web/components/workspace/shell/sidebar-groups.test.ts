@@ -51,9 +51,10 @@ test("🔴🔴🔴 the Projects header is UNCONDITIONAL, because it carries the 
   // Calibration: wrap the header in `{rootFolders.length > 0 ? (` and this reddens, because the
   // conditional then opens BEFORE the label instead of after it.
   const header = at(SIDEBAR, 'label="Projects"');
-  // The body's conditional grew a collapse gate 2026-08-30; the invariant is unchanged — the
-  // HEADER stands before and outside whatever decides whether rows render under it.
-  const list = at(SIDEBAR, 'closedSections.has("projects") ? null : rootFolders.length > 0 ? (');
+  // The body's conditional grew a collapse gate 2026-08-30 and became a `<Reveal>` that ANIMATES
+  // 2026-09-01; the invariant is unchanged through both — the HEADER stands before and outside
+  // whatever decides whether rows render under it.
+  const list = at(SIDEBAR, '<Reveal open={!closedSections.has("projects")}>');
   assert.ok(header < list, "the Projects header moved inside its own conditional — the New project button can now be unreachable");
 
   const buttons = SIDEBAR.match(/action=\{newFolderButton\}/g) ?? [];
@@ -106,8 +107,13 @@ test("🔴 every section header collapses, and the collapse persists (owner 2026
     assert.ok(SIDEBAR.includes(section), `${section} is gone — that header no longer collapses`);
   }
   assert.match(SIDEBAR, /const CLOSED_SECTIONS_KEY = "nemesis\.sidebar\.canvases\.v1\.closedSections";/, "the collapse choice no longer persists");
+  // 🔴 AND SINCE 2026-09-01 A SECTION GROWS SHUT RATHER THAN VANISHING — the same `<Reveal>` a
+  // project body uses, so a header triangle and a project row move the rail the same way.
+  for (const section of ["pinned", "projects", "canvases"]) {
+    assert.ok(SIDEBAR.includes(`<Reveal open={!closedSections.has("${section}")}>`), `the ${section} section stopped using the shared reveal`);
+  }
   // Collapsing must never hide the one create button: the Projects HEADER renders outside the gate.
-  const gate = at(SIDEBAR, 'closedSections.has("projects") ? null :');
+  const gate = at(SIDEBAR, '<Reveal open={!closedSections.has("projects")}>');
   assert.ok(at(SIDEBAR, 'label="Projects"') < gate, "the Projects header moved inside its own collapse gate");
 });
 

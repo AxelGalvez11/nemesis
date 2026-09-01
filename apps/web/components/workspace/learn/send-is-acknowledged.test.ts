@@ -678,12 +678,19 @@ test("a deck's design is the learner's to choose, in both places it lives", () =
   // design regardless.
   const controls = readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8");
   assert.match(controls, /DeckDesignPicker/, "the canvas outputs panel lost its design picker");
+  // 🔴 2026-09-01: THE LIBRARY IS NO LONGER ONE OF THOSE PLACES, and that is the owner's own call
+  // — his screenshot ringed the Library's whole trailing column, design chip included: *"the
+  // documents in library have these options that i dont want."* It was the weaker of the two
+  // doors anyway: a named chip beside a table row asks you to choose a look you cannot see. The
+  // invariant this test exists for is unchanged — the picker must live wherever a learner can
+  // reach a deck — so it is now checked in the two surfaces that SHOW the slides.
   const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
-  assert.match(library, /DeckDesignPicker/, "the Library's Slides shelf lost its design picker");
+  assert.ok(!/DeckDesignPicker/.test(library), "the design chip came back to a Library row that cannot show what it changes");
   // 2026-08-24 REVERSAL: the download used to happen from these rows, so the guard checked that
   // the chosen design was passed to downloadDeck here. Both rows now open /deck, which carries
   // the picker AND the export; the design still reaches the builder, one surface further in.
   const deck = readFileSync(new URL("../../../app/(workspace)/deck/page.tsx", import.meta.url), "utf8");
+  assert.match(deck, /<DeckDesignPicker\b/, "the deck view lost the picker the Library handed it");
   assert.match(deck, /downloadDeck\(plan, output\.title, designId\)/, "the deck view exports without the chosen design");
 });
 

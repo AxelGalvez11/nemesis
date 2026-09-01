@@ -111,7 +111,12 @@ test("🔴🔴 pressing a deck reviews it; the text list is demoted to a peek", 
   assert.match(OUTPUTS, /aria-label=\{`Review \$\{deck\.name\}`\}/, "the review row lost its accessible name");
   // The peek survives — it is useful for checking what Nemesis made — but only behind its own control.
   assert.match(OUTPUTS, /onClick=\{\(\) => void toggleDeck\(deck\.id\)\}/, "the card list can no longer be opened at all");
-  assert.match(OUTPUTS, /aria-expanded=\{openDeck === deck\.id\}/, "the peek control does not report its state");
+  // 🔴 2026-09-01: THE PEEK IS A MENU ITEM NOW, NOT A CHEVRON, so it names its state in WORDS
+  // instead of `aria-expanded` — the owner cleared the Library's rows of standing controls (*"the
+  // documents in library have these options that i dont want"*) and everything a row can do moved
+  // into one ⋯. A menu item that toggles must still say which way it will go, or the learner
+  // presses it to find out.
+  assert.match(OUTPUTS, /"Hide the cards" : "Show the cards"/, "the peek control does not say which way it will go");
 });
 
 test("🔴 a canvas linking to a deck means 'go study this'", () => {
