@@ -55,7 +55,7 @@ test("🔴🔴 the turn is measured by its own box, never by scrollHeight", () =
 
 test("🔴 reserve before scrolling, or the prompt lands short of the top", () => {
   const setsRunway = effect.indexOf("runway.style.height");
-  const scrolls = effect.indexOf("scroller.scrollTop +=");
+  const scrolls = effect.indexOf("scroller.scrollTo(");
   assert.ok(setsRunway > 0 && scrolls > setsRunway, "it scrolls before the room exists, which silently clamps");
 });
 
@@ -94,3 +94,19 @@ test("🔴 a send is keyed on a counter, not the sentence", () => {
   const send = code.slice(code.indexOf("setCurrentSaid(trimmed)"), code.indexOf("setCurrentSaid(trimmed)") + 400);
   assert.match(send, /setSendSeq/, "the counter is no longer bumped where a turn actually starts");
 });
+
+test("🔴🔴 the send glides once, and the ticks after it do not chase reflow", () => {
+  // Owner, 2026-09-01: "the prompts don't scroll smoothly when the prompt gets pinned to the top."
+  // The first build set `scrollTop` directly on every tick of a 100ms interval, so a send read as
+  // a hard cut followed by small jerks as the answer changed height. Ten instant scrolls a second
+  // is not a scroll, it is a stutter.
+  assert.match(effect, /scroller\.scrollTo\(\{/, "the pin went back to assigning scrollTop, which cannot ease");
+  assert.ok(!/scroller\.scrollTop \+= /.test(effect), "the instant assignment is back");
+  assert.match(effect, /behavior: glided \|\| window\.matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches \? "auto" : "smooth"/, "the first placement stopped gliding, or reduced motion stopped being honoured");
+
+  // 🔴 THE THRESHOLD IS WHAT SEPARATES A PIN FROM A STUTTER. Without it every one-pixel reflow is
+  // a scroll, ten times a second.
+  assert.match(effect, /if \(glided && Math\.abs\(drift\) < PIN_DRIFT_PX\) return;/, "the pin chases sub-pixel drift again");
+  assert.match(CANVAS, /const PIN_DRIFT_PX = 4;/, "the drift threshold moved");
+});
+

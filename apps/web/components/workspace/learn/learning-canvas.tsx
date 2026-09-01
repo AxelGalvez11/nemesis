@@ -76,6 +76,7 @@ import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
 import { WHOLE_CANVAS } from "@/lib/learn/canvas-focus";
 import { fileTurn, turnHasContent, type CanvasThreadTurn } from "@/lib/learn/canvas-thread";
+import { EditSentPrompt, SentPromptEditor } from "./edit-sent-prompt";
 import { LearnerUtterance } from "./learner-utterance";
 import { CanvasSourceCards } from "./canvas-source-cards";
 import { SemanticVisual } from "./semantic-visual";
@@ -174,6 +175,16 @@ const PIN_INSET_PX = 64;
 /** How long the prompt may be held at the top before the page is the learner's again. Long enough
  *  for a slow answer to finish forming, short enough that nothing is held hostage. */
 const PIN_MAX_MS = 60_000;
+
+/**
+ * How far the prompt may drift before the pin corrects it.
+ *
+ * 🔴 A THRESHOLD IS WHAT SEPARATES A PIN FROM A STUTTER. The tick runs ten times a second and the
+ * answer changes height under it constantly; correcting a one-pixel reflow ten times a second is
+ * the jitter the owner reported. Four pixels is below what reads as movement and far under the
+ * collapse this is actually there to catch, which is hundreds.
+ */
+const PIN_DRIFT_PX = 4;
 
 const LANDING_TICK_MS = 100;
 
@@ -373,6 +384,8 @@ export function LearningCanvas({
    * same thing twice in a row, which is exactly what a person does when the first answer missed.
    */
   const [sendSeq, setSendSeq] = useState(0);
+  /** Whether the learner is amending the sentence they just sent. */
+  const [editingPrompt, setEditingPrompt] = useState(false);
   /**
    * Open at the foot of the conversation, the way every chat surface does.
    *
@@ -1031,6 +1044,7 @@ export function LearningCanvas({
       setCurrentSaidVia(spokenNow);
       // Owner picked option A from the mockup: the prompt goes to the top and stays there.
       setSendSeq((n) => n + 1);
+      setEditingPrompt(false);
       try {
         const decision = await session.converse(trimmed, surroundings(), () => {
           // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
@@ -1855,6 +1869,19 @@ export function LearningCanvas({
     if (!scroller || !turn) return;
 
     let live = true;
+    /**
+     * 🔴🔴 THE FIRST PLACEMENT GLIDES; THE CORRECTIONS AFTER IT DO NOT MOVE UNLESS THEY HAVE TO.
+     * Owner, 2026-09-01: *"the prompts don't scroll smoothly when the prompt gets pinned to the
+     * top."* The version this replaces set `scrollTop` directly on every tick of a 100ms interval,
+     * so a send read as a hard cut and then a series of small jerks as the answer changed height
+     * underneath it. Ten instant scrolls a second is not a scroll, it is a stutter.
+     *
+     * So: the send itself is one smooth glide to the target, and every tick after it only acts when
+     * the prompt has actually drifted — which in practice is the frame the previous answer
+     * unmounts and the turn collapses. A threshold is what makes that possible: sub-pixel and
+     * one-pixel differences are the reflow breathing, and chasing them is exactly the stutter.
+     */
+    let glided = false;
     const hold = () => {
       const node = currentTurnRef.current;
       const runway = runwayRef.current;
@@ -1865,8 +1892,16 @@ export function LearningCanvas({
       runway.style.height = `${Math.max(0, Math.round(scroller.clientHeight - PIN_INSET_PX - turnHeight))}px`;
       // 🔴 FROM RECTS, NOT `offsetTop`, which is relative to whichever ancestor happens to be
       // positioned — and this subtree gains and loses positioned wrappers as the answer forms.
-      const delta = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-      scroller.scrollTop += delta - PIN_INSET_PX;
+      const drift = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top - PIN_INSET_PX;
+      if (glided && Math.abs(drift) < PIN_DRIFT_PX) return;
+      // 🔴 `scrollTo`, NOT `scrollTop +=`, BECAUSE ONLY ONE OF THEM CAN EASE. And reduced motion
+      // gets the instant one: somebody who asked the system to stop moving must still land in the
+      // right place, they just do not get the travel.
+      scroller.scrollTo({
+        behavior: glided || window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        top: scroller.scrollTop + drift,
+      });
+      glided = true;
     };
 
     const release = () => {
@@ -2504,8 +2539,30 @@ export function LearningCanvas({
             replacing a reply. The learner's sentence does not swap; it stands while the answer
             beneath it forms, which is also what makes a send feel acknowledged. */}
         {threadOpen && currentSaid?.trim() && (
-          <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) justify-end px-6">
-            <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
+          <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
+            {/* 🔴 EDITING RE-ASKS, IT DOES NOT REWRITE HISTORY. `retryTurn` is `converse`, the one
+                path a turn has ever taken, so the exchange being edited files into the thread
+                exactly as it would have and the new sentence becomes the current turn. Nothing is
+                deleted. The reference forks at the edited message; doing that here would delete
+                turns the learner has already read, which is a much bigger claim than "add edit
+                prompt". Owner, 2026-09-01.
+                🔴 AND ONLY WHEN NOTHING IS IN FLIGHT. Offering an edit while the previous answer is
+                still forming invites two turns racing for the same surface. */}
+            {editingPrompt ? (
+              <SentPromptEditor
+                initial={currentSaid}
+                onCancel={() => setEditingPrompt(false)}
+                onSubmit={(next) => {
+                  setEditingPrompt(false);
+                  retryTurn(next);
+                }}
+              />
+            ) : (
+              <>
+                <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
+                {!turnInFlight && <EditSentPrompt onOpen={() => setEditingPrompt(true)} />}
+              </>
+            )}
           </div>
         )}
 
