@@ -43,7 +43,7 @@ import { singleUnitCoverage } from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
 import { reuseStoredParse } from "@/lib/notebooks/parse-reuse";
-import { kindFor, parseDocument, sniffKind } from "@/lib/notebooks/parse-document";
+import { kindFor, parseDocument, resolveKind, sniffKind } from "@/lib/notebooks/parse-document";
 import { noTextMessage } from "@/lib/notebooks/parse-message";
 import { MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
@@ -81,7 +81,8 @@ function sizeMessage(): string {
  * exports from a route file, and that the fix was to move them to lib/ if anyone
  * else needed them. They were moved. This is the other half of that move.
  */
-const supportedFormats = "a photo, a PDF, Word (.docx), PowerPoint (.pptx), or Excel (.xlsx)";
+const supportedFormats =
+  "a photo, a PDF, Word, PowerPoint, Excel, Keynote, Pages, an EPUB book, or a page saved from the web";
 
 export async function POST(req: Request): Promise<Response> {
   const requestId = crypto.randomUUID();
@@ -174,8 +175,9 @@ export async function POST(req: Request): Promise<Response> {
   const sourceSize = sourceBytes.byteLength;
   const bytes = sourceBytes;
   // Name first (cheap and right almost always), contents second (right when a name
-  // has lost its extension). Refusing only after both have failed.
-  const kind = kindFor(sourceName, sourceType) ?? sniffKind(bytes);
+  // has lost its extension, and when the name claims a format the bytes deny).
+  // Refusing only after both have failed.
+  const kind = resolveKind(sourceName, sourceType, bytes);
   if (!kind) {
     return NextResponse.json(
       { error: `Unsupported file. Add ${supportedFormats}.` },
@@ -265,6 +267,18 @@ export async function POST(req: Request): Promise<Response> {
     }
     if (!outcome.ok && outcome.reason === "unsupported") {
       return NextResponse.json({ error: "That file type isn't supported yet." }, { status: 415 });
+    }
+    if (!outcome.ok && outcome.reason === "vendor-unavailable") {
+      // 🔴 503, NOT 415, AND THE WORDS MATTER AS MUCH AS THE CODE. The formats that reach this
+      // have no local reader, so the only thing that can fail is the vendor — and the student's
+      // correct response is to try again, not to go and convert their file. A 415 here would tell
+      // them Nemesis cannot read Keynote, permanently, on the strength of one bad minute at a
+      // vendor. The retry is also automatic: the parse queue owns this row and will come back to
+      // it, so "in a moment" is a promise the system actually keeps.
+      return NextResponse.json(
+        { error: "Couldn't read that one just yet. Nemesis will keep trying in the background." },
+        { status: 503 },
+      );
     }
     // 🔴 `no-text` IS A REFUSAL THAT STILL HAS A DOCUMENT. A scan has nothing to
     // return to the student and plenty to remember: units, figures, geometry.

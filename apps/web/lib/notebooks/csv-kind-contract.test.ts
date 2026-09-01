@@ -49,6 +49,7 @@ test("🔴 every ParsedDocKind is a value the database will actually accept", ()
     docx: true,
     html: true,
     image: true,
+    other: true,
     pdf: true,
     pptx: true,
     text: true,
@@ -65,7 +66,7 @@ test("🔴 every ParsedDocKind is a value the database will actually accept", ()
 });
 
 test("the migration list has not silently grown values the type does not know", () => {
-  const kinds = new Set<string>(["csv", "docx", "html", "image", "pdf", "pptx", "text", "xlsx"]);
+  const kinds = new Set<string>(["csv", "docx", "html", "image", "other", "pdf", "pptx", "text", "xlsx"]);
   const extra = allowedByDatabase().filter((value) => !kinds.has(value));
   assert.deepEqual(extra, [], "the database allows kinds ParsedDocKind cannot express");
 });

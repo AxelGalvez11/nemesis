@@ -1,20 +1,28 @@
 /**
- * The one door for "read this picture" — DeepSeek first, Gemini behind it, one spend row out.
+ * The one door for "read this picture" — Gemini first, DeepSeek behind it, one spend row out.
  *
- * 🔴 CALL SITES IMPORT THIS, NEVER A PROVIDER MODULE, AND THAT IS THE WHOLE DESIGN. The owner asked
- * for DeepSeek vision (2026-08-23: "just give me deepseek vision thats all i want. make sure we can
- * track cost too"), and the cheapest correct shape is a front door that prefers it, not a
- * find-and-replace of one provider name with another: the model is two days old and marked
- * experimental, and this repo has already lived through weeks of a silently dead vision provider
- * (lib/pdf/vision.ts's header — zero descriptions recorded, nobody told). Behind this door, the
- * day DeepSeek retires the id, every camera photo and handwriting page degrades to Gemini instead
- * of to nothing.
+ * 🔴 CALL SITES IMPORT THIS, NEVER A PROVIDER MODULE, AND THAT IS THE WHOLE DESIGN. Two providers
+ * behind one function is what let the order be reversed in a single edit, and it is what makes
+ * either one retiring a degradation instead of an outage. This repo has already lived through weeks
+ * of a silently dead vision provider (lib/pdf/vision.ts's header — zero descriptions recorded,
+ * nobody told); a door with a second reader behind it cannot repeat that.
  *
- * 🔴 THE ORDER IS DEEPSEEK → GEMINI AND THE REASON IS THE BILL. Reading back a page of transcript
- * is mostly OUTPUT tokens, and DeepSeek's output rate is a third of Google's — ~$0.0015 against
- * ~$0.0039 for a typical page at peak, half that off-peak. Gemini is not deleted because it still
- * reads two things DeepSeek cannot: HEIC/HEIF (the iPhone camera default — see
- * DEEPSEEK_VISION_MIMES for why that matters) and application/pdf.
+ * 🔴 THE ORDER IS GEMINI → DEEPSEEK, REVERSED 2026-08-31 BY THE OWNER ("use Gemini"), AND THE
+ * REASON IS THAT DEEPSEEK'S BILL IS UNBOUNDED ON EXACTLY THE PICTURES THAT MATTER. The original
+ * order was DeepSeek-first on a per-token price comparison: reading back a page of transcript is
+ * mostly OUTPUT tokens and DeepSeek's output rate is a third of Google's (~$0.0015 against
+ * ~$0.0039 a page). That comparison only holds for TRANSCRIPTION. DeepSeek reasons before it
+ * answers and bills the reasoning as output, so on a DIAGRAM the token count is set by how hard
+ * the model finds the picture, not by how much answer it produces: one measured molecular diagram
+ * whose visible answer was ~150 tokens burned 18,642 output tokens — $0.025 and 135 seconds for
+ * ONE figure, seventeen times the price of the Gemini read it replaced (see deepseek.ts's
+ * DEEPSEEK_VISION_MAX_OUTPUT, which caps the damage but cannot remove it). A lecture deck is
+ * mostly diagrams. Gemini's cost per picture is flat and its latency is seconds.
+ *
+ * 🔴 AND DEEPSEEK IS NOT DELETED, BECAUSE ONE READER IS AN OUTAGE WAITING TO HAPPEN. It still
+ * answers everything it can when Google refuses or is down. It cannot read HEIC/HEIF (the iPhone
+ * camera default — see DEEPSEEK_VISION_MIMES) or application/pdf, so for those two the fallback
+ * is honest about being narrower than the primary.
  *
  * 🔴 SPEND IS RECORDED HERE, ONCE, BECAUSE THE CALL SITES PROVED THEY WOULD NOT DO IT THEMSELVES.
  * Camera, occlusion, handwriting and notebook reads have gone through readWithVision since July
@@ -65,8 +73,8 @@ export function visionConfigured(env: VisionEnv = process.env): boolean {
 }
 
 /**
- * Read a picture. DeepSeek when it is configured and can read the format; Gemini otherwise or on
- * any DeepSeek failure. Returns null — never throws — when nobody could read it.
+ * Read a picture. Gemini first; DeepSeek on any Gemini failure. Returns null — never throws —
+ * when nobody could read it.
  */
 export async function readImage(
   bytes: Uint8Array,
@@ -77,21 +85,28 @@ export async function readImage(
     signal?: AbortSignal;
     spend?: VisionSpend;
     /**
-     * Which provider to try FIRST. Defaults to DeepSeek.
+     * Which provider to try FIRST. Defaults to Gemini.
      *
-     * 🔴🔴🔴 `"gemini"` EXISTS FOR ONE MEASURED REASON: DEEPSEEK REASONS OVER DIAGRAMS, AND A
-     * DIAGRAM IS THE PATHOLOGICAL CASE. Its own header records the number — a molecular figure
-     * whose visible answer was ~150 tokens burned 18,642 output tokens and **135 seconds**,
-     * enumerating every printed residue. That is fine for a page of handwriting, where the
-     * reasoning earns its keep, and ruinous for "list the labelled boxes", where the answer is a
-     * dozen coordinates.
-     *
-     * Measured on the live nephron diagram, 2026-08-25: the DeepSeek-first ladder took 34s on a
-     * good run and blew a 38s budget on the next one. The parse lane reached the same conclusion
+     * 🔴🔴🔴 THE DEFAULT WAS DEEPSEEK UNTIL 2026-08-31, AND ONE CALL SITE OPTING OUT WAS NOT
+     * ENOUGH. `prefer: "gemini"` was added for figure-occlusion alone, for a measured reason that
+     * was never specific to occlusion: DEEPSEEK REASONS OVER DIAGRAMS, AND A DIAGRAM IS THE
+     * PATHOLOGICAL CASE. deepseek.ts's own header records the number — a molecular figure whose
+     * visible answer was ~150 tokens burned 18,642 output tokens and **135 seconds**, enumerating
+     * every printed residue. On the live nephron diagram the DeepSeek-first ladder took 34s on a
+     * good run and blew a 38s budget on the next. The parse lane reached the same conclusion
      * independently and has kept figures on Gemini since 2026-08-23.
      *
-     * 🔴 IT IS A PREFERENCE, NOT A LOCK. The other provider is still the fallback, so a Gemini
-     * outage costs latency rather than the feature.
+     * So three lanes had each discovered the same thing separately while the DEFAULT still sent
+     * every camera photo, handwriting page and notebook read the other way. The owner settled it
+     * ("use Gemini", 2026-08-31) and the default moved to where the evidence already was.
+     *
+     * 🔴 `"deepseek"` STAYS REACHABLE, because the price comparison that chose it is still true
+     * for the case it was measured on: TRANSCRIBING a dense page is mostly output tokens, and
+     * DeepSeek's output rate is a third of Google's. A lane that is reading words rather than
+     * interpreting a picture may still ask for it.
+     *
+     * 🔴 IT IS A PREFERENCE, NOT A LOCK. The other provider is always the fallback, so either
+     * one's outage costs latency rather than the feature.
      */
     prefer?: "deepseek" | "gemini";
   } = {},
@@ -111,7 +126,7 @@ export async function readImage(
     return seen ? { model: seen.model, provider: "deepseek", text: seen.text, usage: seen.usage } : null;
   };
 
-  const [first, second] = options.prefer === "gemini" ? [gemini, deepseek] : [deepseek, gemini];
+  const [first, second] = options.prefer === "deepseek" ? [deepseek, gemini] : [gemini, deepseek];
   const result: ImageReadResult | null = (await first()) ?? (await second());
 
   if (result && options.spend) {

@@ -10,6 +10,8 @@
 // only place a learner answers anything, so this vocabulary is shared by the composer, the
 // recall state and the test state.
 
+import { READABLE_ACCEPT } from "@/lib/notebooks/readable-formats";
+
 import type { RetrievalTask } from "./canvas-model";
 
 export const RESPONSE_PLACEHOLDER: Record<RetrievalTask, string> = {
@@ -64,10 +66,10 @@ export const START_WITH_MATERIAL_PLACEHOLDER = "Say how to approach this, or jus
  * that the ingestion path can read it; `canvas-shell.test.ts` pins the three doors equal so the
  * promise cannot be made in one place and broken in another.
  */
-// 🔴 `.heif` WAS MISSING, AND IT IS WHAT AN IPHONE ACTUALLY WRITES. `IMAGE_EXTENSIONS` in
-// `chat-attachments.ts` has listed both `.heic` and `.heif` all along and the reader handles both;
-// this list had only the first, so the OS picker greyed out half of a learner's camera roll and the
-// refusal happened before any code of ours ran. Kept in step with that list by hand because the two
-// serve different jobs -- one is what we can READ, this is what the dialog OFFERS -- and a guard
-// asserts they do not drift.
-export const ACCEPTED_MATERIAL = ".pdf,.docx,.pptx,.md,.txt,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.heic,.heif";
+// 🔴 NO LONGER A LIST. It was one, written by hand, and it drifted: `.heif` was missing while the
+// reader handled it, so the OS picker greyed out half of a learner's camera roll and the refusal
+// happened before any code of ours ran — nothing to see in a log, because no request was made. The
+// old comment here promised a guard would keep this in step with what the server can read. Deriving
+// it is stronger than guarding it: there is now one list (`readable-formats.ts`), so the two cannot
+// disagree in the first place.
+export const ACCEPTED_MATERIAL = READABLE_ACCEPT;
