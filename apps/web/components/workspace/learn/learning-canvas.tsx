@@ -176,6 +176,16 @@ const PIN_INSET_PX = 64;
  *  for a slow answer to finish forming, short enough that nothing is held hostage. */
 const PIN_MAX_MS = 60_000;
 
+/**
+ * How far the prompt may drift before the pin corrects it.
+ *
+ * 🔴 A THRESHOLD IS WHAT SEPARATES A PIN FROM A STUTTER. The tick runs ten times a second and the
+ * answer changes height under it constantly; correcting a one-pixel reflow ten times a second is
+ * the jitter the owner reported. Four pixels is below what reads as movement and far under the
+ * collapse this is actually there to catch, which is hundreds.
+ */
+const PIN_DRIFT_PX = 4;
+
 const LANDING_TICK_MS = 100;
 
 /**
@@ -1859,6 +1869,19 @@ export function LearningCanvas({
     if (!scroller || !turn) return;
 
     let live = true;
+    /**
+     * 🔴🔴 THE FIRST PLACEMENT GLIDES; THE CORRECTIONS AFTER IT DO NOT MOVE UNLESS THEY HAVE TO.
+     * Owner, 2026-09-01: *"the prompts don't scroll smoothly when the prompt gets pinned to the
+     * top."* The version this replaces set `scrollTop` directly on every tick of a 100ms interval,
+     * so a send read as a hard cut and then a series of small jerks as the answer changed height
+     * underneath it. Ten instant scrolls a second is not a scroll, it is a stutter.
+     *
+     * So: the send itself is one smooth glide to the target, and every tick after it only acts when
+     * the prompt has actually drifted — which in practice is the frame the previous answer
+     * unmounts and the turn collapses. A threshold is what makes that possible: sub-pixel and
+     * one-pixel differences are the reflow breathing, and chasing them is exactly the stutter.
+     */
+    let glided = false;
     const hold = () => {
       const node = currentTurnRef.current;
       const runway = runwayRef.current;
@@ -1869,8 +1892,16 @@ export function LearningCanvas({
       runway.style.height = `${Math.max(0, Math.round(scroller.clientHeight - PIN_INSET_PX - turnHeight))}px`;
       // 🔴 FROM RECTS, NOT `offsetTop`, which is relative to whichever ancestor happens to be
       // positioned — and this subtree gains and loses positioned wrappers as the answer forms.
-      const delta = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-      scroller.scrollTop += delta - PIN_INSET_PX;
+      const drift = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top - PIN_INSET_PX;
+      if (glided && Math.abs(drift) < PIN_DRIFT_PX) return;
+      // 🔴 `scrollTo`, NOT `scrollTop +=`, BECAUSE ONLY ONE OF THEM CAN EASE. And reduced motion
+      // gets the instant one: somebody who asked the system to stop moving must still land in the
+      // right place, they just do not get the travel.
+      scroller.scrollTo({
+        behavior: glided || window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        top: scroller.scrollTop + drift,
+      });
+      glided = true;
     };
 
     const release = () => {
