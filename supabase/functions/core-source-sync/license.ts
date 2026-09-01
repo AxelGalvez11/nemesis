@@ -65,7 +65,8 @@ export type CoreSourceProvider =
   | "semantic_scholar"
   | "arxiv"
   | "doi_lit"
-  // WEB_IN_CHAT breadth (gated, default off) — a trusted-web live source for normal chat: Tavily
+  // WEB_IN_CHAT breadth (gated, default off) — a trusted-web live source for normal chat: the
+  // configured WEB_RECON endpoint
   // results hard-filtered to journals / .gov / guideline bodies / .edu (blogs & SEO dropped). Same
   // "surface LIVE (citable) but NEVER stored" posture as the science connectors above — a web page
   // has no verifiable per-record open license, so it is treated as restricted (assertCommercialFriendly

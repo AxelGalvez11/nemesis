@@ -8,12 +8,21 @@
 //   POST /nemesis-search/v2/search   Authorization: Bearer <device key (nmk_...)>
 //     → validates key → plan (subscriptions) → daily + monthly unit budgets
 //       (plan_entitlements 'nemesis_search_daily_units'/'nemesis_search_monthly_units'
-//       + usage_counters 'nemesis_search_units'/'nemesis_search_units_month') → tries
-//       Brave first (llm/context — model-ready extracts), then Tavily, then Linkup,
-//       then Firecrawl (first to answer wins) → records usage_events. All four are
-//       translated to Firecrawl's response shape.
+//       + usage_counters 'nemesis_search_units'/'nemesis_search_units_month') → asks
+//       BRAVE, AND ONLY BRAVE (llm/context — model-ready extracts) → records
+//       usage_events. The answer is translated to Firecrawl's response shape, which
+//       is the wire format the desktop SDK parses.
+//
+//       🔴🔴 ONE SEARCH PROVIDER, BY THE OWNER, 2026-09-01: *"make sure tavily is not
+//       plugged into nemesis, only brave for websearch please."* Tavily and Linkup are
+//       gone from this file — not demoted, removed — and Firecrawl no longer answers a
+//       SEARCH either. A chain of fallbacks is how a retired provider keeps billing:
+//       every one of them was reachable, none of them was chosen deliberately, and the
+//       only evidence of which answered was a field in an analytics event.
 //   POST /nemesis-search/v2/scrape   Authorization: Bearer <device key>
-//     → same gate, forwards to Firecrawl's /v2/scrape (no scrape role for Tavily/Linkup).
+//     → same gate, forwards to Firecrawl's /v2/scrape. 🔴 FIRECRAWL STAYS FOR SCRAPE
+//       AND ONLY FOR SCRAPE: reading one named URL is a different job from searching,
+//       Brave's llm/context does not do it, and the owner's rule is about web SEARCH.
 //       One search or one scrape = one unit.
 //
 // Device keys are the SAME identity nemesis-llm mints and validates (device_keys table,
@@ -23,27 +32,22 @@
 // SUPABASE_SERVICE_ROLE_KEY (platform-injected), FIRECRAWL_API_KEY (server-side upstream
 // key; when unset — and no fallback provider is configured either — this returns 503
 // with a plain explanation instead of leaking the gap to students as a cryptic parse
-// error), BRAVE_API_KEY (the primary for /v2/search since 2026-08-06),
-// TAVILY_API_KEY (the quality-first primary from 2026-08-04, now the fallback behind
-// Brave), and LINKUP_API_KEY (the cheaper fallback that sits between Tavily and
-// Firecrawl). Every provider key is read HERE, server-side — none of them exists on
-// the Vercel side, which only forwards to this function.
+// error) and BRAVE_API_KEY (the ONLY search provider since 2026-09-01). Both keys are
+// read HERE, server-side — neither exists on the Vercel side, which only forwards to
+// this function. 🔴 TAVILY_API_KEY AND LINKUP_API_KEY ARE NO LONGER READ BY ANYTHING;
+// delete them from the function's secrets so a key nothing uses cannot quietly bill.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { braveCanAnswer, braveContextParams, braveContextToWeb, BRAVE_MAX_URLS } from './brave.ts'
+import { braveContextParams, braveContextToWeb, braveFit, BRAVE_MAX_URLS } from './brave.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const FIRECRAWL_KEY = Deno.env.get('FIRECRAWL_API_KEY') ?? ''
-const TAVILY_KEY = Deno.env.get('TAVILY_API_KEY') ?? ''
-const LINKUP_KEY = Deno.env.get('LINKUP_API_KEY') ?? ''
 // Read under BOTH names on purpose. `Deno.env.get` is case- and name-sensitive, and
 // this project has already lost a wired provider to a secret stored under a name the
 // code did not ask for — the failure is silent, because a missing key is
 // indistinguishable from "provider declined" in the fallback chain.
 const BRAVE_KEY = Deno.env.get('BRAVE_API_KEY') ?? Deno.env.get('BRAVE_SEARCH_API_KEY') ?? ''
 const FIRECRAWL_BASE = 'https://api.firecrawl.dev'
-const TAVILY_BASE = 'https://api.tavily.com'
-const LINKUP_BASE = 'https://api.linkup.so'
 const BRAVE_CONTEXT_BASE = 'https://api.search.brave.com/res/v1/llm/context'
 
 const COUNTER_KEY = 'nemesis_search_units'
@@ -74,12 +78,15 @@ const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST') ?? 'https://us.i.posthog.com'
  *  competitor-economics-2026-07.md, "about a penny a search") — unlike the token
  *  prices in nemesis-llm, no provider bills us a line item per call, so events carry
  *  price_estimated: true and a report must not present them as exact. */
-// Tavily at ADVANCED depth bills 2 API credits per search (~$0.016), double its
-// basic rate — the price of the 2026-08-04 quality-first flip.
 // Brave llm/context is $5 per 1,000 requests, read off Brave's own pricing page
-// 2026-08-06 — the one rate here that is published per REQUEST rather than inferred,
-// and less than a third of what the same search costs at Tavily.
-const UNIT_USD: Record<string, number> = { brave: 0.005, firecrawl: 0.01, linkup: 0.005, tavily: 0.016 }
+// 2026-08-06 — the one rate here published per REQUEST rather than inferred.
+//
+// 🔴 TAVILY (~$0.016) AND LINKUP (~$0.005) ARE NOT LISTED, BECAUSE NOTHING CAN SPEND
+// THEM. A price for a provider this file cannot call is an invitation to wire it back
+// up. Historical rows naming them are still priceable — that registry is
+// `apps/web/lib/provider-costs.ts`, which has carried them as RETIRED since before
+// this file stopped calling them, and whose own test pins that they are not current.
+const UNIT_USD: Record<string, number> = { brave: 0.005, firecrawl: 0.01 }
 
 // ── Not asking the same question twice ──────────────────────────────────────
 //
@@ -280,7 +287,8 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
 }
 
 /**
- * Brave — the PRIMARY for /v2/search (owner 2026-08-06, replacing Tavily).
+ * Brave — the ONLY provider for /v2/search (owner 2026-09-01; the primary since
+ * 2026-08-06).
  *
  * Uses llm/context rather than web/search: it returns pre-extracted, ranked chunks
  * of each page instead of a one-line SERP snippet, which is what a model reading the
@@ -298,13 +306,21 @@ async function braveSearch(body: Record<string, unknown>): Promise<Response | nu
     return null
   }
 
-  const query = String(body.query ?? '')
+  // 🔴 TRIMMED TO FIT, NOT REJECTED. Brave refuses a query over 400 characters or 50
+  // words. That used to mean "let Tavily take it"; with no one else to take it, the
+  // choice is between a shortened search and no search, and `braveFit` makes it the
+  // former. See its own note.
+  const asked = String(body.query ?? '')
+  const query = braveFit(asked)
 
-  // Checked BEFORE the request, not after a 4xx: Tavily accepts queries Brave
-  // rejects (>400 chars / >50 words), so without this a long query fails at Brave
-  // and falls silently through — presenting as "Brave never wins" with no error.
-  if (!braveCanAnswer(query)) {
+  if (!query) {
     return null
+  }
+
+  if (query !== asked.trim().replace(/\s+/g, ' ')) {
+    // Logged rather than silent: a result set that answers a shorter question than the
+    // one asked is exactly the kind of thing that is impossible to diagnose later.
+    console.log(`brave: query trimmed to fit (${asked.length} → ${query.length} chars)`)
   }
 
   // 🔴 THE FALLBACK IS THE PROVIDER'S CEILING, NOT A NUMBER OF OURS. This used to default to 5,
@@ -334,93 +350,7 @@ async function braveSearch(body: Record<string, unknown>): Promise<Response | nu
   return json({ data: { web }, success: true })
 }
 
-/** Tavily — the FALLBACK behind Brave since 2026-08-06 (it was the primary from
- *  2026-08-04: quality over the half-cent saving). Kept wired on purpose while
- *  Brave proves itself on real student queries; retiring it is a separate decision.
- *  Answered in Firecrawl's response shape so the desktop SDK parses it identically.
- *  Search only — scrape stays Firecrawl. */
-async function tavilySearch(body: Record<string, unknown>): Promise<Response | null> {
-  if (!TAVILY_KEY) {
-    return null
-  }
 
-  const upstream = await fetch(`${TAVILY_BASE}/search`, {
-    body: JSON.stringify({
-      max_results: typeof body.limit === 'number' ? body.limit : BRAVE_MAX_URLS,
-      query: String(body.query ?? ''),
-      // Advanced depth re-ranks and reads deeper into pages — the better
-      // snippets are the point of putting Tavily first. Costs 2 credits.
-      search_depth: 'advanced'
-    }),
-    headers: { Authorization: `Bearer ${TAVILY_KEY}`, 'Content-Type': 'application/json' },
-    method: 'POST'
-  }).catch(() => null)
-
-  if (!upstream?.ok) {
-    return null
-  }
-
-  const data = (await upstream.json().catch(() => null)) as {
-    results?: { content?: string; title?: string; url?: string }[]
-  } | null
-
-  if (!data?.results) {
-    return null
-  }
-
-  return json({
-    data: {
-      web: data.results.map(result => ({
-        description: result.content ?? '',
-        title: result.title ?? result.url ?? '',
-        url: result.url ?? ''
-      }))
-    },
-    success: true
-  })
-}
-
-/** Linkup fallback for /v2/search — the cheaper second line behind Tavily,
- *  ahead of Firecrawl. Same Firecrawl-shaped response as tavilySearch so the
- *  desktop SDK parses it identically; {name,url,content} → {title,url,description}. */
-async function linkupSearch(body: Record<string, unknown>): Promise<Response | null> {
-  if (!LINKUP_KEY) {
-    return null
-  }
-
-  const upstream = await fetch(`${LINKUP_BASE}/v1/search`, {
-    body: JSON.stringify({
-      depth: 'standard',
-      outputType: 'searchResults',
-      q: String(body.query ?? '')
-    }),
-    headers: { Authorization: `Bearer ${LINKUP_KEY}`, 'Content-Type': 'application/json' },
-    method: 'POST'
-  }).catch(() => null)
-
-  if (!upstream?.ok) {
-    return null
-  }
-
-  const data = (await upstream.json().catch(() => null)) as {
-    results?: { content?: string; name?: string; url?: string }[]
-  } | null
-
-  if (!data?.results) {
-    return null
-  }
-
-  return json({
-    data: {
-      web: data.results.map(result => ({
-        description: result.content ?? '',
-        title: result.name ?? result.url ?? '',
-        url: result.url ?? ''
-      }))
-    },
-    success: true
-  })
-}
 
 /**
  * One search answered from the cache: an event, and no meter movement.
@@ -453,7 +383,7 @@ async function recordUsage(
   ctx: KeyContext,
   kind: 'scrape' | 'search',
   detail: string,
-  provider: 'brave' | 'firecrawl' | 'linkup' | 'tavily',
+  provider: 'brave' | 'firecrawl',
   client: string
 ): Promise<void> {
   const nowIso = new Date().toISOString()
@@ -537,8 +467,23 @@ async function maybeWarnCap(
 }
 
 async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'): Promise<Response> {
-  if (!BRAVE_KEY && !FIRECRAWL_KEY && !TAVILY_KEY && !LINKUP_KEY) {
-    return json({ success: false, error: 'search provider key not configured on the server' }, 503)
+  // 🔴 ASKED PER ROUTE, NOT AS ONE POOL. With a chain of four providers, "is ANY key
+  // set" was a fair question. With one provider per job it is not: a server holding
+  // only FIRECRAWL_API_KEY would have passed this check and then failed every search
+  // at the very end with 'search providers unreachable', which names the wrong cause.
+  const required = route === '/v2/search' ? BRAVE_KEY : FIRECRAWL_KEY
+
+  if (!required) {
+    return json(
+      {
+        success: false,
+        error:
+          route === '/v2/search'
+            ? 'web search is not configured on the server (BRAVE_API_KEY)'
+            : 'page reading is not configured on the server (FIRECRAWL_API_KEY)'
+      },
+      503
+    )
   }
 
   const deviceKey = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
@@ -579,13 +524,9 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
 
   const detail = route === '/v2/search' ? String(body.query ?? '') : String(body.url ?? '')
 
-  // Provider routing (owner 2026-08-06: Brave replaces Tavily as the default).
-  // SEARCHES try Brave llm/context first ($0.005/request, model-ready extracts),
-  // then Tavily at advanced depth (~$0.016 — kept as the fallback while Brave
-  // proves itself), then Linkup (~$0.005), then Firecrawl. First to answer wins,
-  // and whichever one did is what `recordUsage` writes down — the routing only
-  // shows up in the cost numbers if the winner is recorded honestly.
-  // Brave/Tavily/Linkup have no scrape role, so SCRAPES go straight to Firecrawl.
+  // Provider routing (owner 2026-09-01: *"only brave for websearch"*).
+  // SEARCHES ask Brave llm/context and nothing else. SCRAPES go to Firecrawl, which
+  // is the only thing here that reads one named URL. There is no chain to fall down.
   if (route === '/v2/search') {
     // ── The same question, asked again ──────────────────────────────────────
     //
@@ -625,27 +566,13 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
       return await cacheAndReturn(ctx.userId, detail, brave)
     }
 
-    const primary = await tavilySearch(body)
-
-    if (primary) {
-      void recordUsage(ctx, 'search', detail, 'tavily', client)
-
-      // 🔴 THE BODY IS READ ONCE AND RE-SENT, because a Response body is a stream and reading it to
-      // cache it would leave the caller with an empty one. `storeSearch` is handed the parsed
-      // object and a fresh Response is built from it.
-      return await cacheAndReturn(ctx.userId, detail, primary)
-    }
-
-    const secondary = await linkupSearch(body)
-
-    if (secondary) {
-      void recordUsage(ctx, 'search', detail, 'linkup', client)
-
-      // 🔴 THE BODY IS READ ONCE AND RE-SENT, because a Response body is a stream and reading it to
-      // cache it would leave the caller with an empty one. `storeSearch` is handed the parsed
-      // object and a fresh Response is built from it.
-      return await cacheAndReturn(ctx.userId, detail, secondary)
-    }
+    // 🔴🔴 BRAVE DECLINED, AND THAT IS THE WHOLE ANSWER NOW. There is nowhere to fall
+    // through to, so this says what happened instead of pretending a search ran and
+    // came back empty. `braveSearch` returns null for three different reasons — the
+    // request failed, the key is missing, or Brave returned nothing — and a learner
+    // cannot act on any of them, so they get one honest sentence and the log keeps
+    // the detail.
+    return json({ success: false, error: 'web search returned nothing for this query' }, 502)
   }
 
   const upstream = FIRECRAWL_KEY

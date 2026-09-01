@@ -66,7 +66,7 @@ export async function runWebRecon(question: string): Promise<WebReconResult> {
     });
     if (!res.ok) return inferRecon(question, []);
 
-    // Provider-tolerant result shape: generic engines return `snippet`; Tavily returns `content`.
+    // Provider-tolerant result shape: generic engines return `snippet`; some return `content`.
     // Same trust filter either way — only .gov/wikipedia survive into recon context.
     const data = await res.json() as { results?: Array<{ title?: string; url?: string; snippet?: string; content?: string }> };
     const sources = (data.results ?? [])

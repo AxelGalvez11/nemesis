@@ -3,7 +3,9 @@ import {
   BRAVE_DESCRIPTION_MAX_CHARS,
   BRAVE_MAX_SNIPPETS,
   BRAVE_QUERY_MAX_CHARS,
+  BRAVE_QUERY_MAX_WORDS,
   braveCanAnswer,
+  braveFit,
   braveContextParams,
   BRAVE_MAX_TOKENS_PER_URL,
   BRAVE_MAX_TOTAL_TOKENS,
@@ -94,7 +96,7 @@ Deno.test("braveContextToWeb: a result whose snippets are all empty still keeps 
   assertEquals(web[0].description, "");
 });
 
-// THE SILENT-FALLTHROUGH GUARD. Brave rejects >400 chars or >50 words; Tavily
+// THE PROVIDER'S OWN LIMITS. Brave rejects >400 chars or >50 words; Tavily
 // never did. Without this check a long query fails at Brave and quietly lands on
 // the fallback, and the symptom is "Brave never wins" with no error to find.
 Deno.test("braveCanAnswer: rejects a query past Brave's character limit", () => {
@@ -188,4 +190,56 @@ Deno.test("braveContextParams: a window is sent when there is one and omitted wh
   // everybody has to reason about.
   assertEquals(braveContextParams("q", 5).has("freshness"), false);
   assertEquals(braveContextParams("q", 5, "last_week").has("freshness"), false);
+});
+
+
+// ── braveFit: the query is trimmed, never refused ────────────────────────────
+//
+// 🔴🔴 THE POINT OF THESE IS THE DAY BRAVE STOPPED HAVING A BACKSTOP. Owner, 2026-09-01:
+// *"make sure tavily is not plugged into nemesis, only brave for websearch please."* An
+// over-long query used to be handed to Tavily; now the only two outcomes are a shortened
+// search or none at all, and every test below pins the first.
+
+Deno.test("braveFit: an ordinary question is returned untouched", () => {
+  const asked = "what is the mechanism of the Calvin cycle?";
+  assertEquals(braveFit(asked), asked);
+  assert(braveCanAnswer(braveFit(asked)));
+});
+
+Deno.test("braveFit: a query past the word limit is cut to the word limit", () => {
+  const fitted = braveFit(Array(120).fill("word").join(" "));
+  assertEquals(fitted.split(" ").length, BRAVE_QUERY_MAX_WORDS);
+  assert(braveCanAnswer(fitted), "the trimmed query still does not fit Brave");
+});
+
+Deno.test("braveFit: fifty LONG words still fit the character limit", () => {
+  // 🔴 THE CASE A WORD-ONLY CUT MISSES. Fifty 30-character words is 50 words and 1,529
+  // characters — inside one limit and far outside the other. The character pass runs
+  // second for exactly this.
+  const fitted = braveFit(Array(50).fill("a".repeat(30)).join(" "));
+  assert(fitted.length <= BRAVE_QUERY_MAX_CHARS);
+  assert(braveCanAnswer(fitted));
+  assert(!fitted.endsWith(" "), "the cut left a trailing space");
+});
+
+Deno.test("braveFit: the character cut falls back to a whole word", () => {
+  const fitted = braveFit(Array(200).fill("chlorophyll").join(" "));
+  assert(fitted.length <= BRAVE_QUERY_MAX_CHARS);
+  // Every word is intact — no half-word at the end.
+  for (const word of fitted.split(" ")) assertEquals(word, "chlorophyll");
+});
+
+Deno.test("braveFit: one unbroken word longer than the whole limit is hard-cut", () => {
+  // No space to fall back to. A hard cut is still a better query than nothing.
+  const fitted = braveFit("a".repeat(BRAVE_QUERY_MAX_CHARS + 200));
+  assertEquals(fitted.length, BRAVE_QUERY_MAX_CHARS);
+  assert(braveCanAnswer(fitted));
+});
+
+Deno.test("braveFit: an empty query stays empty, and is the ONLY empty result", () => {
+  // The caller treats "" as "do not search" — so nothing that was a real question may
+  // ever come back empty, or a search would be dropped in silence.
+  assertEquals(braveFit(""), "");
+  assertEquals(braveFit("   \n  "), "");
+  assert(braveFit("a") !== "");
 });

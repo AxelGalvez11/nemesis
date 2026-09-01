@@ -3,7 +3,7 @@
 // Copies the canonical ChatGPT-style deep-research loop (dzhng/deep-research shape, adapted for a
 // medical evidence product — see docs/research/deep-research-agentic-architecture-2026-07.md):
 //
-//   query -> generate SERP queries -> Tavily search -> extract {learning, url, text} PER SOURCE
+//   query -> generate SERP queries -> recon search -> extract {learning, url, text} PER SOURCE
 //         -> collect follow-ups -> recurse to depth D (breadth halves each level) -> return learnings
 //
 // KEY MEDICAL-TOOL DEVIATION: learnings are extracted PER SINGLE SOURCE so every learning carries
@@ -39,7 +39,7 @@ const num = (key: string, fallback: number): number => {
 };
 const ROOT_BREADTH = () => num("DEEP_AGENTIC_BREADTH", 4); // SERP queries at the root; halves each depth
 const MAX_DEPTH = () => num("DEEP_AGENTIC_DEPTH", 2); // root + one follow-up round
-const RESULTS_PER_QUERY = () => num("DEEP_AGENTIC_RESULTS", 5); // Tavily max_results per query
+const RESULTS_PER_QUERY = () => num("DEEP_AGENTIC_RESULTS", 5); // max_results per query
 const CONCURRENCY = () => num("DEEP_AGENTIC_CONCURRENCY", 3); // parallel searches in flight
 const PAGE_CHAR_CAP = 12000; // truncate each page before the LLM (token-blowup pitfall)
 const SEARCH_TIMEOUT_MS = 12000;
@@ -157,15 +157,28 @@ const EXTRACT_SYSTEM =
 - Do not infer beyond the text. If the source is irrelevant or non-substantive, return no learnings.
 - Never state a medical recommendation; report what the source found, not what a reader should do.`;
 
-interface TavilyResult {
+interface ReconResult {
   title?: string;
   url?: string;
   content?: string;
   raw_content?: string;
 }
 
-/** One Tavily search. Returns [] on any failure (missing key, non-200, timeout). */
-async function tavilySearch(query: string): Promise<TavilyResult[]> {
+/**
+ * One search against the configured reconnaissance endpoint (WEB_RECON_API_URL).
+ *
+ * 🔴 THE PROVIDER IS A SECRET, NOT A NAME IN THIS FILE, AND THAT IS DELIBERATE — it used
+ * to be called `tavilySearch`, which said out loud what only the deployment knows. Owner,
+ * 2026-09-01: *"make sure tavily is not plugged into nemesis, only brave for websearch
+ * please."* Renaming does not unplug anything: if WEB_RECON_API_URL still points at
+ * api.tavily.com, that is what runs. Check the secret, not the identifier.
+ *
+ * 🔴 THIS WHOLE LANE IS OFF UNLESS `DEEP_RESEARCH_AGENTIC=on`. It is not the chat's web
+ * search — that is nemesis-search, which is Brave and nothing else.
+ *
+ * Returns [] on any failure (missing key, non-200, timeout).
+ */
+async function reconSearch(query: string): Promise<ReconResult[]> {
   const apiUrl = Deno.env.get("WEB_RECON_API_URL");
   const apiKey = Deno.env.get("WEB_RECON_API_KEY");
   if (!apiUrl || !apiKey) return [];
@@ -179,7 +192,7 @@ async function tavilySearch(query: string): Promise<TavilyResult[]> {
       signal: ctrl.signal,
     });
     if (!res.ok) return [];
-    const data = await res.json() as { results?: TavilyResult[] };
+    const data = await res.json() as { results?: ReconResult[] };
     return data.results ?? [];
   } catch {
     return [];
@@ -216,7 +229,7 @@ async function generateSerpQueries(question: string, priorLearnings: string[], b
 }
 
 /** Extract learnings from ONE source (per-source so each learning has exactly one backing url). */
-async function extractFromSource(researchGoal: string, result: TavilyResult, apiKey: string): Promise<{ learnings: WebLearning[]; followUps: string[] }> {
+async function extractFromSource(researchGoal: string, result: ReconResult, apiKey: string): Promise<{ learnings: WebLearning[]; followUps: string[] }> {
   const url = String(result.url ?? "").trim();
   const title = String(result.title ?? "").trim();
   const text = String(result.raw_content ?? result.content ?? "").trim().slice(0, PAGE_CHAR_CAP);
@@ -286,7 +299,7 @@ export async function runAgenticWebResearch(
 
     await mapLimit(serp, CONCURRENCY(), async (sq) => {
       if (all.length >= MAX_LEARNINGS_TOTAL) return;
-      const results = await tavilySearch(sq.query);
+      const results = await reconSearch(sq.query);
       const fresh = results.filter((r) => {
         const key = `${sq.goal}::${r.url ?? ""}`;
         if (!r.url || seenUrlGoal.has(key)) return false;

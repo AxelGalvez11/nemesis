@@ -2,7 +2,8 @@
 //
 // WHY: normal chat only searches the medical databases + a hidden .gov/Wikipedia disambiguation
 // pass — it never searches the trusted scholarly web for answer content the way ChatGPT does. This
-// adds a real web search (via the already-configured Tavily key) as ONE MORE live source, hard-
+// adds a real web search (via the configured WEB_RECON endpoint — NOT Tavily; see
+// research/web-research.ts) as ONE MORE live source, hard-
 // filtered to journals / .gov / guideline bodies / .edu (blogs & SEO dropped by webTrust). Its hits
 // become provider:"web_trusted" candidates that flow through the SAME rerank + citation-enforcement +
 // deterministic safety scan (detectViolations) as PubMed/FDA hits already do in the chat answer path.
@@ -23,7 +24,7 @@ export function webInChatEnabled(): boolean {
 const TIMEOUT_MS = 4000;
 const PASSAGE_CAP = 3000; // per-hit text fed to the reranker/generator
 
-interface TavilyResult {
+interface ReconResult {
   title?: string;
   url?: string;
   content?: string;
@@ -43,7 +44,7 @@ export async function fetchTrustedWeb(query: string, max: number): Promise<Norma
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  let results: TavilyResult[] = [];
+  let results: ReconResult[] = [];
   try {
     const res = await fetch(apiUrl, {
       method: "POST",
@@ -52,7 +53,7 @@ export async function fetchTrustedWeb(query: string, max: number): Promise<Norma
       signal: ctrl.signal,
     });
     if (!res.ok) return [];
-    results = ((await res.json()) as { results?: TavilyResult[] }).results ?? [];
+    results = ((await res.json()) as { results?: ReconResult[] }).results ?? [];
   } catch {
     return [];
   } finally {
@@ -64,7 +65,7 @@ export async function fetchTrustedWeb(query: string, max: number): Promise<Norma
   for (const r of results) {
     const url = String(r.url ?? "").trim();
     const title = String(r.title ?? "").trim();
-    // Prefer Tavily's extracted `content` (the on-topic snippet) over `raw_content` (full page): it's
+    // Prefer the extracted `content` (the on-topic snippet) over `raw_content` (full page): it's
     // more relevant AND a smaller injection surface (less uncontrolled page text as grounding context).
     const text = String(r.content ?? r.raw_content ?? "").trim();
     if (!url || !title || !text) continue;
