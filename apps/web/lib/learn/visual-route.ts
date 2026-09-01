@@ -422,7 +422,10 @@ export function routeVisual(input: VisualRouteInput): VisualRoute {
     }
     return {
       asset: choice.asset,
-      because: `a licensed picture of "${spec.subject}" was retrieved, and its licence and credit travel with it`,
+      because:
+        choice.asset.provenance === "source_figure"
+          ? `"${spec.subject}" is in the learner's own lecture, which beats any picture we could go and find`
+          : `a licensed picture of "${spec.subject}" was retrieved, and its licence and credit travel with it`,
       ...(spec.caption ? { caption: spec.caption } : {}),
       decision: "render",
       representation: "reference_image",
@@ -584,14 +587,26 @@ function assetFallback(
     };
   }
 
+  // 🔴 PROVENANCE IS NOT REPRESENTATION, AND THIS IS WHERE THE TWO STOPPED BEING THE SAME WORD.
+  // `representation: "source_figure"` already means something specific and different — the
+  // occlusion shape, which carries `FigureKnowledge` and a hidden label. A picture out of the
+  // learner's own lecture, shown beside an explanation, DRAWS exactly like a retrieved one: an
+  // image with a caption. So it keeps `reference_image` as the representation and says where it
+  // came from through `provenance`, which is the axis trust is measured on.
+  const fromTheirOwn = choice.asset.provenance === "source_figure";
+  // Narrowed explicitly: a ternary here widens back to the full union, because `provenance` still
+  // includes the value being mapped away from.
+  const representation: "reference_image" | "generated_image" =
+    fromTheirOwn || choice.asset.provenance === "reference_image" ? "reference_image" : "generated_image";
   return {
     asset: choice.asset,
-    because:
-      choice.asset.provenance === "reference_image"
+    because: fromTheirOwn
+      ? "this picture is in the learner's own lecture, which is the figure they will be examined on"
+      : choice.asset.provenance === "reference_image"
         ? "nothing higher on the ladder was available, and this figure carries a licence that lets Nemesis show it with its credit"
         : "nothing trustworthy was available and nothing is being graded against the picture, so an illustration is allowed — labelled as one",
     decision: "render",
-    representation: choice.asset.provenance,
+    representation,
   };
 }
 
