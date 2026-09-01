@@ -42,7 +42,7 @@ import {
   csvCoverage,
 } from "./extract-coverage";
 import { mistralCoverage } from "./extract-coverage";
-import { mistralHandles, readWithMistral } from "./mistral-ocr";
+import { mistralHandles, readWithMistral, type MistralOcrResponse } from "./mistral-ocr";
 import { llamaHandles, llamaTier, readWithLlama } from "./llamaparse-ocr";
 import { modelFromLlama, type LlamaResult } from "./llamaparse-model";
 import { claimOf, judgeFigureAccounting, judgeMistralRead } from "./mistral-quality";
@@ -64,6 +64,8 @@ import { readPdfStructure, type CapturedFigure, type PdfStructureResult } from "
 import { accountForFigures, NO_ACCOUNTING } from "@/lib/pdf/figure-accounting";
 import { lookAtFigures, type FigureLookResult } from "@/lib/pdf/figure-look";
 import { matchFigureImages, withFigureRefs } from "@/lib/pdf/figure-match";
+
+import { vendorFigurePixels, withVendorPixels } from "./vendor-figure-pixels";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { describeFiguresWithVision, readFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
@@ -460,6 +462,8 @@ export async function parseWithVendor(
   let model: DocumentModel | null = null;
   let readBy = "";
   let unitsBilled = 0;
+  /** Held so the drawn figures it rasterised can be read out below. See `vendor-figure-pixels`. */
+  let mistralResponse: MistralOcrResponse | null = null;
 
   if (vendor === "mistral") {
     const outcome = await vendors.readWithMistral(bytes, fileName, mimeType);
@@ -477,6 +481,7 @@ export async function parseWithVendor(
     // unnamed figure cannot be paired with its pixels (for vision) and cannot carry an asset (to
     // be shown), and `figure-look` reports the result as `skipped: "unsupported"` — which reads as
     // a format we cannot open when the truth is that we had nothing to look it up by.
+    mistralResponse = outcome.response;
     model = withFigureRefs(modelFromMistral(outcome.response, kind, titleFromMistral(outcome.response)));
     readBy = `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}`;
     unitsBilled = outcome.response.pages.length;
@@ -611,7 +616,15 @@ export async function parseWithVendor(
   /** The one pairing of vendor figures to our decoded pixels. Shared by vision and by the assets. */
   let matchedFigures: ReadonlyMap<string, CapturedFigure> | null = null;
   if (pdfFigures) {
-    matchedFigures = matchFigureImages(model, pdfFigures.model, pdfFigures.images).images;
+    // 🔴 OURS FIRST, THE VENDOR'S FOR WHAT IS LEFT. A drawn chart — axes, lines, labels — is not an
+    // image anywhere in the file, so `readPdfStructure` correctly finds nothing and the figure
+    // reports `skipped: "unsupported"`. The vendor rasterised the page to read it and is the only
+    // party that can hand those over. Filling the gap rather than replacing the matches keeps our
+    // own higher-fidelity decode wherever it exists.
+    matchedFigures = withVendorPixels(
+      matchFigureImages(model, pdfFigures.model, pdfFigures.images).images,
+      vendor === "mistral" && mistralResponse ? vendorFigurePixels(mistralResponse) : new Map(),
+    );
     if (options.lookAtFigures) {
       looked = await lookAtFigures(model, matchedFigures);
       model = looked.model;

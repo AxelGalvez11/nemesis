@@ -304,9 +304,22 @@ export function buildMistralRequest(input: {
     // A single value that satisfied both would have to be `image_limit: 0`, which costs every PDF
     // its diagrams — the expensive half of the trade, paid to avoid one conditional.
     //
-    // The rectangles are what a locator needs. The pixels would multiply the response size for
-    // something the reader renders from the original file anyway.
-    ...(input.office ? {} : { include_image_base64: false }),
+    // 🔴 `true` SINCE 2026-09-01, REVERSING THE REASONING BELOW FOR THE CASE IT DID NOT COVER.
+    // The old note said the pixels "would multiply the response size for something the reader
+    // renders from the original file anyway". That is true of an embedded photo and FALSE of a
+    // DRAWN chart — axes, lines and labels the way Excel and PowerPoint draw one — where the
+    // original file has no image to render because nobody ever put one there.
+    //
+    // Measured on the owner's pharmacokinetics deck: our reader found 15 image regions, the
+    // vendor's model listed 27 figures, and the ~13 that matched nothing were all drawn charts.
+    // They reported `skipped: "unsupported"`, which reads as a format we cannot open. The vendor
+    // has already rasterised the page to read it, so for those figures it is the only party in the
+    // process that can supply pixels at all.
+    //
+    // `vendor-figure-pixels.ts` takes these ONLY for figures our own decode did not match, so the
+    // added response size is proportional to the drawn figures a document actually has, and a
+    // document made of photographs pays nothing extra beyond the transfer.
+    ...(input.office ? {} : { include_image_base64: true }),
   });
 }
 

@@ -234,7 +234,16 @@ test("the request asks for the structure the model needs, by data URI", () => {
   // so breaking any one of them leaves the other two producing figures and a model-level guard
   // stays green. Verified by trying exactly that. The request is the one place the defect is
   // representable.
-  assert.equal(body.include_image_base64, false, "figures must be located, only their pixels declined");
+  //
+  // 🔴 `true` SINCE 2026-09-01. The distinction above is unchanged and still the reason
+  // `image_limit` must stay absent; what changed is the OTHER flag. Declining the pixels was right
+  // while every figure was assumed to be an embedded image we could decode from the original file.
+  // Measured on the owner's pharmacokinetics deck, ~13 of 27 figures are DRAWN charts — axes and
+  // labels, no embedded image anywhere in the file — so there was nothing to decode and they all
+  // reported `skipped: "unsupported"`. The vendor rasterises the page to read it, so for a drawn
+  // figure it is the only party that can supply pixels. See `vendor-figure-pixels.ts`, which takes
+  // them only for figures our own decode did not match.
+  assert.equal(body.include_image_base64, true, "a drawn chart has no pixels anywhere else");
   assert.equal(body.image_limit, undefined, "image_limit: 0 suppresses the figures themselves");
 });
 
