@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 // The ANNOTATE layer's contract — owner, 2026-08-28: *"This is supposed to be more of an annotate
@@ -12,6 +12,7 @@ const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf
 const LAYER = read("./comment-layer.tsx");
 const READER = read("./document-reader.tsx");
 const SIDEBAR = read("./reader-sidebar.tsx");
+const COMMENTS = readFileSync(new URL("../../../lib/workspace/document-comments.ts", import.meta.url), "utf8");
 const PANEL = readFileSync(new URL("../learn/source-preview.tsx", import.meta.url), "utf8");
 const CHAT = readFileSync(new URL("../learn/canvas-chat.ts", import.meta.url), "utf8");
 const ROUTER = readFileSync(new URL("../../../lib/learn/turn-router.ts", import.meta.url), "utf8");
@@ -26,12 +27,50 @@ test("🔴🔴 the note box has two destinations, and both start from the same a
 });
 
 test("🔴🔴 nothing is saved until a button is pressed", () => {
-  // Cancel and Escape leave the document exactly as it was; leaving the mode abandons the draft.
-  // The draft lives in state and reaches the store ONLY through the two buttons' handlers.
-  assert.match(LAYER, /if \(!commenting\) setDraft\(null\);/, "leaving the mode keeps a half-written draft alive");
+  // Cancel and Escape leave the document exactly as it was; leaving the mode abandons the draft it
+  // created. The draft lives in state and reaches the store ONLY through the two buttons' handlers.
+  //
+  // 🔴 REPOINTED 2026-09-01, WHEN A HIGHLIGHT LEARNED TO OPEN THE SAME BOX. This used to assert the
+  // literal `if (!commenting) setDraft(null)`, which was right while the mode was the only way to
+  // start a note. A selection draft is opened with the mode OFF, so that line would have closed the
+  // box in the same tick it appeared. The claim is unchanged — an abandoned draft is never saved —
+  // and it now has to survive being true for two different origins.
+  assert.match(
+    LAYER,
+    /if \(!commenting\) setDraft\(\(current\) => \(current\?\.fromSelection \? current : null\)\);/,
+    "leaving the mode keeps a half-written draft alive",
+  );
+  assert.match(LAYER, /else setDraft\(null\);/, "turning the mode ON no longer abandons a selection draft");
   assert.match(LAYER, /if \(event\.key === "Escape"\) onCancel\(\);/, "Escape no longer cancels the note");
   const noteBox = LAYER.slice(LAYER.indexOf("function CommentNote"));
   assert.match(noteBox, /disabled=\{!ready\}/, "an empty note can be submitted");
+});
+
+test("🔴🔴 a highlight opens the comment box, and it is the ONLY thing a highlight opens", () => {
+  // Owner, 2026-09-01: *"I dont want 'what is this showing' or 'add to notes' — only comment like
+  // 'send to nemesis' or 'add comment'"*. Highlighting used to open a five-button bar where every
+  // button fired immediately, so a thought a learner was not ready to act on had nowhere to sit.
+  //
+  // 🔴 THE DELETED COMPONENT IS ASSERTED GONE, NOT MERELY UNUSED. An unmounted `SelectionActions`
+  // sitting in the tree is the next person's obvious thing to re-mount; this repo has shipped a
+  // dead control more than once. The whole-document versions of those actions stay in the top bar.
+  assert.doesNotMatch(READER, /SelectionActions/, "the five-button selection bar is back");
+  assert.ok(!existsSync(new URL("./selection-actions.tsx", import.meta.url)), "the five-button bar still exists as a file");
+  assert.match(READER, /const commentOnSelection = useCallback/, "a highlight no longer offers a comment");
+  assert.match(LAYER, /request\?: CommentDraftSpot \| null;/, "the layer cannot be handed a draft from outside the mode");
+
+  // 🔴 ON RELEASE, NOT ON EVERY SELECTION CHANGE. `selectionchange` fires on every pixel of a drag,
+  // so opening from it flashes a composer under the moving cursor and steals focus mid-gesture.
+  assert.match(READER, /document\.addEventListener\("mouseup", onRelease\)/, "the box opens mid-drag");
+});
+
+test("🔴 a highlight carries its WORDS, not just where the cursor was", () => {
+  // "I pointed at a spot on page 14" tells the model where a finger was and nothing about what is
+  // under it — the model cannot see the page. Without the quote, a comment on a highlighted
+  // sentence produces an answer about the whole document.
+  assert.match(READER, /anchor: \{ quote: selection\.text/, "the highlighted text is dropped on the way to the anchor");
+  assert.match(COMMENTS, /quote\?: string;/, "the anchor cannot carry a quote");
+  assert.match(COMMENTS, /I highlighted "\$\{quoted/, "the prompt does not quote what was highlighted");
 });
 
 test("🔴 the gestures are said out loud, because neither is discoverable", () => {
