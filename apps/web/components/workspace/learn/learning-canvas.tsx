@@ -162,6 +162,18 @@ const ARRIVING_MS = 1_200;
  * layout reads during the exact load it must not slow down. Ten a second is invisible to a person
  * and free next to what the page is already doing.
  */
+/**
+ * How far below the top of the thread a freshly sent prompt lands.
+ *
+ * 🔴 IT IS THE SCROLLER'S OWN `pt-[64px]`, WHICH IS CLEARANCE FOR THE FLOATING HEADER CONTROLS.
+ * Pinning to the true top tucks the learner's own sentence under Sources and the ⋯.
+ */
+const PIN_INSET_PX = 64;
+
+/** How long the prompt may be held at the top before the page is the learner's again. Long enough
+ *  for a slow answer to finish forming, short enough that nothing is held hostage. */
+const PIN_MAX_MS = 60_000;
+
 const LANDING_TICK_MS = 100;
 
 /**
@@ -345,6 +357,17 @@ export function LearningCanvas({
   const arriving = Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
   /** The thread's scroller, so an opening canvas can be put at its most recent turn. */
   const threadRef = useRef<HTMLDivElement | null>(null);
+  /** The turn being answered right now: the learner's sentence, the thinking line, the answer. */
+  const currentTurnRef = useRef<HTMLDivElement | null>(null);
+  /** Empty space under that turn, so a short exchange can still be scrolled to the top. */
+  const runwayRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Bumped on every send.
+   *
+   * 🔴 A COUNTER, NOT THE SENTENCE. Keying on `currentSaid` would not fire when somebody asks the
+   * same thing twice in a row, which is exactly what a person does when the first answer missed.
+   */
+  const [sendSeq, setSendSeq] = useState(0);
   /**
    * Open at the foot of the conversation, the way every chat surface does.
    *
@@ -982,6 +1005,8 @@ export function LearningCanvas({
       onScreen.current = { aside: null, output: null, said: trimmed, saidVia: spokenNow };
       setCurrentSaid(trimmed);
       setCurrentSaidVia(spokenNow);
+      // Owner picked option A from the mockup: the prompt goes to the top and stays there.
+      setSendSeq((n) => n + 1);
       try {
         const decision = await session.converse(trimmed, surroundings(), () => {
           // 🔴 THE LEARNER ASKED FOR MATERIAL, SO WHAT COMES BACK OWNS ATTENTION — until the policy
@@ -1750,6 +1775,105 @@ export function LearningCanvas({
    * condition.
    */
   const threadOpen = view === "conversation" && !viewing;
+
+  /**
+   * The sent prompt goes to the top and STAYS there while the answer forms under it.
+   *
+   * Owner chose this shape from four demonstrated options, 2026-08-31: the ChatGPT behaviour,
+   * blank space and all.
+   *
+   * 🔴🔴🔴 THE FIRST BUILD OF THIS BLANKED THE PAGE, AND EVERY LINE BELOW IS SHAPED BY WHY. It
+   * measured ONCE, on the frame the send happened, while `CanvasFade` still had the PREVIOUS
+   * answer mounted. So the turn measured tall, the runway computed to zero, and it scrolled to put
+   * that tall block at the top. Then the old answer unmounted, the block collapsed to a one-line
+   * prompt, and the scroll position was left far past the end of the content with no runway to
+   * hold it. What is on screen at that point is nothing at all.
+   *
+   * 🔴🔴 SO IT PLACES ON EVERY CHANGE, NOT ONCE. `reserve` and `place` run together each time the
+   * turn's height moves, which makes the whole thing self-correcting: when the old answer leaves,
+   * the turn shrinks, the runway grows to match and the prompt is put back at the top. There is no
+   * moment whose measurement has to be right, which is the only honest fix for a bug that was
+   * caused by trusting one.
+   *
+   * 🔴 THE TURN IS MEASURED BY ITS OWN BOX, NEVER BY `scrollHeight`. The runway lives in the same
+   * scroller, so `scrollHeight` includes the very space this is deciding: reserving would make the
+   * turn look taller, which reserves less, which makes it look shorter, converging to zero on the
+   * first frame. I hit exactly that while building the mockup for this.
+   *
+   * 🔴 THE LEARNER'S OWN SCROLL ENDS IT. Once they touch the wheel, the page is theirs — a surface
+   * that keeps yanking the view back is the behaviour people file bugs about. Programmatic
+   * scrolling raises no wheel or key event, so listening for those is safe.
+   */
+  useEffect(() => {
+    if (sendSeq === 0 || !threadOpen) return;
+    const scroller = threadRef.current;
+    const turn = currentTurnRef.current;
+    if (!scroller || !turn) return;
+
+    let live = true;
+    const hold = () => {
+      const node = currentTurnRef.current;
+      const runway = runwayRef.current;
+      if (!live || !node || !runway) return;
+      // 🔴 THE ORDER MATTERS. Reserve first so the room exists, then scroll into it; scrolling
+      // before the space is there silently clamps and the prompt lands short of the top.
+      const turnHeight = node.getBoundingClientRect().height;
+      runway.style.height = `${Math.max(0, Math.round(scroller.clientHeight - PIN_INSET_PX - turnHeight))}px`;
+      // 🔴 FROM RECTS, NOT `offsetTop`, which is relative to whichever ancestor happens to be
+      // positioned — and this subtree gains and loses positioned wrappers as the answer forms.
+      const delta = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      scroller.scrollTop += delta - PIN_INSET_PX;
+    };
+
+    const release = () => {
+      if (!live) return;
+      live = false;
+      window.clearInterval(timer);
+      for (const name of ["wheel", "touchmove", "keydown"] as const) window.removeEventListener(name, release);
+      // 🔴 HAND THE ROOM BACK. Left behind, it is a screenful of blank in the middle of the thread
+      // the moment this turn scrolls up into the history.
+      if (runwayRef.current) runwayRef.current.style.height = "0px";
+    };
+
+    // 🔴🔴 AN INTERVAL, NOT A ResizeObserver, AND THE CHOICE IS ABOUT BEING ABLE TO PROVE IT. The
+    // observer is the obvious tool and it is what the reverted build used; it also cannot be
+    // exercised in the only environment available for verifying this (a headless pane, where no
+    // ResizeObserver callback is ever delivered), which is precisely how the first version shipped
+    // broken. The landing effect thirty lines above already re-applies on a tick for the same
+    // reason, with the same cancel-on-touch and the same settle detector, so this is the shape
+    // this file already trusts rather than a second mechanism to reason about.
+    let tallest = 0;
+    let grewAt = Date.now();
+    const opened = Date.now();
+    const timer = window.setInterval(() => {
+      const node = currentTurnRef.current;
+      if (!node) return;
+      hold();
+      const height = node.getBoundingClientRect().height;
+      if (height > tallest) {
+        tallest = height;
+        grewAt = Date.now();
+      } else if (tallest > 0 && Date.now() - grewAt > LANDING_SETTLE_MS) {
+        // 🔴 SETTLED IS NOT FINISHED, AND IT MUST NOT RELEASE. The runway has to stay while this
+        // turn is the current one, or the page drops a screenful the moment an answer pauses
+        // between paragraphs. Only the ceiling, a scroll, or the next turn ends it.
+        return;
+      }
+      if (Date.now() - opened > PIN_MAX_MS) release();
+    }, LANDING_TICK_MS);
+
+    // 🔴 THE LEARNER'S OWN SCROLL ENDS IT. Once they touch the wheel the page is theirs; a surface
+    // that keeps yanking the view back is the behaviour people file bugs about. Passive, because
+    // these only ever cancel. Programmatic scrolling raises none of them, so `hold` cannot cancel
+    // itself.
+    for (const name of ["wheel", "touchmove", "keydown"] as const) {
+      window.addEventListener(name, release, name === "keydown" ? undefined : { passive: true });
+    }
+    // Place it once immediately, so the prompt is at the top on the very first painted frame
+    // rather than a tick later.
+    hold();
+    return release;
+  }, [sendSeq, threadOpen]);
   // The door is withheld until there is a conversation to switch away from, and monotonic within
   // a session — the 2026-08-19 rule: chrome may arrive and stay, never come and go.
   const conversationOffered = history.length > 0 || thread.length > 0 || Boolean(currentSaid);
@@ -2310,6 +2434,21 @@ export function LearningCanvas({
           </div>
         )}
 
+        {/* ── the turn being answered right now ─────────────────────────────────────────────
+            🔴 A PLAIN BLOCK WRAPPER, AND IT MUST STAY PLAIN. Its only job is to be one measurable
+            box around the learner's sentence, the thinking line and the answer, so the pin knows
+            how tall the turn is. No flex, no padding, no positioning: every child already carries
+            its own column and gutters, and giving this box any of its own would change the layout
+            it exists only to measure.
+
+            🔴 THE RUNWAY IS ITS SIBLING, NOT ITS CHILD, AND THAT IS LOAD-BEARING. Inside, it would
+            count toward the height being measured, so reserving space would make the turn look
+            taller, reserve less, and converge to zero on the first frame.
+
+            🔴 `#canvas-answer-end` STAYS THE LAST THING INSIDE IT, so the character still sits
+            under the answer rather than under the runway (#874). Block children stack from the
+            top, so the runway below cannot push that anchor down. */}
+        <div data-canvas-current="" ref={currentTurnRef}>
         {/* 🔴🔴 THE LEARNER'S OWN MESSAGE FOR THE TURN ON SCREEN, AND ONLY IN THE THREAD. Owner,
             2026-08-26: *"just make the canvas the one where it doesn't show the user's prompt. It
             just shows the output."* That is the one difference between the two views, and it is
@@ -2963,6 +3102,12 @@ export function LearningCanvas({
             `max-w-(--canvas-column) px-6`, or the character lines up with the window rather than
             with the text. Both are pinned by `character-place.test.ts`. */}
         <div aria-hidden="true" className="mx-auto h-0 w-full max-w-(--canvas-column) px-6" id="canvas-answer-end" />
+        </div>
+
+        {/* 🔴 THE RUNWAY. Zero until a send, then exactly what the current turn is short of a
+            screenful, so the prompt above can physically reach the top — a container only scrolls
+            as far as it has content. Handed back when the turn stops being the current one. */}
+        <div aria-hidden="true" ref={runwayRef} style={{ height: 0 }} />
       </div>
 
       {/* 🔴 THE POLICY'S ERROR WINS ONLY WHEN THE POLICY IS ON SCREEN. Both runtimes can now hold an
