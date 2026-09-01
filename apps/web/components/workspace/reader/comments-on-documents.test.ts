@@ -68,7 +68,14 @@ test("🔴 a highlight carries its WORDS, not just where the cursor was", () => 
   // "I pointed at a spot on page 14" tells the model where a finger was and nothing about what is
   // under it — the model cannot see the page. Without the quote, a comment on a highlighted
   // sentence produces an answer about the whole document.
-  assert.match(READER, /anchor: \{ quote: selection\.text/, "the highlighted text is dropped on the way to the anchor");
+  assert.match(READER, /anchor: \{\s*quote: text,/, "the highlighted text is dropped on the way to the anchor");
+
+  // 🔴 AND IT IS READ FROM THE LIVE SELECTION, NOT FROM STATE. The browser fires `selectionchange`
+  // then `mouseup` back to back at the end of a drag, and React need not have committed in
+  // between — a handler closing over `selection` state ran with the previous render's closure, saw
+  // null, and silently did nothing. Caught on production; it would have been intermittent in use.
+  assert.match(READER, /const active = typeof window === "undefined" \? null : window\.getSelection\(\);/,
+    "the comment box is built from React state again, which races the release");
   assert.match(COMMENTS, /quote\?: string;/, "the anchor cannot carry a quote");
   assert.match(COMMENTS, /I highlighted "\$\{quoted/, "the prompt does not quote what was highlighted");
 });
