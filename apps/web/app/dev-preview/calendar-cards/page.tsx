@@ -103,7 +103,16 @@ export default function CalendarCardsPreview() {
             <h1 className="text-xl font-medium text-(--ui-text-primary)">August 2026</h1>
           </header>
           <div className="min-h-0 flex-1">
-            <MonthGrid days={days} eventsByDay={eventsByDay} onOpenEvent={() => {}} onPickDay={() => {}} />
+            {/* No rail here: this preview exists to photograph the grid itself,
+                and `selectedKey={null}` is the state it is photographed in. */}
+            <MonthGrid
+              days={days}
+              eventsByDay={eventsByDay}
+              onOpenEvent={() => {}}
+              onPickDay={() => {}}
+              onSelectDay={() => {}}
+              selectedKey={null}
+            />
           </div>
         </div>
       </WorkspaceShell>
