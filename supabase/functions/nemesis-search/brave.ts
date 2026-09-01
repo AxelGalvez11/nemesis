@@ -10,7 +10,8 @@
 // and title on every row regardless, so citations survive the swap unchanged.
 //
 // THE CONTRACT DOES NOT MOVE. Every caller — the agent's web_search tool, the
-// web route, the desktop SDK — reads Firecrawl's shape:
+// web route, the desktop SDK — reads Firecrawl's shape (the vendor is gone; the envelope
+// stays, because three clients parse it):
 //   { success: true, data: { web: [{ title, url, description }] } }
 // Brave is mapped into that shape here. This is a provider swap, not an agent
 // change, and the tests below are what hold that line.
