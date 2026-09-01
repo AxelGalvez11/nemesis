@@ -80,7 +80,7 @@ export const IDLE_REPLY_AUDIO = {
   status: "idle",
   stop: () => {},
 } as const;
-import { AddMenuRow, ADD_MENU } from "./add-menu-row";
+import { AddMenuRow, ADD_MENU, useMenuSide } from "./add-menu-row";
 import { backspaceClearsCapability, CapabilityChip } from "./capability-chip";
 import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
@@ -303,6 +303,7 @@ export function CanvasComposer({
 }: CanvasComposerProps) {
   const [text, setText] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const addSide = useMenuSide(addOpen, "above");
   /* 🔴 THE `ink` REF WENT WITH THE PAGE (owner 2026-08-26, "remove pencil mode for now"). It held
    * the learner's scratch work above the prompt-changed effect so that reopening the sheet did not
    * lose several minutes of working out. With no door there is nothing to reopen. Restoring the
@@ -967,7 +968,12 @@ export function CanvasComposer({
 
               {addOffers.length > 1 && addOpen && (
                 <div
-                  className={cn("absolute bottom-full left-0 mb-[8px]", ADD_MENU)}
+                  // 🔴 ABOVE BY PREFERENCE — this composer sits on the floor of the window, so
+                  // below is almost never the answer. It still flips and caps itself, because a
+                  // short window with a grown composer can leave too little room on either side.
+                  className={cn("absolute left-0", addSide.side === "below" ? "top-full mt-[8px]" : "bottom-full mb-[8px]", ADD_MENU)}
+                  ref={addSide.ref}
+                  style={{ maxHeight: addSide.maxHeight }}
                   // 🔴 A SENTINEL FOR THE CHARACTER'S DOCK, PRESENT ONLY WHILE THE MENU IS OPEN.
                   // The popover is absolutely positioned, so `#canvas-composer`'s bounding box —
                   // the one CharacterDock measures to float clear of — cannot see it, and the
