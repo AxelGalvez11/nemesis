@@ -20,10 +20,23 @@
 /** Surfaces that own the entire left edge and legitimately offer no nav toggle. */
 const IMMERSIVE_ROUTES: ReadonlySet<string> = new Set(["/slides"]);
 
-// 🔴 A CANVAS IS IMMERSIVE AND IS NOT ON THIS LIST, ON PURPOSE (UX brief §38.1).
+// 🔴🔴 A CANVAS IS NO LONGER IMMERSIVE, AND §38.1 IS REVERSED (owner, 2026-08-31).
 //
-//   > "Side bar should also not be visible when inside canvas." — not merely the toggle, the
-//   > whole rail. The Canvas is a focused, full-bleed surface.
+//   > "make the chat retain left sidebar like in chatgpt but when chats are initiated, the left
+//   > sidebar should collapse."
+//
+// §38.1 had said the opposite — *"Side bar should also not be visible when inside canvas"*, not
+// merely the toggle but the whole rail — and that is what `immersiveClaimed` used to buy. It now
+// buys a COLLAPSE instead: the sidebar folds to the 56px rail and the rail stays, which is the
+// reference's own behaviour. ChatGPT's tiny bar was measured in the owner's account on 2026-08-29:
+// **52px, present on every surface, never absent, never resizing.** There is no state in that
+// product where navigation is gone, which is the whole reason the old claim felt wrong once the
+// canvas became the place you simply talk to Nemesis.
+//
+// 🔴 THE CLAIM STILL EXISTS AND STILL COMES FROM `CanvasSurface`; only its EFFECT moved, from
+// `focusMode` to `sidebarVisible`. Keeping the registry means the URL seed keeps doing its job —
+// it now prevents a flash of the EXPANDED sidebar before the collapse, where it used to prevent a
+// flash of the rail.
 //
 // It cannot be a route, because `/learn` is TWO surfaces: the front door (composer + the
 // learner's canvases, which keeps its navigation) and a canvas session (`?c=`, `?ask=`, `?new=1`,
@@ -31,7 +44,7 @@ const IMMERSIVE_ROUTES: ReadonlySet<string> = new Set(["/slides"]);
 //
 // Reading the query in the shell would mean `useSearchParams()` in a client component that wraps
 // every workspace route — which forces the whole group into a Suspense boundary, against a Vercel
-// account with a daily build cap. So the surface DECLARES itself instead: `immersiveClaimed`
+// account with a daily build cap. So the surface DECLARES itself instead: `canvasRunning`
 // below, fed by the claim registry in components/workspace/shell/immersive-surface.tsx.
 //
 // 🔴 AND THE DECLARATION IS NOT FREE. Under §38.1 the rail is gone, so the surface's own `×` is
@@ -55,12 +68,13 @@ export interface ShellNavigationInput {
   /** Settings → General, "Keep Nemesis sidebar" turned off. */
   readonly libraryFullScreen: boolean;
   /**
-   * A surface on screen has declared itself immersive (§38.1 — a canvas).
+   * A canvas is on screen — i.e. a conversation has been initiated.
    *
-   * 🔴 A CLAIM IS A PROMISE THAT THE SURFACE CARRIES ITS OWN EXIT. Only make it from a component
-   * that unconditionally renders one; `CanvasSurface` is the only such caller today.
+   * 🔴 IT COLLAPSES THE SIDEBAR, IT NO LONGER SUPPRESSES THE RAIL. See the note at the top of this
+   * file: §38.1 was reversed on 2026-08-31. The surface still carries its own `×`, which is now a
+   * convenience rather than the learner's only way out.
    */
-  readonly immersiveClaimed?: boolean;
+  readonly canvasRunning?: boolean;
   /** Something is docked on the right — see side-panel.tsx. Collapses the sidebar to the rail for
    *  as long as it is open, and never touches the stored preference. */
   sidePanelOpen?: boolean;
@@ -99,7 +113,7 @@ export function shellNavigation({
   sidebarOpen,
   narrowViewport,
   libraryFullScreen,
-  immersiveClaimed = false,
+  canvasRunning = false,
   sidePanelOpen = false,
 }: ShellNavigationInput): ShellNavigation {
   const route = normalizePathname(pathname);
@@ -112,7 +126,6 @@ export function shellNavigation({
   // applying focus mode there costs a phone nothing and gives it §38.1's full-bleed surface, which
   // is where a full-bleed surface matters most.
   const focusMode =
-    immersiveClaimed ||
     IMMERSIVE_ROUTES.has(route) ||
     (libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(route));
   // 🔴🔴 A DOCKED PANEL COLLAPSES THE SIDEBAR AND LEAVES THE RAIL — owner, 2026-08-25: *"when the
@@ -125,7 +138,11 @@ export function shellNavigation({
   // canvas carrying its own `×`. A document open beside the page must not also remove the way out
   // of the page — so this suppresses only the expanded sidebar, and `railVisible` below, computed
   // from `sidebarVisible`, brings the 56px rail back on its own.
-  const sidebarVisible = sidebarOpen && !focusMode && !sidePanelOpen;
+  // 🔴 `canvasRunning` JOINS THE COLLAPSE, NOT `focusMode` — the reversal of §38.1 in one line.
+  // A running conversation folds the sidebar to the rail exactly as a docked panel does, and for
+  // the same reason: it must not be written to `sidebarOpen`, or the learner's stored preference
+  // would be destroyed the first time they ever talked to Nemesis.
+  const sidebarVisible = sidebarOpen && !focusMode && !sidePanelOpen && !canvasRunning;
   // 🔴 A PHONE GETS NO RAIL. On a narrow viewport the sidebar is an OVERLAY, so a permanent
   // 56px column would eat screen width from a surface that has none to spare and would sit under
   // the overlay it is supposed to replace. The floating toggle stays the right answer there, which
@@ -136,7 +153,7 @@ export function shellNavigation({
     navToggleShowing: !sidebarVisible && !focusMode && !railVisible,
     railVisible,
     sidebarVisible,
-    surfaceOwnsExit: immersiveClaimed,
+    surfaceOwnsExit: canvasRunning,
   };
 }
 
@@ -146,13 +163,17 @@ export function shellNavigation({
  * A learner must always have SOME way out of where they are: either the rail is on screen, or a
  * control puts it there, or the surface itself carries an exit.
  *
- * 🔴 THE THIRD CLAUSE IS NEW, AND IT IS THE ONE THAT COULD ROT. §38.1 takes the rail off a canvas
- * entirely, so `sidebarVisible` and `navToggleShowing` are both false there and the old two-clause
- * predicate would call the product's main surface a dead end. Weakening the predicate to make that
- * green would have thrown away the only thing standing between this repo and the defect it already
- * shipped. So the third clause is not "immersive is allowed to have nothing" — it is "immersive
- * means the surface owns an exit", and `learn-entry.test.ts` is what holds that end up, by
- * asserting the `×` is structural in `CanvasSurface` rather than conditional.
+ * 🔴 THE THIRD CLAUSE IS NOW BELT AND BRACES, WHICH IS WHY IT STAYS. Under §38.1 a canvas had the
+ * rail taken away, so `sidebarVisible` and `navToggleShowing` were both false there and the
+ * two-clause predicate would have called the product's main surface a dead end; the clause existed
+ * to say "immersive means the surface owns an exit". Since 2026-08-31 a canvas COLLAPSES to the
+ * rail instead, so `railVisible` already satisfies this on its own and nothing depends on the
+ * clause any more.
+ *
+ * 🔴 IT IS NOT DELETED, BECAUSE DELETING IT WOULD BE THE SECOND HALF OF A ONE-WAY DOOR. The `×` is
+ * still structural in `CanvasSurface` (`learn-entry.test.ts` holds that up), and if a future
+ * surface ever suppresses the rail again this is the clause that keeps the invariant honest
+ * instead of silently failing.
  *
  * A route on `IMMERSIVE_ROUTES` deliberately does NOT satisfy this. `/slides` is grandfathered by
  * `routeDeclaredImmersive` below, named rather than silently folded in, because nobody has checked

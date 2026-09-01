@@ -51,37 +51,45 @@ test("🔴 collapsed is not the same as suppressed, and only one of them is a de
   assert.equal(slides.navToggleShowing, false, "an immersive surface owns its own exit");
 });
 
-test("🔴 §38.1 — inside a canvas there is no rail AND no toggle, and it is a CLAIM that says so", () => {
+test("🔴🔴 §38.1 REVERSED — a canvas collapses the sidebar to the rail, it does not take navigation away", () => {
+  // Owner, 2026-08-31: *"make the chat retain left sidebar like in chatgpt but when chats are
+  // initiated, the left sidebar should collapse."* §38.1 had said the opposite ("Side bar should
+  // also not be visible when inside canvas") and this test asserted it. ChatGPT's own tiny bar was
+  // measured in the owner's account: 52px, present on every surface, never absent.
   const canvas = shellNavigation({
-    immersiveClaimed: true,
+    canvasRunning: true,
     libraryFullScreen: false,
     narrowViewport: WIDE,
     pathname: "/learn",
     sidebarOpen: false,
   });
-  assert.equal(canvas.sidebarVisible, false, "§38.1: the sidebar is not visible inside a canvas");
-  assert.equal(canvas.navToggleShowing, false, "§38.1 is the whole rail, not merely the toggle");
-  assert.equal(canvas.focusMode, true);
+  assert.equal(canvas.sidebarVisible, false, "a running canvas must still collapse the expanded sidebar");
+  assert.equal(canvas.railVisible, true, "the rail went away again — the canvas is suppressing navigation, not collapsing it");
+  assert.equal(canvas.navToggleShowing, false, "the rail carries its own expand control; a floating toggle beside it is two of the same thing");
+  assert.equal(canvas.focusMode, false, "a canvas is no longer focus mode");
 
   // 🔴 SAME PATHNAME, OPPOSITE ANSWER. This is the whole reason the decision is a claim rather than
   // a route: `/learn` is the front door AND every canvas session, and putting it on the immersive
   // ROUTE list would take navigation off the composer page too.
-  // The front door keeps navigation (as an icon rail); the canvas at the same pathname has none.
-  // Asserted through the invariant rather than through whichever control happens to draw it.
+  // Both keep navigation now; what differs is whether the sidebar is EXPANDED. Asserted through
+  // the invariant rather than through whichever control happens to draw it.
   assert.ok(navigationReachable(firstVisit("/learn")));
   assert.equal(firstVisit("/learn").railVisible, true);
   assert.equal(routeDeclaredImmersive("/learn"), false, "a canvas must never become an immersive ROUTE");
 
-  // Even a learner who has deliberately opened the rail gets a full-bleed canvas. §38.1 is not a
-  // default that a stored preference outranks — it is what a canvas IS.
+  // 🔴 A STORED PREFERENCE DOES NOT KEEP THE SIDEBAR OPEN INSIDE A CANVAS, and that is the owner's
+  // "when chats are initiated, the left sidebar should collapse". It folds to the rail rather than
+  // vanishing, and `sidebarOpen` is never written — see shell-navigation.ts, and side-panel.tsx for
+  // the bug that rule exists to prevent.
   const opened = shellNavigation({
-    immersiveClaimed: true,
+    canvasRunning: true,
     libraryFullScreen: false,
     narrowViewport: WIDE,
     pathname: "/learn",
     sidebarOpen: true,
   });
   assert.equal(opened.sidebarVisible, false);
+  assert.equal(opened.railVisible, true, "collapsing must leave the rail, not the empty column");
 });
 
 test("🔴 the reachability invariant was CHANGED, not weakened — a claim must carry an exit", () => {
@@ -91,7 +99,7 @@ test("🔴 the reachability invariant was CHANGED, not weakened — a claim must
   // what makes it safe: the surface owns its exit. `learn-entry.test.ts` holds that end up by
   // asserting the `×` in `CanvasSurface` is structural rather than conditional.
   const canvas = shellNavigation({
-    immersiveClaimed: true,
+    canvasRunning: true,
     libraryFullScreen: false,
     narrowViewport: WIDE,
     pathname: "/learn",
@@ -120,20 +128,24 @@ test("🔴 the reachability invariant was CHANGED, not weakened — a claim must
   assert.equal(firstVisit("/slides").surfaceOwnsExit, false, "/slides is grandfathered, not vouched for");
 });
 
-test("🔴 a phone inside a canvas gets the same full-bleed surface, deliberately", () => {
+test("🔴 a phone inside a canvas still reaches navigation, by the toggle rather than a rail", () => {
   // The narrow-viewport exemption below exists because /library's own sidebar is an overlay with
   // no exit of its own. A canvas has an `×` at every width, so the exemption would cost the
   // learner the full-bleed surface exactly where the screen is smallest. Decided, not inherited.
   const phone = shellNavigation({
-    immersiveClaimed: true,
+    canvasRunning: true,
     libraryFullScreen: false,
     narrowViewport: NARROW,
     pathname: "/learn",
     sidebarOpen: false,
   });
   assert.equal(phone.sidebarVisible, false);
-  assert.equal(phone.navToggleShowing, false);
-  assert.ok(navigationReachable(phone), "and it is only allowed because the surface carries the ×");
+  // 🔴 NO RAIL ON A PHONE — a permanent 56px column takes width the surface cannot spare — so the
+  // floating toggle is what reaches navigation here. Under §38.1 both were absent and the `×` was
+  // the only way out; now the way out does not depend on the surface at all.
+  assert.equal(phone.railVisible, false);
+  assert.equal(phone.navToggleShowing, true, "a phone in a canvas has no rail AND no toggle — that is the dead end");
+  assert.ok(navigationReachable(phone));
 });
 
 test("opening the rail hides the toggle, so there is never both", () => {
@@ -184,14 +196,14 @@ test("🔴 collapsed is an icon rail, and a canvas still gets nothing at all", (
   assert.ok(navigationReachable(frontDoor));
 
   const canvas = shellNavigation({
-    immersiveClaimed: true,
+    canvasRunning: true,
     libraryFullScreen: false,
     narrowViewport: WIDE,
     pathname: "/learn",
     sidebarOpen: false,
   });
-  assert.equal(canvas.railVisible, false, "a canvas is full-bleed (§38.1) — the rail is not exempt from that");
-  assert.equal(canvas.sidebarVisible, false);
+  assert.equal(canvas.railVisible, true, "a canvas keeps the rail since §38.1 was reversed");
+  assert.equal(canvas.sidebarVisible, false, "but the expanded sidebar still collapses");
   assert.equal(canvas.navToggleShowing, false);
 });
 
