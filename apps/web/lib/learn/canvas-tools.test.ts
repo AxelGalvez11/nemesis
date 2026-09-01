@@ -316,3 +316,39 @@ test("🔴 every call in a round runs, even after one comes back held", () => {
   assert.match(round, /if \(!pending\) pending = readPending\(result\);/, "a later held call overwrites the first, or the loop breaks early");
   assert.ok(!/\bbreak;/.test(round), "the round stops at the first held call");
 });
+
+test("🔴🔴 a connected calendar carries the rules its own defaults make necessary", () => {
+  // Measured off the live schemas 2026-08-31, after the owner reported a week coming back partial:
+  // `calendar_id` defaults to the primary calendar only, `max_results` to 10, and
+  // GOOGLECALENDAR_EVENTS_LIST ships FIXED timeMin/timeMax of a week in 2025. None of the three
+  // announce themselves — each returns a short, confident, incomplete answer.
+  const block = toolCatalogueBlock([
+    { function: { description: "List events", name: "GOOGLECALENDAR_EVENTS_LIST" } },
+  ]);
+  assert.match(block, /List the learner's calendars first and read all of them/);
+  assert.match(block, /Always set the start and end of the range yourself/);
+  assert.match(block, /fixed week in a past year/);
+  assert.match(block, /Raise the result limit/);
+  // 🔴 THE ONE THAT MATTERS MOST. A partial week presented as a whole one is worse than a short
+  // answer that admits it was cut.
+  assert.match(block, /If a result still looks truncated, say so/);
+});
+
+test("🔴 the rules follow the ACTION, not the app, because the calendar is not always its own app", () => {
+  // Google puts the calendar in a toolkit of its own; Microsoft folds it into Outlook. "Which app
+  // is the calendar" has no stable answer, so the test is on what the action concerns.
+  const outlook = toolCatalogueBlock([
+    { function: { description: "List events", name: "OUTLOOK_OUTLOOK_LIST_EVENTS" } },
+  ]);
+  assert.match(outlook, /List the learner's calendars first/, "an Outlook calendar gets no calendar rules");
+});
+
+test("🔴 an app with no calendar in it gets none of that text", () => {
+  // Context spent on rules for a tool that is not offered is context taken from the answer.
+  const drive = toolCatalogueBlock([
+    { function: { description: "Find a file", name: "GOOGLEDRIVE_FIND_FILE" } },
+  ]);
+  assert.ok(!/List the learner's calendars first/.test(drive), "calendar rules appear with no calendar connected");
+  // And nothing at all when no app is connected.
+  assert.ok(!/Reading a calendar, every time/.test(toolCatalogueBlock([])));
+});

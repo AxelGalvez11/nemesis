@@ -116,9 +116,65 @@ export function toolCatalogueBlock(connected: readonly { function: { name: strin
       + "is held until they press a button, so say what you are about to do and stop:",
       ...connected.map((tool) => `  ${tool.function.name} — ${tool.function.description || "no description given"}`),
     );
+    if (connected.some((tool) => concernsCalendar(tool.function.name))) lines.push("", ...CALENDAR_RULES);
   }
   return lines.join("\n");
 }
+
+/**
+ * Whether an offered action reads or writes a calendar.
+ *
+ * 🔴 IT MATCHES THE ACTION NAME, NOT THE APP, for the same reason `riskOf` does: Google puts its
+ * calendar in a toolkit of its own and Microsoft folds it into Outlook, so "which app is the
+ * calendar" has no stable answer and "does this action concern events" does.
+ */
+function concernsCalendar(action: string): boolean {
+  // 🔴 SEGMENTS, NOT A SUBSTRING SCAN OF THE WHOLE SLUG, which is the same rule `riskOf` states one
+  // file over and for the same reason: `/EVENTS?_/` needed a trailing underscore and therefore
+  // missed `OUTLOOK_OUTLOOK_LIST_EVENTS`, where the word ends the name. A test caught it.
+  //
+  // 🔴 `includes("CALENDAR")` RATHER THAN AN EXACT MATCH, DELIBERATELY, because Google's own
+  // toolkit spells it `GOOGLECALENDAR` with no separator. `riskOf` may not be this loose — a false
+  // positive there runs a write without asking — but the worst case here is a few lines of advice
+  // attached to a tool that did not need them.
+  const segments = action.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  return segments.some((segment) => segment.includes("CALENDAR") || segment === "EVENT" || segment === "EVENTS");
+}
+
+/**
+ * What to do differently when reading a calendar, because the tools' own defaults are wrong for a
+ * student and wrong quietly.
+ *
+ * 🔴🔴 ALL THREE OF THESE ARE MEASURED OFF THE LIVE SCHEMAS, 2026-08-31, after the owner reported
+ * that asking what he had that week returned some of it: *"it gave a few events, but ... I actually
+ * had more events this week."* None of them announce themselves — every one returns a short, well
+ * formed, confident answer that is missing things.
+ *
+ *   1. `calendar_id` defaults to `primary`. A student's classes are very often on a second,
+ *      shared or subscribed calendar, and none of it is in the primary one.
+ *   2. `max_results` defaults to 10, and the reply does not say it truncated.
+ *   3. 🔴 WORST: `GOOGLECALENDAR_EVENTS_LIST` ships FIXED `timeMin`/`timeMax` defaults of
+ *      2025-08-25 to 2025-09-01 — a specific week over a year in the past, not a rolling window.
+ *      Omitting the dates does not mean "now", it means "that week in 2025", so the honest-looking
+ *      answer is about the wrong year entirely.
+ *
+ * 🔴 THIS IS GUIDANCE, NOT A GUARANTEE, AND IT IS DELIBERATELY NOT ARGUMENT REWRITING. We could
+ * force these values in the route, but inventing a date range the learner did not ask for is a
+ * different kind of wrong, and silently editing a model's call is how a system becomes impossible
+ * to reason about. The last line matters most: a partial week presented as a whole one is worse
+ * than a short answer that says it was cut.
+ */
+const CALENDAR_RULES: readonly string[] = [
+  "Reading a calendar, every time:",
+  "  - List the learner's calendars first and read all of them. The default is their main calendar "
+  + "only, and classes are usually on a separate, shared or subscribed one.",
+  "  - Always set the start and end of the range yourself. Leaving them out does NOT mean now: the "
+  + "tool's own default is a fixed week in a past year, so the answer will be about the wrong dates.",
+  "  - Raise the result limit above its default of 10, or a normal week comes back cut with no sign "
+  + "that it was.",
+  "  - If a result still looks truncated, say so. A partial week presented as the whole week is "
+  + "worse than saying you could not see all of it.",
+];
 
 /**
  * How long a fetched catalogue is reused.
