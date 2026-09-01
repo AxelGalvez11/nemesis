@@ -1041,11 +1041,73 @@ test("🔴 a spoken turn carries the spoken-size instruction; a typed turn is by
   const block = spoken.find((message) => message.content.startsWith("SPOKEN CONVERSATION."));
   assert.ok(block, "the spoken turn lost its instruction block");
   assert.equal(block?.role, "system");
-  for (const said of ["read aloud", "shortest complete answer", "No headings", "SHAPE of your reply only"]) {
+  // 🔴 THE LENGTH RULE IS MEASURED IN SECONDS OF TALKING, and the worked example is load-bearing
+  // rather than decorative (2026-09-01). The wording it replaces asked for "the shortest complete
+  // answer, a few conversational sentences" and produced 123 words and 8 sentences a turn, about a
+  // minute of speech; this wording measured 41 words and 2.4 sentences, and the example alone
+  // dropped the worst case from 116 words to 80. Owner: *"i want shorter responses since that
+  // saves tokens and feels more natural."*
+  for (const said of [
+    "read aloud",
+    "SECONDS OF TALKING",
+    "about ten seconds, which is two sentences",
+    "Start with the answer itself",
+    "This is the size:",
+    "No headings",
+    "SHAPE of your reply only",
+  ]) {
     assert.ok(block?.content.includes(said), `the spoken block no longer says "${said}"`);
   }
+  // 🔴 AND IT CARRIES NO DASHES OF ITS OWN. The 2026-08-25 ruling binds the prompt strings as well
+  // as the output: a contract that models the punctuation it forbids teaches it. This block
+  // shipped with two em dashes in it for a day.
+  assert.ok(!/[—–]/.test(block?.content ?? ""), "the spoken block is modelling the dash it forbids");
   // The typed packet is BYTE-IDENTICAL to what shipped before the flag existed — the
   // teaching-style precedent: an absent modality emits nothing, not an empty something.
   const typed = JSON.stringify(turnRouterMessages({ context: EMPTY, utterance: "hello" }));
   assert.ok(!typed.includes("SPOKEN CONVERSATION"), "a typed turn is carrying the spoken block");
+});
+
+// ── the decision that arrived without its fence ────────────────────────────────────────────────
+
+test("🔴🔴 an unfenced decision object followed by the answer is a turn, not a loss (2026-09-01)", () => {
+  // Measured against the live model: 1 run in 8 of the same spoken question came back exactly like
+  // this, and the whole turn was discarded — `readTurnDecision` needs the fence, `looksLikeEnvelope`
+  // said yes, and `salvageSay` looked for a "say" field that an object of this shape never has. The
+  // learner lost a good answer; in a voice conversation, a turn of silence.
+  const raw = '{"then": "reply"}\n\nDepends which enzyme is missing. The substrate piles up and the product runs short.';
+  const decision = decisionOrReply(raw);
+  assert.ok(decision, "the turn was thrown away again");
+  assert.equal(decision.then, "reply");
+  assert.match(decision.say, /^Depends which enzyme is missing\./, "the answer did not survive the recovery");
+  assert.ok(!decision.say.includes('"then"'), "the machinery leaked into what the learner reads");
+});
+
+test("🔴 the recovered decision is read by the ONE parser, fields and gates intact", () => {
+  // A search decision written without its fence must still be a search decision, and a course
+  // request must still be droppable by `courseGate` — which is only true because the recovery
+  // re-reads through `readTurnDecision` rather than building a decision of its own.
+  const searching = decisionOrReply('{"then": "reply", "needsWeb": true, "webQuery": "creatine kinase reference range"}\n\nLet me look that up.');
+  assert.equal(searching?.needsWeb, true);
+  assert.equal(searching?.webQuery, "creatine kinase reference range");
+  const course = decisionOrReply('{"then": "study", "curriculumFor": "organic chemistry"}\n\nStarting that now.');
+  assert.equal(course?.curriculumFor, "organic chemistry");
+  assert.equal(courseGate(course!, false).curriculumFor, null, "the course gate stopped applying to a recovered turn");
+});
+
+test("🔴 an answer that merely BEGINS with a brace is still an answer", () => {
+  // The recovery must not eat prose. `{` opening a sentence, or a JSON object with nothing after
+  // it (the old all-in-one shape, which `salvageSay` owns), both keep their existing behaviour.
+  const braceProse = decisionOrReply('{ not really json } and then some words about set notation.');
+  assert.ok(braceProse, "prose starting with a brace was dropped");
+  assert.match(braceProse.say, /set notation/);
+  const oldShape = decisionOrReply('{"say": "The mitochondrion makes ATP.", "then": "reply"}');
+  assert.equal(oldShape?.say, "The mitochondrion makes ATP.", "the old all-in-one salvage stopped working");
+});
+
+test("🔴 a brace inside a string cannot end the object early", () => {
+  const raw = '{"then": "reply", "topic": "sets like {a, b}"}\n\nA set is written with braces.';
+  const decision = decisionOrReply(raw);
+  assert.equal(decision?.topic, "sets like {a, b}");
+  assert.equal(decision?.say, "A set is written with braces.");
 });
