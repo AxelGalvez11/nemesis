@@ -481,28 +481,17 @@ export function addYears(date: Date, delta: number): Date {
  */
 export type WeekStart = 0 | 1;
 
+/**
+ * 🔴 KEPT ONLY SO THE OLD VALUE CAN BE DELETED FROM BROWSERS THAT HOLD ONE.
+ *
+ * Nothing reads this any more. The week starts on Sunday, always (owner
+ * 2026-09-01), and `calendar-workspace.tsx` removes the key on mount so a
+ * browser pinned to Monday by the control that used to exist is healed rather
+ * than left carrying a preference the product no longer has. Delete this once
+ * enough time has passed that no browser still holds one.
+ */
 export const WEEK_START_STORAGE_KEY = "nemesis.calendar.weekStart";
 
-/**
- * The browser's own answer, where the runtime has one.
- *
- * `Intl.Locale#getWeekInfo` is the standard way to ask, and it is missing on
- * older engines — hence the guard and the Sunday fallback, which is exactly the
- * behaviour everything had before this.
- */
-export function localeWeekStart(): WeekStart {
-  try {
-    const locale = new Intl.Locale(new Intl.DateTimeFormat().resolvedOptions().locale) as Intl.Locale & {
-      getWeekInfo?: () => { firstDay: number };
-      weekInfo?: { firstDay: number };
-    };
-    const info = typeof locale.getWeekInfo === "function" ? locale.getWeekInfo() : locale.weekInfo;
-    // The standard numbers days 1..7 from Monday, so 7 is Sunday.
-    return info?.firstDay === 7 ? 0 : 1;
-  } catch {
-    return 0;
-  }
-}
 
 export function startOfWeek(date: Date, weekStart: WeekStart = 0): Date {
   return addDays(date, -((date.getDay() - weekStart + 7) % 7));
