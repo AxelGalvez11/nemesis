@@ -34,7 +34,6 @@ test("🔴🔴 the subjects span faculties — the field-agnostic rule, in the m
     ["the social sciences", "macroeconomics"],
     ["languages", "spanish"],
     ["computing", "data structures"],
-    ["the trades", "welding"],
   ] as const) {
     assert.ok(subjects.includes(subject), `nothing on the front door speaks to ${faculty}`);
   }
@@ -94,4 +93,14 @@ test("🔴 arriving is slower than leaving, and on its own curve (2026-09-01)", 
   assert.match(HEADING, /opacity \$\{FADE_IN_MS\}ms \$\{EASE_IN\}/, "the arriving word is not on the slow curve");
   // The slot must settle while the word is still faint, so it never resizes under something legible.
   assert.match(HEADING, /width \$\{FADE_OUT_MS\}ms \$\{EASE_OUT\}/, "the width now moves for as long as the word takes to arrive");
+});
+
+test("🔴 the pace is the owner's, and it is a floor (2026-09-01)", () => {
+  // Told twice that it was still too fast: "make it even slower and smoother for the fade ins",
+  // then "make the movements slower its still too fast". These numbers are the answer to that, not
+  // a default anybody should tidy back down.
+  const ms = (name: string) => Number(new RegExp(`const ${name} = (\\d+);`).exec(HEADING)?.[1] ?? 0);
+  assert.ok(ms("FADE_IN_MS") >= 1800, "the arrival was sped back up");
+  assert.ok(ms("FADE_OUT_MS") >= 700, "the exit was sped back up");
+  assert.ok(ms("HOLD_MS") >= 3200, "a subject no longer holds long enough to be read without hurry");
 });

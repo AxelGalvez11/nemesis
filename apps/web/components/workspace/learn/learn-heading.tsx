@@ -15,7 +15,7 @@
 // owner 2026-07-27) is that Nemesis serves any discipline and that the design test for anything is
 // whether it works for a law student AND a mechanical engineering student. This line is the single
 // most-read sentence in the product, so a list of only sciences would answer that test with "no" in
-// the first thing anybody sees. Ten subjects, ten different faculties, in a deliberate order that
+// the first thing anybody sees. Nine subjects, nine different faculties, in a deliberate order that
 // never puts two neighbours from the same one together.
 
 import { useEffect, useRef, useState } from "react";
@@ -33,8 +33,9 @@ import { useEffect, useRef, useState } from "react";
  * first life. The guard was right and the list was wrong: a health subject belongs here, that
  * particular one does not, and anatomy serves the same student.
  *
- * 🔴 AND "welding" IS NOT A JOKE ENTRY. CLAUDE.md's own list of who this serves ends with "trades",
- * and a list that quietly stops at university faculties says the opposite of what the rule says.
+ * 🔴 "welding" WAS HERE FOR ONE REVISION AND THE OWNER CUT IT BY NAME (2026-09-01). The reasoning
+ * that put it there still stands for the LIST as a whole: nine subjects, nine faculties, and the
+ * rule this serves is breadth rather than any one entry.
  */
 export const LEARN_SUBJECTS = [
   "calculus",
@@ -46,11 +47,10 @@ export const LEARN_SUBJECTS = [
   "Spanish",
   "data structures",
   "anatomy",
-  "welding",
 ] as const;
 
 /** How long each subject holds, once it has fully arrived. */
-const HOLD_MS = 2600;
+const HOLD_MS = 3200;
 
 /**
  * Leaving is quicker than arriving, and the asymmetry is the whole feel of this.
@@ -65,11 +65,16 @@ const HOLD_MS = 2600;
  * 🔴 THE ARRIVAL IS THE PART ANYBODY WATCHES — owner, 2026-09-01: *"make it even slower and
  * smoother for the fade ins"*. A word that has finished being read can go without ceremony; a word
  * appearing is the thing the eye follows, so the two halves are no longer the same length. The
- * outgoing word clears the slot in well under half a second and the incoming one takes more than
- * twice as long to settle.
+ * outgoing word clears the slot in well under a second and the incoming one takes more than twice
+ * as long to settle.
+ *
+ * 🔴 EVERY NUMBER HERE HAS BEEN RAISED TWICE, BOTH TIMES BY THE OWNER SAYING IT WAS STILL TOO FAST
+ * ("make it even slower and smoother for the fade ins", then "make the movements slower its still
+ * too fast"). A subject now takes about five and a half seconds end to end. Read that as the floor
+ * this line was tuned to rather than as a value to trim back toward the defaults.
  */
-const FADE_OUT_MS = 420;
-const FADE_IN_MS = 1100;
+const FADE_OUT_MS = 700;
+const FADE_IN_MS = 1800;
 
 /** Leaving: eased at both ends, so the word does not snap away on its first frame. */
 const EASE_OUT = "cubic-bezier(0.4, 0, 0.2, 1)";
