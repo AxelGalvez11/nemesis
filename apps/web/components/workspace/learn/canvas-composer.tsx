@@ -59,6 +59,7 @@ import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-c
 import { continueList, pastedTextFile } from "@/lib/learn/composer-text";
 import type { ComposerIntent } from "@/lib/learn/composer-intent";
 import { cn } from "@/lib/utils";
+import { subscribeMicLevel } from "@/lib/workspace/mic-level";
 
 import { composerControl } from "./canvas-progression";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
@@ -825,7 +826,7 @@ export function CanvasComposer({
             textarea does not want a different corner. */}
         <div
           className={cn(
-            "flex flex-col bg-(--composer-fill)",
+            "relative flex flex-col bg-(--composer-fill)",
             // 🔴 THE TOKEN, NOT A LITERAL — THE FRONT DOOR FLIES ITS COMPOSER INTO THIS ONE'S PLACE.
             // These two pills are the same object to a learner: the front door's composer travels
             // down and the route swaps under it, so any difference between the two shapes is a pop
@@ -839,6 +840,12 @@ export function CanvasComposer({
             selected.length > 0 && !listening && "ring-(--ui-action)/50",
           )}
         >
+          {/* 🔴 THE SESSION'S LAMP — candidate C from /dev-preview/voice-glow, shipped subtle
+              (owner 2026-08-31: *"C but make the reactivity be subtle?"*). Mounted for the WHOLE
+              conversation, not just while listening: the meter closes while the reply speaks, so
+              without the steady floor the halo would black out mid-turn and read as the feature
+              dying. Never mounted for plain dictation or typing. */}
+          {voiceLoop.active && <VoiceSessionGlow />}
           {/* 🔴🔴 THE ATTACHMENTS LIVE INSIDE THE BOX NOW (owner 2026-08-26: *"attaching docs to the
               chat doesnt match chatgpt either"*, and on 2026-08-20: *"i dont want the attachments
               to be above the chat composer at all"*). They had drifted back out to a detached row
@@ -1268,4 +1275,59 @@ function VoiceStopButton({ className, onClick }: { className?: string; onClick: 
       <Codicon name="primitive-square" size="16px" />
     </button>
   );
+}
+
+/** The conversation's lamp: candidate C ("Alive") from /dev-preview/voice-glow, shipped subtle
+ *  on the owner's pick (2026-08-31: *"C but make the reactivity be subtle?"*).
+ *
+ *  🔴 OPACITY IS THE ONLY THING THAT MOVES. The two-layer shadow (a tight rim and a wide
+ *  bloom, both `--ui-action` so the lamp follows the mascot) is written ONCE at mount and never
+ *  touched again; the per-frame work is one compositor-cheap opacity write on one layer. No
+ *  reflow, no shadow re-rasterisation — the mockup animated blur and spread, and this
+ *  deliberately does not.
+ *
+ *  🔴 SUBTLE IS A RANGE, NOT AN ADJECTIVE: 0.35 at the quiet floor, 0.70 flat out. The
+ *  floor is what says "the channel is open" while the reply speaks (the meter is closed then and
+ *  the level reads 0); a voice lifts it by at most half again. Attack fast, release slow — the
+ *  asymmetry every audio meter uses — so a word lights it and a pause breathes out instead of
+ *  flickering.
+ *
+ *  🔴 THE LEVEL IS BORROWED, NEVER CAPTURED. `subscribeMicLevel` is the channel the
+ *  dictation waveform already reads, published by the meter the dictation hook already opens. A
+ *  `getUserMedia` here would be a second permission surface spent on a decoration — the exact
+ *  thing lib/workspace/mic-level.ts exists to forbid. */
+function VoiceSessionGlow() {
+  const layer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = layer.current;
+    if (el) {
+      el.style.boxShadow = [
+        "0 0 3px 1px color-mix(in srgb, var(--ui-action) 45%, transparent)",
+        "0 0 18px 4px color-mix(in srgb, var(--ui-action) 28%, transparent)",
+      ].join(", ");
+    }
+    let target = 0;
+    let shown = 0;
+    const off = subscribeMicLevel((level) => {
+      target = level;
+    });
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      shown = target >= shown ? shown + (target - shown) * Math.min(1, dt * 9) : Math.max(target, shown - dt * 1.1);
+      const live = layer.current;
+      if (live) live.style.opacity = String(0.35 + shown * 0.35);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      off();
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  return <div aria-hidden className="pointer-events-none absolute inset-0 rounded-[var(--composer-radius)] opacity-[0.35]" ref={layer} />;
 }
