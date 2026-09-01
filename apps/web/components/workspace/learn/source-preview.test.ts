@@ -217,13 +217,20 @@ test("🔴🔴 an empty shelf does not render, and Sources is the exception that
   const start = CONTROLS.indexOf("function PanelSection");
   const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
   assert.ok(start !== -1 && section.length > 0, "PanelSection moved — this guard is pointed at nothing");
-  assert.match(section, /if \(rows\.length === 0 && !filled && !empty\) return null/, "an empty shelf still renders");
+  // 🔴 `filled` IS GONE (2026-09-01). It existed so the Sources shelf could refuse to call itself
+  // empty while showing a model-knowledge ROW; the row moved into the empty sentence, so the state
+  // it worked around cannot occur. The rule this line guards is unchanged: no `empty`, no shelf.
+  assert.match(section, /if \(rows\.length === 0 && !empty\) return null/, "an empty shelf still renders");
   assert.match(section, /empty\?: string/, "`empty` stopped being optional, so nothing can hide");
 
   // Outputs and Inputs pass no empty state; Sources does, and is therefore always on screen.
   assert.match(CONTROLS, /<PanelSection label="Outputs">/, "the Outputs shelf gained an empty state and can no longer hide");
   assert.match(CONTROLS, /<PanelSection label="Inputs" onAdd=/, "the Inputs shelf gained an empty state and can no longer hide");
-  assert.match(CONTROLS, /empty="Nothing read from the web yet\./, "the Sources shelf lost the empty state that anchors the panel");
+  // 🔴 THE SHELF STILL PASSES AN `empty`, IT IS JUST NO LONGER A LITERAL. Since 2026-09-01 the
+  // sentence changes when the canvas holds model knowledge — that IS the provenance disclosure now
+  // (see canvas-provenance.test.ts). What this guards is unchanged: Sources passes SOMETHING, so it
+  // is the one shelf that cannot hide, and the disclosure cannot vanish with it.
+  assert.match(CONTROLS, /empty=\{[\s\S]{0,200}?"Nothing read from the web yet\."/, "the Sources shelf lost the empty state that anchors the panel");
   assert.ok(!CONTROLS.includes("Nothing made yet"), "the Outputs description is back");
   assert.ok(!CONTROLS.includes("Nothing attached yet"), "the Inputs description is back");
 });

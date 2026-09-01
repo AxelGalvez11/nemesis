@@ -15,7 +15,7 @@
  *
  * ## Why a ledger and not just a constant
  *
- * `MAX_FIGURES_PER_DOC = 40` already exists in `figure-routing.ts` and it is a good
+ * `MAX_FIGURES_PER_DOC` already exists in `figure-routing.ts` and it is a good
  * rule, but it is three things short of a budget:
  *
  *   * It is PER LANE. The figure lane obeys it; the page lane (`readPdfPagesWithVision`)
@@ -49,10 +49,16 @@ export const NO_SPEND: VisionSpend = { calls: 0, units: 0 };
 /**
  * The most units ONE DOCUMENT may ever cost, across every attempt it is given.
  *
- * 🔴 SIZED FROM MEASUREMENT, NOT FROM COMFORT. 1,089 unexamined figures across 120 real
- * course files averages ~9 per file; `MAX_FIGURES_PER_DOC` (40) covers all but the
- * outliers on the figure lane. The page lane is the expensive one: a scanned book is one
- * unit per page, and the worst real document in the corpus is 2,116 pages.
+ * 🔴 SIZED FROM MEASUREMENT, NOT FROM COMFORT. The page lane is the expensive one: a
+ * scanned book is one unit per page, and the worst real document in the corpus is 2,116
+ * pages.
+ *
+ * 🔴 AND IT IS NOW THE ONLY CEILING ON THE FIGURE LANE TOO (2026-09-01). `MAX_FIGURES_PER_DOC`
+ * was 40, sized on the AVERAGE of a corpus (~9 figures a file) — and an average is the wrong
+ * statistic for a ceiling, because every document that meets a ceiling lives in the tail. A real
+ * lecture deck measured that day held ~117 figures and 77 were never looked at. It is 120 now,
+ * matching this cap, so the priced ledger decides and an unpriced constant no longer silently
+ * picks which content is lost first.
  *
  * 120 is deliberately BELOW what the worst document needs. That is the conservative
  * choice the owner asked for: a 2,116-page scan reports pages it could not afford to

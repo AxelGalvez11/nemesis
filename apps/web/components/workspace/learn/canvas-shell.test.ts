@@ -356,8 +356,14 @@ test("🔴 §46.5: the landing surface never tells the learner which way to scro
   const directional = [
     /scroll (down|up|below|further)/i,
     /\bswipe\b/i,
-    /(start|type|create|add|put)[^.<>{}]{0,40}\babove\b/i,
-    /\bbelow\b[^.<>{}]{0,40}(canvas|session|list|see|find)/i,
+    // 🔴 QUOTES BREAK THE GAP, AND WITHOUT THAT THIS MATCHED AN IDENTIFIER. 2026-09-01: the front
+    // door's menu preference became `useMenuSide(addOpen, "above")`, and `addOpen, "` is `add`
+    // followed by seven characters followed by `above` — a clean hit on a guard about PROSE. The
+    // rule it protects is real and the pattern was reading code. A string boundary between the two
+    // words means they are not in one sentence, which is the only thing this is trying to detect;
+    // instruction copy ("type your question above") never crosses a quote to say it.
+    /(start|type|create|add|put)[^.<>{}"'`]{0,40}\babove\b/i,
+    /\bbelow\b[^.<>{}"'`]{0,40}(canvas|session|list|see|find)/i,
     /see (the )?(other|more|your) (canvas|session)/i,
     /(will )?appear (here|below)/i,
   ];

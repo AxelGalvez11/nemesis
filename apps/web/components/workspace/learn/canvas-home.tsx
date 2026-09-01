@@ -234,6 +234,20 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // can't access the course mode from the landing page"*), so the choice is real again and the
   // state, the ref and the dismiss listeners return with it.
   const [addOpen, setAddOpen] = useState(false);
+  // 🔴🔴 "below", AND THE OWNER ASKED FOR "above" ON 2026-09-01 — *"the plus icon… it's opening
+  // down and I wanted it to open up."* NOT DONE, AND NOT REFUSED EITHER: it is the one item of
+  // that day's list held back to be asked about, because doing it silently re-creates a defect he
+  // reported himself.
+  //
+  // The numbers, measured rather than remembered: this menu is EIGHT rows (Upload plus seven
+  // capabilities) at ~326px. A 760px-tall laptop window leaves 348px above the composer. So
+  // "above" does not merely lean toward the character, it occupies essentially all the space the
+  // character is standing in — which is the exact complaint `capability-chip.test.ts` records this
+  // preference as the answer to.
+  //
+  // 🔴 THE HONEST FIX IS PROBABLY A SHORTER MENU, NOT A DIFFERENT SIDE. Eight rows is what makes
+  // both sides bad. That is a product call about which capabilities belong on the front door, and
+  // it is his to make.
   const addSide = useMenuSide(addOpen, "below");
   const addMenu = useRef<HTMLDivElement>(null);
   /** The one-shot capability staged on the NEXT send — the same contract as the session
@@ -997,7 +1011,20 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   a flex row in both forms, so the one-row composer is unchanged by it. */}
               <div
                 className={cn(
-                  "flex min-w-0 flex-1 items-center",
+                  // 🔴🔴 `items-start`, NOT `items-center`, AND THAT ONE WORD WAS THE MISALIGNMENT
+                  // IN THE OWNER'S SCREENSHOT (2026-09-01: *"the spacing is still bad… fix that
+                  // spacing and alignment"*). The chip and the input are built to share a line —
+                  // both are `text-[16px] leading-[26px]`, and `capability-chip.tsx` says so in its
+                  // own header. But the INPUT is a 42px box with 16px of padding below its line
+                  // (the reference's own field), so its words sit in the top 26px while
+                  // `items-center` centred the 26px chip in the full 42. The chip landed 8px below
+                  // the words it is supposed to be part of.
+                  //
+                  // 🔴 THE TWO MEASUREMENTS WERE BOTH RIGHT AND THE ALIGNMENT BETWEEN THEM WAS
+                  // NEVER MADE. Aligning to the top makes two equal line boxes start together,
+                  // which is what shared a line means; centring only agrees when the boxes are the
+                  // same height, and here one carries the reference's padding and the other does not.
+                  "flex min-w-0 flex-1 items-start",
                   // 🔴 10px EACH SIDE, ON TOP OF THE BOX'S OWN 8. The reference insets its text
                   // column 18px from BOTH edges (its field measures 732 inside a 768 box); ours
                   // had the left inset only, so the caret line ran 10px wider than theirs and the
