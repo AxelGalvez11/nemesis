@@ -43,6 +43,15 @@ test("🔴🔴 exactly the five controls the owner asked for, each wired — and
   // 🔴 THE SPEED CONTROL SHOWS ITS VALUE. A dial glyph says "speed exists"; `1.25×` says what it is
   // set to, which is the only question anyone has about a speed control they did not just press.
   assert.match(BAR, /rateLabel\(audio\.rate\)/, "the speed control does not show the current rate");
+  // 🔴 THE BARS SAY "PLAYING" AND CLAIM NOTHING ELSE. Design D showed them beside the words
+  // "Reading aloud"; the owner cut the words in the same sentence that chose the design, so the
+  // bars carry it alone. They are driven by `audio.playing` and by nothing that pretends to read
+  // the audio itself — see the note in globals.css.
+  assert.match(BAR, /<LiveBars playing=\{audio\.playing\} \/>/, "the pill lost the bars that say it is playing");
+  assert.ok(!/AnalyserNode|createMediaElementSource/.test(BAR), "the bars are claiming to read the audio");
+  // Checked as RENDERED text, not as a string in the file: the note above the component quotes the
+  // words in order to record that they were cut.
+  assert.ok(!/>\s*Reading aloud/.test(BAR), "the words the owner cut are back in the pill");
   const cut: Array<[string, RegExp]> = [
     ["the scrubber", /audio\.scrub\(|type="range"/],
     ["the clock", /formatClock\(|audio\.currentTime/],
@@ -75,10 +84,17 @@ test("🔴🔴 no player CARD — no border, no background, no toolbar under the
   // Owner: *"quiet, compact, only prominent while relevant… no unnecessary borders/cards/toolbars.
   // The main content should remain the focus."* Calibration: wrap the controls in a bordered panel
   // and this reddens.
-  for (const [where, file] of [["under the answer", PLAYER], ["in the header", BAR]] as const) {
-    assert.ok(!/\bborder-\(/.test(file), `the playback controls have drawn themselves a border ${where}`);
-    assert.ok(!/\brounded-2xl|\bshadow-|\bbg-\(--ui-bg-(secondary|elevated)\)/.test(file), `the controls have become a card ${where}`);
-  }
+  // 🔴🔴 SCOPED TO THE ROW UNDER THE ANSWER ON 2026-09-01, AND THE HEADER'S HALF IS A REVERSAL THE
+  // OWNER MADE WITH ALL SIX OPTIONS IN FRONT OF HIM: *"give me D but remove the 'reading aloud'"* —
+  // design D being the bordered pill. The complaint this test was written for was about the reading
+  // ("the main content should remain the focus"), and that surface is untouched: it is one glyph in
+  // the same row as Copy. The transport lives in the chrome, exists only while something plays, and
+  // needed to read as one object rather than five loose glyphs.
+  assert.ok(!/\bborder-\(/.test(PLAYER), "the playback controls have drawn themselves a border under the answer");
+  assert.ok(!/\brounded-2xl|\bshadow-|\bbg-\(--ui-bg-(secondary|elevated)\)/.test(PLAYER), "the controls have become a card under the answer");
+  // 🔴 AND THE HEADER'S PILL IS NOW PINNED, so the reversal cannot be quietly reverted either.
+  assert.match(BAR, /rounded-full border border-\(--ui-stroke-secondary\) bg-\(--ui-bg-secondary\)/, "the transport lost the pill the owner chose");
+  assert.ok(!/shadow-/.test(BAR), "the pill has grown a shadow it was not given");
   // And they are inside the SAME row as Copy rather than a second surface below it.
   // 🔴 `text={spoken}`, NOT `text={text}`: the player is handed the RAW reply so `replySpeechPlan`
   // can read the `[say: …]` marks and route each sentence to the voice that must say it. The
