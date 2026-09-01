@@ -112,10 +112,21 @@ test("the deadline aborts a parse that would otherwise outlive the invocation", 
 });
 
 test("memory above the abort line stops the parse before the platform does", async () => {
+  // 🔴🔴 THE CEILING IS REALISTIC ON PURPOSE, AND THE OLD `10` IS WHY THIS TEST WAS FLAKY.
+  // `memoryAbortMb` is not only the guard's threshold — it is also handed to the worker as
+  // `resourceLimits.maxOldGenerationSizeMb`. A thread given a 10 MB old generation cannot start:
+  // V8 OOMs immediately, `worker.on("error")` fires, and the run finishes as `threw` before the
+  // 250 ms guard tick ever samples anything. Whether the guard or the dying thread won was a race
+  // against machine load — measured 2026-09-01, it failed 2 of 3 isolated runs under load and
+  // reddened the whole suite for something that was never a product defect.
+  //
+  // 3,000 gives the thread a heap it can actually live in while keeping the stubbed 4,000 MB
+  // reading above the line, so the guard fires on its first tick and the worker is still blocking.
+  // The assertion is unchanged: crossing the ceiling ends the parse as `memory`.
   const outcome = await runParseOnThread(new Uint8Array([1]), "x.pdf", "application/pdf", {
     heartbeat: async () => true,
     heartbeatMs: 10_000,
-    memoryAbortMb: 10,
+    memoryAbortMb: 3_000,
     rssMb: () => 4_000,
     workerPath: blockingWorker(10_000),
   });

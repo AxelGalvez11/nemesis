@@ -398,6 +398,8 @@ function locatedFigures(page: MistralPage, unit: number, path: string[], named: 
   const out: PendingBlock[] = [];
   for (const image of page.images ?? []) {
     const ref = (image.id ?? "").trim();
+    // Already placed by the markdown, which knows WHERE in the prose it sits and this does not.
+    // Its box is merged in by `boxesById` below rather than duplicated as a second block.
     if (ref && named.has(ref)) continue;
     const rect = rectFrom(image, page.dimensions);
     out.push({
@@ -408,6 +410,33 @@ function locatedFigures(page: MistralPage, unit: number, path: string[], named: 
       unit,
       ...(rect ? { rect } : {}),
     });
+  }
+  return out;
+}
+
+/**
+ * Where each image sits on the page, by id.
+ *
+ * 🔴 THE GEOMETRY LIVES ONLY IN `page.images`, AND A MARKDOWN-PLACED FIGURE HAS NONE. When the
+ * vendor's prose references an image (`![img-0](img-0)`), the markdown reader makes the figure
+ * block and `locatedFigures` correctly skips it — but markdown carries no coordinates, so that
+ * block ends up with no `rect`.
+ *
+ * Everything downstream that pairs a figure with its pixels is GEOMETRIC: `accountForFigures`
+ * measures whether a painted region arrived, and `matchFigureImages` pairs our own decode with the
+ * vendor's figures by overlap. A rect-less figure is invisible to both — so the figure-loss gate
+ * reported the region as never having arrived and REJECTED the whole vendor read, throwing away a
+ * page-accurate parse that was already paid for and falling back to the native lane.
+ *
+ * No data was lost by that, which is why it went unnoticed; a better read was. PURE.
+ */
+function boxesById(page: MistralPage): Map<string, DocRect> {
+  const out = new Map<string, DocRect>();
+  for (const image of page.images ?? []) {
+    const ref = (image.id ?? "").trim();
+    if (!ref || out.has(ref)) continue;
+    const rect = rectFrom(image, page.dimensions);
+    if (rect) out.set(ref, rect);
   }
   return out;
 }
@@ -503,6 +532,15 @@ export function modelFromMistral(
     }
     blocks.push(...pageBlocks);
 
+    // 🔴 THE BOX IS GIVEN TO THE MARKDOWN'S OWN BLOCK, not to a second one. Two blocks for one
+    // picture would double the figure count and hand the accounting a region it could pair twice.
+    const boxes = boxesById(page);
+    for (const block of pageBlocks) {
+      const ref = block.figure?.ref;
+      if (!ref || block.rect) continue;
+      const rect = boxes.get(ref);
+      if (rect) block.rect = rect;
+    }
     const named = new Set(
       pageBlocks.flatMap((block) => (block.figure?.ref ? [block.figure.ref] : [])),
     );

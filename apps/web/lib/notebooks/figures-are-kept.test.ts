@@ -204,18 +204,21 @@ test("🔴 a vendor-parsed PDF keeps the pixels the vendor made us decode oursel
           // below is the fixture's real one: `readPdfStructure` puts its figure at x 0.098,
           // y 0.141, w 0.327, h 0.253 of a 612x792 page, which is exactly (60,112)-(260,312).
           //
-          // 🔴 AND THE MARKDOWN DELIBERATELY DOES NOT REFERENCE THE IMAGE. Adding `![img-0](img-0)`
-          // makes this test fail, and the cause is a real defect elsewhere rather than anything
-          // about figure storage: a markdown-named image is skipped by `locatedFigures`, so its
-          // figure block comes from the markdown parse and carries NO rect, and the geometric
-          // accounting then reports the painted region as never having arrived. That read falls
-          // back to the native lane, so nothing is lost — but the vendor read that was paid for is
-          // discarded. Tracked separately; do not "fix" it by weakening the gate.
+          // 🔴 AND THE MARKDOWN REFERENCES THE IMAGE, WHICH IT DID NOT WHEN THIS WAS WRITTEN. It
+          // could not: a markdown-placed figure had no rect, the geometric accounting reported the
+          // region as never having arrived, and the read was rejected. Fixed at the source rather
+          // than by weakening the gate — `boxesById` merges each image's box onto the block the
+          // markdown already made. This is now the realistic shape, since a vendor's prose usually
+          // does reference its own figures.
           pages: [{
             dimensions: { dpi: 72, height: 792, width: 612 },
             images: [{ bottom_right_x: 260, bottom_right_y: 312, id: "img-0", top_left_x: 60, top_left_y: 112 }],
             index: 0,
-            markdown: "# Bending stress\n\nStress varies across the depth of the section.",
+            // 🔴 THE MARKDOWN NOW REFERENCES THE IMAGE, WHICH IS THE CASE THAT USED TO FAIL. A
+            // markdown-placed figure carried no rect, so the geometric figure-loss gate reported
+            // the painted region as never having arrived and rejected the whole vendor read.
+            // `boxesById` merges the box onto the markdown's own block; see mistral-model.
+            markdown: "# Bending stress\n\n![img-0](img-0)\n\nStress varies across the depth of the section.",
           }],
           usage_info: { pages_processed: 1 },
         },
