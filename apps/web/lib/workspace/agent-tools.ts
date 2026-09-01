@@ -1033,12 +1033,32 @@ async function findFigure(args: Record<string, unknown>): Promise<unknown> {
     : FIGURE_LIMIT_DEFAULT;
   const limit = Math.max(1, Math.min(asked, FIGURE_LIMIT_MAX));
 
-  const { data, error } = await supabase.rpc("search_figures", {
-    p_limit: limit,
-    p_query: query,
-    p_source: source,
-  });
+  const search = async (q: string) =>
+    supabase.rpc("search_figures", { p_limit: limit, p_query: q, p_source: source });
+
+  let { data, error } = await search(query);
   if (error) return { error: `Could not look through your lectures: ${error.message}` };
+
+  // 🔴 THE FALLBACK IS DONE HERE, NOT ASKED OF THE MODEL, AND THAT IS THE WHOLE POINT.
+  //
+  // Observed on production 2026-09-01, driving the real app: the picture was stored, joined and
+  // reachable, the model DID call this tool — and the student got "I can look again with a
+  // different search, or check what figures that lecture actually contains." An offer to retry is
+  // not a picture. The figure had no description (vision recorded `skipped: "examined-empty"`), so
+  // a word search could never match it, and the browse path that would have found it was one the
+  // model had to choose to take and did not.
+  //
+  // Telling the description to "retry with an empty query" would put a second round trip and a
+  // second decision between the student and their diagram, and the model has already shown it
+  // prefers to ASK rather than retry. Widening here costs one query and cannot be declined.
+  let widened = false;
+  if ((data ?? []).length === 0 && query !== "") {
+    const again = await search("");
+    if (!again.error && (again.data ?? []).length > 0) {
+      data = again.data;
+      widened = true;
+    }
+  }
 
   const rows = (data ?? []) as FigureRow[];
   const found: unknown[] = [];
@@ -1078,7 +1098,11 @@ async function findFigure(args: Record<string, unknown>): Promise<unknown> {
     figures: found,
     // Repeated at the point of use because a rule in a tool description competes with everything
     // else in the system prompt, and this one has exactly one chance to be followed.
-    note: "Paste each `markdown` value verbatim on its own line, beside the point it illustrates. Do not rewrite the URL.",
+    note: widened
+      // Said plainly, so the model shows the picture AND is honest about what it is. Silence here
+      // would have it present a near-miss as an exact answer.
+      ? "Nothing matched those words, so these are the pictures that lecture holds. Paste each `markdown` value verbatim on its own line, and say they are from the lecture rather than an exact match."
+      : "Paste each `markdown` value verbatim on its own line, beside the point it illustrates. Do not rewrite the URL.",
   };
 }
 

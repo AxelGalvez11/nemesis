@@ -103,3 +103,18 @@ test("🔴 a picture nobody described is still showable, and never gets empty al
   // The browse case must not require a description, and the search case still must.
   assert.match(migration, /trim\(p_query\) = ''\s*\n\s*or \(description is not null/, "browse and search share one filter again");
 });
+
+test("🔴 a word search that finds nothing widens to the lecture's pictures, without asking the model", () => {
+  // 🔴 OBSERVED ON PRODUCTION 2026-09-01, DRIVING THE REAL APP. The picture was stored, joined and
+  // reachable; the model DID call this tool; and the student got "I can look again with a different
+  // search, or check what figures that lecture actually contains." An offer to retry is not a
+  // picture. The figure carried no description, so a word search could never match it, and the
+  // browse path that would have found it was one the model had to choose and did not.
+  //
+  // Putting the retry in the tool description would add a round trip and a second decision between
+  // the student and their diagram — and the model has already demonstrated it prefers to ask.
+  assert.match(SOURCE, /if \(\(data \?\? \[\]\)\.length === 0 && query !== ""\)/, "an empty result is final again");
+  assert.match(SOURCE, /widened = true/, "the widened search is not recorded");
+  // And it must SAY so, or a near-miss is presented as an exact answer.
+  assert.match(SOURCE, /Nothing matched those words, so these are the pictures that lecture holds/, "the widening is silent");
+});
