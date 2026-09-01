@@ -111,17 +111,31 @@ export interface ProviderRate {
  * from a usage row without a switch statement anywhere else in the codebase.
  */
 export const RATES: readonly ProviderRate[] = [
-  // ── Azure AI Speech. The language lane: dialect voices out, pronunciation scored in. ──
+  // ── Azure AI Speech. The language lane, and ONLY the language lane. ──
   //
-  // 🔴 `assumed`, AND DELIBERATELY SO UNTIL SOMEBODY READS THE PORTAL. Every other rate here is
-  // either mirrored from our own code or read off a public price page on a stated date. Azure's
-  // speech prices vary by region, by commitment tier and by whether the voice is standard or HD,
-  // and this repo has never recorded which of those the account is on — there is no meter for it
-  // either (`voice_seconds_month` counts xAI's lane). So these are PLANNING FIGURES at the public
-  // pay-as-you-go list rate, and `syntheticProviders()` will name them in any margin table they
-  // touch. Replace with `published` + a URL + a date the moment the account's real tier is known.
-  { basis: "assumed", checked: "2026-08-31", provider: "azure_tts", service: "neural TTS", source: "planning figure at Azure's public pay-as-you-go list rate; account tier unread", unit: "per_million_characters", usd: 16 },
-  { basis: "assumed", checked: "2026-08-31", provider: "azure_pronunciation", service: "pronunciation assessment", source: "planning figure; billed as speech-to-text on Azure's public pay-as-you-go list rate", unit: "per_hour", usd: 1 },
+  // 🔴 THE OWNER DREW THIS SCOPE HIMSELF, TWICE, 2026-08-31: *"the reason we added Azure is so that
+  // we can have language learnings with, like, actual, correct accents and pronunciation scoring.
+  // That's pretty much the only reason."* And on what it is NOT: *"we're not going to do actual
+  // real time voice… we're just allowing users to hear how things sound, like specific things, but
+  // not necessarily for actually reading out loud the entire response. I feel like that would be a
+  // bit wasteful."*
+  //
+  // That scope is what makes these rates cheap in practice: TTS is billed per CHARACTER, and a
+  // learner pressing play on one example sentence spends about a hundred of them. The same rate
+  // against a read-aloud of every answer would be a different product and a different bill, which
+  // is the trade he was refusing.
+  //
+  // 🔴 PUBLISHED, NOT ASSUMED, SINCE 2026-08-31 — and the pronunciation number went UP when it was
+  // actually read. Assessment is not plain speech-to-text: it is real-time transcription at $1.00
+  // an hour PLUS a $0.30 prosody add-on billed per feature per hour. The planning figure here was
+  // $1.00 and it was 30% light.
+  //
+  // 🔴 STILL LIST PRICE. Azure's free grant (500k characters a month) and its commitment tiers
+  // (down to about $7.50 per million characters) would both make these smaller; neither is claimed
+  // here, because nobody has read which tier this account is on. Every number in this table errs
+  // toward costing more, never less.
+  { basis: "published", checked: "2026-08-31", provider: "azure_tts", service: "neural TTS", source: "azure.microsoft.com/pricing/details/speech -- prebuilt neural voices, pay-as-you-go; HD voices are $22 and are not used", unit: "per_million_characters", usd: 16 },
+  { basis: "published", checked: "2026-08-31", provider: "azure_pronunciation", service: "pronunciation assessment", source: "azure.microsoft.com/pricing/details/speech -- real-time STT $1.00/hr plus the $0.30/hr prosody add-on, billed in one-second increments", unit: "per_hour", usd: 1.3 },
 
   // ── DeepSeek. Mirrored from the valve's own price list, guarded by a test. ──
   { basis: "mirrored", checked: "2026-07-24", provider: "deepseek", service: "deepseek-v4-flash", source: "supabase/functions/_shared/llm-cost.ts", unit: "per_million_input_tokens", usd: 0.14 },

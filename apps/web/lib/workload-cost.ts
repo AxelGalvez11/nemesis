@@ -312,17 +312,22 @@ export interface StudentMonth {
   voiceSecondsIn: number;
   voiceSecondsOut: number;
   /**
-   * Seconds of TARGET-LANGUAGE speech, which is a different provider and a different bill.
+   * How many times the learner pressed play on a target-language EXAMPLE in the month.
    *
-   * 🔴 SEPARATE FROM `voiceSecondsOut` BECAUSE THE ROUTING IS SEPARATE, NOT BECAUSE IT IS TIDIER.
-   * `speech-route.ts` sends the canvas lane to xAI and the target language to Azure
-   * (`TARGET_LANGUAGE_PROVIDER`), because only Azure's catalogue can name a dialect. Azure's
-   * characters cost roughly 4x xAI's, so folding them into one line would under-report a language
-   * learner and over-report everyone else.
+   * 🔴🔴 A COUNT OF PHRASES, NOT A DURATION, AND THE OWNER IS THE REASON — 2026-08-31: *"we're not
+   * going to do actual real time voice… we're just allowing users to hear how things sound, like
+   * specific things, but not necessarily for actually reading out loud the entire response. I feel
+   * like that would be a bit wasteful."*
+   *
+   * The first version of this modelled Azure as a share of the month's conversational MINUTES, and
+   * that measured a product he had just refused to build: it put five hours of dialect speech on
+   * the ceiling and turned the worst case into a $3.63 loss. Azure bills per character, so the unit
+   * that matches the feature is one example sentence — `SpokenExample` and `hear-again.tsx` play
+   * exactly one, on a press.
    */
-  targetLanguageSecondsOut: number;
-  /** Seconds of the learner's own speech scored for pronunciation. Azure again, billed like STT. */
-  pronunciationSecondsIn: number;
+  languagePhrasesPlayed: number;
+  /** How many times the learner recorded an attempt and had it scored. Billed by the second. */
+  pronunciationAttempts: number;
 }
 
 /**
@@ -334,6 +339,25 @@ export interface StudentMonth {
  */
 const ESCALATION = { gemini: 0.35, llama: 0.25, mistral: 0.4 } as const;
 
+/**
+ * One spoken example, in characters.
+ *
+ * 🔴 A SENTENCE, BECAUSE THAT IS WHAT THE FEATURE PLAYS. `SpokenExample` renders one target-
+ * language line out of an answer and speaks it on a press; a hundred characters is a generous
+ * sentence in any of the languages this serves. It is the unit Azure bills in, so modelling it in
+ * anything else would need a conversion nobody could check.
+ */
+const CHARS_PER_SPOKEN_EXAMPLE = 100;
+
+/**
+ * One scored attempt, in seconds.
+ *
+ * 🔴 THE ROUTE'S OWN CEILING IS 60 SECONDS (`MAX_ATTEMPT_SECONDS`) AND THAT IS NOT THE TYPICAL
+ * CASE. A learner repeats the sentence they just heard, which takes about five seconds; using the
+ * cap here would price every attempt as twelve.
+ */
+const SECONDS_PER_ATTEMPT = 5;
+
 function scenario(
   label: string,
   meteredTokens: number,
@@ -342,11 +366,11 @@ function scenario(
   searches: number,
   voiceMinutes: number,
   proLaneShare: number,
-  /** How much of this month's talking is a language being LEARNED rather than the canvas.
-   *  Zero for most students; the language learner is a real profile the owner named. */
-  languageShare = 0,
+  /** Example phrases played in the month, and attempts scored. Zero for a student who never
+   *  opens a language, which is most of them. */
+  languagePhrases = 0,
+  pronunciationAttempts = 0,
 ): StudentMonth {
-  const languageSeconds = Math.round(voiceMinutes * 60 * languageShare);
   return {
     documentPages,
     geminiShare: ESCALATION.gemini,
@@ -359,12 +383,12 @@ function scenario(
     searches,
     // Half the conversation is the learner talking and half is Nemesis, which is
     // what a taught exchange looks like. Both halves bill, at different rates.
-    // 🔴 THE LANGUAGE SECONDS COME OUT OF THE TOTAL, NOT ON TOP OF IT. A learner has one mouth
-    // and one hour; drilling Spanish is time NOT spent talking to the canvas.
-    pronunciationSecondsIn: Math.round(languageSeconds / 2),
-    targetLanguageSecondsOut: Math.round(languageSeconds / 2),
-    voiceSecondsIn: Math.round((voiceMinutes * 60 - languageSeconds) / 2),
-    voiceSecondsOut: Math.round((voiceMinutes * 60 - languageSeconds) / 2),
+    languagePhrasesPlayed: languagePhrases,
+    pronunciationAttempts,
+    // 🔴 THE CANVAS VOICE IS UNTOUCHED BY THE LANGUAGE LANE. They are different providers reached
+    // by different controls: pressing play on one example does not consume conversational minutes.
+    voiceSecondsIn: Math.round((voiceMinutes * 60) / 2),
+    voiceSecondsOut: Math.round((voiceMinutes * 60) / 2),
   };
 }
 
@@ -385,19 +409,42 @@ export const POWER_STUDENT = scenario("power", 20_000_000, 2_500, 0.75, 140, 200
  * worst a single subscriber can cost" has to have an answer.
  */
 export const CAP_EXHAUSTION: StudentMonth = {
-  // 🔴 THE WHOLE VOICE ALLOWANCE ON THE EXPENSIVE LANE. The ceiling has to assume the costliest
-  // legal way to spend each meter, and for voice that is Azure's, not xAI's.
-  ...scenario("cap exhaustion", PLANS.nemesis.monthlyTokens, 6_000, 0.6, PLANS.nemesis.searchMonthly, PLANS.nemesis.voiceSeconds / 60, 1, 1),
+  // 🔴🔴 THE LANGUAGE LANE IS ZERO HERE, AND ITS ABSENCE IS THE POINT. This row means "every meter
+  // at its cap", and Azure HAS no meter: `/api/speech/token` mints a ten-minute token to any
+  // signed-in browser and counts nothing. Putting a number in would be inventing a ceiling for the
+  // one lane that has none — the arbitrary figure tried first ($25 of Azure) made this row read as
+  // a bound when it was really a guess. What the lane can actually cost is reported by
+  // `unmeteredLanguageBurn()` as a RATE, which is the honest shape for something unbounded.
+  ...scenario("cap exhaustion", PLANS.nemesis.monthlyTokens, 6_000, 0.6, PLANS.nemesis.searchMonthly, PLANS.nemesis.voiceSeconds / 60, 1, 0, 0),
 };
 
 /**
  * The owner's own second use for this product: *"let's say I wanna learn a new language."*
  *
- * 🔴 IT IS THE HEAVY STUDENT WITH THEIR VOICE TIME MOVED, NOT AN EXTRA HOUR ADDED. The point of
- * the profile is that Azure's lane costs several times xAI's for the same minute, so the same
- * amount of talking bills differently depending on WHAT is being talked.
+ * 🔴 THE HEAVY STUDENT, PLUS A LANGUAGE. Forty example phrases and twenty-six scored attempts a
+ * day is a serious daily drill, and it adds well under a dollar — because the feature plays one
+ * sentence at a time rather than narrating anything. That is the whole point of the scope the
+ * owner drew: the same provider narrating every answer would cost multiples of this.
  */
-export const LANGUAGE_LEARNER = scenario("language learner", 12_000_000, 1_400, 0.8, 90, 90, 0.25, 0.7);
+export const LANGUAGE_LEARNER = scenario("language learner", 12_000_000, 1_400, 0.8, 90, 90, 0.25, 1_200, 800);
+
+/**
+ * What the UNMETERED language lane costs per hour of continuous use, and what one account can do
+ * with it in a day.
+ *
+ * 🔴🔴 IT IS A RATE, NOT A SCENARIO, BECAUSE THERE IS NOTHING TO CAP IT AT. Every other cost in
+ * this file is bounded by a plan entitlement the valve enforces before it spends. Azure is reached
+ * from the browser with a ten-minute token from `/api/speech/token`, whose only gate is being
+ * signed in — no counter, no entitlement, no refusal. A FREE account can mint tokens all day.
+ *
+ * 🔴 SPEAKING RATE, NOT READING RATE. `SPEECH_CHARS_PER_MINUTE` is what a synthesiser emits per
+ * minute of audio, so continuous playback is that many characters billed per minute.
+ */
+export function unmeteredLanguageBurn(): { ttsPerHourUsd: number; scoringPerHourUsd: number; bothPerDayUsd: number } {
+  const ttsPerHourUsd = round(usdFor("azure_tts", "neural TTS", "per_million_characters", (SPEECH_CHARS_PER_MINUTE * 60) / 1e6), 4);
+  const scoringPerHourUsd = round(usdFor("azure_pronunciation", "pronunciation assessment", "per_hour", 1), 4);
+  return { bothPerDayUsd: round((ttsPerHourUsd + scoringPerHourUsd) * 24, 2), scoringPerHourUsd, ttsPerHourUsd };
+}
 
 export const SCENARIOS: readonly StudentMonth[] = [
   LIGHT_STUDENT,
@@ -484,7 +531,7 @@ export function modelStudentMonth(month: StudentMonth): WorkloadReport {
           "azure_tts",
           "neural TTS",
           "per_million_characters",
-          (month.targetLanguageSecondsOut * (SPEECH_CHARS_PER_MINUTE / 60)) / 1e6,
+          (month.languagePhrasesPlayed * CHARS_PER_SPOKEN_EXAMPLE) / 1e6,
         ),
         4,
       ),
@@ -492,7 +539,15 @@ export function modelStudentMonth(month: StudentMonth): WorkloadReport {
     {
       provider: "azure_pronunciation",
       role: PROVIDER_ROLE.azure_pronunciation,
-      usd: round(usdFor("azure_pronunciation", "pronunciation assessment", "per_hour", month.pronunciationSecondsIn / 3_600), 4),
+      usd: round(
+        usdFor(
+          "azure_pronunciation",
+          "pronunciation assessment",
+          "per_hour",
+          (month.pronunciationAttempts * SECONDS_PER_ATTEMPT) / 3_600,
+        ),
+        4,
+      ),
     },
     { provider: "vercel", role: PROVIDER_ROLE.vercel, usd: usdFor("vercel", "fluid compute", "per_subscriber_month", 1) },
     { provider: "supabase", role: PROVIDER_ROLE.supabase, usd: usdFor("supabase", "database, storage, egress", "per_subscriber_month", 1) },
