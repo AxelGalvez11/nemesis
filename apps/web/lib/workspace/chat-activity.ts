@@ -27,6 +27,7 @@ const TOOL_ACTIVITY: Record<string, string> = {
   list_study_decks: "Looking through your study sets",
   move_library_note: "Organizing your library",
   read_library_note: "Reading your notes",
+  find_figure: "Looking for a picture in your lectures",
   read_study_artifact: "Looking through your study sets",
   read_study_deck: "Looking through your study sets",
   rename_library_note: "Organizing your library",

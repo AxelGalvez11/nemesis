@@ -57,6 +57,10 @@ export const WEB_EXTRA_AGENT_TOOL_NAMES = [
   // Web-only until the phone has the sitting UI to open a paper from chat.
   "get_study_record",
   "make_practice_test",
+  // Showing a learner a picture from their OWN lectures (owner 2026-08-31: "it should be able to
+  // pull images that it has stored into chat when necessary"). Web-only because the answer is
+  // markdown images rendered in the reply, and the phone's chat surface renders text.
+  "find_figure",
 ] as const;
 
 export const WEB_WORKSPACE_AGENT_TOOL_NAMES = [
@@ -67,6 +71,19 @@ export const WEB_WORKSPACE_AGENT_TOOL_NAMES = [
 export type WebWorkspaceAgentToolName = (typeof WEB_WORKSPACE_AGENT_TOOL_NAMES)[number];
 
 export const WORKSPACE_TOOL_DESCRIPTIONS: Record<WebWorkspaceAgentToolName, string> = {
+  find_figure:
+    "Find a diagram, chart, photo or figure from the student's OWN uploaded lectures and show it to "
+    + "them. Returns each picture's description, which lecture and page it came from, and a `markdown` "
+    + "field. To show a picture, copy that `markdown` field into your answer VERBATIM, on its own line, "
+    + "next to the point it illustrates — it is already a complete image link and it expires, so never "
+    + "rewrite the URL, never describe the link, and never promise a picture you have not pasted. Use "
+    + "this whenever a visual would answer better than a sentence: the student asks what something "
+    + "looks like, asks about a diagram or a structure, asks you to show them something, or is stuck on "
+    + "anything spatial, anatomical, structural or graphed. `query` is what the picture SHOWS, in "
+    + "ordinary words (\"loop of Henle\", \"steroid ring structure\", \"insulin release curve\") — not a "
+    + "file name. Pass `source` to look inside one lecture, and leave `query` empty to see what "
+    + "pictures a lecture holds. Nothing found means this student has no such picture; say so plainly "
+    + "rather than describing one from memory.",
   list_calendar_events:
     "List the student's calendar events, COMPLETE for the window it reports: every event in range, past or "
     + "future, all of them, with recurring classes expanded into their real meeting dates (those rows carry "

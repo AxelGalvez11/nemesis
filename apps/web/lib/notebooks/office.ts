@@ -26,6 +26,7 @@ export { UNZIP_MAX_ENTRIES, UNZIP_MAX_TOTAL_BYTES, unzipBounded } from "./office
 import { unzipBounded } from "./office-unzip";
 
 import { emfEmbeddedImage } from "./emf-bitmap";
+import { figureContentKey, type NormalizedFigure } from "./figure-assets";
 import { imageSize } from "./image-dimensions";
 import {
   chartXmlToText,
@@ -99,13 +100,69 @@ export function extractDocxText(bytes: Uint8Array): OfficeExtract {
  * Previously it was the other way round and the structure was discarded.
  */
 export function extractDocxModel(bytes: Uint8Array): DocumentModel {
-  const structure = extractDocxStructure(bytes);
+  return readDocxDocument(bytes).model;
+}
+
+/**
+ * A Word document AND the pictures it places, from ONE pass over the zip.
+ *
+ * 🔴 THE PICTURES WERE NAMED AND NEVER FETCHED, WHICH IS THE WORST OF BOTH. `extractDocxStructure`
+ * reads `word/_rels/document.xml.rels` so it knows every figure's part — `word/media/image3.png` —
+ * and records it as the block's `ref`. It then threw the zip away. So a Word lecture could say
+ * "there is a figure here, and here is its name", and nothing in the product could ever show one.
+ * Measured on the owner's library: 207 placed pictures across 46 real course files, all invisible.
+ *
+ * 🔴 ONE UNZIP, WHICH IS WHY THIS EXISTS RATHER THAN A SECOND `docxMedia(bytes)` HELPER. A
+ * separate function would inflate the whole archive again — on a picture-heavy dissertation that
+ * is the entire file a second time, and `unzipBounded` exists precisely because that memory is
+ * not free. The model and the media come out of the same `files` map or they are not worth taking.
+ *
+ * 🔴 ONLY WHAT THE BODY ACTUALLY PLACES. `word/media/` also holds header crests, footer rules and
+ * numbering bullets, none of which are figures and all of which would be stored per document. The
+ * media is filtered by the refs the MODEL carries, so the stored set is exactly the described set —
+ * the same rule the deck lane follows, and for the same reason: pictures with no description and
+ * descriptions with no picture each look fine on their own.
+ */
+export function readDocxDocument(bytes: Uint8Array): { model: DocumentModel; figures: NormalizedFigure[] } {
+  const files = unzipBounded(bytes);
+  const structure = docxStructureFrom(files);
   // The title is the first HEADING when the document has one — a real document
   // outline beats guessing at the first line, which on a form or a cover page is
   // whatever happened to be typed at the top.
   const heading = structure.blocks.find((b) => b.kind === "heading")?.text;
-  const model = docxToModel(structure, heading ?? null);
-  return model.title ? model : { ...model, title: firstLine(documentToText(model)) };
+  const built = docxToModel(structure, heading ?? null);
+  const model = built.title ? built : { ...built, title: firstLine(documentToText(built)) };
+
+  const placed = new Set(
+    model.blocks.map((block) => block.figure?.ref).filter((ref): ref is string => Boolean(ref)),
+  );
+  const figures: NormalizedFigure[] = [];
+  const seen = new Set<string>();
+  for (const ref of placed) {
+    const raw = files[ref];
+    if (!raw || raw.byteLength === 0) continue;
+    // A metafile-wrapped screenshot or a Mac TIFF becomes a PNG here; genuine vector drawing
+    // returns null and is left unstored rather than stored as something no renderer can open.
+    const recovered = recoverImage(ref, raw);
+    const payload = recovered ?? { bytes: raw, mime: imageMime(ref) ?? "" };
+    if (!payload.mime) continue;
+    const contentKey = figureContentKey(payload.bytes);
+    // The same diagram placed twice is one object at one content-addressed path.
+    if (seen.has(contentKey)) continue;
+    seen.add(contentKey);
+    const size = imageSize(payload.bytes);
+    figures.push({
+      bytes: payload.bytes,
+      contentKey,
+      // 🔴 THE ZIP PART NAME, UNCHANGED, BECAUSE THAT IS WHAT `DocFigure.ref` HOLDS. The join in
+      // `attachFigureAssets` is on this exact string.
+      entry: ref,
+      height: size?.height ?? null,
+      mime: payload.mime,
+      width: size?.width ?? null,
+    });
+  }
+  return { figures, model };
 }
 
 /**
@@ -125,7 +182,12 @@ export function extractDocxModel(bytes: Uint8Array): DocumentModel {
  * a per-part record, not a fabricated position in the text.
  */
 export function extractDocxStructure(bytes: Uint8Array): DocxDocument {
-  const files = unzipBounded(bytes);
+  return docxStructureFrom(unzipBounded(bytes));
+}
+
+/** The same, over an archive already in hand. Split out so `readDocxDocument` can take the model
+ *  and the media from ONE inflate rather than two. */
+function docxStructureFrom(files: Record<string, Uint8Array>): DocxDocument {
   const doc = files["word/document.xml"];
   if (!doc) throw new Error("That doesn't look like a Word (.docx) file.");
   const numbering = files["word/numbering.xml"];
