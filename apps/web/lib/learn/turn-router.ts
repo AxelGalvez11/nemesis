@@ -492,6 +492,16 @@ export interface TurnContext {
    */
   lessonInProgress: boolean;
   /**
+   * This turn arrived BY VOICE inside a live voice conversation, and the reply will be read
+   * aloud before the microphone reopens.
+   *
+   * 🔴 A FACT ABOUT THE REQUEST'S MODALITY, exactly like `courseRequested` is a fact about its
+   * attachments: it changes the SHAPE the answer should take (spoken-size, no markup a voice
+   * would have to pronounce), never what the answer may claim, verify, or refuse. False on every
+   * typed turn, and the packet is byte-identical then.
+   */
+  spokenConversation: boolean;
+  /**
    * The learner attached the Course capability to THIS submission — an explicit declaration that
    * they want a persistent learning path, made at the composer boundary the way a file is attached.
    *
@@ -1819,6 +1829,25 @@ export function turnRouterMessages(input: {
           + "the whole project. Where they conflict with how you teach, verify, or hold a "
           + "position, your rules above still win.\n\n"
           + context.projectInstructions.trim(),
+        role: "system" as const,
+      }]
+      : []),
+    // 🔴 THE SPOKEN SHAPE IS A MODALITY FACT, NOT A MODE (owner 2026-08-31: voice mode "gives
+    // faster answers by not fuller answers... just quick text to speech and speech to text").
+    // The reply will be READ ALOUD and the microphone reopens after it; a full written treatment
+    // with headings and lists is exactly the lag he is naming, and a voice reading markdown says
+    // the punctuation. Absent on every typed turn, so those packets stay byte-identical.
+    ...(context.spokenConversation
+      ? [{
+        content:
+          "SPOKEN CONVERSATION. The learner said this out loud, and your answer will be read "
+          + "aloud to them by a voice, then the microphone opens again. Answer the way a person "
+          + "speaks: the shortest complete answer, a few conversational sentences, and stop. No "
+          + "headings, no bullet lists, no tables, no fenced blocks, no bracketed markers; a "
+          + "voice would have to read that punctuation out loud. If the subject honestly needs "
+          + "the long form, give the spoken-size answer and offer to put the full version on "
+          + "screen. This changes the SHAPE of your reply only: what you verify, refuse, or hold "
+          + "your ground on does not change.",
         role: "system" as const,
       }]
       : []),

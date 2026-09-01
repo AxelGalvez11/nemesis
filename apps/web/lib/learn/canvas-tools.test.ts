@@ -47,6 +47,7 @@ const EMPTY: TurnContext = {
   demonstrated: 0,
   history: [],
   lessonInProgress: false,
+  spokenConversation: false,
   materialContext: "",
   memory: "",
   projectInstructions: "",

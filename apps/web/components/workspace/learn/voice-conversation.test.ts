@@ -86,7 +86,10 @@ test("🔴 the session forces the reply spoken — as an argument, not a second 
   assert.match(VOICE, /if \(!arrived \|\| !replyKey \|\| !reply \|\| !alwaysSpeak\) return;/, "the session no longer presses play");
   assert.match(CANVAS, /const \[voiceConversing, setVoiceConversing\] = useState\(false\);/, "the canvas lost the session state");
   assert.match(CANVAS, /useCanvasVoice\(turnInFlight \? null : spokenReply, voiceConversing\)/, "the session state no longer reaches the voice hook");
-  assert.match(CANVAS, /onVoiceConversation=\{setVoiceConversing\}/, "the composer can no longer report the session");
+  // The handler writes a ref BESIDE the state since 2026-08-31: surroundings() reads the fact at
+  // SEND time, so a spoken turn's packet carries it without a stale closure.
+  assert.match(CANVAS, /voiceConversingRef\.current = active;/, "the send-time fact lost its ref");
+  assert.match(CANVAS, /spokenConversation: voiceConversingRef\.current,/, "the surroundings no longer carry the spoken fact");
 });
 
 test("🔴 no preference, no menu row, no listen signal — the 2026-08-25 rulings stand", () => {
