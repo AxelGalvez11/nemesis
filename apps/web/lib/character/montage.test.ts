@@ -157,10 +157,24 @@ test("🔴 every entry the picker offers is real, and it offers all thirty-nine"
   for (const id of [...MONTAGE, ...MONTAGE_LEFT_OUT]) {
     assert.ok(MONTAGE_CHOICES.some((c) => c.id === id), `${id} is in the default set but not offered`);
   }
-  // 🔴 THE CARD MUST SEPARATE THEM. An undifferentiated wall of thirty-nine words is how the
-  // moving half went missing the first time.
+});
+
+test("🔴 the picker is gone from Settings, and the character still pulls faces", () => {
+  // Owner, 2026-08-31: *"remove this from settings, the choosing of the montage of the character."*
+  // The catalogue above survives because `isMontageLoop` reads it; what went is the card that let a
+  // learner tick entries, and the stored preference behind it.
+  //
+  // 🔴 THE INVERSE OF THE ASSERTION THIS REPLACES, ON PURPOSE. This line used to demand the card
+  // group the two kinds. Deleting the demand would have left nothing watching, and the card is
+  // exactly the kind of thing that gets rebuilt by someone who finds `MONTAGE_CHOICES` and assumes
+  // it is unused UI data. It is not: it times the faces.
   const card = readFileSync(new URL("../../components/SettingsSurface.tsx", import.meta.url), "utf8");
-  assert.match(card, /c\.kind === kind/, "the settings card stopped grouping the two kinds");
+  assert.ok(!/MONTAGE_CHOICES/.test(card), "the montage picker is back in Settings");
+  assert.ok(!/setMontage/.test(card), "Settings can write a montage preference again");
+  const provider = readFileSync(new URL("../../components/theme-provider.tsx", import.meta.url), "utf8");
+  assert.ok(!/montage/i.test(provider), "the montage preference is back in the theme provider");
+  // The behaviour it chose between is untouched: nothing chosen resolves to the default set.
+  assert.deepEqual(resolveMontage(undefined), MONTAGE, "with no picker, the character has no faces");
 });
 
 test("🔴🔴 BOTH surfaces run the montage, not just the canvas", () => {
