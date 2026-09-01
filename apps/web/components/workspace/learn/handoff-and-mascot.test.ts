@@ -25,25 +25,28 @@ test("🔴🔴 both ends of the handoff measure the SAME rectangle", () => {
   // The whole glitch was two different centres. This page measured against `window`; the canvas's
   // dock measures against its `offsetParent` — the surface inside the shell's second grid column.
   // They differ by the nav rail's width whenever the rail is up, which on the front door is always.
-  assert.match(
-    HOME,
-    /const surface = scroller\.current\?\.getBoundingClientRect\(\)/,
-    "the front door stopped measuring the surface it is about to hand over to",
-  );
-  assert.match(HOME, /const middle = centreStation\(surface\)/, "the character's target left the shared rectangle");
-  // 🔴 THE NEGATIVE HALF, which is what makes the positive half mean anything: the old code read
-  // `window.innerWidth` / `window.innerHeight` for these two targets, and either one coming back
-  // reintroduces the 26px disagreement.
-  assert.equal(
-    /x: Math\.round\(window\.innerWidth \/ 2/.test(HOME),
-    false,
-    "the composer is aiming at the viewport again, not at the surface it lands in",
-  );
-  assert.equal(
-    /centreStation\(\{ left: 0, top: 0, width: window\.innerWidth/.test(HOME),
-    false,
-    "the character is aiming at the viewport again, not at the surface it lands in",
-  );
+  // Pointing both at one shared rectangle removed a 26px correction the learner could see.
+  //
+  // 🔴🔴 AND THEN THE SECOND END WENT AWAY, 2026-09-01 (direction A). "Both ends measure the same
+  // rectangle" was the best available answer while the front door had to compute where the canvas's
+  // character would stand, and it is a rule about a prediction: it makes the prediction agree with
+  // reality on the frame it is made. It cannot make it agree a frame LATER, which is when the rail
+  // collapses and the canvas mounts — so the corrections kept coming back in new places.
+  //
+  // There is now one end. The front door reports the rectangle its character occupies, full stop,
+  // and the canvas walks its own dock back from there to wherever that dock actually is. No shared
+  // centre, no shared scale, nothing to keep in step. What this guards now is that the front door
+  // never starts computing a destination again — that is the shape every version of this bug had.
+  // 🔴 THE CALL, NOT THE WORD. `centreStation` is named in a comment recording why it is gone, and
+  // an assertion on the bare word fails on its own history.
+  assert.ok(!/centreStation\(/.test(HOME), "the front door is computing the character's destination again");
+  assert.ok(!/const surface = scroller\.current\?\.getBoundingClientRect\(\)/.test(HOME), "the front door is computing an arrival target again");
+  assert.match(HOME, /stageArrival\(\{/, "the front door stopped handing its rectangles over");
+  assert.match(HOME, /character: bot \? rectOf\(bot\) : rectOf\(rect\)/, "the character's own rectangle is no longer what is handed over");
+  // 🔴 THE NEGATIVE HALF, kept verbatim from the version above, because a `window` measurement is
+  // still wrong — it is just wrong on the other side of the handoff now.
+  const HOOK = readFileSync(new URL("./use-arrival.ts", import.meta.url), "utf8");
+  assert.ok(!/window\.inner(Width|Height)/.test(HOOK), "the walk is aiming at the viewport again, not at the box things land in");
 });
 
 test("🔴🔴 the character never stands in the corner during the handover", () => {

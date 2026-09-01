@@ -100,7 +100,9 @@ import { CharacterDock } from "@/components/character/character-dock";
 import { stateForCanvas } from "@/lib/character/stations";
 import { CanvasThinking } from "./canvas-thinking";
 import { CanvasSelectionMenu, type SelectionAnswer } from "./canvas-selection-menu";
+import { ArrivalLabels } from "./arrival-labels";
 import { CanvasSurface } from "./canvas-surface";
+import { useArrival } from "./use-arrival";
 import { continueBelongsTo, continueOwner, readingRequirementOf } from "@/lib/learn/canvas-continue";
 import { routeRewrite } from "@/lib/learn/canvas-phrases";
 import { unreadChunk } from "@/lib/learn/canvas-reading";
@@ -371,7 +373,29 @@ export function LearningCanvas({
    * own length, so by the time a later render drops it the element has finished and is sitting at
    * its natural opacity. Removing a finished `both` animation changes nothing on screen.
    */
-  const arriving = Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
+  /**
+   * The walk in from the front door, when there was one.
+   *
+   * 🔴🔴 THIS IS WHAT REPLACES THE FADE BELOW ON ONE ENTRY PATH, AND ONLY ON THAT ONE. `arrival.from`
+   * is non-null exactly when a learner pressed send on `/learn` a frame ago; every other way into a
+   * canvas — a deep link, a hard refresh, a return from sign-in, a row in the rail — has no staged
+   * rectangle and keeps `canvas-enter` unchanged, because there is genuinely nothing on screen for
+   * those to be continuous with. See lib/learn/arrival.ts.
+   */
+  const arrival = useArrival();
+  /**
+   * 🔴🔴 SUPPRESSED WHILE THE FURNITURE IS WALKING, AND THAT IS THE WHOLE POINT OF DIRECTION A.
+   * `canvas-enter` is a 320ms fade with a 120ms delay, so for its first 440ms this surface is
+   * transparent. That was the right answer while the two components could not be made continuous:
+   * a fade over a teleport is better than the teleport. Measured on production 2026-09-01 it was
+   * also the blank screen the owner reported — 300ms in which the learner's own sentence, the
+   * character and the greeting were all gone at once, because the front door had already unmounted
+   * and this had not yet faded up.
+   *
+   * With the pieces now walking in from measured positions, fading the surface as well would fade
+   * out the very continuity the walk creates.
+   */
+  const arriving = arrival.from ? "" : Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
   /** The thread's scroller, so an opening canvas can be put at its most recent turn. */
   const threadRef = useRef<HTMLDivElement | null>(null);
   /** The turn being answered right now: the learner's sentence, the thinking line, the answer. */
@@ -398,6 +422,22 @@ export function LearningCanvas({
    * eight screens of a conversation somebody has already read is the opposite of arriving there.
    */
   useEffect(() => {
+    // 🔴🔴 NOT ON A CANVAS THAT WAS JUST CREATED, AND THIS IS THE PROMPT BOUNCE. Owner, 2026-09-01:
+    // *"there will be flickering of my prompt message"*. Filmed at full frame rate: the sentence
+    // jumped 160px up and back, five times, at exactly 100ms intervals — and 100ms is
+    // `LANDING_TICK_MS`, which TWO loops in this file run on.
+    //
+    // This one exists to reopen a SAVED conversation at its foot, so it drives `scrollTop` to
+    // `scrollHeight`. The pin further down exists to hold a freshly sent prompt near the top, so it
+    // drives the scroller the other way. On a canvas opened from the front door both are armed at
+    // once, on the same clock, and they disagree by the height of the turn — measured live,
+    // scrollTop alternated 0, 160, 0, 160 while the two took turns.
+    //
+    // 🔴 THE GATE IS `openingAsk`, NOT THE ARRIVAL. A reduced-motion send stages no rectangles and
+    // still mints a brand-new canvas with exactly one turn in it, and this loop is just as wrong
+    // there: there is no earlier position to restore, because there is no earlier anything. What
+    // makes it correct is having a conversation to come back to.
+    if (openingAsk) return;
     const opened = Date.now();
     /** The tallest the thread has been, and when it last got taller. */
     let tallest = 0;
@@ -433,7 +473,7 @@ export function LearningCanvas({
     window.addEventListener("touchmove", stop, { passive: true });
     window.addEventListener("keydown", stop);
     return stop;
-  }, [canvasId]);
+  }, [canvasId, openingAsk]);
   const strandedTimer = useRef<number | null>(null);
   /**
    * Go to the front door, and actually arrive.
@@ -1955,7 +1995,24 @@ export function LearningCanvas({
       // 🔴 THE ORDER MATTERS. Reserve first so the room exists, then scroll into it; scrolling
       // before the space is there silently clamps and the prompt lands short of the top.
       const turnHeight = node.getBoundingClientRect().height;
-      runway.style.height = `${Math.max(0, Math.round(scroller.clientHeight - PIN_INSET_PX - turnHeight))}px`;
+      // 🔴🔴 MONOTONIC, AND THIS IS THE BOUNCE THE OWNER REPORTED. Owner, 2026-09-01: *"there will
+      // be flickering of my prompt message"*. Filmed on production at full frame rate: the sentence
+      // jumped 160px up and back FIVE times in the 515ms after it landed, at exactly this tick's
+      // rate. The cause is one line: this reserved `clientHeight - inset - turnHeight`, recomputed
+      // ten times a second from the turn's INSTANTANEOUS height — and the turn's height is not
+      // monotonic while an answer forms. `CanvasFade` swaps content in and out, so the measured
+      // node collapses for a tick and springs back. Recorded live: the reservation flipped between
+      // 370px and 756px on alternating ticks, a 386px change in the page's own height, and the pin
+      // below then corrected the scroll each time it moved.
+      //
+      // The reservation only exists to guarantee there is room to put this turn at the top. Room
+      // that has already been granted must never be taken back while the turn is current: a
+      // momentary collapse in a measurement is not the answer getting shorter. So it may shrink as
+      // the turn genuinely grows, and it may never grow back. `release()` is what hands it back,
+      // and that is the only thing that should.
+      const want = Math.max(0, Math.round(scroller.clientHeight - PIN_INSET_PX - turnHeight));
+      const held = parseFloat(runway.style.height) || Infinity;
+      runway.style.height = `${Math.min(held, want)}px`;
       // 🔴 FROM RECTS, NOT `offsetTop`, which is relative to whichever ancestor happens to be
       // positioned — and this subtree gains and loses positioned wrappers as the answer forms.
       const drift = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top - PIN_INSET_PX;
@@ -2115,10 +2172,12 @@ export function LearningCanvas({
   if (!session.ready) {
     return (
       <CanvasSurface>
+        <ArrivalLabels from={arrival.from} />
         {/* 🔴 UNCONDITIONAL, UNLIKE THE REAL SURFACE'S. This branch exists only while the canvas is
             being read out of the database, which is only ever on the way in — there is no
-            mid-session render of it to protect against, so it needs no `ARRIVING_MS` window. */}
-        <div className="canvas-enter flex h-full items-center justify-center">
+            mid-session render of it to protect against, so it needs no `ARRIVING_MS` window.
+            🔴 EXCEPT ON THE WALK IN, where it must not fade at all: see `arriving` above. */}
+        <div className={`flex h-full items-center justify-center${arrival.from ? "" : " canvas-enter"}`}>
           {/* Nothing is docked yet — there is no composer to stand above — so the character
               simply holds the middle, which is where it would have walked to anyway.
               🔴🔴 `station` IS PASSED, AND THE COMMENT ABOVE WAS A LIE WITHOUT IT. The dock falls back
@@ -2130,7 +2189,16 @@ export function LearningCanvas({
               60px one in the corner on the very next frame — the teleport the learner sees on every
               deep link, hard refresh and fresh sign-in. Every surface that knows where the character
               belongs says so out loud; this one had forgotten to. */}
-          <CharacterDock bottom={0} contain left={0} station="centre" state={stateForCanvas({ thinking: true, preparing: true })} />
+          {/* 🔴🔴 NOT DRAWN WHILE A WALK IS IN FLIGHT, AND THE REASON IS THE SAME ONE THIS BRANCH'S
+              OWN COMMENT BELOW DESCRIBES. This dock stands at the CENTRE; the real surface's stands
+              at the composer's corner. Coming in from the front door those are two different places
+              a few tens of milliseconds apart, so painting this one would put a character in the
+              middle of the screen and then move it — the exact teleport the arrival exists to
+              remove, reintroduced by the loading state. `useArrival` is already walking the real
+              dock in; this branch simply has nothing to add for those few frames. */}
+          {!arrival.from && (
+            <CharacterDock bottom={0} contain left={0} station="centre" state={stateForCanvas({ thinking: true, preparing: true })} />
+          )}
           {/* This branch is one database read long and shows no caption, so the dock's own
               animation is the whole of what says "working" here. Nothing draws a second one. */}
           {/* 🔴 USUALLY NOTHING RENDERS HERE AT ALL, AND NOW THAT IS FINE. This branch is one
@@ -2485,6 +2553,7 @@ export function LearningCanvas({
       />
       }
     >
+      <ArrivalLabels from={arrival.from} />
       {/* 🔴 INSIDE THE SURFACE, NOT AROUND IT. Wrapping `LearningCanvas` in the provider made
           this branch return `<SourceTabsProvider>`, and `learn-entry.test.ts` requires every
           branch to return a `CanvasSurface` — that is the guard standing between a learner and a
@@ -2599,6 +2668,14 @@ export function LearningCanvas({
             🔴 IT IS OUTSIDE `CanvasFade`. The fade swaps what NEMESIS is showing — a question
             replacing a reply. The learner's sentence does not swap; it stands while the answer
             beneath it forms, which is also what makes a send feel acknowledged. */}
+        {/* 🔴 `data-learner-said` IS LOAD-BEARING, NOT A STYLING HOOK, and it fails quietly if it is
+            renamed. `useArrival` finds this box by that attribute to fly the learner's own
+            sentence in from the front door's composer. THIS is the live turn — the sentence you
+            just sent — which is the only one an arrival can ever be about; canvas-thread-turn.tsx
+            carries the same attribute for turns that have already filed into the thread, and
+            marking only that one was a bug I shipped and caught on film: the selector matched
+            nothing on the way in and the sentence appeared at its destination instead of
+            travelling to it. Same warning as `#canvas-composer` carries in canvas-composer.tsx. */}
         {threadOpen && currentSaid?.trim() && (
           <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
             {/* 🔴 EDITING RE-ASKS, IT DOES NOT REWRITE HISTORY. `retryTurn` is `converse`, the one
@@ -2620,7 +2697,16 @@ export function LearningCanvas({
               />
             ) : (
               <>
-                <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
+                {/* 🔴 THE ATTRIBUTE IS ON THE PILL, NOT ON THE COLUMN AROUND IT, AND THE DIFFERENCE
+                    IS THE WHOLE HORIZONTAL HALF OF THE FLIGHT. Marking the wrapper first was a bug
+                    I caught on film: the wrapper is the full canvas column and is already almost
+                    where it ends up, so the sentence rose 446px and moved 79px sideways — it
+                    lifted, it did not fly. The pill is what the learner is watching, it is
+                    right-aligned inside the column, and the composer's field it leaves is
+                    left-aligned, so the real journey is a diagonal of about 500px across. */}
+                <span data-learner-said>
+                  <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
+                </span>
                 {!turnInFlight && <EditSentPrompt onOpen={() => setEditingPrompt(true)} />}
               </>
             )}
@@ -3331,7 +3417,13 @@ export function LearningCanvas({
         // the rail collapses. The fade's 120ms delay covers that whole window, so what is left to
         // see is a character fading into the place it belongs. Trying to make it TRAVEL there
         // instead has been attempted twice and is why those corrections exist — see globals.css.
-        className={arriving}
+        // 🔴🔴 THE CHARACTER FADES EVEN WHEN NOTHING ELSE DOES, AND IT IS THE ONLY EXCEPTION.
+        // `arriving` is emptied during a walk in from the front door, because fading a surface
+        // whose furniture is travelling removes the continuity the travel creates. The character is
+        // the one piece that does not travel — see the note in use-arrival.ts for the three
+        // measured attempts — so without this it would appear at its corner in one frame, which is
+        // the teleport all of this exists to remove. A fade is not a jump.
+        className={arrival.from ? "canvas-enter" : arriving}
         // 🔴 THE COMPOSER, AND ON TOP OF IT (owner 2026-08-26, evening: *"I want it to be on top on
         // the left of the chat composer"*, and then, asked to be exact: *"make sure its on top of
         // the composer not in inside it, top left"*). This reverses that same morning's *"make the

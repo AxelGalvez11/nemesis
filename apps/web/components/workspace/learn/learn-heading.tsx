@@ -18,7 +18,7 @@
 // the first thing anybody sees. Nine subjects, nine different faculties, in a deliberate order that
 // never puts two neighbours from the same one together.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 
 /**
  * What the front door offers to teach, one per faculty.
@@ -100,7 +100,10 @@ const EASE_IN = "cubic-bezier(0.33, 0, 0.35, 1)";
 /** Room for the last glyph's ink to sit outside its own advance width. See `slotWidth`. */
 const SLOT_SLACK_PX = 2;
 
-export function LearnHeading({ departing }: { departing: boolean }) {
+// 🔴 THE REF IS FOR MEASUREMENT, NOT FOR CONTROL. The arriving canvas redraws this greeting where
+// it stood and fades it out (lib/learn/arrival.ts), so the front door has to be able to report its
+// rectangle and its current word. Nothing outside reads or writes the element beyond that.
+export function LearnHeading({ departing, ref }: { departing: boolean; ref?: Ref<HTMLHeadingElement> }) {
   const [index, setIndex] = useState(0);
   /**
    * The natural width of every subject, measured once from the words themselves.
@@ -178,6 +181,7 @@ export function LearnHeading({ departing }: { departing: boolean }) {
   return (
     <h1
       className="text-[length:var(--canvas-text-title)] font-medium tracking-[-0.01em] text-(--ui-text-primary)"
+      ref={ref}
       style={{
         opacity: departing ? 0 : 1,
         // The departure fade is the front door's own, unchanged: the greeting leaves as the

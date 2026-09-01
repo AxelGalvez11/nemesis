@@ -23,7 +23,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
-import { DOCK_CENTRE_SCALE, DOCK_SIZE, centreStation } from "@/components/character/character-dock";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { stateForCanvas } from "@/lib/character/stations";
 import { useMontage } from "@/components/character/use-montage";
@@ -44,6 +43,7 @@ import { ComposerSend } from "./composer-controls";
 import { ProjectPicker } from "./project-picker";
 import { FileDropOverlay } from "./file-drop-overlay";
 import { CanvasRecorder } from "./canvas-recorder";
+import { stageArrival } from "@/lib/learn/arrival";
 import { LearnHeading } from "./learn-heading";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
 import { IDLE_REPLY_AUDIO, VoiceBarsGlyph, VoiceSessionGlow, VoiceStopButton } from "./canvas-composer";
@@ -66,23 +66,6 @@ import { useCanvasDictation } from "./use-canvas-dictation";
  */
 const DOCK_MS = 320;
 
-/**
- * The clearance under the canvas composer: `bottom-0` plus `pb-4`.
- *
- * 🔴 RESOLVED, NOT WRITTEN DOWN, AND THE OLD LITERAL WAS BOTH WRONG AND UNFIXABLE. It said 16,
- * with a comment correctly explaining that "every rem in this app is 1.125x its number" — and
- * then not applying it: `pb-4` is 1rem, which at the app's 112.5% root is 18px, so the composer
- * landed 2px above where the canvas actually draws it and the route swap corrected the last two
- * pixels in one frame.
- *
- * 🔴 AND NO OTHER LITERAL WOULD HAVE SURVIVED EITHER, which is the real reason this is a
- * function. The root size is the SCALING setting — a learner on 90% or 115% moves every rem in
- * the product, so any number typed here is right at exactly one setting. Reading the root font
- * size back is reading `pb-4` itself.
- */
-function canvasComposerInset(): number {
-  return parseFloat(getComputedStyle(document.documentElement).fontSize) || 18;
-}
 
 /** How big the character is on the front door. Bigger than the canvas dock's resting size,
  *  because here it is the only thing on the page rather than a marker beside a composer. */
@@ -91,6 +74,34 @@ function canvasComposerInset(): number {
 // different surfaces and the hand-off between them is only invisible while their sizes keep the
 // same relationship — grow one alone and the character visibly changes size mid-flight.
 const GREETER_SIZE = 80;
+
+
+/**
+ * The text of an element as a person sees it, skipping anything faded out.
+ *
+ * 🔴 `opacity`, NOT JUST `visibility`. See the call site: the greeting cross-fades between subjects
+ * by holding all of them and taking nine to `opacity: 0`, which every built-in text accessor still
+ * reports. This is only ever used to copy a label so it can fade rather than be cut, so "what is
+ * legible right now" is exactly the right question.
+ */
+function visibleText(root: HTMLElement): string {
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const parts: string[] = [];
+  let node: Node | null;
+  while ((node = walk.nextNode())) {
+    const text = node.nodeValue?.trim();
+    if (!text) continue;
+    let el: HTMLElement | null = node.parentElement;
+    let shown = true;
+    while (el && shown) {
+      const style = getComputedStyle(el);
+      if (style.visibility === "hidden" || style.display === "none" || Number(style.opacity) < 0.05) shown = false;
+      el = el === root ? null : el.parentElement;
+    }
+    if (shown) parts.push(text);
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
 
 export function CanvasHome({ accessToken = null, userId }: { accessToken?: string | null; userId: string | null }) {
   const router = useRouter();
@@ -209,29 +220,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    * rather than as a correction. `x` is kept because the two rectangles can still differ — a
    * scrollbar, a narrow viewport — and zero is the common case rather than the assumption.
    */
-  const [travel, setTravel] = useState({ x: 0, y: 0 });
   const greeterBox = useRef<HTMLDivElement>(null);
-  /**
-   * The character's trip to the middle, measured at the moment of the send.
-   *
-   * 🔴🔴 IT TRAVELS TO WHERE THE CANVAS'S CHARACTER WILL BE, TO THE PIXEL (owner 2026-08-21:
-   * "the mascot should move toward the center smoothly not jaggedly"). These are two different
-   * components on two different surfaces — this greeter unmounts and `CharacterDock` mounts — so
-   * the only thing that makes the swap invisible is the two of them agreeing about where the
-   * character stands and how big it is. Anything less and the learner watches one character
-   * vanish and another appear somewhere else, which is what "jaggedly" was describing.
-   *
-   * 🔴 SO THE NUMBERS COME FROM THE DOCK, NOT FROM HERE. `centreStation`, `DOCK_SIZE` and
-   * `DOCK_CENTRE_SCALE` are exported by character-dock.tsx precisely so this cannot drift: retuning
-   * the middle station moves both ends of the hand-off at once. A literal `0.42` copied into
-   * this file would look right today and come apart on the first tweak.
-   *
-   * 🔴 AGAINST THE VIEWPORT, NOT AGAINST THIS PAGE'S OWN BOX. The canvas is an immersive
-   * surface — it takes the nav rail away — so its character centres on the whole window. If
-   * this page still has a rail beside it, the character is meant to end up slightly right of
-   * where THIS page's middle is, because that is where it is about to be standing.
-   */
-  const [handoff, setHandoff] = useState<{ dx: number; dy: number; k: number } | null>(null);
+  /** The two labels that do not survive into a canvas. They exist here only to be MEASURED at the
+   *  moment of the send and handed to the arriving canvas, which redraws them where they stood and
+   *  fades them out — so they LEAVE rather than being cut. See lib/learn/arrival.ts.
+   *  (The learner's own sentence needs no ref of its own: it is `composerField`.) */
+  const headingBox = useRef<HTMLDivElement>(null);
+  const hintBox = useRef<HTMLParagraphElement>(null);
 
   // 🔴 THE MENU IS BACK, BECAUSE IT HAS TWO OFFERS AGAIN. It was removed on 2026-08-20 when
   // "record a lecture" was withdrawn and upload stood alone — "a one-item menu is a second click
@@ -418,25 +413,56 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     // rectangle IS the arrival rectangle, whatever the rail is doing. Measuring it costs one more
     // `getBoundingClientRect` and makes the two surfaces agree by construction rather than by both
     // happening to be full-width.
-    const surface = scroller.current?.getBoundingClientRect() ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
-    // Where the canvas composer sits: `bottom-0` with `pb-4`, so 16px of clearance under it.
-    const target = surface.bottom - canvasComposerInset() - rect.height;
-    setTravel({
-      x: Math.round(surface.left + surface.width / 2 - (rect.left + rect.width / 2)),
-      y: Math.max(0, Math.round(target - rect.top)),
-    });
-    // The character's own trip, on the same beat as the composer's — one departure, not two.
+    // 🔴🔴 THIS SIDE NO LONGER AIMS AT ANYTHING, AND THAT IS THE POINT OF THE REWRITE. Owner chose
+    // direction A off the motion study, 2026-09-01: one continuous move, nothing appearing and
+    // nothing vanishing. What used to happen here was the opposite in structure even when it looked
+    // right for its first 210ms: this page computed where the canvas's composer and character were
+    // ABOUT TO BE, flew its own copies most of the way there, and then died — and the canvas faded
+    // in from zero over the following 440ms. Measured on production: 300ms of blank screen, and a
+    // character that reached its corner without crossing the room.
+    //
+    // Two rectangles cannot be made to agree across a component that unmounts mid-gesture. So the
+    // journey moved: this page measures where its furniture STANDS, hands that over, and leaves on
+    // the same frame. `learning-canvas.tsx` paints its own composer and character at these
+    // coordinates before its first paint and eases them home, so the destination is the canvas's
+    // real layout instead of a prediction of it. `centreStation`, `canvasComposerInset` and
+    // `DOCK_CENTRE_SCALE` are no longer imported here for exactly that reason — nothing on this
+    // side needs to know what the far side looks like any more.
+    const rectOf = (r: DOMRect) => ({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
     const bot = greeterBox.current?.getBoundingClientRect();
-    if (bot) {
-      // The identical call the dock makes on the far side, against the identical rectangle.
-      const middle = centreStation(surface);
-      setHandoff({
-        dx: Math.round(middle.x - (bot.left + bot.width / 2)),
-        dy: Math.round(middle.y - (bot.top + bot.height / 2)),
-        k: (DOCK_SIZE * DOCK_CENTRE_SCALE) / GREETER_SIZE,
-      });
-    }
-    window.setTimeout(() => router.push(href), DOCK_MS);
+    const said = composerField.current?.getBoundingClientRect();
+    stageArrival({
+      composer: rectOf(rect),
+      // 🔴 A MISSING CHARACTER FALLS BACK TO THE COMPOSER, NOT TO ZERO. An unmeasurable rectangle
+      // used to mean "skip the handoff"; with the journey on the far side it would instead mean
+      // "fly in from the top-left corner of the window", which is worse than not moving.
+      character: bot ? rectOf(bot) : rectOf(rect),
+      // Null when nothing was typed. Material dropped on the front door opens a canvas by way of
+      // `?new=1`, and there is no sentence to fly.
+      say: said && said.width > 0 ? rectOf(said) : null,
+      // The two things with no counterpart in a canvas. They are redrawn on the far side purely so
+      // they can fade instead of being cut; see `ARRIVAL_LABEL_MS`.
+      labels: [headingBox, hintBox]
+        .map((ref) => {
+          const el = ref.current;
+          // 🔴🔴 WHAT IS ACTUALLY ON SCREEN, WHICH IS NEITHER `textContent` NOR `innerText`.
+          // `LearnHeading` keeps all ten subjects in the DOM at once and shows one. `textContent`
+          // returns every one of them run together — filmed 2026-09-01, the departing copy read
+          // "Learn anything.Learn…". `innerText` was the obvious fix and is only half of one: it
+          // drops `display:none` and `visibility:hidden` but keeps anything merely TRANSPARENT, so
+          // the next film read "Learn anything. Learn  Calculus Biology". The slots are faded, not
+          // hidden, so opacity is the property that has to be tested.
+          const text = el ? visibleText(el) : "";
+          if (!el || !text) return null;
+          const style = getComputedStyle(el);
+          return { box: rectOf(el.getBoundingClientRect()), colour: style.color, font: style.fontSize, text, weight: style.fontWeight };
+        })
+        .filter((label) => label !== null),
+    });
+    // 🔴 IMMEDIATELY, NOT AFTER A TIMER. The old `setTimeout(…, DOCK_MS)` held the route back 320ms
+    // so this page could finish its own animation first. Now the animation IS the arrival, so every
+    // millisecond spent here is a millisecond the canvas has not started loading in.
+    router.push(href);
     });
   };
 
@@ -649,40 +675,16 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           {/* 🔴 `z-30` MATCHES `.character-dock`'s, so the character passes OVER the composer on its
               way to the middle rather than under it — the composer is travelling the other way
               and the two cross. `relative` is what makes the z-index apply at all. */}
-          <div
-            className="relative z-30 mb-5"
-            ref={greeterBox}
-            style={
-              handoff
-                ? {
-                    // 🔴🔴 IT FADES AS IT GOES, AND THAT IS THE OTHER HALF OF THE 2026-08-30
-                    // DISSOLVE (owner: *"i want a smooth fade in of everything"*). The canvas's own
-                    // character fades IN at the composer — see `.canvas-enter` — and without this
-                    // the front door's simply vanished on the frame of the swap, which is the
-                    // abrupt half of what the report calls the mascot "moving super quickly".
-                    //
-                    // 🔴 A HARD EASE-IN, NOT A LINEAR FADE, and the curve is doing the work. The
-                    // travel below is what the eye is following, so the character has to stay
-                    // legible for most of it and only leave at the end: this curve holds it above
-                    // 0.8 for the first half and spends the whole fall in the last quarter, which
-                    // lands it at nothing exactly as the route swaps. A linear fade would have it
-                    // half gone while it was still visibly moving, which reads as it breaking up
-                    // rather than as it handing over.
-                    //
-                    // 🔴 IT DOES NOT REPLACE THE TRAVEL. The character still goes where it was
-                    // going; this only takes it off screen at the end of the journey rather than
-                    // cutting it. Deleting the transform would leave a character fading out in the
-                    // middle of the page while the composer travels away underneath it.
-                    opacity: 0,
-                    transform: `translate3d(${handoff.dx}px, ${handoff.dy}px, 0) scale(${handoff.k})`,
-                    // The composer's curve, not the dock's 680ms journey: the two are one
-                    // departure and must land together, and the navigation is held for exactly
-                    // this long. See `DOCK_MS`.
-                    transition: `transform ${DOCK_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity ${DOCK_MS}ms cubic-bezier(0.7, 0, 0.84, 0)`,
-                  }
-                : undefined
-            }
-          >
+          {/* 🔴🔴 THE TRAVEL AND THE FADE BOTH MOVED TO THE CANVAS (direction A, owner 2026-09-01),
+              AND THE COMMENTARY ABOVE IS KEPT BECAUSE IT RECORDS WHY THREE EARLIER ANSWERS WERE
+              WRONG. In order, this character has: left with the greeting; stayed put and started
+              thinking; walked to a point this file computed for the far side while fading out. The
+              third was the closest and still could not work, because it required this page to
+              predict the canvas's layout and then die before the prediction could be checked. It
+              now does none of them. It stands still and is MEASURED (`greeterBox` above, read in
+              `start`), and the canvas's own dock is the thing that walks — from here to its corner,
+              in one move, in a tree that is still alive when the move finishes. */}
+          <div className="relative z-30 mb-5" ref={greeterBox}>
             {/* 🔴🔴 THE CHARACTER NO LONGER STEPS ASIDE FOR THE `+` MENU, AND THE REASON IS THAT THE
                 MENU NO LONGER REACHES IT. Owner, 2026-08-30, seeing the menu clip the greeter's
                 corner: *"opening the plus icon … should not go behind the mascot because it kinda
@@ -728,21 +730,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           {/* 🔴 THE GREETING NAMES THE THING THE PRODUCT DOES — owner, 2026-09-01. It asked a
               question and waited; it now says "Learn calculus" with the subject changing under it,
               across ten faculties. See learn-heading.tsx for why the list is what it is. */}
-          <LearnHeading departing={departing} />
-          <div
-            className="mt-9 flex w-full flex-col items-center"
-            ref={composerBox}
-            style={{
-              // 🔴 `transform`, NOT A LAYOUT PROPERTY. Animating margin or top would reflow the
-              // Library list underneath on every frame of the move; a transform is composited and
-              // touches nothing else on the page.
-              transform: departing ? `translate3d(${travel.x}px, ${travel.y}px, 0)` : undefined,
-              // 🔴 A LONGER TAIL THAN THE OLD CURVE. `0.22, 0.61, 0.36, 1` decelerates but still
-              // arrives briskly; this one spends more of its time slowing down, so the composer
-              // settles into place instead of stopping there. Same family the app's sheets use.
-              transition: departing ? `transform ${DOCK_MS}ms cubic-bezier(0.32, 0.72, 0, 1)` : undefined,
-            }}
-          >
+          <LearnHeading departing={departing} ref={headingBox} />
+          {/* 🔴 NO TRANSFORM AND NO TRANSITION ANY MORE. This used to fly itself to a rectangle it
+              had computed for the canvas's composer and then unmount mid-flight. `departing` still
+              fires, and still does the one thing it was always needed for a frame BEFORE the
+              measurement: it folds this two-row pill down to the canvas's one-row shape, so the
+              rectangle handed over is the shape that actually arrives rather than one 76px taller.
+              The travel itself is the canvas's now. See lib/learn/arrival.ts. */}
+          <div className="mt-9 flex w-full flex-col items-center" ref={composerBox}>
         {/* 🔴 THE RECORDER REPLACES THE COMPOSER, IT DOES NOT SIT BESIDE IT. While a lecture is
             being captured there is exactly one thing to do; leaving the text box live underneath
             offers a second. Same position, same width. */}
@@ -1187,7 +1182,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             shown={!departing && !recording}
             value={project}
           />
-          <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
+          <p className="mt-6 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)" ref={hintBox}>
             {/* 🔴 THIS NO LONGER PROMISES RECORDING, BECAUSE THIS SURFACE CANNOT DO IT. The line
                 used to read "Type it, drop a file in, or record a lecture." Recording is started by
                 `RecordWorkspace`, which is hosted only on /sessions and /notebooks — the Canvas has

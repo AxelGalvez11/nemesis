@@ -55,7 +55,19 @@ test("🔴 it still writes through saveKnowledge, one object at a time", () => {
 test("🔴🔴 an opening canvas lands on its most recent turn", () => {
   assert.match(CANVAS, /const LANDING_MS = [\d_]+;/, "the landing window is gone");
   assert.match(CANVAS, /if \(node\.scrollHeight > node\.clientHeight \+ 8\) node\.scrollTop = node\.scrollHeight;/, "the thread no longer opens at its foot");
-  assert.match(CANVAS, /\}, \[canvasId\]\);/, "the landing is no longer re-armed per canvas");
+  assert.match(CANVAS, /\}, \[canvasId, openingAsk\]\);/, "the landing is no longer re-armed per canvas");
+  // 🔴🔴 AND IT DOES NOT RUN ON A CANVAS THAT WAS JUST CREATED — that is the prompt bounce (owner,
+  // 2026-09-01: *"there will be flickering of my prompt message"*). This loop drives the scroller to
+  // its FOOT so a saved conversation reopens where you left it; the pin in learning-canvas.tsx
+  // drives it toward the TOP so a freshly sent prompt sits where you can read it. Both run on
+  // `LANDING_TICK_MS`. On a canvas opened from the front door both were armed at once and took
+  // turns: filmed at full frame rate, scrollTop alternated 0, 160, 0, 160 and the learner's sentence
+  // jumped 160px, five times, in half a second.
+  //
+  // There is nothing here for this loop to do on such a canvas — there is no earlier position to
+  // restore, because there is no earlier anything. `openingAsk` is the fact "this canvas was opened
+  // by someone pressing send", which is exactly when that is true.
+  assert.match(CANVAS, /if \(openingAsk\) return;/, "the landing runs on brand-new canvases again, so it fights the prompt pin");
   // 🔴🔴 IT MUST OUTLAST THE OPEN, AND THE FIRST VERSION DID NOT. Measured on production after
   // shipping a 1.5s window: the conversation is not readable until 9.7s, so a window keyed to the
   // MOUNT expired before there was anything to scroll and the landing never fired once.
