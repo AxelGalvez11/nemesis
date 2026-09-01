@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { menuSide } from "./add-menu-row";
 import { backspaceClearsCapability } from "./capability-chip";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES } from "@/lib/learn/composer-capability";
 
@@ -132,5 +133,40 @@ test("🔴 every tint stays legible as TEXT, in both themes, on the composer's o
       const ratio = contrast(hex, fills[theme]);
       assert.ok(ratio >= 3, `${capability}'s ${theme} tint ${hex} reads at ${ratio.toFixed(2)}:1 on the composer — a word in it would be hard to read`);
     }
+  }
+});
+
+test("🔴🔴 the + menu scrolls before it flips, so it never lands back on the character", () => {
+  // 🔴 I SHIPPED THIS BUG BEFORE MEASURING FOR IT. Moving the front door's menu below the composer
+  // was right on the owner's tall window and wrong at 1280x760, where eight rows ran **61px past
+  // the bottom of a page that does not scroll** — the last row and a half unreachable, with nothing
+  // on screen to say so. A menu is not placed correctly until it is placed correctly on a laptop.
+  //
+  // 🔴🔴 AND THE OBVIOUS REPAIR WAS ALSO WRONG. "Flip whenever the preferred side cannot show the
+  // whole menu" was written first and watched at 760px: the menu duly flipped up and landed back
+  // over the character, which is the complaint this whole change exists to answer, returning on
+  // anyone's laptop. A capped, scrolling menu on the right side of the composer is an ordinary
+  // control; a full-height menu on the wrong side of it is the defect.
+  const roomy = { above: 400, below: 400 };
+  assert.equal(menuSide(roomy, 326, "below"), "below", "a menu that fits below still moves");
+  assert.equal(menuSide(roomy, 326, "above"), "above", "a menu that fits above still moves");
+
+  // 760px window, front door: 260px below, 348 above. It stays BELOW and scrolls — flipping here
+  // is what put it back over the mascot.
+  assert.equal(menuSide({ above: 348, below: 260 }, 326, "below"), "below", "a short window sends the menu back over the character");
+
+  // Only when the preferred side is too cramped to read as a menu at all, and the other side is
+  // genuinely roomier, does it move.
+  assert.equal(menuSide({ above: 400, below: 90 }, 326, "below"), "above", "a menu with four rows' room left does not move");
+  // ...and never into somewhere even smaller.
+  assert.equal(menuSide({ above: 40, below: 90 }, 326, "below"), "below", "the menu moved to the tighter side");
+
+  const MENU = read("add-menu-row.tsx");
+  assert.match(MENU, /useLayoutEffect/, "the flip runs after paint, so the menu is drawn in the wrong place for a frame");
+  assert.match(MENU, /overflow-y-auto/, "the menu clips instead of scrolling when it is capped");
+  assert.match(HOME, /useMenuSide\(addOpen, "below"\)/, "the front door stopped preferring the side that leaves the character alone");
+  assert.match(COMPOSER, /useMenuSide\(addOpen, "above"\)/, "the session composer stopped preferring the side with the room");
+  for (const [name, source] of [["the front door", HOME], ["the session composer", COMPOSER]] as const) {
+    assert.match(source, /style=\{\{ maxHeight: addSide\.maxHeight \}\}/, `${name}'s menu can run off the window again`);
   }
 });
