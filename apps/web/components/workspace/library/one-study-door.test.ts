@@ -42,11 +42,15 @@ test("🔴🔴 the Library is the learner's shelves, and not a home for retired 
   // 🔴 MATCHED AS HEADINGS, NOT AS BARE WORDS. The old spelling of this checked for `/Notes/`,
   // which passed on the `setNotes` state setter and would have gone on passing with every shelf
   // deleted. A guard that cannot fail is worse than no guard, because it is counted as coverage.
-  for (const heading of ["Flashcard decks", "Slides", "Documents"]) {
-    assert.ok(
-      new RegExp(`SECTION_TITLE\\}>${heading}<`).test(OUTPUTS),
-      `the ${heading} shelf heading is gone`,
-    );
+  // 🔴 NAMED BY THEIR PILLS SINCE 2026-09-01, NOT BY HEADINGS. Each shelf used to print a heading
+  // ("Flashcard decks", "Slides", "Documents") above its table, under a pill that already said the
+  // same word — two things on the page saying which shelf you were on, and part of why the shelves
+  // read as different pages (owner: *"it's kinda weird because all of them have different
+  // settings"*). The shelves themselves are unchanged, so this checks the thing that still names
+  // them; `SHELVES` is what the pills are built from and what the guard below already pins.
+  for (const shelf of ["Flashcards", "Slides", "Documents"]) {
+    assert.ok(new RegExp(`label: "${shelf}"`).test(OUTPUTS), `the ${shelf} shelf is gone`);
+    assert.ok(!new RegExp(`SECTION_TITLE\\}>`).test(OUTPUTS), "a shelf heading came back beside its own pill");
   }
 });
 

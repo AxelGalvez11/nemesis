@@ -12,7 +12,7 @@
 // someone who has no Nemesis account is a privacy decision about a student's material, and the
 // owner has that call to make before any link is handed out.
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -24,6 +24,7 @@ import { loadCanvas } from "@/lib/learn/canvas-store";
 
 export default function DeckPage() {
   const params = useSearchParams();
+  const router = useRouter();
   const canvasId = params.get("c") ?? "";
   const outputId = params.get("o") ?? "";
   const { session } = useAuth();
@@ -89,7 +90,12 @@ export default function DeckPage() {
           </button>
         </>
       }
+      crumb="Library"
       designId={designId}
+      // 🔴 BACK IF THERE IS A BACK, THE LIBRARY OTHERWISE. A deck is reached from the shelf, from a
+      // canvas, and from a pasted URL; `router.back()` alone does nothing at all on the third,
+      // which is the failure mode of every control that changes state and paints nothing.
+      onClose={() => (window.history.length > 1 ? router.back() : router.push("/library"))}
       plan={plan}
     />
   );

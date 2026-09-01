@@ -83,12 +83,6 @@ interface NoteRow {
   madeBy: "learner" | "nemesis";
 }
 
-interface Card {
-  id: string;
-  front: string;
-  back: string;
-}
-
 interface SlidesRow {
   assetId: string;
   canvasId: string | null;
@@ -388,15 +382,24 @@ export interface LibraryPreview {
 export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; userId: string | null }) {
   const [decks, setDecks] = useState<DeckRow[]>(() => [...(preview?.decks ?? [])]);
   const [notes, setNotes] = useState<NoteRow[]>(() => [...(preview?.notes ?? [])]);
-  /** The document open on screen, as the shape the shared card takes. */
-  const [readingNote, setReadingNote] = useState<CanvasOutput | null>(null);
+  /**
+   * What is open on screen, as the shape the shared card takes.
+   *
+   * 🔴 IT CARRIES A CANVAS ID NOW, because a slide deck opens here too and its full-page view is
+   * addressed by canvas. A document has none and does not need one.
+   */
+  const [reading, setReading] = useState<{ canvasId?: string; output: CanvasOutput } | null>(null);
   const [loaded, setLoaded] = useState(preview !== undefined);
-  const [openDeck, setOpenDeck] = useState<string | null>(null);
-  const [cards, setCards] = useState<Record<string, Card[]>>({});
   const [slides, setSlides] = useState<SlidesRow[]>(() => [...(preview?.slides ?? [])]);
-  // Which deck is being REVIEWED. Held apart from `openDeck` (which only peeks at the
-  // text) because mounting DeckReview is what triggers the whole-account study load —
-  // see its header. Null means nothing is mounted and nothing has been fetched.
+  // 🔴🔴 THE PEEK IS GONE, AND WITH IT THE ONLY OTHER THING A DECK ROW COULD DO. Owner,
+  // 2026-09-01: *"the option to show the flashcard I don't think that's really necessary in the
+  // library."* It unrolled the answers under the row — added on 2026-08-24 as the consolation for
+  // making the row REVIEW the deck instead of listing it. Now that pressing a deck opens it full
+  // screen, where the cards are the whole screen, a second way to read them is a door onto the
+  // room you are already standing in.
+  //
+  // Which deck is being REVIEWED. Null means nothing is mounted and nothing has been fetched —
+  // mounting DeckReview is what triggers the whole-account study load, see its header.
   const [reviewing, setReviewing] = useState<string | null>(null);
   // 🔴 THE LAST TWO REASONS TO VISIT THE RETIRED STUDY TAB (workstream F). Both mount the Study
   // tab's own screens unchanged — see `study-extras.tsx` — and both stay unmounted until pressed,
@@ -576,7 +579,11 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
       // lives on the open object only: the row keeps the current text, and closing the reader
       // ends the undo history — a stack that outlived the screen it belongs to would be a
       // surprise waiting weeks to happen.
-      setReadingNote((was) => (was && was.id === output.id ? applyRevision({ ...was, markdown: current }, { markdown: result.markdown }) : was));
+      setReading((was) =>
+        was && was.output.id === output.id
+          ? { ...was, output: applyRevision({ ...was.output, markdown: current }, { markdown: result.markdown }) }
+          : was,
+      );
       setNotes((was) => was.map((row) => (row.id === output.id ? { ...row, updatedAt: new Date().toISOString() } : row)));
       return null;
     },
@@ -589,7 +596,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     (output: CanvasOutput) => {
       const back = undoRevision(output);
       if (back.markdown === output.markdown || !userId) return;
-      setReadingNote((was) => (was && was.id === output.id ? back : was));
+      setReading((was) => (was && was.output.id === output.id ? { ...was, output: back } : was));
       void replaceLibraryNoteBody({ content: back.markdown ?? "", id: output.id, userId });
     },
     [userId],
@@ -766,28 +773,13 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     // contributes the freshest fact it holds, compared lexicographically — they are ISO strings.
   ].sort((a, b) => b.when.localeCompare(a.when));
 
-  const toggleDeck = useCallback(
-    async (id: string) => {
-      if (openDeck === id) {
-        setOpenDeck(null);
-        return;
-      }
-      setOpenDeck(id);
-      if (!cards[id]) {
-        const { data, error } = await supabase.from("study_cards").select("id,front,back").eq("deck_id", id).limit(200);
-        if (!error && data) setCards((was) => ({ ...was, [id]: data as Card[] }));
-      }
-    },
-    [cards, openDeck],
-  );
-
   /**
    * Hand a whole deck to the learner as a file.
    *
-   * 🔴 IT FETCHES THE DECK'S OWN CARDS RATHER THAN REUSING THE PEEK. `toggleDeck` caps its read
-   * at 200 rows because it is filling a preview list nobody scrolls to the end of; downloading
-   * 200 of a 400-card deck and calling it the deck would be a silent, unrecoverable loss the
-   * learner only discovers inside Anki.
+   * 🔴 IT READS THE DECK'S OWN CARDS, UNCAPPED. The peek this used to sit beside capped its read
+   * at 200 rows because it was filling a list nobody scrolls to the end of; downloading 200 of a
+   * 400-card deck and calling it the deck would be a silent, unrecoverable loss the learner only
+   * discovers inside Anki. The peek is gone; the rule it taught is not.
    *
    * 🔴 EVERY FIELD THE EXPORT NEEDS IS SELECTED HERE. `card_type` decides whether a row is an
    * image card, and asking for it after the fact would mean a second round trip per deck.
@@ -915,12 +907,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                     label={`Options for ${deck.name}`}
                     onFile={(folderId) => void file("deck", deck.id, folderId)}
                   >
-                    {/* The peek. Deliberately secondary and deliberately still here: reading the
-                        answers is sometimes what you want (checking what Nemesis made before
-                        trusting it), it just must not be what pressing a deck does. */}
-                    <DropdownMenuItem onClick={() => void toggleDeck(deck.id)}>
-                      {openDeck === deck.id ? "Hide the cards" : "Show the cards"}
-                    </DropdownMenuItem>
                     <DropdownMenuItem disabled={downloading === deck.id} onClick={() => void takeDeck(deck)}>
                       Download for Anki
                     </DropdownMenuItem>
@@ -928,19 +914,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   </RowMenu>
                   </span>
                 </div>
-                {openDeck === deck.id && (
-                  <div className="mb-[8px] ml-[32px] mr-[8px] max-h-[320px] overflow-y-auto border-b border-b-black/[0.05] dark:border-b-white/[0.05]">
-                    {(cards[deck.id] ?? []).map((card) => (
-                      <div className="border-b border-b-black/[0.05] px-[12px] py-[8px] last:border-b-0 dark:border-b-white/[0.05]" key={card.id}>
-                        <p className="text-[14px] text-(--ui-text-primary)">{card.front}</p>
-                        <p className="mt-[2px] text-[14px] leading-relaxed text-(--ui-text-secondary)">
-                          {card.back}
-                        </p>
-                      </div>
-                    ))}
-                    {!cards[deck.id] && <p className="px-[12px] py-[8px] text-[14px] text-(--ui-text-secondary)">Loading…</p>}
-                  </div>
-                )}
               </li>
   );
   const noteRow = (note: NoteRow) => (
@@ -955,7 +928,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                     it is opened from, and there is one place to fix when it is wrong. */}
                 <button
                   className={ROW_MAIN}
-                  onClick={() => setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })}
+                  onClick={() => setReading({ output: { createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title } })}
                   type="button"
                 >
                   <span className={COL_TILE}><NotebookText size={20} strokeWidth={1.8} style={{ color: KIND_COLOR.note }} /></span>
@@ -975,6 +948,13 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
   );
   const slidesRow = (row: SlidesRow) => (
               <li className={ROW} key={row.assetId}>
+                {/* 🔴 A SLIDE DECK STILL OPENS AS ITS OWN PAGE, AND THE OWNER SAID SO: *"the slides
+                    … they open like a new page pretty much. The ones that I have there open a new
+                    page. And the library is fine."* It was briefly opened in place beside the
+                    document reader, for consistency's sake, and that is a DOWNGRADE: `/deck`
+                    composes the real slides through `deck-svg.ts` and carries the design picker and
+                    the .pptx export, while the in-panel view is an outline of the plan. What was
+                    actually wrong here was the HEADER — see deck-view.tsx. */}
                 <a
                   className={cn(ROW_MAIN, !row.canvasId && "pointer-events-none opacity-60")}
                   href={row.canvasId ? `/deck?c=${row.canvasId}&o=${encodeURIComponent(row.assetId)}` : "#"}
@@ -1054,7 +1034,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                 className={cn(CARD, "h-[220px]")}
                 key={note.path}
                 onClick={() =>
-                  setReadingNote({ createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title })
+                  setReading({ output: { createdAt: "", id: note.id, kind: "note", notePath: note.path, title: note.title } })
                 }
                 type="button"
               >
@@ -1261,50 +1241,19 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
             folder you OPEN just shows what is in it. */}
       </header>
 
-      {/* 🔴 FOLDERS ARE ROWS, ABOVE THE SHELVES, THE WAY THE REFERENCE DOES IT. They are not
-          filtered by the kind pills: a folder holds decks, slides and notes at once, so hiding it
-          because the learner is looking at slides would hide the slides inside it too.
+      {/* 🔴🔴 FOLDERS ARE THE FIRST ROWS OF WHATEVER LIST IS SHOWING, ON EVERY SHELF. They used
+          to be their own table with its own column header on a kind pill, and merged into the list
+          only on `All` — so switching pills changed the page's shape, not just its contents. Owner,
+          2026-09-01: *"it's kinda weird because all of them have different settings."*
 
-          🔴 AND ONLY THE ONES WITH SOMETHING IN THEM — see `visibleFolders`, above. A project
-          made on `/projects` and never filed into is a real `folders` row with nothing pointing
-          at it, and showing it here was the owner's report: a brand-new project "showed up in
-          the library, and that's not where it should go." */}
-      {/* 🔴 ON A KIND PILL the folders keep their own little table — they are not filtered by the
-          pills (a folder holds all three kinds at once). On "All" they are NOT a section any
-          more: they are the first rows of the one merged list below. */}
-      {shelf !== "all" && openFolder === null && (visibleFolders.length > 0 || naming !== null) && (
-        <section className="pb-[24px]">
-          <h2 className={SECTION_TITLE}>Folders</h2>
-          {/* Naming forces the list: the inline name input is a table row, and a grid with an
-              invisible input would be a New-project door that silently eats the click. */}
-          {view === "grid" && naming === null ? (
-            <div className={CARD_GRID}>
-              {visibleFolders.map(folderCard)}
-            </div>
-          ) : (
-          <ul className="flex flex-col">
-            {/* 🔴 A COUNT IS NOT A DATE, SO IT DOES NOT SIT IN THE DATE COLUMN. This printed
-                "3 items" in the same column position where all three shelves below print a
-                Modified date, under no header at all — one column saying two different kinds of
-                thing. It lives in the count column now, beside the deck shelf's card counts, and
-                the Modified column stays empty because a folder genuinely has no modified date.
-                An empty cell says "not applicable"; a borrowed `createdAt` under a header reading
-                "Modified" would say something false. */}
-            <li className={COLUMN_HEAD}>
-              <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
-              <span className="min-w-0 flex-1">Name</span>
-              {/* A real Modified now — see `folderModified`: the latest change INSIDE, rolled up,
-                  which is what the word means for a container and what the reference prints. */}
-              <span className={COL_MODIFIED}>Modified</span>
-              <span className={COL_COUNT}>Items</span>
-              <span aria-hidden className={COL_ACTIONS} />
-            </li>
-            {visibleFolders.map(folderRow)}
-            {namingRow}
-          </ul>
-          )}
-        </section>
-      )}
+          🔴 THEY ARE NOT FILTERED BY THE PILLS, and that is why they lead every list: a folder holds
+          decks, slides and notes at once, so hiding it because the learner is looking at slides
+          would hide the slides inside it too.
+
+          🔴 AND ONLY THE ONES WITH SOMETHING IN THEM — see `visibleFolders`. A project made on
+          `/projects` and never filed into is a real `folders` row with nothing pointing at it, and
+          showing it here was the owner's report: a brand-new project "showed up in the library, and
+          that's not where it should go." */}
 
       {/* 🔴 THE WAY BACK OUT, AND THE ONLY THING THAT SAYS WHERE YOU ARE. Without it a folder with
           two decks in it is indistinguishable from an account with two decks in it. */}
@@ -1359,8 +1308,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {showing("deck") && (
       <section className="pb-[40px]">
-        <h2 className={SECTION_TITLE}>Flashcard decks</h2>
-        {shownDecks.length === 0 ? (
+        {shownDecks.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
           <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
@@ -1370,22 +1318,35 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No decks in this folder."
                   : "No decks yet. Ask Nemesis for flashcards in any conversation."}
           </p>
-        ) : view === "grid" ? (
-          <div className={CARD_GRID}>
-            {shownDecks.map(deckCard)}
-          </div>
+        ) : view === "grid" && naming === null ? (
+          <>
+            {openFolder === null && visibleFolders.length > 0 && (
+              <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
+            )}
+            <div className={CARD_GRID}>{shownDecks.map(deckCard)}</div>
+          </>
         ) : (
           <ul className="flex flex-col">
-            {/* 🔴 THE COLUMN HEADER THE REFERENCE HAS AND THIS PAGE DID NOT. Third column is a
-                card COUNT, not a byte size: we do not hold a size for a deck, and a column of em
-                dashes forever would say "this is broken" rather than "this does not apply". */}
+            {/* 🔴🔴 ONE HEADER, ONCE, ON EVERY SHELF. Owner, 2026-09-01: *"mainly the columns are
+                just not aligned and they drift a bit… it's kinda weird because all of them have
+                different settings."* A kind shelf used to print TWO of these — a Folders table with
+                its own `Name / Modified / Items` line, then the kind's table with its own line, and
+                the third word changed between them (`Items`, then `Cards`). The column STOPS were
+                identical to the pixel, measured; what drifted was the page's structure, which is
+                the thing you actually see. `All` had already merged folders into one list; every
+                shelf does now, so the pills change what is listed and nothing else.
+                🔴 `Items`, NOT `Cards`, AND THAT COSTS ONE TRUE WORD. A deck's count really is
+                cards. But one list has one third column, and a header that renames itself depending
+                on which row you are looking at is the drift itself. Cards are items. */}
             <li className={COLUMN_HEAD}>
               <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
               <span className={COL_MODIFIED}>Modified</span>
-              <span className={COL_COUNT}>Cards</span>
+              <span className={COL_COUNT}>Items</span>
               <span aria-hidden className={COL_ACTIONS} />
             </li>
+            {openFolder === null && visibleFolders.map(folderRow)}
+            {openFolder === null && namingRow}
             {shownDecks.map(deckRow)}
           </ul>
         )}
@@ -1394,8 +1355,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {showing("slides") && (
       <section className="pb-[40px]">
-        <h2 className={SECTION_TITLE}>Slides</h2>
-        {shownSlides.length === 0 ? (
+        {shownSlides.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
           <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
@@ -1405,21 +1365,35 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No slide decks in this folder."
                   : "No slide decks yet. Ask Nemesis for a PowerPoint in any conversation."}
           </p>
-        ) : view === "grid" ? (
-          <div className={CARD_GRID}>
-            {shownSlides.map(slidesCard)}
-          </div>
+        ) : view === "grid" && naming === null ? (
+          <>
+            {openFolder === null && visibleFolders.length > 0 && (
+              <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
+            )}
+            <div className={CARD_GRID}>{shownSlides.map(slidesCard)}</div>
+          </>
         ) : (
           <ul className="flex flex-col">
-            {/* Two columns here, not three: a slide deck has no count worth a column, and the
-                reference's third column is a size we do not hold. */}
+            {/* 🔴🔴 ONE HEADER, ONCE, ON EVERY SHELF. Owner, 2026-09-01: *"mainly the columns are
+                just not aligned and they drift a bit… it's kinda weird because all of them have
+                different settings."* A kind shelf used to print TWO of these — a Folders table with
+                its own `Name / Modified / Items` line, then the kind's table with its own line, and
+                the third word changed between them (`Items`, then `Cards`). The column STOPS were
+                identical to the pixel, measured; what drifted was the page's structure, which is
+                the thing you actually see. `All` had already merged folders into one list; every
+                shelf does now, so the pills change what is listed and nothing else.
+                🔴 `Items`, NOT `Cards`, AND THAT COSTS ONE TRUE WORD. A deck's count really is
+                cards. But one list has one third column, and a header that renames itself depending
+                on which row you are looking at is the drift itself. Cards are items. */}
             <li className={COLUMN_HEAD}>
               <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
               <span className={COL_MODIFIED}>Modified</span>
-              <span aria-hidden className={COL_COUNT} />
+              <span className={COL_COUNT}>Items</span>
               <span aria-hidden className={COL_ACTIONS} />
             </li>
+            {openFolder === null && visibleFolders.map(folderRow)}
+            {openFolder === null && namingRow}
             {shownSlides.map(slidesRow)}
           </ul>
         )}
@@ -1428,8 +1402,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {showing("note") && (
       <section className="pb-[40px]">
-        <h2 className={SECTION_TITLE}>Documents</h2>
-        {shownNotes.length === 0 ? (
+        {shownNotes.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
           <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
@@ -1439,19 +1412,35 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No documents in this folder."
                   : "No documents yet. Ask Nemesis for a summary or a write-up in any conversation."}
           </p>
-        ) : view === "grid" ? (
-          <div className={CARD_GRID}>
-            {shownNotes.map(noteCard)}
-          </div>
+        ) : view === "grid" && naming === null ? (
+          <>
+            {openFolder === null && visibleFolders.length > 0 && (
+              <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
+            )}
+            <div className={CARD_GRID}>{shownNotes.map(noteCard)}</div>
+          </>
         ) : (
           <ul className="flex flex-col">
+            {/* 🔴🔴 ONE HEADER, ONCE, ON EVERY SHELF. Owner, 2026-09-01: *"mainly the columns are
+                just not aligned and they drift a bit… it's kinda weird because all of them have
+                different settings."* A kind shelf used to print TWO of these — a Folders table with
+                its own `Name / Modified / Items` line, then the kind's table with its own line, and
+                the third word changed between them (`Items`, then `Cards`). The column STOPS were
+                identical to the pixel, measured; what drifted was the page's structure, which is
+                the thing you actually see. `All` had already merged folders into one list; every
+                shelf does now, so the pills change what is listed and nothing else.
+                🔴 `Items`, NOT `Cards`, AND THAT COSTS ONE TRUE WORD. A deck's count really is
+                cards. But one list has one third column, and a header that renames itself depending
+                on which row you are looking at is the drift itself. Cards are items. */}
             <li className={COLUMN_HEAD}>
               <span aria-hidden className="mr-[12px] w-[32px] shrink-0" />
               <span className="min-w-0 flex-1">Name</span>
               <span className={COL_MODIFIED}>Modified</span>
-              <span aria-hidden className={COL_COUNT} />
+              <span className={COL_COUNT}>Items</span>
               <span aria-hidden className={COL_ACTIONS} />
             </li>
+            {openFolder === null && visibleFolders.map(folderRow)}
+            {openFolder === null && namingRow}
             {shownNotes.map(noteRow)}
           </ul>
         )}
@@ -1473,11 +1462,12 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
           🔴 THE SAME DOCUMENT KEEPS ONE SET OF COMMENTS. They key to the ledger id (`assetId ?? id`),
           so a note pinned inside a canvas shows those pins here and the other way round. */}
-      {readingNote && (
+      {reading && (
         <OutputPreview
           comments={{ preview: Boolean(preview), uid: userId }}
           initialMode="full"
-          onClose={() => setReadingNote(null)}
+          canvasId={reading.canvasId}
+          onClose={() => setReading(null)}
           // 🔴🔴 THE SECOND HALF OF THE OWNER'S SENTENCE: *"a comment or edit (IF ITS NEMESIS
           // MADE)"*. `onRevise` is passed only for a note this app wrote, so a document the
           // learner typed keeps the pin and "Add comment" and is never offered a rewrite. The
@@ -1486,9 +1476,9 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           //
           // 🔴 THE ORIGIN IS LOOKED UP FRESH FROM THE LIST rather than copied onto the opened
           // object, so a refresh that re-reads `made_by` is what decides, not a stale snapshot.
-          onRevise={notes.find((row) => row.id === readingNote.id)?.madeBy === "nemesis" ? reviseNote : undefined}
+          onRevise={notes.find((row) => row.id === reading.output.id)?.madeBy === "nemesis" ? reviseNote : undefined}
           onUndo={undoNote}
-          output={readingNote}
+          output={reading.output}
         />
       )}
 
@@ -1507,16 +1497,20 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           card and review on the account; keeping it unmounted until a learner presses a deck
           is what stops the Library paying that cost on arrival.
 
-          🔴🔴 DOCKED HERE TOO, AND THE FULL-SCREEN VERSION THIS ONCE PASSED WAS A REAL DEFECT.
-          The argument for it was "there is no conversation on the shelf to keep on screen", which
-          is true and is not the rule the owner gave. He gave one rule for the object: flashcards
-          open in the panel, with full screen a button inside it. Opening the same deck two
-          different ways depending on which door you came through is exactly the surprise he hit
-          on 2026-08-31 — *"the flashcard open full screen, and it did not open in the sidebar,
-          like the test. I thought I already asked for that."* What sits beside the panel here is
-          the shelf, which is worth keeping: the next deck is one click away without closing this
-          one. */}
-      {reviewing && <DeckReview deckId={reviewing} onClose={() => setReviewing(null)} />}
+          🔴🔴 FULL SCREEN FROM HERE, AND THE 2026-08-31 RULING THAT SAID OTHERWISE WAS ABOUT A
+          DIFFERENT DOOR. That day the owner reported a deck opening full screen when he wanted
+          the panel — *"the flashcard open full screen, and it did not open in the sidebar, like
+          the test"* — and this mount was changed to docked to match. Today, of the Library
+          specifically: *"when I click on the flashcards it just pulls up a sidebar, which is not
+          how it's supposed to be in the library — for the library it should just be full screen
+          immediately."*
+
+          Both hold once the rule is scoped to the DOOR rather than the object. Docking exists to
+          keep something else on screen, and inside a canvas that something is the conversation the
+          deck came out of. Here it is a list of file names, and squeezing that beside a card you
+          are trying to answer helps nobody. Full screen is still one button from docked either
+          way; this only decides where you land. See study-panel.tsx. */}
+      {reviewing && <DeckReview deckId={reviewing} initialMode="full" onClose={() => setReviewing(null)} />}
       {/* 🔴 The Anki import and Progress dialogs were removed with their buttons (owner,
           2026-08-24), and the occlusion EDITOR went the same way the day after (owner,
           2026-08-25: "I don't want users to edit flashcards, really"). In all three cases the

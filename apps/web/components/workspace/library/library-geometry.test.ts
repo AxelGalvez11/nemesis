@@ -199,9 +199,18 @@ test("🔴🔴 the columns are the measured widths, and the header row exists at
     modifieds,
     "a row renders Modified without holding the third column open, so its date drifts out of the grid",
   );
-  for (const heading of ["Name", "Modified", "Cards"]) {
+  // 🔴🔴 ONE HEADER PER SHELF, AND ONE WORD FOR THE THIRD COLUMN. It used to say `Items` over the
+  // folders table and `Cards` over the deck table, on the same screen, above identical column
+  // stops — owner, 2026-09-01: *"mainly the columns are just not aligned and they drift a bit… all
+  // of them have different settings."* The stops were exact to the pixel (measured 461 / 505 / 861
+  // / 1021 / 1109 on all four shelves); what drifted was a header that renamed itself depending on
+  // which group of rows you were looking at, printed twice on one page.
+  for (const heading of ["Name", "Modified", "Items"]) {
     assert.ok(OUTPUTS.includes(`>${heading}</span>`), `the ${heading} column header is gone`);
   }
+  assert.ok(!/>Cards</.test(OUTPUTS), "the third column renames itself per group again");
+  // 🔴 EXACTLY FOUR HEADERS IN THE FILE — one per shelf, never two on one screen.
+  assert.equal((OUTPUTS.match(/<li className=\{COLUMN_HEAD\}>/g) ?? []).length, 4, "a shelf grew a second column header, or lost its own");
   // 🔴🔴 AND WE DO NOT INVENT THE ONE WE HAVEN'T GOT. The reference's third column is a byte size.
   // We hold no size for a deck, a note or a slide deck, so the deck shelf spends that column on a
   // real card count and the other two shelves simply have two columns. A "Size" header over a
@@ -218,7 +227,23 @@ test("🔴🔴 every behaviour the page had before the restyle still works", () 
   assert.match(OUTPUTS, /<RowMenu\b/, "the row menu is gone, so nothing can be filed, downloaded or shared");
   assert.match(OUTPUTS, /Download for Anki/, "a deck can no longer be taken out of the app");
   assert.match(OUTPUTS, />Share</, "the share door is gone from the row menu");
-  assert.match(OUTPUTS, /"Hide the cards" : "Show the cards"/, "the peek at a deck's answers is gone");
+  // 🔴 THE PEEK IS DELIBERATELY GONE (owner, 2026-09-01: *"the option to show the flashcard I don't
+  // think that's really necessary in the library"*) — pressing a deck opens it full screen, where
+  // the cards ARE the screen. Asserted as an absence so it cannot creep back as a menu row.
+  assert.ok(!/"Hide the cards"|"Show the cards"/.test(OUTPUTS), "the peek at a deck's answers came back");
+  // 🔴🔴 AND ALL THREE KINDS OPEN THE SAME WAY. Owner, same day: *"it's kinda weird because all of
+  // them have different settings… the slides and the documents, they both have different top
+  // header settings."* A document opened full screen, a deck slid in a sidebar, and a slide deck
+  // LEFT THE PAGE for /deck. One press, one answer, one header band now.
+  assert.match(OUTPUTS, /<DeckReview deckId=\{reviewing\} initialMode="full"/, "a deck opens as a sidebar from the shelf again");
+  assert.match(OUTPUTS, /initialMode="full"[\s\S]{0,400}output=\{reading\.output\}/, "the document reader stopped opening full screen");
+  // 🔴 A SLIDE DECK STILL OPENS AS ITS OWN PAGE, AND THE OWNER SAID SO: *"the slides … they open
+  // like a new page pretty much. The ones that I have there open a new page. And the library is
+  // fine."* Opening it in place beside the document reader was tried for consistency's sake and
+  // reverted: `/deck` composes the REAL slides and carries the design picker and the .pptx export,
+  // while the in-panel view is an outline of the plan. What was wrong was the header, and that is
+  // fixed where it lives — see artifact-chrome.test.ts for the one-band guard.
+  assert.match(OUTPUTS, /\/deck\?c=/, "a slide deck no longer opens its own page");
   assert.match(OUTPUTS, /<DropdownMenuSubTrigger>Move to project<\/DropdownMenuSubTrigger>/, "filing is gone from the row menu");
   assert.match(OUTPUTS, /<DeckShare\b/, "the share sheet is gone");
   assert.match(OUTPUTS, /<OutputPreview\b/, "a document no longer opens in place");
