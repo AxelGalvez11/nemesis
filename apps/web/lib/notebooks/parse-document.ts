@@ -53,7 +53,7 @@ import { readCsv } from "./csv-structure";
 import { readTextDocument } from "./text-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
-import { normalizedFigures, type NormalizedFigure } from "./figure-assets";
+import { capturedFigures, normalizedFigures, type NormalizedFigure } from "./figure-assets";
 import { extractDocxModel, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
 import { capText, extractPdfText, guessTitle, TEXT_CAP } from "@/lib/pdf/extract";
@@ -782,6 +782,11 @@ export async function parseDocument(
     if (routed.vendor) return routed.vendor;
     routeReason = routed.reason;
     ({ coverage, model, readBy, text, title } = routed.native);
+    // 🔴 THE PIXELS RIDE OUT WITH THE TEXT. Until now a PDF's figures were decoded for vision and
+    // then dropped, so a parsed lecture could describe its diagrams and never show one. `figures`
+    // is a sibling of the document rather than a field on it (see `ParseOutcome`), so a caller
+    // with storage picks them up and one without simply ignores them.
+    if (routed.native.figures.length > 0) normalized = routed.native.figures;
   } else if (kind === "docx") {
     // 🔴 OUR READ FIRST, AND THE VENDOR ONLY FOR WHAT IT LOST. Word XML is a manifest: `<w:tbl>`
     // either appears or it does not, `word/media/` either holds pictures or it does not. Reading
@@ -1038,7 +1043,14 @@ async function parsePdfRouted(
 ): Promise<{
   vendor: ParseOutcome | null;
   reason: string;
-  native: { coverage: ExtractionCoverage; model: DocumentModel | undefined; readBy: string | undefined; text: string; title: string | null };
+  native: {
+    coverage: ExtractionCoverage;
+    figures: NormalizedFigure[];
+    model: DocumentModel | undefined;
+    readBy: string | undefined;
+    text: string;
+    title: string | null;
+  };
 }> {
   const structural = await readPdfNatively(bytes, options);
   const decision = preflightPdf(pdfEvidenceFrom(structural));
@@ -1097,6 +1109,7 @@ async function parsePdfRouted(
 /** Never read — the vendor branch that returns it always returns a non-null `vendor` beside it. */
 const EMPTY_NATIVE = {
   coverage: singleUnitCoverage({ method: "native" as const, read: false }),
+  figures: [] as NormalizedFigure[],
   model: undefined,
   readBy: undefined,
   text: "",
@@ -1204,6 +1217,8 @@ async function parsePdf(
   readBy: string | undefined;
   text: string;
   title: string | null;
+  /** Pixels the structural read already decoded. Empty unless `captureFigures` ran. */
+  figures: NormalizedFigure[];
 }> {
   const structural = prepared ? prepared.structural : await readPdfNatively(bytes, options);
   let model: DocumentModel | undefined = prepared?.model ?? structural?.model;
@@ -1362,6 +1377,11 @@ async function parsePdf(
         ...(unreadableRegions ? { unreadableRegions } : {}),
         unreadableRegionsByUnit,
       }),
+    // 🔴 TAKEN HERE, WHERE THEY ARE STILL IN MEMORY, AND NOWHERE ELSE. `structural.figureImages` is
+    // populated only when `captureFigures` ran, so this is empty on the cheap lane and free on the
+    // expensive one — the decode was already paid for by the vision pass. A caller with storage
+    // picks them up; a caller without one drops them exactly as before.
+    figures: structural ? capturedFigures(structural.figureImages) : [],
     model,
     readBy,
     text,
