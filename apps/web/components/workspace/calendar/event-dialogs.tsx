@@ -16,18 +16,38 @@ import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
-import type { CalendarEvent, CalendarEventKind } from "@/lib/workspace/calendar-model";
+import { type CalendarEvent, type CalendarEventKind, isAllDay } from "@/lib/workspace/calendar-model";
+import { formatRecurrenceLines, parseRecurrenceLines, specFromLegacy, specToLegacy } from "@/lib/workspace/rrule";
 import { Trash2 } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
 import { formatEventDate, formatEventTime } from "./format";
 import { KIND_META, KIND_ORDER } from "./kind-meta";
+import { RepeatEditor } from "./repeat-editor";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 
 const newEventId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `evt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+/**
+ * Zones offered in the picker.
+ *
+ * 🔴 THE BROWSER'S OWN LIST, NOT A HAND-WRITTEN ONE. `Intl.supportedValuesOf`
+ * returns every zone the runtime actually knows, which is the only list that
+ * cannot disagree with the runtime that has to interpret the result. Older
+ * engines lack it, so the fallback is the reader's own zone plus UTC — enough to
+ * save an event, never enough to be wrong about one.
+ */
+const TIME_ZONES: readonly string[] = (() => {
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
+  const all = typeof supported === "function" ? supported("timeZone") : [];
+  if (all.length === 0) return [...new Set([local, "UTC"])];
+  // The reader's own zone first: it is the answer nine times in ten.
+  return [local, ...all.filter((zone) => zone !== local)];
+})();
 
 // ── Add / Edit form ──────────────────────────────────────────────────────────
 
@@ -59,6 +79,17 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
   const [date, setDate] = useState(event?.date ?? draft?.date ?? "");
   const [time, setTime] = useState(event?.time ?? draft?.time ?? "");
   const [endTime, setEndTime] = useState(event?.endTime ?? draft?.endTime ?? "");
+  const [endDate, setEndDate] = useState(event?.endDate ?? "");
+  // Undefined on an existing row means "guess from the time", which is what the
+  // whole product did before there was a flag — so the box starts where the
+  // guess would have landed and the student can disagree with it.
+  const [allDay, setAllDay] = useState(event ? isAllDay(event) : !(draft?.time));
+  const [timeZone, setTimeZone] = useState(
+    event?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "",
+  );
+  const [rrule, setRrule] = useState<string[] | undefined>(
+    event?.rrule ?? (event?.recurrence ? formatRecurrenceLines(specFromLegacy(event.recurrence)) : undefined),
+  );
   const [kind, setKind] = useState<CalendarEventKind>(event?.kind ?? draft?.kind ?? "assignment");
   const [course, setCourse] = useState(event?.course ?? "");
   const [note, setNote] = useState(event?.note ?? "");
@@ -76,10 +107,28 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
       date,
       kind,
       source: "manual",
-      ...(event?.recurrence ? { recurrence: event.recurrence } : {}),
     };
-    if (time) built.time = time;
-    if (endTime) built.endTime = endTime;
+    if (!allDay && time) built.time = time;
+    if (!allDay && endTime) built.endTime = endTime;
+    built.allDay = allDay;
+    if (endDate && endDate > date) built.endDate = endDate;
+    // Only worth storing when it differs from the reader's own zone: writing the
+    // browser's zone onto every event would make a student's whole calendar look
+    // like it came from somewhere, and pin it there if they moved.
+    if (!allDay && timeZone && timeZone !== Intl.DateTimeFormat().resolvedOptions().timeZone) {
+      built.timeZone = timeZone;
+    }
+    if (rrule && rrule.length > 0) {
+      built.rrule = rrule;
+      // 🔴 THE OLD SHAPE IS WRITTEN TOO, BUT ONLY WHEN IT CAN HOLD THE RULE.
+      // `specToLegacy` returns null for anything it would have to approximate,
+      // and an approximated schedule is worse than a missing one because nothing
+      // about it looks wrong. A client on an older deploy then sees no repeat
+      // rather than the wrong one.
+      const spec = parseRecurrenceLines(rrule);
+      const legacy = spec ? specToLegacy(spec) : null;
+      if (legacy) built.recurrence = legacy;
+    }
     if (course.trim()) built.course = course.trim();
     if (note.trim()) built.note = note.trim();
 
@@ -115,15 +164,42 @@ export function EventFormDialog({ mode, draft, event, onClose, onSave, onDelete 
           <Input autoFocus onChange={(e) => setTitle(e.target.value)} placeholder="Title" value={title} />
           <div className="grid grid-cols-[minmax(0,1fr)_7rem_7rem] gap-2">
             <Input onChange={(e) => setDate(e.target.value)} type="date" value={date} />
-            <Input aria-label="Start time" onChange={(e) => setTime(e.target.value)} type="time" value={time} />
-            <Input aria-label="End time" onChange={(e) => setEndTime(e.target.value)} type="time" value={endTime} />
+            {allDay ? (
+              <Input
+                aria-label="Last day"
+                className="col-span-2"
+                min={date}
+                onChange={(e) => setEndDate(e.target.value)}
+                placeholder="Last day"
+                type="date"
+                value={endDate}
+              />
+            ) : (
+              <>
+                <Input aria-label="Start time" onChange={(e) => setTime(e.target.value)} type="time" value={time} />
+                <Input aria-label="End time" onChange={(e) => setEndTime(e.target.value)} type="time" value={endTime} />
+              </>
+            )}
           </div>
-          {event?.recurrence ? (
-            <p className="text-xs text-muted-foreground">
-              Repeats on {event.recurrence.days.map((day) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day]).join(", ")}
-              {" "}through {event.recurrence.until}.
-            </p>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-(--ui-text-secondary)">
+              <input checked={allDay} onChange={(e) => setAllDay(e.target.checked)} type="checkbox" />
+              All day
+            </label>
+            {!allDay && (
+              <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-(--ui-text-tertiary)">
+                <span className="shrink-0">Timezone</span>
+                <select
+                  className="h-8 min-w-0 flex-1 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-xs text-foreground"
+                  onChange={(e) => setTimeZone(e.target.value)}
+                  value={timeZone}
+                >
+                  {TIME_ZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+          <RepeatEditor onChange={setRrule} startDate={date} value={rrule} />
           {/* Colour dots, not a labeled type dropdown (owner 2026-08-04:
               "remove the 'assignment,exam etc.' picker and replace with color
               selectors") — the same row the quick-create card uses. The name

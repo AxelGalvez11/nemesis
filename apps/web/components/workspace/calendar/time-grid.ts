@@ -20,7 +20,7 @@
 //
 // Pure and DOM-free so the packing can be tested without rendering anything.
 
-import type { CalendarEvent } from "@/lib/workspace/calendar-model";
+import { type CalendarEvent, isAllDay } from "@/lib/workspace/calendar-model";
 
 /**
  * Height of one hour, in pixels. The single knob for grid density.
@@ -104,7 +104,10 @@ export function layoutDay(events: readonly CalendarEvent[]): DayLayout {
   const timed: PositionedEvent[] = [];
 
   for (const event of events) {
-    const start = minutesOf(event.time);
+    // 🔴 `isAllDay` RATHER THAN "HAS NO TIME". An event can now say outright that
+    // it covers whole days, and a multi-day run belongs in the strip on every day
+    // it covers even though its first day carries a start time.
+    const start = isAllDay(event) || (event.spanLength ?? 1) > 1 ? null : minutesOf(event.time);
     if (start === null) {
       allDay.push(event);
       continue;

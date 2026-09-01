@@ -36,7 +36,7 @@ import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from 
 import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
 import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { cn } from "@/lib/utils";
-import { AddMenuRow, ADD_MENU } from "./add-menu-row";
+import { AddMenuRow, ADD_MENU, useMenuSide } from "./add-menu-row";
 import { backspaceClearsCapability, CapabilityChip } from "./capability-chip";
 import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
@@ -236,6 +236,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // can't access the course mode from the landing page"*), so the choice is real again and the
   // state, the ref and the dismiss listeners return with it.
   const [addOpen, setAddOpen] = useState(false);
+  const addSide = useMenuSide(addOpen, "below");
   const addMenu = useRef<HTMLDivElement>(null);
   /** The one-shot capability staged on the NEXT send — the same contract as the session
    *  composer's chip (§38: cleared by the send, never a persistent mode). It rides to the canvas
@@ -900,7 +901,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             </button>
             {addOpen && (
               <div
-                className={cn("absolute left-0 top-full mt-[8px]", ADD_MENU)}
+                // 🔴 BELOW BY PREFERENCE, NOT BY DECREE. Below is the reference's placement on this
+                // screen and the only one that leaves the character alone, but at 1280x760 an
+                // eight-row menu ran 61px past the bottom of a page that does not scroll. It flips
+                // when it has to, and `maxHeight` makes a cramped window scroll instead of cut.
+                className={cn("absolute left-0", addSide.side === "below" ? "top-full mt-[8px]" : "bottom-full mb-[8px]", ADD_MENU)}
+                ref={addSide.ref}
+                style={{ maxHeight: addSide.maxHeight }}
                 // 🔴 THE SENTINEL THE CHARACTER'S DOCK MEASURES, carried here so the front door and
                 // the session composer describe an open menu the same way. See its note in
                 // `canvas-composer.tsx`; renaming it re-creates that clash silently.

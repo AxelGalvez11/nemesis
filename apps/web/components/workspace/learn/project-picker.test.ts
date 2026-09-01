@@ -144,7 +144,11 @@ test("🔴🔴 the + menu opens clear of the character instead of hiding it", ()
   const source = home.replace(/\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
   assert.ok(!/opacity: addOpen/.test(source), "the character is hidden for the + menu again");
   assert.ok(!/pointerEvents: addOpen/.test(source), "the character is switched off for the + menu again");
-  assert.match(source, /absolute left-0 top-full mt-\[8px\]/, "the front door's + menu no longer hangs below the composer");
+  // 🔴 THE CLASS IS A TERNARY NOW, NOT A LITERAL. The direction is chosen at open time by
+  // `useMenuSide` — below by preference on this surface, which is what keeps it off the character;
+  // see `capability-chip.test.ts` for the rule and the laptop-height window that forced it.
+  assert.match(source, /addSide\.side === "below" \? "top-full mt-\[8px\]" : "bottom-full mb-\[8px\]"/, "the front door's + menu lost its measured placement");
+  assert.match(source, /useMenuSide\(addOpen, "below"\)/, "the front door's + menu no longer prefers hanging below the composer");
   assert.ok(!/bottom-\[52px\]/.test(source), "the + menu is back on a fixed offset from the button");
 });
 
@@ -154,11 +158,17 @@ test("🔴🔴 neither + menu is anchored to its button, because the composer is
   // distance from a button sitting on the FLOOR of a growing box moves into the box as it grows.
   // Anchoring to the card instead makes `top-full` / `bottom-full` mean "clear of the whole pill"
   // at any height, so this cannot come back the next time either composer changes size.
-  const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
-  const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
+  // 🔴 COMMENTS STRIPPED. Both files EXPLAIN the offsets they no longer use, and a bare source
+  // match reads the explanation as the offence — this repo's guards have tripped on their own
+  // prose twice already.
+  const strip = (text: string) => text.replace(/\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  const home = strip(readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8"));
+  const composer = strip(readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8"));
   assert.match(home, /<div className="shrink-0 justify-self-start self-end \[grid-area:add\]" ref=\{addMenu\}>/, "the front door's + wrapper is positioned again, so the menu anchors to the button");
   assert.match(composer, /<div className="shrink-0" ref=\{addMenu\}>/, "the session's + wrapper is positioned again, so the menu anchors to the button");
-  assert.match(composer, /absolute bottom-full left-0 mb-\[8px\]/, "the session's + menu no longer clears the whole composer");
+  assert.match(composer, /addSide\.side === "below" \? "top-full mt-\[8px\]" : "bottom-full mb-\[8px\]"/, "the session's + menu lost its measured placement");
+  assert.match(composer, /useMenuSide\(addOpen, "above"\)/, "the session's + menu no longer prefers the side with the room");
+  assert.ok(!/bottom-\[46px\]/.test(composer), "the session's + menu is back on a fixed offset from the button");
 });
 
 test("🔴🔴 a stray ?folder= never decides the surface", () => {

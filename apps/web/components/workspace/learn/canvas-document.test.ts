@@ -159,9 +159,12 @@ test("🔴 every shape the validator accepts survives RoutedVisual's narrowing t
   // silently again.
   const source = await SOURCE;
   const { SUBJECT_KINDS } = await import("@/lib/learn/subject-visuals");
-  // The spec-backed kinds that live outside SUBJECT_KINDS ride the same narrowing and rot the
-  // same way — "anatomy" joined the day after this tripwire was written, through this list.
-  for (const kind of [...SUBJECT_KINDS, "anatomy"]) {
+  // The spec-backed kinds that live outside SUBJECT_KINDS ride the same narrowing and rot the same
+  // way, so any that exist go in this list beside them. 🔴 IT IS EMPTY TODAY, AND THAT IS A REAL
+  // STATE, not a list waiting to be filled: "anatomy" was the only member and it was retired on
+  // 2026-09-01. Anatomy is a `figure` now, and `figure` is in SUBJECT_KINDS.
+  const OUTSIDE_SUBJECT_KINDS: readonly string[] = [];
+  for (const kind of [...SUBJECT_KINDS, ...OUTSIDE_SUBJECT_KINDS]) {
     assert.ok(
       source.includes(`route.representation !== "${kind}"`),
       `RoutedVisual never lets a "${kind}" through to SemanticVisual — the shape validates and then draws nothing`,

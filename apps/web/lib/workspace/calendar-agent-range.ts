@@ -38,6 +38,12 @@ export interface CalendarEventRow {
   date: unknown;
   time?: unknown;
   end_time?: unknown;
+  end_date?: unknown;
+  all_day?: unknown;
+  time_zone?: unknown;
+  rrule?: unknown;
+  override_of?: unknown;
+  original_date?: unknown;
   kind?: unknown;
   course?: unknown;
   note?: unknown;

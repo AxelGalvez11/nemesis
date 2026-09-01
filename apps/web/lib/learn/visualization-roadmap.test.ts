@@ -12,8 +12,13 @@
 // change. That is the whole mechanism. It does not police the design — it polices the claim.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
+
+import { validateCanvasVisual } from "./canvas-visual";
+import { searchCurated } from "./reference-images";
+import { REFERENCE_REGISTRY } from "./reference-registry";
+import { REFERENCE_SHELF } from "./reference-shelf";
 
 const CONTRACT = readFileSync(
   new URL("../../../../docs/canvas-product-contract.md", import.meta.url),
@@ -261,80 +266,89 @@ test("🔴 §42's macromolecule claims are tied to the viewer, the resolver and 
   assert.match(viewer, /import\("molstar\/lib\/mol-plugin\/context"\)/, "the viewer no longer lazy-loads its engine");
 });
 
-test("🔴 §42's anatomy claims are tied to the harvest, the registry door and the viewer", () => {
-  assert.match(SECTION_42, /The anatomy atlas shipped 2026-08-24/);
-  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
-  assert.ok(prompts.includes('"kind":"anatomy"'), "the prompt no longer offers the anatomy request");
-  const seam = readFileSync(new URL("./answer-prepare.ts", import.meta.url), "utf8");
-  assert.match(seam, /resolveAnatomy/, "the answer seam no longer runs the anatomy pass");
-  // 🔴 THE LICENCE ACT: the harvest strips every texture before anything reaches the repo,
-  // because the source's textures are NC and NC is refused across this codebase by design.
-  const harvest = readFileSync(new URL("../../scripts/anatomy-harvest.mts", import.meta.url), "utf8");
-  assert.match(harvest, /texture\.dispose\(\)/, "the harvest no longer strips the NC textures");
-  assert.match(harvest, /CC-BY-SA-4\.0/, "the harvest no longer records the mesh licence");
-  // The registry is the only door: the validator holds the asset to a same-origin /anatomy/ path.
-  assert.match(VISUAL_CONTRACT, /\/anatomy\\\/\[a-z0-9-\]\+\\\.glb/, "the same-origin asset rule has left the validator");
-  // The viewer keeps the Mol* discipline: its own chunk, the decoder from our own dependency.
-  const viewer = readFileSync(new URL("../../components/workspace/learn/anatomy-viewer.tsx", import.meta.url), "utf8");
-  assert.match(viewer, /setDecoderPath\("\/draco\/"\)/, "the viewer no longer decodes from our own /draco/ copy");
-  const scripts = JSON.parse(WEB_PACKAGE) as { scripts?: Record<string, string> };
-  assert.match(scripts.scripts?.prebuild ?? "", /copy-draco-decoder/, "the decoder copy has left prebuild");
-});
-
-test("🔴 every atlas the harvest names can be credited, on its OWN licence", () => {
-  // 🔴🔴 THE HARVEST AND THE CREDIT MODULE ARE TWO HAND-KEPT COPIES OF ONE TABLE, and they are
-  // apart on purpose: the registry may not reach the learner's bundle (see the next test), so the
-  // viewer's credit line lives in its own tiny module. That split is what makes drift possible —
-  // a region harvested under a source id the viewer has never heard of renders with somebody
-  // else's attribution under it, which for a share-alike mesh is the precise failure the licence
-  // exists to prevent. The third source made this real: HRA is CC BY 4.0 where the first two are
-  // CC BY-SA 4.0, so the TERMS travel per region now, not only the name.
-  const harvest = readFileSync(new URL("../../scripts/anatomy-harvest.mts", import.meta.url), "utf8");
-  const licence = readFileSync(new URL("./anatomy-licence.ts", import.meta.url), "utf8");
-  const ids = (source: string): string[] =>
-    [...source.matchAll(/^ {2}"([a-z0-9-]+)": \{$/gm)].map((match) => match[1] ?? "").sort();
-  assert.deepEqual(
-    ids(harvest),
-    ids(licence),
-    "the harvest and the credit module disagree about which atlases exist",
-  );
-  assert.ok(ids(licence).includes("hra"), "the female atlas has left the credit module");
-  assert.match(licence, /CC-BY-4\.0/, "the third atlas's own licence is no longer recorded");
-  // §42 has to say where the female organs come from, because "the model is male" was true here
-  // for three days and is the kind of claim that outlives its moment.
-  assert.match(SECTION_42, /Human Reference Atlas/);
-});
-
-test("🔴 the atlas REGISTRY never reaches the learner's bundle — §45's rule, applied to data", () => {
-  // 🔴🔴 THE REGISTRY IS 3,700-ODD STRUCTURE NAMES AND GROWS WITH EVERY REGION HARVESTED. It was
-  // imported straight into the resolve pass on the day the lane shipped, and `prepareAnswer` runs
-  // in the BROWSER (`canvas-chat.ts` calls it) — so a learner reading a history lesson downloaded
-  // the name of every bone, muscle, nerve and vessel to discover their answer named none of them.
-  // The fix was the shape every heavy lane already uses: a route owns the data, the browser posts
-  // a name. This guard is what stops the shortcut being taken again.
-  assert.match(SECTION_42, /server-side only/i);
-  const clientReachable = [
-    "lib/learn/anatomy-resolve.ts",
+test("🔴🔴 the 3D anatomy lane is retired, everywhere, and anatomy is a figure instead", () => {
+  // 🔴 THE THREE GUARDS THIS REPLACES ASSERTED THE ATLAS EXISTS. They tied §42's claims to the
+  // harvest script, held the harvest and the credit module to one list of atlases, and kept the
+  // 3,831-name registry out of the learner's bundle — all correct while the lane shipped, and all
+  // of it removed on 2026-09-01 (owner: *"could you retire the z anatomy and prefer the use of the
+  // corpus figures for anatomy?"*). A retirement needs a guard as much as a feature does: a lane
+  // half-removed is the worst of both, and this repo's most repeated defect is a renderer nobody
+  // can reach.
+  const gone = [
+    "lib/learn/anatomy-atlas.ts",
+    "lib/learn/anatomy-licence.ts",
     "lib/learn/anatomy-lookup.ts",
-    "lib/learn/answer-prepare.ts",
-    "lib/learn/canvas-visual.ts",
+    "lib/learn/anatomy-match.ts",
+    "lib/learn/anatomy-resolve.ts",
     "components/workspace/learn/anatomy-viewer.tsx",
-    "components/workspace/learn/semantic-visual.tsx",
-    "components/workspace/learn/canvas-document.tsx",
+    "app/api/learn/anatomy/route.ts",
+    "scripts/anatomy-harvest.mts",
+    "scripts/copy-draco-decoder.mjs",
+    "public/draco/draco_decoder.wasm",
+    "public/anatomy/overview-skeleton.glb",
   ];
-  for (const file of clientReachable) {
-    const source = readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
-    for (const heavy of ["anatomy-atlas", "anatomy-match"]) {
-      assert.equal(
-        source.includes(`"./${heavy}"`) || source.includes(`/learn/${heavy}"`),
-        false,
-        `${file} imports ${heavy} — the atlas registry has reached the learner's bundle`,
-      );
-    }
+  for (const file of gone) {
+    assert.equal(existsSync(new URL(`../../${file}`, import.meta.url)), false, `${file} survived the retirement`);
   }
-  // ...and the route that legitimately holds it still does.
-  const route = readFileSync(new URL("../../app/api/learn/anatomy/route.ts", import.meta.url), "utf8");
-  assert.match(route, /anatomy-match/, "the anatomy route no longer owns the matcher");
+
+  // 🔴 NOT OFFERED, IN EITHER PLACE THE MODEL IS TOLD WHAT IT MAY DRAW. A kind still named in a
+  // prompt after its renderer is gone is a request the validator refuses every time, which reads
+  // to a learner as the picture silently failing.
+  for (const file of ["canvas-prompts.ts", "turn-router.ts"]) {
+    const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+    assert.equal(source.includes('"kind":"anatomy"'), false, `${file} still offers the retired anatomy request`);
+  }
+  assert.equal(VISUAL_CONTRACT.includes('value.kind === "anatomy"'), false, "the validator still admits an anatomy shape");
+  const seam = readFileSync(new URL("./answer-prepare.ts", import.meta.url), "utf8");
+  assert.equal(/resolveAnatomy/.test(seam), false, "the answer seam still runs the retired atlas pass");
+
+  // 🔴 AND THE PACKAGE STOPPED CARRYING THE HARVEST'S TOOLS. `three` itself STAYS — `surface-plot`
+  // draws with it — so this checks the four that were the atlas's alone.
+  const pkg = WEB_PACKAGE;
+  for (const dep of ["@gltf-transform/core", "@gltf-transform/extensions", "@gltf-transform/functions", "draco3dgltf"]) {
+    assert.equal(pkg.includes(`"${dep}"`), false, `${dep} was the atlas harvest's and is still installed`);
+  }
+  const scripts = JSON.parse(pkg) as { scripts?: Record<string, string> };
+  assert.equal(/copy-draco-decoder/.test(scripts.scripts?.prebuild ?? ""), false, "prebuild still copies the retired decoder");
+});
+
+test("🔴🔴 a stored canvas carrying the retired shape keeps its prose", () => {
+  // 🔴 THE RULE EVERY RETIRED KIND MUST FOLLOW, and the only one a learner can actually notice.
+  // Canvases saved before 2026-09-01 hold `{"kind":"anatomy",…}` blocks. The validator has no
+  // renderer for it now, so it must REFUSE rather than throw: a refusal loses the picture and
+  // keeps the paragraph, and the paragraph is where the teaching was.
+  const result = validateCanvasVisual({
+    kind: "anatomy",
+    learningGoal: "Place the liver among the abdominal organs",
+    resolved: {
+      assetPath: "/anatomy/visceral-systems.glb",
+      region: "visceral-systems",
+      regionTitle: "Internal organs",
+      source: "z-anatomy",
+      structures: ["Liver"],
+    },
+    structure: "liver",
+  });
+  assert.equal(result.ok, false, "the retired anatomy shape still validates");
+  assert.equal(result.ok === false && result.reason, "unknown-kind");
+});
+
+test("🔴 anatomy is answered by the corpus, and the corpus is asked to answer it", () => {
+  // 🔴 THE POSITIVE HALF. Retiring the lane without pointing the model at the replacement would
+  // leave anatomy with no picture at all and nothing on screen to say why — the model would simply
+  // stop asking. Both places that describe the visuals now name anatomy inside `figure`.
+  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  assert.match(prompts, /THIS IS THE ANATOMY SHAPE/, "the figure offer no longer claims anatomy");
+  const router = readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8");
+  assert.match(router, /ANATOMY IS A FIGURE/, "the router's visual menu no longer sends anatomy to the figure lane");
+
+  // 🔴 AND THE SHELF REALLY HOLDS IT — measured, not asserted. These are the retired atlas's own
+  // regions, asked the way a learner asks. The threshold is deliberately below the 22/26 measured
+  // on 2026-09-01: a shelf refresh may move individual rows, and the claim being guarded is that
+  // anatomy is covered, not that these exact files are.
+  const found = ["heart anatomy", "kidney nephron", "eye anatomy", "spinal cord", "cervical vertebrae", "placenta"]
+    .filter((concept) => searchCurated({ concept, limit: 1 }, [...REFERENCE_REGISTRY, ...REFERENCE_SHELF]).length > 0);
+  assert.ok(found.length >= 5, `only ${found.length} of 6 anatomy subjects find a licensed figure: ${found.join(", ")}`);
 });
 
 test("🔴 §42's ladder is the array, not the paragraph", () => {

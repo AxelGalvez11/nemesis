@@ -1835,6 +1835,49 @@ export function LearningCanvas({
   const threadOpen = view === "conversation" && !viewing;
 
   /**
+   * Going back to an earlier moment.
+   *
+   * 🔴🔴 IN THE CONVERSATION IT SCROLLS; IT DOES NOT REWIND. Owner, 2026-09-01: *"when going back
+   * the chat just scrolls up or down smoothly."* Every earlier turn is already on this page — that
+   * is what the thread IS — so replacing the whole surface with a reconstruction of one of them
+   * throws away the thing the learner is looking at in order to show them a copy of part of it.
+   * Scrolling is both gentler and more honest: they end up at the real turn, with everything
+   * around it intact, and there is no state to get out of afterwards.
+   *
+   * 🔴 THE ANSWER VIEW STILL REWINDS, because there is nothing to scroll to there: that view draws
+   * one exchange alone. The rewind machinery is untouched and is still the only behaviour on that
+   * surface.
+   *
+   * 🔴 AND IT FALLS BACK RATHER THAN FAILING. A turn taken in this sitting is filed under a live
+   * id (`turn-3-…`), not the moment id the rail carries, until the canvas is saved and re-seeded.
+   * When the anchor is not on the page the old rewind runs, so a marker is never a dead control.
+   */
+  const goToMoment = useCallback(
+    (id: string | null) => {
+      if (id === null) {
+        setRewound(null);
+        return;
+      }
+      const scroller = threadRef.current;
+      const turn = scroller?.querySelector<HTMLElement>(`[data-thread-turn="${CSS.escape(id)}"]`);
+      if (view === "conversation" && scroller && turn) {
+        // 🔴 THE SAME INSET THE SENT PROMPT LANDS ON, so arriving at an old turn and arriving at a
+        // new one put the thing you are reading in the same place.
+        const delta = turn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        scroller.scrollTo({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+          top: scroller.scrollTop + delta - PIN_INSET_PX,
+        });
+        // 🔴 AND IT LEAVES `rewound` ALONE. Setting it would blank the thread this just scrolled
+        // (`threadOpen` is `!viewing`), which is the exact surface swap being replaced.
+        return;
+      }
+      setRewound((was) => (was === id ? null : id));
+    },
+    [view],
+  );
+
+  /**
    * The sent prompt goes to the top and STAYS there while the answer forms under it.
    *
    * Owner chose this shape from four demonstrated options, 2026-08-31: the ChatGPT behaviour,
@@ -2465,7 +2508,7 @@ export function LearningCanvas({
       <CanvasHistoryRail
         activeMomentId={rewound}
         entries={history}
-        onSelect={(id) => setRewound((was) => (was === id ? null : id))}
+        onSelect={goToMoment}
       />
 
       {/* ── the rewound Canvas ─────────────────────────────────────────────────────────────

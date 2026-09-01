@@ -19,8 +19,6 @@
 // no route, no network, bad JSON, a mismatched response. The picture is lost; the explanation
 // that came with it is not.
 
-import { resolveAnatomy, type AnatomyLookupDeps } from "./anatomy-lookup";
-import { collectAnatomyAsks, mightResolveAnatomy } from "./anatomy-resolve";
 import { collectComputedSeries, mightComputePlot } from "./computed-plot";
 import { collectSurfaceRequests, mightComputeSurface } from "./computed-surface";
 import { computePlots, type PlotComputeDeps } from "./plot-compute";
@@ -33,7 +31,6 @@ import { resolveStructures, type StructureLookupDeps } from "./structure-lookup"
 import { collectCompoundNames, mightResolveStructure } from "./structure-resolve";
 
 export interface AnswerDeps {
-  readonly anatomy?: AnatomyLookupDeps;
   readonly figures?: FigureLookupDeps;
   readonly macromolecules?: MacromoleculeLookupDeps;
   readonly plots?: PlotComputeDeps;
@@ -168,21 +165,7 @@ async function prepareJson(
   const shaped = await resolveMacromolecules(pictured, deps.macromolecules, signal);
   if (molecules > 0) onStep?.(null);
 
-  const anatomy = onStep ? pendingAnatomy(shaped) : 0;
-  if (anatomy > 0) onStep?.(anatomy === 1 ? "Finding it in the atlas" : `Finding ${anatomy} structures in the atlas`);
-  const complete = await resolveAnatomy(shaped, deps.anatomy, signal);
-  if (anatomy > 0) onStep?.(null);
-  return complete;
-}
-
-/** How many atlas structures this answer asks to have found. */
-function pendingAnatomy(text: string): number {
-  if (!mightResolveAnatomy(text)) return 0;
-  try {
-    return collectAnatomyAsks(JSON.parse(text)).length;
-  } catch {
-    return 0;
-  }
+  return shaped;
 }
 
 /** How many compounds this answer asks to have looked up. Cheap, and exact. */

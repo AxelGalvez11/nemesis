@@ -6,7 +6,6 @@ import { useId, useMemo } from "react";
 import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/canvas-visual";
 import { layoutFlow, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
-import { AnatomyViewer } from "./anatomy-viewer";
 import { ChemicalStructure } from "./chemical-structure";
 import { MechanismScheme } from "./mechanism-scheme";
 import { Macromolecule } from "./macromolecule-viewer";
@@ -79,7 +78,6 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
           the one place the scheme is mounted. */}
       {visual.kind === "mechanism" ? <MechanismScheme visual={visual} /> : null}
       {visual.kind === "macromolecule" ? <Macromolecule visual={visual} /> : null}
-      {visual.kind === "anatomy" ? <AnatomyViewer visual={visual} /> : null}
       {visual.kind === "table" ? <DataTable visual={visual} /> : null}
       {visual.kind === "timeline" ? <Timeline visual={visual} /> : null}
       {visual.kind === "construction" ? <Construction visual={visual} /> : null}
