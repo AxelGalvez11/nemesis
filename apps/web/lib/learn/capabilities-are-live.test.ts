@@ -238,7 +238,9 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   // 🔴 IT NOW DECLARES ITS WIDTH TOO, so the surface can be PUSHED by exactly that much rather than
   // covered — the reference's own behaviour, measured. Zero while full screen: a reader covering
   // everything has nothing to push.
-  assert.match(preview, /useDeclareSidePanel\(mode === "docked" \? dock : 0\)/, "the panel does not declare itself");
+  // 🔴 AND SINCE 2026-09-01 IT ALSO HANDS OVER `dragging`, so the canvas can follow the drag rather
+  // than easing 220ms behind it — see panes-share-one-clock.test.ts for the measured seam.
+  assert.match(preview, /useDeclareSidePanel\(mode === "docked" \? dock : 0, dragging\)/, "the panel does not declare itself");
   // 🔴 WIDTH, NOT PADDING, AND THE COMPOSER IS WHY. Padding was the obvious choice and it moved the
   // document while leaving the composer under the panel: an absolutely positioned child is laid out
   // against its containing block's PADDING box, which includes the padding. Narrowing the element
@@ -263,7 +265,16 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   // Calibration: put `open` back in the same context value as the actions and this reddens.
   assert.match(registry, /const SidePanelActionsContext/, "the actions share a context with the boolean again");
   assert.match(registry, /const SidePanelOpenContext/, "the open flag shares a context with the actions again");
-  assert.match(registry, /\[actions, id, inset\]/, "the claiming effect depends on something that changes");
+  // 🔴 THE DEPS ARE THE STABLE ACTIONS PLUS PRIMITIVES, AND THAT IS THE RULE — not the exact list.
+  // `live` joined them on 2026-09-01 so the surface can be told a drag is in progress; it is a
+  // boolean off `useDockWidth`, it changes twice per drag, and crucially it is NOT derived from
+  // this provider — which is what the loop above needed. Anything here that comes BACK out of
+  // `SidePanelProvider` re-opens it.
+  assert.match(registry, /\[actions, id, inset, live\]/, "the claiming effect depends on something that changes");
+  assert.ok(
+    !/\[actions[^\]]*\b(open|ids|inset:)\b[^\]]*\]/.test(registry),
+    "the claiming effect depends on something the provider itself produces — that is the loop",
+  );
   const memo = registry.slice(registry.indexOf("useMemo<SidePanelActions>"));
   assert.match(memo.slice(0, memo.indexOf("}")), /setIds\(\(current\)/, "the actions read the set instead of the updater");
 });

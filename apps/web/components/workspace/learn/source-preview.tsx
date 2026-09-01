@@ -154,7 +154,7 @@ export function SourcePreview({
 
   // 🔴 THE CANVAS IS PUSHED, NOT COVERED — see side-panel.tsx. It is what makes this a sidebar
   // rather than a popup wearing a sidebar's shape. Zero while closed, so nothing is inset.
-  useDeclareSidePanel(active ? width : 0);
+  useDeclareSidePanel(active ? width : 0, dragging);
 
   if (!active) return null;
 
@@ -162,11 +162,17 @@ export function SourcePreview({
     <div
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)",
-        // 🔴🔴 THE OPENING SLIDE, AND IT IS DROPPED WHILE DRAGGING — owner, 2026-08-27: *"make sure
-        // to add smooth animation to the sidebar when sources are open."* A transition on `width`
-        // during a drag makes the edge lag the pointer by its own duration, which reads as the
-        // panel fighting you. `.reader-dock-in` slides it from the right edge on mount only.
-        !dragging && "reader-dock-in",
+        // 🔴 THE OPENING SLIDE — owner, 2026-08-27: *"make sure to add smooth animation to the
+        // sidebar when sources are open."* `.reader-dock-in` slides it in from the right edge when
+        // the element is created, on the shared `--pane-slide` clock, and never again.
+        // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
+        // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
+        // and putting it back is how you restart a CSS animation, so releasing the drag handle made
+        // the panel jump to `translateX(4%)` at opacity 0 and slide in again. Watched live on
+        // /dev-preview/exports: the class went true → false on pointerdown → true on pointerup.
+        // The gate was guarding against nothing: this keyframe moves `transform` and `opacity`, not
+        // width, and it has finished long before anybody can reach the handle.
+        "reader-dock-in",
       )}
       data-workspace
       role="dialog"
