@@ -314,10 +314,24 @@ function markdownComponents(
         </code>
       );
     },
-    h1: ({ children }) => <h1 className="my-1 text-[1.33rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h1>,
-    h2: ({ children }) => <h2 className="my-1 text-[1.11rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h2>,
-    h3: ({ children }) => <h3 className="my-1 text-[0.97rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h3>,
-    h4: ({ children }) => <h4 className="my-1 text-[0.89rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h4>,
+    // 🔴🔴 THE MARGINS, NOT THE SIZES, WERE WHY A HEADING DID NOT READ AS ONE. Owner, 2026-09-01,
+    // comparing an answer of ours with ChatGPT's: *"it has like more bold words and it has the line
+    // breaks and the headings… it's just easier to read."* Every heading here carried `my-1` — 4.5px
+    // at this root font — so a section title sat the same distance from the paragraph above it as
+    // from its own body, and the eye had nothing to group on. The sizes were already correct.
+    //
+    // Numbers are ChatGPT's own, measured in the owner's account and recorded in
+    // docs/chatgpt-reference.md: h1 24/600/32 with `0 0 8px`, h2 20/600/28 and h3 18/600/28 with
+    // `16px 0 4px`. A heading belongs to what FOLLOWS it, which is why the space above is four
+    // times the space below.
+    //
+    // 🔴 PIXELS, NOT TAILWIND STEPS. This app's root font is 112.5%, so `mt-4` is 18px and not 16 —
+    // the trap this repo has fallen into six times. Anything measured against a reference is
+    // written here as the measurement.
+    h1: ({ children }) => <h1 className="mb-[8px] mt-[24px] text-[24px] font-semibold leading-[32px] tracking-tight first:mt-0" id={slugifyHeading(headingText(children))}>{children}</h1>,
+    h2: ({ children }) => <h2 className="mb-[4px] mt-[16px] text-[20px] font-semibold leading-[28px] tracking-tight first:mt-0" id={slugifyHeading(headingText(children))}>{children}</h2>,
+    h3: ({ children }) => <h3 className="mb-[4px] mt-[16px] text-[18px] font-semibold leading-[28px] first:mt-0" id={slugifyHeading(headingText(children))}>{children}</h3>,
+    h4: ({ children }) => <h4 className="mb-[4px] mt-[16px] text-[16px] font-semibold leading-[24px] first:mt-0" id={slugifyHeading(headingText(children))}>{children}</h4>,
     hr: () => <hr className="my-5 border-0 border-t border-(--ui-stroke-secondary)" />,
     img: ({ alt, src }) =>
       typeof src === "string" ? (

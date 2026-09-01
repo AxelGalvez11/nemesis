@@ -53,6 +53,21 @@ function normalise(value: string): string {
     .trim();
 }
 
+/**
+ * Whether a file name carries information, or is a stub.
+ *
+ * 🔴 STRUCTURAL, NOT A LIST OF WORDS (CLAUDE.md). Nothing here knows that "lecture" is generic and
+ * "Hevener" is not — it counts words and characters, which reads the same for a law student's
+ * `Contracts_Week3_Consideration.pdf` and an engineer's `beam_deflection_lab.pdf`. A vocabulary of
+ * "boring file names" would be a keyword list, and keyword lists never generalise.
+ *
+ * Two words, or twelve characters. `lecture` and `x` fail; `boundary layer notes` and
+ * `IPT4 Steroid Med Chem Practice Questions Hevener 8 2026` pass.
+ */
+function namesSomething(value: string): boolean {
+  return value.split(" ").filter(Boolean).length >= 2 || value.length >= 12;
+}
+
 /** A title that genuinely ran long keeps its beginning, cut at a word. */
 function trimmed(value: string): string {
   if (value.length <= TITLE_MAX) return value;
@@ -93,8 +108,41 @@ export function nameFromFile(fileName: string): string {
  * than invent something.
  */
 export function documentTitle(candidate: string | undefined | null, fallback = ""): string {
+  // 🔴🔴 THE NAME THE LEARNER DROPPED IN WINS, AND THIS PRECEDENCE IS THE FIX OF 2026-09-01.
+  // Owner, comparing his own two uploads: *"the sources I dropped in… the titles were changed to
+  // something that was simpler. And so it makes it more difficult to see what's actually the file
+  // that I'm looking for."*
+  //
+  // He dropped in `IPT4_Steroid_Med_Chem_Practice_Questions_Hevener_8_2026.pptx` and
+  // `Hevener_Systemic_and_Inhalational_Steroids_Lecture_2026.pdf` — two names nobody could confuse.
+  // The extractor offered each document's own first line, both of which begin "Integrated
+  // Pharmacotherapy 4", and those won. The shelf then read:
+  //
+  //     Integrated Pharmacotherapy 4 Steroid Chemistry Systemic and Pulmonary…
+  //     Integrated Pharmacotherapy 4
+  //
+  // 🔴 THE COLLISION IS THE WORST PART, NOT THE LENGTH. Two distinct files became two strings with
+  // the same first four words, so the practice deck and the lecture are indistinguishable in a list
+  // — and `trimmed` had cut the longer one at 72 characters, deleting the words ("Med Chem Practice
+  // Questions") that were the only thing separating them.
+  //
+  // 🔴 THIS FILE'S ORIGINAL DEFECT STAYS FIXED, AND IS BETTER FIXED. It was written because a table
+  // header row became a canvas title; the answer then was to reject the candidate's SHAPE. Every
+  // shape test below still runs — they now decide the case where there is no file name at all (a
+  // pasted URL, a scanned page), which is the only case where the extractor's guess is all we have.
+  //
+  // 🔴 "WINS" IS CONDITIONAL, AND THE CONDITION IS THE WHOLE DESIGN. A flat reversal would rename
+  // a well-titled paper after a file called `lecture.pdf` or `x.pdf`, which is the same defect
+  // pointing the other way. `namesSomething` is the test: a name that is more than one short stub
+  // is a name its owner chose, and a name its owner chose is the one they will look for.
+  const own = nameFromFile(fallback);
+
+  if (own && HAS_WORDS.test(own) && namesSomething(own)) return trimmed(own);
+
   if (candidate && looksLikeTitle(candidate)) return trimmed(normalise(candidate));
-  const spare = nameFromFile(fallback);
-  if (spare && HAS_WORDS.test(spare)) return trimmed(spare);
+
+  // A stub file name is still better than nothing, when the document offered nothing.
+  if (own && HAS_WORDS.test(own)) return trimmed(own);
+
   return "";
 }

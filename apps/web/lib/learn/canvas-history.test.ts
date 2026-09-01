@@ -10,7 +10,16 @@ import {
   shortTitle,
   type CanvasHistorySource,
 } from "./canvas-history";
-import { MAX_ASSISTANT_TEXT, MAX_MOMENTS, appendMoment, makeMoment, sameMoment } from "./canvas-moment";
+import {
+  DEMOTED_ASSISTANT_TEXT,
+  MAX_ASSISTANT_TEXT,
+  MAX_MOMENTS,
+  MOMENT_TEXT_BUDGET,
+  appendMoment,
+  makeMoment,
+  sameMoment,
+} from "./canvas-moment";
+import type { CanvasMoment } from "./canvas-moment";
 
 const HERE = import.meta.dirname;
 const MOMENT_SOURCE = readFileSync(join(HERE, "canvas-moment.ts"), "utf8");
@@ -216,4 +225,49 @@ test("a rewound conversational moment carries both halves of the turn", () => {
   assert.equal(view?.asked, "Why?");
   assert.equal(view?.said, "Because of X.");
   assert.equal(view?.missing, undefined);
+});
+
+test("🔴🔴🔴 a real teaching answer survives the save WHOLE", () => {
+  // Owner, 2026-09-01, holding his own canvas beside the same prompt in ChatGPT: ours ended
+  // mid-word on screen — "…is exactly the picture you need to h" — at exactly 2000 characters,
+  // 362 words, against ChatGPT's ~1,200 complete. The old cap's own note justified itself with
+  // "a Nemesis reply is one short paragraph (contract rule 2)", a rule deleted when the canvas
+  // became a chat. Nobody came back to the constant.
+  //
+  // 7,900 characters is the length of the ChatGPT answer it was measured against.
+  const answer = "The steroid scaffold is four fused rings. ".repeat(190);
+  assert.ok(answer.length > 7_800, `the fixture is only ${answer.length} chars`);
+  assert.ok(answer.length < MAX_ASSISTANT_TEXT, "the fixture no longer fits under the cap");
+
+  const moment = makeMoment({ assistantText: answer, kind: "assistant" }, "2026-09-01T18:34:44.620Z", "m1");
+
+  assert.equal(moment.assistantText, answer.trim(), "the answer was cut on the way to disk");
+  assert.equal(moment.truncated, undefined, "a whole answer was marked truncated");
+});
+
+test("🔴🔴 the row is STILL bounded — newest turns keep their text, oldest are demoted not dropped", () => {
+  // Raising the per-answer cap without a total budget puts 80 x 16,000 = 1.2MB on every autosave.
+  // That would be a different bug with the same cause: a number changed without the constraint
+  // that justified it.
+  const long = "x".repeat(MAX_ASSISTANT_TEXT);
+  let moments: readonly CanvasMoment[] = [];
+
+  for (let turn = 0; turn < 20; turn++) {
+    moments = appendMoment(
+      moments,
+      { assistantText: long, kind: "assistant" },
+      `2026-09-01T00:00:${String(turn).padStart(2, "0")}.000Z`,
+      `m${turn}`,
+    );
+  }
+
+  const total = moments.reduce((sum, m) => sum + (m.assistantText?.length ?? 0), 0);
+  assert.ok(total <= MOMENT_TEXT_BUDGET + MAX_ASSISTANT_TEXT, `moment text grew to ${total}`);
+
+  // 🔴 NOTHING WAS DROPPED — every turn still has a marker for the rail.
+  assert.equal(moments.length, 20, "a moment disappeared instead of being demoted");
+
+  assert.equal(moments[moments.length - 1]?.assistantText?.length, MAX_ASSISTANT_TEXT, "the newest turn was demoted");
+  assert.equal(moments[0]?.assistantText?.length, DEMOTED_ASSISTANT_TEXT, "the oldest turn kept its full text");
+  assert.equal(moments[0]?.truncated, true, "a demoted turn does not admit it was cut");
 });

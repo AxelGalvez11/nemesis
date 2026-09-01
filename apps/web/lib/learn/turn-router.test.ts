@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
   HISTORY_TURNS,
@@ -1110,4 +1111,58 @@ test("🔴 a brace inside a string cannot end the object early", () => {
   const decision = decisionOrReply(raw);
   assert.equal(decision?.topic, "sets like {a, b}");
   assert.equal(decision?.say, "A set is written with braces.");
+});
+
+test("🔴🔴🔴 the chat prompt says how an answer is SHAPED, not just that it may be", () => {
+  // Owner, 2026-09-01, with ours and ChatGPT's reply to the same prompt and files side by side:
+  // *"the ChatGPT response is easier to read… more bold words… the line breaks and the headings…
+  // ours, there's some bolded points, but there's like no headers, there's no line breaks."*
+  //
+  // The rule this replaces was "use headings, short lists or a table when the material genuinely
+  // has that shape" — three devices, a reason to skip all of them, and no guidance on any. So the
+  // model used the one thing needing no permission: bold. Every section title in the measured
+  // answer was `**bold**`, a paragraph pretending to be a heading.
+  const prompt = readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  assert.match(prompt, /Shape a long answer so it can be SCANNED/, "the scanning rule is gone");
+  assert.match(prompt, /never a bold line /, "nothing stops a bold line standing in for a heading");
+  assert.match(prompt, /two to four sentences/, "paragraph length is unspecified again");
+  // 🔴 AND IT STILL EXEMPTS THE SHORT ANSWER. A heading on three sentences is the opposite failure,
+  // and a rule that only pushes one way produces it.
+  assert.match(prompt, /do not put a heading on three /, "a short answer can now be given a heading");
+
+  // The permissive line must not come back alongside it — two rules about one thing is how a
+  // prompt grows a contradiction.
+  assert.ok(
+    !/genuinely has that shape/.test(prompt),
+    "the old permissive heading clause is back beside the new rule",
+  );
+});
+
+test("🔴 a heading is spaced like a heading, in ChatGPT's own numbers", () => {
+  // Sizes were already right; `my-1` (4.5px at this root font) was not, so a section title sat as
+  // far from the paragraph above it as from its own body and read as bold text. ChatGPT's measured
+  // values, from docs/chatgpt-reference.md: h2/h3 `16px 0 4px`, h1 `0 0 8px`.
+  //
+  // 🔴 PIXELS, NOT TAILWIND STEPS — the root font is 112.5%, so `mt-4` is 18px, not 16.
+  const md = readFileSync(new URL("../workspace/chat-markdown.tsx", import.meta.url), "utf8");
+  assert.match(md, /<h2 className="mb-\[4px\] mt-\[16px\] text-\[20px\] font-semibold leading-\[28px\]/, "h2 lost ChatGPT's spacing");
+  assert.match(md, /<h3 className="mb-\[4px\] mt-\[16px\] text-\[18px\] font-semibold leading-\[28px\]/, "h3 lost ChatGPT's spacing");
+  assert.ok(!/<h[1-4] className="my-1 /.test(md), "a heading is back to 4.5px of breathing room");
+});
+
+test("🔴🔴 the model cannot promise a drawing it has no way to deliver", () => {
+  // Measured on the owner's canvas, 2026-09-01. The answer ended "This is worth a drawing so you
+  // see it. Give me a moment, because the steroid scaffold… is exactly the picture you need to
+  // have." No drawing came, and none could: every visual is a bracketed marker inside THAT reply,
+  // and there is no second turn. A promise with no mechanism behind it is worse than silence.
+  const prompt = readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  assert.match(prompt, /A drawing happens INSIDE this reply/, "the no-promise rule is gone");
+  assert.match(prompt, /Never write that you are about to draw something/, "the model may announce a drawing again");
+  assert.match(prompt, /Draw it where you would have promised it/, "the rule forbids without offering the alternative");
 });
