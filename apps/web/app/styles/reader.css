@@ -190,3 +190,16 @@
 .nemesis-reader[data-variant="dialog"] .nemesis-reader-bar {
   padding-right: 2.5rem;
 }
+
+/* The pane's toolbar: the search field is a magnifier until it is asked for.
+   🔴 WIDTH, NOT `display: none` — a hidden input cannot take focus, so the field has to stay in the
+   layout and simply take no room. Focus-within reopens it, which is what makes the magnifier a
+   button without any state to keep. `.nemesis-reader-search` sets its own widths, so the override
+   has to reach the input itself. */
+.nemesis-reader-search-dense .nemesis-reader-search {
+  width: 0;
+  padding: 0;
+}
+.nemesis-reader-search-dense:focus-within .nemesis-reader-search {
+  width: 8rem;
+}

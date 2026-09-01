@@ -25,6 +25,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 import { LibrarySourceReader } from "@/components/workspace/reader/library-source-reader";
+import { cn } from "@/lib/utils";
 import {
   NO_TABS,
   activeTab,
@@ -173,7 +174,7 @@ function PassageView({ tab }: { tab: SourceTab }) {
 function TabBody({ tab }: { tab: SourceTab }) {
   // A filed source has a real document behind it, so show the real reader.
   if (tab.librarySourceId) {
-    return <LibrarySourceReader className="min-h-0 flex-1" sourceId={tab.librarySourceId} />;
+    return <LibrarySourceReader className="min-h-0 flex-1" dense sourceId={tab.librarySourceId} />;
   }
   return <PassageView tab={tab} />;
 }
@@ -202,9 +203,26 @@ export function SourceTabPane() {
         className="absolute inset-y-0 right-0 z-40 flex w-full max-w-[520px] flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) shadow-[-14px_0_30px_rgba(0,0,0,0.13)] xl:w-[360px] xl:max-w-none xl:shadow-none"
       >
         <TabStrip api={api} />
-        <div className="flex min-h-0 flex-1 flex-col">
-          <TabBody tab={tab} />
-        </div>
+        {/* 🔴🔴 EVERY OPEN TAB STAYS MOUNTED; ONLY THE FRONT ONE IS SHOWN. Rendering just the active
+            tab meant switching back to a document UNMOUNTED the reader and mounted a fresh one, so
+            the file was fetched, re-parsed by pdf.js and re-rendered from page one every single
+            time — with the scroll position, the zoom and the search lost with it. The owner called
+            it out on 2026-09-01: *"slow (it has to load each pdf continually)"*.
+
+            🔴 IT IS BOUNDED BY `MAX_TABS`, WHICH IS WHY THIS IS AFFORDABLE. `openTab` already
+            evicts past six, so the worst case is six mounted readers rather than an unbounded
+            pile — the reason the original chose one was memory, and the cap already answers it.
+            `hidden` rather than unmounting keeps pdf.js's rendered canvases alive, which is the
+            whole cost being avoided. */}
+        {api.state.tabs.map((open) => (
+          <div
+            aria-hidden={open.key !== tab.key}
+            className={cn("min-h-0 flex-1 flex-col", open.key === tab.key ? "flex" : "hidden")}
+            key={open.key}
+          >
+            <TabBody tab={open} />
+          </div>
+        ))}
       </aside>
     </>
   );
