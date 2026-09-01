@@ -80,3 +80,20 @@ test("🔴 the actions under an answer are their 32px squares with 20px glyphs",
   // The rem trap, one more time: `mt-2` is 18px at this app's root, `px-1.5` is 6.75.
   assert.ok(!/\bmt-2\b/.test(ACTIONS), "mt-2 is back, which is 18px here against their 12");
 });
+
+test("🔴 a table in an answer is unboxed, the way theirs is", () => {
+  // Measured in the owner's account 2026-08-31: NO wrapper border, NO radius, NO shaded header
+  // band. 14px text, a firmer hairline under the header and a fainter one under each row, and the
+  // first column flush with the prose — their 24px of cell gap is on the RIGHT, not both sides.
+  // A bordered card with a grey header reads as a widget dropped into the answer; theirs reads as
+  // part of the sentence that introduced it.
+  const MD = strip(read("../../../lib/workspace/chat-markdown.tsx"));
+  assert.match(MD, /className="aui-md-table my-2 max-w-full overflow-x-auto"/, "the table wrapper grew a border or radius again");
+  assert.match(MD, /border-collapse text-\[14px\]/, "the table left the reference's 14px");
+  assert.match(MD, /py-\[10px\] pr-\[24px\]/, "a cell left the reference's 10px/24px");
+  assert.match(MD, /py-\[8px\] pr-\[24px\]/, "a header cell left the reference's 8px/24px");
+  assert.ok(!/px-2\.5/.test(MD), "px-2.5 is back: 11.25px here, and it pads the left edge off the prose column");
+  assert.ok(!/thead className="m-0 bg-/.test(MD), "the header band came back");
+  // 🔴 THE SCROLL WRAPPER STAYS. A wide table must never make the whole answer scroll sideways.
+  assert.match(MD, /overflow-x-auto/, "a wide table can now scroll the answer sideways");
+});

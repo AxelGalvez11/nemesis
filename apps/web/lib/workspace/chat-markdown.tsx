@@ -291,22 +291,34 @@ function markdownComponents(
         </pre>
       );
     },
+    // 🔴🔴 UNBOXED, AND THAT IS THE REFERENCE'S OWN SHAPE. Measured in the owner's account
+    // 2026-08-31: their table has NO wrapper border, NO radius and NO shaded header. It is 14px
+    // text with two hairlines — a firmer one under the header, a fainter one under each row — and
+    // the first column sits flush with the prose above it, with the 24px of gap on the RIGHT of
+    // each cell instead. A bordered card with a grey header band reads as a widget dropped into
+    // the answer; theirs reads as part of the sentence that introduced it.
+    //
+    // 🔴 THE SCROLL WRAPPER STAYS. A wide table must never make the whole answer scroll sideways
+    // (globals.css states that rule for the note editor and it holds here). What went is the
+    // border and the radius on it, not the container.
     table: ({ children }) => (
-      <div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-[0.375rem] border border-border">
-        {/* !m-0: typography's table margin survives a bare m-0 here and drew
-            an empty band between the wrapper border and the header row. */}
-        <table className="!m-0 w-full min-w-[18rem] border-collapse text-[length:var(--conversation-text-font-size)] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0">
-          {children}
-        </table>
+      <div className="aui-md-table my-2 max-w-full overflow-x-auto">
+        {/* !m-0: typography's table margin survives a bare m-0 here. */}
+        <table className="!m-0 w-full min-w-[18rem] border-collapse text-[14px]">{children}</table>
       </div>
     ),
-    td: ({ children }) => <td className="px-2.5 py-1.5 align-top leading-normal">{children}</td>,
+    // 🔴 PIXELS, AND NO LEFT PADDING. `px-2.5` is 11.25px at this app's 112.5% root and pads BOTH
+    // sides, which pushes the first column off the prose column it should line up with. Theirs is
+    // 10px above and below, 24px to the right, nothing to the left.
+    td: ({ children }) => (
+      <td className="border-b border-(--ui-stroke-tertiary) py-[10px] pr-[24px] align-top leading-normal">{children}</td>
+    ),
     th: ({ children }) => (
-      <th className="whitespace-nowrap px-2.5 py-1.5 text-left align-middle text-[0.8125rem] font-semibold text-foreground">
+      <th className="whitespace-nowrap border-b border-(--ui-stroke-secondary) py-[8px] pr-[24px] text-left align-middle font-semibold text-foreground">
         {children}
       </th>
     ),
-    thead: ({ children }) => <thead className="m-0 bg-muted/35 text-muted-foreground">{children}</thead>,
+    thead: ({ children }) => <thead className="m-0">{children}</thead>,
     ul: ({ children }) => (
       <ul className="my-1 gap-0" dir="auto">
         {children}
