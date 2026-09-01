@@ -72,6 +72,15 @@ export function AddMenuRow({ detail, icon, label, onClick, tint }: AddMenuRowPro
  * collapsing to something that reads as a tooltip; `max-w` is the backstop against copy nobody has
  * written yet turning the menu into a banner.
  */
+/**
+ * 🔴 AND A CEILING, BECAUSE THE MENU OPENS DOWNWARD NOW. On the front door the popover hangs below
+ * the composer (the reference's placement on that screen, measured 2026-09-01), which puts eight
+ * rows into whatever is left of the window. `min()` rather than a flat `vh`: on a tall screen the
+ * menu should never grow past the point where it stops reading as a menu, and on a short one it
+ * must not run off the bottom edge with rows nobody can reach. `overflow-y-auto` with the x axis
+ * still clipped keeps the corners and the `whitespace-nowrap` rows both intact.
+ */
 export const ADD_MENU =
-  "z-50 w-max min-w-[15rem] max-w-[24rem] overflow-hidden rounded-2xl bg-(--ui-bg-elevated) p-1.5 " +
+  "z-50 w-max min-w-[15rem] max-w-[24rem] max-h-[min(60vh,26rem)] overflow-y-auto overflow-x-hidden " +
+  "rounded-2xl bg-(--ui-bg-elevated) p-1.5 " +
   "shadow-[0_8px_28px_rgba(0,0,0,0.14)] ring-1 ring-(--ui-stroke-tertiary)";
