@@ -210,10 +210,34 @@ test("🔴 rewinding never calls the session's writer", () => {
   // and the rail's "Now" mark had gone on 2026-08-25, so pressing the marker you are already on had
   // to become a way out. What this test is actually about is unchanged and still holds: selecting a
   // moment is a VIEW change and must never reach the session's writer.
-  assert.ok(
-    /onSelect=\{\(id\) => setRewound\(\(was\) => \(was === id \? null : id\)\)\}/.test(CANVAS_CODE),
-    "the rail's selection goes somewhere other than the view state",
-  );
+  //
+  // 🔴 REPOINTED AGAIN 2026-09-01, when the handler stopped being an inline arrow. Owner: *"when
+  // going back the chat just scrolls up or down smoothly"* — in the conversation the earlier turn
+  // is already on the page, so selecting it now SCROLLS to it and leaves `rewound` alone; the
+  // answer view, which draws one exchange and has nothing to scroll to, still rewinds. Pinning the
+  // arrow's exact text made a guard about the WRITER fail on a change of NAVIGATION, which is the
+  // third over-pinning this file has been caught by. It now asserts the thing it is named for.
+  assert.match(CANVAS_CODE, /onSelect=\{goToMoment\}/, "the rail's selection is no longer routed through one handler");
+  const body = CANVAS_CODE.slice(CANVAS_CODE.indexOf("const goToMoment"), CANVAS_CODE.indexOf("[view],"));
+  assert.ok(body.length > 200, "goToMoment is gone or was renamed");
+  assert.ok(!/session\./.test(body), "selecting a moment reaches the session");
+  assert.ok(!/converse\(|remember\(|save/.test(body), "selecting a moment writes something");
+  // It is still a toggle: pressing the marker you are already on is the way out of a rewind.
+  assert.match(body, /setRewound\(\(was\) => \(was === id \? null : id\)\)/, "the marker stopped toggling");
+});
+
+test("🔴🔴 going back scrolls the conversation; only the answer view rewinds", () => {
+  // Owner, 2026-09-01. Every earlier turn is already on the page in the conversation — that is what
+  // the thread IS — so replacing the surface with a reconstruction of one of them throws away what
+  // the learner is looking at to show a copy of part of it.
+  const body = CANVAS_CODE.slice(CANVAS_CODE.indexOf("const goToMoment"), CANVAS_CODE.indexOf("[view],"));
+  assert.match(body, /view === "conversation" && scroller && turn/, "the scroll is no longer gated on the conversation view");
+  assert.match(body, /behavior: window\.matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches \? "auto" : "smooth"/, "going back stopped gliding, or stopped honouring reduced motion");
+  assert.match(body, /PIN_INSET_PX/, "an old turn lands somewhere other than where a new one does");
+  // 🔴 AND IT FALLS BACK RATHER THAN FAILING. A turn taken this sitting is filed under a live id,
+  // not the moment id the rail carries, until the canvas is saved and re-seeded; with no anchor on
+  // the page the rewind still runs, so a marker is never a dead control.
+  assert.match(body, /data-thread-turn="\$\{CSS\.escape\(id\)\}"/, "the scroll target is no longer looked up by moment id");
 });
 
 // ── the rail's stated behaviours ────────────────────────────────────────────────────────────
