@@ -6,6 +6,7 @@
 // assistant column, and no route change between reading, recalling and being tested — the
 // canvas itself is the interface, and the command bar is the only control.
 
+import { advance as advanceRead } from "@/lib/workspace/read-progress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -597,7 +598,7 @@ export function LearningCanvas({
    * source restored on reload never pass through the picker, so they can never appear here. A
    * reload starts this empty, which is correct: nothing is pending over a box nobody has touched.
    */
-  const [staged, setStaged] = useState<readonly { id: string; file: File; state: AttachmentState }[]>([]);
+  const [staged, setStaged] = useState<readonly { id: string; file: File; state: AttachmentState; progress: number }[]>([]);
   const selected = useMemo(
     () => canvas.blocks.filter((block) => selectedIds.includes(block.id)),
     [canvas.blocks, selectedIds],
@@ -884,13 +885,24 @@ export function LearningCanvas({
   const readStaged = useCallback(
     (id: string, file: File) => {
       if (!uid) return;
-      const run = extractFile(file, uid, { folderPath: CANVAS_FILING_FOLDER, keep: true });
+      // 🔴 THE ARC MOVES ON `extractFile`'S OWN STEPS, and `advanceRead` is what stops a late or
+      // repeated report rewinding it on screen. See `lib/workspace/read-progress.ts`.
+      const run = extractFile(file, uid, {
+        folderPath: CANVAS_FILING_FOLDER,
+        keep: true,
+        onPhase: (phase) =>
+          setStaged((current) =>
+            current.map((entry) => (entry.id === id ? { ...entry, progress: advanceRead(entry.progress, phase) } : entry)),
+          ),
+      });
       stagedReads.current.set(id, run);
       // Marking the promise handled here is also what keeps a failure the learner never sends from
       // surfacing as an unhandled rejection. A send still sees the rejection, because it awaits the
       // same promise.
       void run.then(
-        () => setStaged((current) => current.map((entry) => (entry.id === id ? { ...entry, state: "ready" } : entry))),
+        () => setStaged((current) => current.map((entry) => (entry.id === id ? { ...entry, progress: 1, state: "ready" } : entry))),
+        // 🔴 THE ARC STAYS WHERE IT DIED. Completing it behind a "couldn't read" would be the card
+        // disagreeing with itself; the failed state paints the same arc red.
         () => setStaged((current) => current.map((entry) => (entry.id === id ? { ...entry, state: "failed" } : entry))),
       );
     },
@@ -902,7 +914,7 @@ export function LearningCanvas({
   // commits explicitly.
   const attachWithChips = useCallback(
     (files: FileList | File[]) => {
-      const picked = Array.from(files).map((file) => ({ id: crypto.randomUUID(), file, state: "reading" as const }));
+      const picked = Array.from(files).map((file) => ({ id: crypto.randomUUID(), file, progress: 0, state: "reading" as const }));
       if (picked.length === 0) return;
       setStaged((current) => [...current, ...picked]);
       for (const entry of picked) readStaged(entry.id, entry.file);
@@ -929,7 +941,7 @@ export function LearningCanvas({
 
   /** The composer's own view of what is staged: a title and a state, never the bytes. */
   const stagedCards = useMemo(
-    () => staged.map((entry) => ({ id: entry.id, title: entry.file.name, state: entry.state })),
+    () => staged.map((entry) => ({ id: entry.id, progress: entry.progress, title: entry.file.name, state: entry.state })),
     [staged],
   );
   // 🔴 SENDING COMMITS WHAT IS STAGED. This used to only clear the chips, because attaching had
@@ -3592,7 +3604,7 @@ export function LearningCanvas({
             const entry = staged.find((candidate) => candidate.id === id);
             if (!entry) return;
             stagedReads.current.delete(id);
-            setStaged((current) => current.map((c) => (c.id === id ? { ...c, state: "reading" } : c)));
+            setStaged((current) => current.map((c) => (c.id === id ? { ...c, progress: 0, state: "reading" } : c)));
             readStaged(id, entry.file);
           }}
           recentAttachments={stagedCards}

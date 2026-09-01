@@ -2,8 +2,11 @@
 
 // DEV-ONLY PREVIEW — what the composer shows while it is reading a document.
 //
-// Owner, 2026-09-01: *"when the chat composer is reading and parsing documents there should be an
-// animation or like a loading circular bar showing progress in processing"*.
+// Owner, 2026-09-01, first: *"when the chat composer is reading and parsing documents there should
+// be an animation or like a loading circular bar showing progress in processing"*. Then, having
+// seen the turning ring that shipped: *"remove the attachment icon and replace with a circular
+// progress bar that doesnt spin but just does the progress indicator, also make sure the send
+// button for chat composer is just inactivated"*.
 //
 // Both halves are the REAL components: the attachment card the front door stages files into, and
 // the send button it puts on the pill. The only thing scripted is the state they are handed.
@@ -16,22 +19,30 @@ export default function ReadingStatePreview() {
     <main data-workspace className="min-h-screen bg-(--ui-bg) px-[56px] py-[44px] text-(--ui-text-primary)">
       <h1 className="text-[15px] font-semibold">While a document is being read</h1>
       <p className="mb-[32px] mt-[6px] max-w-[620px] text-[12.5px] leading-[1.6] text-(--ui-text-tertiary)">
-        The ring turns while the parser is working. It does not fill up, because the parser reports
-        nothing until it finishes: an arc creeping toward full would be a number about your document
-        that nobody measured.
+        The arc fills from twelve o&rsquo;clock and nothing on it turns. It moves only when a step of
+        the read has genuinely finished — the key resolved, the bytes uploaded, the extractor
+        answered — so it holds still through the long middle, and the sweep across the card is what
+        says the work is still going.
       </p>
 
       <div className="flex max-w-[560px] flex-col gap-[14px]">
-        <AttachmentCard name="Lecture 7 — Enzyme kinetics.pdf" onRemove={() => undefined} state="reading" />
-        <AttachmentCard name="Seminar notes.docx" onRemove={() => undefined} state="reading" />
+        <AttachmentCard name="Lecture 7 — Enzyme kinetics.pdf" onRemove={() => undefined} progress={0.1} state="reading" />
+        <AttachmentCard name="Seminar notes.docx" onRemove={() => undefined} progress={0.6} state="reading" />
         <AttachmentCard name="Problem set 3.pdf" onRemove={() => undefined} state="ready" />
         <AttachmentCard name="Scan of the whiteboard.heic" onRemove={() => undefined} onRetry={() => undefined} state="failed" />
+      </div>
+
+      <h2 className="mb-[12px] mt-[40px] text-[13px] font-semibold">The arc, at each stop</h2>
+      <div className="flex max-w-[560px] flex-col gap-[14px]">
+        {[["queued", 0], ["authorised", 0.1], ["uploaded", 0.6], ["read", 1]].map(([label, at]) => (
+          <AttachmentCard key={label as string} name={`${label as string}.pdf`} progress={at as number} state="reading" />
+        ))}
       </div>
 
       <h2 className="mb-[12px] mt-[40px] text-[13px] font-semibold">The send button, in each state</h2>
       <div className="flex items-center gap-[26px]">
         {[
-          ["reading", { busy: true, disabled: false }],
+          ["reading", { busy: false, disabled: true }],
           ["ready to send", { busy: false, disabled: false }],
           ["nothing typed", { busy: false, disabled: true }],
         ].map(([label, props]) => (

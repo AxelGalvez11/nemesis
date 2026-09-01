@@ -71,23 +71,36 @@
   animation: nemesis-record-processing 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* A document being read, on the attachment card (attachment-card.tsx, owner 2026-09-01: *"when the
-   chat composer is reading and parsing documents there should be an animation or like a loading
-   circular bar showing progress in processing"*).
-   🔴🔴 INDETERMINATE, AND THAT IS THE HONEST SHAPE RATHER THAN A SHORTCUT. `extractFile` is one
-   awaited call: the parser reports nothing at all until it returns, so there is no percentage to
-   draw and any arc that crept toward full would be invented. This product already made that exact
-   call once, for audio transcription, in the note above `.record-processing-track`: a sweep says
-   "working" without claiming to know how far. A ring that turns says the same thing about a file.
-   🔴 IT TURNS THE WHOLE RING RATHER THAN ANIMATING `stroke-dashoffset`, so the work stays on the
-   compositor beside a composer somebody is typing into. */
-@keyframes nemesis-reading-ring {
-  to { transform: rotate(360deg); }
+/* A document being read, on the attachment card (attachment-card.tsx).
+   🔴🔴 THE RING THAT TURNED IS GONE, AND THE NOTE THAT STOOD HERE IS WORTH KEEPING AS HISTORY. It
+   said: *"INDETERMINATE, AND THAT IS THE HONEST SHAPE... `extractFile` is one awaited call: the
+   parser reports nothing at all until it returns, so there is no percentage to draw."* That was
+   right about `extractFile` as a black box and wrong about `extractFile` as a sequence. It
+   authorises, it uploads the bytes, and it waits for one answer, and a browser can watch each of
+   those finish — so there are three real stops, and `lib/workspace/read-progress.ts` draws the arc
+   from them and nothing else. Owner, 2026-09-01: *"a circular progress bar that doesnt spin but
+   just does the progress indicator."*
+   🔴 THE SWEEP IS WHAT MAKES A PAUSED ARC READABLE. The arc holds still through the longest step,
+   because that step has not finished; a card that were also still would read as a hang. This is
+   the same gesture `.canvas-rewriting` uses, deliberately, so waiting in the composer looks like
+   waiting everywhere else in the product.
+   🔴 A SEPARATE CLASS RATHER THAN REUSING `.canvas-rewriting`, whose sizing and speed belong to a
+   block of prose being replaced. Two surfaces that merely share a gesture should not share a rule
+   that either might tune. */
+@keyframes nemesis-reading-sweep {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 
-.reading-ring {
-  animation: nemesis-reading-ring 1.05s linear infinite;
-  transform-origin: center;
+.reading-sweep {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--ui-text-quaternary) 18%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: nemesis-reading-sweep 1800ms linear infinite;
 }
 
 /* The read-aloud player's live bars (canvas-audio-bar.tsx, owner's design D, 2026-09-01).
@@ -126,8 +139,8 @@
   .record-processing-track::after { animation: none; inline-size: 100%; opacity: 0.55; }
   /* Same rule as the mascot's STILL frames: hold a characteristic shape, do not flatten. */
   .audio-bars[data-playing="true"] > span { animation: none; transform: scaleY(0.78); }
-  /* Holds the gap where it is: still legible as a ring in progress, with nothing turning. */
-  .reading-ring { animation: none; }
+  /* The arc still draws where it has got to; only the sweep across the card stops. */
+  .reading-sweep { animation: none; background-image: none; }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
