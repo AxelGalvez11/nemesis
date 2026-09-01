@@ -118,6 +118,7 @@ function LearnSurface() {
     <LearningCanvas
       canvasId={canvasId}
       openingAsk={ask}
+      openingSpoken={entry.spoken}
       openingCapability={openingCapability}
       openingFolder={entry.folder}
       policyOverride={policyOverride}

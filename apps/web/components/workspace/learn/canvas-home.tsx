@@ -43,6 +43,8 @@ import { ProjectPicker } from "./project-picker";
 import { FileDropOverlay } from "./file-drop-overlay";
 import { CanvasRecorder } from "./canvas-recorder";
 import { CanvasVoiceBars } from "./canvas-voice-bars";
+import { IDLE_REPLY_AUDIO, VoiceBarsGlyph, VoiceSessionGlow, VoiceStopButton } from "./canvas-composer";
+import { useVoiceConversation } from "./use-voice-conversation";
 import { pastedTextFile } from "@/lib/learn/composer-text";
 import { putPending, type PendingAttachment } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
@@ -331,7 +333,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
       ? "One document couldn't be read. Try again or remove it."
       : "Start";
 
-  const start = () => {
+  const start = (options?: { spoken?: boolean }) => {
     // 🔴 THE KEYBOARD OBEYS THE SAME GATE AS THE BUTTON. Enter calls this directly, so a check that
     // lived only on the button's `disabled` would leave the one route the owner's own report came
     // in through wide open.
@@ -367,8 +369,12 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     // are the same new canvas, so a project chosen before either must file either. Only the bare
     // `/learn` — nothing typed, nothing staged — has nothing to file.
     const filing = project ? `&folder=${encodeURIComponent(project)}` : "";
+    // 🔴 `&voice=1` RIDES ONLY BESIDE A TOPIC, exactly as `&cap=` does: the modality is a fact
+    // about the words, and the loop cannot fire without words (the silence rule watches the
+    // transcript). The canvas reads it and ADOPTS the conversation — speaks the reply, then
+    // opens the microphone again — so the session survives the route swap.
     const href = topic
-      ? `/learn?ask=${encodeURIComponent(topic)}${capability ? `&cap=${capability}` : ""}${filing}`
+      ? `/learn?ask=${encodeURIComponent(topic)}${options?.spoken ? "&voice=1" : ""}${capability ? `&cap=${capability}` : ""}${filing}`
       : staged.length > 0
         ? `/learn?new=1${filing}`
         : "/learn";
@@ -515,6 +521,29 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    *  canvas: speech recognition mishears, and auto-submitting would open a canvas on a topic the
    *  learner never said. */
   const acceptDictation = () => dictation.stop();
+
+  // ── The voice conversation, from the front door ─────────────────────────────
+  // Owner, 2026-08-31: *"by the landing page i meant the webapp landing chat."* Same loop, same
+  // microphone, same silence rule as the session composer — but no reply ever plays HERE: the
+  // auto-send STARTS the canvas, and the canvas adopts the session (see `&voice=1` in `start`).
+  // `departing` stands in for busy, so the quiet-turn grace cannot re-open the microphone while
+  // the pill is already travelling; the route swap unmounts everything a beat later.
+  const voiceLoop = useVoiceConversation({
+    busy: departing,
+    dictation,
+    replyAudio: IDLE_REPLY_AUDIO,
+    submit: () => {
+      if (blocked) return "retry";
+      if (!text.trim() && staged.length === 0) return "retry";
+      start({ spoken: true });
+      // 🔴 THE TRANSCRIPT IS SPENT WITH THE SEND (canvas-composer's own rule, PR #979): this
+      // pill stays mounted while it folds and travels, and the sync effect above would paint
+      // the sent words straight back into it for the whole journey.
+      if (dictation.transcript) dictation.reset();
+      typedBefore.current = "";
+      return "sent";
+    },
+  });
 
   return (
     <main
@@ -722,6 +751,9 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         // project-picker.tsx); without a stacking order the tray, a later sibling, would wash the
         // pill's bottom edge with its translucent grey — 8% white in dark, visibly.
         <div className="pointer-events-auto relative z-[1] flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--composer-fill) shadow-[var(--composer-edge)]">
+          {/* The session's lamp — the same component, the same subtle tuning, the same gate as
+              the canvas composer's. It rides the fold and the travel with the pill. */}
+          {voiceLoop.active && <VoiceSessionGlow />}
           {/* 🔴🔴 INSIDE THE BOX, LIKE THE CANVAS COMPOSER AND LIKE THE REFERENCE. These were a row
               of detached pills floating ABOVE the composer — which is both what the owner said he
               did not want on 2026-08-20 and what does not match. The pill became a card because a
@@ -872,6 +904,24 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
             )}
           </div>
           {listening ? (
+            voiceLoop.active ? (
+              <>
+                {/* 🔴 IN A VOICE CONVERSATION THE WORDS THEMSELVES ARE THE FEEDBACK — the same
+                    live treatment the canvas composer ships: "Listening…" until the first words,
+                    then the words as heard, italic and softened, no caret. The waveform stays
+                    the DICTATION treatment, where the learner reviews before sending. */}
+                <div className="ml-[12px] flex max-h-[78px] min-w-0 flex-1 items-end self-center overflow-hidden">
+                  {text.trim() ? (
+                    <p className="w-full text-[length:var(--canvas-text-body)] italic leading-[26px] [color:color-mix(in_srgb,var(--ui-text-primary)_72%,transparent)]">
+                      {text}
+                    </p>
+                  ) : (
+                    <p className="w-full text-[length:var(--canvas-text-body)] leading-[26px] text-(--ui-text-quaternary)">Listening…</p>
+                  )}
+                </div>
+                <VoiceStopButton className="ml-[10px] self-center" onClick={voiceLoop.end} />
+              </>
+            ) : (
             <>
               <div className="ml-[12px] flex min-w-0 flex-1 items-center">
                 <CanvasVoiceBars live />
@@ -895,6 +945,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 <Codicon name="check" size="var(--composer-icon)" />
               </button>
             </>
+            )
           ) : (
             <>
               {/* The staged capability, inline where the words will start — the same composition
@@ -999,12 +1050,35 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   a real `?ask=`. */}
               {/* 🔴 AND NOTHING IS SENT UNTIL EVERY STAGED FILE HAS BEEN READ — see `blocked`. The
                   label carries the reason, so a dark button is never a mystery. */}
+              {/* 🔴 THE SEND SLOT IS THE VOICE DOOR WHILE THE BOX IS EMPTY — the same grammar
+                  the canvas composer ships (owner 2026-08-30: the send button "becoming the
+                  voice button until text is manually [typed]"). Same circle, same accent, so
+                  the slot keeps its shape on the first keystroke. The stop lives in the
+                  listening branch above; material or a capability brings the arrow back,
+                  because those sends need the button. */}
+              {voiceLoop.active ? (
+                <VoiceStopButton className="self-end [grid-area:send]" onClick={voiceLoop.end} />
+              ) : !text.trim() && staged.length === 0 && !capability && !blocked && voiceLoop.offered ? (
+                <button
+                  aria-label="Start a voice conversation"
+                  className="flex size-[var(--composer-control)] shrink-0 items-center justify-center self-end rounded-full bg-(--ui-action) text-(--ui-bg-editor) transition-opacity [grid-area:send] hover:opacity-90"
+                  onClick={() => {
+                    typedBefore.current = "";
+                    voiceLoop.begin();
+                  }}
+                  title="Start a voice conversation"
+                  type="button"
+                >
+                  <VoiceBarsGlyph />
+                </button>
+              ) : (
               <ComposerSend
                 className="self-end [grid-area:send]"
                 disabled={blocked || (capability ? !text.trim() : !text.trim() && staged.length === 0)}
                 label={sendLabel}
-                onClick={start}
+                onClick={() => start()}
               />
+              )}
             </>
           )}
           </div>
@@ -1077,7 +1151,7 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                 was no dictation. Those are now real, so the copy describes four things this
                 composer genuinely does. Wording is my call; the constraint is that it not name a
                 capability the front door does not have. */}
-            Type a topic, ask a question, dictate it, or drop your material in.
+            Type a topic, ask a question, talk it through, or drop your material in.
           </p>
 
           {/* 🔴🔴 NOTHING GOES HERE. There WAS a strip under the composer — workstream D's "what is

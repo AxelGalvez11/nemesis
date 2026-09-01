@@ -67,9 +67,11 @@ import { useCanvasDictation } from "./use-canvas-dictation";
 import { useVoiceConversation } from "./use-voice-conversation";
 import type { ResponseAudio } from "./use-response-audio";
 
-/** An inert player for surfaces that mount the composer without one (previews). Never plays, so
- *  the voice loop simply treats every turn as a quiet one. */
-const IDLE_REPLY_AUDIO = {
+/** An inert player for surfaces that mount the composer without one (previews), and for the
+ *  FRONT DOOR, where no reply ever plays — the auto-send starts the canvas and the canvas
+ *  speaks. Exported for canvas-home for exactly that reason. Never plays, so the voice loop
+ *  simply treats every turn as a quiet one. */
+export const IDLE_REPLY_AUDIO = {
   complete: false,
   currentTime: 0,
   failure: null,
@@ -142,6 +144,10 @@ interface CanvasComposerProps {
    *  reply finishes. The SAME controller the header's transport bar drives — pausing or scrubbing
    *  there and the loop here read one state. */
   voiceReplyAudio?: ResponseAudio;
+  /** A voice conversation began on the FRONT DOOR and this canvas is its continuation: the loop
+   *  is adopted mid-turn (see useVoiceConversation.adopt) so the stop pill and the lamp are up
+   *  from the first frame and the microphone re-arms once the spoken reply finishes. */
+  voiceArrival?: boolean;
   /** Reports the voice conversation starting and ending, so the canvas can force replies spoken
    *  for the session (see `alwaysSpeak` in use-canvas-voice.ts). */
   onVoiceConversation?: (active: boolean) => void;
@@ -285,6 +291,7 @@ export function CanvasComposer({
   onCapability,
   onRecord = null,
   intent,
+  voiceArrival = false,
   voiceReplyAudio,
   onVoiceConversation,
   busy,
@@ -724,6 +731,18 @@ export function CanvasComposer({
       return "sent";
     },
   });
+
+  // A conversation that began on the front door arrives with its first turn already in flight.
+  // Adopt exactly once: the loop enters at "waiting", the slot shows Stop, the lamp lights, and
+  // the reply speaks before the microphone opens (the canvas set the packet fact itself — see
+  // learning-canvas's spokenArrival).
+  const adoptedArrival = useRef(false);
+  useEffect(() => {
+    if (!voiceArrival || adoptedArrival.current) return;
+    adoptedArrival.current = true;
+    voiceLoop.adopt();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceArrival]);
 
   const control = composerControl({
     hasResponse: Boolean(text.trim()),
@@ -1248,7 +1267,7 @@ export function CanvasComposer({
 /** The voice door's bars — drawn, not imported, like every house mark. Static: the LIVE waveform
  *  belongs to CanvasVoiceBars while listening; a button glyph that wiggled would claim a
  *  microphone that is not open. */
-function VoiceBarsGlyph() {
+export function VoiceBarsGlyph() {
   return (
     <svg aria-hidden fill="currentColor" height="18" viewBox="0 0 18 18" width="18">
       <rect height="6" rx="1" width="2" x="2" y="6" />
@@ -1260,7 +1279,7 @@ function VoiceBarsGlyph() {
 }
 
 /** The conversation's one way out, wherever the loop currently is (listening, waiting, spoken). */
-function VoiceStopButton({ className, onClick }: { className?: string; onClick: () => void }) {
+export function VoiceStopButton({ className, onClick }: { className?: string; onClick: () => void }) {
   return (
     <button
       aria-label="End the voice conversation"
@@ -1296,7 +1315,7 @@ function VoiceStopButton({ className, onClick }: { className?: string; onClick: 
  *  dictation waveform already reads, published by the meter the dictation hook already opens. A
  *  `getUserMedia` here would be a second permission surface spent on a decoration — the exact
  *  thing lib/workspace/mic-level.ts exists to forbid. */
-function VoiceSessionGlow() {
+export function VoiceSessionGlow() {
   const layer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

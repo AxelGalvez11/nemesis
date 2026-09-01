@@ -68,6 +68,10 @@ export interface VoiceConversation {
   /** True while the conversation lane is available at all — the browser recogniser exists. */
   offered: boolean;
   begin: () => void;
+  /** Adopt a conversation that began on the FRONT DOOR: its first send already went out there,
+   *  so the loop enters at "waiting" with the microphone closed — the reply speaks first, and
+   *  the ordinary machinery re-arms the microphone when it finishes. */
+  adopt: () => void;
   end: () => void;
   /** A turn went out by hand while the conversation was held — the loop resumes waiting on it. */
   noteSent: () => void;
@@ -92,6 +96,16 @@ export function useVoiceConversation(input: {
 }): VoiceConversation {
   const { busy, dictation, onActiveChange, replyAudio, submit } = input;
   const [active, setActive] = useState(false);
+  // 🔴 THE SILENCE TIMEOUT MUST READ THE PRESENT, NOT THE RENDER THAT ARMED IT. The transcript's
+  // last growth arms the timer in the same render where the composer's `text` has NOT caught up
+  // (its sync effect runs after the commit), and the effect's deps never change again — so a
+  // `submit` captured in the timeout's closure sent the turn one growth short: the FINAL WORD of
+  // a spoken turn was dropped. Proven with a scripted recogniser feeding word-by-word (the ask
+  // arrived missing its last word); easy to miss in casual use because the real engine's trailing
+  // final often repeats the text and papers over the gap. The ref is written every render, so the
+  // timeout submits whatever the composer holds at FIRE time.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
   // The conversation is offered only where a live transcript exists to watch — see the header.
   const [offered] = useState(() => dictationEngine() === "browser" && dictation.supported);
 
@@ -131,6 +145,18 @@ export function useVoiceConversation(input: {
     setSession(true);
   };
 
+  const adopt = () => {
+    if (!offered || active) return;
+    clearSilence();
+    clearQuietTurn();
+    // 🔴 NO dictation.start() HERE, AND THAT IS THE POINT. The learner already spoke; what they
+    // are owed next is the answer. "waiting" hands control to the same effects every ordinary
+    // turn uses: reply plays, playbackFinished() opens the microphone, and a turn that dies
+    // quietly re-arms through the quiet-turn grace exactly as it would mid-session.
+    stage.current = "waiting";
+    setSession(true);
+  };
+
   const end = () => {
     clearSilence();
     clearQuietTurn();
@@ -156,7 +182,7 @@ export function useVoiceConversation(input: {
       // microphone; nothing was lost. "held" is the graded-answer rule: the words STAY in the
       // box — no reset, which would wipe them — and the loop stands down until the learner's own
       // send (`noteSent`) or the stop button.
-      const verdict = submit();
+      const verdict = submitRef.current();
       if (verdict === "sent") {
         stage.current = "waiting";
       } else if (verdict === "held") {
@@ -222,5 +248,5 @@ export function useVoiceConversation(input: {
     stage.current = "waiting";
   };
 
-  return { active, begin, end, noteSent, offered };
+  return { active, adopt, begin, end, noteSent, offered };
 }
