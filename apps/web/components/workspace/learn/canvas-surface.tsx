@@ -82,6 +82,31 @@ import { FileDropOverlay } from "./file-drop-overlay";
 const CANVAS_COLUMN_PX = "822px";
 
 /**
+ * The narrow step, and it is the reference's own rule rather than a taste call.
+ *
+ * 🔴🔴 THEIR COLUMN IS NOT FIXED, WHICH IS WHY TWO HONEST MEASUREMENTS OF IT DISAGREED. Read off
+ * the live class list, 2026-08-31:
+ *
+ *   [--thread-content-max-width:40rem] @[53.5rem]/main:[--thread-content-max-width:48rem]
+ *
+ * A CONTAINER query, not a viewport one: 640px of text while the thread's own area is under 856px,
+ * 768px at or above it. The 2026-08-26 note in this file measured 768 on a 1470px window and set
+ * this constant to match; today the same account measured 640 with the sidebar open, because the
+ * area was 848px. Both readings were correct and neither was the whole rule.
+ *
+ * 🔴 A CONTAINER QUERY IS ALSO THE ONLY ONE THAT CAN BE RIGHT HERE, because this surface narrows
+ * for the reading pane (#913). A viewport query would keep the wide column while the pane squeezed
+ * the text to two thirds of it.
+ *
+ * Same arithmetic as the constant above: this is the OUTSIDE of the box, and `px-6` is 27px a side
+ * against this app's 112.5% root, so 694 - 54 = 640 of text.
+ */
+const CANVAS_COLUMN_NARROW_PX = "694px";
+
+/** Where the reference steps between the two. 53.5rem at ITS 16px root. */
+const CANVAS_COLUMN_STEP_PX = 856;
+
+/**
  * How long the departure is allowed to hold the press before the route actually changes.
  *
  * 🔴🔴 A CEILING, NOT A DESIGN CHOICE (owner: *"never make the exit slower to respond ... an
@@ -231,6 +256,8 @@ export function CanvasSurface({ chrome, children, onDropFiles, onExit }: CanvasS
       // would reach every other surface in the app, none of which was asked about.
       data-selectable-text="true"
       // The transition is what makes the push read as the panel arriving rather than the page jumping.
+      // 🔴 THE HANDLE THE COLUMN'S CONTAINER QUERY HANGS ON. See `canvas-surface` in globals.css.
+      data-canvas-surface=""
       style={{
         ["--canvas-column" as string]: CANVAS_COLUMN_PX,
         // The transition is what makes the push read as the panel arriving rather than the page jumping.

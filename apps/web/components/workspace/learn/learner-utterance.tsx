@@ -86,8 +86,13 @@ export function LearnerUtterance({ children, className, via = "typed" }: Learner
         // came from you. It does NOT mean correct."* What has to hold is that the learner's words
         // carry a distinct, unconditional ground that is never keyed to a verdict — and they do.
         // There is no verdict prop here and there must not be one.
-        "inline-block max-w-[70%] rounded-[22px] px-4 py-2.5 text-left",
-        "text-[length:var(--canvas-text-body)] leading-relaxed",
+        // 🔴 PIXELS, NOT SCALE STEPS, AND THAT IS THE REM TRAP AGAIN. This app sets
+        // `html { font-size: 112.5% }`, so `px-4` is 18px here and `py-2.5` is 11.25px, against the
+        // reference's 16 and 10. `leading-relaxed` lands on 26px against their 24. Measured in the
+        // owner's own account 2026-08-31: padding 10px 16px, line-height 24px, radius 22px,
+        // max-width 70%. The last two already matched; these three did not.
+        "inline-block max-w-[70%] rounded-[22px] px-[16px] py-[10px] text-left",
+        "text-[length:var(--canvas-text-body)] leading-[24px]",
         // 🔴 THE COLOUR IS ONE BRANCH, NOT A BASE PLUS AN OVERRIDE. Two text-colour utilities on
         // one element resolve by stylesheet order, not by which was written later here.
         via === "spoken"
