@@ -25,7 +25,7 @@ import { supabaseUrl } from "@/lib/env";
 // is no allow-list to keep in step with wherever the app happens to be running.
 //
 // 🔴 NO UNIT IS SPENT HERE, AND THAT IS A FACT ABOUT THE UPSTREAMS, NOT A GENEROSITY. All seven
-// are public, key-free APIs. The metered path (/api/workspace/search → Brave → Tavily → …) bills
+// are public, key-free APIs. The metered path (/api/workspace/search → Brave) bills
 // because those providers bill us; these do not, so putting them on the same meter would charge a
 // student for something that cost nothing.
 

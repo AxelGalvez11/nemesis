@@ -1,5 +1,6 @@
 // Brave Search as the primary provider for /v2/search (owner 2026-08-06,
-// replacing Tavily). The network call lives in index.ts; everything here is pure
+// replacing Tavily, and since 2026-09-01 the ONLY one). The network call lives in
+// index.ts; everything here is pure
 // so it can be tested without a key or a socket.
 //
 // WHY llm/context AND NOT web/search: this endpoint exists for exactly our
@@ -26,10 +27,9 @@ export interface WebResult {
 /**
  * Brave rejects a query over 400 characters or 50 words.
  *
- * Tavily has no such limit, so a long query that works today would fail at Brave
- * and fall silently through to the fallback — the symptom is "Brave never wins"
- * with no error anywhere to find. Checking up front means the recorded provider
- * says what actually happened instead.
+ * 🔴 THIS USED TO BE A REASON TO SKIP BRAVE — a longer query fell through to Tavily,
+ * which has no such limit. Brave is the only provider now, so there is nothing to fall
+ * through to and `braveFit` trims to these numbers instead of refusing.
  */
 export const BRAVE_QUERY_MAX_CHARS = 400
 export const BRAVE_QUERY_MAX_WORDS = 50
@@ -76,8 +76,10 @@ export const BRAVE_MAX_TOTAL_TOKENS = 32_768
  *  should be able to tell these are separate extracts, not running prose. */
 const SNIPPET_JOIN = ' … '
 
-/** Whether Brave can be asked this at all. False means skip it and let the next
- *  provider answer — never send a request we know the API rejects. */
+/** Whether Brave can be asked this AS WRITTEN. False now means it needs trimming
+ *  (see `braveFit`), not that some other provider should take it — there is no
+ *  other provider. Kept exported because it states the provider's limit plainly
+ *  and `braveFit` is checked against it. */
 export function braveCanAnswer(query: string): boolean {
   const trimmed = query.trim()
 
@@ -86,6 +88,46 @@ export function braveCanAnswer(query: string): boolean {
   }
 
   return trimmed.split(/\s+/).length <= BRAVE_QUERY_MAX_WORDS
+}
+
+/**
+ * The same question, cut down to something Brave will accept.
+ *
+ * 🔴🔴 TRIMMING BEATS REFUSING, AND THAT IS THE WHOLE ARGUMENT. While Tavily sat behind
+ * Brave, an over-long query was handed sideways and answered in full. With one provider
+ * the only two options are a shortened search or no search at all, and a learner who
+ * asked a long question is far better served by an answer to the first fifty words of it
+ * than by "web search returned nothing". Nothing is silent about it: the caller logs the
+ * trim.
+ *
+ * 🔴 WORDS FIRST, THEN CHARACTERS, AND BOTH ARE CHECKED. Cutting to 50 words can still
+ * leave more than 400 characters (fifty long words), and cutting to 400 characters can
+ * split one mid-way — so the character cut runs second and falls back to the last whole
+ * word inside the limit. A query that violates neither is returned untouched, trimmed of
+ * surrounding whitespace only, so the ordinary case is not reshaped by a rule about the
+ * unusual one.
+ *
+ * PURE. Returns "" only for a query that was empty to begin with.
+ */
+export function braveFit(query: string): string {
+  const trimmed = query.trim().replace(/\s+/g, ' ')
+
+  if (!trimmed) {
+    return ''
+  }
+
+  const words = trimmed.split(' ').slice(0, BRAVE_QUERY_MAX_WORDS).join(' ')
+
+  if (words.length <= BRAVE_QUERY_MAX_CHARS) {
+    return words
+  }
+
+  const cut = words.slice(0, BRAVE_QUERY_MAX_CHARS)
+  const lastSpace = cut.lastIndexOf(' ')
+
+  // A single word longer than the whole limit has no space to fall back to; the hard
+  // cut is then the only thing left, and it is still a better query than nothing.
+  return lastSpace > 0 ? cut.slice(0, lastSpace) : cut
 }
 
 /** Query string for GET /res/v1/llm/context. `limit` is the caller's requested

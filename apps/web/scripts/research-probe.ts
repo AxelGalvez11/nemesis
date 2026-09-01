@@ -2,7 +2,7 @@
  * A REAL research run, with only the search provider substituted.
  *
  * The model calls are genuine DeepSeek. The passages are genuine page text, fetched over the
- * network from real public URLs. What is stubbed is the choice of which URLs — the Brave/Tavily key
+ * network from real public URLs. What is stubbed is the choice of which URLs — the Brave key
  * lives server-side in the edge function and is deliberately not on this machine — so I supply a
  * realistic result set per query and let the pipeline do everything else for real:
  * plan → per-source extraction → write → per-sentence verification → render.

@@ -34,7 +34,7 @@
 // undeployed behind `SCIENCE_SEARCH_ENABLED`.
 //
 // 🔴 THE SIX ARE FREE AND KEY-FREE, so this spends no search unit and needs no secret. It is
-// deliberately NOT on the metered path (`nemesis-search` → Brave → Tavily → …): those providers
+// deliberately NOT on the metered path (`nemesis-search` → Brave): that provider
 // bill us, these do not, and putting them on the same meter would charge a student for something
 // that cost nothing.
 //

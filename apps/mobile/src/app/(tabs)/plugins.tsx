@@ -45,7 +45,7 @@ const PLUGINS: PluginEntry[] = [
   {
     id: "web",
     name: "Web research",
-    description: "Ground chats with Linkup, Tavily, and Firecrawl search.",
+    description: "Ground chats with Brave web search.",
     icon: "globe",
     status: "Connected",
   },

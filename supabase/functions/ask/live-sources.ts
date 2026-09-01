@@ -177,7 +177,8 @@ export function isScienceConnectorsOn(): boolean {
   return Deno.env.get("SCIENCE_CONNECTORS") === "on";
 }
 
-// GATED (WEB_IN_CHAT=on, default OFF): a trusted-web source (Tavily, filtered to journals/.gov/
+// GATED (WEB_IN_CHAT=on, default OFF): a trusted-web source (the configured WEB_RECON
+// endpoint, filtered to journals/.gov/
 // guidelines/.edu) searching the RESEARCH query, so normal chat can draw on the scholarly web the way
 // Deep Research does. Appended to the fan-out only when the flag is on; off → byte-identical.
 const WEB_SOURCE: LiveSourceDef = {

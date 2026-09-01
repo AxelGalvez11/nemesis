@@ -158,6 +158,48 @@ test("web search is priced as Brave, and no retired search provider is in the mo
   }
 });
 
+test("🔴🔴🔴 the search valve CALLS Brave and nothing else — the cost model is not the wiring", () => {
+  // Owner, 2026-09-01: *"make sure tavily is not plugged into nemesis, only brave for
+  // websearch please."*
+  //
+  // 🔴🔴 THE TEST ABOVE PASSED THE WHOLE TIME TAVILY WAS BILLING, AND THAT IS WHY THIS
+  // ONE EXISTS. `provider-costs.ts` has carried tavily/linkup as RETIRED since long
+  // before anything stopped calling them — a price list is a description, and the code
+  // that opens a socket is the fact. `nemesis-search` was still reading TAVILY_API_KEY
+  // and posting to api.tavily.com on every search Brave declined. A guard that reads the
+  // registry can only ever tell you what someone wrote down.
+  // 🔴 COMMENTS STRIPPED. The valve's own header now NAMES the two keys, to tell whoever
+  // reads it next to delete them from the function's secrets. A guard that cannot tell a
+  // warning about a provider from a call to one would redden on its own tombstone.
+  const valve = repoFile("supabase/functions/nemesis-search/index.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  for (const gone of ["tavily.com", "TAVILY_API_KEY", "LINKUP_API_KEY", "linkup.so"]) {
+    assert.ok(!valve.includes(gone), `the search valve reaches ${gone} again`);
+  }
+  // The search route asks exactly one provider. Firecrawl keeps its scrape role — reading
+  // one named URL is a different job — so it is pinned to that and away from search.
+  assert.match(valve, /const brave = await braveSearch\(body\)/, "Brave is no longer the search provider");
+  assert.ok(!/await (tavily|linkup|firecrawl)Search\(/i.test(valve), "a second search provider is wired in again");
+  assert.match(
+    valve,
+    /const required = route === '\/v2\/search' \? BRAVE_KEY : FIRECRAWL_KEY/,
+    "the server-config check stopped being asked per route — a Firecrawl-only server would pass it and fail every search",
+  );
+  // 🔴 AND A PRICE FOR A PROVIDER NOTHING CAN CALL IS AN INVITATION TO RE-WIRE IT.
+  assert.match(valve, /const UNIT_USD: Record<string, number> = \{ brave: 0\.005, firecrawl: 0\.01 \}/, "the valve prices a provider it cannot call");
+});
+
+test("🔴 a query Brave will not take is TRIMMED, never dropped", () => {
+  // The cost of having no fallback: Brave refuses >400 chars or >50 words, and that used
+  // to be Tavily's cue. With one provider the only outcomes are a shortened search or
+  // none, so the valve must trim. `braveFit`'s own behaviour is pinned in Deno beside it
+  // (brave.test.ts); this pins that the valve actually calls it, which no Deno test can.
+  const valve = repoFile("supabase/functions/nemesis-search/index.ts");
+  assert.match(valve, /const query = braveFit\(asked\)/, "the valve stopped trimming over-long queries");
+  assert.ok(!/if \(!braveCanAnswer\(query\)\) \{\s*return null/.test(valve), "an over-long query is silently dropped again");
+});
+
 test("the retired audio providers are costable but are NOT in the forward model", () => {
   // AssemblyAI streaming tokens are still minted by live-audio/token, so a
   // historical usage row must still be priceable. It must not be able to end up
