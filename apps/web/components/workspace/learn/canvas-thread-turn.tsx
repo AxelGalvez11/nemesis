@@ -57,8 +57,13 @@ export function CanvasThreadTurnView({
           that makes an answer legible at all.
           🔴 `via={null}`: nothing on the ordinary conversational path establishes whether the words
           were typed or spoken, and `LearnerUtterance` defaults to `"typed"`. */}
+      {/* 🔴 `data-learner-said` IS LOAD-BEARING, NOT A STYLING HOOK, and it fails quietly if it is
+          renamed. `useArrival` finds this box by that attribute to fly the learner's own sentence
+          in from the front door's composer; without it the sentence is the one piece of the
+          arrival that appears out of nowhere, which is the half of the report that said prompts
+          "disappear". Same warning as `#canvas-composer` carries in canvas-composer.tsx. */}
       {turn.said?.trim() && (
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex justify-end" data-learner-said>
           <LearnerUtterance via={turn.saidVia}>{turn.said}</LearnerUtterance>
         </div>
       )}

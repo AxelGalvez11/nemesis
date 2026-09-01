@@ -27,8 +27,13 @@ function code(source: string): string {
   return source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
 }
 
+// Direction A (2026-09-01) moved the journey to the arriving side; several guards below read it
+// there rather than in the front door.
+const ARRIVAL_HOOK = readFileSync(new URL("./use-arrival.ts", import.meta.url), "utf8");
+
 const canvasCode = code(CANVAS);
 const homeCode = code(HOME);
+const arrivalHook = code(ARRIVAL_HOOK);
 const previewCode = code(PREVIEW);
 
 const TEACHING = { blocks: 0, canvasState: "learn", policyPresenting: true, working: false } as const;
@@ -211,12 +216,16 @@ test("🔴🔴 the distance is MEASURED, never a constant", () => {
   // greeting's height, the window's height and the length of the Library list below it. A
   // hard-coded translate would be correct at exactly one window size.
   assert.match(homeCode, /getBoundingClientRect\(\)/);
-  // 🔴 AGAINST THE SURFACE, NOT THE WINDOW, AND THAT CHANGE IS THE POINT RATHER THAN AN EDIT TO IT.
-  // The height is still read rather than assumed; what moved is WHICH box it is read from. The
-  // canvas's `CharacterDock` measures its `offsetParent` — the surface in the shell's second grid
-  // column — so a target computed from `window` disagreed with the arrival point by the nav rail's
-  // width on every send. Same rule, one shared rectangle.
-  assert.match(homeCode, /surface\.bottom - canvasComposerInset\(\) - rect\.height/);
+  // 🔴🔴 STILL MEASURED, AND NOW MEASURED AT BOTH ENDS (direction A, 2026-09-01). This used to pin
+  // `surface.bottom - canvasComposerInset() - rect.height` — the front door computing where the
+  // canvas's composer was about to be. The rule was right and the arithmetic was the problem: it is
+  // a PREDICTION of another component's layout, made before that component exists, by a component
+  // that unmounts before it can be checked. The canvas now measures its own composer where it
+  // actually sits and walks it back to the rectangle this file hands over, so neither side
+  // predicts anything. See lib/learn/arrival.ts.
+  assert.match(homeCode, /stageArrival\(\{/, "the front door stopped handing its measurements over");
+  assert.match(arrivalHook, /node\.getBoundingClientRect\(\)/, "the arriving side stopped measuring where things really are");
+  assert.ok(!/canvasComposerInset/.test(homeCode), "the front door is predicting the canvas's layout again");
 });
 
 test("🔴🔴 the clearance under the canvas composer is READ, not typed", () => {
@@ -225,17 +234,36 @@ test("🔴🔴 the clearance under the canvas composer is READ, not typed", () =
   // the app's root is 112.5%, so `pb-4` is 18px and the composer landed 2px high.
   //
   // Calibration: put any number back in place of the read and this reddens.
-  assert.match(homeCode, /getComputedStyle\(document\.documentElement\)\.fontSize/);
+  // 🔴🔴 THE READ IS GONE BECAUSE THE QUESTION IS GONE, WHICH IS A STRONGER FIX THAN THE READ WAS.
+  // `pb-4` is one rem and the root font size is the learner's SCALING setting, so a literal was
+  // right at exactly one setting and the literal that was here (16) at none. Reading it back was
+  // the correct answer while the front door had to compute the canvas composer's resting position.
+  // Under direction A it does not: the canvas measures its own composer, already laid out, already
+  // carrying whatever `pb-4` resolved to at this learner's scale. There is nothing left to get
+  // wrong. What this now guards is that nobody reintroduces the computation.
+  assert.ok(!/canvasComposerInset|CANVAS_COMPOSER_INSET/.test(homeCode), "the front door is computing the canvas's clearance again");
   assert.ok(
-    !/const CANVAS_COMPOSER_INSET = \d/.test(homeCode),
-    "the clearance is a literal again, so it is wrong at every scale but one",
+    !/bottom-\d|- 18\b|- 16\b/.test(arrivalHook),
+    "the arriving side typed a clearance instead of measuring the composer where it sits",
   );
 });
 
-test("🔴🔴 the navigation waits for the move, or the move plays against a dead page", () => {
-  // The canvas mounts with its composer already docked. If this one has not arrived by then the
-  // two do not line up and the swap is visible, which is the opposite of the point.
-  assert.match(homeCode, /window\.setTimeout\(\(\) => router\.push\(href\), DOCK_MS\)/);
+test("🔴🔴 the navigation goes FIRST, so the move plays on the page that is staying", () => {
+  // 🔴🔴 THIS TEST IS REVERSED, AND THE REVERSAL IS THE FIX. It used to require
+  // `setTimeout(() => router.push(href), DOCK_MS)` — hold the route back 320ms so the departing
+  // page could finish its animation before the arriving one existed.
+  //
+  // That is the whole bug, stated as a rule. The move played against a page that was about to die,
+  // and the page that lived faded in from nothing afterwards: filmed on production 2026-09-01, 300ms
+  // of blank screen between them. Holding the route ALSO delayed the canvas mounting, the session
+  // being minted and the opening ask being sent, so the 320ms was charged twice — once to the eye
+  // and once to the answer.
+  //
+  // Now the route changes on the frame of the send and the arriving page owns the move. The old
+  // concern was real and is met the other way round: the two composers line up because the canvas
+  // measures its own and walks it back, not because the front door guessed well before dying.
+  assert.ok(!/setTimeout\(\(\) => router\.push/.test(homeCode), "the route push is deferred again");
+  assert.match(homeCode, /stageArrival\(\{[\s\S]*?\n    router\.push\(href\);/, "the measurement and the push are no longer one gesture");
 });
 
 test("🔴🔴 reduced motion skips the TRAVEL, not the send", () => {
@@ -248,7 +276,9 @@ test("🔴🔴 reduced motion skips the TRAVEL, not the send", () => {
 
 test("🔴 it moves with a transform, so nothing under it reflows", () => {
   // Animating a layout property would reflow the Library list on every frame of the move.
-  assert.match(homeCode, /transform: departing \? `translate3d\(\$\{travel\.x\}px, \$\{travel\.y\}px, 0\)`/);
+  // Same rule, one file along: the move is the canvas's now, and it is still a transform.
+  assert.match(arrivalHook, /node\.style\.transform = `translate3d\(/, "the arrival stopped moving things with a transform");
+  assert.ok(!/style\.(top|left|marginTop)\s*=/.test(arrivalHook), "the arrival animates layout instead of a transform");
   assert.ok(!/marginTop: departing/.test(homeCode), "the move animates layout instead of a transform");
 });
 
@@ -269,14 +299,18 @@ test("🔴🔴 the composer lands where the canvas's composer BEGINS, not where 
   // Both ends now measure the SAME rectangle, so the composer lands exactly where the canvas's
   // composer begins and the swap shows nothing; the rail then carries both away together.
   //
-  // Calibration: point either target back at `window` and the numbers disagree by the rail again.
-  assert.match(homeCode, /const surface = scroller\.current\?\.getBoundingClientRect\(\)/);
-  assert.match(homeCode, /x: Math\.round\(surface\.left \+ surface\.width \/ 2 - \(rect\.left \+ rect\.width \/ 2\)\)/);
-  assert.equal(
-    /window\.innerWidth \/ 2 - \(rect\.left/.test(homeCode),
-    false,
-    "the composer is aiming at the viewport again, which is not the box it lands in",
-  );
+  // 🔴🔴 AND THEN THE AIMING WENT AWAY ENTIRELY, 2026-09-01. Everything above describes two
+  // rectangles being made to agree across an unmount, and the last correction in that series was
+  // making both ends measure the same box. Direction A removes the second rectangle: the front door
+  // reports where its composer IS, and the canvas walks its own composer back from there to where
+  // it already sits. There is no target, so there is nothing to aim at the wrong box.
+  //
+  // Calibration: make the arrival compute an offset from anything other than the node's own rect
+  // and the walk lands somewhere the composer is not.
+  assert.ok(!/const surface = scroller\.current\?\.getBoundingClientRect\(\)/.test(homeCode), "the front door is computing an arrival target again");
+  assert.match(arrivalHook, /const dx = Math\.round\(start\.x - now\.left\);/, "the walk stopped starting from the measured rectangle");
+  assert.match(arrivalHook, /const dy = Math\.round\(start\.y - now\.top\);/, "the walk stopped starting from the measured rectangle");
+  assert.ok(!/window\.innerWidth/.test(arrivalHook), "the arrival is aiming at the viewport, which is not the box anything lands in");
 });
 
 // ── And the character travels with it ───────────────────────────────────────
@@ -288,8 +322,23 @@ test("🔴🔴🔴 the character walks to the exact spot the canvas will stand i
   // so the hand-off is invisible only while the two agree about the point and the size. It was
   // not agreeing about either: the greeter held its place while the dock mounted in the
   // lower-left corner and crawled to the middle, which the learner reads as two characters.
-  assert.match(homeCode, /const \[handoff, setHandoff\]/);
-  assert.match(homeCode, /transform: `translate3d\(\$\{handoff\.dx\}px, \$\{handoff\.dy\}px, 0\) scale\(\$\{handoff\.k\}\)`/);
+  // 🔴🔴 AND IT FINALLY DOES, BECAUSE THERE IS ONLY ONE CHARACTER NOW (direction A, 2026-09-01).
+  // Everything above is the third of three attempts to make two characters on two surfaces agree,
+  // and it is kept because it explains why each earlier one failed. All three shared one shape: the
+  // front door computed the dock's future position, flew ITS character there, and unmounted. The
+  // learner still saw two characters, just better aligned ones — filmed on production, the dock
+  // appeared at (400,778) on the same frame the greeter vanished from (746,378), having never
+  // crossed the space between.
+  //
+  // The greeter no longer moves at all. It is measured where it stands, and the canvas's own dock —
+  // one character, in a tree that is alive for the whole journey — walks from that rectangle to its
+  // corner. Nothing has to agree with anything, because there is no second party.
+  assert.ok(!/setHandoff|handoff\.(dx|dy|k)/.test(homeCode), "the front door is flying its own character again");
+  // 🔴 AND NOTHING ELSE FLIES IT EITHER. The fourth attempt at a walking character is the one to
+  // stop: the dock owns its own transform and re-measures its own anchor, so an outside writer
+  // either loses the render or compounds into an off-screen frame. Both were measured on
+  // 2026-09-01; see use-arrival.ts. It fades in at its corner, which is not a jump.
+  assert.ok(!/selector: "\.character-(dock|arrival)"/.test(arrivalHook), "something is writing to the dock's transform from outside again");
 });
 
 test("🔴🔴 and it takes those numbers FROM the dock, so they cannot drift apart", () => {
@@ -298,10 +347,18 @@ test("🔴🔴 and it takes those numbers FROM the dock, so they cannot drift ap
   // subtly wrong, which is harder to see than one that is obviously wrong.
   //
   // Calibration: inline any of the three as a literal and this reddens.
-  assert.match(homeCode, /from "@\/components\/character\/character-dock"/);
-  for (const name of ["centreStation", "DOCK_SIZE", "DOCK_CENTRE_SCALE"]) {
-    assert.match(homeCode, new RegExp(name), `${name} is not read from the dock`);
-  }
+  // 🔴🔴 AND THE STRONGEST VERSION OF THAT RULE IS TO IMPORT NOTHING, WHICH IS WHERE IT LANDED.
+  // Sharing `centreStation`, `DOCK_SIZE` and `DOCK_CENTRE_SCALE` across the two files was the right
+  // answer while the front door had to reproduce the dock's arithmetic: it made a retune move both
+  // ends at once. It could not fix the underlying problem, which is that arithmetic reproduced in
+  // two places is still two places. The scale is now read off the two rectangles themselves —
+  // `start.w / now.width` — so retuning either size, or the station, or the rail, moves it with no
+  // shared constant at all. A literal is what this still forbids.
+  assert.ok(
+    !/centreStation|DOCK_CENTRE_SCALE/.test(homeCode),
+    "the front door is reproducing the dock's arithmetic again instead of handing over a rectangle",
+  );
+  assert.ok(!/scale\(/.test(arrivalHook), "the walk started resizing things; the dock owns size, the walk owns position");
 });
 
 test("🔴🔴 and the dock does not walk in from a corner it was never standing in", () => {
@@ -496,11 +553,31 @@ test("🔴🔴 the canvas's own half of the transition exists at all", () => {
 
 test("🔴 the composer's drop is longer than it was, and lands softer", () => {
   // At 260ms the composer covered most of a screen height in a quarter of a second, which reads as
-  // a jump with a blur rather than as a thing travelling.
+  // a jump with a blur rather than as a thing travelling. It went to 320ms on `cubic-bezier(0.32,
+  // 0.72, 0, 1)` (owner 2026-08-20: *"The chat composer needs to drop smoother"*).
+  //
+  // 🔴🔴 THE DROP MOVED FILES ON 2026-09-01 AND THIS TEST FOLLOWED IT, RATHER THAN BEING DELETED.
+  // It used to read `DOCK_MS` and the curve out of canvas-home.tsx, because the front door animated
+  // its own composer down and then handed a finished picture to a canvas that faded in from
+  // nothing. Filmed on production, that fade left the screen blank for 300ms. Under direction A the
+  // arriving side owns the whole journey (lib/learn/arrival.ts), so the front door no longer has a
+  // drop to measure — it measures rectangles and leaves on the same frame.
+  //
+  // What the owner asked for is unchanged and still guarded, one level along: the drop is longer
+  // than 320ms and its curve is softer than the brisk one. Both got MORE so, not less — 1,960ms on
+  // his own instruction (*"make it all slower like 1.5 seconds slower"*).
+  const arrival = readFileSync(new URL("../../../lib/learn/arrival.ts", import.meta.url), "utf8");
+  const ms = /export const ARRIVAL_MS = ([\d_]+);/.exec(arrival);
+  assert.ok(ms && Number((ms[1] ?? "").replace(/_/g, "")) >= 320, `the drop is back to ${ms?.[1]}ms or shorter than the 320 it replaced`);
+  assert.match(arrival, /export const ARRIVAL_EASE = "cubic-bezier\(/, "the drop lost its curve");
+  assert.ok(
+    !/cubic-bezier\(0\.32, 0\.72, 0, 1\)/.test(arrival),
+    "the drop is back on the brisker curve, which lunges and then stalls over a two-second move",
+  );
+  // 🔴 AND THE FRONT DOOR NO LONGER RUNS ONE OF ITS OWN. Two composers travelling on two curves is
+  // what this whole rewrite removes.
   const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
-  const dock = /const DOCK_MS = (\d+);/.exec(home);
-  assert.ok(dock && Number(dock[1]) >= 300, `the drop is back to ${dock?.[1]}ms`);
-  assert.match(home, /cubic-bezier\(0\.32, 0\.72, 0, 1\)/, "the drop is back on the brisker curve");
+  assert.ok(!/transition: departing \? `transform/.test(home), "the front door is animating its own composer travel again");
 });
 
 test("🔴🔴🔴 the character wears no punctuation, anywhere", () => {

@@ -14,7 +14,10 @@ const HEADING = read("./learn-heading.tsx");
 const HOME = read("./canvas-home.tsx");
 
 test("🔴 the front door says Learn, and the old question is gone", () => {
-  assert.match(HOME, /<LearnHeading departing=\{departing\} \/>/, "the front door lost its greeting");
+  // 🔴 THE `ref` IS MEASUREMENT, NOT CONTROL. The arriving canvas redraws this greeting where it
+  // stood and fades it out (lib/learn/arrival.ts), so the front door has to be able to report its
+  // rectangle. Nothing outside reads or writes the element beyond that.
+  assert.match(HOME, /<LearnHeading departing=\{departing\} ref=\{headingBox\} \/>/, "the front door lost its greeting");
   assert.ok(!/What are you working on/.test(HOME), "the question the owner replaced is back");
   assert.match(HEADING, /Learn&nbsp;/, "the word Learn left the heading");
 });
