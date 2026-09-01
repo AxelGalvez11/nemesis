@@ -1246,7 +1246,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * URL and returns plain text; nothing about its implementation reads or writes a notebook, and
    * `components/workspace/notebooks/notebook-source-actions.ts` already calls it as exactly that,
    * a generic "read this page" utility. A second route with the identical body would be the same
-   * Firecrawl call behind a different path for no reason.
+   * page read behind a different path for no reason.
    *
    * 🔴 THE URL IS PROVENANCE, NOT SOURCE CONTENT. `CanvasSource.sourceUrl` carries it separately,
    * so the learner can reopen the page without teaching the extractor the synthetic claim

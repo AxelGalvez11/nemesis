@@ -73,6 +73,16 @@ jobs:
         run: deno test --allow-env supabase/functions/ask/
       - name: Deno unit tests (shared cost attribution)
         run: deno test --allow-env supabase/functions/_shared/
+      # 🔴🔴 THE SEARCH VALVE'S TESTS WERE NEVER RUN BY CI UNTIL 2026-09-01, and the day
+      # they were added was the day they started mattering: Firecrawl came out and
+      # Nemesis began fetching student-supplied URLs from inside our own network, so
+      # read-page.test.ts is the SSRF guard — loopback, link-local, the cloud metadata
+      # endpoint, and the re-check on every redirect hop. A security test nobody runs is
+      # one refactor away from not existing. --no-check because this folder's supabase-js
+      # import does not resolve without a Deno-side install; the tests themselves are
+      # pure and need neither the network nor the client.
+      - name: Deno unit tests (search valve — incl. the SSRF guard)
+        run: deno test --no-check --allow-env --allow-read supabase/functions/nemesis-search/
       # The recording pipeline's decisions — the backoff curve, when a stage
       # gives up, where the model's title ends and its notes begin. This is the
       # function that finishes a lecture after the page that recorded it has

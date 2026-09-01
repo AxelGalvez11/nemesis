@@ -1,5 +1,6 @@
 // Notebook web-link source extraction — scrapes a URL to plain text via the nemesis-search edge
-// function's /v2/scrape route (which holds the server-side Firecrawl key and meters usage against the
+// function's /v2/scrape route (which fetches and extracts the page itself — no vendor since
+// 2026-09-01 — and meters usage against the
 // student's device key). This proxy exists because nemesis-search has no browser CORS and was built
 // for server-to-server calls; the browser passes its own nmk_ device key through, we forward it, and
 // return { title, text } for the client to write as a notebook_sources row under its RLS session.
@@ -37,7 +38,7 @@ interface ScrapePayload {
 export async function POST(req: Request): Promise<Response> {
   // A SHAPE check, and that is enough HERE and only here: this route spends
   // nothing itself — it forwards the key to nemesis-search, which resolves it
-  // against `device_keys` and meters the Firecrawl call against that account. A
+  // against `device_keys` and meters the page read against that account. A
   // forged key gets a 403 one hop later, before any money is spent.
   //
   // The sibling file route carried this identical line and was NOT safe, because

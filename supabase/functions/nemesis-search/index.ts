@@ -2,8 +2,13 @@
 //
 // The desktop's agent speaks the Firecrawl API natively (its provider is pointed at
 // this function via FIRECRAWL_API_URL, with the student's device key as the "api key"),
-// so this function implements the two Firecrawl v2 routes the agent actually calls and
-// forwards them to the real Firecrawl with the SERVER-side key:
+// so this function implements the two Firecrawl v2 routes the agent actually calls.
+//
+// 🔴🔴 THE SHAPE IS FIRECRAWL'S; NOTHING IS FORWARDED TO FIRECRAWL ANY MORE. Owner,
+// 2026-09-01: *"also remove firecrawl too, i only want brave (its cheap)."* The route
+// names and the response envelope stay because three clients parse them — renaming a
+// wire format to make a point breaks the desktop, the phone and the web at once — but
+// both routes are answered HERE now: search by Brave, scrape by our own reader.
 //
 //   POST /nemesis-search/v2/search   Authorization: Bearer <device key (nmk_...)>
 //     → validates key → plan (subscriptions) → daily + monthly unit budgets
@@ -20,34 +25,34 @@
 //       every one of them was reachable, none of them was chosen deliberately, and the
 //       only evidence of which answered was a field in an analytics event.
 //   POST /nemesis-search/v2/scrape   Authorization: Bearer <device key>
-//     → same gate, forwards to Firecrawl's /v2/scrape. 🔴 FIRECRAWL STAYS FOR SCRAPE
-//       AND ONLY FOR SCRAPE: reading one named URL is a different job from searching,
-//       Brave's llm/context does not do it, and the owner's rule is about web SEARCH.
-//       One search or one scrape = one unit.
+//     → same gate, then `readPage` (read-page.ts): one ordinary HTTPS request and a
+//       plain-text extraction, no vendor and no per-page cost. Brave's llm/context
+//       cannot fetch a URL you name, so deleting Firecrawl without this would have
+//       deleted the feature, not the provider. One search or one scrape = one unit —
+//       a scrape now costs us nothing, but the unit is also the rate limit.
 //
 // Device keys are the SAME identity nemesis-llm mints and validates (device_keys table,
 // SHA-256 at rest) — one device, one identity, two metered services.
 //
 // Deploy with verify_jwt=false (custom device-key auth here). Secrets: SUPABASE_URL /
-// SUPABASE_SERVICE_ROLE_KEY (platform-injected), FIRECRAWL_API_KEY (server-side upstream
-// key; when unset — and no fallback provider is configured either — this returns 503
-// with a plain explanation instead of leaking the gap to students as a cryptic parse
-// error) and BRAVE_API_KEY (the ONLY search provider since 2026-09-01). Both keys are
-// read HERE, server-side — neither exists on the Vercel side, which only forwards to
-// this function. 🔴 TAVILY_API_KEY AND LINKUP_API_KEY ARE NO LONGER READ BY ANYTHING;
-// delete them from the function's secrets so a key nothing uses cannot quietly bill.
+// SUPABASE_SERVICE_ROLE_KEY (platform-injected) and BRAVE_API_KEY — 🔴 THE ONLY
+// PROVIDER KEY THIS FUNCTION STILL READS. When it is unset, /v2/search returns a 503
+// naming it rather than leaking the gap to students as a cryptic parse error; /v2/scrape
+// needs no key at all and keeps working. It is
+// read HERE, server-side, and does not exist on the Vercel side, which only forwards.
+// 🔴 TAVILY_API_KEY, LINKUP_API_KEY AND FIRECRAWL_API_KEY ARE READ BY NOTHING; delete
+// all three from the function's secrets, so a key nothing asks for cannot quietly bill.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { braveContextParams, braveContextToWeb, braveFit, BRAVE_MAX_URLS } from './brave.ts'
+import { readPage } from './read-page.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const FIRECRAWL_KEY = Deno.env.get('FIRECRAWL_API_KEY') ?? ''
 // Read under BOTH names on purpose. `Deno.env.get` is case- and name-sensitive, and
 // this project has already lost a wired provider to a secret stored under a name the
 // code did not ask for — the failure is silent, because a missing key is
 // indistinguishable from "provider declined" in the fallback chain.
 const BRAVE_KEY = Deno.env.get('BRAVE_API_KEY') ?? Deno.env.get('BRAVE_SEARCH_API_KEY') ?? ''
-const FIRECRAWL_BASE = 'https://api.firecrawl.dev'
 const BRAVE_CONTEXT_BASE = 'https://api.search.brave.com/res/v1/llm/context'
 
 const COUNTER_KEY = 'nemesis_search_units'
@@ -81,12 +86,16 @@ const POSTHOG_HOST = Deno.env.get('POSTHOG_HOST') ?? 'https://us.i.posthog.com'
 // Brave llm/context is $5 per 1,000 requests, read off Brave's own pricing page
 // 2026-08-06 — the one rate here published per REQUEST rather than inferred.
 //
-// 🔴 TAVILY (~$0.016) AND LINKUP (~$0.005) ARE NOT LISTED, BECAUSE NOTHING CAN SPEND
-// THEM. A price for a provider this file cannot call is an invitation to wire it back
-// up. Historical rows naming them are still priceable — that registry is
-// `apps/web/lib/provider-costs.ts`, which has carried them as RETIRED since before
-// this file stopped calling them, and whose own test pins that they are not current.
-const UNIT_USD: Record<string, number> = { brave: 0.005, firecrawl: 0.01 }
+// 🔴 TAVILY, LINKUP AND FIRECRAWL ARE NOT LISTED, BECAUSE NOTHING CAN SPEND THEM. A
+// price for a provider this file cannot call is an invitation to wire it back up.
+// Historical rows naming them are still priceable — that registry is
+// `apps/web/lib/provider-costs.ts`, which carries them as RETIRED.
+//
+// 🔴 `direct` IS ZERO AND IS STILL RECORDED. Reading a page ourselves costs no vendor
+// money, and an event with no row would make the scrape lane look retired the moment
+// it stopped billing — the exact misreading that let Tavily survive in the code for
+// 26 days after it last answered anything. Free is a price; absent is not.
+const UNIT_USD: Record<string, number> = { brave: 0.005, direct: 0 }
 
 // ── Not asking the same question twice ──────────────────────────────────────
 //
@@ -383,7 +392,7 @@ async function recordUsage(
   ctx: KeyContext,
   kind: 'scrape' | 'search',
   detail: string,
-  provider: 'brave' | 'firecrawl',
+  provider: 'brave' | 'direct',
   client: string
 ): Promise<void> {
   const nowIso = new Date().toISOString()
@@ -467,23 +476,12 @@ async function maybeWarnCap(
 }
 
 async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'): Promise<Response> {
-  // 🔴 ASKED PER ROUTE, NOT AS ONE POOL. With a chain of four providers, "is ANY key
-  // set" was a fair question. With one provider per job it is not: a server holding
-  // only FIRECRAWL_API_KEY would have passed this check and then failed every search
-  // at the very end with 'search providers unreachable', which names the wrong cause.
-  const required = route === '/v2/search' ? BRAVE_KEY : FIRECRAWL_KEY
-
-  if (!required) {
-    return json(
-      {
-        success: false,
-        error:
-          route === '/v2/search'
-            ? 'web search is not configured on the server (BRAVE_API_KEY)'
-            : 'page reading is not configured on the server (FIRECRAWL_API_KEY)'
-      },
-      503
-    )
+  // 🔴 ONLY SEARCH NEEDS A KEY NOW. Reading a page is an ordinary HTTPS request, so the
+  // scrape route has nothing to be unconfigured about and must not be refused for a
+  // missing search key — asking one pooled question is how a server with the wrong half
+  // of its configuration fails the working half.
+  if (route === '/v2/search' && !BRAVE_KEY) {
+    return json({ success: false, error: 'web search is not configured on the server (BRAVE_API_KEY)' }, 503)
   }
 
   const deviceKey = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
@@ -575,31 +573,32 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     return json({ success: false, error: 'web search returned nothing for this query' }, 502)
   }
 
-  const upstream = FIRECRAWL_KEY
-    ? await fetch(`${FIRECRAWL_BASE}${route}`, {
-        body: JSON.stringify(body),
-        headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
-        method: 'POST'
-      }).catch(() => null)
-    : null
+  // ── /v2/scrape — read the one page they named ─────────────────────────────
+  //
+  // 🔴 ANSWERED IN FIRECRAWL'S ENVELOPE, because that is what three clients parse:
+  // `data.markdown` is where the notebook reader looks, `data.metadata.title` is what
+  // names the source. The shape is a contract with our own apps; the vendor behind it
+  // was never part of that contract.
+  const page = await readPage(String(body.url ?? ''))
 
-  if (upstream?.ok) {
-    void recordUsage(ctx, route === '/v2/search' ? 'search' : 'scrape', detail, 'firecrawl', client)
-
-    return new Response(await upstream.text(), {
-      headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
-      status: upstream.status
-    })
+  if ('reason' in page) {
+    // 🔴 THE REASON IS THE LEARNER'S, NOT A STATUS CODE. "Couldn't read that page" was
+    // the old ceiling on what we could say, because the failure happened inside someone
+    // else's service. We do the fetching now, so we know whether it was a PDF, a login
+    // wall, a redirect off the public web or a dead link — and saying which is the
+    // difference between a person fixing their link and giving up.
+    return json({ success: false, error: page.reason }, 422)
   }
 
-  if (upstream) {
-    return new Response(await upstream.text(), {
-      headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
-      status: upstream.status
-    })
-  }
+  void recordUsage(ctx, 'scrape', detail, 'direct', client)
 
-  return json({ success: false, error: 'search providers unreachable' }, 502)
+  return json({
+    data: {
+      markdown: page.text,
+      metadata: { sourceURL: page.url, title: page.title }
+    },
+    success: true
+  })
 }
 
 Deno.serve((req: Request) => {

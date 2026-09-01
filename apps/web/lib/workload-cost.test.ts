@@ -174,20 +174,49 @@ test("🔴🔴🔴 the search valve CALLS Brave and nothing else — the cost mo
   const valve = repoFile("supabase/functions/nemesis-search/index.ts")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
-  for (const gone of ["tavily.com", "TAVILY_API_KEY", "LINKUP_API_KEY", "linkup.so"]) {
+  for (const gone of ["tavily.com", "TAVILY_API_KEY", "LINKUP_API_KEY", "linkup.so", "FIRECRAWL_API_KEY", "api.firecrawl.dev"]) {
     assert.ok(!valve.includes(gone), `the search valve reaches ${gone} again`);
   }
   // The search route asks exactly one provider. Firecrawl keeps its scrape role — reading
   // one named URL is a different job — so it is pinned to that and away from search.
   assert.match(valve, /const brave = await braveSearch\(body\)/, "Brave is no longer the search provider");
   assert.ok(!/await (tavily|linkup|firecrawl)Search\(/i.test(valve), "a second search provider is wired in again");
+  // 🔴 THE CONFIG CHECK BELONGS TO SEARCH ALONE. It was one pooled "is ANY provider key set"
+  // question, which a server holding the wrong half of its configuration passed before failing
+  // the working half. Reading a page needs no key at all now, so a missing BRAVE_API_KEY must
+  // not refuse a scrape.
   assert.match(
     valve,
-    /const required = route === '\/v2\/search' \? BRAVE_KEY : FIRECRAWL_KEY/,
-    "the server-config check stopped being asked per route — a Firecrawl-only server would pass it and fail every search",
+    /if \(route === '\/v2\/search' && !BRAVE_KEY\) \{/,
+    "the search key check is no longer scoped to search — a missing Brave key now breaks page reading too",
   );
   // 🔴 AND A PRICE FOR A PROVIDER NOTHING CAN CALL IS AN INVITATION TO RE-WIRE IT.
-  assert.match(valve, /const UNIT_USD: Record<string, number> = \{ brave: 0\.005, firecrawl: 0\.01 \}/, "the valve prices a provider it cannot call");
+  assert.match(valve, /const UNIT_USD: Record<string, number> = \{ brave: 0\.005, direct: 0 \}/, "the valve prices a provider it cannot call");
+});
+
+test("🔴🔴 removing Firecrawl removed the PROVIDER, not the job — a link is still readable", () => {
+  // Owner, 2026-09-01: *"also remove firecrawl too, i only want brave (its cheap)."* Firecrawl was
+  // the SCRAPE provider — 153 of its 156 recorded calls — and Brave's llm/context cannot fetch a
+  // URL you name. Deleting it without a replacement would have deleted "paste a link and Nemesis
+  // reads it", which nobody asked for.
+  const valve = repoFile("supabase/functions/nemesis-search/index.ts");
+  assert.match(valve, /const page = await readPage\(String\(body\.url \?\? ''\)\)/, "the scrape route stopped reading the page");
+  // 🔴 THE WIRE SHAPE IS A CONTRACT WITH OUR OWN APPS, and outlives the vendor it came from:
+  // apps/web/app/api/notebooks/extract/url/route.ts reads exactly these two fields.
+  assert.match(valve, /markdown: page\.text/, "the notebook reader's field is gone");
+  assert.match(valve, /metadata: \{ sourceURL: page\.url, title: page\.title \}/, "the source's title is gone");
+});
+
+test("🔴🔴🔴 fetching a user's URL from our own network is guarded against SSRF", () => {
+  // The cost of doing the fetching ourselves. While Firecrawl did it, a hostile URL left THEIR
+  // network; now it leaves ours, from inside the platform, where 169.254.169.254 hands out the
+  // machine's credentials. The behaviour is pinned in Deno beside the code (read-page.test.ts);
+  // this pins that the guard is WIRED — a perfect `safeTarget` nothing calls is worth nothing.
+  const reader = repoFile("supabase/functions/nemesis-search/read-page.ts");
+  assert.match(reader, /export function safeTarget/, "the SSRF guard is gone");
+  assert.match(reader, /redirect: 'manual'/, "redirects are followed automatically again — a 302 to a private address then goes unchecked");
+  assert.match(reader, /const next = safeTarget\(new URL\(location, target\.url\)\.toString\(\)\)/, "redirect hops are no longer re-checked");
+  assert.match(reader, /if \('reason' in target\)/, "readPage stopped checking its target at all");
 });
 
 test("🔴 a query Brave will not take is TRIMMED, never dropped", () => {
