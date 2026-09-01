@@ -78,3 +78,83 @@ export function groupCitationRuns(markdown: string): string {
     },
   );
 }
+
+// ── Citing the learner's OWN material ───────────────────────────────────────
+//
+// 🔴🔴 THE `[n]` MACHINERY ABOVE IS FOR WEB RESULTS AND ONLY WEB RESULTS, AND THAT WAS THE WHOLE
+// GAP. Owner, 2026-09-01, comparing his canvas with ChatGPT's answer to the same prompt and the
+// same two uploads: ChatGPT pinned about fifteen chips to specific claims; ours pinned none. Not
+// because the model ignored the files, it plainly used them ("the rule your slides give…", "your
+// very first poll asks for the 19-position") — there was simply no way to SAY so. A reader could
+// not tell which sentences came from the lecture and which from the model's own memory.
+//
+// 🔴 A SEPARATE MARKER, NOT A SHARED NUMBER SPACE, AND THAT IS A DELIBERATE REFUSAL. Merging files
+// into the `[n]` list would put file and web citations in one positional index, and `canvas-chat.ts`
+// documents at length why an `[n]` must resolve against exactly what the model was SHOWN — the
+// usable results that fitted the budget, not the raw haul. Sharing that index means every one of
+// those invariants has to hold for a second, differently-built list. The model already sees excerpt
+// ids in its material block (`[s1:e4] (label) text`), so it can cite with an identifier it is
+// holding rather than a number we would have to keep in sync.
+
+/** `[s1:e4]`, the excerpt id the model is shown in its material block. Not `[1]` (bare digits) and
+ *  not `[smiles: …]` (a notation word), so it is disjoint from both by construction. */
+const FILE_REF_RE = /([ \t]*)\[(s\d{1,3}:e\d{1,4})\](?!\()/g;
+
+/** One attached document the answer may cite. Structural: `CanvasSource` fits as-is. */
+export interface FileCitation {
+  id: string;
+  title: string;
+}
+
+/**
+ * Rewrite excerpt-id markers into file-pill links, and DELETE the rest.
+ *
+ * 🔴 A MARKER THAT CANNOT BECOME A PILL IS REMOVED, NOT PRINTED — the same rule `citationsToMarkdown`
+ * learned the hard way when the owner reported *"it's also made up citations"*. A bare `[s3:e9]`
+ * left in the prose is not a smaller citation, it is a claim of evidence with nothing behind it,
+ * and it is uglier besides.
+ *
+ * 🔴 THE SOURCE ID IS WHAT SURVIVES INTO THE HREF, NOT THE EXCERPT ID. The pill names a document,
+ * because that is what a learner recognises and can open; which excerpt inside it carried the
+ * sentence is provenance the surface has no room to show. `s1:e4` therefore resolves to `s1`.
+ *
+ * 🔴 CODE IS UNTOUCHED, for the reason `[1]` inside a fence is left alone: in a pasted config or a
+ * snippet of someone's source, that bracket is not a citation.
+ */
+export function fileRefsToMarkdown(text: string, files: readonly FileCitation[]): string {
+  const known = new Map(files.map((file) => [file.id, file]));
+
+  return text
+    .split(CODE_SEGMENT_RE)
+    .map((chunk, index) =>
+      index % 2 === 1
+        ? chunk
+        : chunk.replace(FILE_REF_RE, (_match, lead: string, ref: string) => {
+            const sourceId = ref.split(":")[0] ?? "";
+            const file = known.get(sourceId);
+            return file ? `${lead}[${file.title}](#nemesis-file=${sourceId})` : "";
+          }),
+    )
+    .join("");
+}
+
+/**
+ * A run of adjacent file markers becomes ONE pill.
+ *
+ * 🔴 THE SAME CLUTTER `groupCitationRuns` EXISTS TO PREVENT, and more likely here: a sentence built
+ * from three excerpts of one lecture would otherwise end in three identical chips naming the same
+ * document. Runs that resolve to the SAME source collapse to one with no "+n" at all, because
+ * "Lecture+2" would be claiming three documents where there is one.
+ */
+export function groupFileRuns(markdown: string): string {
+  return markdown.replace(
+    /\[[^\]]+\]\(#nemesis-file=(s\d{1,3})\)(?:\s*\[[^\]]+\]\(#nemesis-file=s\d{1,3}\))+/g,
+    (run, firstId: string) => {
+      const ids = [...run.matchAll(/#nemesis-file=(s\d{1,3})/g)].map((m) => m[1]);
+      const unique = [...new Set(ids)];
+      const label = run.match(/^\[([^\]]+)\]/)?.[1] ?? firstId;
+      const extra = unique.length - 1;
+      return `[${label}](#nemesis-file=${firstId}${extra > 0 ? `.${extra}` : ""})`;
+    },
+  );
+}

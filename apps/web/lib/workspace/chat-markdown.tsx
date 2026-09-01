@@ -25,7 +25,8 @@ import remarkMath from "remark-math";
 
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
-import { citationsToMarkdown, groupCitationRuns } from "@/lib/workspace/chat-citations";
+import { citationsToMarkdown, fileRefsToMarkdown, groupCitationRuns, groupFileRuns } from "@/lib/workspace/chat-citations";
+import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { escapeCurrencyDollars, normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 import { MermaidDiagram } from "@/lib/workspace/mermaid-diagram";
@@ -160,6 +161,40 @@ function markdownComponents(
             data-library-tag={tag}
           >
             #{tag}
+          </span>
+        );
+      }
+      // 🔴🔴 A CITATION OF THE LEARNER'S OWN MATERIAL, WHICH HAD NO WAY TO EXIST UNTIL 2026-09-01.
+      // Owner, comparing his canvas with ChatGPT's answer to the same two uploads: ChatGPT pinned
+      // about fifteen chips to specific claims and ours pinned none, because every pill below is
+      // built on `source.url` — a favicon, a hostname, an external link — and a lecture the learner
+      // dropped in has none of those. It is not a web result with a missing field; it is a
+      // different kind of thing, and it gets its own treatment rather than a hollowed-out one.
+      //
+      // 🔴 IT IS NOT A LINK. There is nowhere on the public internet to send anyone, and a pill
+      // that looks clickable and goes nowhere is worse than one that plainly does not. The
+      // document's name is in the pill and in the tooltip; opening it belongs to the sources panel,
+      // which already does that job.
+      const fileRef = href?.startsWith("#nemesis-file=")
+        ? href.slice("#nemesis-file=".length).split(".")[0]
+        : null;
+      if (fileRef) {
+        const extra = Number.parseInt(href!.slice("#nemesis-file=".length).split(".")[1] ?? "0", 10) || 0;
+        const name = typeof children === "string" ? children : String(children ?? fileRef);
+        return (
+          <span
+            className="mx-[2px] inline-flex h-[18px] max-w-[220px] translate-y-[4px] items-center gap-[3px] rounded-[12px] bg-(--ui-bg-tertiary) pl-[5px] pr-[6px] align-baseline text-[9px] font-medium leading-none text-(--ui-text-secondary)"
+            data-cite-file={fileRef}
+            title={extra > 0 ? `${name} and ${extra} more` : name}
+          >
+            {/* A page with a folded corner: the one mark that reads as "a document you added"
+                without needing a brand behind it. 10px to sit inside the 18px pill. */}
+            <svg aria-hidden="true" className="size-[10px] shrink-0" fill="none" viewBox="0 0 12 12">
+              <path d="M3 1.25h3.5L9.25 4v6.75H3z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.1" />
+              <path d="M6.5 1.25V4h2.75" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.1" />
+            </svg>
+            <span className="truncate">{name}</span>
+            {extra > 0 && <span className="shrink-0 opacity-70">+{extra}</span>}
           </span>
         );
       }
@@ -404,6 +439,7 @@ export function AssistantMarkdown({
   className,
   text,
   sources,
+  files,
   onWikiLink,
   isWikiLinkAvailable,
   externalLinksInNewTab = true,
@@ -419,6 +455,10 @@ export function AssistantMarkdown({
   /** Numbered web results backing this answer. Supplying them turns the answer's
    *  [n] markers into inline source pills; omitting them leaves the text as-is. */
   sources?: ReadonlyArray<CitationSource>;
+  /** Documents the learner attached, which the answer can cite by excerpt id (`[s1:e4]`).
+   *  Supplying them turns those markers into file pills; omitting them DELETES the markers, on
+   *  the same rule as `[n]`: a marker with nothing behind it is never printed. */
+  files?: ReadonlyArray<FileCitation>;
   onWikiLink?: (target: string) => void;
   isWikiLinkAvailable?: (target: string) => boolean;
   externalLinksInNewTab?: boolean;
@@ -471,7 +511,17 @@ export function AssistantMarkdown({
   const cited = namedCitations
     ? groupCitationRuns(citationsToMarkdown(markdown, sources?.length ?? 0))
     : citationsToMarkdown(markdown, sources?.length ?? 0);
-  const linked = onWikiLink ? wikiLinksToMarkdown(cited) : cited;
+  // 🔴 AFTER THE WEB PASS, AND THE ORDER DOES NOT MATTER FOR CORRECTNESS — the two patterns are
+  // disjoint (`[1]` is bare digits, this needs `sN:eN`) and chat-citations.test.ts asserts that in
+  // both directions. It runs second only so a future reader meets them in the order the model
+  // learned them.
+  //
+  // 🔴 ALWAYS, NOT GATED ON `namedCitations`. A file pill has no dot form to fall back to: the
+  // whole point is the document's NAME, so there is no second treatment to choose between. And
+  // running it unconditionally is what makes "a stray excerpt id never reaches the screen" true on
+  // every surface rather than on the ones that opted in.
+  const grounded = groupFileRuns(fileRefsToMarkdown(cited, files ?? []));
+  const linked = onWikiLink ? wikiLinksToMarkdown(grounded) : grounded;
   // 🔴 A PRICE IS NOT A FORMULA. With single-dollar math on, remark-math pairs the two `$` in
   // "$0.87 to $3.96" into one italic run — the owner's screenshot, twice. Guarding here rather
   // than turning the flag off keeps `$k$` and `$x^2$` working on the surfaces that asked for them.

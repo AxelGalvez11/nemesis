@@ -32,10 +32,17 @@ import { LearnerUtterance } from "./learner-utterance";
 import { SemanticVisual } from "./semantic-visual";
 
 export function CanvasThreadTurnView({
+  files,
   onOpenOutput,
   onRetry,
   turn,
 }: {
+  /** The canvas's attached documents, so a past turn's `[s1:e4]` still resolves to a pill.
+   *
+   *  🔴 A PROP, NOT A FIELD ON THE TURN. Documents belong to the CANVAS: the same lecture backs
+   *  every answer in the thread, and copying it onto each turn would store one shelf N times and
+   *  let the copies disagree the first time a source was renamed. */
+  files: ReadonlyArray<{ id: string; title: string }>;
   /** Opening what the turn produced. The card is not a dead control in the thread. */
   onOpenOutput: (output: NonNullable<CanvasThreadTurn["output"]>) => void;
   /** Re-asks this turn's question. Absent when the turn carries no question to re-ask. */
@@ -90,6 +97,10 @@ export function CanvasThreadTurnView({
                 key={`p${index}`}
                 namedCitations
                 singleDollarMath
+                // 🔴 THE SAME FILES THE LIVE ANSWER GETS. A citation that resolves while the turn
+                // is on screen and turns into nothing once it scrolls into the thread is the exact
+                // class of loss this component was written to end — see its header.
+                files={files}
                 sources={turn.sources.length ? turn.sources : undefined}
                 text={segment.text}
               />
