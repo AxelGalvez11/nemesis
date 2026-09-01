@@ -100,6 +100,32 @@ interface Placed {
 }
 
 /** Figure blocks that carry both a reference and a rectangle, in document order. */
+/**
+ * Give every figure block a ref, minting one where the format supplied none.
+ *
+ * 🔴 A FIGURE WITH NO REF IS INVISIBLE TO EVERYTHING DOWNSTREAM, AND THAT IS NOT OBVIOUS FROM
+ * READING ANY ONE CALLER. `placedFigures` below skips it, so it can never be paired with its
+ * pixels; `attachFigureAssets` keys on the ref, so it can never be shown; and `figure-look`
+ * reports the unpaired result as `skipped: "unsupported"`, which reads as "a format we cannot
+ * open" when the truth is "we had nothing to look it up by".
+ *
+ * Mistral names an image only when its markdown happens to reference it, so a real lecture arrives
+ * with a mix: some figures named, some not, and no signal that the unnamed ones were handled
+ * differently. Minting here is safe because `DocFigure.ref` means "the format's own name for it" —
+ * a format that supplied no name has no opinion to contradict — and the minted value is derived
+ * from unit and position, so it is stable across a re-parse of the same file.
+ */
+export function withFigureRefs(model: DocumentModel | null): DocumentModel | null {
+  if (!model) return model;
+  let minted = false;
+  const blocks = model.blocks.map((block, index) => {
+    if (block.kind !== "figure" || block.figure?.ref) return block;
+    minted = true;
+    return { ...block, figure: { ...block.figure, ref: `fig_${block.unit}_${index}` } };
+  });
+  return minted ? { ...model, blocks } : model;
+}
+
 function placedFigures(model: DocumentModel): Placed[] {
   const out: Placed[] = [];
   for (const block of model.blocks) {

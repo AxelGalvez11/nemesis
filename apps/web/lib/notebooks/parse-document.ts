@@ -53,7 +53,6 @@ import { readCsv } from "./csv-structure";
 import { readTextDocument } from "./text-structure";
 import { workbookToModel } from "./xlsx-model";
 import { readWorkbook } from "./xlsx-structure";
-import { alignFiguresToModel } from "./figure-alignment";
 import { capturedFigures, normalizedFigures, type NormalizedFigure } from "./figure-assets";
 import { readDocxDocument, pptxTextWithFigures, readPptxSlides } from "./office";
 import { pptxToModel } from "./pptx-model";
@@ -64,7 +63,7 @@ import { currentVisionLedger } from "@/lib/pdf/vision-budget";
 import { readPdfStructure, type CapturedFigure, type PdfStructureResult } from "@/lib/pdf/structure";
 import { accountForFigures, NO_ACCOUNTING } from "@/lib/pdf/figure-accounting";
 import { lookAtFigures, type FigureLookResult } from "@/lib/pdf/figure-look";
-import { matchFigureImages } from "@/lib/pdf/figure-match";
+import { matchFigureImages, withFigureRefs } from "@/lib/pdf/figure-match";
 import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { describeFiguresWithVision, readFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
@@ -473,7 +472,12 @@ export async function parseWithVendor(
       }
       return null;
     }
-    model = modelFromMistral(outcome.response, kind, titleFromMistral(outcome.response));
+    // 🔴 REFS FIRST, BECAUSE A FIGURE WITHOUT ONE IS INVISIBLE TO BOTH PASSES BELOW. Mistral names
+    // an image only when its markdown references it, so a real lecture arrives with a mix. An
+    // unnamed figure cannot be paired with its pixels (for vision) and cannot carry an asset (to
+    // be shown), and `figure-look` reports the result as `skipped: "unsupported"` — which reads as
+    // a format we cannot open when the truth is that we had nothing to look it up by.
+    model = withFigureRefs(modelFromMistral(outcome.response, kind, titleFromMistral(outcome.response)));
     readBy = `${MISTRAL_PARSER_PREFIX}${outcome.response.model || "unknown"}`;
     unitsBilled = outcome.response.pages.length;
   } else {
@@ -512,7 +516,7 @@ export async function parseWithVendor(
       return null;
     }
     const { tier, version } = llamaTier();
-    model = modelFromLlama(outcome.result as LlamaResult, kind, null);
+    model = withFigureRefs(modelFromLlama(outcome.result as LlamaResult, kind, null));
     readBy = `${LLAMA_PARSER_PREFIX}${tier}@${version}`;
     unitsBilled = outcome.pages;
   }
@@ -604,10 +608,14 @@ export async function parseWithVendor(
   // this lane debits the same per-document budget as every other and cannot become a second,
   // unmetered door. A figure with no match keeps its honest reason and never fails the parse.
   let looked: FigureLookResult | null = null;
-  if (pdfFigures && options.lookAtFigures) {
-    const matched = matchFigureImages(model, pdfFigures.model, pdfFigures.images);
-    looked = await lookAtFigures(model, matched.images);
-    model = looked.model;
+  /** The one pairing of vendor figures to our decoded pixels. Shared by vision and by the assets. */
+  let matchedFigures: ReadonlyMap<string, CapturedFigure> | null = null;
+  if (pdfFigures) {
+    matchedFigures = matchFigureImages(model, pdfFigures.model, pdfFigures.images).images;
+    if (options.lookAtFigures) {
+      looked = await lookAtFigures(model, matchedFigures);
+      model = looked.model;
+    }
   }
 
   const unitsRead = new Set(
@@ -628,26 +636,18 @@ export async function parseWithVendor(
   // even when it differs from what we asked for — especially then.
   coverage = { ...coverage, parserVersion: readBy };
 
-  // 🔴 THE PIXELS LEAVE THIS LANE TOO, AND THEY HAVE TO BE RE-KEYED FIRST. `pdfFigures.images` holds
-  // figures this function ALREADY decoded — it had to, because a vendor returns coordinates and
-  // refuses bytes, so the render above is the only thing in the whole process that ever sees a
-  // vendor-parsed PDF's diagrams.
+  // 🔴 THE PIXELS LEAVE THIS LANE TOO, RE-KEYED ONTO THE MODEL THAT GETS STORED. They are named by
+  // OUR structural read (`0:img_p0_1`); the stored model is the VENDOR'S (`img-0`). Joining those
+  // on refs cannot work, and shipping it that way stored 14 objects for the owner's
+  // pharmacokinetics lecture while it still reported 0 showable figures out of 27 — pictures in
+  // the bucket, nothing pointing at them.
   //
-  // The pixels are named by OUR structural read (`0:img_p0_1`); the model that gets STORED is the
-  // vendor's, whose figures are named `img-0` or not at all. Joining those on refs cannot work, and
-  // shipping it that way stored 14 objects for the owner's pharmacokinetics lecture while it still
-  // reported 0 showable figures out of 27 — pictures in the bucket, nothing pointing at them.
-  // `alignFiguresToModel` matches them by where the ink is, the one thing the two reads agree on,
-  // and mints a ref for any vendor figure that arrived without one.
-  //
-  // 🔴 IT RUNS BEFORE `document` IS BUILT, BECAUSE IT REWRITES `model`. Placed after, the minted
-  // refs are computed and thrown away and the join fails exactly as it did before — which is the
-  // mistake this comment exists to stop being made twice.
-  const aligned = pdfFigures
-    ? alignFiguresToModel(capturedFigures(pdfFigures.images), pdfFigures.model, model)
-    : { figures: [], model };
-  const figures = aligned.figures;
-  model = aligned.model;
+  // 🔴 IT IS THE SAME PAIRING THE VISION PASS ALREADY MADE, NOT A SECOND ONE. `matchedFigures`
+  // above is `matchFigureImages`, whose output is keyed by the TARGET model's figures — precisely
+  // what an asset join needs. A separate matcher was written for this and deleted: two geometric
+  // pairings of the same two models can disagree, and then a figure is DESCRIBED as one picture
+  // and SHOWS another, which is worse than showing none. One pairing, both uses.
+  const figures = matchedFigures ? capturedFigures(matchedFigures) : [];
 
   const full = documentToText(model);
   const capped = capText(full, TEXT_CAP);
