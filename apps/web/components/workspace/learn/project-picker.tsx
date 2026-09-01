@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/lib/learn/canvas-store";
+import { APP_LOGO } from "@/lib/workspace/app-logos";
 import { beginConnect, type ConnectableApp } from "@/lib/workspace/composio-client";
 
 /**
@@ -132,12 +133,9 @@ export interface ProjectPickerProps {
  * 🔴 NOT HOT-LINKED. Serving them from `www.gstatic.com` would put Google on the request path for
  * every page view and break silently the day they re-cut the set.
  */
-const APP_LOGO: Record<string, string> = {
-  googledrive: "/brand/google/drive.svg",
-  gmail: "/brand/google/gmail.svg",
-  googlecalendar: "/brand/google/calendar.svg",
-  googledocs: "/brand/google/docs.svg",
-};
+// 🔴 THE MAP MOVED TO `lib/workspace/app-logos.ts`. It was about to have a second copy on the
+// Plugins page, and two answers to "which file is Outlook's" drift silently: a row renders a
+// letter instead of a mark and nobody can tell which map was stale.
 
 /**
  * One app's 20px mark: its real logo where we have the file, its initial where we do not.
