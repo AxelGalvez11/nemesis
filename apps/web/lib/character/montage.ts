@@ -56,8 +56,9 @@ import { ANIMATION_BY_ID, animationDuration } from "@/lib/avatar";
  * | the sixteen feelings, median | **0.8px** |
  *
  * Under a pixel. That is a photograph, and it is the whole reason four separate reports said the
- * character was not pulling faces. The `kind` is carried so the settings card can say which is
- * which rather than offering thirty-nine indistinguishable words.
+ * character was not pulling faces. The `kind` is still carried because `isMontageLoop` reads it —
+ * a loop and a held face are timed differently — though the settings card it was first written for
+ * is gone (owner 2026-08-31: *"remove this from settings, the choosing of the montage"*).
  */
 export interface MontageChoice {
   readonly id: string;
@@ -232,13 +233,15 @@ export function holdFor(id: string): number {
 /**
  * A chosen list, made safe to draw.
  *
- * 🔴 IT CAN COME OUT OF `localStorage`, SO IT CAN BE ANYTHING — a list from an older build naming
- * a face that has since been renamed, a hand-edited value, an empty array left by a learner who
- * unticked everything. Every one of those has to resolve to something drawable, because the
- * alternative is a character with no face and no explanation.
+ * 🔴 NOTHING CHOOSES ANY MORE, AND THIS STAYS FOR THE ONE PATH THAT IS LEFT. The Appearance card
+ * that let a learner tick faces was removed on 2026-08-31 at the owner's word (*"remove this from
+ * settings, the choosing of the montage of the character"*), along with the preference it wrote —
+ * so every caller now asks with nothing and gets `MONTAGE`. The filtering below is not dead
+ * defensiveness: it is what makes "no choice" a single well-defined answer instead of each caller
+ * inventing its own default.
  *
- * An empty choice means the DEFAULT rather than nothing: "no expressions" is already expressible by
- * leaving one ticked, and a character frozen on one face is a better failure than a blank one.
+ * An empty list resolves to the DEFAULT rather than to nothing, because a character with no face is
+ * indistinguishable from a broken one.
  */
 export function resolveMontage(chosen: readonly string[] | null | undefined): readonly string[] {
   if (!chosen) return MONTAGE;

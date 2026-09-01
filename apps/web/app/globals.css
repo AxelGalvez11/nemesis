@@ -1383,3 +1383,33 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
  * searches the RAW stylesheet, so an earlier version of this very comment — which quoted the query
  * verbatim in order to explain the rule — became the last match, and every class read as unguarded
  * again. Comments in this file are part of the text a guard reads. */
+
+/* ── the canvas column steps the way the reference's does ─────────────────────────────────────
+   🔴🔴 THEIR COLUMN IS NOT FIXED, WHICH IS WHY TWO HONEST MEASUREMENTS OF IT DISAGREED. Read off
+   the live class list in the owner's account, 2026-08-31:
+
+     [--thread-content-max-width:40rem] @[53.5rem]/main:[--thread-content-max-width:48rem]
+
+   A CONTAINER query, not a viewport one: 640px of text while the thread's own area is under 856px,
+   768px at or above. The 2026-08-26 measurement in canvas-surface.tsx read 768 on a 1470px window
+   and sized this app to match; the same account read 640 today with the sidebar open, because the
+   area was 848px. Both were right; neither was the whole rule.
+
+   🔴 A CONTAINER QUERY IS THE ONLY KIND THAT CAN BE RIGHT HERE, because this surface narrows for
+   the reading pane (#913). A viewport query would hold the wide column while the pane squeezed the
+   text into two thirds of it.
+
+   🔴 THE VARIABLE LANDS ON THE CHILDREN, NOT THE CONTAINER. A container cannot be styled by its own
+   query, and the surface sets `--canvas-column` inline; redefining it on `> *` beats that
+   inheritance for everything that actually reads it, without touching the inline value the shell
+   tests pin. 694 - 54 of `px-6` padding = 640 of text, the same arithmetic as the wide step. */
+[data-canvas-surface] {
+  container-type: inline-size;
+  container-name: canvasarea;
+}
+
+@container canvasarea (max-width: 855px) {
+  [data-canvas-surface] > * {
+    --canvas-column: 694px;
+  }
+}

@@ -2504,7 +2504,7 @@ export function LearningCanvas({
             appears, only WHERE. `turnInFlight` covers an ordinary answer; `preparing` covers the
             first wait on a canvas that has nothing on it yet. */}
         {threadOpen && (turnInFlight || presence === "preparing") && !replyText.trim() && (
-          <CanvasThinkingPreview label={preparingLabel} />
+          <CanvasThinkingPreview app={session.workApp} label={preparingLabel} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
@@ -3348,7 +3348,7 @@ export function LearningCanvas({
           recording panel offers a second one. Same position, same width — the surface transforms,
           it does not gain a layer. */}
       {showComposer && recording && (
-        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4 pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent${paneInset}`}>
+        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[24px] pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent${paneInset}`}>
           <div className="pointer-events-auto w-full">
             <CanvasRecorder
               // The canvas's ordinary attach path — the identical one a dropped file takes, which is

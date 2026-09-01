@@ -28,7 +28,11 @@ test("🔴🔴🔴 the running step is a line in the conversation, not a caption
   assert.match(PREVIEW, /data-canvas-thinking-line/, "the line lost the handle its placement is measured by");
   assert.ok(!/className="sr-only"/.test(PREVIEW.slice(PREVIEW.indexOf("export function CanvasThinkingPreview"), PREVIEW.indexOf("export function CanvasThinkingAnnouncement"))),
     "the visible line went back to being screen-reader only");
-  assert.match(CANVAS, /<CanvasThinkingPreview label=\{preparingLabel\} \/>/, "nothing draws the line in the thread");
+  // 🔴 THE APP RIDES ALONGSIDE THE LABEL (2026-08-31). Plain thinking still draws the bare
+  // shimmering sentence this file measures; a step that reaches a connected app also carries that
+  // app's own favicon, re-measured in the owner's account the same day. `app` is null for every
+  // step Nemesis runs on its own, so the state this test describes is unchanged.
+  assert.match(CANVAS, /<CanvasThinkingPreview app=\{session\.workApp\} label=\{preparingLabel\} \/>/, "nothing draws the line in the thread");
   // 🔴🔴 SCOPED TO CHAT VIEW, 2026-08-31 (owner, same day, second pass): *"it should only be like
   // that when it's in chat mode, not when it's in Canvas mode. Canvas mode should just have the
   // thinking below the mascot."* The morning's instruction this guard came from only ever spoke

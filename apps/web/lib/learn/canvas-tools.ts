@@ -35,7 +35,8 @@ import { EXAM_ITEM_RULES_SHORT } from "@/lib/workspace/item-writing";
 
 import { executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { composioTools, runConnectedApp, runAction, type ComposioToolIndex } from "@/lib/workspace/composio-client";
-import type { PendingAction } from "@/lib/workspace/composio-actions";
+import { actionSegments, riskOf, type PendingAction } from "@/lib/workspace/composio-actions";
+import { labelFor as appLabel } from "@/lib/workspace/composio-apps";
 import { serializeToolResult } from "@/lib/workspace/chat-tool-result";
 
 /** One thing the model asked to do, as it comes out of the envelope. */
@@ -87,6 +88,21 @@ export interface ToolRoundResult {
 /** What the strip says while one call runs, and which mark sits beside it. */
 export interface WorkNote {
   readonly label: string;
+  /**
+   * The connected app this step is running against, as its toolkit slug, or undefined for
+   * Nemesis's own tools.
+   *
+   * 🔴🔴 NOT THE MARK THAT WAS DELETED, AND THE DIFFERENCE IS THE WHOLE JUSTIFICATION. What died
+   * on 2026-08-30 was a set of GENERIC glyphs — a globe, a calendar, a chain link — drawn beside
+   * every caption, removed the day the reference was measured as a bare shimmering sentence. That
+   * measurement was taken with NO app connected, and it is still correct for plain thinking, which
+   * still gets nothing beside it.
+   *
+   * Re-measured 2026-08-31 in the owner's own account with Google Calendar connected: a step that
+   * calls an app shows that app's REAL favicon at 20px, an 8px gap, then the sentence. So this
+   * field carries an identity, not a decoration, and only for steps that genuinely reach an app.
+   */
+  readonly app?: string;
 }
 
 /**
@@ -227,6 +243,7 @@ export async function loadToolCatalogue(): Promise<{ block: string; index: Compo
  * already has, and it is carried rather than re-derived downstream.
  */
 export function labelFor(name: string, app: string | undefined): WorkNote {
+  // Nemesis's own tools. No app, so no mark: these are the product doing its own work.
   if (name.startsWith("list_calendar") || name === "find_calendar_issues") {
     return { label: "Reading the calendar" };
   }
@@ -236,7 +253,28 @@ export function labelFor(name: string, app: string | undefined): WorkNote {
   if (name === "get_study_record") return { label: "Reading your study record" };
   if (name === "make_practice_test") return { label: "Writing a practice test" };
   if (name === "find_figure") return { label: "Looking for a picture in your lectures" };
-  return { label: app ? `Working in ${app}` : "Working in a connected app" };
+  // A connected app. The slug is the identity the row draws its mark from; the words are the
+  // app's own name, never the slug — `Working in googlecalendar` is a database row, not a sentence.
+  if (!app) return { label: "Working in a connected app" };
+  return { app, label: `${appVerb(name)} your ${appLabel(app)}` };
+}
+
+/**
+ * The verb the strip shows for one action, from the action itself.
+ *
+ * 🔴 IT READS THE SAME SEGMENTS `riskOf` DOES, so the words and the safety gate can never disagree
+ * about what an action is: anything the gate treats as a read says so, and everything else is
+ * phrased as work about to happen rather than work already done. A step that says "Searching" and
+ * then asks for confirmation to send an email has told the learner the wrong thing.
+ */
+function appVerb(action: string): string {
+  const segments = actionSegments(action);
+  if (segments.some((s) => s === "SEARCH" || s === "FIND")) return "Searching";
+  if (segments.some((s) => s === "LIST" || s === "FETCH" || s === "GET" || s === "READ" || s === "RETRIEVE")) {
+    return "Reading";
+  }
+  if (segments.some((s) => s === "DOWNLOAD")) return "Downloading from";
+  return riskOf(action) === "read" ? "Checking" : "Working in";
 }
 
 function readPending(result: unknown): PendingConfirmation | null {

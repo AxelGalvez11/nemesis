@@ -244,7 +244,13 @@ function materialSection(sources: readonly CanvasSource[], topic: string): strin
   if (grounding) return `MATERIAL (cite these excerpt ids):\n\n${grounding}`;
   // Topic-first learning (§6B). No material means no citations are possible, and saying so
   // is what stops the model producing citation-shaped decoration.
-  return `There is no attached material. The learner asked to be taught: "${topic}". Write from established knowledge in the field and leave every sourceRefs list empty.`;
+  //
+  // 🔴🔴 AND THE BAN NAMES THE PROSE, NOT ONLY `sourceRefs`. This said "leave every sourceRefs
+  // list empty" and nothing else, so the model obeyed it exactly and still wrote "[1][2][3]" into
+  // the sentences — a structured field it left empty beside prose full of citation marks. Owner,
+  // 2026-08-31, on a turn with no sources at all: *"it's also made up citations."* The renderer
+  // now deletes any marker it cannot turn into a pill, which is the backstop; this is the cause.
+  return `There is no attached material. The learner asked to be taught: "${topic}". Write from established knowledge in the field and leave every sourceRefs list empty. Do not write bracketed numbers like [1] or [2] anywhere in your prose: there is nothing for them to point at, and a reader takes them as evidence you do not have.`;
 }
 
 /**

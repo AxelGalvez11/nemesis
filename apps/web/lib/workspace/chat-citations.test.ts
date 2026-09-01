@@ -16,13 +16,24 @@ assert.equal(
   "every in-range marker converts",
 );
 
-// A turn that ran no web search must look exactly as before.
-assert.equal(citationsToMarkdown("See item [1] of the list.", 0), "See item [1] of the list.", "no sources means no rewriting");
+// 🔴🔴 A MARKER THAT CANNOT BECOME A PILL IS DELETED. These two assertions used to say the
+// opposite — "no sources means no rewriting" and "out-of-range markers are left alone" — on the
+// reasoning that a bare "[9]" was less wrong than a pill pointing at nothing. The owner reported
+// the result of that on 2026-08-31, twice: *"it's also made up citations"* and *"citations should
+// only show up as the pill form."* His screenshot carried [1][2][3], [5], [2][6] on a turn with no
+// sources attached at all, which is the `sourceCount === 0` path.
+//
+// A bare bracket number is not a smaller citation. It is a claim of evidence with nothing behind
+// it, and in a product a student trusts to be right that is the worse failure. Deleting it also
+// makes "citations appear only as pills" true by construction rather than by the model behaving.
+assert.equal(citationsToMarkdown("See item [1] of the list.", 0), "See item of the list.", "an unsourced turn still printed a bracket number");
+assert.equal(citationsToMarkdown("Claim [9].", 3), "Claim.", "an invented marker was left on screen");
+assert.equal(citationsToMarkdown("Claim [0].", 3), "Claim.", "zero is not a source index and must not print");
 
-// Models invent numbers. A pill pointing at a source that was never supplied
-// would be a fabricated citation, so out-of-range markers stay plain text.
-assert.equal(citationsToMarkdown("Claim [9].", 3), "Claim [9].", "out-of-range markers are left alone");
-assert.equal(citationsToMarkdown("Claim [0].", 3), "Claim [0].", "zero is not a source index");
+// 🔴 FOUR DIGITS ARE NOT A CITATION. A law report ("[1998] AC 123") and a year in brackets must
+// survive, which the 1-2 digit marker pattern already guarantees — pinned so a widened pattern
+// cannot start eating them.
+assert.equal(citationsToMarkdown("Donoghue [1932] AC 562.", 0), "Donoghue [1932] AC 562.", "a bracketed year was deleted as a citation");
 
 // Already-linked text must not be double-wrapped.
 assert.equal(

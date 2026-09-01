@@ -765,7 +765,10 @@ export function CanvasComposer({
           way. */}
       <div
         className={cn(
-          "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4",
+          // 🔴 24px OFF THE BOTTOM, MEASURED, NOT `pb-4`. This app's root is 112.5%, so `pb-4` is 18px
+          // here against the reference's 24. Read in the owner's own account 2026-08-31: the composer
+          // form's bottom edge sits 24px above the viewport floor.
+          "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[24px]",
           "bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent pt-14",
         )}
       >

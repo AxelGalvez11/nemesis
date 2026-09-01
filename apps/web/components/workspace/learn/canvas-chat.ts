@@ -302,7 +302,7 @@ export async function askCanvasChat(
    */
   /** What is happening right now, in words. (The mark that used to ride beside the label died
    *  2026-08-30 with the ChatGPT-parity thinking preview — the reference draws no glyph.) */
-  onWork?: (label: string | null) => void,
+  onWork?: (label: string | null, app?: string) => void,
   /**
    * The learner attached the Course capability to this submission.
    *
@@ -525,7 +525,7 @@ export async function askCanvasChat(
       // labels once it is over — see `onCall`'s own note. `labelFor` never shows a slug.
       const ran = await runToolRound(decision.tools, catalogue.index, {
         askText: question,
-        onCall: (note) => onWork?.(note.label),
+        onCall: (note) => onWork?.(note.label, note.app),
       });
       if (ran.context) toolResults.push(ran.context);
       // 🔴 A HELD CALL ENDS THE TOOL HALF OF THE TURN, HERE, BEFORE ANOTHER ROUND CAN ASK AGAIN.

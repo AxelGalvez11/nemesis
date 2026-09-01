@@ -125,12 +125,29 @@ test("🔴🔴 the strip moves BEFORE each call, not after the round", () => {
   assert.ok(!/labels/.test(round), "the round still collects labels to hand back at the end");
 });
 
-test("🔴 the label travels alone now — the mark machinery may not creep back (2026-08-30)", () => {
-  // The mark beside the caption died with the ChatGPT-parity thinking preview (the reference
-  // draws a bare shimmering sentence in every working state). The WORDS still travel live:
-  // tool → onWork → setWork, announced before the call runs.
-  assert.match(CHAT, /onCall: \(note\) => onWork\?\.\(note\.label\)/, "the label stopped travelling from the tool to the caption");
+test("🔴 the label travels live, and so does the app it is running against", () => {
+  // The WORDS travel live: tool → onWork → setWork, announced before the call runs.
+  assert.match(CHAT, /onCall: \(note\) => onWork\?\.\(note\.label, note\.app\)/, "the label stopped travelling from the tool to the caption");
   assert.ok(!/workMark|ThinkingMark/.test(SESSION), "the session grew a mark again");
+});
+
+test("🔴🔴 the GENERIC mark stays dead; an app's own favicon is a different thing", () => {
+  // 🔴 BOTH MEASUREMENTS ARE RIGHT AND THEY MEASURED DIFFERENT STATES. On 2026-08-30 the reference
+  // was read as a bare shimmering sentence with no glyph, and the generic marks — a globe, a
+  // calendar, a chain link, drawn beside EVERY caption — were deleted. That reading was taken with
+  // no app connected, and it still holds: plain thinking has nothing beside it.
+  //
+  // Re-measured 2026-08-31 in the owner's account with Google Calendar connected: a step that
+  // reaches an app shows that app's OWN favicon at 20px with an 8px gap. So what travels now is an
+  // identity for one specific app, on exactly the steps that have one, and never a glyph chosen to
+  // decorate a caption.
+  assert.ok(!/workMark|ThinkingMark|markForBusy/.test(CHAT + SESSION + TOOLS), "the generic mark machinery came back");
+  // The identity is the toolkit slug, and it is absent for Nemesis's own tools.
+  assert.match(TOOLS, /readonly app\?: string;/, "WorkNote stopped carrying which app a step is in");
+  assert.match(TOOLS, /if \(!app\) return \{ label: "Working in a connected app" \};/, "a step with no app now claims one");
+  // And the words are the app's own name, never the raw slug.
+  assert.ok(!/`Working in \$\{app\}`/.test(TOOLS), "the caption prints the toolkit slug at the learner again");
+  assert.match(TOOLS, /appLabel\(app\)/, "the caption stopped using the app's own name");
 });
 
 // ── The envelope ─────────────────────────────────────────────────────────────────────────────

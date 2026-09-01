@@ -17,6 +17,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { capturedFigures, figureContentKey } from "./figure-assets";
@@ -244,4 +245,24 @@ test("🔴 a vendor-parsed PDF keeps the pixels the vendor made us decode oursel
     kept.length,
     "the stored pixels reached no figure in the vendor's model — stored, and unreachable",
   );
+});
+
+test("🔴 vision and the asset join use ONE pairing, and a nameless vendor figure still gets both", () => {
+  // 🔴 TWO PAIRINGS OF THE SAME TWO MODELS CAN DISAGREE, AND THE FAILURE IS THE WORST KIND. A
+  // figure would be DESCRIBED as one picture and SHOW another — confidently, with a citation.
+  // That is worse than showing no picture at all, and nothing downstream could detect it.
+  //
+  // A second geometric matcher was written for the asset join and deleted in favour of the one the
+  // vision pass already computes (`matchFigureImages`, whose output is keyed by the TARGET model's
+  // figures — exactly what an asset join needs). This asserts the duplicate has not come back.
+  const source = readFileSync(new URL("./parse-document.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /figure-alignment|alignFiguresToModel/, "a second figure matcher is back");
+  assert.match(source, /capturedFigures\(matchedFigures\)/, "the asset join stopped reusing the vision pairing");
+
+  // 🔴 AND REFS ARE MINTED BEFORE EITHER PASS. `placedFigures` skips a figure block with no ref, so
+  // an unnamed vendor figure can be paired with nothing — and `figure-look` then reports it as
+  // `skipped: "unsupported"`, which reads as "a format we cannot open" when the truth is that we
+  // had nothing to look it up by. Mistral names an image only when its markdown references it.
+  assert.match(source, /withFigureRefs\(modelFromMistral/, "Mistral figures can arrive nameless");
+  assert.match(source, /withFigureRefs\(modelFromLlama/, "LlamaParse figures can arrive nameless");
 });

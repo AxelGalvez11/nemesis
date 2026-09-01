@@ -52,9 +52,13 @@ test("🔴 naming a running step does not lock the composer", () => {
   assert.match(SESSION, /const \[work, setWork\] = useState<string \| null>\(null\)/);
   // 🔴 THE RULE HERE WAS NEVER THE SHAPE OF THE ARROW: a step label lands in `setWork` and NEVER
   // in `setBusy`, because `busy` disables the composer and naming a running step must not stop
-  // somebody typing. (The arrow grew a body 2026-08-25 when a mark rode beside the label, and
-  // shrank back 2026-08-30 when the mark died with the ChatGPT-parity preview.)
-  assert.match(SESSION, /\(label\) => setWork\(label\)/);
+  // somebody typing. The arrow grew a body 2026-08-25 when a mark rode beside the label, shrank
+  // back 2026-08-30 when the generic mark died, and grew one again 2026-08-31 — this time
+  // carrying which APP a step is running against, so the row can wear that app's own favicon.
+  // The rule is unchanged and is what is asserted: `setWork`, never `setBusy`.
+  assert.match(SESSION, /\(label, app\) => \{/, "the step label stopped travelling into setWork");
+  assert.match(SESSION, /setWork\(label\);/, "the label no longer lands in setWork");
+  assert.match(SESSION, /setWorkApp\(app \?\? null\);/, "the app identity stopped riding with the label");
   assert.ok(
     !/setBusy\(label \?/.test(SESSION),
     "a step label is back on `busy`, which disables the composer while it runs",
