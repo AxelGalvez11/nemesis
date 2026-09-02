@@ -73,6 +73,7 @@ import type { CanvasSelection } from "@/lib/learn/canvas-selection";
 import { canStart, canTransition } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { readingSubjectFor, thinkingCopy } from "@/lib/learn/thinking-phases";
+import { canvasAddress } from "@/lib/learn/learn-entry";
 import { deleteCanvas, loadCanvas, mergeSourceIntoCanvas, newCanvas, saveCanvas } from "@/lib/learn/canvas-store";
 import { ensureCanvasDeck, gradeStudyCard, writeRecallCards } from "@/lib/learn/canvas-study-bridge";
 
@@ -726,9 +727,39 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   latest.current = canvas;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * Whether the address bar names the canvas in hand.
+   *
+   * 🔴🔴🔴 IT DID NOT, AND THAT IS WHY CHATS DID NOT SAVE. Owner, 2026-09-02: *"the chats don't
+   * seem to save or make a unique conversation id."* They saved perfectly; the URL just never
+   * learned where they were. `/learn?ask=<topic>` mints a canvas here, and the address stayed
+   * `?ask=` for its whole life — so a reload did not reopen the conversation, it ASKED AGAIN in a
+   * new one. Production the same day: "what is capacitance" twice 58 seconds apart in two
+   * canvases, "How a diode works" four times, six canvases for one question about AI news.
+   *
+   * 🔴 AFTER THE FIRST SAVE, NEVER BEFORE. An address is a promise that something is there; naming
+   * a canvas that has not been written yet turns a reload into an empty canvas standing where the
+   * work was. `saveCanvas` reports whether it is findable — the local copy counts, because
+   * `loadCanvas` falls back to it on every path.
+   *
+   * 🔴 `replaceState`, NOT A PUSH. A pushed entry would make Back return to `?ask=` and start the
+   * whole thing over, which is the bug wearing a different gesture.
+   */
+  const addressed = useRef(Boolean(canvasId));
+  useEffect(() => {
+    if (canvasId) addressed.current = true;
+  }, [canvasId]);
+
   const persist = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void saveCanvas(uid, latest.current), 600);
+    saveTimer.current = setTimeout(() => {
+      const saving = latest.current;
+      void saveCanvas(uid, saving).then((findable) => {
+        if (!findable || addressed.current || typeof window === "undefined") return;
+        addressed.current = true;
+        window.history.replaceState(null, "", canvasAddress(window.location.href, saving.id));
+      });
+    }, 600);
   }, [uid]);
 
   /** Every state change funnels through here so nothing can update the canvas without also
@@ -804,6 +835,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   // Load, or start fresh.
   useEffect(() => {
     let alive = true;
+    // 🔴🔴 THE URL LEARNING OUR OWN ID IS NOT A REQUEST TO RELOAD. `persist` writes `?c=<id>` after
+    // the first save, and Next surfaces that through `useSearchParams`, so this effect re-runs with
+    // an id it did not have a moment ago — the id of the canvas already in hand, mid-conversation.
+    // Reloading there would replace live state with the last SAVED state and silently drop whatever
+    // has happened since the debounce. A canvas opened from a link is unaffected: there the fresh
+    // canvas minted at mount has a different id, so this never matches.
+    if (canvasId && canvasId === latest.current.id) {
+      setReady(true);
+      return;
+    }
     void (async () => {
       if (canvasId) {
         let found: Awaited<ReturnType<typeof loadCanvas>> = null;
@@ -2591,6 +2632,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     const fresh = newCanvas();
     latest.current = fresh;
     setCanvas(fresh);
+    // 🔴 THE OLD ADDRESS IS NOW A LIE, so it goes before the new canvas has earned one. Leaving
+    // `?c=<previous>` on screen means a reload reopens the canvas the learner just left, and the
+    // fresh one they are typing into vanishes with no trace of why.
+    addressed.current = false;
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("c");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
     canvasCapture("canvas_created", fresh);
   }, []);
 

@@ -144,3 +144,35 @@ export const LEARN_ENTRY_PATHS: ReadonlyArray<{
 export function learnEntryFromSearch(search: string): LearnEntry {
   return learnEntryFrom(new URLSearchParams(search));
 }
+
+/**
+ * The address a canvas gets once it exists: `?c=<id>`, with the parameters that STARTED it gone.
+ *
+ * 🔴🔴🔴 THE URL NEVER LEARNED THE CANVAS'S ID, AND THAT WAS THE BUG. Owner, 2026-09-02: *"the
+ * chats don't seem to save or make a unique conversation id."* Sending from the front door goes to
+ * `/learn?ask=<topic>`, which carries NO id because there is nothing to carry yet —
+ * `useCanvasSession(null)` mints one when the surface mounts. It was never written back, so the
+ * address bar said `?ask=what is capacitance` for the whole life of the conversation.
+ *
+ * Which means a refresh does not reopen that conversation. It ASKS AGAIN, in a brand new canvas.
+ * Read off production the same day: "what is capacitance" exists twice, 58 seconds apart, in two
+ * canvases with two different answers; "How a diode works" four times, all empty; six separate
+ * canvases for one question about AI news between 00:17 and 00:28. Every one of those is somebody
+ * pressing reload.
+ *
+ * 🔴 THE STARTING PARAMETERS MUST GO, NOT JUST `c` ARRIVE. Leaving `?ask=` beside `?c=` would keep
+ * the reload re-asking — into the right canvas this time, which is a second copy of the question
+ * rather than a second canvas, and no better. `new`, `cap`, `voice` and `folder` are the same kind
+ * of fact: instructions for STARTING a canvas, meaningless once one exists, and actively wrong on a
+ * reload (`&folder=` would re-file it, `&voice=1` would reopen the microphone).
+ *
+ * 🔴 EVERYTHING ELSE SURVIVES. `?policy=` and `?teacher=` are development switches that describe
+ * how the session runs rather than how it began, and an engineer who set one expects it to hold
+ * across a reload.
+ */
+export function canvasAddress(href: string, id: string): string {
+  const url = new URL(href);
+  url.searchParams.set("c", id);
+  for (const started of ["ask", "new", "cap", "voice", "folder", "import"]) url.searchParams.delete(started);
+  return `${url.pathname}${url.search}${url.hash}`;
+}

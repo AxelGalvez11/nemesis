@@ -189,7 +189,14 @@ test("🔴🔴 neither + menu is anchored to its button, because the composer is
 test("🔴🔴 a stray ?folder= never decides the surface", () => {
   // The same rule `cap` carries: a filing instruction is a fact ABOUT a submission. With nothing
   // asked there is nothing to file, so it must open the front door like any unknown parameter.
-  const surface = ENTRY.slice(ENTRY.indexOf("export function learnSurface"));
+  // 🔴 THE FUNCTION'S OWN BODY, NOT "EVERYTHING AFTER IT". This sliced to the END OF THE FILE, so
+  // it went red the moment a later function in the same module so much as NAMED the parameter —
+  // which `canvasAddress` does on 2026-09-02, in the list of starting parameters it strips from the
+  // URL. That is the opposite of this rule being broken, and a guard that reddens on the fix is a
+  // guard nobody will trust the next time.
+  const from = ENTRY.indexOf("export function learnSurface");
+  const surface = ENTRY.slice(from, ENTRY.indexOf("\n}", from));
+  assert.ok(surface.length > 20, "learnSurface is gone — this guard is pointed at nothing");
   assert.ok(!/folder/.test(surface), "?folder= can now open a canvas on its own");
 });
 
