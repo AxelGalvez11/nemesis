@@ -234,21 +234,20 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // can't access the course mode from the landing page"*), so the choice is real again and the
   // state, the ref and the dismiss listeners return with it.
   const [addOpen, setAddOpen] = useState(false);
-  // 🔴🔴 "below", AND THE OWNER ASKED FOR "above" ON 2026-09-01 — *"the plus icon… it's opening
-  // down and I wanted it to open up."* NOT DONE, AND NOT REFUSED EITHER: it is the one item of
-  // that day's list held back to be asked about, because doing it silently re-creates a defect he
-  // reported himself.
+  // 🔴🔴 "above" — OPTION A, CHOSEN BY THE OWNER FROM FOUR DRAWN ALTERNATIVES, 2026-09-01.
+  // *"it should like just be in front of the mascot… it should open up."*
   //
-  // The numbers, measured rather than remembered: this menu is EIGHT rows (Upload plus seven
-  // capabilities) at ~326px. A 760px-tall laptop window leaves 348px above the composer. So
-  // "above" does not merely lean toward the character, it occupies essentially all the space the
-  // character is standing in — which is the exact complaint `capability-chip.test.ts` records this
-  // preference as the answer to.
+  // 🔴 THIS IS NOT A REVERSAL OF THE DOWNWARD PREFERENCE, IT IS THE THING THAT PREFERENCE WAS
+  // SUBSTITUTING FOR. He had already asked for the same outcome — *"the plus icon menu should be
+  // in front of mascot"* — and the menu was sent downward instead, because a popover inside the
+  // composer card could not paint over the character (see that card's own note). The card now
+  // rises while the menu is open, so "in front" is achievable and the direction can be the one he
+  // asked for both times.
   //
-  // 🔴 THE HONEST FIX IS PROBABLY A SHORTER MENU, NOT A DIFFERENT SIDE. Eight rows is what makes
-  // both sides bad. That is a product call about which capabilities belong on the front door, and
-  // it is his to make.
-  const addSide = useMenuSide(addOpen, "below");
+  // 🔴 IT STILL FLIPS WHEN THERE IS GENUINELY NO ROOM. `menuSide` moves only when the preferred
+  // side is too cramped to read as a menu AND the other side is roomier — measured at 326px
+  // against 348px of room above on a 760px window, so the ordinary laptop keeps it up.
+  const addSide = useMenuSide(addOpen, "above");
   const addMenu = useRef<HTMLDivElement>(null);
   /** The one-shot capability staged on the NEXT send — the same contract as the session
    *  composer's chip (§38: cleared by the send, never a persistent mode). It rides to the canvas
@@ -780,7 +779,28 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
         // 🔴 `relative z-[1]`: the project/apps tray tucks 20px UNDER this pill (see TRAY in
         // project-picker.tsx); without a stacking order the tray, a later sibling, would wash the
         // pill's bottom edge with its translucent grey — 8% white in dark, visibly.
-        <div className="pointer-events-auto relative z-[1] flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--composer-fill) shadow-[var(--composer-edge)]">
+        // 🔴🔴🔴 AND `z-40` WHILE THE MENU IS OPEN, WHICH IS THE FIX THE DOWNWARD MENU WAS
+        // STANDING IN FOR. The note above the greeter said raising the MENU's z-index "could never
+        // have fixed it", and that was exactly right and only half the sentence: a popover inside
+        // this card is pinned to level 1 against the greeter's `z-30` however high it sets its own
+        // z-index — because the trap is THIS element's stacking context, not the popover's number.
+        // So the thing to raise is the CARD.
+        //
+        // Owner, twice: *"the plus icon menu should be in front of mascot"* (2026-09-01), then
+        // *"it should like just be in front of the mascot… it should open up"* after choosing
+        // option A from four drawn alternatives. Opening downward was a way to have no z-order to
+        // win; this gives the card the z-order instead, and the menu opens upward over the
+        // character exactly as asked.
+        //
+        // 🔴 ONLY WHILE OPEN, AND THE INTERNAL ORDER IS UNTOUCHED. `relative z-[1]` exists so the
+        // project/apps tray tucks under this pill; raising the WHOLE subtree keeps the pill above
+        // the tray, because their order is decided inside this context and nothing here changes
+        // that. At rest the card returns to level 1, so nothing else on the screen is reordered
+        // for a menu that is not on screen.
+        <div className={cn(
+          "pointer-events-auto relative flex w-full max-w-[var(--composer-max-width)] flex-col rounded-[var(--composer-radius)] bg-(--composer-fill) shadow-[var(--composer-edge)]",
+          addOpen ? "z-40" : "z-[1]",
+        )}>
           {/* The session's lamp — the same component, the same subtle tuning, the same gate as
               the canvas composer's. It rides the fold and the travel with the pill. */}
           {voiceLoop.active && <VoiceSessionGlow />}

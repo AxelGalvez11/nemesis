@@ -153,7 +153,10 @@ test("🔴🔴 the + menu scrolls before it flips, so it never lands back on the
 
   // 760px window, front door: 260px below, 348 above. It stays BELOW and scrolls — flipping here
   // is what put it back over the mascot.
-  assert.equal(menuSide({ above: 348, below: 260 }, 326, "below"), "below", "a short window sends the menu back over the character");
+  assert.equal(menuSide({ above: 348, below: 260 }, 326, "below"), "below", "a short window sends the menu somewhere it does not fit");
+  // The same window with the front door's real preference: 326px of menu into 348px of room. It
+  // stays up, which is the point of the 2026-09-01 change.
+  assert.equal(menuSide({ above: 348, below: 260 }, 326, "above"), "above", "the front door's menu stopped fitting above on a laptop");
 
   // Only when the preferred side is too cramped to read as a menu at all, and the other side is
   // genuinely roomier, does it move.
@@ -164,7 +167,16 @@ test("🔴🔴 the + menu scrolls before it flips, so it never lands back on the
   const MENU = read("add-menu-row.tsx");
   assert.match(MENU, /useLayoutEffect/, "the flip runs after paint, so the menu is drawn in the wrong place for a frame");
   assert.match(MENU, /overflow-y-auto/, "the menu clips instead of scrolling when it is capped");
-  assert.match(HOME, /useMenuSide\(addOpen, "below"\)/, "the front door stopped preferring the side that leaves the character alone");
+  // 🔴 THE FRONT DOOR PREFERS **ABOVE** SINCE 2026-09-01 — owner's pick from four drawn options,
+  // and the second time he asked for the menu to be in front of the character. "Leaving the
+  // character alone" was never the goal he stated; it was this file's reading of a report about
+  // the mascot DISAPPEARING. The card now rises while the menu is open, so the menu is in front
+  // and the character is still drawn. See project-picker.test.ts for the full circle.
+  //
+  // 🔴 EVERY SCROLL AND FLIP RULE ABOVE IS UNTOUCHED, and that is the half of this test that was
+  // always about the laptop: the menu is still capped, still scrolls before it flips, and still
+  // refuses to move to a tighter side.
+  assert.match(HOME, /useMenuSide\(addOpen, "above"\)/, "the front door stopped opening upward over the character");
   assert.match(COMPOSER, /useMenuSide\(addOpen, "above"\)/, "the session composer stopped preferring the side with the room");
   for (const [name, source] of [["the front door", HOME], ["the session composer", COMPOSER]] as const) {
     assert.match(source, /style=\{\{ maxHeight: addSide\.maxHeight \}\}/, `${name}'s menu can run off the window again`);

@@ -144,11 +144,26 @@ test("🔴🔴 the + menu opens clear of the character instead of hiding it", ()
   const source = home.replace(/\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
   assert.ok(!/opacity: addOpen/.test(source), "the character is hidden for the + menu again");
   assert.ok(!/pointerEvents: addOpen/.test(source), "the character is switched off for the + menu again");
-  // 🔴 THE CLASS IS A TERNARY NOW, NOT A LITERAL. The direction is chosen at open time by
-  // `useMenuSide` — below by preference on this surface, which is what keeps it off the character;
-  // see `capability-chip.test.ts` for the rule and the laptop-height window that forced it.
+  // 🔴 THE CLASS IS A TERNARY. The direction is chosen at open time by `useMenuSide`.
   assert.match(source, /addSide\.side === "below" \? "top-full mt-\[8px\]" : "bottom-full mb-\[8px\]"/, "the front door's + menu lost its measured placement");
-  assert.match(source, /useMenuSide\(addOpen, "below"\)/, "the front door's + menu no longer prefers hanging below the composer");
+
+  // 🔴🔴🔴 IT PREFERS **ABOVE** NOW, AND THIS GUARD HAS ARGUED ITSELF ROUND THE FULL CIRCLE.
+  //   v1  pinned `opacity: addOpen` on the greeter — the character faded so the menu could show.
+  //       That satisfied "the menu should not go behind the mascot" and produced the next report.
+  //   v2  owner, 2026-09-01: *"the plus menu causes the mascot to disappear (the plus icon menu
+  //       show be infront of mascot)."* The menu was sent DOWNWARD, and this guard concluded "the
+  //       fix is placement, not order", because a popover inside the composer card is pinned to
+  //       level 1 against the greeter's `z-30` however high its own z-index goes.
+  //   v3  that reasoning was right about the popover and wrong about what to raise. The trap is
+  //       the CARD's stacking context, so the card is what rises — `z-40` while the menu is open —
+  //       and order works after all. The owner picked this from four drawn options: *"it should
+  //       like just be in front of the mascot… it should open up."*
+  //
+  // 🔴 WHAT NEVER CHANGES, AND IS THE REAL SUBJECT OF THIS TEST: the character is not hidden,
+  // faded or switched off for a menu. Both assertions above still hold, and they are what v1 got
+  // wrong. A menu in front of a character is not the same thing as no character.
+  assert.match(source, /useMenuSide\(addOpen, "above"\)/, "the front door's + menu stopped opening upward over the character");
+  assert.match(source, /addOpen \? "z-40" : "z-\[1\]"/, "the composer card stopped rising, so its menu is trapped under the character again");
   assert.ok(!/bottom-\[52px\]/.test(source), "the + menu is back on a fixed offset from the button");
 });
 
@@ -212,7 +227,12 @@ test("🔴 the row is the composer's width, and it sits on the reference's grey 
   // 🔴 THE TUCK NEEDS THE PILL ABOVE IT. The tray overlaps the pill's bottom 20px so no sliver of
   // page shows beside the pill's 28px corner curve; without `relative z-[1]` on the pill, the
   // tray — a later sibling — washes the pill's bottom edge with 8% white in dark.
-  assert.match(HOME, /relative z-\[1\][^"]*rounded-\[var\(--composer-radius\)\]/, "the pill no longer paints over the tucked tray");
+  // 🔴 THE PILL'S LEVEL IS CONDITIONAL SINCE 2026-09-01 (`z-[1]` at rest, `z-40` while the + menu
+  // is open, so the menu can paint over the character). Both are above the tray, which is a later
+  // sibling at level 0 inside this context — so the tuck this guards is unaffected, and asserting
+  // the literal `relative z-[1]` next to the radius would pin a class string rather than the rule.
+  assert.match(HOME, /rounded-\[var\(--composer-radius\)\]/, "the pill lost the composer radius the tray is cut to");
+  assert.match(HOME, /addOpen \? "z-40" : "z-\[1\]"/, "the pill has no stacking level, so the tray washes its bottom edge");
   // And the token exists in BOTH themes — a light-only tray is invisible-in-dark, the classic bug.
   const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /--composer-tray: rgba\(0, 0, 0, 0\.03\);/, "the light tray ink is gone");
