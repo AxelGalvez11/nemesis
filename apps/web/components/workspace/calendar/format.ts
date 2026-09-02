@@ -4,24 +4,39 @@
 
 import { addDays, parseDateKey, startOfWeek } from "@/lib/workspace/calendar-model";
 
-export type CalendarViewMode = "day" | "week" | "month" | "year";
+/**
+ * 🔴 THE ORDER OF THIS UNION IS NOT THE ORDER OF THE MENU — see VIEW_OPTIONS.
+ *
+ * `fourDay` and `schedule` were added 2026-09-01: "the calendar is missing
+ * schedule view and 4 day view from Google Calendar".
+ */
+export type CalendarViewMode = "day" | "fourDay" | "week" | "month" | "year" | "schedule";
 
 export interface CalendarViewOption {
   id: CalendarViewMode;
   label: string;
 }
 
+/** Google's own order, and its own words — "4 days", not "Four day". */
 export const VIEW_OPTIONS: readonly CalendarViewOption[] = [
   { id: "day", label: "Day" },
   { id: "week", label: "Week" },
   { id: "month", label: "Month" },
   { id: "year", label: "Year" },
+  { id: "schedule", label: "Schedule" },
+  { id: "fourDay", label: "4 days" },
 ];
+
+/** How many columns the 4-day grid draws. Google's is fixed at four and starts
+ *  on the day you are looking at, not on a week boundary. */
+export const FOUR_DAY_COLUMNS = 4;
 
 export const VIEW_UNIT_LABEL: Record<CalendarViewMode, string> = {
   day: "day",
-  week: "week",
+  fourDay: "4 days",
   month: "month",
+  schedule: "period",
+  week: "week",
   year: "year",
 };
 
@@ -36,7 +51,7 @@ export const AGENDA_WINDOW_DAYS = 30;
 
 export const CALENDAR_VIEW_STORAGE_KEY = "nemesis.calendar.view";
 
-const VALID_VIEWS: readonly CalendarViewMode[] = ["day", "week", "month", "year"];
+const VALID_VIEWS: readonly CalendarViewMode[] = ["day", "fourDay", "week", "month", "year", "schedule"];
 
 export function isCalendarViewMode(value: unknown): value is CalendarViewMode {
   return typeof value === "string" && (VALID_VIEWS as readonly string[]).includes(value);
@@ -102,6 +117,20 @@ export function viewLabel(view: CalendarViewMode, cursor: Date): string {
       month: "short",
       year: "numeric",
     });
+  }
+  if (view === "fourDay") {
+    const end = addDays(cursor, FOUR_DAY_COLUMNS - 1);
+    const startLabel = cursor.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    const endLabel = end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    return `${startLabel} – ${endLabel}`;
+  }
+  if (view === "schedule") {
+    // The window the Schedule list covers, said outright: a list with no dates
+    // in its header looks like every event there is, which it is not.
+    const end = addDays(cursor, AGENDA_WINDOW_DAYS - 1);
+    const startLabel = cursor.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    const endLabel = end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    return `${startLabel} – ${endLabel}`;
   }
   if (view === "week") {
     const start = startOfWeek(cursor);
