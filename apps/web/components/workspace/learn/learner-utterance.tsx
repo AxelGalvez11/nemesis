@@ -32,6 +32,19 @@ export interface LearnerUtteranceProps {
   children: React.ReactNode;
   className?: string;
   /**
+   * This is the newest exchange — the one an arrival flies in from the composer.
+   *
+   * 🔴🔴 THE MARKER GOES ON THIS ELEMENT, NOT ON A WRAPPER, AND A WRAPPER IS WHAT BROKE THE BUBBLE.
+   * #1042 needed something for `useArrival` to find, and put a `<span>` around this. A span is
+   * INLINE, so the `max-w-[70%]` below stopped resolving against the canvas column and started
+   * resolving against a box with no width of its own — the bubble shrank to a narrow blob and wrapped
+   * short messages onto two lines. Owner, 2026-09-02: *"the actual chat bubble of the user isn't
+   * right… it sort of stays like a single shape."* Measured against ChatGPT the same day: their
+   * bubble is `max-width: 70%` of a 768px column, radius 22px, padding 10px 16px, 16px on 24px —
+   * which is exactly what this element already said, and exactly what the wrapper prevented.
+   */
+  live?: boolean;
+  /**
    * How the words arrived.
    *
    * 🔴 DRAWN AS A RECEIPT SINCE 2026-08-31 (owner, with the reference open: *"the transcribed
@@ -51,7 +64,7 @@ export interface LearnerUtteranceProps {
   via?: LearnerInputModality | null;
 }
 
-export function LearnerUtterance({ children, className, via = "typed" }: LearnerUtteranceProps) {
+export function LearnerUtterance({ children, className, live = false, via = "typed" }: LearnerUtteranceProps) {
   return (
     <p
       className={cn(
@@ -102,6 +115,7 @@ export function LearnerUtterance({ children, className, via = "typed" }: Learner
         className,
       )}
       data-learner-utterance=""
+      {...(live ? { "data-learner-said": "" } : {})}
       {...(via ? { "data-via": via } : {})}
     >
       {children}
