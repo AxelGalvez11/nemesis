@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "@/components/GlassSurface";
-import { CopyIcon, RetryIcon } from "@/components/icons-canvas";
+import { CopyIcon, RetryIcon, SpeakerIcon } from "@/components/icons-canvas";
 import type { MenuAnchor } from "@/components/MiniMenu";
 import { turnTimestamp } from "@/lib/canvas-timestamp";
 import type { ThemeColors } from "@/theme/palette";
@@ -13,9 +13,8 @@ import { radius, row, space, type } from "@/theme/tokens";
 // MiniMenu has no header line and never renders a row's icon — bolting both onto a shared,
 // widely-used component for one caller was more risk than a small sibling.
 //
-// Only Copy and Retry today. The reference also shows "Branch in new chat", "Read Aloud" and
-// "Search the web" (IMG_6561) — Read Aloud and Search arrive with later slices per the brief;
-// Branch in new chat isn't asked for here either, so it stays out rather than half-wiring a
+// Copy, Read Aloud and Retry today. The reference also shows "Branch in new chat" and "Search
+// the web" (IMG_6561) — neither is asked for here, so they stay out rather than half-wiring a
 // destination that doesn't exist yet.
 const MENU_WIDTH = 220;
 const ROW_HEIGHT = row.menu;
@@ -28,7 +27,9 @@ export function CanvasReplyMenu({
   at,
   onClose,
   onCopy,
+  onReadAloud,
   onRetry,
+  speaking,
 }: {
   visible: boolean;
   anchor: MenuAnchor | null;
@@ -36,7 +37,11 @@ export function CanvasReplyMenu({
   at: string | null;
   onClose: () => void;
   onCopy: () => void;
+  /** Absent hides the row entirely — a caller that hasn't wired speech yet keeps the old menu. */
+  onReadAloud?: () => void;
   onRetry: () => void;
+  /** True while this reply's audio is playing; flips the row's label to "Stop reading". */
+  speaking?: boolean;
 }) {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -44,7 +49,7 @@ export function CanvasReplyMenu({
   const { height, width } = useWindowDimensions();
   if (!visible || !anchor) return null;
 
-  const rowsHeight = ROW_HEIGHT * 2;
+  const rowsHeight = ROW_HEIGHT * (onReadAloud ? 3 : 2);
   const headerHeight = 44; // timestamp line + its padding, measured against IMG_6561's crop
   const menuHeight = headerHeight + rowsHeight;
   const left = Math.min(Math.max(anchor.x - MENU_WIDTH / 2, EDGE_MARGIN), Math.max(EDGE_MARGIN, width - MENU_WIDTH - EDGE_MARGIN));
@@ -75,6 +80,17 @@ export function CanvasReplyMenu({
             <CopyIcon size={20} color={c.text} />
             <Text style={styles.label}>Copy</Text>
           </Pressable>
+          {onReadAloud ? (
+            <Pressable
+              testID="canvas-reply-menu-read-aloud"
+              onPress={() => pick(onReadAloud)}
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              accessibilityRole="button"
+            >
+              <SpeakerIcon size={20} color={c.text} />
+              <Text style={styles.label}>{speaking ? "Stop reading" : "Read Aloud"}</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             testID="canvas-reply-menu-retry"
             onPress={() => pick(onRetry)}

@@ -65,6 +65,17 @@ export function ShareBoxIcon({ size = 18, color, strokeWidth = 1.7 }: IconProps)
   );
 }
 
+/** The long-press menu's Read Aloud glyph — a speaker with two sound-wave arcs (IMG_6561). */
+export function SpeakerIcon({ size = 20, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M4 10v4h3.5L12 17.5v-11L7.5 10H4z" {...base} stroke={color} strokeWidth={strokeWidth} />
+      <Path d="M16 9.5a4 4 0 0 1 0 5" {...base} stroke={color} strokeWidth={strokeWidth} />
+      <Path d="M18.5 7a7.5 7.5 0 0 1 0 10" {...base} stroke={color} strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
 /** The long-press menu's retry glyph — a circular refresh arrow (IMG_6561). */
 export function RetryIcon({ size = 20, color, strokeWidth = 1.7 }: IconProps) {
   return (
