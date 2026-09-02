@@ -1183,7 +1183,9 @@ test("🔴🔴🔴 the learner's own files are citable, by the id the model alre
   // 🔴 AND IT MUST STILL SAY WHEN **NOT** TO MARK. A citation on every sentence is the same as none:
   // it stops distinguishing the learner's material from the model's own recall, which is the only
   // reason the chip is worth drawing.
-  assert.match(prompt, /Leave a sentence unmarked when it comes from your own /, "the chip lost its meaning: everything is cited");
+  // 🔴 A SHORT, CONTIGUOUS PHRASE. These strings are concatenated across lines, so a longer quote
+  // silently spans a `" + "` join and the guard fails on a rewrap rather than on a change of rule.
+  assert.match(prompt, /Leave a sentence unmarked when it comes/, "the chip lost its meaning: everything is cited");
 
   // The web rule is untouched — two citation systems, disjoint markers, neither renamed.
   assert.match(prompt, /cite the numbered result inline like this: \[1\]/, "the web citation rule was disturbed");
@@ -1199,4 +1201,19 @@ test("🔴 a file pill is not a link, and the id never reaches the prose", () =>
   const body = md.slice(start, start + 1_800);
   assert.ok(!/<a\b/.test(body), "the file pill became an anchor with nowhere to go");
   assert.match(body, /data-cite-file=\{fileRef\}/, "the pill no longer says which document it stands for");
+});
+
+test("🔴 the prompt names the list form the parser accepts", () => {
+  // 🔴🔴 THE TWO SIDES DISAGREED IN PRODUCTION FOR TWO HOURS. The instruction asked for "that
+  // excerpt's id in square brackets" and said nothing about a sentence built from two, so the model
+  // did the ordinary thing — `[s1:e26, s1:e29]` — and the parser, which matched singles only, left
+  // it in the prose as literal text. Measured on the owner's own canvas.
+  //
+  // The parser accepts lists now; this is the other half. A format one side tolerates and the other
+  // has never heard of is a format that works by luck.
+  const prompt = readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.match(prompt, /\[s1:e26, s1:e29\]/, "the model is not told it may group ids in one bracket");
+  assert.match(prompt, /in one bracket separated by commas/, "the grouping rule lost its instruction");
 });

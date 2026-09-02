@@ -96,9 +96,24 @@ export function groupCitationRuns(markdown: string): string {
 // ids in its material block (`[s1:e4] (label) text`), so it can cite with an identifier it is
 // holding rather than a number we would have to keep in sync.
 
-/** `[s1:e4]`, the excerpt id the model is shown in its material block. Not `[1]` (bare digits) and
- *  not `[smiles: …]` (a notation word), so it is disjoint from both by construction. */
-const FILE_REF_RE = /([ \t]*)\[(s\d{1,3}:e\d{1,4})\](?!\()/g;
+/**
+ * `[s1:e4]`, or `[s1:e26, s1:e29]` — one excerpt id or a comma-separated list of them.
+ *
+ * 🔴🔴 THE LIST FORM WAS MISSING FOR ITS FIRST TWO HOURS IN PRODUCTION, AND IT SHOWED. Measured on
+ * the owner's own canvas the evening this shipped: single markers became pills exactly as intended,
+ * and every sentence citing two excerpts kept a literal `[s1:e26, s1:e29]` sitting in the prose.
+ * He reported the answer as "harder to read" in the same message, which is what a page of raw ids
+ * mixed into finished text reads as.
+ *
+ * 🔴 IT WAS NOT THE MODEL DISOBEYING. Nothing told it one id per bracket, and grouping citations
+ * for one sentence is the ordinary thing to do — every reference style does it. The instruction
+ * asked for "that excerpt's id in square brackets" and a sentence built from two excerpts has two.
+ * The parser is what was wrong.
+ *
+ * Still disjoint from the other markers by construction: `[1]` is bare digits, `[smiles: …]` needs
+ * a notation word, and this needs `sN:eN`.
+ */
+const FILE_REF_RE = /([ \t]*)\[(s\d{1,3}:e\d{1,4}(?:\s*,\s*s\d{1,3}:e\d{1,4})*)\](?!\()/g;
 
 /** One attached document the answer may cite. Structural: `CanvasSource` fits as-is. */
 export interface FileCitation {
@@ -129,10 +144,18 @@ export function fileRefsToMarkdown(text: string, files: readonly FileCitation[])
     .map((chunk, index) =>
       index % 2 === 1
         ? chunk
-        : chunk.replace(FILE_REF_RE, (_match, lead: string, ref: string) => {
-            const sourceId = ref.split(":")[0] ?? "";
-            const file = known.get(sourceId);
-            return file ? `${lead}[${file.title}](#nemesis-file=${sourceId})` : "";
+        : chunk.replace(FILE_REF_RE, (_match, lead: string, refs: string) => {
+            // 🔴 DISTINCT DOCUMENTS, NOT DISTINCT EXCERPTS. Three excerpts of one lecture are one
+            // citation of one document; naming it three times, or once with "+2", would claim
+            // three sources where there is one. `groupFileRuns` makes the same distinction for
+            // adjacent markers and this makes it inside a single bracket.
+            const ids = refs.split(",").map((ref) => ref.trim().split(":")[0] ?? "");
+            const files = [...new Set(ids)].map((id) => known.get(id)).filter((file) => file !== undefined);
+
+            if (files.length === 0) return "";
+
+            const extra = files.length - 1;
+            return `${lead}[${files[0]!.title}](#nemesis-file=${files[0]!.id}${extra > 0 ? `.${extra}` : ""})`;
           }),
     )
     .join("");
