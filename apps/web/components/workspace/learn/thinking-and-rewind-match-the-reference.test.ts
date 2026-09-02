@@ -69,7 +69,17 @@ test("🔴🔴 the line is the reference's own type, in pixels, because of the r
 test("🔴 the line and the answer cannot both claim the surface", () => {
   // It is drawn only while the turn is genuinely in flight and nothing has arrived to replace it;
   // a thinking line above a finished answer is a system reporting work it is not doing.
-  assert.match(CANVAS, /\(turnInFlight \|\| presence === "preparing"\) && !replyText\.trim\(\)/, "the line can outlive the answer");
+  // 🔴 `preparing` IS GATED ON AN EMPTY THREAD SINCE 2026-09-01. That clause covers "the first wait
+  // on a canvas with nothing on it yet", and it used to take the presence ladder's word for that —
+  // but the ladder is told `blocks`, never the thread, so a reopened conversation reported itself
+  // empty and re-ran the thinking line every time it was opened (owner: *"it's almost as if the
+  // conversation was not saved, and it's trying to think about it again"*). Both waits are still
+  // covered; the second one now checks the condition it names.
+  assert.match(
+    CANVAS,
+    /\(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !replyText\.trim\(\)/,
+    "the line can outlive the answer",
+  );
 });
 
 test("🔴🔴🔴 a rewound moment is the conversation's own layout: message right, answer left", () => {

@@ -2775,8 +2775,27 @@ export function LearningCanvas({
             being made, and it must not cross-fade with the answer that replaces it.
             🔴 THE SAME CONDITION THE DOCK USED TO CARRY, so the caption did not change WHEN it
             appears, only WHERE. `turnInFlight` covers an ordinary answer; `preparing` covers the
-            first wait on a canvas that has nothing on it yet. */}
-        {threadOpen && (turnInFlight || presence === "preparing") && !replyText.trim() && (
+            first wait on a canvas that has nothing on it yet.
+
+            🔴🔴 AND "NOTHING ON IT YET" IS NOW TESTED RATHER THAN ASSUMED, WHICH IS THE WHOLE FIX.
+            Owner, 2026-09-01: *"when I go back into chats, it's doing this thinking animation… it's
+            almost as if the conversation was not saved, and it's trying to think about it again."*
+            He is describing exactly this line. `presence === "preparing"` resolves on REOPEN,
+            because `working` carries `policy.status === "loading"` and `policy.deciding` — both
+            true while a canvas restores its own state — and the presence ladder is told `blocks`
+            but has never been told about the THREAD. So a canvas with twenty turns on screen
+            reported itself as having nothing on it, and the one thing this clause exists to cover
+            fired on the one case it was never meant for.
+
+            🔴 THE LADDER IS LEFT ALONE, DELIBERATELY. Every clause in `working` is a measured
+            defence against rendering progress as failure (see its own note: three separate reports
+            of "Nemesis hasn't found anything to ask you about yet" appearing mid-lesson). Teaching
+            it about threads to fix a caption would put that reasoning back in play for a
+            presentation bug. The clause states its own condition instead.
+
+            🔴 IT STILL COVERS WHAT IT WAS WRITTEN FOR: a brand-new canvas waiting on its first
+            answer has an empty thread, so `preparing` still speaks there. */}
+        {threadOpen && (turnInFlight || (presence === "preparing" && thread.length === 0)) && !replyText.trim() && (
           <CanvasThinkingPreview app={session.workApp} label={preparingLabel} web={session.searchedDomains.length > 0} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should

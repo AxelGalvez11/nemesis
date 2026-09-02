@@ -72,9 +72,13 @@ test("🔴🔴 chat view puts it in the thread; canvas view puts it under the ch
   // at y=676 — 333px apart, at opposite ends of the screen, in the view where there is no
   // conversation for it to sit under.
   assert.match(CANVAS, /caption=\{threadOpen \? null : preparingLabel\}/, "the two views draw the caption the same way again");
+  // 🔴 THE `preparing` HALF IS GATED ON AN EMPTY THREAD SINCE 2026-09-01 — the ladder is told
+  // `blocks`, never the thread, so a REOPENED conversation reported itself empty and re-ran this
+  // line on every open. What this test is about is untouched: `threadOpen` still scopes the line
+  // to chat view, so the two views cannot both draw a caption.
   assert.match(
     CANVAS,
-    /\{threadOpen && \(turnInFlight \|\| presence === "preparing"\) && !replyText\.trim\(\) && \(/,
+    /\{threadOpen && \(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !replyText\.trim\(\) && \(/,
     "the thread's line is no longer scoped to chat view — canvas view would draw two captions",
   );
   // 🔴 UNDER, NOT BESIDE, AND THE STATION IS WHAT DECIDES IT. The dock places its caption under the
