@@ -38,10 +38,16 @@ test("🔴🔴🔴 the review screen has no way to type INTO a card", () => {
   // change what a card SAYS; they tell Nemesis it is wrong and Nemesis rewrites it. A note box is
   // that sentence with words instead of a thumb. A front/back form is not, and never becomes one.
   //
-  // So: exactly one text field, it is the note, and nothing on this screen is bound to card text.
+  // 🔴🔴 AND THE LOOSENING WAS UNDONE ON 2026-09-01 — owner: *"for flashcards, I want you to remove
+  // the chat icon because I don't think that's necessary at all. Maybe just a thumbs up or thumbs
+  // down."* Which returns this screen to ZERO text fields, the state the proxy above described
+  // before it had to bend. The note box was worth building and, after two days of using it, not
+  // worth keeping in the one moment the learner is trying to recall something.
+  //
+  // So: NO text field at all, and nothing on this screen bound to card text.
   const textareas = REVIEW.match(/<textarea/gi) ?? [];
-  assert.equal(textareas.length, 1, "a second text field appeared on the review screen");
-  assert.match(REVIEW, /data-testid="ask-card-note"/, "the one text field is not the note box");
+  assert.equal(textareas.length, 0, "a text field appeared on the review screen");
+  assert.ok(!/data-testid="ask-card-note"/.test(REVIEW), "the note box is back on the recall screen");
   assert.ok(!/<input/i.test(REVIEW), "an input appeared on the review screen");
   assert.ok(!/Edit card/.test(REVIEW), "the card editor came back");
 
@@ -112,18 +118,18 @@ test("🔴 an unreadable vote reads as unvoted rather than crashing a review", (
 
 console.log("cards-are-output-only.test.ts OK");
 
-test("🔴🔴 the ask reaches the model as an instruction, and there is only one rewrite path", () => {
-  // Before this, the ONLY way to change a card was thumbs-down, which called `reviseCardMessages`
-  // with nothing — the prompt read that as "(none)" and Nemesis rewrote the card without being told
-  // what was wrong. That is the difference between "this card is bad" and "the answer is wrong, it
-  // is the neutral axis", and it is why the note exists.
-  assert.match(REVIEW, /rewriteCurrent\(note\)/, "the note is collected and then thrown away");
+test("🔴🔴 there is ONE rewrite path, and the typed door is gone", () => {
+  // 🔴 THE ASK IS CUT (2026-09-01) BUT THE MECHANISM IS NOT, and keeping those two apart is the
+  // whole of this test. Thumbs-down still calls `reviseCardMessages`, so a wrong card is still
+  // reported and still repaired; what went is saying HOW in words. Restoring it must stay a button
+  // and a textarea, which is why `rewriteCurrent` keeps its `instruction` parameter and
+  // `reviseCardMessages` keeps its `note` field — both asserted below.
+  assert.ok(!/rewriteCurrent\(note\)/.test(REVIEW), "the typed note is back on the recall screen");
+  assert.match(REVIEW, /rewriteCurrent\(instruction\?: string\)/, "the rewrite lost the parameter that makes restoring the ask cheap");
+  assert.match(REVIEW, /await rewriteCurrent\(\)/, "thumbs-down stopped rewriting the card, so a wrong card has nowhere to go");
 
-  // 🔴 THE GLYPH IS PART OF THE RULE, NOT DECORATION. A pencil means "edit this card", which this
-  // screen has never allowed, and `study-row-actions.tsx` already uses it for Rename — a real edit.
-  // A speech bubble says "leave a note", which is what the control does, and it is what
-  // `output-preview.tsx` uses for the same gesture on a document. Owner picked it, 2026-08-30.
-  assert.match(REVIEW, /<IconMessage \/>/, "the ask control is not a speech bubble");
+  // 🔴 NO PENCIL, EVER. It means "edit this card", which this screen has never allowed, and
+  // `study-row-actions.tsx` already uses it for Rename — a real edit.
   assert.doesNotMatch(REVIEW, /IconPencil/, "the pencil is back, promising an editor this screen does not have");
 
   // 🔴 TWO DOORS, ONE MECHANISM. The thumbs-down and the note must not grow separate model calls,
