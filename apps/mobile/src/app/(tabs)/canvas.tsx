@@ -157,6 +157,8 @@ export default function CanvasScreen() {
 
   /** What the turn is doing right now, in its own words ("Searching the web"), or null. */
   const [turnStatus, setTurnStatus] = useState<string | null>(null);
+  /** The sites this turn has read so far — the favicon chips beside the status line. */
+  const [searchHosts, setSearchHosts] = useState<readonly string[]>([]);
   /** Pages a turn answered in this sitting stood on, by moment id. The log stores text only
    *  (the web's rule: a restored turn is text), so sources live for the session, as on the web. */
   const [liveSources, setLiveSources] = useState<Record<string, NumberedSource[]>>({});
@@ -313,6 +315,7 @@ export default function CanvasScreen() {
         sendingRef.current = false;
         setSending(false);
         setTurnStatus(null);
+        setSearchHosts([]);
       };
 
       setTurnStatus(null);
@@ -325,9 +328,10 @@ export default function CanvasScreen() {
           setStreamingText(prose);
         },
         // The web's two beats: the request is out, then the pages are in hand.
-        onSearching: (found) => {
+        onSearching: (found, domains) => {
           if (epochRef.current !== epoch) return;
           setTurnStatus(found === null ? "Searching the web" : `Read ${found} ${found === 1 ? "website" : "websites"}`);
+          setSearchHosts(domains);
         },
         onMilestones: (milestones) => {
           if (epochRef.current !== epoch) return;
@@ -669,7 +673,7 @@ export default function CanvasScreen() {
                   <CanvasTurn turn={liveTurn!} capability={liveCapability} live />
                   {sending && !streamingText ? (
                     <View style={styles.thinkingWrap}>
-                      <ThinkingLine phase={THINKING_PHASE} label={turnStatus} testID="canvas-thinking-line" />
+                      <ThinkingLine phase={THINKING_PHASE} label={turnStatus} hosts={searchHosts} testID="canvas-thinking-line" />
                     </View>
                   ) : null}
                   {lastError ? (
