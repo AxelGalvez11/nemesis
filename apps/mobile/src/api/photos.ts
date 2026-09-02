@@ -33,6 +33,7 @@ import {
 } from "@/lib/photo-note";
 import { fileLibrarySource } from "./librarySources";
 import { supabase } from "./supabase";
+import type { DocumentModel, ExtractionCoverage } from "@nemesis/shared";
 
 /** A photograph that has been stored and read. */
 export interface ReadPhoto {
@@ -47,6 +48,22 @@ export interface ReadPhoto {
   text: string;
   /** A title drawn from the transcript, safe to use as a note name. */
   title: string;
+  /**
+   * Widened for canvas attachment (api/canvas-sources.ts), additive — see documents.ts's
+   * `ReadDocument` for why each of these exists; the same five ride along here.
+   *
+   * 🔴 UNUSED BY THE CANVAS SOURCE ITSELF, KEPT FOR HONESTY ANYWAY. `buildFileCanvasSource`
+   * titles an image by its FILE NAME, never by what a vision read said it saw — so this field
+   * never actually reaches a `CanvasSource.title`. It is here so `extractedFrom`'s mapping has
+   * one shape for both a document and a photo, rather than a photo silently claiming `title`
+   * (already the note-safe, `photoNoteTitle`-shortened one) is the parser's raw line.
+   */
+  extractedTitle: string | null;
+  kind?: string;
+  coverage?: ExtractionCoverage;
+  model?: DocumentModel;
+  /** The `library_sources.id` this reached, when filing worked. */
+  librarySourceId: string | null;
 }
 
 /** Thrown with a sentence a student can act on — every caller shows `message`
@@ -113,7 +130,17 @@ export async function storeAndReadPhoto(uid: string, uri: string): Promise<ReadP
   });
 
   const read = await readPhotoText(uid, uri, sourceId);
-  return { imageUrl: signed.data.signedUrl, storagePath, text: read.text, title: photoNoteTitle(read.title) };
+  return {
+    coverage: read.coverage,
+    extractedTitle: read.title,
+    imageUrl: signed.data.signedUrl,
+    kind: read.kind,
+    librarySourceId: sourceId,
+    model: read.model,
+    storagePath,
+    text: read.text,
+    title: photoNoteTitle(read.title),
+  };
 }
 
 /** A displayable name for a photo, whose object key is a bare uuid. */
@@ -133,7 +160,7 @@ async function readPhotoText(
   uid: string,
   uri: string,
   sourceId: string | null,
-): Promise<{ text: string; title: string | null }> {
+): Promise<{ text: string; title: string | null; kind?: string; coverage?: ExtractionCoverage; model?: DocumentModel }> {
   const key = await deviceKey(uid);
   // The route gates on a `nmk_` device key, NOT on the Supabase session token —
   // the same bearer the chat wire uses. Sending the access token here would 401
@@ -165,7 +192,14 @@ async function readPhotoText(
 
   const parsed = (() => {
     try {
-      return JSON.parse(response.body) as { text?: string; title?: string; error?: string };
+      return JSON.parse(response.body) as {
+        text?: string;
+        title?: string;
+        error?: string;
+        kind?: string;
+        coverage?: ExtractionCoverage;
+        model?: DocumentModel;
+      };
     } catch {
       return null;
     }
@@ -177,5 +211,5 @@ async function readPhotoText(
     // rather than repeating a generic apology.
     throw new PhotoError(parsed?.error ?? photoUploadError(response.status));
   }
-  return { text: parsed.text, title: parsed.title ?? null };
+  return { coverage: parsed.coverage, kind: parsed.kind, model: parsed.model, text: parsed.text, title: parsed.title ?? null };
 }

@@ -31,12 +31,15 @@ import {
 } from "@/api/canvases";
 import { useShell } from "@/components/AppDrawer";
 import { CanvasActionsMenu } from "@/components/canvas/CanvasActionsMenu";
+import { CanvasAttachMenu } from "@/components/canvas/CanvasAttachMenu";
 import { CanvasFindBar } from "@/components/canvas/CanvasFindBar";
 import { CanvasHeaderPill } from "@/components/canvas/CanvasHeaderPill";
 import { CanvasReplyMenu } from "@/components/canvas/CanvasReplyMenu";
+import { speakText, type SpeakHandle } from "@/api/speak";
 import { CanvasTurn } from "@/components/canvas/CanvasTurn";
 import { ScrollToBottomButton } from "@/components/canvas/ScrollToBottomButton";
 import { UploadedFilesSheet } from "@/components/canvas/UploadedFilesSheet";
+import { useCanvasIntake } from "@/components/canvas/useCanvasIntake";
 import { Composer, COMPOSER_COMPACT_HEIGHT } from "@/components/Composer";
 import type { MenuAnchor } from "@/components/MiniMenu";
 import { NemesisAvatar } from "@/components/NemesisAvatar";
@@ -97,9 +100,19 @@ export default function CanvasScreen() {
   const { setHeaderTitle, setHeaderRight } = useShell();
   const insets = useSafeAreaInsets();
 
-  const params = useLocalSearchParams<{ c?: string | string[]; ask?: string | string[]; cap?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    c?: string | string[];
+    ask?: string | string[];
+    cap?: string | string[];
+    /** A Library note the document viewer asked to carry along (document.tsx's `onSend`). */
+    note?: string | string[];
+    /** A project the front door (project.tsx) or LearnHome asked this canvas to be filed into. */
+    folder?: string | string[];
+  }>();
   const canvasId = firstParam(params.c);
   const askParam = firstParam(params.ask);
+  const noteParam = firstParam(params.note);
+  const routeFolderParam = firstParam(params.folder);
   const capability = capabilityFromParam(params.cap);
 
   const [canvas, setCanvas] = useState<LearningCanvas | null>(null);
@@ -110,6 +123,9 @@ export default function CanvasScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  // The composer's "+" — attach a Library note, a file or a photo mid-session (item 6 of this
+  // pass; see CanvasAttachMenu.tsx). Distinct from `menuOpen`, the "…" header menu.
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
 
   const [input, setInput] = useState("");
   // The learner's just-sent words, drawn immediately — before the pair is even a moment in
@@ -125,6 +141,9 @@ export default function CanvasScreen() {
   // timestamp and Retry can re-ask its words.
   const [replyMenuAnchor, setReplyMenuAnchor] = useState<MenuAnchor | null>(null);
   const [replyMenuTurn, setReplyMenuTurn] = useState<CanvasThreadTurn | null>(null);
+  /** The reply being read aloud, if any — one at a time, stopped by a second press or on leaving. */
+  const speakRef = useRef<SpeakHandle | null>(null);
+  const [speaking, setSpeaking] = useState(false);
   const [sourcesFor, setSourcesFor] = useState<readonly SourceLike[] | null>(null);
   const [uploadedFilesOpen, setUploadedFilesOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
@@ -218,6 +237,53 @@ export default function CanvasScreen() {
   useEffect(() => {
     if (menuOpen) refreshFolders();
   }, [menuOpen, refreshFolders]);
+
+  /**
+   * File this canvas into a project (null = unfile).
+   *
+   * 🔴 A FRONT-DOOR CANVAS HAS NO ROW UNTIL ITS FIRST SAVE, and an UPDATE on a row that is not
+   * there matches nothing and says nothing — the web's `setCanvasFolder` comment records exactly
+   * this. So an unsaved canvas is saved first (an empty row the first turn will fill), and the
+   * write's own answer decides what the menu shows: false puts the old value back.
+   *
+   * 🔴 DEFINED HERE, ABOVE THE ATTACH INTAKE HOOK BELOW, RATHER THAN NEAR THE OTHER PROJECT
+   * HANDLERS. `useCanvasIntake` needs it (to file a canvas the front door pointed at a project),
+   * and a `const` has to exist before the call that closes over it — moving the other three
+   * project handlers up too would have scattered them away from the menu they belong to for no
+   * reason, since none of them are needed this early.
+   */
+  const fileInto = useCallback(
+    async (next: string | null) => {
+      if (!uid || !canvasId) return;
+      const previous = folderId;
+      setFolderId(next);
+      if (!savedRef.current && canvasRef.current) {
+        savedRef.current = await saveCanvas(uid, canvasRef.current);
+      }
+      const filed = savedRef.current ? await setCanvasFolder(uid, canvasId, next) : false;
+      if (!filed) setFolderId(previous);
+    },
+    [uid, canvasId, folderId],
+  );
+
+  // Material this canvas owes on open — front-door attachments (LearnHome's staged chips) and a
+  // Library note the document viewer carried along (`?note=`) — plus filing into a project the
+  // front door chose (`?folder=`). See useCanvasIntake.ts's own header for why `attachReady` has
+  // to be real state rather than merely "this effect ran before that one".
+  const adoptAttachedCanvas = useCallback((next: LearningCanvas) => {
+    savedRef.current = true;
+    canvasRef.current = next;
+    setCanvas(next);
+  }, []);
+  const { attachReady } = useCanvasIntake({
+    canvas,
+    canvasId,
+    folderId: routeFolderParam,
+    noteId: noteParam,
+    onAttached: adoptAttachedCanvas,
+    uid,
+    fileInto,
+  });
 
   // One exchange: the learner's words go out, the reply streams back into `streamingText`, and
   // the pair is recorded as a single moment (runCanvasTurn → withExchange) once it lands.
@@ -322,8 +388,16 @@ export default function CanvasScreen() {
   );
 
   // Send the front door's opening question exactly once per canvas id.
+  //
+  // 🔴🔴 WAITS FOR `attachReady`. A document dropped on the front door (or an attached Library
+  // note riding `?note=`) is still uploading/parsing while this would otherwise fire — sending
+  // now means the packet goes out built from a `canvas` with no sources, and the model answers
+  // "I don't see any document attached yet" over material that was about to attach perfectly
+  // (the web's own production incident, 2026-08-31, `use-canvas-session.ts`'s `settledAttachments`
+  // comment). `attachReady` starts false and flips true almost immediately when there is nothing
+  // to attach, so the common case pays one extra render, not a visible delay.
   useEffect(() => {
-    if (!canvas || !uid || !canvasId || !askParam?.trim()) return;
+    if (!canvas || !uid || !canvasId || !askParam?.trim() || !attachReady) return;
     if (askSentForRef.current.has(canvasId)) return;
     askSentForRef.current.add(canvasId);
     if (canvas.moments.length === 0) capForFirstTurnRef.current = capability;
@@ -331,7 +405,7 @@ export default function CanvasScreen() {
     // send/capability are stable enough for this one-shot effect; canvas is read for its
     // moments length only at the instant this fires.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvas, uid, canvasId, askParam]);
+  }, [canvas, uid, canvasId, askParam, attachReady]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -389,27 +463,6 @@ export default function CanvasScreen() {
     [uid, canvasId],
   );
 
-  /**
-   * File this canvas into a project (null = unfile).
-   *
-   * 🔴 A FRONT-DOOR CANVAS HAS NO ROW UNTIL ITS FIRST SAVE, and an UPDATE on a row that is not
-   * there matches nothing and says nothing — the web's `setCanvasFolder` comment records exactly
-   * this. So an unsaved canvas is saved first (an empty row the first turn will fill), and the
-   * write's own answer decides what the menu shows: false puts the old value back.
-   */
-  const fileInto = useCallback(
-    async (next: string | null) => {
-      if (!uid || !canvasId) return;
-      const previous = folderId;
-      setFolderId(next);
-      if (!savedRef.current && canvasRef.current) {
-        savedRef.current = await saveCanvas(uid, canvasRef.current);
-      }
-      const filed = savedRef.current ? await setCanvasFolder(uid, canvasId, next) : false;
-      if (!filed) setFolderId(previous);
-    },
-    [uid, canvasId, folderId],
-  );
   const handlePickProject = useCallback((id: string) => void fileInto(id), [fileInto]);
   const handleRemoveFromProject = useCallback(() => void fileInto(null), [fileInto]);
   const handleNewProjectConfirm = useCallback(
@@ -452,6 +505,35 @@ export default function CanvasScreen() {
   const handleCopyReply = useCallback(() => {
     if (replyMenuTurn?.reply) void Clipboard.setStringAsync(replyMenuTurn.reply);
   }, [replyMenuTurn]);
+  const stopReading = useCallback(() => {
+    speakRef.current?.stop();
+    speakRef.current = null;
+    setSpeaking(false);
+  }, []);
+  // Read Aloud: the web's own request to nemesis-speak, played chunk by chunk. A second press
+  // stops it; so does leaving the screen (the cleanup below).
+  const handleReadAloud = useCallback(() => {
+    if (speakRef.current) {
+      stopReading();
+      return;
+    }
+    const reply = replyMenuTurn?.reply;
+    if (!uid || !reply) return;
+    setSpeaking(true);
+    speakText(uid, reply)
+      .then((handle) => {
+        speakRef.current = handle;
+        return handle.done;
+      })
+      .catch((error: unknown) => {
+        setLastError(error instanceof Error ? error.message : "Couldn't read that aloud.");
+      })
+      .finally(() => {
+        speakRef.current = null;
+        setSpeaking(false);
+      });
+  }, [uid, replyMenuTurn, stopReading]);
+  useEffect(() => () => speakRef.current?.stop(), []);
   /**
    * Retry: drop the last moment (the web's own shape for "re-run the last exchange" — a
    * repeat is never appended as a second moment, `withExchange`'s `sameMoment` guard already
@@ -637,6 +719,7 @@ export default function CanvasScreen() {
             onChangeText={setInput}
             onSend={handleSend}
             onStop={handleStop}
+            onPlus={() => setAttachMenuOpen((open) => !open)}
             sending={sending}
             placeholder={placeholder}
             inputRef={composerRef}
@@ -644,6 +727,14 @@ export default function CanvasScreen() {
             compact
           />
         </View>
+        <CanvasAttachMenu
+          visible={attachMenuOpen}
+          onClose={() => setAttachMenuOpen(false)}
+          bottomOffset={composerBottomPad + COMPOSER_COMPACT_HEIGHT + space(2)}
+          uid={uid}
+          canvas={canvas}
+          onAttached={adoptAttachedCanvas}
+        />
         <CanvasActionsMenu
           visible={menuOpen}
           onClose={() => setMenuOpen(false)}
@@ -689,6 +780,8 @@ export default function CanvasScreen() {
           at={replyMenuTurn?.at ?? null}
           onClose={closeReplyMenu}
           onCopy={handleCopyReply}
+          onReadAloud={handleReadAloud}
+          speaking={speaking}
           onRetry={handleRetry}
         />
       </View>

@@ -5,6 +5,7 @@ import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote } from "@/api/cl
 import { DocumentError, pickAndReadDocument } from "@/api/documents";
 import { ArrowUpIcon, CloseIcon, SearchIcon } from "./icons";
 import { DotsIcon, FileTypeTile } from "./icons-composer";
+import { extractedFrom, type PendingAttachmentItem } from "@/lib/pending-attachment";
 import { longRelativeTime } from "@/lib/relative-time";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -12,10 +13,16 @@ import { control, radius, row, space, type } from "@/theme/tokens";
 
 /** One thing AddFilesSheet handed back — either a Library note the learner ticked, or a freshly
  *  uploaded file. Either way it's already TEXT (the same one-shot-attachment shape every other
- *  picker in this app produces — Composer.tsx's own header on `attachment`/`chip`). */
+ *  picker in this app produces — Composer.tsx's own header on `attachment`/`chip`).
+ *
+ * 🔴 `item` IS WHAT ACTUALLY GETS ATTACHED — `id`/`title` ARE ONLY THE CHIP. LearnHome.tsx stages
+ * `PickedFile[]` purely to draw the removable chip row; on Send it reads `item` off each one and
+ * hands the list to `putPending` (pending-attachment.ts), which is what the canvas screen claims
+ * on mount and turns into real `CanvasSource`s (api/canvas-sources.ts). */
 export interface PickedFile {
   id: string;
   title: string;
+  item: PendingAttachmentItem;
 }
 
 // The reference's "Add files" sheet (IMG_6528) — a full-height page, not a bottom sheet: round
@@ -34,10 +41,11 @@ export interface PickedFile {
 // API that exists, and it returns Library NOTES. FileTypeTile still draws "word"/"pdf" tiles
 // (see that file) for the day a listing exists; this sheet just never asks for them today.
 //
-// ATTACHMENT CARRY-THROUGH IS THE NEXT SLICE. Picking rows and tapping Done hands the result
-// back to `onDone`; LearnHome.tsx stages it as a small chip above the composer and goes no
-// further — there is no canvas turn yet for a front-door attachment to ride into (same
-// deferral ComposerPlusMenu.tsx's own header documents for photos).
+// ATTACHMENT CARRY-THROUGH: LearnHome.tsx stages the chip AND the `item` this sheet builds; on
+// Send, every staged item's `read` promise (already running, or — for an upload — already
+// finished) is stashed via `putPending` for the canvas screen that is about to mint, which claims
+// it on mount and turns it into a real `CanvasSource` (see pending-attachment.ts,
+// api/canvas-sources.ts).
 export function AddFilesSheet({
   visible,
   onClose,
@@ -90,7 +98,9 @@ export function AddFilesSheet({
     });
 
   const finishWithSelection = () => {
-    const picked = (notes ?? []).filter((n) => selected.has(n.id)).map((n) => ({ id: n.id, title: n.title }));
+    const picked = (notes ?? [])
+      .filter((n) => selected.has(n.id))
+      .map((n) => ({ id: n.id, item: { kind: "note" as const, note: n }, title: n.title }));
     onDone(picked);
     onClose();
   };
@@ -102,7 +112,20 @@ export function AddFilesSheet({
       const doc = await pickAndReadDocument(uid);
       // A cancel isn't a failure — just stay on the sheet.
       if (doc) {
-        onDone([{ id: `upload:${Date.now()}`, title: doc.title }]);
+        onDone([
+          {
+            id: doc.uri,
+            item: {
+              kind: "file",
+              mimeType: doc.mimeType,
+              name: doc.name,
+              read: Promise.resolve(extractedFrom(doc)),
+              size: doc.size,
+              uri: doc.uri,
+            },
+            title: doc.title,
+          },
+        ]);
         onClose();
       }
     } catch (cause) {

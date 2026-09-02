@@ -35,6 +35,7 @@ import {
   documentMime,
   documentRefusal,
 } from "@/lib/document-kind";
+import type { DocumentModel, ExtractionCoverage } from "@nemesis/shared";
 
 /** A message already written for the student — surfaced as-is, never wrapped. */
 export class DocumentError extends Error {}
@@ -44,6 +45,31 @@ export interface ReadDocument {
   title: string;
   /** The extracted text, already structured by the server's reader. */
   text: string;
+  /**
+   * Widened for canvas attachment (api/canvas-sources.ts), additive — every field below is new
+   * and every existing caller of `pickAndReadDocument` still gets exactly what it got before.
+   *
+   * The parser's own title line — the route's `title`, before `documentChipTitle` throws it away
+   * for a name derived purely from the filename. `title` above stays the chip label; this is what
+   * `documentTitle(extractedTitle, name)` needs to build a `CanvasSource` the way the web does.
+   */
+  extractedTitle: string | null;
+  /** Whatever the extractor reported — "pdf" | "docx" | "pptx" | "image" — or absent. */
+  kind?: string;
+  coverage?: ExtractionCoverage;
+  model?: DocumentModel;
+  /** The `library_sources.id` this reached, when filing worked — the same id `uploadDocument`
+   *  already computes, now handed back instead of only used internally. */
+  librarySourceId: string | null;
+  /** The picked asset's own identity, for building a `PendingAttachmentItem` without re-picking. */
+  uri: string;
+  /** The RAW file name, extension and all — never `title` (already humanized) or
+   *  `extractedTitle` (the parser's own line). This is `file.name` in the web's
+   *  `documentTitle(extracted.title, file.name)`; passing the chip title here instead would
+   *  double-humanize a name `documentTitle` already knows how to read. */
+  name: string;
+  size: number | null;
+  mimeType: string;
 }
 
 /**
@@ -70,8 +96,9 @@ export async function pickAndReadDocument(uid: string): Promise<ReadDocument | n
   const mime = documentMime(asset.name);
   if (!mime) throw new DocumentError("Add a PDF, Word or PowerPoint file.");
 
+  const read = await readDocumentText(uid, asset.uri, asset.name, mime, asset.size ?? null);
   return {
-    text: await readDocumentText(uid, asset.uri, asset.name, mime, asset.size ?? null),
+    ...read,
     title: documentChipTitle(asset.name),
   };
 }
@@ -123,14 +150,16 @@ async function uploadDocument(uid: string, uri: string, name: string, mime: stri
   }
 }
 
-/** Read the file, by reference when we could store it, by value when we could not. */
+/** Read the file, by reference when we could store it, by value when we could not. Returns
+ *  everything `ReadDocument` promises except the chip `title` — the caller (`pickAndReadDocument`)
+ *  fills that in from the file name, the one thing it knows that this function does not. */
 async function readDocumentText(
   uid: string,
   uri: string,
   name: string,
   mime: string,
   size: number | null,
-): Promise<string> {
+): Promise<Omit<ReadDocument, "title">> {
   const key = await deviceKey(uid);
   // Same gate as the camera: the route checks a `nmk_` device key, NOT the Supabase
   // access token. Sending the session token 401s every time and the message would
@@ -169,7 +198,14 @@ async function readDocumentText(
 
   const parsed = (() => {
     try {
-      return JSON.parse(response.body) as { text?: string; title?: string; error?: string };
+      return JSON.parse(response.body) as {
+        text?: string;
+        title?: string;
+        error?: string;
+        kind?: string;
+        coverage?: ExtractionCoverage;
+        model?: DocumentModel;
+      };
     } catch {
       return null;
     }
@@ -179,5 +215,16 @@ async function readDocumentText(
     // "That file is too large (25 MB max)."), so they surface unchanged.
     throw new DocumentError(parsed?.error ?? "Couldn't read that file. Try again.");
   }
-  return parsed.text;
+  return {
+    coverage: parsed.coverage,
+    extractedTitle: parsed.title ?? null,
+    kind: parsed.kind,
+    librarySourceId: sourceId,
+    mimeType: mime,
+    name,
+    model: parsed.model,
+    size,
+    text: parsed.text,
+    uri,
+  };
 }

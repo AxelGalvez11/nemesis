@@ -58,6 +58,7 @@ export {
   type CanvasSource,
   type CanvasState,
   type LearningCanvas,
+  type SourceExcerpt,
 } from "../../../web/lib/learn/canvas-model.ts";
 
 export {

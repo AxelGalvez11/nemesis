@@ -4,9 +4,11 @@ import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View, useW
 import { useRouter } from "expo-router";
 
 import { startCanvas } from "@/api/canvases";
+import { storeAndReadPhoto } from "@/api/photos";
 import { useAuth } from "@/auth/AuthProvider";
 import { STUDY_IMAGE_PICKER_TYPES } from "@/lib/study-image-pick";
 import { atMentionState, removeAtMention } from "@/lib/at-mention";
+import { extractedFrom, putPending, type PendingAttachmentItem } from "@/lib/pending-attachment";
 import { CHARACTER_SILHOUETTE } from "@/learn/avatar";
 import { CAPABILITY_COPY, type ComposerCapability } from "@/learn/web";
 import type { ThemeColors } from "@/theme/palette";
@@ -60,11 +62,10 @@ export function LearnHome() {
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [addFilesOpen, setAddFilesOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  // What's staged above the composer's text row (IMG_6528's own "attachment carry-through is
-  // the next slice" deferral — see AddFilesSheet.tsx's header and ComposerPlusMenu.tsx's on
-  // photos). Nothing here is uploaded or read; picking just stages a small chip. A Library
-  // note, an uploaded file, and a photo all land in this ONE list because they're the same
-  // kind of thing once staged — a title and an id to show as a chip.
+  // What's staged above the composer's text row. A Library note, an uploaded file, and a photo
+  // all land in this ONE list because they're the same kind of thing once staged — a chip, and
+  // an `item` (pending-attachment.ts) whose read is already running. See AddFilesSheet.tsx's
+  // header for what `item` is and where it goes on Send.
   const [attachments, setAttachments] = useState<readonly PickedFile[]>([]);
   const composerRef = useRef<TextInput>(null);
   const composerWrapRef = useRef<View>(null);
@@ -148,7 +149,26 @@ export function LearnHome() {
     composerRef.current?.focus();
   };
 
+  /**
+   * Start reading a photo the moment it lands — "read them on drop, like chatgpt" (the web's own
+   * 2026-08-31 instruction, mirrored here: see the web's pending-attachment.ts header). Returns
+   * the staged item immediately; the read keeps running in the background and is only ever
+   * awaited later, when the canvas that will hold it claims it (api/canvas-sources.ts).
+   *
+   * 🔴 THE REJECTION IS SILENCED HERE, NOT SWALLOWED. `read` is the SAME promise handed to
+   * `item.read` — attaching a no-op `.catch` to it marks it "handled" so React Native's
+   * unhandled-promise-rejection warning does not fire for a photo the learner never sends; it
+   * does not change what `read` itself resolves or rejects to, so `attachToCanvas`'s own
+   * `await item.read` still sees a real failure when there is one.
+   */
+  const startPhotoRead = (uid: string, uri: string, name: string, mimeType: string | null, size: number | null): PendingAttachmentItem => {
+    const read = storeAndReadPhoto(uid, uri).then(extractedFrom);
+    read.catch(() => {});
+    return { kind: "file", mimeType, name, read, size, uri };
+  };
+
   const addPhotosFromDevice = async () => {
+    if (!uid) return;
     // 🔴 NOT expo-image-picker. That's a native module this build deliberately doesn't carry —
     // adding one would drop the app off OTA updates until the next TestFlight release (see
     // lib/study-image-pick.ts's own header, which made this exact trade already). Its
@@ -158,7 +178,9 @@ export function LearnHome() {
     if (picked.canceled) return;
     const asset = picked.assets?.[0];
     if (!asset) return;
-    setAttachments((current) => [...current, { id: asset.uri, title: asset.name || "Photo" }]);
+    const name = asset.name || "Photo";
+    const item = startPhotoRead(uid, asset.uri, name, asset.mimeType ?? "image/jpeg", asset.size ?? null);
+    setAttachments((current) => [...current, { id: asset.uri, item, title: name }]);
   };
 
   const handleSend = () => {
@@ -168,9 +190,16 @@ export function LearnHome() {
     // (see its `chipBlocksSend`); this guards the same rule at the one other place a send can
     // fire from (this function is also reachable via the button's onPress with nothing typed
     // if a future caller wires a hardware "go" key to it).
-    if (!said) return;
+    //
+    // 🔴 MATERIAL WITH NO WORDS IS STILL A SEND, THE WEB'S OWN RULE. A learner who attaches a
+    // lecture and taps Send having typed nothing is not asking for nothing — the canvas screen
+    // opens the attach effect straight into a lesson on what was just handed over (the web's own
+    // `?new=1`-shaped opening, `learning-canvas.tsx`'s attach effect runs before the opening-ask
+    // effect regardless of whether there is one). Refuse only when there is truly nothing at all.
+    if (!said && attachments.length === 0) return;
     const canvas = startCanvas();
     const cap = capability;
+    if (attachments.length > 0) putPending(attachments.map((file) => file.item));
     setText("");
     setCapability(null);
     setAttachments([]);
@@ -179,7 +208,7 @@ export function LearnHome() {
     // route exists; it just stops typed-routes from gating a screen this file doesn't own.
     router.push({
       pathname: "/canvas",
-      params: { c: canvas.id, ask: said, ...(cap ? { cap } : {}) },
+      params: { c: canvas.id, ...(said ? { ask: said } : {}), ...(cap ? { cap } : {}) },
     } as never);
   };
 
@@ -244,6 +273,11 @@ export function LearnHome() {
               onChangeText={handleChangeText}
               onSend={handleSend}
               onPlus={() => setPlusMenuOpen((open) => !open)}
+              // Material with no typed words is still sendable — composer-send.ts's own rule,
+              // already proven for chat.tsx's photo attach. Without this the send button never
+              // appears for an attach-only send (handleSend's own "material with no words" guard
+              // would then be unreachable from the button).
+              attached={attachments.length > 0}
               placeholder={capability ? CAPABILITY_COPY[capability].prompt : "Ask Nemesis"}
               inputRef={composerRef}
               testID="learn-home-input"
@@ -293,7 +327,9 @@ export function LearnHome() {
         onClose={() => setCameraOpen(false)}
         onCaptured={(uri) => {
           setCameraOpen(false);
-          setAttachments((current) => [...current, { id: uri, title: "Photo" }]);
+          if (!uid) return;
+          const item = startPhotoRead(uid, uri, "Photo", "image/jpeg", null);
+          setAttachments((current) => [...current, { id: uri, item, title: "Photo" }]);
         }}
       />
     </KeyboardAvoidingView>
