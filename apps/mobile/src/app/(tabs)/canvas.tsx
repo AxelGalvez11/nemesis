@@ -513,6 +513,7 @@ export default function CanvasScreen() {
   // Read Aloud: the web's own request to nemesis-speak, played chunk by chunk. A second press
   // stops it; so does leaving the screen (the cleanup below).
   const handleReadAloud = useCallback(() => {
+    if (__DEV__) console.log("[read-aloud] pressed", { uid: Boolean(uid), chars: replyMenuTurn?.reply?.length ?? 0, speaking: Boolean(speakRef.current) });
     if (speakRef.current) {
       stopReading();
       return;
@@ -526,6 +527,7 @@ export default function CanvasScreen() {
         return handle.done;
       })
       .catch((error: unknown) => {
+        if (__DEV__) console.warn("[read-aloud]", error);
         setLastError(error instanceof Error ? error.message : "Couldn't read that aloud.");
       })
       .finally(() => {

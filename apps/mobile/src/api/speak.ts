@@ -110,6 +110,7 @@ async function fetchChunk(step: SpeakStep, token: string): Promise<string | null
     ...(step.utterance.voiceId ? { voiceId: step.utterance.voiceId } : {}),
   });
   const res = await fetch(plan.url, plan.init);
+  if (__DEV__) console.log("[speak] response", res.status);
   if (!res.ok) throw new Error(`nemesis-speak failed (${res.status})`);
 
   const bytes = new Uint8Array(await res.arrayBuffer());
