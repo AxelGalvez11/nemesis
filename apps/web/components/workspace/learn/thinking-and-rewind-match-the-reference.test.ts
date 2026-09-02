@@ -39,7 +39,7 @@ test("🔴🔴🔴 the running step is a line in the conversation, not a caption
   // is not reading the open web, so the state this test describes is unchanged.
   assert.match(
     CANVAS,
-    /<CanvasThinkingPreview app=\{session\.workApp\} label=\{preparingLabel\} web=\{session\.searchedDomains\.length > 0\} \/>/,
+    /<CanvasThinkingPreview app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\} web=\{session\.searchedDomains\.length > 0\} \/>/,
     "nothing draws the line in the thread",
   );
   // 🔴🔴 SCOPED TO CHAT VIEW, 2026-08-31 (owner, same day, second pass): *"it should only be like
