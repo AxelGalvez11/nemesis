@@ -33,6 +33,7 @@
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
 
+import { Icon } from "@/components/icons";
 import { logoFor } from "@/lib/workspace/app-logos";
 
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
@@ -40,7 +41,24 @@ import { logoFor } from "@/lib/workspace/app-logos";
 export function CanvasThinkingPreview({
   app = null,
   label = null,
+  web = false,
 }: {
+  /**
+   * This step is reading the open web, so it gets a globe.
+   *
+   * 🔴🔴 A MARK THAT NAMES THE KIND OF SOURCE, WHICH IS NOT THE MARK THAT WAS DELETED. Owner,
+   * 2026-09-01, watching a live search: *"the thing in preview showing what it's doing, it doesn't
+   * have an icon for it, like it does in ChatGPT."* What went on 2026-08-30 was a GENERIC glyph
+   * beside every caption, measured against the reference with nothing connected and correctly
+   * removed — a mark on every step is decoration. ChatGPT's own behaviour is the distinction: a
+   * globe while it searches the web, nothing while it merely thinks.
+   *
+   * 🔴 DRIVEN BY THE SITES, NOT BY THE WORDS. The caller passes `searchedDomains.length > 0`, which
+   * is true exactly when real pages are being read, so the globe cannot appear over a step with no
+   * source behind it. Parsing the caption for "Reading" would put one there the first time some
+   * unrelated step borrowed the verb.
+   */
+  web?: boolean;
   /**
    * The connected app this step is running against, as its toolkit slug.
    *
@@ -103,6 +121,10 @@ export function CanvasThinkingPreview({
             is the same fact twice.
             eslint-disable-next-line @next/next/no-img-element */}
         {appLogo ? <img alt="" aria-hidden="true" className="size-[20px] shrink-0" height={20} src={appLogo} width={20} /> : null}
+        {/* 🔴 THE APP LOGO WINS. Both cannot be true today, but if a connected app ever searches the
+            web the specific mark beats the generic one — "Searching your Google Drive" with a globe
+            beside it would be less true, not more. */}
+        {!appLogo && web ? <Icon aria-hidden className="shrink-0 text-(--ui-text-tertiary)" name="globe" size={20} /> : null}
         <span className="canvas-thinking-word">{label ? label.replace(/…$/, "") : "Thinking"}</span>
       </p>
     </div>

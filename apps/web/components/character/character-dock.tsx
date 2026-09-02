@@ -39,6 +39,7 @@ import { gazeTarget, glanceOffset, trackReach } from "@/lib/character/gaze";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { placeAbove, placeBeside, placeUnder } from "./character-place";
 import { DomainChips } from "@/components/DomainChips";
+import { Icon } from "@/components/icons";
 
 // 🔴 THE STYLESHEET COMES IN HERE NOW, AND FORGETTING IT COST AN AFTERNOON. It used to be
 // imported by the renderer, which lived in this folder; the renderer moved to
@@ -874,7 +875,12 @@ export function CharacterDock({
           //
           // 🔴 AND A REAL LINE-HEIGHT. `leading-none` is 1em, which at 14px is survivable and at
           // 16px puts the mark and the words in a box tighter than either of them.
-          className={`character-caption pointer-events-none absolute flex select-none flex-col gap-1.5 text-[length:var(--canvas-text-body)] leading-6 ${
+          // 🔴 `w-max`, OR THE BOX COLLAPSES TO ITS NARROWEST CHILD. Absolutely positioned with only
+          // a `left`/`top`, this is shrink-to-fit: without an intrinsic width it resolves toward the
+          // minimum, which is what let the chip row below stack into a column and run through the
+          // composer (see components/DomainChips.tsx). `w-max` makes it as wide as its widest row
+          // and no wider, which is what a caption beside a character wants anyway.
+          className={`character-caption pointer-events-none absolute flex w-max select-none flex-col gap-1.5 text-[length:var(--canvas-text-body)] leading-6 ${
             station === "centre" ? "items-center" : "items-start"
           }${station === "centre" ? " left-1/2 top-full" : " left-full top-1/2"}${leaving ? " canvas-preview-out" : ""}`}
           style={
@@ -891,12 +897,32 @@ export function CharacterDock({
                 }
           }
         >
-          {/* 🔴 NO MARK BESIDE THE WORDS ANY MORE (owner 2026-08-30: match ChatGPT's thinking
-              preview). The reference was measured the same day: a bare shimmering sentence in the
-              tertiary colour, no glyph in any working state. thinking-mark.tsx is deleted, not
-              parked — the words are the whole claim now. */}
+          {/* 🔴🔴 A MARK IS BACK, AND ONLY WHEN IT SAYS SOMETHING THE WORDS DO NOT.
+              History, because this has now gone both ways and a future reader will otherwise undo
+              one of them in good faith:
+                · 2026-08-30 every working caption wore a GENERIC glyph. Measured against ChatGPT
+                  with nothing connected, the reference was a bare shimmering sentence, so the
+                  glyphs were deleted and thinking-mark.tsx with them. That was right: a mark that
+                  appears beside every step is decoration, and §"icons earn their place" bans it.
+                · 2026-09-01 the owner, watching a live web search: *"the thing in preview showing
+                  what it's doing, it doesn't have an icon for it, like it does in ChatGPT."*
+
+              Both readings are correct because they are about different steps. ChatGPT shows a
+              GLOBE while it is searching the web and nothing while it is merely thinking, and that
+              is the rule here: the mark names the KIND of source, so it carries information the
+              sentence does not, and plain thinking still gets nothing. `domains` is the honest
+              signal — it is non-empty exactly when real sites are being read — so the mark cannot
+              appear for a step that has no source behind it. */}
           {caption ? (
             <span className="flex items-center gap-2 whitespace-nowrap">
+              {domains.length > 0 ? (
+                // 🔴 OUTSIDE `canvas-thinking-word`, NOT INSIDE IT. The shimmer paints text by
+                // setting `color: transparent` and clipping a gradient to the glyphs — an SVG
+                // stroked in `currentColor` inside it is invisible. Two sessions found that
+                // independently on the same day; the comment below records it for the chips and it
+                // applies here for the same reason.
+                <Icon aria-hidden className="shrink-0 text-(--ui-text-tertiary)" name="globe" size={16} />
+              ) : null}
               {/* 🔴 THE SHIMMER PAINTS TEXT, SO IT MAY ONLY WRAP TEXT. `canvas-thinking-word`
                   clips a moving gradient to glyphs, which it does by setting `color:transparent`
                   — so while it sat on the whole caption box it made the mark beside the words

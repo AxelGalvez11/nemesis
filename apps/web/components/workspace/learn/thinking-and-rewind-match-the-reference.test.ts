@@ -32,7 +32,16 @@ test("🔴🔴🔴 the running step is a line in the conversation, not a caption
   // shimmering sentence this file measures; a step that reaches a connected app also carries that
   // app's own favicon, re-measured in the owner's account the same day. `app` is null for every
   // step Nemesis runs on its own, so the state this test describes is unchanged.
-  assert.match(CANVAS, /<CanvasThinkingPreview app=\{session\.workApp\} label=\{preparingLabel\} \/>/, "nothing draws the line in the thread");
+  // 🔴 AND A GLOBE RIDES ALONGSIDE BOTH, 2026-09-01 (owner: *"the thing in preview showing what
+  // it's doing, it doesn't have an icon for it, like it does in ChatGPT"*). Same shape as the app
+  // logo above and the same rule behind it: the mark names the KIND of source, so plain thinking
+  // still draws the bare shimmering sentence this file measures. `web` is false for every step that
+  // is not reading the open web, so the state this test describes is unchanged.
+  assert.match(
+    CANVAS,
+    /<CanvasThinkingPreview app=\{session\.workApp\} label=\{preparingLabel\} web=\{session\.searchedDomains\.length > 0\} \/>/,
+    "nothing draws the line in the thread",
+  );
   // 🔴🔴 SCOPED TO CHAT VIEW, 2026-08-31 (owner, same day, second pass): *"it should only be like
   // that when it's in chat mode, not when it's in Canvas mode. Canvas mode should just have the
   // thinking below the mascot."* The morning's instruction this guard came from only ever spoke
