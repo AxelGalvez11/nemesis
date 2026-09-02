@@ -16,6 +16,8 @@
 import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
+
+import { CHEVRON_STYLE, FIELD as SHARED_FIELD } from "./field-chrome";
 import {
   type ByDay,
   dateOf,
@@ -99,7 +101,11 @@ function specForPreset(preset: Preset, start: Date, previous: RecurrenceSpec | n
   }
 }
 
-const FIELD = "h-8 rounded-lg border border-(--ui-stroke-secondary) bg-background px-2 text-xs text-foreground";
+// 🔴 SHARED, NOT LOCAL. This was its own `h-8 rounded-lg border …` and it had
+// already drifted from the editor's: once those controls were sized to Google's
+// 40px, the repeat dropdown was still 36 and sat visibly short beside the date
+// field above it. Two constants that must agree are one constant.
+const FIELD = SHARED_FIELD;
 
 export function RepeatEditor({ value, onChange, startDate }: RepeatEditorProps) {
   const spec = useMemo(() => specOf(value), [value]);
@@ -118,12 +124,20 @@ export function RepeatEditor({ value, onChange, startDate }: RepeatEditorProps) 
   const weekdays = (spec?.rule.byDay ?? []).filter((entry) => entry.ordinal === undefined).map((entry) => entry.day);
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-(--ui-stroke-tertiary) p-2.5">
+    // 🔴 THE BOX ONLY EXISTS WHEN THERE IS SOMETHING TO GROUP. With no repeat
+    // set this is one dropdown, and a bordered card around one dropdown was the
+    // heaviest thing in a form the owner had just asked to lighten (2026-09-01,
+    // "it's too bunched in together"). The extras below — the weekday chips and
+    // the Ends row — only appear once `spec` exists, and THEY are what a box is
+    // for. The word "Repeats" went with it: the row already carries the repeat
+    // icon, and the first option says "Does not repeat" in full.
+    <div className={cn("flex flex-col gap-2", spec && "rounded-lg border border-(--ui-stroke-tertiary) p-2.5")}>
       <div className="flex items-center gap-2">
-        <label className="text-xs text-(--ui-text-tertiary)" htmlFor="repeat-preset">Repeats</label>
         <select
+          aria-label="Repeats"
           className={cn(FIELD, "min-w-0 flex-1")}
           id="repeat-preset"
+          style={CHEVRON_STYLE}
           onChange={(e) => push(specForPreset(e.target.value as Preset, start, spec))}
           value={preset}
         >
@@ -184,6 +198,7 @@ export function RepeatEditor({ value, onChange, startDate }: RepeatEditorProps) 
           <select
             className={FIELD}
             id="repeat-ends"
+            style={CHEVRON_STYLE}
             onChange={(e) =>
               edit((draft) => {
                 delete draft.rule.count;

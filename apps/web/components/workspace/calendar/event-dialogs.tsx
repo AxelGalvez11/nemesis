@@ -24,7 +24,7 @@ import type { Calendar } from "@/lib/workspace/calendars";
 import { EVENT_COLORS } from "@/lib/workspace/event-colors";
 import { formatRecurrenceLines, parseRecurrenceLines, specFromLegacy, specToLegacy } from "@/lib/workspace/rrule";
 import { Clock, FileText, Layers3, LinkIcon, Palette, RefreshCw, Trash2 } from "@/lib/workspace/icons";
-import { controlVariants } from "@/components/desktop-ui/control";
+import { CHEVRON_STYLE, CONTROL_HEIGHT, DATE_FIELD, FIELD } from "./field-chrome";
 import { cn } from "@/lib/utils";
 
 import { clockOf, minutesOf, SNAP_MINUTES } from "./time-grid";
@@ -67,35 +67,6 @@ const TIME_ZONES: readonly string[] = (() => {
 const CHEVRON =
   "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5 6 7.5 9 4.5'/></svg>\")";
 
-const FIELD = cn(controlVariants(), "h-8 cursor-pointer appearance-none pr-7");
-
-/**
- * Date and time inputs, with the platform's own glyph turned down.
- *
- * `::-webkit-calendar-picker-indicator` is the little calendar and clock the
- * browser draws inside these fields. It cannot be replaced, only dimmed, and at
- * full strength it is the loudest thing in the row — two saturated blue-grey
- * glyphs against type this size. It still opens the picker on click.
- */
-const DATE_FIELD = "h-8 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-35 [&::-webkit-calendar-picker-indicator]:hover:opacity-70";
-
-/**
- * 🔴 THE WHOLE BACKGROUND SHORTHAND GOES INLINE, not just the image.
- *
- * `bg-[right_0.5rem_center]` and `bg-[length:0.75rem]` do not compile: Tailwind
- * reads a bare `bg-[…]` as a colour or an image, never as a position or a size,
- * so the arrow kept its natural size and TILED — six chevrons marching across
- * the timezone field. Setting `backgroundImage` inline and leaving the rest to
- * classes is the trap, because the half that silently failed is the half that
- * makes one arrow one arrow.
- */
-const CHEVRON_STYLE: React.CSSProperties = {
-  backgroundImage: CHEVRON,
-  backgroundPosition: "right 0.5rem center",
-  backgroundRepeat: "no-repeat",
-  backgroundSize: "0.75rem",
-};
-
 /**
  * One line of the editor: a fixed icon column, then the control.
  *
@@ -115,11 +86,15 @@ function Row({
   label?: string;
 }) {
   return (
-    <div className="grid grid-cols-[1.125rem_minmax(0,1fr)] items-start gap-x-3">
-      <div className="grid h-8 place-items-center text-(--ui-text-tertiary)">{Icon ? <Icon size={15} /> : null}</div>
-      <div className="flex min-w-0 flex-col gap-1.5 py-0.5">
+    // Google's icon sits 20px clear of its field; ours sat 13.5. Both the column
+    // gap and the row padding are its measurements converted.
+    <div className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-[1.25rem]">
+      <div className={cn("grid place-items-center text-(--ui-text-tertiary)", CONTROL_HEIGHT)}>
+        {Icon ? <Icon size={16} /> : null}
+      </div>
+      <div className="flex min-w-0 flex-col gap-2 py-[0.25rem]">
         {label ? (
-          <span className="text-[0.6875rem] font-medium uppercase tracking-[0.05em] text-(--ui-text-tertiary)">{label}</span>
+          <span className="-mb-0.5 text-[0.6875rem] font-medium uppercase tracking-[0.05em] text-(--ui-text-tertiary)">{label}</span>
         ) : null}
         {children}
       </div>
@@ -334,7 +309,7 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
           <input
             aria-label="Title"
             autoFocus
-            className="mb-1 w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[1.0625rem] font-medium text-foreground outline-none placeholder:text-(--ui-text-quaternary) hover:border-(--ui-stroke-tertiary) focus:border-(--ui-stroke-secondary)"
+            className="mb-2 w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-[1.0625rem] font-medium text-foreground outline-none placeholder:text-(--ui-text-quaternary) hover:border-(--ui-stroke-tertiary) focus:border-(--ui-stroke-secondary)"
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Add a title"
             value={title}
