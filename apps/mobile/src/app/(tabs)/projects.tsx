@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import Reanimated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
@@ -10,13 +9,14 @@ import { useCanvasesAndFolders } from "@/components/useCanvasesAndFolders";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
 import { MiniMenu, type MenuAnchor, type MenuRow } from "@/components/MiniMenu";
-import { CanvasRow, PinnedMark, ProjectRow } from "@/components/ProjectRows";
+import { PinnedMark, ProjectRow } from "@/components/ProjectRows";
 import { TextPromptSheet } from "@/components/RowActionSheets";
 import { useRowDrag } from "@/components/useRowDrag";
-import { CloseIcon, PlusIcon, SearchIcon } from "@/components/icons";
+import { CloseIcon, PinIcon, PlusIcon, SearchIcon, TrashIcon } from "@/components/icons";
+import { PencilIcon } from "@/components/icons-sidebar";
 import { createFolder, deleteFolder, renameFolder, setFolderPinned } from "@/api/canvases";
 import { buildProjects, visibleProjects, type ProjectFilter, type ProjectNode } from "@/lib/canvases";
-import { longRelativeTime, shortRelativeTime } from "@/lib/relative-time";
+import { longRelativeTime } from "@/lib/relative-time";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -25,10 +25,11 @@ import { control, radius, space, type } from "@/theme/tokens";
 // 3), ported to the ChatGPT-iOS shape: a filter chip row, a list of projects (icon tile +
 // name + relative time + a pin glyph when pinned), and a search field DOCKED at the
 // bottom rather than the drawer's inline one — that's the web page's own layout, not a
-// drawer convention repeated here. Tapping a row expands it IN PLACE to its most recent
-// canvases (same behaviour as the drawer's Projects section, and the same cap/"Show
-// more"), rather than pushing a project detail screen — there isn't one yet. Long-press
-// opens the same Pin / Rename / Delete menu the drawer's project tiles do.
+// drawer convention repeated here. Tapping a row opens the project's own page (IMG_6538 →
+// IMG_6543, "Tapping a row opens /project?id="), which now exists (see
+// app/(tabs)/project.tsx) — the previous expand-in-place behaviour is retired along with
+// it. Long-press still opens the same Pin / Rename / Delete menu the drawer's project
+// rows do.
 
 /** Space the docked search bar (plus its own breathing room) reserves at the list's foot,
  *  so the last row never sits under it. */
@@ -54,8 +55,6 @@ export default function ProjectsScreen() {
   const { canvases, folders, setFolders } = useCanvasesAndFolders(uid, true);
   const [filter, setFilter] = useState<ProjectFilter>("all");
   const [query, setQuery] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedFully, setExpandedFully] = useState<ReadonlySet<string>>(new Set());
   const [newPromptOpen, setNewPromptOpen] = useState(false);
 
   const [actionTarget, setActionTarget] = useState<ProjectNode | null>(null);
@@ -158,9 +157,9 @@ export default function ProjectsScreen() {
 
   const rowActions: MenuRow[] = actionTarget
     ? [
-        { key: "pin", label: actionTarget.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePin(actionTarget) },
-        { key: "rename", label: "Rename", onPress: () => beginRename(actionTarget) },
-        { destructive: true, key: "delete", label: "Delete", onPress: () => confirmDelete(actionTarget) },
+        { icon: PinIcon, key: "pin", label: actionTarget.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePin(actionTarget) },
+        { icon: PencilIcon, key: "rename", label: "Rename", onPress: () => beginRename(actionTarget) },
+        { destructive: true, icon: TrashIcon, key: "delete", label: "Delete", onPress: () => confirmDelete(actionTarget) },
       ]
     : [];
 
@@ -187,56 +186,23 @@ export default function ProjectsScreen() {
         {shown.length === 0 ? (
           <EmptyBlock title={emptyTitle} />
         ) : (
-          shown.map((project) => {
-            const expanded = expandedId === project.id;
-            const canvasesShown = expandedFully.has(project.id) ? project.canvases : project.canvases.slice(0, 5);
-            const more = project.canvases.length - canvasesShown.length;
-            return (
-              <Reanimated.View key={project.id} layout={LinearTransition.duration(200)}>
-                <ProjectRow
-                  name={project.name}
-                  color={project.color}
-                  lifted={rowDrag.activeKey === project.id}
-                  gesture={rowDrag.gestureFor(project.id, { canDropOn: () => false, draggable: false, lift: true })}
-                  onPress={() => setExpandedId(expanded ? null : project.id)}
-                  trailing={
-                    <View style={styles.trailing}>
-                      <Text style={styles.time}>{longRelativeTime(project.modifiedAt)}</Text>
-                      {project.pinnedAt ? <PinnedMark /> : null}
-                    </View>
-                  }
-                  testID={`projects-row-${project.id}`}
-                />
-                {expanded ? (
-                  <Reanimated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(100)} layout={LinearTransition.duration(200)}>
-                    {canvasesShown.length === 0 ? (
-                      <Text style={styles.emptyRows}>No canvases yet</Text>
-                    ) : (
-                      canvasesShown.map((canvas) => (
-                        <CanvasRow
-                          key={canvas.id}
-                          label={canvas.title.trim() || "New canvas"}
-                          time={shortRelativeTime(canvas.updatedAt)}
-                          indent
-                          onPress={() => router.push(`/canvas?c=${canvas.id}` as never)}
-                          testID={`projects-canvas-${canvas.id}`}
-                        />
-                      ))
-                    )}
-                    {more > 0 ? (
-                      <Pressable
-                        style={({ pressed }) => [styles.showMore, pressed && styles.rowPressed]}
-                        onPress={() => setExpandedFully((prev) => new Set(prev).add(project.id))}
-                        testID={`projects-row-${project.id}-more`}
-                      >
-                        <Text style={styles.showMoreLabel}>Show {more} more</Text>
-                      </Pressable>
-                    ) : null}
-                  </Reanimated.View>
-                ) : null}
-              </Reanimated.View>
-            );
-          })
+          shown.map((project) => (
+            <ProjectRow
+              key={project.id}
+              name={project.name}
+              color={project.color}
+              lifted={rowDrag.activeKey === project.id}
+              gesture={rowDrag.gestureFor(project.id, { canDropOn: () => false, draggable: false, lift: true })}
+              onPress={() => router.push(`/project?id=${project.id}` as never)}
+              trailing={
+                <View style={styles.trailing}>
+                  <Text style={styles.time}>{longRelativeTime(project.modifiedAt)}</Text>
+                  {project.pinnedAt ? <PinnedMark /> : null}
+                </View>
+              }
+              testID={`projects-row-${project.id}`}
+            />
+          ))
         )}
       </ScrollView>
 
@@ -264,7 +230,14 @@ export default function ProjectsScreen() {
         </GlassSurface>
       </View>
 
-      <MiniMenu visible={actionTarget !== null} anchor={actionAt} actions={rowActions} onClose={closeMenu} testID="projects-row-actions" />
+      <MiniMenu
+        visible={actionTarget !== null}
+        anchor={actionAt}
+        actions={rowActions}
+        title={actionTarget?.name}
+        onClose={closeMenu}
+        testID="projects-row-actions"
+      />
       <TextPromptSheet
         visible={prompt !== null || newPromptOpen}
         title={prompt ? "Rename project" : "New project"}
@@ -302,16 +275,14 @@ const createStyles = (c: ThemeColors) =>
     body: { flexGrow: 1, paddingHorizontal: space(2) },
 
     chips: { flexDirection: "row", gap: space(2), marginBottom: space(3), paddingHorizontal: space(2) },
-    chip: { borderRadius: radius.pill, paddingHorizontal: space(3.5), paddingVertical: space(1.5), backgroundColor: c.surface },
-    chipPressed: { backgroundColor: c.surface2 },
-    chipActive: { backgroundColor: c.accent },
+    // Transparent at rest — IMG_6538's unselected chips ("Created by you", "Shared with
+    // you") carry no pill at all, only grey text; the selected chip gets a c.surface2 pill
+    // with plain c.text, never the accent fill this used to apply.
+    chip: { borderRadius: radius.pill, paddingHorizontal: space(3.5), paddingVertical: space(1.5), backgroundColor: "transparent" },
+    chipPressed: { backgroundColor: c.surface },
+    chipActive: { backgroundColor: c.surface2 },
     chipLabel: { ...type.small, color: c.text2, fontWeight: "600" },
-    chipLabelActive: { color: c.onAccent },
-
-    emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
-    rowPressed: { backgroundColor: c.surface },
-    showMore: { borderRadius: radius.md, marginHorizontal: space(2), paddingHorizontal: space(3.5) + space(5), paddingVertical: space(2) },
-    showMoreLabel: { color: c.text3, ...type.small },
+    chipLabelActive: { color: c.text },
 
     trailing: { flexDirection: "row", alignItems: "center", gap: space(1.5) },
     time: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },

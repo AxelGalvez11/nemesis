@@ -1,37 +1,48 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
-import { Alert, Animated, Easing, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, Animated, Easing, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, usePathname } from "expo-router";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
-import Reanimated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
-import { createFolder, deleteCanvas, deleteFolder, renameCanvas, renameFolder, setCanvasFolder, setCanvasPinned, setFolderPinned } from "@/api/canvases";
-import { buildProjects, canvasLabel, sidebarSections, type CanvasSummary, type Folder, type ProjectNode } from "@/lib/canvases";
-import { flattenProjects, shortRelativeTime } from "@/lib/relative-time";
+import { createFolder, deleteCanvas, deleteFolder, loadCanvas, renameCanvas, renameFolder, setCanvasFolder, setCanvasPinned, setFolderPinned } from "@/api/canvases";
+import { buildProjects, canvasLabel, sidebarSections, threadFromCanvas, type CanvasSummary, type Folder, type ProjectNode } from "@/lib/canvases";
+import { flattenProjects } from "@/lib/relative-time";
+import { isFresh } from "@/lib/canvas-freshness";
 import { hapticDrawerOpened } from "@/lib/haptics";
-import Svg, { Path } from "react-native-svg";
 import { MiniMenu, type MenuAnchor, type MenuRow } from "./MiniMenu";
-import { CanvasRow, ProjectRow } from "./ProjectRows";
+import { CanvasRow } from "./ProjectRows";
 import { useCanvasesAndFolders } from "./useCanvasesAndFolders";
 import { useRowDrag } from "./useRowDrag";
 import { TextPromptSheet } from "./RowActionSheets";
-import { CalendarIcon, ChevronIcon, FolderIcon, LibraryIcon, PluginIcon, SearchIcon, SettingsIcon, type IconProps } from "./icons";
+import { ChatIcon, PinIcon, SearchIcon, SettingsIcon, TrashIcon, type IconProps } from "./icons";
+import {
+  CalendarGlyphIcon,
+  ComposeIcon,
+  FolderPlusIcon,
+  LibraryShelfIcon,
+  PencilIcon,
+  PluginsGlyphIcon,
+  ProjectFolderIcon,
+  ShareIcon,
+} from "./icons-sidebar";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { control, radius, space, type } from "@/theme/tokens";
+import { control, inset, radius, space, type } from "@/theme/tokens";
 
 // ChatGPT/Claude-style side drawer + the app-shell context that drives it. Built on RN's built-in
 // Animated (no extra deps; renders identically under react-native-web for previews). The sidebar is
 // always mounted UNDERNEATH the page; opening PUSHES the whole page (Slot + StatusBarBlur + TopBar) to
 // the right by the panel width to reveal it, instead of sliding an overlay on top — see DrawerShell.
 //
-// The drawer IS the desktop sidebar on the phone: a compact nav (Library · Projects ·
-// Plugins · Calendar), then the web's own Pinned / Projects / Canvases sections — the
-// learner's `learning_canvases` and `folders` rows, exactly as the desktop sidebar groups
-// them (see src/lib/canvases.ts's `sidebarSections`) — replacing the retired chat-threads
-// list (docs/design/ios-web-parity-2026-09.md, slice 1). Tapping a canvas reopens it (via
-// the /canvas?c=<id> route param); tapping a project expands it in place to its most recent
-// canvases. A solid "New canvas" pill and a settings gear float over the bottom of the list.
+// The drawer IS the desktop sidebar on the phone, redrawn to match the ChatGPT iOS app
+// one-to-one (nemesis-ios-catchup): a compact nav (Library · Projects · Plugins ·
+// Calendar), then a plain "Pinned" header (a pinned canvas or project, icon-led, no
+// chevron/count) and a plain "Recents" header below it (canvases only — there is no
+// standalone "Projects" section here; unpinned projects live on the Projects page). Data
+// is the learner's `learning_canvases` + `folders` rows (src/lib/canvases.ts's
+// `sidebarSections`). Tapping a canvas reopens it (`/canvas?c=<id>`); tapping a pinned
+// project opens its own page (`/project?id=<id>`) rather than expanding in place. A solid
+// accent "Chat" pill and a settings gear float over the bottom of the list.
 //
 // Owner call 2026-07-18: the drawer opens on a rightward swipe from ANYWHERE (plus
 // tapping TopBar's menu button); on /graph and /calendar — which own their own
@@ -315,16 +326,6 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // Each section collapses independently — same chevron idiom the old Pinned/Chats
-  // headers used.
-  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
-  const [projectsCollapsed, setProjectsCollapsed] = useState(false);
-  const [canvasesCollapsed, setCanvasesCollapsed] = useState(false);
-  // Which project (if any) is expanded in place, and which expanded projects have had
-  // their "Show more" tapped — both keyed by folder id.
-  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
-  const [expandedFully, setExpandedFully] = useState<ReadonlySet<string>>(new Set());
-
   // Long-press a row -> a MiniMenu at the touch point (owner 2026-07-23 precedent,
   // carried over from the retired chat list). `menuMode` swaps the SAME menu's rows to
   // the "Add to project" picker rather than opening a second menu on top of it.
@@ -374,6 +375,26 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
   function beginRenameCanvas(canvas: CanvasSummary) {
     closeMenu();
     setPrompt({ id: canvas.id, initial: canvasLabel(canvas), mode: "renameCanvas" });
+  }
+
+  /** "Share" (IMG_6536): RN's own Share sheet, given the title plus a plain-text transcript.
+   *  Re-reads the full canvas rather than trusting the summary row — a `CanvasSummary` carries
+   *  only the last line, and `loadCanvas` can come back null for a row whose canvas was deleted
+   *  out from under this menu between the long-press and the tap. */
+  async function shareCanvas(canvas: CanvasSummary) {
+    closeMenu();
+    if (!uid) return;
+    const full = await loadCanvas(uid, canvas.id);
+    if (!full) return;
+    const label = canvasLabel(canvas);
+    const transcript = threadFromCanvas(full)
+      .map((turn) => (turn.said ? `Q: ${turn.said}\nA: ${turn.reply}` : turn.reply))
+      .join("\n\n");
+    try {
+      await Share.share({ title: label, message: transcript ? `${label}\n\n${transcript}` : label });
+    } catch {
+      // The share sheet itself throws on a user cancel — nothing to recover from.
+    }
   }
 
   function confirmDeleteCanvas(canvas: CanvasSummary) {
@@ -480,62 +501,48 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
   const flatProjects = useMemo(() => flattenProjects(allProjects), [allProjects]);
 
   canvasesByIdRef.current = new Map(canvases.map((canvas) => [canvas.id, canvas]));
-  projectsByIdRef.current = new Map([...sections.pinnedProjects, ...sections.projects].map((project) => [project.id, project]));
+  // Only pinned projects draw a "p:<id>" row now (there is no standalone Projects
+  // section any more — see the file's own doc comment), so this only needs to cover them.
+  projectsByIdRef.current = new Map(sections.pinnedProjects.map((project) => [project.id, project]));
 
   const trimmed = query.trim();
   const hasPinned = sections.pinnedCanvases.length > 0 || sections.pinnedProjects.length > 0;
 
-  const renderCanvasRow = (canvas: CanvasSummary, scope: string, indent = false) => {
+  /** A canvas row. `Icon` is set only in the Pinned section (IMG_6531: a pinned canvas
+   *  carries a chat-bubble glyph, a pinned project a folder glyph); Recents rows below carry
+   *  none. Every row can show the green freshness dot regardless of section. */
+  const renderCanvasRow = (canvas: CanvasSummary, scope: string, Icon?: ComponentType<IconProps>) => {
     const key = `${scope}:c:${canvas.id}`;
     return (
       <CanvasRow
         key={key}
         label={canvasLabel(canvas)}
-        time={shortRelativeTime(canvas.updatedAt)}
+        fresh={isFresh(canvas.updatedAt)}
+        Icon={Icon}
         lifted={rowDrag.activeKey === key}
         gesture={liftGesture(key)}
-        indent={indent}
         onPress={() => go(`/canvas?c=${canvas.id}`)}
         testID={`drawer-canvas-${canvas.id}`}
       />
     );
   };
 
-  const renderProjectRow = (project: ProjectNode) => {
+  /** A pinned project row — plain icon + name like a pinned canvas (IMG_6531 has no tile
+   *  here; the coloured tile is the Projects PAGE's own look, see ProjectRows.tsx). Tapping
+   *  opens the project's own page instead of expanding in place — project.tsx now exists to
+   *  hold that job, so a second, cramped copy of it inside the drawer would be redundant. */
+  const renderPinnedProjectRow = (project: ProjectNode) => {
     const key = `p:${project.id}`;
-    const expanded = expandedProjectId === project.id;
-    const shown = expandedFully.has(project.id) ? project.canvases : project.canvases.slice(0, 5);
-    const more = project.canvases.length - shown.length;
     return (
-      <Reanimated.View key={project.id} layout={LinearTransition.duration(200)}>
-        <ProjectRow
-          name={project.name}
-          color={project.color}
-          lifted={rowDrag.activeKey === key}
-          gesture={liftGesture(key)}
-          onPress={() => setExpandedProjectId(expanded ? null : project.id)}
-          compact
-          testID={`drawer-project-${project.id}`}
-        />
-        {expanded ? (
-          <Reanimated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(100)} layout={LinearTransition.duration(200)}>
-            {shown.length === 0 ? (
-              <Text style={styles.emptyRows}>No canvases yet</Text>
-            ) : (
-              shown.map((canvas) => renderCanvasRow(canvas, `proj:${project.id}`, true))
-            )}
-            {more > 0 ? (
-              <Pressable
-                style={({ pressed }) => [styles.showMore, pressed && styles.rowPressed]}
-                onPress={() => setExpandedFully((prev) => new Set(prev).add(project.id))}
-                testID={`drawer-project-${project.id}-more`}
-              >
-                <Text style={styles.showMoreLabel}>Show {more} more</Text>
-              </Pressable>
-            ) : null}
-          </Reanimated.View>
-        ) : null}
-      </Reanimated.View>
+      <CanvasRow
+        key={key}
+        label={project.name}
+        Icon={ProjectFolderIcon}
+        lifted={rowDrag.activeKey === key}
+        gesture={liftGesture(key)}
+        onPress={() => go(`/project?id=${project.id}`)}
+        testID={`drawer-project-${project.id}`}
+      />
     );
   };
 
@@ -545,12 +552,18 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
       const canvas = actionTarget.canvas;
       const rows: MenuRow[] = [];
       if (canvas.folderId) {
-        rows.push({ key: "remove", label: "Remove from project", onPress: () => fileCanvas(canvas.id, null) });
+        rows.push({
+          icon: ProjectFolderIcon,
+          key: "remove",
+          label: "Remove from project",
+          onPress: () => fileCanvas(canvas.id, null),
+        });
       }
       for (const { depth, node } of flatProjects) {
-        rows.push({ indent: depth, key: `to:${node.id}`, label: node.name, onPress: () => fileCanvas(canvas.id, node.id) });
+        rows.push({ icon: ProjectFolderIcon, indent: depth, key: `to:${node.id}`, label: node.name, onPress: () => fileCanvas(canvas.id, node.id) });
       }
       rows.push({
+        icon: FolderPlusIcon,
         key: "new-project",
         label: "New project…",
         onPress: () => {
@@ -568,19 +581,30 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
     if (actionTarget.kind === "canvas") {
       const canvas = actionTarget.canvas;
       return [
-        { key: "pin", label: canvas.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePinCanvas(canvas) },
-        { key: "rename", label: "Rename", onPress: () => beginRenameCanvas(canvas) },
-        { key: "add-to-project", label: "Add to project ›", onPress: () => setMenuMode("addToProject") },
-        { destructive: true, key: "delete", label: "Delete", onPress: () => confirmDeleteCanvas(canvas) },
+        { icon: ShareIcon, key: "share", label: "Share", onPress: () => void shareCanvas(canvas) },
+        { icon: PinIcon, key: "pin", label: canvas.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePinCanvas(canvas) },
+        { chevron: true, icon: ProjectFolderIcon, key: "add-to-project", label: "Add to project", onPress: () => setMenuMode("addToProject") },
+        { icon: PencilIcon, key: "rename", label: "Rename", onPress: () => beginRenameCanvas(canvas) },
+        { destructive: true, icon: TrashIcon, key: "delete", label: "Delete", onPress: () => confirmDeleteCanvas(canvas) },
       ];
     }
+    // A project row's own menu omits Share (IMG_6543's project-detail "…" menu has none
+    // either — there is no single conversation to hand off).
     const project = actionTarget.project;
     return [
-      { key: "pin", label: project.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePinProject(project) },
-      { key: "rename", label: "Rename", onPress: () => beginRenameProject(project) },
-      { destructive: true, key: "delete", label: "Delete", onPress: () => confirmDeleteProject(project) },
+      { icon: PinIcon, key: "pin", label: project.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePinProject(project) },
+      { icon: PencilIcon, key: "rename", label: "Rename", onPress: () => beginRenameProject(project) },
+      { destructive: true, icon: TrashIcon, key: "delete", label: "Delete", onPress: () => confirmDeleteProject(project) },
     ];
   })();
+
+  const menuTitle =
+    menuMode === "actions" && actionTarget
+      ? actionTarget.kind === "canvas"
+        ? canvasLabel(actionTarget.canvas)
+        : actionTarget.project.name
+      : undefined;
+  const menuSectionTitle = menuMode === "addToProject" ? "Add to project" : undefined;
 
   const promptTitle =
     prompt?.mode === "renameCanvas" ? "Rename canvas" : prompt?.mode === "renameProject" ? "Rename project" : "New project";
@@ -598,7 +622,7 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
           hitSlop={8}
           accessibilityLabel="Search canvases and projects"
         >
-          <SearchIcon size={19} color={searchOpen ? c.text : c.text2} />
+          <SearchIcon size={20} color={c.text} />
         </Pressable>
       </View>
 
@@ -613,10 +637,10 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.navGroup}>
-          <NavRow Icon={LibraryIcon} label="Library" onPress={() => go("/library")} />
-          <NavRow Icon={FolderIcon} label="Projects" onPress={() => go("/projects")} />
-          <NavRow Icon={PluginIcon} label="Plugins" onPress={() => go("/plugins")} />
-          <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
+          <NavRow Icon={LibraryShelfIcon} label="Library" onPress={() => go("/library")} />
+          <NavRow Icon={ProjectFolderIcon} label="Projects" onPress={() => go("/projects")} />
+          <NavRow Icon={PluginsGlyphIcon} label="Plugins" onPress={() => go("/plugins")} />
+          <NavRow Icon={CalendarGlyphIcon} label="Calendar" onPress={() => go("/calendar")} />
         </View>
 
         {searchOpen ? (
@@ -634,63 +658,23 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
           </View>
         ) : null}
 
+        {/* Plain headers (IMG_6531: no chevron, no count, not collapsible) — the reference
+            has neither a "Projects" section (projects live on the Projects page and inside
+            Pinned) nor a way to collapse Pinned/Recents. */}
         {hasPinned ? (
           <>
-            <Pressable
-              style={({ pressed }) => [styles.sectionHeader, pressed && styles.rowPressed]}
-              onPress={() => setPinnedCollapsed((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel="Pinned"
-              accessibilityState={{ expanded: !pinnedCollapsed }}
-              testID="drawer-pinned-header"
-            >
-              <View style={pinnedCollapsed ? undefined : styles.chevronOpen}>
-                <ChevronIcon size={12} color={c.text2} strokeWidth={2.2} />
-              </View>
-              <Text style={styles.sectionHeaderLabel}>Pinned</Text>
-              <Text style={styles.sectionCount}>{sections.pinnedCanvases.length + sections.pinnedProjects.length}</Text>
-            </Pressable>
-            {pinnedCollapsed ? null : (
-              <>
-                {sections.pinnedCanvases.map((canvas) => renderCanvasRow(canvas, "pin"))}
-                {sections.pinnedProjects.map(renderProjectRow)}
-              </>
-            )}
+            <Text style={styles.sectionHeaderLabel} testID="drawer-pinned-header">
+              Pinned
+            </Text>
+            {sections.pinnedCanvases.map((canvas) => renderCanvasRow(canvas, "pin", ChatIcon))}
+            {sections.pinnedProjects.map(renderPinnedProjectRow)}
           </>
         ) : null}
 
-        {/* Same collapsible header as Pinned, chevron and all. */}
-        <Pressable
-          style={({ pressed }) => [styles.sectionHeader, pressed && styles.rowPressed]}
-          onPress={() => setProjectsCollapsed((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel="Projects"
-          accessibilityState={{ expanded: !projectsCollapsed }}
-          testID="drawer-projects-header"
-        >
-          <View style={projectsCollapsed ? undefined : styles.chevronOpen}>
-            <ChevronIcon size={12} color={c.text2} strokeWidth={2.2} />
-          </View>
-          <Text style={styles.sectionHeaderLabel}>Projects</Text>
-          <Text style={styles.sectionCount}>{sections.projects.length}</Text>
-        </Pressable>
-        {projectsCollapsed ? null : sections.projects.map(renderProjectRow)}
-
-        <Pressable
-          style={({ pressed }) => [styles.sectionHeader, pressed && styles.rowPressed]}
-          onPress={() => setCanvasesCollapsed((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel="Canvases"
-          accessibilityState={{ expanded: !canvasesCollapsed }}
-          testID="drawer-canvases-header"
-        >
-          <View style={canvasesCollapsed ? undefined : styles.chevronOpen}>
-            <ChevronIcon size={12} color={c.text2} strokeWidth={2.2} />
-          </View>
-          <Text style={styles.sectionHeaderLabel}>Canvases</Text>
-          <Text style={styles.sectionCount}>{sections.recents.length}</Text>
-        </Pressable>
-        {canvasesCollapsed ? null : sections.recents.length === 0 ? (
+        <Text style={styles.sectionHeaderLabel} testID="drawer-recents-header">
+          Recents
+        </Text>
+        {sections.recents.length === 0 ? (
           <Text style={styles.emptyRows}>{trimmed ? "No matches" : "No canvases yet"}</Text>
         ) : (
           sections.recents.map((canvas) => renderCanvasRow(canvas, "rec"))
@@ -716,7 +700,8 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
           accessibilityLabel="New canvas"
         >
           <ComposeIcon size={18} color={c.onAccent} strokeWidth={1.9} />
-          <Text style={styles.canvasPillText}>New canvas</Text>
+          {/* "Chat" — the reference's own word (IMG_6531); a Nemesis canvas IS a chat. */}
+          <Text style={styles.canvasPillText}>Chat</Text>
         </Pressable>
 
         <Pressable
@@ -751,6 +736,8 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
             visible={actionTarget !== null}
             anchor={actionAt}
             actions={rowActions}
+            title={menuTitle}
+            sectionTitle={menuSectionTitle}
             onClose={closeMenu}
             testID="drawer-row-actions"
           />
@@ -775,27 +762,13 @@ function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; labe
   return (
     <Pressable style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]} onPress={onPress}>
       <View style={styles.navIcon}>
-        <Icon size={17} color={c.text2} />
+        {/* 22pt, c.text — measured off IMG_6531 (icon_library.png etc): the glyph's own ink
+            bbox is ~18.5×17-19pt at x0≈27pt, and it reads solid black, not the muted grey
+            this used to render at 17pt. */}
+        <Icon size={22} color={c.text} strokeWidth={1.7} />
       </View>
       <Text style={styles.navLabel}>{label}</Text>
     </Pressable>
-  );
-}
-
-/** Pencil-in-square "compose" glyph — the floating pill's icon (the
- * ChatGPT-style mark the owner's crop shows). */
-function ComposeIcon({ size = 23, color, strokeWidth = 1.8 }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M11.3 5.4H7.1A2.6 2.6 0 0 0 4.5 8v8.9a2.6 2.6 0 0 0 2.6 2.6H16a2.6 2.6 0 0 0 2.6-2.6v-4.2M18.9 3.8l1.3 1.3a1.7 1.7 0 0 1 0 2.4l-7.5 7.5-3.9 1 1-3.9 7.5-7.5a1.7 1.7 0 0 1 2.4 0Z"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
   );
 }
 
@@ -844,7 +817,9 @@ const createStyles = (c: ThemeColors) =>
     // the right rather than space-between pushing them apart.
     brandRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: space(4), paddingBottom: space(3) },
     brand: { ...type.h2, color: c.text, letterSpacing: -0.3, marginRight: "auto" },
-    searchBtn: { width: control.md, height: control.md, borderRadius: control.md / 2, alignItems: "center", justifyContent: "center" },
+    // control.lg (44), not control.md — measured off IMG_6531 (crop_footer_grid.png's gear,
+    // the same round-button family as this search button): ~44-48pt across, not 36.
+    searchBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center" },
     searchBtnActive: { backgroundColor: c.surface },
     // Borderless (owner 2026-07-20: "remove the sidebar borders") — fills only.
     searchField: {
@@ -855,43 +830,44 @@ const createStyles = (c: ThemeColors) =>
     },
     searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
 
-    navGroup: { paddingHorizontal: space(2), marginBottom: space(2) },
+    navGroup: { paddingHorizontal: space(2), marginBottom: space(3) },
     navRow: {
       flexDirection: "row", alignItems: "center", gap: space(3),
       paddingVertical: space(2.75), paddingHorizontal: space(2.5), borderRadius: radius.md,
     },
     navRowPressed: { backgroundColor: c.surface },
-    navIcon: { width: 26, alignItems: "center" },
-    // Sidebar text rides the shared type ramp (owner 2026-07-20: bigger + standardized).
-    navLabel: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "500", flex: 1 },
+    // inset.sidebarIcon (26) — matches the measured x0≈27pt the icon actually starts at.
+    navIcon: { width: inset.sidebarIcon, alignItems: "center" },
+    // type.label (17/regular) — tokens.ts calls this out by name for exactly this row.
+    navLabel: { color: c.text, fontSize: type.label.fontSize, flex: 1 },
 
-    // Collapsible section header — a tappable row with a chevron that rotates
-    // open (owner 2026-07-23). Same chevron idiom as the Library/Study folder rows.
-    sectionHeader: {
-      flexDirection: "row", alignItems: "center", gap: space(1.5),
-      paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5),
-      paddingVertical: space(1), borderRadius: radius.sm, marginHorizontal: space(2),
+    // Plain header (IMG_6531: bold, no chevron, no count, not a button). type.title
+    // (17/600) in c.text, not the old micro/grey pairing — measured off IMG_6531
+    // (crop_pinned.png / crop_recents.png): "Pinned"/"Recents" both ink at ~13pt with no
+    // descender, which is a 17pt cap+ascender line, not a 13pt one, and they read
+    // near-black, not grey.
+    sectionHeaderLabel: {
+      ...type.title,
+      color: c.text,
+      paddingHorizontal: space(4),
+      // A generous top gap (IMG_6531: the header sits well clear of the row above it,
+      // more than this app's usual space(3) section gap) and a tighter one below, where
+      // the first row follows immediately.
+      marginTop: space(7),
+      marginBottom: space(1.5),
     },
-    sectionHeaderLabel: { color: c.text2, fontSize: type.micro.fontSize, fontWeight: "700", flex: 1 },
-    sectionCount: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
-    // ChevronIcon points right by default; rotate it down for the expanded state.
-    chevronOpen: { transform: [{ rotate: "90deg" }] },
 
     rowPressed: { backgroundColor: c.surface },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
-    // "Show N more" — inside an expanded project, below its capped canvas list.
-    showMore: { borderRadius: radius.md, marginHorizontal: space(2), paddingHorizontal: space(3.5) + space(5), paddingVertical: space(2) },
-    showMoreLabel: { color: c.text3, ...type.small },
-
     // Footer — a FLOATING row over the list (owner 2026-07-21, ChatGPT style;
-    // replaces the in-flow "New chat"/plain-gear row). Extra right padding so the
-    // gear clears the pushed page's shadow that bleeds onto the sidebar's right edge
-    // (owner: the gear was "cutting out to the right").
+    // replaces the in-flow "New chat"/plain-gear row). Both insets are 34pt — measured
+    // off IMG_6531 (crop_footer_grid.png): the pill's left edge and the gear's right
+    // edge sit the same distance from their side of the panel.
     footerFloat: {
       position: "absolute", left: 0, right: 0,
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      paddingLeft: space(3.5), paddingRight: space(4),
+      paddingLeft: 34, paddingRight: 34,
     },
     // The pill: solid ACCENT fill (the appearance setting's swatch drives it),
     // onAccent content, soft drop shadow (c.pageShadow bakes the alpha).

@@ -146,7 +146,7 @@ export function ThinkingLine({
             char={char}
             position={index / last}
             progress={progress}
-            dim={c.textHint}
+            dim={c.text2}
             bright={c.text}
           />
         ))}
@@ -165,11 +165,15 @@ const createStyles = (c: ThemeColors) =>
       paddingVertical: space(1),
     },
     phrase: {
-      // Body, matching the transcript around it (owner 2026-08-01). The colour
-      // here is the floor the characters animate away from and back to; each one
-      // overrides it while the band is on it.
-      ...type.body,
-      color: c.textHint,
+      // 17pt in #8F8F8F (measured, IMG_6542/6550: "Thinking" — c.text2 in light mode is
+      // exactly that hex). type.label rather than type.body: the reference's "Thinking" sits
+      // a half-size up from the 16pt prose it precedes, matching a row label's size instead —
+      // superseding the 2026-08-01 "same size as the transcript" call now that this is a
+      // measured one-to-one target rather than an in-house choice. The colour here is the
+      // floor the characters animate away from and back to; each one overrides it while the
+      // band is on it.
+      ...type.label,
+      color: c.text2,
       flexShrink: 1,
     },
   });

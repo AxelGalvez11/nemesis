@@ -5,17 +5,18 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Reanimated, { FadeIn } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
 import {
   askCanvas,
@@ -31,20 +32,26 @@ import {
 } from "@/api/canvases";
 import { useShell } from "@/components/AppDrawer";
 import { CanvasActionsMenu } from "@/components/canvas/CanvasActionsMenu";
+import { CanvasFindBar } from "@/components/canvas/CanvasFindBar";
+import { CanvasHeaderPill } from "@/components/canvas/CanvasHeaderPill";
+import { CanvasReplyMenu } from "@/components/canvas/CanvasReplyMenu";
 import { CanvasTurn } from "@/components/canvas/CanvasTurn";
+import { ScrollToBottomButton } from "@/components/canvas/ScrollToBottomButton";
+import { UploadedFilesSheet } from "@/components/canvas/UploadedFilesSheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT } from "@/components/Composer";
-import { GlassSurface } from "@/components/GlassSurface";
-import { MiniMenu, type MenuAnchor } from "@/components/MiniMenu";
+import type { MenuAnchor } from "@/components/MiniMenu";
 import { TextPromptSheet } from "@/components/RowActionSheets";
+import { SourcesSheet, type SourceLike } from "@/components/SourcesSheet";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
+import { filterTurnsByQuery } from "@/lib/canvas-find";
 import { capabilityFromParam, firstParam } from "@/lib/canvas-screen";
 import { canvasLabel, newCanvas, threadFromCanvas, type Folder } from "@/lib/canvases";
-import { CAPABILITY_COPY, lastThingSaid, type CanvasThreadTurn, type ComposerCapability, type LearningCanvas } from "@/learn/web";
+import { lastThingSaid, type CanvasThreadTurn, type ComposerCapability, type LearningCanvas } from "@/learn/web";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { control, space, type } from "@/theme/tokens";
+import { space, type } from "@/theme/tokens";
 
 // One canvas — the web app's session object — rendered as a conversation in the ChatGPT iOS
 // app's shape (see docs/design/ios-web-parity-2026-09.md, Slice 1). A canvas is a single durable
@@ -59,6 +66,9 @@ import { control, space, type } from "@/theme/tokens";
 // reply arriving after the id changed must not land on the canvas now on screen.
 
 const THINKING_PHASE = { kind: "routing" as const };
+/** Room the find bar's own height (40) plus its top margin needs below the header, so the
+ *  list's first row doesn't render underneath it once "Find in chat" opens. */
+const FIND_BAR_CLEARANCE = 56;
 
 interface Row {
   id: string;
@@ -102,8 +112,17 @@ export default function CanvasScreen() {
   const [streamingText, setStreamingText] = useState("");
   const [sending, setSending] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-  const [copyAnchor, setCopyAnchor] = useState<MenuAnchor | null>(null);
-  const [copyText, setCopyText] = useState<string | null>(null);
+  // The long-press-on-a-reply menu (item 8) — both a long press AND the action row's "…" land
+  // here (CanvasTurn's onLongPressReply prop), carrying the whole turn so the menu can show its
+  // timestamp and Retry can re-ask its words.
+  const [replyMenuAnchor, setReplyMenuAnchor] = useState<MenuAnchor | null>(null);
+  const [replyMenuTurn, setReplyMenuTurn] = useState<CanvasThreadTurn | null>(null);
+  const [sourcesFor, setSourcesFor] = useState<readonly SourceLike[] | null>(null);
+  const [uploadedFilesOpen, setUploadedFilesOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  // Shows the ↓ disc once the learner has scrolled away from the newest content (item 7).
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   const canvasRef = useRef<LearningCanvas | null>(null);
 
@@ -203,7 +222,12 @@ export default function CanvasScreen() {
       setLastError(null);
       setSending(true);
       setStreamingText("");
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      // 🔴 NOT scrollToEnd. This used to race useScrollToNewest's scrollToIndex+viewOffset
+      // below: scrollToEnd jumps to the literal bottom of the list (past the live row, into
+      // the footer spacer), and only on turn 1 — where there's nothing above to jump past —
+      // did that happen to land in the same place scrollToIndex would put it. From turn 2 on
+      // it fought the pin-under-header behavior every send. useScrollToNewest now owns all
+      // of this screen's "scroll to the newest question" scrolling.
 
       const settle = (fn: () => void) => {
         fn();
@@ -285,34 +309,23 @@ export default function CanvasScreen() {
   }, []);
   const handleSend = useCallback(() => send(input), [send, input]);
 
-  // ---- header: title + the "…" actions menu -------------------------------------------------
-
-  useEffect(() => {
-    if (!canvas) return;
-    setHeaderTitle(canvasLabel({ title: canvas.title, courseTitle: null, preview: lastThingSaid(canvas.moments) }));
-  }, [canvas, setHeaderTitle]);
+  // ---- header: the compose+"…" pill, no title --------------------------------------------
+  //
+  // The reference's chat header carries NO title (IMG_6532/6551) — headerTitle is left null
+  // (chat.tsx and every other screen still set theirs; this one deliberately doesn't). The
+  // canvas's own name still exists — canvasLabel below — it just moves into the "…" menu's
+  // 13pt header line (CanvasActionsMenu's `title` prop) instead of the TopBar.
+  const canvasTitle = canvas ? canvasLabel({ title: canvas.title, courseTitle: null, preview: lastThingSaid(canvas.moments) }) : "";
 
   useEffect(() => {
     const hasCanvas = Boolean(canvas);
     setHeaderRight(
       hasCanvas ? (
-        <GlassSurface style={styles.actionsBtn} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined} shadow>
-          <Pressable
-            style={styles.actionsBtnInner}
-            onPress={() => setMenuOpen((v) => !v)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Canvas actions"
-            accessibilityState={{ expanded: menuOpen }}
-            testID="canvas-actions-btn"
-          >
-            <DotsIcon size={20} color={menuOpen ? c.accent : c.text2} />
-          </Pressable>
-        </GlassSurface>
+        <CanvasHeaderPill onCompose={() => router.push("/")} onMenu={() => setMenuOpen((v) => !v)} menuOpen={menuOpen} />
       ) : null,
     );
     return () => setHeaderRight(null);
-  }, [canvas, menuOpen, c, styles, setHeaderRight]);
+  }, [canvas, menuOpen, setHeaderRight]);
 
   // Both header slots belong to whichever screen is on top; clear them on the way out so the
   // next screen doesn't inherit this one's title/button for a frame.
@@ -339,10 +352,12 @@ export default function CanvasScreen() {
         if (!saved) return;
         setCanvas((prev) => (prev ? { ...prev, title: saved } : prev));
         canvasRef.current = canvasRef.current ? { ...canvasRef.current, title: saved } : canvasRef.current;
-        setHeaderTitle(saved);
+        // No setHeaderTitle here — this screen's header carries no title (see the header
+        // effect above); the new name shows up in the "…" menu's own title line instead,
+        // which re-derives from `canvas` on its own.
       });
     },
-    [uid, canvasId, setHeaderTitle],
+    [uid, canvasId],
   );
 
   /**
@@ -395,22 +410,57 @@ export default function CanvasScreen() {
     ]);
   }, [uid, canvasId]);
 
-  // ---- long-press → Copy ---------------------------------------------------------------------
+  // ---- the reply menu: long-press OR the action row's "…" (item 8) ------------------------
 
-  const handleLongPressReply = useCallback((x: number, y: number, text: string) => {
-    setCopyAnchor({ x, y });
-    setCopyText(text);
+  const handleOpenReplyMenu = useCallback((x: number, y: number, turn: CanvasThreadTurn) => {
+    setReplyMenuAnchor({ x, y });
+    setReplyMenuTurn(turn);
   }, []);
-  const closeCopyMenu = useCallback(() => {
-    setCopyAnchor(null);
-    setCopyText(null);
+  const closeReplyMenu = useCallback(() => {
+    setReplyMenuAnchor(null);
+    setReplyMenuTurn(null);
   }, []);
+  const handleCopyReply = useCallback(() => {
+    if (replyMenuTurn?.reply) void Clipboard.setStringAsync(replyMenuTurn.reply);
+  }, [replyMenuTurn]);
+  /**
+   * Retry: drop the last moment (the web's own shape for "re-run the last exchange" — a
+   * repeat is never appended as a second moment, `withExchange`'s `sameMoment` guard already
+   * relies on the SAME thing) and ask again with the same words.
+   *
+   * 🔴 THE SAVE MUST LAND BEFORE THE RE-ASK. `askCanvas` reloads the canvas fresh from the
+   * server itself (`recordExchange`'s `loadCanvas`) rather than trusting what this screen
+   * already has in memory — so if the truncated canvas hasn't been written yet, the reload
+   * would still see the old, un-dropped moment and Retry would land as a THIRD turn instead
+   * of replacing the second. Awaiting saveCanvas before send() is what keeps it a replace.
+   */
+  const handleRetry = useCallback(() => {
+    const turn = replyMenuTurn;
+    if (!uid || !canvasId || !canvasRef.current || !turn?.said) return;
+    const dropped: LearningCanvas = { ...canvasRef.current, moments: canvasRef.current.moments.slice(0, -1) };
+    canvasRef.current = dropped;
+    setCanvas(dropped);
+    void saveCanvas(uid, dropped).then(() => send(turn.said!));
+  }, [uid, canvasId, replyMenuTurn, send]);
 
   // Rows are computed unconditionally — including while signed out, where `canvas` is simply
   // null — so useScrollToNewest below is called on every render, never skipped by the early
   // return further down (React's rule: hooks can't be conditional on `uid`).
   const turns = canvas ? threadFromCanvas(canvas) : [];
-  const rows: Row[] = turns.map((turn, index) => ({ id: turn.id, isFirstTurn: index === 0, kind: "turn" as const, turn }));
+
+  const handleShareTranscript = useCallback(() => {
+    const text = turns
+      .map((t) => [t.said?.trim() ? `You: ${t.said.trim()}` : null, t.reply.trim() || null].filter(Boolean).join("\n"))
+      .filter(Boolean)
+      .join("\n\n");
+    if (text) void Share.share({ message: text }).catch(() => {});
+  }, [turns]);
+
+  // "Find in chat" (item 6): hides every turn whose question and answer both miss the query.
+  // The live row (a reply still streaming in) is never filtered — there's nothing finished to
+  // search yet, and hiding it mid-stream would look like the reply vanished.
+  const visibleTurns = findQuery.trim() ? filterTurnsByQuery(turns, findQuery) : turns;
+  const rows: Row[] = visibleTurns.map((turn, index) => ({ id: turn.id, isFirstTurn: index === 0, kind: "turn" as const, turn }));
   if (pendingText !== null) {
     rows.push({ id: "__live__", isFirstTurn: turns.length === 0, kind: "live" as const });
   }
@@ -436,8 +486,19 @@ export default function CanvasScreen() {
     pendingText !== null
       ? { at: new Date().toISOString(), attached: [], id: "__live__", output: null, reply: streamingText, said: pendingText, saidVia: null, sources: [], visuals: [] }
       : null;
-  const liveCapabilityLabel =
-    capForFirstTurnRef.current && turns.length === 0 ? CAPABILITY_COPY[capForFirstTurnRef.current].label : null;
+  // The raw capability, not its resolved label — CanvasTurn picks its own icon + label text
+  // from it now (CAPABILITY_COPY + a local icon map), so the two can never disagree.
+  const liveCapability = capForFirstTurnRef.current && turns.length === 0 ? capForFirstTurnRef.current : null;
+  const uploadedFileTitles = canvas?.sources.map((s) => s.title) ?? [];
+
+  // Near enough the bottom that the ↓ disc would be redundant — a little more than one
+  // composer's height, so it doesn't flicker in in the last few points of a normal scroll.
+  const NEAR_BOTTOM_PX = 160;
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    setShowScrollToBottom(distanceFromBottom > NEAR_BOTTOM_PX);
+  };
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
@@ -445,10 +506,21 @@ export default function CanvasScreen() {
         <FlatList
           ref={listRef}
           data={rows}
-          keyExtractor={(row) => row.id}
-          contentContainerStyle={[styles.listBody, { paddingBottom: listBottomInset, paddingTop: contentTop + space(2) }]}
+          // Index, not the row's own id: a canvas's turns are append-only (the same slot never
+          // holds a different EARLIER turn), but the row AT a slot changes identity mid-send —
+          // "__live__" while streaming, the landed turn's real moment id once it settles. Keying
+          // by id made FlatList treat that as a totally different row and remount it, silently
+          // eating whatever scroll position useScrollToNewest had just set (found by tracing
+          // why the pin-under-header only ever looked reliable on a turn's first send).
+          keyExtractor={(_row, index) => String(index)}
+          contentContainerStyle={[
+            styles.listBody,
+            { paddingBottom: listBottomInset, paddingTop: contentTop + space(2) + (findOpen ? FIND_BAR_CLEARANCE : 0) },
+          ]}
           keyboardShouldPersistTaps="handled"
           onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+          onScroll={handleScroll}
+          scrollEventThrottle={100}
           onScrollToIndexFailed={(info) => {
             listRef.current?.scrollToOffset({ animated: false, offset: info.averageItemLength * info.index });
             setTimeout(() => {
@@ -468,11 +540,11 @@ export default function CanvasScreen() {
             >
               {item.kind === "turn" ? (
                 <Reanimated.View entering={FadeIn.duration(220)}>
-                  <CanvasTurn turn={item.turn!} onLongPressReply={handleLongPressReply} />
+                  <CanvasTurn turn={item.turn!} onLongPressReply={handleOpenReplyMenu} onOpenSources={setSourcesFor} />
                 </Reanimated.View>
               ) : (
                 <View style={styles.liveWrap}>
-                  <CanvasTurn turn={liveTurn!} capabilityLabel={liveCapabilityLabel} />
+                  <CanvasTurn turn={liveTurn!} capability={liveCapability} live />
                   {sending && !streamingText ? (
                     <View style={styles.thinkingWrap}>
                       <ThinkingLine phase={THINKING_PHASE} testID="canvas-thinking-line" />
@@ -490,6 +562,17 @@ export default function CanvasScreen() {
           ListEmptyComponent={loading ? <ActivityIndicator style={styles.loadingSpinner} color={c.text3} /> : null}
           ListFooterComponent={rows.length > 0 ? <View style={{ height: footerSpacer }} /> : null}
         />
+        {showScrollToBottom ? (
+          <ScrollToBottomButton bottom={composerBottomPad + COMPOSER_COMPACT_HEIGHT + space(3)} onPress={() => listRef.current?.scrollToEnd({ animated: true })} />
+        ) : null}
+        {findOpen ? (
+          <CanvasFindBar
+            value={findQuery}
+            onChangeText={setFindQuery}
+            onClose={() => { setFindOpen(false); setFindQuery(""); }}
+            top={insets.top + space(2) + 44 + space(1.5)}
+          />
+        ) : null}
         <View style={[styles.composerRow, styles.composerFloat, { paddingBottom: composerBottomPad }]}>
           <Composer
             value={input}
@@ -507,9 +590,14 @@ export default function CanvasScreen() {
           visible={menuOpen}
           onClose={() => setMenuOpen(false)}
           topInset={insets.top}
+          title={canvasTitle}
           pinned={pinned}
           onTogglePin={handleTogglePin}
           onRename={() => setRenameOpen(true)}
+          onShare={handleShareTranscript}
+          onFindInChat={() => setFindOpen(true)}
+          onUploadedFiles={() => setUploadedFilesOpen(true)}
+          hasUploadedFiles={uploadedFileTitles.length > 0}
           folders={folders}
           currentFolderId={folderId}
           onPickProject={handlePickProject}
@@ -535,21 +623,15 @@ export default function CanvasScreen() {
           onClose={() => setNewProjectOpen(false)}
           testID="canvas-new-project-sheet"
         />
-        <MiniMenu
-          visible={copyAnchor !== null}
-          anchor={copyAnchor}
-          onClose={closeCopyMenu}
-          actions={[
-            {
-              key: "copy",
-              label: "Copy",
-              onPress: () => {
-                if (copyText) void Clipboard.setStringAsync(copyText);
-                closeCopyMenu();
-              },
-            },
-          ]}
-          testID="canvas-reply-menu"
+        <UploadedFilesSheet visible={uploadedFilesOpen} onClose={() => setUploadedFilesOpen(false)} titles={uploadedFileTitles} />
+        <SourcesSheet visible={sourcesFor !== null} onClose={() => setSourcesFor(null)} sources={sourcesFor ? [...sourcesFor] : []} />
+        <CanvasReplyMenu
+          visible={replyMenuAnchor !== null}
+          anchor={replyMenuAnchor}
+          at={replyMenuTurn?.at ?? null}
+          onClose={closeReplyMenu}
+          onCopy={handleCopyReply}
+          onRetry={handleRetry}
         />
       </View>
     </KeyboardAvoidingView>
@@ -580,18 +662,6 @@ function useScrollToNewest(listRef: RefObject<FlatList<Row> | null>, rowCount: n
   }, [rowCount]);
 }
 
-/** Horizontal "…" for the TopBar canvas-actions button — same glyph chat.tsx draws locally for
- *  the same button, kept local here for the same reason (it's a one-off, not shared chrome). */
-function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx="5.6" cy="12" r="1.7" fill={color} />
-      <Circle cx="12" cy="12" r="1.7" fill={color} />
-      <Circle cx="18.4" cy="12" r="1.7" fill={color} />
-    </Svg>
-  );
-}
-
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
@@ -603,6 +673,4 @@ const createStyles = (c: ThemeColors) =>
     loadingSpinner: { marginTop: space(8) },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
     composerFloat: { position: "absolute", bottom: 0, left: 0, right: 0 },
-    actionsBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },
-    actionsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   });

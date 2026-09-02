@@ -1,11 +1,12 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type ComponentType, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { FolderIcon, PinIcon } from "./icons";
+import { PinIcon, type IconProps } from "./icons";
+import { ProjectFolderIcon } from "./icons-sidebar";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { inset, radius, space, type } from "@/theme/tokens";
 
 // The two row shapes a canvas/project list draws with, shared by the drawer's Pinned /
 // Projects / Canvases sections and the Projects page — same "lift while held" gesture
@@ -31,21 +32,26 @@ function useLiftAnimation(lifted: boolean) {
 
 /** The small tile every project row leads with: the project's own color when set, a
  *  neutral surface otherwise — always the folder glyph. The web reserves a distinct
- *  icon-per-project as a nicety this pass doesn't reach for. */
-export function ProjectTile({ color, size = 30 }: { color: string | null; size?: number }) {
+ *  icon-per-project as a nicety this pass doesn't reach for.
+ *
+ *  Default size 40 / radius.lg (16) — measured off IMG_6538 (`tile_zoom.png`): the tile's
+ *  own bbox is 40.3×39.7pt at exactly the `row.tile` (68pt) pitch, and fitting the corner's
+ *  inset profile against several rounded-rect radii lands on 48px = 16pt at 3x, i.e.
+ *  radius.lg — not radius.sm/md as a first guess would suggest. */
+export function ProjectTile({ color, size = 40 }: { color: string | null; size?: number }) {
   const { colors: c } = useTheme();
   return (
     <View
       style={{
         alignItems: "center",
         backgroundColor: color ?? c.surface2,
-        borderRadius: radius.sm,
+        borderRadius: radius.lg,
         height: size,
         justifyContent: "center",
         width: size,
       }}
     >
-      <FolderIcon size={Math.round(size * 0.55)} color={color ? c.onAccent : c.text2} strokeWidth={1.8} />
+      <ProjectFolderIcon size={Math.round(size * 0.5)} color={color ? c.onAccent : c.text2} strokeWidth={1.8} />
     </View>
   );
 }
@@ -53,6 +59,8 @@ export function ProjectTile({ color, size = 30 }: { color: string | null; size?:
 export function CanvasRow({
   label,
   time,
+  fresh = false,
+  Icon,
   lifted = false,
   gesture,
   onPress,
@@ -61,6 +69,16 @@ export function CanvasRow({
 }: {
   label: string;
   time?: string;
+  /** A small accent dot in place of `time` — the drawer's Recents/Pinned rows carry no
+   *  timestamp at all (IMG_6531 has none), only this: a canvas updated in the last five
+   *  minutes gets a dot, measured off IMG_6531 (crop_recents.png) at ~10pt, coloured the
+   *  reference's green (this app's light-mode `c.accent`). Takes precedence over `time` when
+   *  both are set — no caller does that today, but the dot is the more urgent signal. */
+  fresh?: boolean;
+  /** A leading glyph — the drawer's Pinned rows carry one (folder for a project, a chat
+   *  bubble for a canvas, IMG_6531); the Recents rows below them and the Projects page's
+   *  nested rows carry none, so this stays optional and shifts the label over only when set. */
+  Icon?: ComponentType<IconProps>;
   lifted?: boolean;
   /** Omit where a row has no hold-menu (the Projects page's nested, tap-only rows) —
    *  a GestureDetector that only ever lands on "do nothing" still eats a long tap, so
@@ -72,6 +90,7 @@ export function CanvasRow({
   testID?: string;
 }) {
   const styles = useThemedStyles(createStyles);
+  const { colors: c } = useTheme();
   const animated = useLiftAnimation(lifted);
   const row = (
     <Reanimated.View style={[styles.rowShadow, animated]}>
@@ -86,16 +105,26 @@ export function CanvasRow({
         onPress={onPress}
         accessibilityHint={gesture ? "Touch and hold to rename, pin, file, or delete this canvas." : undefined}
       >
+        {Icon ? (
+          <View style={styles.rowIcon}>
+            <Icon size={20} color={c.text2} strokeWidth={1.6} />
+          </View>
+        ) : null}
         <Text style={styles.canvasTitle} numberOfLines={1}>
           {label}
         </Text>
-        {time ? <Text style={styles.rowTime}>{time}</Text> : null}
+        {fresh ? <View style={styles.freshDot} /> : time ? <Text style={styles.rowTime}>{time}</Text> : null}
       </Pressable>
     </Reanimated.View>
   );
   return gesture ? <GestureDetector gesture={gesture}>{row}</GestureDetector> : row;
 }
 
+/** The Projects page's tile row (IMG_6538): a 40pt colour tile, name, and whatever
+ *  trailing content the page wants ("3 weeks ago" + a pin glyph). The drawer no longer
+ *  uses this — its Pinned section renders a project the same plain, icon-led way it
+ *  renders a canvas (see AppDrawer's use of CanvasRow with `Icon={ProjectFolderIcon}`),
+ *  matching IMG_6531's un-tiled pinned rows. */
 export function ProjectRow({
   name,
   color,
@@ -103,19 +132,14 @@ export function ProjectRow({
   lifted,
   gesture,
   onPress,
-  compact = false,
   testID,
 }: {
   name: string;
   color: string | null;
-  /** The Projects page adds a relative-time stamp and a pin glyph here; the drawer's
-   *  row is icon + name only ("no chevron at rest" — spec item 2). */
   trailing?: ReactNode;
   lifted: boolean;
   gesture: ReturnType<typeof Gesture.Pan>;
   onPress: () => void;
-  /** The drawer's rows are tighter than the Projects page's own list. */
-  compact?: boolean;
   testID?: string;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -125,16 +149,11 @@ export function ProjectRow({
       <Reanimated.View style={[styles.rowShadow, animated]}>
         <Pressable
           testID={testID}
-          style={({ pressed }) => [
-            styles.row,
-            compact ? styles.projectRowCompact : styles.projectRowWide,
-            pressed && styles.rowPressed,
-            lifted && styles.rowLifted,
-          ]}
+          style={({ pressed }) => [styles.row, styles.projectRowWide, pressed && styles.rowPressed, lifted && styles.rowLifted]}
           onPress={onPress}
           accessibilityHint="Touch and hold to rename, pin, or delete this project."
         >
-          <ProjectTile color={color} size={compact ? 26 : 34} />
+          <ProjectTile color={color} />
           <Text style={styles.projectName} numberOfLines={1}>
             {name}
           </Text>
@@ -168,10 +187,20 @@ const createStyles = (c: ThemeColors) =>
     rowIndent: { paddingLeft: space(3.5) + space(5) },
     rowPressed: { backgroundColor: c.surface },
     rowLifted: { backgroundColor: c.surface2, borderColor: c.line, borderWidth: 1 },
-    canvasTitle: { color: c.text2, flex: 1, fontSize: type.small.fontSize + 1, minWidth: 0 },
+    // c.text, not c.text2 — measured off IMG_6531 (the drawer's Recents rows read
+    // near-black, not grey; the grey is reserved for a row's SECOND line, like the
+    // Projects page's "3 weeks ago", which stays on rowTime below). 17pt (type.label) per
+    // both the Projects-page spec ("name 17pt") and the drawer's own row.list text.
+    canvasTitle: { color: c.text, flex: 1, fontSize: type.label.fontSize, minWidth: 0 },
     rowTime: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
+    // inset.sidebarIcon (26) so an iconed row's label lands at the same column the nav
+    // rows use — width alone, not a fixed left offset, so the icon still rides the row's
+    // own paddingHorizontal like a plain row's label does.
+    rowIcon: { width: inset.sidebarIcon, alignItems: "center" },
+    // ~10pt, coloured the reference's green — see the `fresh` prop's own doc comment for
+    // the measurement.
+    freshDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.accent },
 
-    projectRowCompact: { gap: space(2.5) },
     projectRowWide: { gap: space(3), paddingVertical: space(3) },
-    projectName: { color: c.text, flex: 1, fontSize: type.small.fontSize + 1, fontWeight: "500", minWidth: 0 },
+    projectName: { color: c.text, flex: 1, fontSize: type.label.fontSize, fontWeight: "500", minWidth: 0 },
   });

@@ -11,6 +11,13 @@ import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
 
+// 🔴 ONE-TO-ONE PASS (owner 2026-09-01, "font spacing icons literally everything needs to
+// match one-to-one" against IMG_6529/6530/6532/6549 in ~/Downloads/chatgptios). Measured off
+// the reference at 3x: the tall card's own OUTER height (top edge to bottom edge) is 81pt,
+// which is exactly COMPOSER_PILL_HEIGHT below — no change needed there. The controls row's
+// icons measure 22pt tall (both "+" and mic), the send/voice circle is 36pt (control.md), and
+// the card's radius is 24 (radius.xl) — the previous hand-picked 26 was close but not it.
+
 // The one composer — a ChatGPT-style card (owner 2026-07-21, "exactly like
 // ChatGPT"). Opaque surface card (not glass): ChatGPT's composer is a plain
 // white card on a white page, hairline border and all; dark mode gets the same
@@ -261,8 +268,15 @@ export function Composer({
    *  §38 chip, rendered INSIDE the card at the start of the text row (unlike `attachment`,
    *  which gets its own slot above the field: a capability is a fact about the WORDS, a
    *  photo/note is a thing the words are about). LearnHome.tsx (the front door) is the first
-   *  caller; wire it from `ComposerPlusMenu`'s `capabilities.onSelect`. */
-  chip?: { label: string; onRemove: () => void };
+   *  caller; wire it from `ComposerPlusMenu`'s `capabilities.onSelect`.
+   *
+   *  🔴 NO PILL, NO ✕ — matched to the reference (IMG_6530/IMG_6549): the chip is just the
+   *  capability's tinted icon plus its label in blue, sitting where typed text would, with a
+   *  space before whatever the learner types next. There is still a way to remove it: the
+   *  whole icon+label is ONE press target for `onRemove` (Composer.tsx used to reach for a
+   *  visible ✕ here — the file's own comment on why backspace-at-caret-zero isn't reachable on
+   *  a phone still applies, and a tap on the chip itself costs the same one tap the ✕ did). */
+  chip?: { label: string; icon: ReactNode; onRemove: () => void };
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -416,7 +430,8 @@ export function Composer({
       accessibilityLabel={listening ? "Stop dictation" : "Dictate"}
       testID="composer-mic"
     >
-      <MicIcon size={20} color={listening ? c.onAccent : c.text} />
+      {/* 22pt, measured off the reference's control row (IMG_6529) — was 20. */}
+      <MicIcon size={22} color={listening ? c.onAccent : c.text} />
     </Bounce>
   );
   // The last slot is whichever action the draft calls for: Send once there's
@@ -456,6 +471,7 @@ export function Composer({
       )}
     </Bounce>
   ) : onModeChange ? (
+    // chat.tsx wires record mode: the circle ENTERS it, unchanged from before.
     <Bounce
       style={[styles.round, styles.recordCircle]}
       onPress={() => onModeChange("record")}
@@ -465,22 +481,45 @@ export function Composer({
     >
       <WaveGlyph color={c.onAccent} />
     </Bounce>
+  ) : inputRef ? (
+    // 🔴 EVERY REFERENCE SCREEN SHOWS SOMETHING HERE — IMG_6532's rest state and IMG_6529's
+    // typed state both keep the circle on screen; only the glyph inside changes. This callers
+    // WITHOUT record mode wired (LearnHome, canvas.tsx) used to render `null` in this slot —
+    // an empty gap that matched none of the reference screens. The orb glyph is the same
+    // WaveGlyph record mode uses to enter (owner 2026-07-31 already matched it to ChatGPT's
+    // voice button), and tapping it just focuses the field for now — voice mode itself is a
+    // later slice (see LearnHome.tsx's own header). Gated on `inputRef` rather than always
+    // rendering: without a ref there is nothing for the tap to DO, and a circle that accepts a
+    // tap and does nothing is worse than the gap it would replace (notebook.tsx passes none).
+    <Bounce
+      style={[styles.round, styles.recordCircle]}
+      onPress={() => inputRef.current?.focus()}
+      hitSlop={6}
+      accessibilityLabel="Voice"
+      testID="composer-voice"
+    >
+      <WaveGlyph color={c.onAccent} />
+    </Bounce>
   ) : null;
   // The staged capability, at the START of the text row — inside the card, unlike
   // `attachment`'s own slot above the field (see the prop's own doc comment for why: a
-  // capability is a fact about the WORDS, not a thing riding alongside them). Removed with
-  // its own ✕ rather than Backspace-at-caret-zero (the web's gesture): the phone's field has
-  // no reliable "caret is at position 0" signal without wiring selection tracking for a
-  // control this small, and a visible × costs one tap.
+  // capability is a fact about the WORDS, not a thing riding alongside them). See the `chip`
+  // prop's own comment for why removal is "tap the chip" rather than a visible ✕.
   const chipPill = chip ? (
-    <View style={styles.chipPill} testID="composer-chip">
+    // The whole icon+label is the remove target — see the `chip` prop's own comment on why
+    // there is no visible ✕ here (the reference has none).
+    <Pressable
+      style={styles.chipPill}
+      onPress={chip.onRemove}
+      hitSlop={6}
+      accessibilityLabel={`Remove ${chip.label}`}
+      testID="composer-chip"
+    >
+      {chip.icon}
       <Text style={styles.chipLabel} numberOfLines={1}>
         {chip.label}
       </Text>
-      <Pressable onPress={chip.onRemove} hitSlop={8} accessibilityLabel={`Remove ${chip.label}`} testID="composer-chip-remove">
-        <CloseIcon size={11} color={c.onAccent} />
-      </Pressable>
-    </View>
+    </Pressable>
   ) : null;
   const field = (
     <TextInput
@@ -555,10 +594,12 @@ const createStyles = (c: ThemeColors) =>
     // Two rows: the field alone on top, the "+" / mic-or-send row underneath —
     // ChatGPT's card geometry (rounded ~26, hairline border, opaque surface).
     card: {
+      // c.surface (#F9F9F9 light) rather than the reference's measured #FBFBFB — the two are
+      // 2/255 apart, inside sampling noise, and the token stays correct in dark mode for free.
       backgroundColor: c.surface,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: 26,
+      borderRadius: radius.xl,
       paddingHorizontal: space(2),
       paddingTop: space(2.5),
       paddingBottom: space(2),
@@ -630,17 +671,18 @@ const createStyles = (c: ThemeColors) =>
     // whose cross-size the chip itself set — a no-op that leaves the field's own flex-start
     // text sitting visibly above the chip's middle. Sharing the row's own alignment keeps both
     // starting from the same edge instead.
+    // No pill, no fill — the reference (IMG_6530/IMG_6549) renders the chip as plain inline
+    // content at the head of the text row: a small tinted icon, then the label in blue, at the
+    // FIELD's own font size (not a smaller "chip" size) so it reads as part of the same line
+    // the typed words sit on.
     chipPill: {
       flexDirection: "row",
       alignItems: "center",
       gap: space(1),
-      marginRight: space(1.5),
-      paddingVertical: space(0.75),
-      paddingHorizontal: space(2.5),
-      borderRadius: radius.pill,
-      backgroundColor: c.accentDim,
+      marginRight: space(1),
+      paddingVertical: 2,
     },
-    chipLabel: { ...type.micro, color: c.onAccent, fontWeight: "600" },
+    chipLabel: { fontSize: type.small.fontSize + 1, lineHeight: 21, color: c.blue, fontWeight: "400" },
     recordRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(1) },
     // The waveform takes the field's slot — it is what you watch while
     // recording, so it gets all the room the two buttons don't.

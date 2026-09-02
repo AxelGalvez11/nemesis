@@ -3,10 +3,19 @@ import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, useWindowDim
 import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
 import { DocumentIcon, FileIcon, GlobeIcon, LibraryIcon, MapIcon, PdfIcon, SlidesIcon, TableIcon, TelescopeIcon } from "./icons";
+import { PhotoLibraryIcon } from "./icons-composer";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/learn/web";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { row, space, type } from "@/theme/tokens";
+
+// 🔴 THE CARD RADIUS the "@" picker also uses (CapabilityPicker.tsx) — measured on the
+// reference's "Plugins" card, IMG_6529 ("card radius ≈ 20" per the task brief). A literal
+// rather than a theme token: theme/tokens.ts's own radius ladder tops out at `xl` (24, the
+// composer card's own radius) and has nothing between that and `lg` (16) — this sits between
+// the two, and is specific enough to these two floating cards that it isn't worth adding a
+// rung to the shared ladder for it.
+export const CAPABILITY_CARD_RADIUS = 20;
 
 // Composer "+" mini menu (chat.tsx) — same always-mounted fade+rise,
 // anchored-above-a-control shape as StudyModeMenu.tsx (that screen's FAB, this
@@ -46,11 +55,15 @@ import { radius, space, type } from "@/theme/tokens";
 // add-menu-row.tsx gives: a hard-coded row cannot be wrong about itself, which is precisely
 // why it silently stops being the whole menu the next time a capability is added there.
 //
-// `onAttach`/`onAddFile`/`onTakePhoto` are now OPTIONAL. LearnHome.tsx (the front door) opens
-// this menu with ONLY `capabilities` set — no attach rows. Attachments on the front door are
-// the next slice (see the doc); a row that opened a picker for nothing to receive it into
-// would be exactly the "renders, hovers, accepts the click, nothing happens" control the web's
-// own canvas-home.tsx describes fixing once already.
+// 🔴 TWO SETS OF ATTACH ROWS, BOTH OPTIONAL. chat.tsx still wires the original three —
+// `onAttach` ("Attach from Library"), `onAddFile` ("Add a file"), `onTakePhoto` ("Take
+// photo") — completely unchanged in behaviour; only this file's CARD LOOK changed under it
+// (2026-09-01 one-to-one pass). LearnHome.tsx (the front door) wires the reference's own three
+// instead — `onAddPhotos` ("Add photos"), `onTakePhoto` (shared — the same camera row either
+// caller asks for), `onAddFiles` ("Add files", opens the new AddFilesSheet) — because IMG_6529
+// names different rows than chat.tsx ever offered, and chat.tsx's own three still make sense
+// for a screen with a Library already open. A caller passes ONE set, never both; nothing stops
+// a future caller mixing them; if one shows up, add the ordering rule here rather than guessing.
 export function ComposerPlusMenu({
   visible,
   onClose,
@@ -58,6 +71,8 @@ export function ComposerPlusMenu({
   onAttach,
   onAddFile,
   onTakePhoto,
+  onAddPhotos,
+  onAddFiles,
   capabilities,
 }: {
   visible: boolean;
@@ -70,6 +85,16 @@ export function ComposerPlusMenu({
   /** Opens the system file picker for a PDF / Word / PowerPoint (api/documents.ts). */
   onAddFile?: () => void;
   onTakePhoto?: () => void;
+  /** Front-door-only row, "Add photos" (IMG_6529). There is no photo-LIBRARY picker in this
+   *  build — expo-image-picker is a native module the app deliberately does not carry (see
+   *  lib/study-image-pick.ts's own header: adding one would drop the app off OTA updates until
+   *  the next TestFlight build) — so LearnHome.tsx wires this through expo-document-picker
+   *  filtered to image files instead, the same trade study-image-pick.ts already made. */
+  onAddPhotos?: () => void;
+  /** Front-door-only row, "Add files" (IMG_6529/IMG_6528) — opens AddFilesSheet.tsx, which
+   *  browses the Library AND offers "Upload files", rather than going straight to a system
+   *  picker the way `onAddFile` does. */
+  onAddFiles?: () => void;
   /** The composer-capability rows (Course, Deep research, …). Optional: chat.tsx doesn't
    *  offer them yet (attachments only, on this screen); LearnHome.tsx offers ONLY these. */
   capabilities?: {
@@ -98,10 +123,10 @@ export function ComposerPlusMenu({
     fn();
   };
 
-  const hasAttachRows = Boolean(onAttach || onAddFile || onTakePhoto);
+  const hasAttachRows = Boolean(onAttach || onAddFile || onTakePhoto || onAddPhotos || onAddFiles);
   // A cap on how tall this can grow before it scrolls — the web's own `min(60vh, 26rem)` rule
   // (add-menu-row.tsx's ADD_MENU), sized for a phone rather than a laptop window. Only the
-  // capability list is long enough to ever need it (three attach rows never do).
+  // capability list is long enough to ever need it (five attach rows never do).
   const menuMaxHeight = Math.min(windowHeight * 0.6, 420);
 
   return (
@@ -110,7 +135,7 @@ export function ComposerPlusMenu({
           page (owner: confine blur to the component), same as every other menu here. */}
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
       <Animated.View style={[styles.menuWrap, { bottom: bottomOffset, opacity: progress, transform: [{ translateY }] }]}>
-        <GlassSurface style={styles.menu} fallbackColor={c.glassPanel} opaque>
+        <GlassSurface style={styles.menu} fallbackColor={c.glassMenu} opaque>
           <ScrollView style={{ maxHeight: menuMaxHeight }} bounces={false} keyboardShouldPersistTaps="handled">
             {onAttach && (
               <Pressable
@@ -119,7 +144,7 @@ export function ComposerPlusMenu({
                 style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
                 accessibilityRole="button"
               >
-                <LibraryIcon size={17} color={c.text2} />
+                <LibraryIcon size={20} color={c.text2} />
                 <Text style={styles.rowLabel}>Attach from Library</Text>
               </Pressable>
             )}
@@ -130,19 +155,41 @@ export function ComposerPlusMenu({
                 style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
                 accessibilityRole="button"
               >
-                <FileIcon size={17} color={c.text2} />
+                <FileIcon size={20} color={c.text2} />
                 <Text style={styles.rowLabel}>Add a file</Text>
+              </Pressable>
+            )}
+            {onAddPhotos && (
+              <Pressable
+                testID="composer-plus-add-photos"
+                onPress={() => pickAndClose(onAddPhotos)}
+                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                accessibilityRole="button"
+              >
+                <PhotoLibraryIcon size={20} color={c.text2} />
+                <Text style={styles.rowLabel}>Add photos</Text>
               </Pressable>
             )}
             {onTakePhoto && (
               <Pressable
                 testID="composer-plus-camera"
                 onPress={() => pickAndClose(onTakePhoto)}
-                style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
+                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
                 accessibilityRole="button"
               >
-                <CameraIcon size={17} color={c.text2} />
+                <CameraIcon size={20} color={c.text2} />
                 <Text style={styles.rowLabel}>Take photo</Text>
+              </Pressable>
+            )}
+            {onAddFiles && (
+              <Pressable
+                testID="composer-plus-add-files"
+                onPress={() => pickAndClose(onAddFiles)}
+                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                accessibilityRole="button"
+              >
+                <FileIcon size={20} color={c.text2} />
+                <Text style={styles.rowLabel}>Add files</Text>
               </Pressable>
             )}
             {capabilities &&
@@ -162,13 +209,12 @@ export function ComposerPlusMenu({
                     ]}
                     accessibilityRole="button"
                   >
-                    <Icon size={17} color={tint} />
-                    <View style={styles.capTextCol}>
-                      <Text style={styles.capLabel}>{copy.label}</Text>
-                      <Text style={styles.capDetail} numberOfLines={1}>
-                        {copy.detail}
-                      </Text>
-                    </View>
+                    <Icon size={20} color={tint} />
+                    {/* Single line now (label only, no detail subtitle) — matched to the
+                        picker's own rows so the two floating cards read as one family (owner:
+                        "same card look"). The detail copy still exists in CAPABILITY_COPY for
+                        anything that wants it later; this row just doesn't render it. */}
+                    <Text style={styles.rowLabel} numberOfLines={1}>{copy.label}</Text>
                   </Pressable>
                 );
               })}
@@ -198,8 +244,10 @@ function CameraIcon({ size = 17, color }: { size?: number; color: string }) {
 
 /** Which line-icon (icons.tsx) draws each capability — see that file's own "composer capability
  *  icons" section for why these are hand-drawn equivalents rather than ports of the web's
- *  Codicon names. */
-const CAPABILITY_ICON: Record<ComposerCapability, typeof MapIcon> = {
+ *  Codicon names. Exported: CapabilityPicker.tsx (the "@" picker) draws the SAME seven rows
+ *  and must use the SAME icon per capability — a second hand-picked map here would drift the
+ *  first time either changed. */
+export const CAPABILITY_ICON: Record<ComposerCapability, typeof MapIcon> = {
   course: MapIcon,
   research: TelescopeIcon,
   search: GlobeIcon,
@@ -236,7 +284,8 @@ const CAPABILITY_KIND: Record<ComposerCapability, keyof typeof CAPABILITY_KIND_H
   slides: "amber",
 };
 
-function capabilityTint(capability: ComposerCapability, dark: boolean): string {
+/** Exported alongside CAPABILITY_ICON — see that export's own comment. */
+export function capabilityTint(capability: ComposerCapability, dark: boolean): string {
   const hex = CAPABILITY_KIND_HEX[CAPABILITY_KIND[capability]];
   return dark ? hex.dark : hex.light;
 }
@@ -249,16 +298,14 @@ const createStyles = (c: ThemeColors) =>
     // text behind it", which was the landing page's starter rows drawing over
     // the panel).
     host: { zIndex: 30 },
-    // maxWidth added for the capability rows' two-line detail text: without a ceiling the menu
-    // grows to fit the longest detail on one line, which for "Build a table you can open in
-    // Excel" ran wider than comfortable. The three plain attach rows never approach it.
-    menuWrap: { position: "absolute", left: space(3), minWidth: 224, maxWidth: 300 },
-    menu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
-    row: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(3), paddingHorizontal: space(4) },
+    menuWrap: { position: "absolute", left: space(3), minWidth: 240, maxWidth: 320 },
+    // radius/pitch/font matched to CapabilityPicker.tsx — see that file and
+    // CAPABILITY_CARD_RADIUS above for the measurements both cards share.
+    menu: { borderRadius: CAPABILITY_CARD_RADIUS, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    // minHeight rather than paddingVertical math: row.nav (48) is the measured pitch
+    // (IMG_6529's picker rows), and minHeight keeps it exact regardless of font metrics.
+    row: { flexDirection: "row", alignItems: "center", gap: space(3), paddingHorizontal: space(4), minHeight: row.nav },
     rowDivider: { borderTopWidth: 1, borderTopColor: c.line },
-    rowPressed: { backgroundColor: c.surface },
-    rowLabel: { ...type.body, color: c.text },
-    capTextCol: { flexShrink: 1 },
-    capLabel: { ...type.small, color: c.text, fontWeight: "600" },
-    capDetail: { ...type.micro, color: c.text3, marginTop: 1 },
+    rowPressed: { backgroundColor: c.surface2 },
+    rowLabel: { ...type.label, color: c.text, flexShrink: 1 },
   });

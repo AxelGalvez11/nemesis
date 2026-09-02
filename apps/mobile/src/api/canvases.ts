@@ -179,6 +179,23 @@ export async function renameFolder(uid: string, id: string, name: string): Promi
   return next;
 }
 
+/** "Edit instructions" (project "…" menu, IMG_6544). Mirrors `renameFolder` exactly —
+ *  trim, the same `.eq` pair, `console.warn` + `emit()` on error, `emit()` on success — so
+ *  the drawer/Projects/project-detail re-read on the same schedule every other mutation
+ *  here does. Unlike a name, empty instructions ARE a valid value ("no special
+ *  instructions"), so this never rejects an empty string the way `renameFolder` does. */
+export async function setFolderInstructions(uid: string, id: string, instructions: string): Promise<string | null> {
+  const next = instructions.trim();
+  const { error } = await supabase.from("folders").update({ instructions: next || null }).eq("id", id).eq("user_id", uid);
+  if (error) {
+    console.warn("[canvases] folder instructions failed", error.message);
+    emit(); // the listener re-reads and reverts whatever was painted optimistically
+    return null;
+  }
+  emit();
+  return next;
+}
+
 export async function setFolderPinned(uid: string, id: string, pinned: boolean): Promise<void> {
   const { error } = await supabase
     .from("folders")

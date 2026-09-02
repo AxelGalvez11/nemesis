@@ -123,7 +123,10 @@ const createStyles = (c: ThemeColors) =>
     bun: { width: 18, height: 2, borderRadius: 2.5, backgroundColor: c.text2, marginVertical: 2 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(1) },
     title: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "600", letterSpacing: -0.2 },
-    // Right slot — holds a screen's headerRight action (Graph gear / Chat "…") when set,
-    // else an empty same-size box so the center label stays centered between two equal slots.
-    spacer: { width: TOP_BAR_BUTTON, height: TOP_BAR_BUTTON, alignItems: "center", justifyContent: "center" },
+    // Right slot — holds a screen's headerRight action (Graph gear / Chat "…", or the canvas
+    // screen's two-glyph pill) when set, else an empty same-size box so the center label stays
+    // centered between two equal slots. minWidth (not a fixed width) so every existing
+    // single-button caller renders exactly as before, while the canvas screen's wider pill
+    // (CanvasHeaderPill, ~109pt) isn't clipped to a single button's box.
+    spacer: { minWidth: TOP_BAR_BUTTON, height: TOP_BAR_BUTTON, alignItems: "center", justifyContent: "center" },
   });
