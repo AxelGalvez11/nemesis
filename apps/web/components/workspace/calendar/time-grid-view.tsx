@@ -26,10 +26,13 @@ import {
   INLINE_MIN_PX,
   renderedBlockHeight,
   clockOf,
+  DEFAULT_EVENT_MINUTES,
   FULL_DAY,
   type HourWindow,
   hourLabels,
   layoutDay,
+  MIN_BLOCK_MINUTES,
+  minutesOf,
   nowOffset,
   offsetFor,
   SCROLL_TO_HOUR,
@@ -98,9 +101,24 @@ interface TimeGridViewProps {
   onPickSlot: (result: GestureResult, anchor: DOMRect) => void;
   /** An event was dragged to a new time, day, or length. */
   onMoveEvent: (event: CalendarEvent, result: GestureResult) => void;
+  /**
+   * The slot the quick-create card is currently open on, or null.
+   *
+   * 🔴 WITHOUT THIS THE EVENT DISAPPEARS WHILE YOU NAME IT. Owner 2026-09-01:
+   * "when clicking on the calendar it gives editing event but the event
+   * disappears. Also happens when dragging a new event out."
+   *
+   * He is describing a real hole. The drag draws a block, and `handlePointerUp`
+   * clears the gesture the instant you let go — so the block vanishes at the
+   * exact moment the card asking for its title appears, and you are typing a
+   * name for something with no position on screen. A plain click never drew one
+   * at all. Google keeps a provisional block on the grid for as long as the card
+   * is open, and so does this.
+   */
+  pendingSlot?: { date: string; time?: string; endTime?: string } | null;
 }
 
-export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMoveEvent, onOpenEvent, onPickSlot }: TimeGridViewProps) {
+export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMoveEvent, onOpenEvent, onPickSlot, pendingSlot }: TimeGridViewProps) {
   const [now, setNow] = useState<Date | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -149,6 +167,26 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
   const { beginCreate, beginMove, beginResize, gesture, gridRef, handlePointerMove, handlePointerUp, preview } =
     useTimeGridGestures({ days, hours, onCommit: onMoveEvent, onOpenEvent, onPickSlot });
 
+  /**
+   * The block drawn for something that does not exist yet: the drag in progress,
+   * or the slot the quick-create card is open on once the drag has ended.
+   *
+   * ONE element for both, deliberately. Two would cross over at pointer-up —
+   * the drag preview unmounting in the same commit the pending one mounts — and
+   * a block that is removed and re-added is a block that flickers.
+   */
+  const pending = (() => {
+    if (preview) return preview;
+    if (!pendingSlot) return null;
+    const dayIndex = days.findIndex((day) => day.key === pendingSlot.date);
+    const startMinute = minutesOf(pendingSlot.time);
+    // A month cell has no time to draw at, which is not a failure — there is
+    // simply nothing to put on an hour grid.
+    if (dayIndex < 0 || startMinute === null) return null;
+    const endMinute = minutesOf(pendingSlot.endTime) ?? startMinute + DEFAULT_EVENT_MINUTES;
+    return { dayIndex, endMinute: Math.max(endMinute, startMinute + MIN_BLOCK_MINUTES), label: "New event", startMinute };
+  })();
+
   return (
     // The app's card frame (owner 2026-08-03, "follow the design system"), and
     // --ui-* strokes throughout instead of the legacy shadcn border-border —
@@ -162,7 +200,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
             another timezone needs to know which one these rows mean. Taken
             from the browser, never hardcoded. */}
         <div
-          className="flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-2 text-[0.6875rem] font-medium tracking-[0.01em] text-(--ui-text-quaternary)"
+          className="flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-2 text-[0.6875rem] font-medium tracking-[0.01em] text-(--ui-text-secondary)"
           style={{ width: GUTTER_WIDTH }}
         >
           {gmtLabel()}
@@ -195,8 +233,14 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
               <span
                 className={cn(
                   // 11px/32px, weight 500, 0.8px tracking at Google's 16px root.
-                  "text-[0.6875rem] font-medium uppercase leading-[2rem] tracking-[0.0727em]",
-                  day.isToday ? "text-foreground" : "text-(--ui-text-tertiary)",
+                  // 🔴 leading-[1.5rem], DOWN FROM 2rem. Owner 2026-09-01: "the
+                  // weekday row is a tad bit too big." This is the one place the
+                  // header deliberately leaves Google, whose weekday line box is
+                  // 32px (2rem converted); the numeral and its disc below are
+                  // still Google's exactly, so the row loses 9px and nothing
+                  // else moves.
+                  "text-[0.6875rem] font-medium uppercase leading-[1.5rem] tracking-[0.0727em]",
+                  day.isToday ? "text-foreground" : "text-(--ui-text-secondary)",
                 )}
               >
                 {day.date.toLocaleDateString(undefined, { weekday: "short" })}
@@ -248,7 +292,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
       {hasAllDay && (
         <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary)/30">
           <div
-            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.6875rem] uppercase tracking-[0.06em] text-(--ui-text-quaternary)"
+            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.6875rem] uppercase tracking-[0.06em] text-(--ui-text-secondary)"
             style={{ width: GUTTER_WIDTH }}
           >
             All day
@@ -304,7 +348,13 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
               if (index === 0) return null;
               return (
                 <div
-                  className="absolute right-2 flex items-baseline gap-1 whitespace-nowrap text-[0.6875rem] font-medium leading-[1rem] tabular-nums text-(--ui-text-quaternary)"
+                  // 🔴 SECONDARY, NOT QUATERNARY. Google's hour label is #444746
+                  // — about 72% dark on white — and ours was drawing at 30%, a
+                  // third of its weight. It read as faint in light and vanished
+                  // in dark (owner 2026-09-01: "darkmode calendar has faint gray
+                  // labels and makes it hard to see"). `--ui-text-secondary` is
+                  // 66%, the closest rung to what was measured.
+                  className="absolute right-2 flex items-baseline gap-1 whitespace-nowrap text-[0.6875rem] font-medium leading-[1rem] tabular-nums text-(--ui-text-secondary)"
                   key={hour}
                   // Google offsets the label -6px against a 16px line, so its
                   // middle lands just under the rule it names. -6 x 18/16.
@@ -362,20 +412,20 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
             {/* What the drag currently describes. Move and resize leave the
                 real block in place and show this on top, so the change is
                 visible against where it came from. */}
-            {preview && (
+            {pending && (
               <div
                 aria-hidden
                 className="pointer-events-none absolute z-20 overflow-hidden rounded-md border border-(--theme-primary) bg-(--theme-primary)/20 px-1.5 py-0.5 text-[0.6875rem] font-medium leading-tight text-(--theme-primary)"
                 style={{
-                  height: Math.max(offsetFor(preview.endMinute, hours) - offsetFor(preview.startMinute, hours), 16),
-                  left: `calc(${(preview.dayIndex / days.length) * 100}% + 2px)`,
-                  top: offsetFor(preview.startMinute, hours),
+                  height: Math.max(offsetFor(pending.endMinute, hours) - offsetFor(pending.startMinute, hours), 16),
+                  left: `calc(${(pending.dayIndex / days.length) * 100}% + 2px)`,
+                  top: offsetFor(pending.startMinute, hours),
                   width: `calc(${(1 / days.length) * 100}% - 4px)`,
                 }}
               >
-                <span className="block truncate">{preview.label}</span>
+                <span className="block truncate">{pending.label}</span>
                 <span className="block truncate text-[0.625rem] tabular-nums opacity-80">
-                  {formatEventTime(clockOf(preview.startMinute))} – {formatEventTime(clockOf(preview.endMinute))}
+                  {formatEventTime(clockOf(pending.startMinute))} – {formatEventTime(clockOf(pending.endMinute))}
                 </span>
               </div>
             )}

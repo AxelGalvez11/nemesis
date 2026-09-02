@@ -49,7 +49,14 @@ import { calendarColorOf } from "@/lib/workspace/calendar-colors";
 
 import { DayRail } from "./day-rail";
 import { type EventDraft, EventFormDialog } from "./event-dialogs";
-import { CALENDAR_VIEW_STORAGE_KEY, isCalendarViewMode, type CalendarViewMode } from "./format";
+import {
+  AGENDA_WINDOW_DAYS,
+  CALENDAR_VIEW_STORAGE_KEY,
+  FOUR_DAY_COLUMNS,
+  isCalendarViewMode,
+  type CalendarViewMode,
+} from "./format";
+import { ScheduleView } from "./schedule-view";
 import { MonthGrid } from "./month-grid";
 import { type AnchorRect, QuickCreatePopover, type QuickCreateDraft } from "./quick-create-popover";
 import { TimeGridView } from "./time-grid-view";
@@ -206,6 +213,26 @@ export function CalendarWorkspace() {
     [cursor, today, weekStart],
   );
   const weekDays = useMemo(() => weekGrid(cursor, today, weekStart), [cursor, today, weekStart]);
+  /** 4 days from the cursor, NOT from a week boundary — Google's rule, and the
+   *  reason the view is worth having: it follows where you are looking. */
+  const fourDays = useMemo(
+    () => Array.from({ length: FOUR_DAY_COLUMNS }, (_, i) => addDays(cursor, i)).map((date) => ({
+      date, inMonth: true, isToday: dateKey(date) === dateKey(today), key: dateKey(date),
+    })),
+    [cursor, today],
+  );
+  /** Everything in the Schedule window, earliest first. Read from `byDate` so
+   *  repeating events arrive already expanded into their occurrences. */
+  const scheduleEvents = useMemo(() => {
+    const out: CalendarEvent[] = [];
+    for (let i = 0; i < AGENDA_WINDOW_DAYS; i += 1) {
+      const key = dateKey(addDays(cursor, i));
+      const onDay = byDate.get(key);
+      if (!onDay) continue;
+      out.push(...[...onDay].sort((a, b) => (a.time ?? "").localeCompare(b.time ?? "")));
+    }
+    return out;
+  }, [byDate, cursor]);
   // Day view is the same grid with one column, so it takes the same shape.
   const dayColumn = useMemo(
     () => [{ date: cursor, inMonth: true, isToday: dateKey(cursor) === dateKey(today), key: dateKey(cursor) }],
@@ -215,6 +242,8 @@ export function CalendarWorkspace() {
   function goStep(delta: 1 | -1) {
     setCursor((prev) => {
       if (view === "day") return addDays(prev, delta);
+      if (view === "fourDay") return addDays(prev, FOUR_DAY_COLUMNS * delta);
+      if (view === "schedule") return addDays(prev, AGENDA_WINDOW_DAYS * delta);
       if (view === "week") return addWeeks(prev, delta);
       if (view === "year") return addYears(prev, delta);
       return addMonths(prev, delta);
@@ -375,6 +404,28 @@ export function CalendarWorkspace() {
               onMoveEvent={handleGridMove}
               onOpenEvent={openEvent}
               onPickSlot={pickSlot}
+              pendingSlot={quickCreate?.draft ?? null}
+            />
+          )}
+          {view === "fourDay" && (
+            <TimeGridView
+              calendarHex={calendarHex}
+              days={fourDays}
+              eventsByDay={byDate}
+              onAddOnDate={openAdd}
+              onMoveEvent={handleGridMove}
+              onOpenEvent={openEvent}
+              onPickSlot={pickSlot}
+              pendingSlot={quickCreate?.draft ?? null}
+            />
+          )}
+          {view === "schedule" && (
+            <ScheduleView
+              calendarHex={calendarHex}
+              events={scheduleEvents}
+              hasAnyEvents={events.length > 0}
+              loaded={mounted}
+              onOpenEvent={openEvent}
             />
           )}
           {view === "week" && (
@@ -386,6 +437,7 @@ export function CalendarWorkspace() {
               onMoveEvent={handleGridMove}
               onOpenEvent={openEvent}
               onPickSlot={pickSlot}
+              pendingSlot={quickCreate?.draft ?? null}
             />
           )}
           {view === "month" && (

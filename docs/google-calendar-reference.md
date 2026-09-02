@@ -290,3 +290,26 @@ Only two things, both colours, both settled before this work (see section 9): th
 today's disc are this app's neutral rather than Google's `#db372d` and `#0b57d0`, because
 `--theme-primary` was retired to a neutral on 2026-07-28 and the product has one accent.
 Their SIZE, WEIGHT and PLACEMENT are Google's exactly.
+
+### Added 2026-09-01
+
+**The weekday line box is 1.5rem, not Google's 2rem.** Owner: *"the weekday row is
+a tad bit too big."* The numeral and its 46px disc below are still Google's
+exactly; the row simply loses 9px above them. This is the only place the header
+knowingly leaves the reference.
+
+**Label colour was a MISS, not a deviation, and is now fixed.** Google's hour and
+weekday labels are `#444746` — about 72% dark on white. Ours were drawing at
+`--ui-text-quaternary`, 30%, barely a third of that weight. It read as faint in
+light and vanished in dark (owner: *"darkmode calendar has faint gray labels and
+makes it hard to see"*). They take `--ui-text-secondary` (66%) now, the closest
+rung on this app's ladder to what was measured.
+
+🔴 The harness reports colours but does not ASSERT them, which is why this sat
+wrong for a fortnight while every geometry row passed. If a colour matters, it
+belongs in `EXPECT`, not in the report-only list.
+
+**Both of Google's remaining views now exist**: Schedule and 4 days, in Google's
+menu order (Day · Week · Month · Year · Schedule · 4 days) and its wording. The
+4-day grid starts on the day you are looking at rather than a week boundary,
+which is Google's rule and the only thing that makes it different from Week.
