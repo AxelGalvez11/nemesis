@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import type { ASTNode } from "react-native-markdown-display";
 import MarkdownIt from "markdown-it";
@@ -7,9 +7,12 @@ import { MathJaxSvg } from "react-native-mathjax-html-to-svg";
 
 import { MarkdownImage } from "./MarkdownImage";
 import type { ChatSource } from "@/lib/chat-thread";
+import { FILE_PILL_PREFIX, WEB_PILL_PREFIX, webCitationFaviconUrl, webCitationLabel } from "@/lib/citation-pills";
 import { obsidianInline } from "@/lib/markdown-obsidian";
+import type { ThreadSource } from "@/learn/web";
 import { createMarkdownStyles } from "@/theme/markdown";
 import { useTheme } from "@/theme/ThemeProvider";
+import { type as typeScale } from "@/theme/tokens";
 
 // MessageBody: the assistant answer renderer. The overwhelming common case is
 // prose with NO math — that path renders EXACTLY as before, a single
@@ -83,18 +86,75 @@ interface MessageBodyProps {
   /** Known answer sources. Matching markdown links become compact inline
    * citation chips, like the iOS ChatGPT source treatment. */
   sources?: ChatSource[];
+  /** The canvas turn's web results, in the numbering the model was shown — resolves a
+   *  `groundedReplyMarkdown`-produced `#nemesis-cite=n` pill to a favicon + host/title. A
+   *  DIFFERENT list from `sources` above: that one matches a markdown link's literal URL, this one
+   *  is looked up by POSITION (`webSources[n-1]`), the only correct way to resolve `[n]` — see
+   *  `citation-pills.ts`'s header for why the answer-order list must never be used for this. */
+  webSources?: readonly ThreadSource[];
 }
 
-export function MessageBody({ content, styles, onLinkPress, sources }: MessageBodyProps) {
+export function MessageBody({ content, styles, onLinkPress, sources, webSources }: MessageBodyProps) {
   const { colors: c } = useTheme();
   const segments = useMemo(() => buildSegments(content), [content]);
+  // 🔴 CHEAP AND TARGETED, RATHER THAN "ALWAYS BUILD A CUSTOM LINK RULE". `citation-pills.ts`'s
+  // `groundedReplyMarkdown` is the only thing that ever writes either substring, and only the
+  // canvas turn calls it before handing `content` here — every other of this component's ~12 call
+  // sites (the note reader, flashcard review, the notebook thread…) passes plain content and must
+  // keep getting the library's own default link renderer, unchanged. Scanning for the markers is
+  // what lets this stay additive instead of risking a regression across all of them.
+  const hasPills = content.includes("(" + FILE_PILL_PREFIX) || content.includes("(" + WEB_PILL_PREFIX);
   const rules = useMemo(() => {
-    if (!sources?.length) return MARKDOWN_RULES;
-    const sourceUrls = new Set(sources.map((source) => normalizedUrl(source.url)));
+    if (!sources?.length && !hasPills) return MARKDOWN_RULES;
+    const sourceUrls = new Set((sources ?? []).map((source) => normalizedUrl(source.url)));
     return {
       ...MARKDOWN_RULES,
       link: (node: ASTNode, children: ReactNode) => {
         const href = String(node.attributes?.href ?? "");
+        // 🔴 A CITATION, NOT A LINK TO US. `groundedReplyMarkdown` already resolved this marker to
+        // a source this canvas actually holds — the label IS the document's title, same rule
+        // `source-pill.ts` states for the web. There is nowhere to send a tap (no onPress, no
+        // `Linking`): the web's own `chat-markdown.tsx` draws the identical marker as a plain,
+        // non-interactive `<span>` for exactly this reason, and this mirrors that rather than
+        // inventing a destination. `.extra` (from a collapsed run, `groupFileRuns`) prints as "+N".
+        if (href.startsWith(FILE_PILL_PREFIX)) {
+          const extra = Number.parseInt(href.slice(FILE_PILL_PREFIX.length).split(".")[1] ?? "0", 10) || 0;
+          return (
+            <Text key={node.key} style={[groundedCitation.pill, { backgroundColor: c.surface2, color: c.text }]}>
+              {"\u{1F4C4} "}
+              {children}
+              {extra > 0 ? ` +${extra}` : ""}
+            </Text>
+          );
+        }
+        // 🔴 A LIVE PAGE, WHICH DOES OPEN — unlike the file pill above, `chat-markdown.tsx` sends
+        // this one to `source.url` (`target="_blank"`) because a web page already has an address
+        // to send a reader to. `citeIndex` is 1-based and resolved by POSITION against
+        // `webSources`, never by matching the href's digits against anything else — see
+        // `citation-pills.ts`'s header for why an answer-order list would attribute this to the
+        // wrong page. Out of range (a stale/replayed answer) drops the chip rather than a bare
+        // number, the same rule a missing file source follows.
+        if (href.startsWith(WEB_PILL_PREFIX)) {
+          const rest = href.slice(WEB_PILL_PREFIX.length);
+          const citeIndex = Number.parseInt(rest, 10);
+          const extra = Number.parseInt(rest.split(".")[1] ?? "0", 10) || 0;
+          const source = webSources?.[citeIndex - 1];
+          if (!source) return null;
+          const label = webCitationLabel(source.url) ?? source.title;
+          const favicon = webCitationFaviconUrl(source.url);
+          return (
+            <Text
+              accessibilityRole="link"
+              key={node.key}
+              onPress={() => void Linking.openURL(source.url).catch(() => {})}
+              style={[groundedCitation.pill, { backgroundColor: c.surface2, color: c.text }]}
+            >
+              {favicon ? <Image source={{ uri: favicon }} style={groundedCitation.favicon} /> : null}
+              {label ? ` ${label}` : ""}
+              {extra > 0 ? ` +${extra}` : ""}
+            </Text>
+          );
+        }
         const isSource = sourceUrls.has(normalizedUrl(href));
         return (
           <Text
@@ -113,7 +173,7 @@ export function MessageBody({ content, styles, onLinkPress, sources }: MessageBo
         );
       },
     };
-  }, [c.surface2, c.textHint, onLinkPress, sources, styles]);
+  }, [c.surface2, c.text, c.textHint, hasPills, onLinkPress, sources, styles, webSources]);
 
   // No real math (or unbalanced delimiters → fallback): render the message as a
   // single plain Markdown block with NO wrapper, byte-identical to before.
@@ -161,6 +221,25 @@ const inlineCitation = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: 5,
     paddingVertical: 2,
+    textDecorationLine: "none",
+  },
+});
+
+// The pill for a GROUNDED citation — a document excerpt (`#nemesis-file=`) or a live web result
+// (`#nemesis-cite=`) — as distinct from `inlineCitation` above, which is the older bare-URL-match
+// chip. Measured off the web's own file chip (`chat-markdown.tsx`'s `fileRef` span: rounded-full,
+// `bg-(--ui-bg-tertiary)`, `text-(--ui-text-secondary)`) but restated in the phone's own terms per
+// the owner's screenshot of the first pass, which came out green and underlined: a rounded grey
+// box in `colors.text` (not the accent/link colour), `type.micro` (13pt), no underline.
+const groundedCitation = StyleSheet.create({
+  favicon: { borderRadius: 3, height: 12, marginRight: 2, width: 12 },
+  pill: {
+    borderRadius: 6,
+    fontSize: typeScale.micro.fontSize,
+    fontWeight: typeScale.micro.fontWeight,
+    lineHeight: typeScale.micro.lineHeight,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     textDecorationLine: "none",
   },
 });

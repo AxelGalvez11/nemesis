@@ -4,7 +4,8 @@ import { AttachedFileCard, DeliverableList } from "@/components/canvas/Attachmen
 import { CanvasActionRow } from "@/components/canvas/CanvasActionRow";
 import { DocumentIcon, GlobeIcon, MapIcon, PdfIcon, SlidesIcon, TableIcon, TelescopeIcon, type IconProps } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
-import { CAPABILITY_COPY, type CanvasThreadTurn, type ComposerCapability, type ThreadSource } from "@/learn/web";
+import { CAPABILITY_COPY, type CanvasSource, type CanvasThreadTurn, type ComposerCapability, type ThreadSource } from "@/learn/web";
+import { groundedReplyMarkdown } from "@/lib/citation-pills";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -32,6 +33,7 @@ const CAPABILITY_ICON: Record<ComposerCapability, ComponentType<IconProps>> = {
 export function CanvasTurn({
   turn,
   capability,
+  documents = [],
   live = false,
   onLongPressReply,
   onOpenSources,
@@ -40,6 +42,13 @@ export function CanvasTurn({
   /** Only ever set for the very first turn of a session that opened via the front door's
    *  capability chip — see canvas.tsx's capForFirstTurnRef for why it never survives a reload. */
   capability?: ComposerCapability | null;
+  /** The canvas's attached documents, so a `[s1:e4]` marker in the reply's prose resolves to a
+   *  pill naming the source it cites — same rule the web's `CanvasThreadTurnView` states for its
+   *  own `files` prop: this is `canvas.sources`, not a field on the turn. The same shelf backs
+   *  every answer in the thread, and copying it onto each turn would let per-turn copies disagree
+   *  the moment a source was renamed. A marker naming a source not in this list is dropped, never
+   *  shown raw — see `citation-pills.ts`'s `groundedReplyMarkdown`. */
+  documents?: readonly CanvasSource[];
   /** True for the streaming row canvas.tsx draws while a reply is in flight — no action row,
    *  no long-press menu, no timestamp (there isn't a landed moment yet to time-stamp). */
   live?: boolean;
@@ -58,6 +67,12 @@ export function CanvasTurn({
   const CapIcon = capability ? CAPABILITY_ICON[capability] : null;
   const capLabel = capability ? CAPABILITY_COPY[capability].label : null;
   const deliverables = turn.output ? [turn.output.title] : [];
+  // Stripped/pilled BEFORE it reaches MessageBody — the stored `turn.reply` keeps its raw
+  // `[s1:e1]`/`[1]` markers (ReplyActions' copy/speak below still read `turn.reply` itself); only
+  // what is DRAWN changes, same split the web's `CanvasThreadTurnView` keeps between `turn.reply`
+  // and what it hands `AssistantMarkdown`. `turn.sources` is the web-result list in the numbering
+  // the model was shown for THIS turn; `documents` is the canvas's whole document shelf.
+  const groundedReply = reply ? groundedReplyMarkdown(reply, documents, turn.sources) : reply;
 
   const openMenuFromPress = (e: GestureResponderEvent) => onLongPressReply?.(e.nativeEvent.pageX, e.nativeEvent.pageY, turn);
   const openMenuFromRow = (x: number, y: number) => onLongPressReply?.(x, y, turn);
@@ -97,7 +112,7 @@ export function CanvasTurn({
       {reply ? (
         <Pressable delayLongPress={350} onLongPress={openMenuFromPress} disabled={live}>
           <View style={styles.replyWrap}>
-            <MessageBody content={turn.reply} styles={markdownStyles} />
+            <MessageBody content={groundedReply} styles={markdownStyles} webSources={turn.sources} />
           </View>
         </Pressable>
       ) : null}

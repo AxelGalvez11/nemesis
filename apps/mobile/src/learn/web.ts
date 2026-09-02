@@ -72,6 +72,28 @@ export {
 
 export { documentTitle, TITLE_MAX } from "../../../web/lib/learn/document-title.ts";
 
+// 🔴 A GROUNDED REPLY'S `[s1:e4]` MARKERS, THE SAME REGEX-BASED TRANSFORM THE WEB'S
+// `AssistantMarkdown` RUNS BEFORE HANDING TEXT TO react-markdown (`components/workspace/learn/
+// canvas-thread-turn.tsx` passes `files={files}` for exactly this). Pure string-in, string-out —
+// no DOM, no React — so it crosses unmodified rather than being re-derived on the phone, which is
+// how a marker came to resolve identically on both apps: same regex, same source list, same
+// "unresolvable marker is deleted, never printed raw" rule.
+export {
+  citationsToMarkdown,
+  fileRefsToMarkdown,
+  groupCitationRuns,
+  groupFileRuns,
+  type FileCitation,
+} from "../../../web/lib/workspace/chat-citations.ts";
+
+// 🔴 `hostnameOf`/`sourceLabel` ONLY — NOT `faviconUrl`. That function returns the WEB's own
+// same-origin path (`/api/favicon?domain=…`), right for a browser on `app.enternemesis.com` and
+// meaningless as an absolute image URL on the phone. `citation-pills.ts` rebuilds the identical
+// route against `APP_API_BASE` instead of pointing the phone at Google's favicon service directly
+// — see that file's header for why: `apps/web/app/api/favicon/route.ts` exists specifically so a
+// learner's reading list is never handed to a third party as a side effect of drawing a citation.
+export { hostnameOf, sourceLabel } from "../../../web/lib/favicon.ts";
+
 // 🔴 NOT `canvas-hosting.ts` (`isEvidenceStage`): its type imports reach `knowledge-types.ts`, which
 // imports `@/lib/sources/source-context` — a web path the phone cannot resolve. The two retired
 // evidence stages are spelled out in lib/canvases.ts instead, pinned to the web's list by a test

@@ -81,6 +81,9 @@ const FIND_BAR_CLEARANCE = 56;
  *  already sized twice ("make the mascot bigger in the app"). */
 const CHARACTER_DOCK_SIZE = 76;
 
+/** Canvases whose opening question has been sent in this JS session — see the send effect. */
+const OPENING_ASK_SENT = new Set<string>();
+
 interface Row {
   id: string;
   kind: "turn" | "live";
@@ -372,7 +375,11 @@ export default function CanvasScreen() {
             setPendingText(null);
             setTurnStatus(null);
             const answered = result.canvas.moments.at(-1)?.id;
-            const stood = result.sources.length ? result.sources : result.consulted;
+            // 🔴 THE NUMBERED LIST, NEVER THE CITED ONE. An `[n]` in the answer is an index into what
+            // the model was SHOWN (`consulted`); the cited list is in citation order and resolving
+            // against it would attribute a sentence to the wrong page — this repo's oldest citation
+            // rule. The pills and the Sources sheet both read this list.
+            const stood = result.consulted.length ? result.consulted : result.sources;
             if (answered && stood.length) setLiveSources((prev) => ({ ...prev, [answered]: stood }));
           });
         })
@@ -402,8 +409,14 @@ export default function CanvasScreen() {
   // to attach, so the common case pays one extra render, not a visible delay.
   useEffect(() => {
     if (!canvas || !uid || !canvasId || !askParam?.trim() || !attachReady) return;
-    if (askSentForRef.current.has(canvasId)) return;
+    if (askSentForRef.current.has(canvasId) || OPENING_ASK_SENT.has(canvasId)) return;
     askSentForRef.current.add(canvasId);
+    // 🔴 A REMOUNT MUST NOT RESEND. A ref dies with the component and the `ask` param lives on the
+    // route, so a hot reload — or any remount — re-sent the opening question and doubled the
+    // exchange (seen on the simulator, 2026-09-02). The module-level set survives remounts, and
+    // striking the param from the route covers a fresh JS session that restores the route.
+    OPENING_ASK_SENT.add(canvasId);
+    router.setParams({ ask: "" });
     if (canvas.moments.length === 0) capForFirstTurnRef.current = capability;
     send(askParam);
     // send/capability are stable enough for this one-shot effect; canvas is read for its
@@ -616,6 +629,10 @@ export default function CanvasScreen() {
   // from it now (CAPABILITY_COPY + a local icon map), so the two can never disagree.
   const liveCapability = capForFirstTurnRef.current && turns.length === 0 ? capForFirstTurnRef.current : null;
   const uploadedFileTitles = canvas?.sources.map((s) => s.title) ?? [];
+  // The canvas's whole document shelf, so `CanvasTurn` can resolve a `[s1:e4]` marker in any
+  // turn's reply to the source it names — same rule the web's `CanvasThreadTurnView` follows for
+  // its own `files` prop (canvas-level, not per-turn).
+  const documentSources = canvas?.sources ?? [];
 
   // Near enough the bottom that the ↓ disc would be redundant — a little more than one
   // composer's height, so it doesn't flicker in in the last few points of a normal scroll.
@@ -666,11 +683,11 @@ export default function CanvasScreen() {
             >
               {item.kind === "turn" ? (
                 <Reanimated.View entering={FadeIn.duration(220)}>
-                  <CanvasTurn turn={item.turn!} onLongPressReply={handleOpenReplyMenu} onOpenSources={setSourcesFor} />
+                  <CanvasTurn documents={documentSources} turn={item.turn!} onLongPressReply={handleOpenReplyMenu} onOpenSources={setSourcesFor} />
                 </Reanimated.View>
               ) : (
                 <View style={styles.liveWrap}>
-                  <CanvasTurn turn={liveTurn!} capability={liveCapability} live />
+                  <CanvasTurn documents={documentSources} turn={liveTurn!} capability={liveCapability} live />
                   {sending && !streamingText ? (
                     <View style={styles.thinkingWrap}>
                       <ThinkingLine phase={THINKING_PHASE} label={turnStatus} hosts={searchHosts} testID="canvas-thinking-line" />
