@@ -1289,6 +1289,34 @@ const DECISION_CONTRACT = [
   + "got a minute of waiting has been failed as badly as someone who wanted a report and got two "
   + "lines, so when it is genuinely borderline, answer them now and offer to research it properly.",
   "",
+  // 🔴🔴🔴 AND AN OUTRIGHT INSTRUCTION IS NOT BORDERLINE. Owner, 2026-09-02, with a screenshot:
+  // *"I asked it to make a document and it literally did not, it just gave me reasoning out loud
+  // and no action, like what the heck."* Reproduced on production: he typed "make a document on
+  // it", the reply said *"The research report is being saved into your Library now"*, and two
+  // minutes later the canvas had ZERO outputs and not one failed request — the run never started,
+  // because `wantsReport` came back null.
+  //
+  // The paragraph above is why. Every sentence in it argues AGAINST choosing this, and it was
+  // written to stop the model picking a minute-long run for any question that happened to have
+  // sources in it. It works. It works on "make a document on it" too, which is not a judgement
+  // call at all — it is the learner naming the thing they want.
+  "None of that caution applies when the learner ASKS for the artefact outright. \"Make a document "
+  + "on it\", \"write this up\", \"turn that into a report\", \"I want a file I can hand in\". "
+  + "These leave nothing to weigh. Set it, and write the research question from what the conversation "
+  + "has been about. The cost paragraph above is for deciding on their behalf; it has no bearing on "
+  + "a request they have already made.",
+  "",
+  // 🔴🔴 AND THE WORDS MAY NOT PROMISE WHAT THE FLAG DID NOT ASK FOR. This is the actual defect in
+  // the report above, and it is worse than the missing document: the reply ANNOUNCED a document
+  // that was never going to exist. `reply` and `wantsReport` are two fields of one envelope, and
+  // nothing has ever made them agree — so the model can decline the run in one field and describe
+  // it as under way in the other. A learner cannot tell those apart; they read the sentence.
+  "Your reply and this field must tell the same story. Do not say a document, report, file or "
+  + "anything else is being made, saved, written or added to their Library unless you have set "
+  + "\"wantsReport\" on this same turn. If you are not making one, either make one or say plainly "
+  + "that you have not, and offer. Describing work you did not request is the one thing here that "
+  + "cannot be recovered from, because they will go looking for it.",
+  "",
   "When you do set it, write the RESEARCH QUESTION rather than repeating their sentence: "
   + '"can you dig into whether fin spacing matters" becomes "does fin spacing affect natural '
   + 'convection performance in a finned heatsink". The run plans its sub-questions from this text.',
