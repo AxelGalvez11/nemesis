@@ -53,8 +53,10 @@ export function LearnHome() {
     // A frame late: KeyboardAvoidingView's own padding animates in, and measuring on the same
     // frame as the layout event can catch the card mid-shift.
     requestAnimationFrame(() => {
-      composerWrapRef.current?.measureInWindow((_x, y, _width, height) => {
-        setMenuOffset(Math.max(space(2), Math.round(windowHeight - (y + height) + space(2))));
+      composerWrapRef.current?.measureInWindow((_x, y) => {
+        // The menu's BOTTOM edge sits a gap above the card's TOP edge. Measuring to the card's
+        // bottom put the menu over the card and the heading (seen on the simulator, 2026-09-01).
+        setMenuOffset(Math.max(space(2), Math.round(windowHeight - y + space(2))));
       });
     });
   }, [windowHeight]);

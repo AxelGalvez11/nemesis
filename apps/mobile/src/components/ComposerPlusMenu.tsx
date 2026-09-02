@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
 import { DocumentIcon, FileIcon, GlobeIcon, LibraryIcon, MapIcon, PdfIcon, SlidesIcon, TableIcon, TelescopeIcon } from "./icons";
@@ -111,7 +111,7 @@ export function ComposerPlusMenu({
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
       <Animated.View style={[styles.menuWrap, { bottom: bottomOffset, opacity: progress, transform: [{ translateY }] }]}>
         <GlassSurface style={styles.menu} fallbackColor={c.glassPanel} opaque>
-          <View style={{ maxHeight: menuMaxHeight }}>
+          <ScrollView style={{ maxHeight: menuMaxHeight }} bounces={false} keyboardShouldPersistTaps="handled">
             {onAttach && (
               <Pressable
                 testID="composer-plus-attach"
@@ -172,7 +172,7 @@ export function ComposerPlusMenu({
                   </Pressable>
                 );
               })}
-          </View>
+          </ScrollView>
         </GlassSurface>
       </Animated.View>
     </View>
