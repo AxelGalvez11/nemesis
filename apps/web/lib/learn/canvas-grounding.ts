@@ -288,3 +288,58 @@ export function quotedExcerpt(
   const excerpt = source.excerpts.find((candidate) => candidate.id === ref.excerptId);
   return excerpt ? { source, excerpt } : null;
 }
+
+/**
+ * The same material, packed for a DELIVERABLE rather than for a cited answer.
+ *
+ * 🔴🔴 IT DROPS THE EXCERPT IDS ON PURPOSE, AND THAT IS THE WHOLE DIFFERENCE FROM
+ * `groundingBlock`. That function exists so an on-screen answer can be resolved back to the
+ * sentence it came from, and every line it emits carries a bracketed `[s1:e4]` for the renderer to
+ * turn into a pill. A Word file, a PDF, a slide deck and a flashcard are things the learner takes
+ * AWAY: nothing downstream resolves an id, so a model imitating the markers it was shown writes
+ * them into the prose as literal noise. That failure is already on record — shown bracketed numbers
+ * with nothing behind them, the model wrote "[1][2][3]" into its sentences (owner, 2026-08-31:
+ * *"it's also made up citations"*).
+ *
+ * 🔴 EXCERPTS ARE JOINED BACK INTO RUNNING TEXT, one per line rather than one per paragraph. A
+ * lecture transcript arrives as caption lines — the one that prompted this averaged 29 characters
+ * across 2,530 of them — and a blank line between every fragment burns budget and reads as 2,530
+ * disconnected statements instead of a lecture.
+ */
+export function materialText(sources: readonly CanvasSource[]): string {
+  if (sources.length === 0) return "";
+
+  const parts: string[] = [];
+  let budget = MAX_GROUNDING_CHARS;
+  let dropped = 0;
+
+  for (const source of sources) {
+    const header = `### ${source.title}${
+      source.coverageNote ? `\n(Nemesis could not read all of this: ${source.coverageNote})` : ""
+    }`;
+    parts.push(header);
+    budget -= header.length;
+
+    const lines: string[] = [];
+    for (const excerpt of source.excerpts) {
+      const line = excerpt.label ? `${excerpt.label}: ${excerpt.text}` : excerpt.text;
+      if (line.length > budget) {
+        dropped += 1;
+        continue;
+      }
+      lines.push(line);
+      budget -= line.length + 1;
+    }
+    if (lines.length > 0) parts.push(lines.join("\n"));
+  }
+
+  // 🔴 The same honesty `groundingBlock` keeps: silence about a truncation is how a model comes to
+  // claim it covered a chapter it was never shown.
+  if (dropped > 0) {
+    parts.push(
+      `(${dropped} further passage${dropped === 1 ? " was" : "s were"} not included because the material is long. Do not claim to have covered them.)`,
+    );
+  }
+
+  return parts.join("\n\n");
+}

@@ -202,3 +202,78 @@ test("🔴🔴🔴 \"make a document\" makes a document, and a document parser i
   // reasons this file records at length; "turn that into a report" belongs to `wantsReport`.
   assert.equal(readDeliverableAsk("turn that into a report"), null);
 });
+
+// ---------------------------------------------------------------- the attached files reach the file
+
+/** The owner's canvas of 2026-09-02, in miniature: a lecture transcript dropped in as caption
+ *  lines, no taught blocks, and one throwaway exchange. Real lines from the lecture, because the
+ *  point of the test is that the DOCUMENT is about COPD and not about the canvas's title. */
+function canvasWithLecture() {
+  const canvas = newCanvas();
+  canvas.title = "Still fired up to be here";
+  canvas.sources.push({
+    durability: "ephemeral",
+    excerpts: [
+      "Still fired up to be here.",
+      "Thank you for coming out early.",
+      "Remember, GOLD guidelines are for COPD.",
+      "Protease activity also causes alveolar destruction.",
+      "A diagnostic threshold of FEV to an FVC ratio",
+      "of less than percent is diagnostic of obstructive lung disease.",
+      "LABA-ICS combos are discouraged in COPD now.",
+      "The hallmark of improving symptoms and outcomes in COPD is stopping smoking.",
+    ].map((text, index) => ({ id: `s1:e${index + 1}`, label: null, text })),
+    id: "s1",
+    kind: "text",
+    title: "Still fired up to be here",
+  } as unknown as (typeof canvas.sources)[number]);
+  canvas.moments.push({
+    assistantText: "Thanks for sharing the transcript. What would you like to do with it?",
+    id: "m1",
+    kind: "assistant",
+    userText: "this is transcript from lecture",
+  } as unknown as (typeof canvas.moments)[number]);
+  return canvas;
+}
+
+test("a dropped-in lecture reaches the writer, instead of only the canvas's title", () => {
+  // Owner, 2026-09-02: "i dropped in my lecture transcript and i dont think it read it well.
+  // because i asked for a document and it was not related at all." The transcript had parsed
+  // perfectly — 2,530 excerpts — and none of it was in the prompt. The document that came back was
+  // an essay about the phrase "still fired up to be here", which was the canvas's title and the
+  // only subject the model was given.
+  const brief = canvasBrief(canvasWithLecture());
+  assert.ok(brief.includes("Protease activity also causes alveolar destruction."), "the material is not in the brief");
+  assert.ok(brief.includes("LABA-ICS combos are discouraged in COPD now."), "later material is not in the brief");
+  assert.ok(
+    brief.includes("of less than percent is diagnostic of obstructive lung disease."),
+    "the brief stops partway through the material",
+  );
+});
+
+test("attached files are material on their own — no chatter required", () => {
+  // This canvas passed the gate only by accident, on the throwaway reply Nemesis happened to have
+  // made. Drop a file, say nothing, ask for a document: that must not refuse.
+  const canvas = canvasWithLecture();
+  canvas.moments.length = 0;
+  assert.equal(canvas.blocks.length, 0);
+  assert.equal(canvasHasMaterial(canvas), true, "a canvas holding only an attached file refuses to make anything");
+});
+
+test("material bound for a file carries no citation ids to copy", () => {
+  // A Word file, a PDF and a flashcard have nothing that resolves [s1:e4] into a pill, and a model
+  // writes back the markers it is shown. Owner, 2026-08-31: "it's also made up citations."
+  const brief = canvasBrief(canvasWithLecture());
+  assert.ok(!/\[s\d+:e\d+\]/.test(brief), "excerpt ids are being shown to a writer whose output cannot resolve them");
+});
+
+test("caption lines are joined into running text, not scattered by blank lines", () => {
+  // A lecture transcript arrives one caption per excerpt — the owner's averaged 29 characters
+  // across 2,530 of them. Blank lines between every fragment burn the budget and read as thousands
+  // of disconnected statements rather than a lecture.
+  const brief = canvasBrief(canvasWithLecture());
+  assert.ok(
+    brief.includes("Thank you for coming out early.\nRemember, GOLD guidelines are for COPD."),
+    "consecutive caption lines are not being joined into running text",
+  );
+});
