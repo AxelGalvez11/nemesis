@@ -38,6 +38,13 @@ type MarkdownStyles = { [K in keyof ReturnType<typeof createMarkdownStyles>]: ob
 // Match the Markdown body size so inline math sits at the same scale as prose.
 const MATH_FONT_SIZE = 15.5;
 
+/** A node's text, flattened: a link's label without the link's inherited styling. */
+function plainText(node: ASTNode): string {
+  const own = typeof node.content === "string" ? node.content : "";
+  const kids = Array.isArray(node.children) ? node.children.map(plainText).join("") : "";
+  return own + kids;
+}
+
 // Render `![](url)` through MarkdownImage instead of the library's built-in
 // rule, which hands a remote URL to <Image> with no dimensions — and a remote
 // <Image> with no width/height collapses to zero in React Native, so the
@@ -122,7 +129,10 @@ export function MessageBody({ content, styles, onLinkPress, sources, webSources 
           return (
             <Text key={node.key} style={[groundedCitation.pill, { backgroundColor: c.surface2, color: c.text }]}>
               {"\u{1F4C4} "}
-              {children}
+              {/* The plain title, never `children`: the renderer hands a link's children down already
+                  wearing the link style (accent, underlined), which is exactly the look a pill must
+                  not have. Seen on the simulator as green underlined pill text before this. */}
+              {plainText(node)}
               {extra > 0 ? ` +${extra}` : ""}
             </Text>
           );
