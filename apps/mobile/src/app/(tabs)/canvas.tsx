@@ -39,16 +39,19 @@ import { ScrollToBottomButton } from "@/components/canvas/ScrollToBottomButton";
 import { UploadedFilesSheet } from "@/components/canvas/UploadedFilesSheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT } from "@/components/Composer";
 import type { MenuAnchor } from "@/components/MiniMenu";
+import { NemesisAvatar } from "@/components/NemesisAvatar";
 import { TextPromptSheet } from "@/components/RowActionSheets";
 import { SourcesSheet, type SourceLike } from "@/components/SourcesSheet";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
+import { animationForTurnState } from "@/lib/avatar-animation";
 import { filterTurnsByQuery } from "@/lib/canvas-find";
 import { capabilityFromParam, firstParam } from "@/lib/canvas-screen";
 import { runCanvasTurn } from "@/api/canvas-turn";
 import { canvasLabel, newCanvas, threadFromCanvas, type Folder } from "@/lib/canvases";
 import type { NumberedSource } from "@/lib/turn-text";
+import { CHARACTER_SILHOUETTE } from "@/learn/avatar";
 import { lastThingSaid, type CanvasThreadTurn, type ComposerCapability, type LearningCanvas } from "@/learn/web";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -70,6 +73,10 @@ const THINKING_PHASE = { kind: "routing" as const };
 /** Room the find bar's own height (40) plus its top margin needs below the header, so the
  *  list's first row doesn't render underneath it once "Find in chat" opens. */
 const FIND_BAR_CLEARANCE = 56;
+/** The web's own measured `DOCK_SIZE` (`components/character/character-dock.tsx`) — the
+ *  character never got a phone-specific size of its own, so it keeps the one the owner
+ *  already sized twice ("make the mascot bigger in the app"). */
+const CHARACTER_DOCK_SIZE = 76;
 
 interface Row {
   id: string;
@@ -602,6 +609,26 @@ export default function CanvasScreen() {
             top={insets.top + space(2) + 44 + space(1.5)}
           />
         ) : null}
+        {/* The character, parked lower-left above the composer — the web's `character-dock.tsx`
+            placement, ported without its pointer-tracking and walk-to-centre choreography (the
+            phone has no cursor and this screen has no front-door greeting moment). Fixed, never
+            part of the FlatList's layout, `pointer-events: none` so it can never steal a tap
+            meant for the composer behind it, and hidden while the keyboard is up — there is no
+            room for it above a composer the keyboard has pushed to the middle of the screen. */}
+        {!keyboardUp ? (
+          <View
+            pointerEvents="none"
+            style={[styles.characterDock, { bottom: composerBottomPad + COMPOSER_COMPACT_HEIGHT + space(2) }]}
+          >
+            <NemesisAvatar
+              animation={animationForTurnState(sending ? "sending" : "idle")}
+              ink={c.accent}
+              eye={c.bg}
+              size={CHARACTER_DOCK_SIZE}
+              silhouette={CHARACTER_SILHOUETTE}
+            />
+          </View>
+        ) : null}
         <View style={[styles.composerRow, styles.composerFloat, { paddingBottom: composerBottomPad }]}>
           <Composer
             value={input}
@@ -702,4 +729,5 @@ const createStyles = (c: ThemeColors) =>
     loadingSpinner: { marginTop: space(8) },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
     composerFloat: { position: "absolute", bottom: 0, left: 0, right: 0 },
+    characterDock: { position: "absolute", left: space(3) },
   });

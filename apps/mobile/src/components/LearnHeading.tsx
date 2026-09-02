@@ -68,7 +68,10 @@ export function LearnHeading() {
     // seconds inside a live heading would otherwise be announced on every swap.
     <View accessibilityRole="header" accessibilityLabel="Learn anything." style={styles.row}>
       <Text style={[type.h1, styles.word, { color: c.text }]}>Learn </Text>
-      <View style={{ width: slotWidth ?? undefined, minHeight: type.h1.lineHeight }}>
+      {/* No reserved width: the outgoing word is fully gone before the next arrives (sequential,
+          never a crossfade), so the line re-centres between words without a visible jump — and a
+          reserved slot sized to the widest subject pushed every shorter one off centre. */}
+      <View style={{ minHeight: type.h1.lineHeight }}>
         <Animated.Text
           style={[type.h1, styles.word, animatedStyle, { color: c.text }]}
           numberOfLines={1}

@@ -7,6 +7,7 @@ import { startCanvas } from "@/api/canvases";
 import { useAuth } from "@/auth/AuthProvider";
 import { STUDY_IMAGE_PICKER_TYPES } from "@/lib/study-image-pick";
 import { atMentionState, removeAtMention } from "@/lib/at-mention";
+import { CHARACTER_SILHOUETTE } from "@/learn/avatar";
 import { CAPABILITY_COPY, type ComposerCapability } from "@/learn/web";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -17,11 +18,16 @@ import { CapabilityPicker } from "./CapabilityPicker";
 import { AddFilesSheet, type PickedFile } from "./AddFilesSheet";
 import { PhotoCaptureSheet } from "./PhotoCaptureSheet";
 import { GlassSurface } from "./GlassSurface";
+import { NemesisAvatar } from "./NemesisAvatar";
 import { useShell } from "./AppDrawer";
 import { useKeyboardVisible, useShellPadding } from "./shell-chrome";
 import { LearnHeading } from "./LearnHeading";
 import { CloseIcon } from "./icons";
 import { VoiceModeIcon } from "./icons-composer";
+
+// The web's own measured `GREETER_SIZE` (`components/workspace/learn/canvas-home.tsx`) — the
+// character above the "Learn ‹subject›" heading on its front door, ported at the same size.
+const GREETER_SIZE = 80;
 
 // The app's front door — the web's `/learn` (canvas-home.tsx), in the ChatGPT iPhone app's
 // shape: an empty canvas with a centred greeting and a composer docked at the BOTTOM of the
@@ -196,6 +202,21 @@ export function LearnHome() {
             block rather than the single centred group the screen used to render everything
             as. */}
         <View style={styles.headingArea}>
+          {/* The character, above the heading it greets with — the web's front-door greeter
+              (`canvas-home.tsx`), centred rather than docked here since this screen has no
+              conversation yet for it to sit beside. `idle` rather than the web's own
+              state-machine-driven animation: this screen is a still greeting, not a working
+              surface, so there is no "thinking" moment for it to answer to. */}
+          <View style={styles.greeter}>
+            <NemesisAvatar
+              animation="idle"
+              ink={c.accent}
+              eye={c.bg}
+              size={GREETER_SIZE}
+              silhouette={CHARACTER_SILHOUETTE}
+              label="Nemesis"
+            />
+          </View>
           <LearnHeading />
           <Text style={styles.help}>Ask anything, or pick what to make with +</Text>
         </View>
@@ -288,6 +309,7 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1 },
     headingArea: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(5) },
+    greeter: { marginBottom: space(3) },
     help: { ...type.small, color: c.text3, marginTop: space(2.5), textAlign: "center" },
     dock: { paddingHorizontal: COMPOSER_INSET, paddingTop: space(2) },
     composerWrap: { width: "100%" },

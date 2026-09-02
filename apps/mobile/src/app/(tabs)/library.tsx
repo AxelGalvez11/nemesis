@@ -119,7 +119,8 @@ function buildLibraryItems(
         key: `deck:${deck.id}`,
         kind: "deck",
         name: deck.name,
-        sublabel: deck.description ? deck.description : libraryModifiedLabel(deck.updatedAt, now),
+        // The reference row's second line is always the modified date (IMG_6539), never a blurb.
+        sublabel: libraryModifiedLabel(deck.updatedAt, now),
         updatedAt: deck.updatedAt,
         deckId: deck.id,
       });
