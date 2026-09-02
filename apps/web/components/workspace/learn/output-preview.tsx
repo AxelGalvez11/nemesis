@@ -529,7 +529,35 @@ export function OutputPreview({
           Out here it pins to the panel, which is what a position indicator has to do. */}
       {full && !deck && !output.sheet && <DocumentRail headings={headings} scroller={scroller} />}
       <div className={cn("min-h-0 flex-1 overflow-auto px-[24px] pt-[25px]", full && onAsk ? "pb-[101px]" : "pb-[24px]")} ref={setScroller}>
-        <div className="mx-auto w-full max-w-[816px] bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-primary)">
+        {/* 🔴🔴🔴 `--ui-bg-editor`, NOT `--ui-bg-primary`, AND THE DIFFERENCE IS WHETHER PAPER WEARS
+            THE LEARNER'S ACCENT. Owner, 2026-09-01, with a document and a deck open side by side in
+            the Library: *"the dark mode's not consistent… for the documents and reports, for some
+            reason it has a colour accent depending on what the user chose in the settings. Remove
+            that."*
+
+            He is describing this exact declaration. `--ui-bg-primary` is not a surface, it is a
+            FILL: `color-mix(--ui-accent <mix>, color-mix(--ui-base 10%, transparent))`. Every fill
+            token in this system is built over the accent on purpose, so a hover, a chip and a row
+            all agree with whatever colour the learner picked. Paper is not a fill. A document page
+            tinted by a preference is a page that looks like a different document to two people,
+            and beside a deck — which uses a neutral surface — it reads as one of them being broken.
+
+            🔴 THE SAME NAME MEANS OPPOSITE THINGS IN THE TWO PRODUCTS, AND THIS FILE IS THE SECOND
+            CASUALTY. `library-outputs.tsx` carries the first, in its own words: the reference's
+            `--bg-primary` is its page WHITE, ours is a 24% wash over an accent, and reading it as
+            "the page colour" put a grey chip on every Library row. Written here in full so the
+            third person to reach for it in dark mode finds the warning rather than the wash.
+
+            🔴 `--ui-bg-editor` IS THE NEUTRAL ONE, BY CONSTRUCTION AND NOT BY LUCK:
+            `color-mix(--theme-card-seed <mix>, --theme-neutral-card)`, and both of those are plain
+            hex in every theme. No accent term anywhere in it, and its contrast is already measured
+            (desktop-ui.css records 6.95:1 light against the resolved value). It is also the surface
+            the canvas itself uses, so an output now looks the same wherever it is opened, which is
+            the rule this file's own header sets three comments above.
+
+            🔴 LIGHT MODE IS UNTOUCHED: `bg-white` was never the problem. Paper is white on a white
+            product, and the accent only ever reached this through the dark override. */}
+        <div className="mx-auto w-full max-w-[816px] bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-editor)">
           {deck ? (
             <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} registerElement={canComment ? registerUnit : undefined} />
           ) : output.sheet ? (

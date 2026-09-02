@@ -131,20 +131,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
    * appears, and this value is never rendered.
    */
   const shownAt = useRef<number | null>(null);
-  /**
-   * The learner asking for a change to the card in front of them, in words.
-   *
-   * 🔴🔴 THIS IS NOT A CARD EDITOR, AND THE OWNER HAS BANNED THOSE TWICE. The learner never gets a
-   * cursor in the card: they write a NOTE and Nemesis rewrites the card. That is exactly the line
-   * the documents lane draws (`revise-output.ts`, and claude.ai's Comment mode rather than its Edit
-   * mode), applied to the one artifact that never got it.
-   *
-   * 🔴 WHY IT HAD TO EXIST. Before this, the only way to change a card was the thumbs-down, which
-   * rewrites it with NO instruction — Nemesis guessed at what was wrong. Owner, 2026-08-30: *"what
-   * happens when a user asks for an adjustment on one?"* The honest answer was that they could not.
-   */
-  const [asking, setAsking] = useState(false);
-  const [note, setNote] = useState("");
   // The Explain side chat: transcripts cache per card for the sitting, so
   // reopening a card never bills twice; the panel itself lives to the RIGHT
   // of the card (owner 2026-08-04) and streams into explain-chat.tsx.
@@ -185,9 +171,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
   const currentId = current?.id ?? null;
   useEffect(() => {
     shownAt.current = currentId ? Date.now() : null;
-    // 🔴 THE BOX IS PER CARD. A note half-written about card one must not arrive on card two.
-    setAsking(false);
-    setNote("");
     // 🔴 AND SO IS THE ANSWER. `grade()` and `undo()` each clear this on their own way out, which
     // covered every route a learner had until the card could also change underneath them — a
     // re-sorted queue, a card arriving from its learning step. Anchoring it to the card itself
@@ -349,7 +332,12 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
   /**
    * Rewrite the card in front of the learner.
    *
-   * 🔴 TWO DOORS, ONE MECHANISM. Thumbs-down calls this with no note ("this is bad, you work out
+   * 🔴 ONE DOOR SINCE 2026-09-01, AND THE PARAMETER STAYS. The note box was cut from the recall
+   * row (see its tombstone there); thumbs-down is the only caller now and passes nothing. The
+   * `instruction` argument is kept because it costs nothing and because restoring the box should be
+   * a button and a textarea rather than a rebuild of this function.
+   *
+   * 🔴 TWO DOORS, ONE MECHANISM (historic). Thumbs-down calls this with no note ("this is bad, you work out
    * why"); the note box calls it with one ("the answer is wrong, it is the neutral axis"). A second
    * rewrite path for the second door is how the two would start disagreeing about what a revision
    * does, so there is one, and the note is a parameter.
@@ -378,9 +366,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
       // underneath them, and showing the new answer they never tried to recall would
       // spend the retrieval for nothing.
       setRevealed(false);
-      // The ask is done; close the box and clear it so the next card starts empty.
-      setAsking(false);
-      setNote("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't rewrite this card.");
     } finally {
@@ -485,32 +470,26 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
                 >
                   {current.quality === -1 ? <IconThumbDownFilled className="text-(--ui-learner)" /> : <IconThumbDown />}
                 </Button>
-                {/* 🔴🔴 THE ONE CONTROL ADDED BACK TO THIS ROW, AND IT EARNS ITS PLACE BY BEING THE
-                    THING THE CUT ONES WERE STANDING IN FOR. Three controls left here on 2026-08-26
-                    (explain, flag, suspend) because each was a decision ABOUT the card taken during
-                    recall. This is the same gesture as the thumbs beside it — "this card is wrong" —
-                    except the learner gets to say HOW, which is the difference between Nemesis
-                    fixing it and Nemesis guessing. Owner, 2026-08-30: *"what happens when a user
-                    asks for an adjustment on one?"* */}
-                <Button
-                  aria-label="Ask Nemesis to change this card"
-                  aria-pressed={asking}
-                  data-testid="ask-card-change"
-                  disabled={rewriting}
-                  onClick={() => setAsking((open) => !open)}
-                  size="icon-xs"
-                  title="Ask Nemesis to change this card"
-                  variant="ghost"
-                >
-                  {/* 🔴 A SPEECH BUBBLE, NOT A PENCIL, AND THE GLYPH IS THE WHOLE POINT. A pencil
-                      means "edit this card" everywhere in software, and editing a card is the one
-                      thing this screen has never allowed — it would promise a cursor and then take
-                      it away. It is also already spoken for: `study-row-actions.tsx` uses the same
-                      pencil for Rename, a real edit. A bubble says "leave a note", which is what
-                      happens, and it matches `output-preview.tsx`, where the same gesture on a
-                      document is a comment. Owner picked it, 2026-08-30. */}
-                  <IconMessage />
-                </Button>
+                {/* 🪦 THE ASK-FOR-A-CHANGE BUBBLE, CUT 2026-09-01: *"for flashcards, I want you to
+                    remove the chat icon because I don't think that's necessary at all. Maybe just a
+                    thumbs up or thumbs down."*
+
+                    🔴 THAT IS A RETURN TO HIS FIRST POSITION, NOT A NEW ONE. The quote this file
+                    already carries above `vote` reads *"want users to edit flashcards, really…
+                    Mainly just a thumbs up or a thumbs down if a card"*. The bubble came in on
+                    2026-08-30 from *"what happens when a user asks for an adjustment on one?"*, and
+                    two days of using it answered that question differently: the ask was worth
+                    building and not worth keeping on the recall screen.
+
+                    🔴 NOTHING WAS LOST BUT THE DOOR. Thumbs-down still rewrites the card — see
+                    `vote`, which calls `rewriteCurrent()` with no instruction — so a wrong card is
+                    still reported and still repaired. What is gone is saying HOW in words, which is
+                    the refinement, not the mechanism. `rewriteCurrent` keeps its `instruction`
+                    parameter, so restoring this is a button and a textarea, not a feature.
+
+                    🔴 AND THE ROW'S OWN RULE REASSERTS ITSELF, the one written directly below: every
+                    control here is a decision ABOUT the card taken in the moment the learner is
+                    meant to be recalling it. This was the one exception. There are none now. */}
                 {/* 🔴🔴 THE ROW ENDS HERE: TWO THUMBS AND ONE ASK, AND NOTHING ELSE. Three controls were cut on
                     2026-08-26 on the owner's instruction, and each had a defensible reason to exist:
                     ✨ opened a side chat that explained the card, 🚩 flagged it a colour, and ⋯ held
@@ -548,42 +527,6 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
                 </div>
               </section>
             </div>
-            {asking && !rewriting && (
-              // 🔴 A NOTE BOX, NOT THE CARD. The learner types what they want changed; the card
-              // itself stays read-only. Same shape as the document reader's note, same rule.
-              <div className="grid gap-2 rounded-xl p-3 ring-1 ring-(--ui-stroke-secondary)">
-                <textarea
-                  autoFocus
-                  className="min-h-16 w-full resize-none bg-transparent text-sm text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-                  data-testid="ask-card-note"
-                  onChange={(event) => setNote(event.target.value)}
-                  onKeyDown={(event) => {
-                    // Enter sends, Shift+Enter breaks the line: the composer's own rule, so the
-                    // gesture is the one the learner already has in their hands.
-                    if (event.key === "Enter" && !event.shiftKey && note.trim()) {
-                      event.preventDefault();
-                      void rewriteCurrent(note);
-                    }
-                    if (event.key === "Escape") setAsking(false);
-                  }}
-                  placeholder="What should change? For example: the answer is wrong, it is the neutral axis."
-                  value={note}
-                />
-                <div className="flex items-center justify-end gap-2">
-                  <Button className="text-xs" onClick={() => setAsking(false)} size="sm" variant="ghost">Cancel</Button>
-                  <Button
-                    className="text-xs"
-                    data-testid="ask-card-send"
-                    disabled={!note.trim()}
-                    onClick={() => void rewriteCurrent(note)}
-                    size="sm"
-                    variant="secondary"
-                  >
-                    Ask Nemesis
-                  </Button>
-                </div>
-              </div>
-            )}
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
             {/* A rewrite is a model call, so it takes seconds. Saying so beats a menu
                 item that closed and apparently did nothing. */}
