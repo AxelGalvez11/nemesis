@@ -37,6 +37,7 @@ const CANVAS_RAW = readFileSync("components/workspace/learn/learning-canvas.tsx"
  */
 const code = (source: string) => source.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 const CANVAS = code(CANVAS_RAW);
+const SESSION = code(readFileSync("components/workspace/learn/use-canvas-session.ts", "utf8"));
 
 test("🔴🔴 the sites are a ROW, and a row cannot collapse into the composer", () => {
   // 🔴 THE COLLAPSE IS THE PART THAT LOOKS LIKE A CSS DETAIL AND IS ACTUALLY THE BUG. This row is
@@ -82,32 +83,27 @@ test("🔴🔴 the step wears a mark only when it has a source to name", () => {
   );
 });
 
-test("🔴🔴🔴 the address bar becomes a link to the conversation, not a recipe for making one", () => {
+test("🔴🔴🔴 exactly ONE thing renames the address bar", () => {
   // `?ask=<sentence>` is an INSTRUCTION: `learnSurface` reads it, mints a canvas and sends the
   // question. Leaving it in the bar meant the URL of a chat was a way to create another one —
-  // proved on production, two rows named "Ohm's law" 43 seconds apart.
-  assert.match(CANVAS, /here\.searchParams\.set\("c", canvas\.id\)/, "the URL no longer becomes a canvas link");
-  assert.match(CANVAS, /for \(const spent of \["ask", "new", "voice", "cap", "folder"\]\) here\.searchParams\.delete\(spent\)/,
-    "a spent instruction is being left in the bar, so returning to the URL will act on it again");
-  // 🔴 `replaceState`, NOT the router. This renames the page already on screen; `router.replace`
-  // re-runs the route and re-renders the whole surface mid-answer.
-  assert.match(CANVAS, /window\.history\.replaceState\(window\.history\.state, "", /, "the rename became a navigation");
-  assert.ok(!/router\.replace\(`?\/learn\?c=/.test(CANVAS), "the rename became a router navigation, which re-runs the route mid-answer");
-});
-
-test("🔴🔴 and it keeps following the canvas, because the id can change under it", () => {
-  // 🔴 THIS SHIPPED BROKEN ONCE AND THE GUARD IS THE FIX'S RECEIPT. `canvas.id` is minted on the
-  // client and the row is written later by the first save that has something to save, so a session
-  // can mint one canvas and settle on another. The first version rewrote the bar to the FIRST id,
-  // then refused to correct it because there was no `?ask=` left to consume — the address bar held
-  // an id belonging to no row, and reloading it made a third, empty canvas.
-  assert.match(CANVAS, /const renamedUrl = useRef\(false\);/, "nothing remembers that this mount already renamed the URL");
-  assert.match(
-    CANVAS,
-    /if \(!here\.searchParams\.has\("ask"\) && !here\.searchParams\.has\("new"\) && !renamedUrl\.current\) return;/,
-    "the URL can no longer be corrected when the canvas id changes, so it can point at a row that does not exist",
+  // proved on production, two rows named "Ohm's law" 43 seconds apart, the second created by
+  // returning to that URL and the first orphaned.
+  //
+  // 🔴🔴 AND THE FIX EXISTED TWICE FOR ABOUT AN HOUR, WHICH IS WHAT THIS TEST IS REALLY FOR. Two
+  // sessions answered the same report on 2026-09-01 and both merged: #1047 renamed the bar from
+  // `learning-canvas.tsx` keyed on `canvas.id`, #1050 from `use-canvas-session.ts` keyed on the
+  // first successful save. They wrote the same id, so nothing broke on screen — a duplicate owner
+  // that agrees with itself is invisible until the day it does not.
+  //
+  // The session's is the one kept, and on the merits: `canvas.id` is minted on the client before
+  // any row exists, so renaming from the component could publish an address for a canvas that had
+  // not been written yet. That happened, and needed a ref to correct the id afterwards.
+  // `saveCanvas` reports whether the canvas is findable, so the session can wait until the address
+  // is a promise it can keep.
+  assert.match(SESSION, /const addressed = useRef\(Boolean\(canvasId\)\);/, "the session stopped owning the address bar");
+  assert.match(SESSION, /replaceState/, "the session stopped renaming the address bar");
+  assert.ok(
+    !/replaceState/.test(CANVAS),
+    "the canvas surface is renaming the address bar again — two owners of one URL, and they only look fine while they agree",
   );
-  // 🔴 AND A DEEP LINK IS NEVER TOUCHED. Its `?c=` is the id the session loaded, so the equality
-  // guard above returns first and this effect does nothing at all.
-  assert.match(CANVAS, /if \(here\.searchParams\.get\("c"\) === canvas\.id\) return;/, "a deep link's own URL can now be rewritten under it");
 });
