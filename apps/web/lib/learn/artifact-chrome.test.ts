@@ -352,3 +352,27 @@ test("🔴🔴 a document is read at the measured column, not at whatever width 
   );
   assert.match(body, /text-\[length:var\(--canvas-text-body\)\] leading-relaxed text-\(--ui-text-primary\)/, "the document body is no longer the measured 16/26 in the primary colour");
 });
+
+test("🔴🔴 there are THREE sizes, and full screen stops at the rail while maximized covers it", () => {
+  // Owner, 2026-09-01: *"when users open the initial artifact in the library, it should take up the
+  // whole screen except for the sidebar. And then if they want a full screen, then the sidebar will
+  // disappear."* Two different bignesses, and the panel only had one.
+  const reader = readFileSync(new URL("../../components/workspace/learn/output-preview.tsx", import.meta.url), "utf8");
+
+  assert.match(reader, /type Mode = "docked" \| "full" \| "maximized"/, "the third size is gone");
+  assert.match(
+    reader,
+    /maximized \? "left-0 z-\[60\]" : full \? "left-\[var\(--nav-column,0px\)\]"/,
+    "full screen stopped stopping at the rail, or maximized stopped covering it",
+  );
+
+  // 🔴 THE TOGGLE IS AGAINST WHERE THE PANEL OPENED, NOT A FIXED PAIR. The canvas opens `docked`
+  // and its button has always meant "fill the window" — which is `full`, not `maximized`. A
+  // three-way cycle would also make getting back a double press.
+  assert.match(reader, /setMode\(mode === initialMode \? biggerThan\(initialMode\) : initialMode\)/, "the size toggle stopped keying on where it opened");
+  assert.match(reader, /return opened === "docked" \? "full" : "maximized"/, "the step up from each opening size changed");
+
+  // 🔴 AND MAXIMIZED MUST NOT GROW A SECOND ✕. Every big size already carries one at the head of
+  // the crumb (the reference's placement, pinned above); this is the calibration that caught it.
+  assert.ok(!/\(!full \|\| maximized\)/.test(reader), "a second close button is back in the maximized header");
+});

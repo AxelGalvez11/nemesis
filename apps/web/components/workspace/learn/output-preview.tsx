@@ -69,6 +69,14 @@ const DOWNLOAD_LABEL: Record<string, string> = {
   sheet: "Download .csv",
 };
 
+/** The three sizes a reader can take. See `mode`. */
+type Mode = "docked" | "full" | "maximized";
+
+/** One step bigger than the size a panel opened at. PURE. */
+function biggerThan(opened: Mode): Mode {
+  return opened === "docked" ? "full" : "maximized";
+}
+
 export function OutputPreview({
   canvasId = "",
   initialMode = "docked",
@@ -124,7 +132,25 @@ export function OutputPreview({
   onAsk?: (question: string, material: { name: string; text: string } | null) => void;
 }) {
   const card = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<"docked" | "full">(initialMode);
+  /**
+   * How much of the window this panel takes.
+   *
+   * 🔴🔴 THREE SIZES SINCE 2026-09-01, BECAUSE "FULL SCREEN" MEANT TWO DIFFERENT THINGS. Owner:
+   * *"when users open the initial artifact in the library, it should take up the whole screen
+   * except for the sidebar. And then if they want a full screen, then the sidebar will
+   * disappear."*
+   *
+   *   docked      a side sheet at the dragged width, with the surface beside it. The canvas.
+   *   full        everything but the nav rail (`--nav-column`). The Library's opening size.
+   *   maximized   everything, rail included. Nothing but the artifact.
+   *
+   * 🔴 THE BUTTON IS STILL A TWO-STATE TOGGLE, AND IT TOGGLES AGAINST WHERE THE PANEL OPENED. A
+   * three-way cycle on one control makes the learner press it twice to get back, and it would
+   * change the canvas's behaviour to fix the Library's — the canvas opens `docked` and its button
+   * has always meant "fill the window", which is `full` and not `maximized`. So the pair is
+   * (initial, bigger), and `biggerThan` names the one step up from wherever this opened.
+   */
+  const [mode, setMode] = useState<Mode>(initialMode);
   /**
    * The docked width, and the drag that changes it.
    *
@@ -360,7 +386,12 @@ export function OutputPreview({
     void (output.kind === "pdf" ? downloadPdf(markdown, output.title) : downloadDocx(markdown, output.title));
   };
 
-  const full = mode === "full";
+  /** Anything that is not the side sheet: the header and the rail both key on this. */
+  const full = mode === "full" || mode === "maximized";
+  /** 🔴 THE RAIL IS COVERED ONLY HERE. `full` deliberately stops at `--nav-column` so the learner
+   *  can still reach Library, Projects and the rest while reading — the whole point of the Library
+   *  default being `full` rather than this. */
+  const maximized = mode === "maximized";
 
   /**
    * 🔴🔴 PORTALLED TO THE BODY, AND WITHOUT IT THE PANEL COLLAPSES INTO A CORNER. `position: fixed`
@@ -390,7 +421,7 @@ export function OutputPreview({
     <div
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
-        full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
+        maximized ? "left-0 z-[60]" : full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
         // The opening slide, on the shared `--pane-slide` clock.
         // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
         // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
@@ -475,14 +506,22 @@ export function OutputPreview({
           <Codicon name="download" size={CHROME.icon} />
         </button>
         <button
-          aria-label={full ? "Exit full screen" : "Full screen"}
+          aria-label={mode === initialMode ? "Full screen" : "Exit full screen"}
           className={CHROME.button}
-          onClick={() => setMode(full ? "docked" : "full")}
-          title={full ? "Exit full screen" : "Full screen"}
+          // 🔴 AGAINST WHERE IT OPENED, NOT AGAINST A FIXED PAIR. From the canvas (`docked`) the
+          // step up is `full`; from the Library (`full`) it is `maximized`. One press out, one
+          // press back, and neither surface inherits the other's idea of big.
+          onClick={() => setMode(mode === initialMode ? biggerThan(initialMode) : initialMode)}
+          title={mode === initialMode ? "Full screen" : "Exit full screen"}
           type="button"
         >
-          <Codicon name={full ? "screen-normal" : "screen-full"} size={CHROME.icon} />
+          <Codicon name={mode === initialMode ? "screen-full" : "screen-normal"} size={CHROME.icon} />
         </button>
+        {/* 🔴 NOT DUPLICATED AT `maximized`, AND THE GUARD CAUGHT ME TRYING. Every big size already
+            carries a ✕ at the HEAD of the crumb — the reference's own placement, pinned by
+            artifact-chrome.test.ts — so adding one here on the reasoning "there is nothing behind
+            it to click" would have put two close buttons in one header. The way out of a maximized
+            reader is the same ✕ as the way out of a full one. */}
         {!full && (
           <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
             <Codicon name="close" size={CHROME.icon} />
