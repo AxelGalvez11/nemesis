@@ -135,7 +135,7 @@ export default function LibraryScreen() {
   const { colors: c, resolvedMode } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
-  const { setHeaderTitle, setHeaderRight } = useShell();
+  const { setHeaderTitle, setHeaderCenter, setHeaderRight } = useShell();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
 
@@ -148,10 +148,35 @@ export default function LibraryScreen() {
   const [query, setQuery] = useState("");
   const [actionsOpen, setActionsOpen] = useState(false);
 
+  const folderTitle = activeFolder ? activeFolder.split("/").pop() ?? activeFolder : null;
+
+  // Coordinator finding 2026-09-01 (simulator measurement against IMG_6539):
+  // the reference's "Library" sits INSIDE the shared top bar (ink at y
+  // 62-78pt), not as a page heading drawn below it — so this uses the
+  // shell's own header slot instead of an in-page <Text>. Root gets the
+  // plain title; inside a folder, a CONTROL (setHeaderCenter) replaces it
+  // with the back-chevron + folder name, since the plain-label slot can only
+  // ever render text, not a Pressable.
   useEffect(() => {
-    setHeaderTitle(null); // this screen draws its own centered title (folder back-chevron)
-    return () => setHeaderTitle(null);
-  }, [setHeaderTitle]);
+    if (folderTitle) {
+      setHeaderTitle(null);
+      setHeaderCenter(
+        <Pressable onPress={() => setActiveFolder(null)} hitSlop={8} style={styles.backRow} testID="library-folder-back">
+          <View style={styles.backChevron}>
+            <ChevronIcon size={16} color={c.text} strokeWidth={2.2} />
+          </View>
+          <Text style={styles.title} numberOfLines={1}>{folderTitle}</Text>
+        </Pressable>,
+      );
+    } else {
+      setHeaderCenter(null);
+      setHeaderTitle("Library");
+    }
+    return () => {
+      setHeaderTitle(null);
+      setHeaderCenter(null);
+    };
+  }, [folderTitle, c, styles, setHeaderTitle, setHeaderCenter]);
 
   useEffect(() => {
     setHeaderRight(
@@ -225,7 +250,6 @@ export default function LibraryScreen() {
   const allItems = buildLibraryItems(snapshot, decks, activeFolder, chip);
   const trimmed = query.trim().toLowerCase();
   const rows = trimmed ? allItems.filter((it) => it.name.toLowerCase().includes(trimmed)) : allItems;
-  const folderTitle = activeFolder ? activeFolder.split("/").pop() ?? activeFolder : null;
 
   const openItem = (item: LibraryItem) => {
     if (item.kind === "folder" && item.folderPath) {
@@ -240,28 +264,11 @@ export default function LibraryScreen() {
   return (
     <View style={styles.flex} testID="library-screen">
       <View style={[styles.topArea, { paddingTop: contentTop }]}>
-        {/* The shared TopBar already draws the ≡ / "…" row above this; this
-            block is the screen's OWN title row + chips, which sit below it —
-            folderTitle replaces the plain "Library" label with a back
-            chevron once a folder is open (task brief: "a back chevron in the
-            title returns"). */}
-        <View style={styles.titleRow}>
-          {folderTitle ? (
-            <Pressable onPress={() => setActiveFolder(null)} hitSlop={8} style={styles.backRow} testID="library-folder-back">
-              {/* ChevronIcon points right by default; a wrapping View rotates it
-                  to point back, same technique the old screen used for its
-                  collapse/expand chevron (rotating the SVG prop itself isn't
-                  typed on IconProps). */}
-              <View style={styles.backChevron}>
-                <ChevronIcon size={16} color={c.text} strokeWidth={2.2} />
-              </View>
-              <Text style={styles.title} numberOfLines={1}>{folderTitle}</Text>
-            </Pressable>
-          ) : (
-            <Text style={styles.title}>Library</Text>
-          )}
-        </View>
-
+        {/* The title now lives in the shared TopBar's own slot (see the
+            effect above) — the reference's "Library" sits INSIDE that bar,
+            not as a page heading here. This block is just the chips, placed
+            so their row starts ~24pt below the bar (coordinator measurement
+            against IMG_6539: reference chip centre ≈139pt = contentTop+~24). */}
         <View style={styles.chipsRow} testID="library-chips">
           {CHIPS.map((entry) => {
             const active = chip === entry.key;
@@ -381,14 +388,18 @@ const createStyles = (c: ThemeColors) =>
     kebabInner: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center" },
 
     topArea: { paddingBottom: space(2) },
-    titleRow: { paddingHorizontal: space(4), alignItems: "center" },
+    // title/backRow/backChevron are also used by the header-center control
+    // (see the effect above), not just this file's own JSX.
     title: { ...type.title, color: c.text },
     backRow: { flexDirection: "row", alignItems: "center", gap: space(1) },
     backChevron: { transform: [{ rotate: "180deg" }] },
 
     // Chips: selected = surface2 pill (task brief's own "#F3F3F3" measured
     // fill, which is exactly what surface2 already models — see palette.ts).
-    chipsRow: { flexDirection: "row", gap: space(2), paddingHorizontal: space(4), marginTop: space(3) },
+    // marginTop 24 (space(6)), not the title row's old space(3): coordinator
+    // measurement against IMG_6539 puts the chips' own top edge ~24pt below
+    // the bar now that the title moved into it.
+    chipsRow: { flexDirection: "row", gap: space(2), paddingHorizontal: space(4), marginTop: space(6) },
     chip: { paddingHorizontal: space(3.5), paddingVertical: space(1.75), borderRadius: radius.pill },
     chipActive: { backgroundColor: c.surface2 },
     chipText: { ...type.small, color: c.text2 },
@@ -399,7 +410,13 @@ const createStyles = (c: ThemeColors) =>
     listBody: { paddingTop: space(2) },
     emptyWrap: { paddingTop: space(10) },
 
-    row: { flexDirection: "row", alignItems: "center", gap: space(3), paddingHorizontal: space(4), minHeight: row.twoLine },
+    // Coordinator measurement against IMG_6539: our tile/text sat ~4-8pt too
+    // far right (text x≈77.5 vs reference's 73.3). Raw, measured values —
+    // not the 4pt grid — same reasoning as CARD_RADIUS in settings.tsx:
+    // paddingHorizontal 20 puts the 48pt tile's left edge at the reference's
+    // own ≈20pt, and a 5pt tile→text gap (was space(3)=12) lands the name at
+    // 20+48+5=73, matching 73.3.
+    row: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 20, minHeight: row.twoLine },
     rowPressed: { backgroundColor: c.surface2 },
     tile: {
       width: 48,

@@ -190,16 +190,12 @@ export default function ProjectsScreen() {
             <ProjectRow
               key={project.id}
               name={project.name}
+              time={longRelativeTime(project.modifiedAt)}
               color={project.color}
               lifted={rowDrag.activeKey === project.id}
               gesture={rowDrag.gestureFor(project.id, { canDropOn: () => false, draggable: false, lift: true })}
               onPress={() => router.push(`/project?id=${project.id}` as never)}
-              trailing={
-                <View style={styles.trailing}>
-                  <Text style={styles.time}>{longRelativeTime(project.modifiedAt)}</Text>
-                  {project.pinnedAt ? <PinnedMark /> : null}
-                </View>
-              }
+              trailing={project.pinnedAt ? <PinnedMark /> : null}
               testID={`projects-row-${project.id}`}
             />
           ))
@@ -283,9 +279,6 @@ const createStyles = (c: ThemeColors) =>
     chipActive: { backgroundColor: c.surface2 },
     chipLabel: { ...type.small, color: c.text2, fontWeight: "600" },
     chipLabelActive: { color: c.text },
-
-    trailing: { flexDirection: "row", alignItems: "center", gap: space(1.5) },
-    time: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
 
     plusGlass: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, borderWidth: 1, borderColor: c.line },
     plusGlassInner: { flex: 1, alignItems: "center", justifyContent: "center" },

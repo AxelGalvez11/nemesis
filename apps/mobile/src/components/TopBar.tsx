@@ -126,7 +126,9 @@ const createStyles = (c: ThemeColors) =>
     glassBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
     bun: { width: 18, height: 2, borderRadius: 2.5, backgroundColor: c.text2, marginVertical: 2 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(1) },
-    title: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "600", letterSpacing: -0.2 },
+    // type.pageTitle (20/600) — re-measured off IMG_6538: the reference's centred page
+    // title ("Projects") stands 19.7pt tall, not the 17pt bodyStrong this used before.
+    title: { color: c.text, ...type.pageTitle, letterSpacing: -0.2 },
     // Right slot — holds a screen's headerRight action (Graph gear / Chat "…", or the canvas
     // screen's two-glyph pill) when set, else an empty same-size box so the center label stays
     // centered between two equal slots. minWidth (not a fixed width) so every existing

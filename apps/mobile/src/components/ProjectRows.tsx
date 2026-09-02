@@ -51,7 +51,7 @@ export function ProjectTile({ color, size = 40 }: { color: string | null; size?:
         width: size,
       }}
     >
-      <ProjectFolderIcon size={Math.round(size * 0.5)} color={color ? c.onAccent : c.text2} strokeWidth={1.8} />
+      <ProjectFolderIcon size={Math.round(size * 0.5)} color={color ? c.onAccent : c.text} strokeWidth={1.8} />
     </View>
   );
 }
@@ -127,6 +127,7 @@ export function CanvasRow({
  *  matching IMG_6531's un-tiled pinned rows. */
 export function ProjectRow({
   name,
+  time,
   color,
   trailing,
   lifted,
@@ -135,6 +136,9 @@ export function ProjectRow({
   testID,
 }: {
   name: string;
+  /** The row's second line ("3 weeks ago") — stacked UNDER the name at the same x, not
+   *  beside it (IMG_6538). Only the trailing pin glyph sits out at the row's right edge. */
+  time?: string;
   color: string | null;
   trailing?: ReactNode;
   lifted: boolean;
@@ -154,9 +158,16 @@ export function ProjectRow({
           accessibilityHint="Touch and hold to rename, pin, or delete this project."
         >
           <ProjectTile color={color} />
-          <Text style={styles.projectName} numberOfLines={1}>
-            {name}
-          </Text>
+          <View style={styles.projectTextCol}>
+            <Text style={styles.projectName} numberOfLines={1}>
+              {name}
+            </Text>
+            {time ? (
+              <Text style={styles.projectTime} numberOfLines={1}>
+                {time}
+              </Text>
+            ) : null}
+          </View>
           {trailing}
         </Pressable>
       </Reanimated.View>
@@ -175,9 +186,7 @@ const createStyles = (c: ThemeColors) =>
     // The shadow's own colour/offset are static; only opacity/radius and the
     // scale animate, matching AppDrawer's ChatRow.
     rowShadow: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 } },
-    // The Projects page's own tile row (ProjectRow, via projectRowWide below) — its
-    // ~68pt row.tile pitch comes from its 40pt tile plus this padding, not an explicit
-    // height, and stays that way; it wasn't part of the coordinator's diff.
+    // The Projects page's own tile row (ProjectRow, via projectRowWide below).
     row: {
       alignItems: "center",
       borderRadius: radius.md,
@@ -217,6 +226,12 @@ const createStyles = (c: ThemeColors) =>
     // the measurement.
     freshDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.accent },
 
-    projectRowWide: { gap: space(3), paddingVertical: space(3) },
-    projectName: { color: c.text, flex: 1, fontSize: type.label.fontSize, fontWeight: "500", minWidth: 0 },
+    // Explicit height: row.tile (68) — re-measured off IMG_6538, ours previously sat on a
+    // padding-derived ~64pt pitch instead of the reference's 68.
+    projectRowWide: { gap: space(3), height: rowToken.tile, paddingVertical: space(3) },
+    // Name + time stack in one column now (coordinator fix: the reference's second line
+    // sits UNDER the name at the same x, not out at the row's trailing edge).
+    projectTextCol: { flex: 1, gap: space(0.5), minWidth: 0 },
+    projectName: { color: c.text, fontSize: type.label.fontSize, fontWeight: "500" },
+    projectTime: { color: c.text2, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
   });
