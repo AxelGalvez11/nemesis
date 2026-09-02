@@ -1884,6 +1884,31 @@ export function LearningCanvas({
     // restored nowhere. Found on screen: four moments, three turns, and the last question gone.
     const liveShowsLast = canvas.blocks.length === 0;
     setThread(liveShowsLast ? restored.slice(0, Math.max(0, restored.length - 1)) : restored);
+    // 🔴🔴🔴 AND THE QUESTION COMES BACK WITH THE ANSWER, WHICH IT DID NOT. Owner, 2026-09-02, on a
+    // canvas of his own: *"whenever I switch chats the user bubbles aren't changing into the history
+    // of the chat… the conversation history is not saving or something."*
+    //
+    // It saved. Read straight out of the row he linked (`ba87076e…`): one moment, `userText` "what
+    // can you teach me?", a full `assistantText`. On screen: the answer, no question, and ZERO
+    // turns. The line above is why — it holds the newest exchange back because the live region is
+    // meant to be showing it, and `use-canvas-session.ts` restores that exchange by seeding `aside`
+    // with `lastThingSaid`, which is the ASSISTANT half and nothing else. So the newest question was
+    // dropped from the thread and restored nowhere, on every reopen. On a canvas with exactly one
+    // exchange — his — `restored.slice(0, 0)` is empty and the whole conversation was one orphaned
+    // reply with no bubble above it.
+    //
+    // 🔴 SEEDED FROM `restored`, NOT RE-DERIVED FROM `moments`. The turn the thread just decided to
+    // hold back is the exact turn the live region has to show; taking it from the same array means
+    // the two cannot disagree about which one that is. Re-deriving "the last exchange" separately
+    // is how they drift the day `turnHasContent` filters something out.
+    //
+    // 🔴 THIS EFFECT IS `seededFor`-GUARDED, so it runs once per canvas and cannot overwrite a live
+    // turn mid-answer.
+    const held = liveShowsLast ? restored.at(-1) : null;
+    if (held?.said) {
+      setCurrentSaid(held.said);
+      setCurrentSaidVia(held.saidVia ?? null);
+    }
   }, [canvas.blocks.length, canvas.createdAt, canvas.id, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history]);
 
   /**
@@ -2711,16 +2736,13 @@ export function LearningCanvas({
               />
             ) : (
               <>
-                {/* 🔴 THE ATTRIBUTE IS ON THE PILL, NOT ON THE COLUMN AROUND IT, AND THE DIFFERENCE
-                    IS THE WHOLE HORIZONTAL HALF OF THE FLIGHT. Marking the wrapper first was a bug
-                    I caught on film: the wrapper is the full canvas column and is already almost
-                    where it ends up, so the sentence rose 446px and moved 79px sideways — it
-                    lifted, it did not fly. The pill is what the learner is watching, it is
-                    right-aligned inside the column, and the composer's field it leaves is
-                    left-aligned, so the real journey is a diagonal of about 500px across. */}
-                <span data-learner-said>
-                  <LearnerUtterance via={currentSaidVia}>{currentSaid}</LearnerUtterance>
-                </span>
+                {/* 🔴 THE MARKER IS ON THE PILL ITSELF, VIA A PROP, AND IT HAS BEEN WRONG TWICE.
+                    First on the COLUMN around it — the column is already almost where it ends up,
+                    so the sentence rose 446px and moved 79px sideways: it lifted, it did not fly.
+                    Then on a `<span>` wrapping the pill, which fixed the flight and broke the
+                    bubble, because a percentage `max-width` cannot resolve against an inline box
+                    (see learner-utterance.tsx). A prop puts it on the pill and adds no element. */}
+                <LearnerUtterance live via={currentSaidVia}>{currentSaid}</LearnerUtterance>
                 {!turnInFlight && <EditSentPrompt onOpen={() => setEditingPrompt(true)} />}
               </>
             )}

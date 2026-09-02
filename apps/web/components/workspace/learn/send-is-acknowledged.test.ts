@@ -714,8 +714,13 @@ test("the open composer menu counts as composer: the dock floats clear of the po
   // data-canvas-composer-popover precisely so this measurement can see it. Renaming either
   // side re-creates the owner's "the mascot clashes with the menu" silently.
   const dock = readFileSync(new URL("../../character/character-dock.tsx", import.meta.url), "utf8");
-  assert.ok(dock.includes('querySelector("[data-canvas-composer-popover]")'), "the dock no longer measures the open menu");
-  assert.match(dock, /Math\.min\(r\.top, popover\.getBoundingClientRect\(\)\.top\)/, "the union lost the higher edge");
+  assert.ok(dock.includes('querySelector<HTMLElement>("[data-canvas-composer-popover]")'), "the dock no longer measures the open menu");
+  // 🔴 THROUGH `restingRect` SINCE 2026-09-02, AND THE UNION IS UNCHANGED. The dock polls its
+  // anchor eight times a second, which cannot follow a transform: while the arrival animates the
+  // composer the painted box is somewhere different every tick, and the character was dragged along
+  // in sixteen visible steps. `restingRect` subtracts the element's own translate so the poll aims
+  // at where the thing SITS. The popover goes through it for the same reason — it animates open.
+  assert.match(dock, /Math\.min\(r\.top, restingRect\(popover\)\.top\)/, "the union lost the higher edge");
   const composer = readFileSync(new URL("./canvas-composer.tsx", import.meta.url), "utf8");
   assert.ok(composer.includes("data-canvas-composer-popover"), "the composer stopped stamping the popover — the dock is blind to it");
 });

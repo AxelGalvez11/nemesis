@@ -49,6 +49,46 @@ import { Icon } from "@/components/icons";
 import "./character.css";
 
 /** How often the anchor and the attention target are re-measured. */
+
+/**
+ * Where an element SITS, ignoring any animation currently moving it.
+ *
+ * 🔴🔴🔴 THIS EXISTS BECAUSE THE DOCK POLLS, AND A POLL CANNOT FOLLOW AN ANIMATION. The measurement
+ * below runs on a 120ms interval (`MEASURE_MS`) — eight times a second — which is ample for the
+ * things it was built for: the composer growing a line, the rail collapsing, a window resize. All
+ * of those are steps, and a step is caught on the next tick.
+ *
+ * A TRANSFORM is not a step. When the front-door arrival began animating the composer 334px down
+ * over 1,960ms (#1042), this measurement started sampling a moving target: the character followed
+ * it in sixteen visible jumps of ~21px, at 8fps, while every other element on screen moved at 60 —
+ * and each jump also restarted the dock's own 680ms correction toward a spot that had already moved
+ * again. Owner, 2026-09-02: *"the movement of the mascot and the chat composer when it's supposed
+ * to be animating into place becomes super laggy and glitchy."* That is this, exactly, and it was
+ * only that bad because the walk is six times longer than the 320ms travel it replaced.
+ *
+ * `getBoundingClientRect` reports the PAINTED box, transform included. Subtracting the element's own
+ * translate gives the box layout put it in — which is where it will be when the animation finishes,
+ * and therefore the only sane thing for a poller to aim at. The character now sits at its resting
+ * anchor for the whole arrival and fades in there, and the composer slides to meet it.
+ *
+ * 🔴 ONLY THE ELEMENT'S OWN TRANSFORM, NOT ITS ANCESTORS'. A scaled or translated ANCESTOR is real
+ * layout as far as this dock is concerned — the shell's rail column animates, and the character is
+ * supposed to ride that. What must be ignored is an animation applied to the thing being measured.
+ */
+function restingRect(el: HTMLElement): DOMRect {
+  const r = el.getBoundingClientRect();
+  const { transform } = getComputedStyle(el);
+  if (!transform || transform === "none") return r;
+  // `matrix(a,b,c,d,tx,ty)` and `matrix3d(...)` — the translate is the last two of a 2D matrix and
+  // elements 13/14 of a 3D one. A malformed value is treated as no transform rather than throwing.
+  const parts = transform.slice(transform.indexOf("(") + 1, -1).split(",").map((n) => Number(n.trim()));
+  const is3d = transform.startsWith("matrix3d");
+  const tx = is3d ? parts[12] : parts[4];
+  const ty = is3d ? parts[13] : parts[5];
+  if (!Number.isFinite(tx) || !Number.isFinite(ty) || (tx === 0 && ty === 0)) return r;
+  return new DOMRect(r.x - (tx as number), r.y - (ty as number), r.width, r.height);
+}
+
 const MEASURE_MS = 120;
 
 /** How far the thing being watched has to move before the dock re-renders to follow it. */
@@ -406,7 +446,7 @@ export function CharacterDock({
       return;
     }
     const measure = () => {
-      const el = document.querySelector(anchor);
+      const el = document.querySelector<HTMLElement>(anchor);
       // Measured is measured, found or not — a missing composer resolves to the fallback,
       // which is a real answer, not a pending one.
       anchoredRef.current = true;
@@ -417,7 +457,7 @@ export function CharacterDock({
         setOffset(bottom);
         return;
       }
-      const r = el.getBoundingClientRect();
+      const r = restingRect(el);
       // 🔴🔴 "NOT LAID OUT YET" IS A DIFFERENT MEASUREMENT FOR EACH MODE, AND CONFLATING THEM COST
       // an hour. A composer that has not been laid out has height 0, so `beside` treats that as
       // "fall back to the corner". The `under` anchor is a DELIBERATELY zero-height marker at the
@@ -438,8 +478,8 @@ export function CharacterDock({
       // popover carries data-canvas-composer-popover for exactly this measurement (stamped by
       // canvas-composer.tsx; renaming either side re-creates the clash silently — pinned by
       // character-dock.test.ts).
-      const popover = document.querySelector("[data-canvas-composer-popover]");
-      const top = popover ? Math.min(r.top, popover.getBoundingClientRect().top) : r.top;
+      const popover = document.querySelector<HTMLElement>("[data-canvas-composer-popover]");
+      const top = popover ? Math.min(r.top, restingRect(popover).top) : r.top;
       // Measured against whatever the dock is positioned within. Using the window's
       // height for a contained dock puts it hundreds of pixels below its own container,
       // where it simply vanishes.
