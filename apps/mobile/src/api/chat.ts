@@ -242,6 +242,20 @@ export interface ChatReply {
   pendingDelete?: PendingDelete;
 }
 
+/**
+ * One plain completion for a caller that is not a chat thread — the canvas screen's turn
+ * (api/canvases.ts). Same valve, same device key, same routing default as an ordinary chat turn
+ * with nothing special asked; nothing here touches `chat_threads`.
+ */
+export async function completeMessages(
+  uid: string,
+  wireMessages: WireMsg[],
+  options: { onDelta?: CompletionDeltaHandler; signal?: AbortSignal } = {},
+): Promise<{ text: string | null; errorText: string | null }> {
+  const reply = await postChatCompletion(uid, wireMessages, routeForTurn(DEFAULT_INTENT, null), options.onDelta, undefined, undefined, options.signal);
+  return { text: reply.text, errorText: reply.errorText };
+}
+
 /** One completion turn over expo/fetch's streaming Response.body (SDK 56, no
  *  new dep — a real ReadableStream, same shape a browser gives web). Always
  *  requests `stream: true`; readCompletionStream still returns the full

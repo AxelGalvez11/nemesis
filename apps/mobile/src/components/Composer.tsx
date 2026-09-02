@@ -9,7 +9,7 @@ import { composerAction } from "@/lib/composer-send";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { control, space, type } from "@/theme/tokens";
+import { control, radius, space, type } from "@/theme/tokens";
 
 // The one composer — a ChatGPT-style card (owner 2026-07-21, "exactly like
 // ChatGPT"). Opaque surface card (not glass): ChatGPT's composer is a plain
@@ -199,6 +199,7 @@ export function Composer({
   attached = false,
   onStop,
   onCardLayout,
+  chip,
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -256,6 +257,12 @@ export function Composer({
    *  phone did before (owner 2026-07-30: "there is also no pause button for once
    *  it begins thinking and doing"). */
   onStop?: () => void;
+  /** A capability staged on the next submission (Course, Deep research, …) — the composer's own
+   *  §38 chip, rendered INSIDE the card at the start of the text row (unlike `attachment`,
+   *  which gets its own slot above the field: a capability is a fact about the WORDS, a
+   *  photo/note is a thing the words are about). LearnHome.tsx (the front door) is the first
+   *  caller; wire it from `ComposerPlusMenu`'s `capabilities.onSelect`. */
+  chip?: { label: string; onRemove: () => void };
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -263,8 +270,14 @@ export function Composer({
   // one inline `value.trim().length > 0` here, and that expression is what made
   // an attached photo unsendable — see that file's header.
   const action = composerAction(value, { attached, sending });
-  const hasDraft = action !== "record";
-  const canSend = action === "send";
+  // 🔴 A STAGED CHIP NEEDS WORDS BEFORE IT CAN SEND — the web's own §38 rule ("a declaration
+  // about words needs the words"), held here rather than left to whatever screen renders a
+  // chip. Unlike `attached`, a chip never makes an EMPTY box sendable by itself; it only ever
+  // narrows what typed words already made sendable. So the button still APPEARS (never falls
+  // back to the record circle) but stays disabled until there is something typed.
+  const chipBlocksSend = Boolean(chip) && value.trim().length === 0;
+  const hasDraft = action !== "record" || Boolean(chip);
+  const canSend = action === "send" && !chipBlocksSend;
   const isRecordMode = mode === "record";
 
   // Voice dictation: the transcript is merged onto whatever was already typed when
@@ -419,7 +432,11 @@ export function Composer({
   const stopping = action === "sending" && Boolean(onStop);
   const sendOrRecordButton = hasDraft ? (
     <Bounce
-      style={[styles.round, styles.sendOn, action === "sending" && !stopping && styles.controlOff]}
+      // 🔴 DIMMED WHENEVER IT IS GENUINELY DISABLED, not only mid-flight. This used to read
+      // `action === "sending" && !stopping`, which is exactly `disabled` below with one case
+      // missing: a chip staged over an empty box is `disabled` (see `chipBlocksSend`) but was
+      // never dimmed, so the arrow looked pressable while doing nothing.
+      style={[styles.round, styles.sendOn, !canSend && !stopping && styles.controlOff]}
       onPress={stopping ? onStop : canSend ? onSend : undefined}
       disabled={!canSend && !stopping}
       accessibilityLabel={stopping ? "Stop" : "Send"}
@@ -449,6 +466,22 @@ export function Composer({
       <WaveGlyph color={c.onAccent} />
     </Bounce>
   ) : null;
+  // The staged capability, at the START of the text row — inside the card, unlike
+  // `attachment`'s own slot above the field (see the prop's own doc comment for why: a
+  // capability is a fact about the WORDS, not a thing riding alongside them). Removed with
+  // its own ✕ rather than Backspace-at-caret-zero (the web's gesture): the phone's field has
+  // no reliable "caret is at position 0" signal without wiring selection tracking for a
+  // control this small, and a visible × costs one tap.
+  const chipPill = chip ? (
+    <View style={styles.chipPill} testID="composer-chip">
+      <Text style={styles.chipLabel} numberOfLines={1}>
+        {chip.label}
+      </Text>
+      <Pressable onPress={chip.onRemove} hitSlop={8} accessibilityLabel={`Remove ${chip.label}`} testID="composer-chip-remove">
+        <CloseIcon size={11} color={c.onAccent} />
+      </Pressable>
+    </View>
+  ) : null;
   const field = (
     <TextInput
       ref={inputRef}
@@ -475,10 +508,11 @@ export function Composer({
   // fresh one — focus was lost, and the keyboard dropped as fast as it rose.
   //
   // The null slots below are load-bearing: React reconciles unkeyed children by
-  // INDEX, so a null still holds its place and `field` stays child 1 either
-  // way, which is what keeps it mounted (and focused) across the switch. The
-  // buttons remounting is harmless, so the tall layout renders its own copies
-  // rather than contorting the tree to move them.
+  // INDEX, so a null still holds its place and `field` stays child 2 either
+  // way (chip added a slot ahead of it — still a fixed index, still null when
+  // idle), which is what keeps the field mounted (and focused) across the
+  // switch. The buttons remounting is harmless, so the tall layout renders its
+  // own copies rather than contorting the tree to move them.
   return (
     <View
       style={[styles.card, compact && styles.cardCompact]}
@@ -489,8 +523,13 @@ export function Composer({
           would shift the row below it — the same index bookkeeping the comment
           above describes, one level up. */}
       {attachment ? <View style={styles.attachmentSlot}>{attachment}</View> : null}
-      <View style={compact ? styles.compactRow : undefined}>
+      {/* `styles.textRow` in the tall layout is new alongside the chip: the row used to be
+          `undefined` (a bare column with one child, `field`, filled by default stretch) because
+          nothing ever sat beside it. A chip needs a row to sit beside `field` IN, in both
+          layouts, so the tall form gets an explicit row now too — see `input`'s own flex:1. */}
+      <View style={compact ? styles.compactRow : styles.textRow}>
         {compact ? plusButton : null}
+        {chipPill}
         {field}
         {/* Siblings, not wrapped in `trailing` — the compact row's own gap is
             what the shipped spacing was verified at, and `trailing` carries a
@@ -530,6 +569,12 @@ const createStyles = (c: ThemeColors) =>
     // and would leave the tile flush against the text.
     attachmentSlot: { marginBottom: space(1.5), paddingHorizontal: space(1), paddingTop: space(0.5) },
     input: {
+      // flex:1/minWidth:0 so the field is what gives way in a ROW — both layouts wrap it in
+      // one now (see `textRow`/`compactRow`), where it used to rely on plain column stretch
+      // in the tall form. Harmless in the tall form even with no chip: a lone flex:1 child
+      // fills the row exactly as stretch filled the column.
+      flex: 1,
+      minWidth: 0,
       maxHeight: 120,
       paddingHorizontal: space(2),
       paddingVertical: 0,
@@ -565,10 +610,37 @@ const createStyles = (c: ThemeColors) =>
     // upward, not the buttons.
     cardCompact: { paddingTop: space(1), paddingBottom: space(1), gap: 0 },
     compactRow: { flexDirection: "row", alignItems: "flex-end", gap: space(1) },
+    // The tall layout's own row — see the JSX comment above `textRow`'s use. Top-aligned
+    // (not "flex-end" like the compact row) so a staged chip sits level with the first line
+    // of the field rather than sinking to match a multi-line draft's LAST line.
+    textRow: { flexDirection: "row", alignItems: "flex-start" },
     // minWidth:0 lets the field be the thing that gives way as the row fills —
     // without it a long draft pushes the row wider than the card and the
     // trailing buttons drift off the edge.
     inputCompact: { flex: 1, minWidth: 0, paddingBottom: space(1.5), paddingHorizontal: space(1) },
+    // The staged-capability chip — a small tinted pill at the head of the text row (§38: a
+    // one-shot declaration, same visual family as an accent-filled control). `accentDim`
+    // rather than `accent` itself: full accent here would compete with the send button for
+    // "the one thing that's really the primary action" on a card that already has one.
+    //
+    // No `alignSelf` here on purpose — it takes whichever `alignItems` the row it lands in
+    // sets (`textRow`'s flex-start or `compactRow`'s flex-end). The chip is TALLER than the
+    // field's single-line height (its own vertical padding plus a 17.5pt line beats the
+    // field's bare 21pt line), so `alignSelf:"center"` here would centre the chip inside a row
+    // whose cross-size the chip itself set — a no-op that leaves the field's own flex-start
+    // text sitting visibly above the chip's middle. Sharing the row's own alignment keeps both
+    // starting from the same edge instead.
+    chipPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(1),
+      marginRight: space(1.5),
+      paddingVertical: space(0.75),
+      paddingHorizontal: space(2.5),
+      borderRadius: radius.pill,
+      backgroundColor: c.accentDim,
+    },
+    chipLabel: { ...type.micro, color: c.onAccent, fontWeight: "600" },
     recordRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(1) },
     // The waveform takes the field's slot — it is what you watch while
     // recording, so it gets all the room the two buttons don't.
