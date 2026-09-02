@@ -6,6 +6,14 @@ notes). The web app was itself built to that reference, so the target is one sen
 
 > **The phone is the ChatGPT iPhone app's shape, carrying the Nemesis web app's content.**
 
+Owner, later the same evening, twice: *"dont stop until the app matches the folder i sent 1 to 1"*
+and *"font spacing icons literally everything needs to match one-to-one"*. So "shape" means
+measured: the reference screenshots were sampled at 3x and the numbers live in the phone's tokens
+(`theme/palette.ts` LIGHT_BASE, `theme/tokens.ts` `type`/`row`/`inset`/`radius`). Where Nemesis has
+no equivalent for a control (Chat|Work, Scheduled, Remote, Archive, the thinking-level gauge) the
+control is left out rather than faked; dark mode follows once light is done, since every reference
+screen is light.
+
 ## Where the two apps stand (main, 2026-09-01)
 
 | Surface | Web (`apps/web`) | Phone (`apps/mobile`) |
@@ -36,9 +44,11 @@ the history reconstruction have exactly one copy.
    screen renders the stored conversation from `moments` exactly as the web rebuilds it on reopen,
    and its composer sends a plain turn through `nemesis-llm`, appended as an `assistant` moment so
    the web sees it too.
-2. **The teaching turn.** The canvas composer runs the web's own turn (`turn-router`,
-   `strategy-llm-teacher`, capabilities → deliverables) instead of a plain reply; streaming
-   progress lines; the Sources sheet; the message long-press menu (Copy · Read aloud · Retry).
+2. **The teaching turn.** DONE for the conversation: `api/canvas-turn.ts` runs the web's own
+   `askCanvasChat` with the web's modules imported through `src/learn/turn.ts` (packet, decision
+   parser, search loop through `nemesis-search`, course gate, the same `assistant` moment). Still
+   web-only, each named in that file: pinned comments, connected-app tools, the literature
+   indexes, the `study` branch, figure/plot/structure resolution, the deliverable makers.
 3. **Projects and Library.** `/projects` list with filter chips + search, project page with
    Canvases | Sources tabs and the `…` menu; Library as outputs (decks + notes) with All / Decks /
    Notes chips; the document viewer with the floating composer.
