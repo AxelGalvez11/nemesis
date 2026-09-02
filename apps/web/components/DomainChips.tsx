@@ -47,8 +47,15 @@ import { faviconUrl } from "@/lib/favicon";
 // that carries the meaning.
 
 /** Beyond this the row stops being scannable and starts being a wall. The caller never truncates
- *  (a guard in searched-domains.test.ts enforces that), so the "+N" below is a real remainder. */
-const DEFAULT_MAX = 6;
+ *  (a guard in searched-domains.test.ts enforces that), so the "+N" below is a real remainder.
+ *
+ *  🔴🔴 THREE, DOWN FROM SIX, AND THE SIX WAS RUNNING THROUGH THE COMPOSER. Owner, 2026-09-01, with
+ *  a screenshot: *"the favicons and where it's supposed to be researching, there's a bug where it
+ *  shows near the composer, it's clipping."* Reproduced on production asking his own question: a
+ *  broad web search returns eight or more sites, and six chips beside a 76px character is a
+ *  540px-wide row that this box has nowhere to put. The reference shows a short row and a "+N", and
+ *  the "+N" is the part that was already right — it just never had to do any work at six. */
+const DEFAULT_MAX = 3;
 
 export function DomainChips({ domains, max = DEFAULT_MAX }: { domains: readonly string[]; max?: number }) {
   // 🔴 NOTHING IS THE HONEST DRAWING OF NOTHING. There is deliberately no placeholder and no
@@ -59,7 +66,16 @@ export function DomainChips({ domains, max = DEFAULT_MAX }: { domains: readonly 
   const extra = domains.length - shown.length;
 
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+    // 🔴🔴 `nowrap`, AND WRAPPING IS WHAT PUT THIS THROUGH THE COMPOSER. This row is absolutely
+    // positioned beside the character with only a `left`, so its width is shrink-to-fit — and
+    // shrink-to-fit on a WRAPPING flex container resolves to the widest single item, not to the
+    // row. Six chips therefore stacked into a 116px-wide, 185px-tall column hanging off the
+    // character, and the composer starts 40px into it. Measured on production 2026-09-01: chips at
+    // y 680 through 865, composer at y 824.
+    //
+    // A row that cannot wrap has no such collapse, and `max` above keeps it short enough that it
+    // never needs to. `min-w-0` stays: it is what lets a long hostname ellipsize rather than push.
+    <span className="flex min-w-0 flex-nowrap items-center gap-x-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
       {shown.map((domain) => (
         <span className="flex min-w-0 items-center gap-1" key={domain}>
           {/* 🔴🔴 EAGER, NOT LAZY — A LAZY IMAGE IN A TRANSIENT INDICATOR MAY NEVER LOAD AT ALL.

@@ -1302,6 +1302,58 @@ export function LearningCanvas({
     };
   }, [canvas.id, openingFolder, session.ready, uid]);
 
+  /**
+   * The address bar becomes a link to THIS conversation, once there is one to link to.
+   *
+   * 🔴🔴🔴 WITHOUT THIS, REVISITING YOUR OWN CHAT STARTS A SECOND ONE. Owner, 2026-09-01, reading
+   * his own URL: *"from the URL, it looks like it's not making a new conversation, it's just
+   * staying on the landing page… with ChatGPT it sort of makes a unique code of the chat."*
+   *
+   * He is describing a real fault, not a cosmetic one. A canvas opened from the front door leaves
+   * `?ask=<the whole sentence>` in the bar, and that parameter is an INSTRUCTION, not an address:
+   * `learnSurface` reads it, mints a canvas and sends the question. So the URL of a conversation
+   * was a recipe for creating one. Proved on production the same day — opened a chat, pressed
+   * Back, returned to the URL, and the database had two rows named "Ohm's law" 43 seconds apart,
+   * the first orphaned. Reload, share, bookmark and browser Back all did the same thing.
+   *
+   * 🔴 `history.replaceState`, NOT `router.replace`, AND THE DIFFERENCE IS DELIBERATE.
+   *   · REPLACE, not push, so the back button still goes to the front door in one step rather than
+   *     stepping through a URL that no longer exists.
+   *   · `history`, not the Next router, because this is a RENAME of the page already on screen, not
+   *     a navigation to a different one. `router.replace` re-runs the route, re-reads the params
+   *     and re-renders the whole surface mid-answer; the raw call changes the bar and touches
+   *     nothing. `useSearchParams` deliberately does not see it, so `openingAsk` stays exactly as
+   *     it was for the rest of this mount and the opening effect cannot re-fire.
+   *
+   * 🔴 ONLY WHILE THE BAR STILL CARRIES AN INSTRUCTION. `?c=` is already an address, and a learner
+   * who deep-linked or refreshed has one; rewriting it would be a no-op at best and would stamp on
+   * a `?folder=`/`?teacher=` someone is deliberately using at worst.
+   */
+  const renamedUrl = useRef(false);
+  useEffect(() => {
+    if (!canvas.id) return;
+    const here = new URL(window.location.href);
+    if (here.searchParams.get("c") === canvas.id) return;
+    // 🔴🔴 ONCE THIS MOUNT OWNS THE BAR IT KEEPS IT CORRECT, AND THE FIRST VERSION OF THIS SHIPPED
+    // A DEAD LINK BECAUSE IT DID NOT. `canvas.id` is minted on the client (`newCanvas`, a
+    // `randomUUID`) and the row is written later, by the first save that has something to save — so
+    // a session can mint one canvas on mount and settle on another, and only the second one ever
+    // reaches the database. Caught by driving it: the bar was rewritten to the FIRST id, the guard
+    // below then saw no `?ask=` left to consume and refused the correction, and the id in the
+    // address bar belonged to no row at all. Reloading it made a third, empty canvas.
+    //
+    // So the condition for rewriting is "this URL asked for a new canvas" OR "I have already
+    // renamed this URL" — the second is what lets the id be corrected, and it can never touch a
+    // deep link, because a deep link's `?c=` is the id the session loaded and the guard above
+    // returns first.
+    if (!here.searchParams.has("ask") && !here.searchParams.has("new") && !renamedUrl.current) return;
+    renamedUrl.current = true;
+    // The instruction has been carried out; what is left is the thing it made.
+    for (const spent of ["ask", "new", "voice", "cap", "folder"]) here.searchParams.delete(spent);
+    here.searchParams.set("c", canvas.id);
+    window.history.replaceState(window.history.state, "", `${here.pathname}?${here.searchParams.toString()}`);
+  }, [canvas.id]);
+
   converseRef.current = converse;
 
   // Leaving a canvas that was started but never finished is the number the pilot is being
@@ -2725,7 +2777,7 @@ export function LearningCanvas({
             appears, only WHERE. `turnInFlight` covers an ordinary answer; `preparing` covers the
             first wait on a canvas that has nothing on it yet. */}
         {threadOpen && (turnInFlight || presence === "preparing") && !replyText.trim() && (
-          <CanvasThinkingPreview app={session.workApp} label={preparingLabel} />
+          <CanvasThinkingPreview app={session.workApp} label={preparingLabel} web={session.searchedDomains.length > 0} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
