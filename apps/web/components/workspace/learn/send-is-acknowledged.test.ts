@@ -197,7 +197,13 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption is a 
   // the step at a time, or a canvas gets two "Thinking"s on one screen.
   assert.match(
     canvasCode,
-    /\{threadOpen && \(turnInFlight \|\| presence === "preparing"\) && !replyText\.trim\(\) && \(/,
+  // 🔴 `preparing` IS GATED ON AN EMPTY THREAD SINCE 2026-09-01. That clause covers "the first wait
+  // on a canvas with nothing on it yet", and it used to take the presence ladder's word for that —
+  // but the ladder is told `blocks`, never the thread, so a reopened conversation reported itself
+  // empty and re-ran the thinking line every time it was opened (owner: *"it's almost as if the
+  // conversation was not saved, and it's trying to think about it again"*). Both waits are still
+  // covered; the second one now checks the condition it names.
+    /\{threadOpen && \(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !replyText\.trim\(\) && \(/,
     "the thread's caption is no longer scoped to chat view — canvas view draws two of them",
   );
   // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets
@@ -804,4 +810,34 @@ test("🔴 the character's two surfaces grow together", () => {
   const greeter = Number(/const GREETER_SIZE = (\d+)/.exec(home)?.[1]);
   assert.ok(dockSize >= 76, `the character shrank at the composer (${dockSize})`);
   assert.ok(Math.abs(greeter / dockSize - 64 / 60) < 0.06, `the two surfaces drifted apart (${greeter} vs ${dockSize})`);
+});
+
+test("🔴🔴🔴 reopening a conversation does not re-run the thinking line", () => {
+  // Owner, 2026-09-01: *"when I go back into chats, it's doing this thinking animation… it's almost
+  // as if the conversation was not saved, and it's trying to think about it again."*
+  //
+  // 🔴 THE CANVAS REALLY DOES REPORT ITSELF EMPTY ON REOPEN, AND THAT IS THE BUG BEHIND THE
+  // SYMPTOM. `working` carries `policy.status === "loading"` and `policy.deciding`, both true while
+  // a canvas restores its own state, so `presence` resolves to `preparing`. The presence ladder is
+  // handed `blocks`, `canvasState`, `hasMaterial` — and never the THREAD. A conversation with
+  // twenty turns on screen therefore looked exactly like a blank canvas waiting on its first
+  // answer, which is the one case this caption was written for.
+  //
+  // 🔴 FIXED AT THE CLAUSE, NOT IN THE LADDER, AND THAT IS DELIBERATE. Every term in `working` is a
+  // measured defence against rendering progress as failure — its own note records three separate
+  // reports of "Nemesis hasn't found anything to ask you about yet" appearing mid-lesson. Teaching
+  // the ladder about threads to fix a caption would put all of that back in play for a
+  // presentation bug.
+  const canvas = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+
+  assert.match(
+    canvas,
+    /presence === "preparing" && thread\.length === 0/,
+    "`preparing` can claim the caption on a canvas that already has a conversation",
+  );
+
+  // 🔴 AND THE CLAUSE STILL COVERS WHAT IT WAS WRITTEN FOR. A brand-new canvas waiting on its first
+  // answer has an empty thread, so the line still speaks there — the fix narrows the case, it does
+  // not delete it. Calibration: drop `turnInFlight` and an ordinary answer loses its caption too.
+  assert.match(canvas, /turnInFlight \|\| \(presence === "preparing"/, "an ordinary turn lost its thinking line");
 });
