@@ -27,7 +27,7 @@ import {
 } from "./icons-sidebar";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { control, inset, radius, space, type } from "@/theme/tokens";
+import { control, inset, radius, row, space, type } from "@/theme/tokens";
 
 // ChatGPT/Claude-style side drawer + the app-shell context that drives it. Built on RN's built-in
 // Animated (no extra deps; renders identically under react-native-web for previews). The sidebar is
@@ -617,7 +617,10 @@ function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose:
   const promptInitial = prompt?.mode === "renameCanvas" || prompt?.mode === "renameProject" ? prompt.initial : "";
 
   return (
-    <View style={[styles.panelInner, { paddingTop: insets.top + space(2) }]}>
+    // Coordinator fix #4 (on-simulator diff): the title's ink sat 24pt too low. The extra
+    // space(2) here was most of that — the reference's "Nemesis" sits right at the safe-area
+    // inset with no added gap.
+    <View style={[styles.panelInner, { paddingTop: insets.top }]}>
       <View style={styles.brandRow}>
         <Text style={styles.brand}>Nemesis</Text>
         {/* No "+" here (owner 2026-07-24: "remove the '+' from the main
@@ -770,8 +773,10 @@ function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; labe
       <View style={styles.navIcon}>
         {/* 22pt, c.text — measured off IMG_6531 (icon_library.png etc): the glyph's own ink
             bbox is ~18.5×17-19pt at x0≈27pt, and it reads solid black, not the muted grey
-            this used to render at 17pt. */}
-        <Icon size={22} color={c.text} strokeWidth={1.7} />
+            this used to render at 17pt. No strokeWidth override — each icon in
+            icons-sidebar.tsx now carries its own tuned default (Library bumped to 2 after
+            coordinator feedback that it read as three plain strokes at a flat 1.7). */}
+        <Icon size={22} color={c.text} />
       </View>
       <Text style={styles.navLabel}>{label}</Text>
     </Pressable>
@@ -820,9 +825,14 @@ const createStyles = (c: ThemeColors) =>
     scroll: { flex: 1 },
 
     // gap + marginRight:auto on the wordmark so the two buttons sit together on
-    // the right rather than space-between pushing them apart.
-    brandRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: space(4), paddingBottom: space(3) },
-    brand: { ...type.h2, color: c.text, letterSpacing: -0.3, marginRight: "auto" },
+    // the right rather than space-between pushing them apart. inset.sidebarIcon (26) —
+    // coordinator fix #3: was space(4)=16, reference measures x≈25.3.
+    brandRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: inset.sidebarIcon, paddingBottom: space(3) },
+    // ~26pt/700 — coordinator fix #4 (on-simulator diff): the old type.h2 (22/600) inked
+    // 16.7pt tall, the reference inks 20.0pt tall, which is a 26pt line, not 22. Tight
+    // lineHeight (31, not h2's 28-for-22pt ratio scaled up) keeps the box from adding back
+    // the vertical space the trimmed top padding just removed.
+    brand: { fontSize: 26, lineHeight: 31, fontWeight: "700", color: c.text, letterSpacing: -0.3, marginRight: "auto" },
     // control.lg (44), not control.md — measured off IMG_6531 (crop_footer_grid.png's gear,
     // the same round-button family as this search button): ~44-48pt across, not 36.
     searchBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center" },
@@ -836,14 +846,21 @@ const createStyles = (c: ThemeColors) =>
     },
     searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
 
-    navGroup: { paddingHorizontal: space(2), marginBottom: space(3) },
+    // paddingHorizontal moved onto navRow itself (coordinator fix #3) — the group no
+    // longer contributes its own inset, so navRow's own padding IS the row's left edge.
+    navGroup: { marginBottom: space(3) },
+    // height: row.nav (48), explicit — coordinator fix #1: paddingVertical-derived rows
+    // pitched at ~43.5pt on-simulator; alignItems:"center" centers the label/icon inside
+    // the fixed box instead. paddingHorizontal: inset.sidebarIcon (26) — fix #3.
     navRow: {
       flexDirection: "row", alignItems: "center", gap: space(3),
-      paddingVertical: space(2.75), paddingHorizontal: space(2.5), borderRadius: radius.md,
+      height: row.nav, paddingHorizontal: inset.sidebarIcon, borderRadius: radius.md,
     },
     navRowPressed: { backgroundColor: c.surface },
-    // inset.sidebarIcon (26) — matches the measured x0≈27pt the icon actually starts at.
-    navIcon: { width: inset.sidebarIcon, alignItems: "center" },
+    // No fixed width here any more (coordinator fix #3) — a 26-wide centering box on top
+    // of navRow's own 26 padding pushed the icon's ink past the target x; removed, so the
+    // icon's own left edge sits flush at navRow's padding edge.
+    navIcon: { alignItems: "center", justifyContent: "center" },
     // type.label (17/regular) — tokens.ts calls this out by name for exactly this row.
     navLabel: { color: c.text, fontSize: type.label.fontSize, flex: 1 },
 
@@ -855,11 +872,12 @@ const createStyles = (c: ThemeColors) =>
     sectionHeaderLabel: {
       ...type.title,
       color: c.text,
-      paddingHorizontal: space(4),
-      // A generous top gap (IMG_6531: the header sits well clear of the row above it,
-      // more than this app's usual space(3) section gap) and a tighter one below, where
-      // the first row follows immediately.
-      marginTop: space(7),
+      // inset.sidebarIcon (26) — coordinator fix #3: was space(4)=16, reference x≈28.
+      paddingHorizontal: inset.sidebarIcon,
+      // Coordinator fix #5: with nav rows now exactly row.nav (48) tall, the reference's
+      // measured row-top-to-header-top gap (53pt) is only 5pt more than one row height —
+      // this used to add a full space(7)=28 on top, nearly 6x too much.
+      marginTop: space(1),
       marginBottom: space(1.5),
     },
 

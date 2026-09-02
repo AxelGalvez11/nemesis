@@ -13,18 +13,24 @@ const base = { fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "r
 /** Sidebar nav "Library" — three book spines on a shelf, the third leaning. Redrawn from
  *  IMG_6531 (crop `icon_library.png`): three rounded-rect spines, the first two upright and
  *  touching, the third tilted a few degrees like a book leaning on its neighbours. */
-export function LibraryShelfIcon({ size = 22, color, strokeWidth = 1.7 }: IconProps) {
+export function LibraryShelfIcon({ size = 22, color, strokeWidth = 2 }: IconProps) {
+  // Coordinator feedback (on-simulator diff against IMG_6531): the old spines sat only
+  // 0.7 units apart at a 1.7 default stroke, so at the nav row's 22pt render size the
+  // gaps disappeared and it read as three plain strokes, not a book. Gaps widened to 1.4
+  // units, default stroke bumped to 2, and the third spine's tilt now uses
+  // `rotate(angle cx cy)` — a single, unambiguous SVG transform — instead of a
+  // hand-composed translate+rotate pair.
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Rect x="3.6" y="4.4" width="5" height="15.2" rx="2.5" stroke={color} strokeWidth={strokeWidth} {...base} />
-      <Rect x="9.3" y="4.4" width="5" height="15.2" rx="2.5" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Rect x="3.6" y="4" width="4.6" height="15.6" rx="2.3" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Rect x="9.6" y="4" width="4.6" height="15.6" rx="2.3" stroke={color} strokeWidth={strokeWidth} {...base} />
       <Rect
-        x="-2.85"
-        y="-2.75"
-        width="5"
-        height="15.2"
-        rx="2.5"
-        transform="translate(17.9 12) rotate(8)"
+        x="15.6"
+        y="4"
+        width="4.6"
+        height="15.6"
+        rx="2.3"
+        transform="rotate(10 17.9 11.8)"
         stroke={color}
         strokeWidth={strokeWidth}
         {...base}
@@ -59,16 +65,16 @@ export function ProjectFolderIcon({ size = 22, color, strokeWidth = 1.7 }: IconP
  *  two short prongs off its top corners, and a curved tail sweeping from the body's right
  *  side down and around toward the circle's lower-left, open rather than closed (matching the
  *  reference's "@"-style tail gap). */
-export function PluginsGlyphIcon({ size = 22, color, strokeWidth = 1.6 }: IconProps) {
+export function PluginsGlyphIcon({ size = 22, color, strokeWidth = 1.8 }: IconProps) {
+  // Coordinator asked for the same on-simulator check as the Library icon got. The
+  // outer ring was a fully CLOSED Circle plus an unrelated decorative squiggle placed
+  // near the plug — neither corresponds to the reference, whose outer loop is an
+  // "@"-style OPEN arc (a ~300° sweep, gap at lower-left). Replaced both with a single
+  // arc Path (hand-computed: start/end points at 190°/130° around the circle, so the
+  // drawn sweep is the major 300° arc, large-arc-flag 1, sweep-flag 1 for clockwise).
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx="12" cy="12" r="8.3" stroke={color} strokeWidth={strokeWidth} {...base} />
-      <Path
-        d="M15.6 12.4c1.5 2.2.6 5.1-1.7 5.6-2.7.6-4.8-1.9-4-4.5.5-1.8 2.3-2.9 4-2.5"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        {...base}
-      />
+      <Path d="M3.83 10.56 A 8.3 8.3 0 1 1 6.66 18.36" stroke={color} strokeWidth={strokeWidth} {...base} />
       <Rect x="9.8" y="9.8" width="4.6" height="4.6" rx="0.6" transform="rotate(45 12.1 12.1)" stroke={color} strokeWidth={strokeWidth} {...base} />
       <Path d="M10.3 8.9 9 7.6M13.9 8.9l1.3-1.3" stroke={color} strokeWidth={strokeWidth} {...base} />
     </Svg>

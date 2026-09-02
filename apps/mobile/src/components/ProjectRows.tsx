@@ -6,7 +6,7 @@ import { PinIcon, type IconProps } from "./icons";
 import { ProjectFolderIcon } from "./icons-sidebar";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { inset, radius, space, type } from "@/theme/tokens";
+import { inset, radius, row as rowToken, space, type } from "@/theme/tokens";
 
 // The two row shapes a canvas/project list draws with, shared by the drawer's Pinned /
 // Projects / Canvases sections and the Projects page — same "lift while held" gesture
@@ -97,7 +97,7 @@ export function CanvasRow({
       <Pressable
         testID={testID}
         style={({ pressed }) => [
-          styles.row,
+          styles.canvasRow,
           indent && styles.rowIndent,
           pressed && styles.rowPressed,
           lifted && styles.rowLifted,
@@ -175,6 +175,9 @@ const createStyles = (c: ThemeColors) =>
     // The shadow's own colour/offset are static; only opacity/radius and the
     // scale animate, matching AppDrawer's ChatRow.
     rowShadow: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 } },
+    // The Projects page's own tile row (ProjectRow, via projectRowWide below) — its
+    // ~68pt row.tile pitch comes from its 40pt tile plus this padding, not an explicit
+    // height, and stays that way; it wasn't part of the coordinator's diff.
     row: {
       alignItems: "center",
       borderRadius: radius.md,
@@ -184,7 +187,20 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(3.5),
       paddingVertical: space(2.5),
     },
-    rowIndent: { paddingLeft: space(3.5) + space(5) },
+    // The drawer's own row (Pinned + Recents) — split out from `row` above once the two
+    // needed different heights: this one is EXPLICIT height: row.list (48), not
+    // padding-derived (coordinator fix #2: on-simulator pitch was ~40.3pt). No
+    // marginHorizontal — paddingHorizontal alone is the row's inset now, matching
+    // AppDrawer's navRow (coordinator fix #3: inset.sidebarIcon, 26, not 22).
+    canvasRow: {
+      alignItems: "center",
+      borderRadius: radius.md,
+      flexDirection: "row",
+      gap: space(2.5),
+      height: rowToken.list,
+      paddingHorizontal: inset.sidebarIcon,
+    },
+    rowIndent: { paddingLeft: inset.sidebarIcon + space(5) },
     rowPressed: { backgroundColor: c.surface },
     rowLifted: { backgroundColor: c.surface2, borderColor: c.line, borderWidth: 1 },
     // c.text, not c.text2 — measured off IMG_6531 (the drawer's Recents rows read
@@ -193,10 +209,10 @@ const createStyles = (c: ThemeColors) =>
     // both the Projects-page spec ("name 17pt") and the drawer's own row.list text.
     canvasTitle: { color: c.text, flex: 1, fontSize: type.label.fontSize, minWidth: 0 },
     rowTime: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
-    // inset.sidebarIcon (26) so an iconed row's label lands at the same column the nav
-    // rows use — width alone, not a fixed left offset, so the icon still rides the row's
-    // own paddingHorizontal like a plain row's label does.
-    rowIcon: { width: inset.sidebarIcon, alignItems: "center" },
+    // No fixed width any more (coordinator fix #3) — a 26-wide centering box stacked on
+    // canvasRow's own 26 padding pushed the icon's ink past the target x; the icon now
+    // sits flush at the row's own padding edge, same change as AppDrawer's navIcon.
+    rowIcon: { alignItems: "center", justifyContent: "center" },
     // ~10pt, coloured the reference's green — see the `fresh` prop's own doc comment for
     // the measurement.
     freshDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.accent },

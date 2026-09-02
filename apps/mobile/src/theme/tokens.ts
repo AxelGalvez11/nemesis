@@ -122,9 +122,10 @@ export const type = {
   title: { fontSize: 17, lineHeight: 22, fontWeight: "600" as const },
   /** A row's label — nav rows, recents, menu rows, settings rows: 17pt regular, 48pt pitch. */
   label: { fontSize: 17, lineHeight: 22, fontWeight: "400" as const },
-  /** Prose: an answer, a note. 16pt on a 25.5pt line, the reference's chat body. */
-  body: { fontSize: 16, lineHeight: 25.5, fontWeight: "400" as const },
-  bodyStrong: { fontSize: 16, lineHeight: 25.5, fontWeight: "600" as const },
+  /** Prose: an answer, a note. 17pt on a 25.5pt line — the reference's chat body, re-measured
+   *  on the simulator against IMG_6532 (our 16pt glyphs stood 15.0pt tall, the reference's 15.7–16.0). */
+  body: { fontSize: 17, lineHeight: 25.5, fontWeight: "400" as const },
+  bodyStrong: { fontSize: 17, lineHeight: 25.5, fontWeight: "600" as const },
   /** Chips, the composer's capability chip, the "Chat" pill's label. */
   small: { fontSize: 15, lineHeight: 20, fontWeight: "400" as const },
   /** Second lines and stamps — "3 weeks ago", "Modified Aug 28", a menu's title. 13pt. */
