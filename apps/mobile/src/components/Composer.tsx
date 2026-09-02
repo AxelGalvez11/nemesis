@@ -414,7 +414,7 @@ export function Composer({
 
   const plusButton = (
     <Bounce style={styles.round} onPress={onPlus} disabled={!onPlus} hitSlop={6} accessibilityLabel="New" testID="composer-plus">
-      <PlusIcon size={22} color={c.text} strokeWidth={1.9} />
+      <PlusIcon size={26} color={c.text} strokeWidth={1.9} />
     </Bounce>
   );
   // Dictation is ALWAYS on the card (owner 2026-07-22: "also add dictation to
@@ -431,7 +431,7 @@ export function Composer({
       testID="composer-mic"
     >
       {/* 22pt, measured off the reference's control row (IMG_6529) — was 20. */}
-      <MicIcon size={22} color={listening ? c.onAccent : c.text} />
+      <MicIcon size={26} color={listening ? c.onAccent : c.text} />
     </Bounce>
   );
   // The last slot is whichever action the draft calls for: Send once there's
@@ -596,11 +596,11 @@ const createStyles = (c: ThemeColors) =>
     card: {
       // c.surface (#F9F9F9 light) rather than the reference's measured #FBFBFB — the two are
       // 2/255 apart, inside sampling noise, and the token stays correct in dark mode for free.
-      backgroundColor: c.surface,
+      backgroundColor: c.composer,
       borderWidth: 1,
       borderColor: c.line,
       borderRadius: radius.xl,
-      paddingHorizontal: space(2),
+      paddingHorizontal: space(1),
       paddingTop: space(2.5),
       paddingBottom: space(2),
       gap: space(1),

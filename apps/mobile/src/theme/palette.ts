@@ -208,6 +208,9 @@ export interface ThemeColors {
    *  it through the accent/status contrast machinery, and do NOT reach for it
    *  as a general "secondary text" shade — that's what the flatten removed. */
   textHint: string;
+  /** The composer card's fill — measured #FBFBFB on the reference (IMG_6529/6532), a hair off
+   *  the page so the hairline border and shadow carry the card, not a grey fill. */
+  composer: string;
   /** The reference's blue: capability chips in the composer, "Upgrade plan", links. */
   blue: string;
   blueFaint: string;
@@ -237,6 +240,7 @@ export interface ThemeColors {
 // (the old #e9eaee/#9a9da6/#6f7278 ramp is in git history).
 const DARK_BASE = {
   bgGrouped: "#000000",
+  composer: "#161617",
   blue: "#3a83f7",
   blueFaint: "rgba(58,131,247,0.16)",
   bg: "#000000",
@@ -272,6 +276,7 @@ const LIGHT_BASE = {
   bg: "#ffffff",
   bg2: "#ffffff",
   bgGrouped: "#f2f2f6",
+  composer: "#fbfbfb",
   surface: "#f9f9f9",
   surface2: "#f3f3f3",
   raised: "#ffffff",

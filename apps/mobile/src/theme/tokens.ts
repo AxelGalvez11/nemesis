@@ -117,8 +117,12 @@ export const type = {
   /** The front door's "Learn ‹subject›". */
   h1: { fontSize: 34, lineHeight: 40, fontWeight: "700" as const },
   h2: { fontSize: 22, lineHeight: 28, fontWeight: "600" as const },
-  /** Page titles ("Projects", "Library"), section headers ("Pinned"), a project's name in its
-   *  header — measured 17pt semibold on every reference page. */
+  /** A page's centred title ("Projects", "Library", "Add files"): 17pt semibold. A first reading of
+   *  IMG_6538 said 20 — the band had swallowed the "+" button's glyph beside the title; "Library" on
+   *  IMG_6539, measured alone, stands 16.3pt tall with its descender, which is 17pt. */
+  pageTitle: { fontSize: 17, lineHeight: 22, fontWeight: "600" as const },
+  /** Section headers ("Pinned", "Recents"), a project's name in its header, the drawer's rows'
+   *  bold variants — 17pt semibold. */
   title: { fontSize: 17, lineHeight: 22, fontWeight: "600" as const },
   /** A row's label — nav rows, recents, menu rows, settings rows: 17pt regular, 48pt pitch. */
   label: { fontSize: 17, lineHeight: 22, fontWeight: "400" as const },

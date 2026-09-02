@@ -78,9 +78,10 @@ export function LearnHome() {
     // frame as the layout event can catch the card mid-shift.
     requestAnimationFrame(() => {
       composerWrapRef.current?.measureInWindow((_x, y) => {
-        // The menu's BOTTOM edge sits a gap above the card's TOP edge. Measuring to the card's
+        // The menu's BOTTOM edge sits 16pt above the card's TOP edge (the reference's picker→composer gap
+        // measures ~17pt on IMG_6529). Measuring to the card's
         // bottom put the menu over the card and the heading (seen on the simulator, 2026-09-01).
-        setMenuOffset(Math.max(space(2), Math.round(windowHeight - y + space(2))));
+        setMenuOffset(Math.max(space(2), Math.round(windowHeight - y + space(4))));
       });
     });
   }, [windowHeight]);
@@ -105,7 +106,8 @@ export function LearnHome() {
           style={styles.voiceGlassInner}
           testID="learn-home-voice"
         >
-          <VoiceModeIcon size={20} color={c.text} strokeWidth={1.9} />
+          {/* 22pt per the coordinator's redraw ask (was 20). */}
+          <VoiceModeIcon size={22} color={c.text} strokeWidth={1.8} />
         </Pressable>
       </GlassSurface>,
     );

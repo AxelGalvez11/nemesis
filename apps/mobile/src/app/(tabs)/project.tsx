@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View, type TextInput } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
@@ -65,6 +65,7 @@ export default function ProjectScreen() {
   const project = useMemo(() => (projectId ? findProject(buildProjects(folders, canvases), projectId) : null), [folders, canvases, projectId]);
 
   const [tab, setTab] = useState<"chats" | "sources">("chats");
+  const composerRef = useRef<TextInput>(null);
   const [input, setInput] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuAt, setMenuAt] = useState<MenuAnchor | null>(null);
@@ -266,7 +267,8 @@ export default function ProjectScreen() {
 
         {tab === "chats" ? (
           <View style={[styles.composerRow, { paddingBottom: composerBottomPad }]}>
-            <Composer value={input} onChangeText={setInput} onSend={handleSend} placeholder="Ask Nemesis" testID="project-composer" compact />
+            {/* `inputRef` is what makes the composer show the reference's voice orb while the field is empty. */}
+            <Composer inputRef={composerRef} value={input} onChangeText={setInput} onSend={handleSend} placeholder="Ask Nemesis" testID="project-composer" compact />
           </View>
         ) : null}
       </View>
