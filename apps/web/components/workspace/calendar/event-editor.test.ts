@@ -21,6 +21,9 @@ const CARD = readFileSync(new URL("./quick-create-popover.tsx", import.meta.url)
 const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const FORM_CODE = code(FORM);
 const CARD_CODE = code(CARD);
+const CHROME = readFileSync(new URL("./field-chrome.ts", import.meta.url), "utf8");
+const CHROME_CODE = code(CHROME);
+const REPEAT_CODE = code(readFileSync(new URL("./repeat-editor.tsx", import.meta.url), "utf8"));
 
 test("there is exactly one row of colour swatches, and no type row at all", () => {
   // There were two stacked rows of unlabelled dots answering different
@@ -76,9 +79,28 @@ test("🔴 the fields that lost their controls did not lose their data", () => {
 test("the selects wear the app's control chrome, not the platform's", () => {
   // A hand-rolled height and border that ALMOST matched the inputs beside them,
   // plus the platform's own dropdown arrow, is what "default functions" meant.
-  assert.match(FORM_CODE, /const FIELD = cn\(controlVariants\(\)/, "the selects stopped sharing Input's chrome");
-  assert.doesNotMatch(FORM_CODE, /const SELECT = "h-8/, "the hand-rolled select chrome is back");
-  assert.match(FORM_CODE, /appearance-none/, "the platform's dropdown arrow is back");
+  assert.match(CHROME_CODE, /export const FIELD = cn\(controlVariants\(\)/, "the selects stopped sharing Input's chrome");
+  assert.match(CHROME_CODE, /appearance-none/, "the platform's dropdown arrow is back");
+});
+
+test("🔴 there is ONE definition of the field chrome, and both editors use it", () => {
+  // The event editor and the repeat editor each had their own
+  // `const FIELD = "h-8 rounded-lg border …"`, and they had already drifted:
+  // once the editor's controls were sized to Google's 40px the repeat dropdown
+  // was still 36 and sat visibly short beside the date field above it.
+  for (const [name, source] of [["editor", FORM_CODE], ["repeat editor", REPEAT_CODE]] as const) {
+    assert.match(source, /from "\.\/field-chrome"/, `${name}: stopped importing the shared chrome`);
+    assert.doesNotMatch(source, /const FIELD = "h-\d/, `${name}: rolled its own field chrome again`);
+  }
+});
+
+test("control height and row rhythm are Google's, converted", () => {
+  // Google's editor draws 40px controls and steps its rows 48px at a 16px root.
+  // This app's root is 18px, so the like-for-like figures are 45px (2.5rem) and
+  // 54px. Owner 2026-09-01: "it's too bunched in together" — it was 36px
+  // controls 4.5px apart.
+  assert.match(CHROME_CODE, /CONTROL_HEIGHT = "h-\[2\.5rem\]"/, "the controls left Google's height");
+  assert.doesNotMatch(CHROME_CODE, /"h-8/, "a control is back at the old, shorter height");
 });
 
 test("the drawn chevron is positioned inline, never by a bg-[…] class", () => {
@@ -86,8 +108,8 @@ test("the drawn chevron is positioned inline, never by a bg-[…] class", () => 
   // Tailwind reads a bare `bg-[…]` as a colour or an image, never a position or
   // a size, so the arrow kept its natural size and tiled — six chevrons
   // marching across the timezone field.
-  assert.match(FORM_CODE, /backgroundPosition: "right 0\.5rem center"/);
-  assert.match(FORM_CODE, /backgroundRepeat: "no-repeat"/);
-  assert.doesNotMatch(FORM_CODE, /bg-\[right_/, "the position is back in a class that does not compile");
-  assert.doesNotMatch(FORM_CODE, /bg-\[length:/, "the size is back in a class that does not compile");
+  assert.match(CHROME_CODE, /backgroundPosition: "right 0\.5rem center"/);
+  assert.match(CHROME_CODE, /backgroundRepeat: "no-repeat"/);
+  assert.doesNotMatch(CHROME_CODE, /bg-\[right_/, "the position is back in a class that does not compile");
+  assert.doesNotMatch(CHROME_CODE, /bg-\[length:/, "the size is back in a class that does not compile");
 });
