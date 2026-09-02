@@ -40,7 +40,7 @@ import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { capabilityFromParam, firstParam } from "@/lib/canvas-screen";
-import { canvasLabel, newCanvas, nextMomentId, threadFromCanvas, withExchange, type Folder } from "@/lib/canvases";
+import { canvasLabel, newCanvas, threadFromCanvas, type Folder } from "@/lib/canvases";
 import { CAPABILITY_COPY, lastThingSaid, type CanvasThreadTurn, type ComposerCapability, type LearningCanvas } from "@/learn/web";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -106,6 +106,10 @@ export default function CanvasScreen() {
   const [copyText, setCopyText] = useState<string | null>(null);
 
   const canvasRef = useRef<LearningCanvas | null>(null);
+
+  /** Whether a row for this canvas exists in the cloud yet — false for a front-door canvas until its first save. */
+
+  const savedRef = useRef(false);
   const epochRef = useRef(0);
   const sendingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -158,8 +162,10 @@ export default function CanvasScreen() {
     canvasRef.current = null;
     capForFirstTurnRef.current = null;
     setLoading(true);
+    savedRef.current = false;
     void loadCanvas(uid, canvasId).then((loaded) => {
       if (epochRef.current !== epoch) return;
+      savedRef.current = loaded !== null;
       const next = loaded ?? newCanvas(canvasId);
       canvasRef.current = next;
       setCanvas(next);
@@ -215,19 +221,17 @@ export default function CanvasScreen() {
       })
         .then((result) => {
           if (epochRef.current !== epoch) return;
-          if (controller.signal.aborted) {
-            const partial = streamedRef.current.trim();
+          if (result.aborted || controller.signal.aborted) {
+            // Stopped mid-answer. askCanvas already recorded the half-answer (once) when there was
+            // one; the screen adopts the canvas it returned and records nothing itself — a second
+            // save here, from this screen's older copy, is how a Stop overwrote a fresh row
+            // (review finding, 2026-09-01).
             settle(() => {
               setStreamingText("");
-              if (partial && canvasRef.current) {
-                // Stopped mid-answer: the reference keeps a half-answer rather than throwing it
-                // away. askCanvas already returned without saving (no reply text), so the pair is
-                // recorded here with the SAME building blocks askCanvas itself uses.
-                const now = new Date().toISOString();
-                const next = withExchange(canvasRef.current, { userText: text, assistantText: partial }, now, nextMomentId(canvasRef.current));
-                canvasRef.current = next;
-                setCanvas(next);
-                void saveCanvas(uid, next);
+              if (result.reply) {
+                savedRef.current = true;
+                canvasRef.current = result.canvas;
+                setCanvas(result.canvas);
               }
               setPendingText(null);
             });
@@ -242,6 +246,7 @@ export default function CanvasScreen() {
             return;
           }
           settle(() => {
+            savedRef.current = true;
             canvasRef.current = result.canvas;
             setCanvas(result.canvas);
             setStreamingText("");
@@ -340,31 +345,40 @@ export default function CanvasScreen() {
     [uid, canvasId, setHeaderTitle],
   );
 
-  const handlePickProject = useCallback(
-    (id: string) => {
+  /**
+   * File this canvas into a project (null = unfile).
+   *
+   * 🔴 A FRONT-DOOR CANVAS HAS NO ROW UNTIL ITS FIRST SAVE, and an UPDATE on a row that is not
+   * there matches nothing and says nothing — the web's `setCanvasFolder` comment records exactly
+   * this. So an unsaved canvas is saved first (an empty row the first turn will fill), and the
+   * write's own answer decides what the menu shows: false puts the old value back.
+   */
+  const fileInto = useCallback(
+    async (next: string | null) => {
       if (!uid || !canvasId) return;
-      setFolderId(id);
-      void setCanvasFolder(uid, canvasId, id);
+      const previous = folderId;
+      setFolderId(next);
+      if (!savedRef.current && canvasRef.current) {
+        savedRef.current = await saveCanvas(uid, canvasRef.current);
+      }
+      const filed = savedRef.current ? await setCanvasFolder(uid, canvasId, next) : false;
+      if (!filed) setFolderId(previous);
     },
-    [uid, canvasId],
+    [uid, canvasId, folderId],
   );
-  const handleRemoveFromProject = useCallback(() => {
-    if (!uid || !canvasId) return;
-    setFolderId(null);
-    void setCanvasFolder(uid, canvasId, null);
-  }, [uid, canvasId]);
+  const handlePickProject = useCallback((id: string) => void fileInto(id), [fileInto]);
+  const handleRemoveFromProject = useCallback(() => void fileInto(null), [fileInto]);
   const handleNewProjectConfirm = useCallback(
     (name: string) => {
       setNewProjectOpen(false);
-      if (!uid || !canvasId) return;
+      if (!uid) return;
       void createFolder(uid, name).then((folder) => {
         if (!folder) return;
         setFolders((prev) => [...prev, folder]);
-        setFolderId(folder.id);
-        void setCanvasFolder(uid, canvasId, folder.id);
+        void fileInto(folder.id);
       });
     },
-    [uid, canvasId],
+    [uid, fileInto],
   );
   const handleDelete = useCallback(() => {
     if (!uid || !canvasId) return;

@@ -103,8 +103,17 @@ function list<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+/** The stages the web retired with its six-stage machine — `isEvidenceStage` in
+ *  apps/web/lib/learn/canvas-hosting.ts, which the phone cannot import (see learn/web.ts).
+ *  `canvases.test.ts` reads that function's source and fails if the two lists disagree. */
+export const EVIDENCE_STAGES: readonly CanvasState[] = ["recall", "test", "retest", "diagnose", "complete"];
+
+/** The web's two read-time rules in one place: an unrecognised state reads as `learn`, and so
+ *  does a retired evidence stage — `normaliseCanvas` in the web store, whose comment explains
+ *  why the row itself is never rewritten. */
 function knownState(state: string): CanvasState {
-  return (CANVAS_STATES as readonly string[]).includes(state) ? (state as CanvasState) : "learn";
+  const known = (CANVAS_STATES as readonly string[]).includes(state) ? (state as CanvasState) : "learn";
+  return EVIDENCE_STAGES.includes(known) ? "learn" : known;
 }
 
 export function summaryFromRow(row: CanvasListRow): CanvasSummary {

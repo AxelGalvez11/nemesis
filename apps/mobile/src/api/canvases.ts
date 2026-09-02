@@ -135,6 +135,7 @@ export async function renameCanvas(uid: string, id: string, title: string): Prom
   const { error } = await supabase.from(TABLE).update({ title: next }).eq("id", id).eq("user_id", uid);
   if (error) {
     console.warn("[canvases] rename failed", error.message);
+    emit(); // the listener re-reads and reverts whatever was painted optimistically
     return null;
   }
   emit();
@@ -158,6 +159,7 @@ export async function createFolder(uid: string, name: string, parentId?: string 
     .single();
   if (error || !data) {
     console.warn("[canvases] folder create failed", error?.message);
+    emit();
     return null;
   }
   emit();
@@ -170,6 +172,7 @@ export async function renameFolder(uid: string, id: string, name: string): Promi
   const { error } = await supabase.from("folders").update({ name: next }).eq("id", id).eq("user_id", uid);
   if (error) {
     console.warn("[canvases] folder rename failed", error.message);
+    emit(); // the listener re-reads and reverts whatever was painted optimistically
     return null;
   }
   emit();
@@ -192,6 +195,7 @@ export async function deleteFolder(uid: string, id: string): Promise<boolean> {
   const { error } = await supabase.from("folders").delete().eq("id", id).eq("user_id", uid);
   if (error) {
     console.warn("[canvases] folder delete failed", error.message);
+    emit(); // the listener re-reads and puts the row back
     return false;
   }
   emit();
@@ -217,6 +221,31 @@ export interface CanvasTurnResult {
   canvas: LearningCanvas;
   reply: string | null;
   errorText: string | null;
+  /** The learner pressed Stop. Whatever had streamed is already recorded (or nothing was). */
+  aborted: boolean;
+}
+
+/**
+ * Record one exchange on the FRESHEST copy of the canvas and save it.
+ *
+ * 🔴🔴 RE-READ, THEN WRITE — NEVER WRITE THE SNAPSHOT THE SCREEN OPENED WITH. `saveCanvas` replaces
+ * the whole document column (the web's own save shape), and the phone's copy was read when the
+ * screen mounted. A canvas the web touched in between — a lesson written on a laptop while the
+ * phone sat open — would have been overwritten wholesale by the phone's stale document plus one
+ * moment (review finding, 2026-09-01). Reading the row again here shrinks that window from "as
+ * long as the screen was open" to the milliseconds between this read and the upsert. A canvas
+ * with no row yet (the front door's unsaved one) keeps the in-memory copy.
+ */
+async function recordExchange(
+  uid: string,
+  canvas: LearningCanvas,
+  exchange: { userText: string; assistantText: string; spoken?: boolean },
+): Promise<LearningCanvas> {
+  const fresh = (await loadCanvas(uid, canvas.id)) ?? canvas;
+  const now = new Date().toISOString();
+  const next = withExchange(fresh, exchange, now, nextMomentId(fresh));
+  if (next !== fresh) await saveCanvas(uid, next);
+  return next;
 }
 
 /**
@@ -225,6 +254,12 @@ export interface CanvasTurnResult {
  *
  * `onDelta` receives the accumulated reply as it streams. A failed turn records nothing and
  * returns the canvas untouched with `errorText` set.
+ *
+ * 🔴 STOP SAVES AT MOST ONCE, AND IT SAVES HERE. A cancelled expo/fetch can come back as a clean
+ * close with the partial text rather than a throw (see postChatCompletion), so "the call returned
+ * text" is not proof the learner did not press Stop. The signal is the truth: if it is aborted by
+ * the time the call returns, the partial answer is recorded once — the reference keeps a
+ * half-answer — and `aborted` tells the screen not to record anything itself.
  */
 export async function askCanvas(
   uid: string,
@@ -233,24 +268,34 @@ export async function askCanvas(
   options: { onDelta?: (accumulated: string) => void; signal?: AbortSignal; spoken?: boolean } = {},
 ): Promise<CanvasTurnResult> {
   const said = text.trim();
-  if (!said) return { canvas, reply: null, errorText: null };
+  if (!said) return { canvas, reply: null, errorText: null, aborted: false };
   const wire = [
     { role: "system" as const, content: CANVAS_SYSTEM },
     ...wireHistory(canvas),
     { role: "user" as const, content: said },
   ];
+  let streamed = "";
   const result = await completeMessages(uid, wire, {
-    onDelta: options.onDelta ? (_delta, accumulated) => options.onDelta?.(accumulated) : undefined,
+    onDelta: (_delta, accumulated) => {
+      streamed = accumulated;
+      options.onDelta?.(accumulated);
+    },
     signal: options.signal,
   });
-  if (!result.text) return { canvas, reply: null, errorText: result.errorText ?? "The answer came back empty. Try again." };
-  const now = new Date().toISOString();
-  const next = withExchange(
-    canvas,
-    { userText: said, assistantText: result.text, ...(options.spoken ? { spoken: true } : {}) },
-    now,
-    nextMomentId(canvas),
-  );
-  await saveCanvas(uid, next);
-  return { canvas: next, reply: result.text, errorText: null };
+  const exchange = (assistantText: string) => ({
+    userText: said,
+    assistantText,
+    ...(options.spoken ? { spoken: true } : {}),
+  });
+  if (options.signal?.aborted) {
+    const partial = (result.text ?? streamed).trim();
+    if (!partial) return { canvas, reply: null, errorText: null, aborted: true };
+    const next = await recordExchange(uid, canvas, exchange(partial));
+    return { canvas: next, reply: partial, errorText: null, aborted: true };
+  }
+  if (!result.text) {
+    return { canvas, reply: null, errorText: result.errorText ?? "The answer came back empty. Try again.", aborted: false };
+  }
+  const next = await recordExchange(uid, canvas, exchange(result.text));
+  return { canvas: next, reply: result.text, errorText: null, aborted: false };
 }

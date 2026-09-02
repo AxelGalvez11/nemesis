@@ -70,3 +70,8 @@ export {
 } from "../../../web/lib/learn/composer-capability.ts";
 
 export { documentTitle, TITLE_MAX } from "../../../web/lib/learn/document-title.ts";
+
+// 🔴 NOT `canvas-hosting.ts` (`isEvidenceStage`): its type imports reach `knowledge-types.ts`, which
+// imports `@/lib/sources/source-context` — a web path the phone cannot resolve. The two retired
+// evidence stages are spelled out in lib/canvases.ts instead, pinned to the web's list by a test
+// that reads the web's source.

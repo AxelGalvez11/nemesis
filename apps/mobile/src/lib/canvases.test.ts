@@ -8,6 +8,7 @@ import {
   canvasLabel,
   canvasToRow,
   DOCUMENT_KEYS,
+  EVIDENCE_STAGES,
   newCanvas,
   sidebarSections,
   summaryFromRow,
@@ -80,6 +81,20 @@ Deno.test("a corrupt document reads as an empty canvas, not a crash", () => {
   assertEquals(back.state, "learn");
   assertEquals(back.level, null);
   assertEquals(back.title, "");
+});
+
+
+Deno.test("the retired evidence stages match the web's list, and read as learn", async () => {
+  const url = new URL("../../../web/lib/learn/canvas-hosting.ts", import.meta.url);
+  const source = await Deno.readTextFile(url);
+  const m = source.match(/const EVIDENCE_STAGES: readonly CanvasState\[\] = \[([^\]]*)\]/);
+  assert(m, "the web's EVIDENCE_STAGES constant moved — update the phone's copy and this test");
+  const webStages = [...m![1]!.matchAll(/"([a-z_]+)"/g)].map((x) => x[1]);
+  assertEquals(webStages, [...EVIDENCE_STAGES]);
+  for (const stage of EVIDENCE_STAGES) {
+    const back = canvasFromRow({ id: "c1", title: "T", state: stage, level: null, document: {}, active_ms: 0, created_at: NOW, updated_at: NOW });
+    assertEquals(back.state, "learn");
+  }
 });
 
 // ─── sidebar ─────────────────────────────────────────────────────────────────
