@@ -33,7 +33,7 @@ import {
 import type { ComposerCapability, LearningCanvas } from "@/learn/web";
 import { nextMomentId, withExchange } from "@/lib/canvases";
 import { formatWebSearchContext, type ChatSource } from "@/lib/chat-thread";
-import { citedSources, exchangesFromCanvas, visibleProse, withoutFigureMarkers, type NumberedSource } from "@/lib/turn-text";
+import { citedSources, exchangesFromCanvas, roundContinues, visibleProse, withoutFigureMarkers, type NumberedSource } from "@/lib/turn-text";
 
 /** The web's `CHAT_DECISION`: the conversation route on the chat model, no forced search. */
 const CHAT_DECISION: ChatRouteDecision = { route: "conversation", model: "deepseek-chat", searchWeb: false };
@@ -188,6 +188,8 @@ export async function runCanvasTurn(
         signal: options.signal,
         onDelta: (_delta, accumulated) => {
           streamed = accumulated;
+          // A round that has decided to search is not the answer; its prose stays off screen.
+          if (roundContinues(accumulated)) return;
           options.onDelta?.(visibleProse(accumulated));
         },
       },
@@ -195,6 +197,12 @@ export async function runCanvasTurn(
 
   const readDecision = (raw: string): TurnDecision | null => {
     const read = decisionOrReply(raw);
+    if (__DEV__) {
+      // What the model asked for, in Metro's console — the one place a phone turn can be watched.
+      console.log("[canvas-turn] decision", read
+        ? { then: read.then, needsWeb: read.needsWeb, webQuery: read.webQuery, webResults: read.webResults, milestones: read.milestones, sayChars: read.say?.length ?? 0 }
+        : { parsed: false, head: raw.slice(0, 120) });
+    }
     options.onMilestones?.(read?.milestones ?? []);
     return read;
   };
@@ -210,6 +218,7 @@ export async function runCanvasTurn(
   for (let round = 0; round < MAX_SEARCH_ROUNDS && decision?.needsWeb; round += 1) {
     options.onSearching?.(null, []);
     const found = await searchWebContext(uid, decision.webQuery || said, decision.webResults ?? null, decision.webFreshness ?? null);
+    if (__DEV__) console.log("[canvas-turn] search", { query: decision.webQuery || said, found: found.sources.length, contextChars: found.context.length });
     for (const source of found.sources) {
       if (seen.has(source.url)) continue;
       seen.add(source.url);
@@ -246,7 +255,7 @@ export async function runCanvasTurn(
   };
 
   async function stopped(): Promise<CanvasTurnOutcome> {
-    const partial = withoutFigureMarkers(visibleProse(streamed));
+    const partial = roundContinues(streamed) ? "" : withoutFigureMarkers(visibleProse(streamed));
     if (!partial) return untouched(null, true);
     const kept = await recordExchange(uid, canvas, {
       userText: said,

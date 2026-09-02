@@ -52,7 +52,7 @@ export default function ProjectScreen() {
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const keyboardUp = useKeyboardVisible();
-  const { setHeaderCenter, setHeaderRight } = useShell();
+  const { setHeaderCenter, setHeaderLeft, setHeaderRight } = useShell();
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
 
@@ -82,12 +82,11 @@ export default function ProjectScreen() {
   useEffect(() => {
     if (!project) return;
     const tint = project.color ?? c.blue;
-    setHeaderCenter(
-      <View style={styles.headerRow}>
+    setHeaderLeft(
+      <GlassSurface style={styles.moreGlass} fallbackColor={c.glassPanel} shadow>
         <Pressable
           onPress={() => (router.canGoBack() ? router.back() : router.replace("/projects" as never))}
-          hitSlop={10}
-          style={styles.backBtn}
+          style={styles.moreGlassInner}
           accessibilityRole="button"
           accessibilityLabel="Back to Projects"
           testID="project-back"
@@ -96,12 +95,14 @@ export default function ProjectScreen() {
             <ChevronIcon size={19} color={c.text} strokeWidth={2.1} />
           </View>
         </Pressable>
-        <View style={styles.headerTitleGroup}>
-          <ProjectFolderIcon size={18} color={tint} strokeWidth={1.9} />
-          <Text style={styles.headerTitleText} numberOfLines={1}>
-            {project.name}
-          </Text>
-        </View>
+      </GlassSurface>,
+    );
+    setHeaderCenter(
+      <View style={styles.headerTitleGroup}>
+        <ProjectFolderIcon size={18} color={tint} strokeWidth={1.9} />
+        <Text style={styles.headerTitleText} numberOfLines={1}>
+          {project.name}
+        </Text>
       </View>,
     );
     setHeaderRight(
@@ -121,10 +122,11 @@ export default function ProjectScreen() {
       </GlassSurface>,
     );
     return () => {
+      setHeaderLeft(null);
       setHeaderCenter(null);
       setHeaderRight(null);
     };
-  }, [project, setHeaderCenter, setHeaderRight, styles, c]);
+  }, [project, setHeaderLeft, setHeaderCenter, setHeaderRight, styles, c]);
 
   function closeMenu() {
     setMenuOpen(false);

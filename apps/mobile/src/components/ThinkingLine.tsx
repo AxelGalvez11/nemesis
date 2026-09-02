@@ -96,9 +96,12 @@ function SweepChar({
 
 export function ThinkingLine({
   phase,
+  label: labelOverride,
   testID,
 }: {
   phase: ThinkingPhase;
+  /** The turn's own words for what it is doing right now ("Searching the web") — wins over the phase. */
+  label?: string | null;
   /** Kept out of the live row intentionally; the caller stores it for the
    * finished answer's expandable ThoughtTrail. */
   reasoning?: string;
@@ -107,7 +110,7 @@ export function ThinkingLine({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
-  const label = phaseLabel(phase) || "Thinking";
+  const label = labelOverride || phaseLabel(phase) || "Thinking";
   const progress = useSharedValue(0);
 
   useEffect(() => {

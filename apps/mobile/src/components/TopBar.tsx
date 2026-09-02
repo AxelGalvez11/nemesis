@@ -30,17 +30,21 @@ export const TOP_BAR_PAD_TOP = space(2);
 
 export function TopBar() {
   const insets = useSafeAreaInsets();
-  const { openDrawer, headerTitle, headerCenter, headerRight } = useShell();
+  const { openDrawer, headerTitle, headerCenter, headerLeft, headerRight } = useShell();
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
 
   return (
     <View style={[styles.overlay, { paddingTop: insets.top + space(2) }]} pointerEvents="box-none">
-      <GlassButton onPress={openDrawer} label="Open menu" styles={styles} fallback={c.glassPanel}>
-        <View style={styles.bun} />
-        <View style={styles.bun} />
-        <View style={styles.bun} />
-      </GlassButton>
+      {/* Left slot: the menu button, unless a pushed page put its own control here (the
+          reference's round back button on a project). */}
+      {headerLeft ?? (
+        <GlassButton onPress={openDrawer} label="Open menu" styles={styles} fallback={c.glassPanel}>
+          <View style={styles.bun} />
+          <View style={styles.bun} />
+          <View style={styles.bun} />
+        </GlassButton>
+      )}
 
       {/* Center slot: a plain title by default, or a screen's own CONTROL when it
           publishes one (Study's Cards/Tests/Mindmaps dropdown). A label can't be

@@ -82,3 +82,24 @@ export function citedSources(say: string, numbered: readonly NumberedSource[]): 
   }
   return out;
 }
+
+/**
+ * Whether the round streaming in will NOT be the answering round — its decision block, once
+ * closed, asks for the web (or papers, or tools), so the prose after it is the model talking to
+ * itself ("I don't have a live view of the web…") and must not reach the learner. The web never
+ * streams typed turns and so never showed that text; the phone streams, so it has to know.
+ * Undecidable (the block has not closed, or does not parse) reads as false: prose streams.
+ */
+export function roundContinues(accumulated: string): boolean {
+  if (!FENCE_OPEN.test(accumulated)) return false;
+  const opened = accumulated.match(FENCE_OPEN)!;
+  const rest = accumulated.slice(opened[0].length);
+  const close = rest.indexOf("\n```");
+  if (close < 0) return false;
+  try {
+    const decision = JSON.parse(rest.slice(0, close)) as { needsWeb?: unknown; needsPapers?: unknown; tools?: unknown };
+    return decision.needsWeb === true || decision.needsPapers === true || (Array.isArray(decision.tools) && decision.tools.length > 0);
+  } catch {
+    return false;
+  }
+}

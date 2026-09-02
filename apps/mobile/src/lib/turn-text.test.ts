@@ -1,7 +1,7 @@
 // Run: deno test --no-check --unstable-sloppy-imports --allow-read apps/mobile/src/lib/turn-text.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { newCanvas, withExchange } from "./canvases.ts";
-import { citedSources, exchangesFromCanvas, visibleProse, withoutFigureMarkers } from "./turn-text.ts";
+import { citedSources, exchangesFromCanvas, roundContinues, visibleProse, withoutFigureMarkers } from "./turn-text.ts";
 
 const NOW = "2026-09-01T20:00:00.000Z";
 
@@ -41,4 +41,13 @@ Deno.test("citedSources resolves [n] against the numbered list, in citation orde
   ];
   assertEquals(citedSources("Fact [3]. Another [1] and again [3]. Bogus [9].", numbered).map((s) => s.title), ["Three", "One"]);
   assertEquals(citedSources("No citations", numbered), []);
+});
+
+Deno.test("roundContinues: a closed decision asking for the web hides that round's prose", () => {
+  assertEquals(roundContinues("```json\n{\"needsWeb\": true, \"webQuery\": \"x\"}\n```\nI can't see the web"), true);
+  assertEquals(roundContinues("```json\n{\"needsPapers\": true}\n```\n"), true);
+  assertEquals(roundContinues("```json\n{\"tools\": [{\"slug\": \"a\"}]}\n```\n"), true);
+  assertEquals(roundContinues("```json\n{\"needsWeb\": false}\n```\nThe answer"), false);
+  assertEquals(roundContinues("```json\n{\"needsWeb\": tr"), false, "not closed yet");
+  assertEquals(roundContinues("Plain prose"), false);
 });

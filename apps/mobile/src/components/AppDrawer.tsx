@@ -77,6 +77,10 @@ interface ShellState {
    *  are set, and unlike the title slot it accepts taps. */
   headerCenter: ReactNode;
   setHeaderCenter: (node: ReactNode) => void;
+  /** A control in the TopBar's LEFT slot, in place of the menu button — the reference's round
+   *  back button on a pushed page (a project). Null restores the menu button. */
+  headerLeft: ReactNode;
+  setHeaderLeft: (node: ReactNode) => void;
   /** Optional right-side TopBar chrome — a screen's own action (Graph's gear, Chat's
    *  "…" menu). Rendered in the top-right slot, which paints ABOVE the status-bar blur,
    *  so it stays crisp and lines up exactly with the left menu button (owner 2026-07-18). */
@@ -118,6 +122,7 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
   const [headerCenter, setHeaderCenter] = useState<ReactNode>(null);
+  const [headerLeft, setHeaderLeft] = useState<ReactNode>(null);
   const [headerRight, setHeaderRight] = useState<ReactNode>(null);
   const [immersive, setImmersive] = useState(false);
   // Opening the drawer always drops the keyboard (owner 2026-07-20: swiping to the
@@ -147,10 +152,11 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
       open, openDrawer, closeDrawer, newCanvas,
       headerTitle, setHeaderTitle,
       headerCenter, setHeaderCenter,
+      headerLeft, setHeaderLeft,
       headerRight, setHeaderRight,
       immersive, setImmersive,
     }),
-    [open, openDrawer, closeDrawer, newCanvas, headerTitle, headerCenter, headerRight, immersive],
+    [open, openDrawer, closeDrawer, newCanvas, headerTitle, headerCenter, headerLeft, headerRight, immersive],
   );
 
   return (

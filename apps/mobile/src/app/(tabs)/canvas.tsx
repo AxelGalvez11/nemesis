@@ -19,7 +19,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import {
-  askCanvas,
   createFolder,
   deleteCanvas,
   listCanvases,
@@ -47,7 +46,9 @@ import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { filterTurnsByQuery } from "@/lib/canvas-find";
 import { capabilityFromParam, firstParam } from "@/lib/canvas-screen";
+import { runCanvasTurn } from "@/api/canvas-turn";
 import { canvasLabel, newCanvas, threadFromCanvas, type Folder } from "@/lib/canvases";
+import type { NumberedSource } from "@/lib/turn-text";
 import { lastThingSaid, type CanvasThreadTurn, type ComposerCapability, type LearningCanvas } from "@/learn/web";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -128,6 +129,11 @@ export default function CanvasScreen() {
 
   /** Whether a row for this canvas exists in the cloud yet — false for a front-door canvas until its first save. */
 
+  /** What the turn is doing right now, in its own words ("Searching the web"), or null. */
+  const [turnStatus, setTurnStatus] = useState<string | null>(null);
+  /** Pages a turn answered in this sitting stood on, by moment id. The log stores text only
+   *  (the web's rule: a restored turn is text), so sources live for the session, as on the web. */
+  const [liveSources, setLiveSources] = useState<Record<string, NumberedSource[]>>({});
   const savedRef = useRef(false);
   const epochRef = useRef(0);
   const sendingRef = useRef(false);
@@ -207,7 +213,7 @@ export default function CanvasScreen() {
   }, [menuOpen, refreshFolders]);
 
   // One exchange: the learner's words go out, the reply streams back into `streamingText`, and
-  // the pair is recorded as a single moment (askCanvas → withExchange) once it lands.
+  // the pair is recorded as a single moment (runCanvasTurn → withExchange) once it lands.
   const send = useCallback(
     (raw: string) => {
       const text = raw.trim();
@@ -233,20 +239,32 @@ export default function CanvasScreen() {
         fn();
         sendingRef.current = false;
         setSending(false);
+        setTurnStatus(null);
       };
 
-      void askCanvas(uid, canvasRef.current, text, {
+      setTurnStatus(null);
+      void runCanvasTurn(uid, canvasRef.current, text, {
         signal: controller.signal,
-        onDelta: (accumulated) => {
+        capability: canvasRef.current.moments.length === 0 ? capForFirstTurnRef.current : null,
+        onDelta: (prose) => {
           if (epochRef.current !== epoch) return;
-          streamedRef.current = accumulated;
-          setStreamingText(accumulated);
+          streamedRef.current = prose;
+          setStreamingText(prose);
+        },
+        // The web's two beats: the request is out, then the pages are in hand.
+        onSearching: (found) => {
+          if (epochRef.current !== epoch) return;
+          setTurnStatus(found === null ? "Searching the web" : `Read ${found} ${found === 1 ? "website" : "websites"}`);
+        },
+        onMilestones: (milestones) => {
+          if (epochRef.current !== epoch) return;
+          setTurnStatus((current) => current ?? milestones[0] ?? null);
         },
       })
         .then((result) => {
           if (epochRef.current !== epoch) return;
           if (result.aborted || controller.signal.aborted) {
-            // Stopped mid-answer. askCanvas already recorded the half-answer (once) when there was
+            // Stopped mid-answer. runCanvasTurn already recorded the half-answer (once) when there was
             // one; the screen adopts the canvas it returned and records nothing itself — a second
             // save here, from this screen's older copy, is how a Stop overwrote a fresh row
             // (review finding, 2026-09-01).
@@ -275,6 +293,10 @@ export default function CanvasScreen() {
             setCanvas(result.canvas);
             setStreamingText("");
             setPendingText(null);
+            setTurnStatus(null);
+            const answered = result.canvas.moments.at(-1)?.id;
+            const stood = result.sources.length ? result.sources : result.consulted;
+            if (answered && stood.length) setLiveSources((prev) => ({ ...prev, [answered]: stood }));
           });
         })
         .catch(() => {
@@ -428,7 +450,7 @@ export default function CanvasScreen() {
    * repeat is never appended as a second moment, `withExchange`'s `sameMoment` guard already
    * relies on the SAME thing) and ask again with the same words.
    *
-   * 🔴 THE SAVE MUST LAND BEFORE THE RE-ASK. `askCanvas` reloads the canvas fresh from the
+   * 🔴 THE SAVE MUST LAND BEFORE THE RE-ASK. `runCanvasTurn` reloads the canvas fresh from the
    * server itself (`recordExchange`'s `loadCanvas`) rather than trusting what this screen
    * already has in memory — so if the truncated canvas hasn't been written yet, the reload
    * would still see the old, un-dropped moment and Retry would land as a THIRD turn instead
@@ -446,7 +468,12 @@ export default function CanvasScreen() {
   // Rows are computed unconditionally — including while signed out, where `canvas` is simply
   // null — so useScrollToNewest below is called on every render, never skipped by the early
   // return further down (React's rule: hooks can't be conditional on `uid`).
-  const turns = canvas ? threadFromCanvas(canvas) : [];
+  const turns = canvas
+    ? threadFromCanvas(canvas).map((turn) => {
+        const stood = liveSources[turn.id];
+        return stood ? { ...turn, sources: stood } : turn;
+      })
+    : [];
 
   const handleShareTranscript = useCallback(() => {
     const text = turns
@@ -547,7 +574,7 @@ export default function CanvasScreen() {
                   <CanvasTurn turn={liveTurn!} capability={liveCapability} live />
                   {sending && !streamingText ? (
                     <View style={styles.thinkingWrap}>
-                      <ThinkingLine phase={THINKING_PHASE} testID="canvas-thinking-line" />
+                      <ThinkingLine phase={THINKING_PHASE} label={turnStatus} testID="canvas-thinking-line" />
                     </View>
                   ) : null}
                   {lastError ? (
