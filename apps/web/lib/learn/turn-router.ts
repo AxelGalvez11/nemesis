@@ -1302,9 +1302,24 @@ const DECISION_CONTRACT = [
   // call at all — it is the learner naming the thing they want.
   "None of that caution applies when the learner ASKS for the artefact outright. \"Make a document "
   + "on it\", \"write this up\", \"turn that into a report\", \"I want a file I can hand in\". "
-  + "These leave nothing to weigh. Set it, and write the research question from what the conversation "
+  + "These leave nothing to weigh: SET IT. Write the research question from what the conversation "
   + "has been about. The cost paragraph above is for deciding on their behalf; it has no bearing on "
-  + "a request they have already made.",
+  + "a request they have already made, and such a request is never \"borderline\".",
+  "",
+  // 🔴🔴🔴 AND OFFERING IS NOT AN ALLOWED ANSWER THERE, WHICH THE FIRST VERSION OF THIS DID NOT SAY.
+  // Shipped 2026-09-02 and driven on production the same hour. The honesty half worked exactly as
+  // written — the reply became *"I haven't made a document. I only answered your question in the
+  // chat"* — and then it went on to ask *"would you like me to actually write one up?"* about a
+  // document he had asked for in plain words one message earlier.
+  //
+  // My own wording handed it that. The rule below ended "either make one or say plainly that you
+  // have not, and offer", which reads as two equally good branches, and the cost paragraph above
+  // spends five sentences arguing for the second. So the model told the truth and still did not act,
+  // which for the learner is the same outcome with better manners.
+  "Never answer an outright request by OFFERING to do it. \"Would you like me to write one up?\" is "
+  + "not an answer to \"make a document on it\" - they have already said yes by asking. Offering is "
+  + "for a report you are proposing on your own initiative, on a turn where they asked for something "
+  + "else.",
   "",
   // 🔴🔴 AND THE WORDS MAY NOT PROMISE WHAT THE FLAG DID NOT ASK FOR. This is the actual defect in
   // the report above, and it is worse than the missing document: the reply ANNOUNCED a document
@@ -1313,9 +1328,10 @@ const DECISION_CONTRACT = [
   // it as under way in the other. A learner cannot tell those apart; they read the sentence.
   "Your reply and this field must tell the same story. Do not say a document, report, file or "
   + "anything else is being made, saved, written or added to their Library unless you have set "
-  + "\"wantsReport\" on this same turn. If you are not making one, either make one or say plainly "
-  + "that you have not, and offer. Describing work you did not request is the one thing here that "
-  + "cannot be recovered from, because they will go looking for it.",
+  + "\"wantsReport\" on this same turn. Describing work you did not request is the one thing here "
+  + "that cannot be recovered from, because they will go looking for it. If you genuinely are not "
+  + "making one - they asked for something else, and you are proposing it - say plainly that you "
+  + "have not and offer. That is the only case where offering is right.",
   "",
   "When you do set it, write the RESEARCH QUESTION rather than repeating their sentence: "
   + '"can you dig into whether fin spacing matters" becomes "does fin spacing affect natural '
