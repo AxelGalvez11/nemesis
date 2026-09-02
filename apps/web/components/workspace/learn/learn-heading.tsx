@@ -1,6 +1,6 @@
 "use client";
 
-// The front door's greeting: "Learn calculus", with the subject changing under it.
+// The front door's greeting: "Learn anything", with the subject changing under it.
 //
 // Owner, 2026-09-01: *"could you replace the 'what are you working on' with 'Learn x' and have the
 // x fade in different subjects like calculus, biology, etc. so users are encouraged to learn"*. The
@@ -46,6 +46,17 @@ import { useEffect, useRef, useState, type Ref } from "react";
  * rule this serves is breadth rather than any one entry.
  */
 export const LEARN_SUBJECTS = [
+  // 🔴🔴 "anything" IS ALWAYS FIRST AND IS THE ONLY LOWERCASE ENTRY. Owner, 2026-09-01: *"I want
+  // the first thing for it to say is learn anything."* The capitalisation ruling above is not
+  // broken by it, it simply does not reach it: those nine are capitalised because each is the NAME
+  // OF A THING YOU CAN PICK, and "anything" is the opposite of a pick. "Learn Anything" reads as a
+  // slogan; "Learn anything" is the promise, in ordinary English, and it is the sentence the screen
+  // reader has been given all along.
+  //
+  // 🔴 IT IS INDEX 0 SO THE SERVER AND THE CLIENT AGREE. The order is shuffled after mount (see
+  // `order`); rendering a random first word would mismatch the hydrated markup and React would
+  // throw the tree away.
+  "anything",
   "Calculus",
   "Biology",
   "Contract Law",
@@ -100,11 +111,42 @@ const EASE_IN = "cubic-bezier(0.33, 0, 0.35, 1)";
 /** Room for the last glyph's ink to sit outside its own advance width. See `slotWidth`. */
 const SLOT_SLACK_PX = 2;
 
+/**
+ * A tour of the subjects that starts at "anything" and is shuffled below that.
+ *
+ * 🔴🔴 SHUFFLED AFTER MOUNT, NEVER DURING RENDER. Owner, 2026-09-01: *"if you could randomize the
+ * way it presents things… that'd be great too."* A random order computed while rendering is a
+ * different string on the server than in the browser, and React discards the whole tree on that
+ * mismatch — the same constraint that already keeps the width measurement in an effect.
+ *
+ * 🔴 INDEX 0 IS PINNED. The shuffle only touches what comes after it, so the first word on screen
+ * is "anything" on every load and the randomness is what you see SECOND.
+ *
+ * 🔴 ONE SHUFFLE PER VISIT, NOT ONE PER LAP. Re-shuffling on the wrap would have to happen inside
+ * the rotation's own state updater, and a `setState` nested in an updater is the shape that doubled
+ * every dictated sentence in #880 — invisible in a diff, wrong at runtime. A different order each
+ * time the front door is opened is what "randomize" asks for.
+ */
+function tour(): readonly number[] {
+  const rest: number[] = LEARN_SUBJECTS.map((_, at) => at).slice(1);
+  for (let i = rest.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const held = rest[i] as number;
+    rest[i] = rest[j] as number;
+    rest[j] = held;
+  }
+  return [0, ...rest];
+}
+
 // 🔴 THE REF IS FOR MEASUREMENT, NOT FOR CONTROL. The arriving canvas redraws this greeting where
 // it stood and fades it out (lib/learn/arrival.ts), so the front door has to be able to report its
 // rectangle and its current word. Nothing outside reads or writes the element beyond that.
 export function LearnHeading({ departing, ref }: { departing: boolean; ref?: Ref<HTMLHeadingElement> }) {
-  const [index, setIndex] = useState(0);
+  /** Where we are in the tour, not which subject: `order[step]` is the subject. */
+  const [step, setStep] = useState(0);
+  const [order, setOrder] = useState<readonly number[]>(() => LEARN_SUBJECTS.map((_, at) => at));
+  useEffect(() => setOrder(tour()), []);
+  const index = order[step] ?? 0;
   /**
    * The natural width of every subject, measured once from the words themselves.
    *
@@ -158,7 +200,7 @@ export function LearnHeading({ departing, ref }: { departing: boolean; ref?: Ref
       // full tail AND then the next word's own slow head left a quarter-second where the line read
       // "Learn" with nothing after it. This closes that beat without putting two words in one spot.
       swap = window.setTimeout(() => {
-        setIndex((current) => (current + 1) % LEARN_SUBJECTS.length);
+        setStep((current) => (current + 1) % LEARN_SUBJECTS.length);
         setLit(true);
       }, Math.round(FADE_OUT_MS * 0.85));
     }, HOLD_MS + FADE_OUT_MS + FADE_IN_MS);

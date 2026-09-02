@@ -147,6 +147,44 @@ test("🔴🔴 an artifact opens itself, and a deck is opened by pressing its ca
   assert.match(canvas, /openedArtifactId\.current === made\.id\) return;/, "the reader re-opens itself after being closed");
 });
 
+test("🔴🔴 the Library asks about a file; a canvas never does", () => {
+  // Owner, 2026-09-01, of the reference's library: *"it also has like this chat bar at the bottom so
+  // that you can ask a question about it, and then when you send it, it'll take you to a new chat.
+  // So I think that'll be a good thing to have only for the library."*
+  //
+  // Measured in his Chrome the same day at 1470x836: a 604x52 pill at radius 28, centred in the
+  // pane, 25px clear of the bottom, reading "Ask about this file".
+  const view = code("../../components/workspace/deck/deck-view.tsx");
+  for (const [name, source] of [["output-preview", PREVIEW], ["deck-view", view]] as const) {
+    assert.match(source, /placeholder="Ask about this file"/, `${name}: the ask bar is gone`);
+    assert.match(source, /h-\[52px\] w-full max-w-\[604px\][\s\S]{0,40}rounded-\[28px\]/, `${name}: the ask bar lost the measured pill`);
+    assert.match(source, /bottom-\[25px\]/, `${name}: the ask bar lost its measured clearance`);
+  }
+  // 🔴 THE READER'S BAR IS FULL SCREEN ONLY. Docked, it sits beside a conversation that already has
+  // a composer, and the bar would be the second one on screen with the wrong one nearer.
+  assert.match(PREVIEW, /\{full && onAsk && \(/, "the ask bar shows while docked beside a conversation");
+  // 🔴 AND ONLY THE LIBRARY PASSES IT. Asserted as an absence on the canvas, because "the Library
+  // has it" passes just as well in a build where everything does.
+  const library = code("../../components/workspace/library/library-outputs.tsx");
+  assert.match(library, /onAsk=\{askAbout\}/, "the Library's reader lost its ask bar");
+  assert.ok(!/onAsk=/.test(code("../../components/workspace/learn/canvas-controls.tsx")), "a canvas grew a second composer for the artifact beside it");
+  // 🔴🔴 THE DOCUMENT TRAVELS WITH THE QUESTION, OR THE QUESTION IS UNANSWERABLE. `putPending` is
+  // the front door's own single-use hand-off, so the new canvas ingests the document through the
+  // one path every other attachment takes.
+  for (const [name, source] of [["library", library], ["deck page", code("../../app/(workspace)/deck/page.tsx")]] as const) {
+    assert.match(source, /putPending\(\[\{ file: new File\(\[material\.text\], material\.name/, `${name}: the question is sent without the document`);
+    assert.match(source, /router\.push\(`\/learn\?ask=\$\{encodeURIComponent\(question\)\}`\)/, `${name}: asking no longer opens a new canvas`);
+  }
+  // 🔴 AND THE STASH STAYS TYPE-ONLY AT ITS EDGE. Written `import { type ExtractedFile }`, importing
+  // `putPending` drags `chat-attachments` and every file parser behind it into whatever page did
+  // the importing; the Library route stopped compiling for four minutes the first time.
+  assert.match(
+    code("../../components/workspace/learn/pending-attachment.ts"),
+    /import type \{ ExtractedFile \}/,
+    "the stash pulls the whole ingestion graph into every page that hands over a file",
+  );
+});
+
 test("🔴🔴 all three opened artifacts wear ONE header band", () => {
   // Owner, 2026-09-01: *"it's kinda weird because all of them have different settings… the slides
   // and the documents, they both have like different top header settings."* Two of the three
@@ -194,7 +232,17 @@ test("🔴🔴 flashcards and the check open in the side panel, with full screen
   assert.match(panel, /fixed inset-y-0 right-0/, "the study panel is not docked to the right edge");
   assert.match(panel, /createPortal\(/, "the panel is not portalled — `fixed` will resolve against the canvas");
   assert.match(panel, /data-workspace/, "the portal left the workspace scope and the global button rule owns it");
-  assert.match(panel, /full \? "left-0"/, "the panel has no full-screen geometry");
+  // 🔴🔴 FULL SCREEN IS THE MAIN COLUMN, NOT THE VIEWPORT (2026-09-01). Owner, of the reference's
+  // library: *"you keep the left sidebar and it just leaves the sidebar open and it'll just have
+  // the document viewer in there."* Measured in his Chrome the same day: their viewer spans x=260
+  // to the right edge while the 260px sidebar is untouched. `--nav-column` is published on
+  // `documentElement` by the shell, because these panels are portalled to `document.body` and are
+  // outside the scope `SHELL_VARS` are set on.
+  assert.match(panel, /full \? "left-\[var\(--nav-column,0px\)\]"/, "the panel covers the sidebar again");
+  assert.match(PREVIEW, /full \? "left-\[var\(--nav-column,0px\)\]"/, "the reader covers the sidebar again");
+  const shell = code("../../components/workspace/shell/workspace-shell.tsx");
+  assert.match(shell, /document\.documentElement\.style\.setProperty\("--nav-column", column\)/, "the shell stopped publishing the column a portal can read");
+  assert.match(shell, /narrowViewport\s*\?\s*"0px"/, "a phone's reader now leaves a gutter for an overlay sidebar");
   assert.match(panel, /data-testid="study-panel-full"/, "there is no way to go full screen");
 
   // 🔴🔴 CLOSED HIDES, IT DOES NOT UNMOUNT. A learner four questions into a check who closes the

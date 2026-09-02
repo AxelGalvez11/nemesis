@@ -16,6 +16,9 @@ import { useState } from "react";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import { ArtifactCard } from "@/components/workspace/learn/artifact-card";
+import { useRouter } from "next/navigation";
+
+import { putPending } from "@/components/workspace/learn/pending-attachment";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
 import { docxBlob, downloadDocx, downloadPdf, downloadSheet, pdfBlob, sheetBlob, type SheetData } from "@/lib/export/doc-file";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
@@ -180,6 +183,7 @@ export default function ExportsPreviewPage() {
 
 function ExportsPreview() {
   const [report, setReport] = useState<string>("");
+  const router = useRouter();
   const [open, setOpen] = useState<CanvasOutput | null>(null);
 
   const check = async () => {
@@ -248,7 +252,23 @@ function ExportsPreview() {
           <ArtifactCard key={output.id} onOpen={() => setOpen(output)} output={output} />
         ))}
       </div>
-      {open && <OutputPreview onClose={() => setOpen(null)} output={open} />}
+      {/* 🔴 OPENED THE WAY THE LIBRARY OPENS IT — full screen beside the sidebar, with the ask bar.
+          This harness exists so the reader can be SEEN without a Supabase session; opening it
+          docked and mute showed a shape no shipped door produces. `onAsk` does what the Library's
+          does, because a control wired to nothing is exactly what this preview must not teach. */}
+      {open && (
+        <OutputPreview
+          initialMode="full"
+          onAsk={(question, material) => {
+            if (material) {
+              putPending([{ file: new File([material.text], material.name, { type: "text/markdown" }), read: null }]);
+            }
+            router.push(`/learn?ask=${encodeURIComponent(question)}`);
+          }}
+          onClose={() => setOpen(null)}
+          output={open}
+        />
+      )}
       {report && (
         <pre className="m-0 overflow-x-auto rounded-xl bg-(--ui-bg-tertiary) p-4 text-[length:var(--canvas-text-meta)] text-(--ui-text-primary)">
           {report}

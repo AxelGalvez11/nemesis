@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { DeckDesignPicker, useDeckDesignChoice } from "@/components/workspace/deck/deck-design-picker";
 import { DeckView } from "@/components/workspace/deck/deck-view";
+import { putPending } from "@/components/workspace/learn/pending-attachment";
 import type { DeckPlan } from "@/lib/export/deck-plan";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { loadCanvas } from "@/lib/learn/canvas-store";
@@ -95,6 +96,13 @@ export default function DeckPage() {
       // 🔴 BACK IF THERE IS A BACK, THE LIBRARY OTHERWISE. A deck is reached from the shelf, from a
       // canvas, and from a pasted URL; `router.back()` alone does nothing at all on the third,
       // which is the failure mode of every control that changes state and paints nothing.
+      // 🔴 THE SAME HAND-OFF THE LIBRARY'S READER USES — `putPending` stages the deck as the new
+      // canvas's own material, so "what does slide 4 mean?" opens a conversation that is already
+      // holding the deck. See library-outputs.tsx for why a real `File` rather than a second lane.
+      onAsk={(question, material) => {
+        putPending([{ file: new File([material.text], material.name, { type: "text/markdown" }), read: null }]);
+        router.push(`/learn?ask=${encodeURIComponent(question)}`);
+      }}
       onClose={() => (window.history.length > 1 ? router.back() : router.push("/library"))}
       plan={plan}
     />
