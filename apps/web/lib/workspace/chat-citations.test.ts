@@ -115,3 +115,31 @@ assert.ok(!oneDoc.includes(".1") && !oneDoc.includes(".2"));
 
 // A run across TWO documents keeps the count.
 assert.match(groupFileRuns(fileRefsToMarkdown("Both say so [s1:e4][s2:e9].", FILES)), /#nemesis-file=s1\.1\)/);
+
+// ── the list form, which production found before the tests did ──────────────
+//
+// 🔴🔴 MEASURED ON THE OWNER'S OWN CANVAS TWO HOURS AFTER THIS SHIPPED. The model wrote
+// `[s1:e26, s1:e29]` for a sentence built from two excerpts — the ordinary thing to do, and nothing
+// had told it one id per bracket — and the parser matched only singles, so that bracket stayed in
+// the prose as literal text. He reported the answer as "harder to read" in the same message.
+
+assert.equal(
+  fileRefsToMarkdown("The TCR cannot see a whole protein [s1:e26, s1:e29].", FILES),
+  "The TCR cannot see a whole protein [IPT4 Steroid Med Chem Practice Questions Hevener 8 2026](#nemesis-file=s1).",
+);
+
+// 🔴 TWO EXCERPTS OF ONE DOCUMENT ARE ONE CITATION OF ONE DOCUMENT. No "+1": that would claim two
+// sources where there is one, which is the same lie `groupFileRuns` refuses for adjacent markers.
+assert.ok(!fileRefsToMarkdown("Both [s1:e1, s1:e2].", FILES).includes(".1"));
+
+// Across two documents the count is real, and rides the href the way an adjacent run's does.
+assert.match(fileRefsToMarkdown("Both [s1:e4, s2:e9].", FILES), /#nemesis-file=s1\.1\)/);
+
+// Whitespace around the comma is the model's to choose, not ours to require.
+assert.match(fileRefsToMarkdown("A [s1:e4,s2:e9] b.", FILES), /#nemesis-file=s1\.1\)/);
+
+// An all-unknown list is still deleted whole, never left as half a bracket.
+assert.equal(fileRefsToMarkdown("A claim [s8:e1, s9:e2] here.", FILES), "A claim here.");
+
+// 🔴 AND A LIST IS STILL NOT A DRAWING OR A WEB CITE — the three markers stay disjoint.
+assert.equal(fileRefsToMarkdown("Drawn [smiles: CCO] cited [1].", FILES), "Drawn [smiles: CCO] cited [1].");

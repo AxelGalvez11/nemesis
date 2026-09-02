@@ -652,10 +652,11 @@ const NEMESIS_SYSTEM = [
   // A number would have to be kept in step with a list built somewhere else, which is precisely
   // the drift `canvas-chat.ts` warns about for `[n]`.
   "When a sentence comes from the attached material, mark it with that excerpt's id in square "
-  + "brackets, like [s1:e4], at the end of the sentence. Use ONLY ids that appear in the material "
-  + "below, exactly as written, and never invent one. Mark the sentences that carry a real claim "
-  + "from the material, not every sentence. Leave a sentence unmarked when it comes from your own "
-  + "knowledge rather than their documents, the difference is the point.",
+  + "brackets, like [s1:e4], at the end of the sentence. When it draws on more than one, put them "
+  + "in one bracket separated by commas, like [s1:e26, s1:e29]. Use ONLY ids that appear in the "
+  + "material below, exactly as written, and never invent one. Mark the sentences that carry a real "
+  + "claim from the material, not every sentence. Leave a sentence unmarked when it comes from your "
+  + "own knowledge rather than their documents, the difference is the point.",
 
   // 🔴🔴 THE CANVAS CAN DRAW A MOLECULE, AND UNTIL THIS LINE EXISTED THE MODEL HAD NO WAY TO KNOW.
   // Reported 2026-08-20: "i asked it to create the chemical structures using the new tools we gave
