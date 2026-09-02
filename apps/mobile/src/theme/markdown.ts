@@ -8,12 +8,12 @@ import type { ThemeColors } from "./palette";
 // this map — not the type tokens).
 export const createMarkdownStyles = (c: ThemeColors) =>
   ({
-    body: { color: c.text, fontSize: 18, lineHeight: 28 },
+    body: { color: c.text, fontSize: 16, lineHeight: 25.5 },
     paragraph: { marginTop: 0, marginBottom: 12 },
-    heading1: { color: c.text, fontSize: 27, lineHeight: 34, fontWeight: "700", marginTop: 18, marginBottom: 8 },
-    heading2: { color: c.text, fontSize: 22, lineHeight: 29, fontWeight: "700", marginTop: 18, marginBottom: 6 },
-    heading3: { color: c.text, fontSize: 19, lineHeight: 26, fontWeight: "600", marginTop: 14, marginBottom: 4 },
-    heading4: { color: c.text, fontSize: 18, lineHeight: 25, fontWeight: "700", marginTop: 12, marginBottom: 4 },
+    heading1: { color: c.text, fontSize: 24, lineHeight: 30, fontWeight: "700", marginTop: 18, marginBottom: 8 },
+    heading2: { color: c.text, fontSize: 20, lineHeight: 26, fontWeight: "700", marginTop: 16, marginBottom: 6 },
+    heading3: { color: c.text, fontSize: 18, lineHeight: 24, fontWeight: "600", marginTop: 14, marginBottom: 4 },
+    heading4: { color: c.text, fontSize: 16, lineHeight: 22, fontWeight: "700", marginTop: 12, marginBottom: 4 },
     strong: { fontWeight: "700" as const },
     em: { fontStyle: "italic" as const },
     s: { textDecorationLine: "line-through" as const },
