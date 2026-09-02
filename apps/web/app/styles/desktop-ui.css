@@ -777,6 +777,20 @@
        tinted every box edge pink back when the accent was crimson, and would
        do the same for anyone who picks Pink from the palette. */
     --ui-stroke-tertiary: color-mix(in srgb, var(--ui-base) 14%, transparent);
+    /* 🔴 AND THE OTHER THREE, BECAUSE RAISING ONE INVERTED THE LADDER.
+       Only `tertiary` was lifted in 2026-07-22, so dark ran
+       primary 18% · secondary 12% · TERTIARY 14% · quaternary 5% — a
+       "secondary" stroke drawing FAINTER than a tertiary one. Every form
+       control in the calendar borders on secondary, which is why the owner
+       could barely see them in dark on 2026-09-01 while the boxes around
+       them read fine.
+
+       Anchored on the 14% he tuned and holding light's proportions
+       (18/12/8/5), so the four keep their order and their relative weight:
+       nothing above tertiary can be quieter than it again. */
+    --ui-stroke-primary: color-mix(in srgb, var(--ui-base) 24%, transparent);
+    --ui-stroke-secondary: color-mix(in srgb, var(--ui-base) 20%, transparent);
+    --ui-stroke-quaternary: color-mix(in srgb, var(--ui-base) 9%, transparent);
   }
 
   /* DARK, CHARCOAL tone — the ChatGPT-parity ladder shipped 2026-08-05, now an
