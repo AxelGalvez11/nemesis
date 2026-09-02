@@ -50,7 +50,9 @@ export function fileKindFromTitle(title: string): CanvasFileKind {
   return EXTENSION_KIND[extensionOf(title)] ?? "generic";
 }
 
-/** The card's second line — "Word document", "PDF", etc. — for a title. */
+/** The card's second line — "Word document", "PDF", etc. — for a title. A title with no extension
+ *  at all is a Library note (files always carry one), so it reads "Note" rather than "File". */
 export function fileKindLabel(title: string): string {
+  if (!extensionOf(title)) return "Note";
   return KIND_LABEL[fileKindFromTitle(title)];
 }

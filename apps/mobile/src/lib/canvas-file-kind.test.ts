@@ -26,4 +26,6 @@ Deno.test("fileKindLabel: the card's second line", () => {
   assertEquals(fileKindLabel("data.csv"), "Spreadsheet");
   assertEquals(fileKindLabel("photo.jpg"), "Image");
   assertEquals(fileKindLabel("mystery.xyz"), "File");
+  // A Library note has no extension; it is a note, not an unknown file.
+  assertEquals(fileKindLabel("research retatrutide"), "Note");
 });
