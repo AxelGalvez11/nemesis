@@ -114,7 +114,10 @@ export function AddFilesSheet({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
-      <View style={[styles.page, { paddingTop: insets.top + space(2) }]}>
+      {/* A page sheet already sits below the status bar; adding the safe-area inset on top of that
+          left a 70pt blank band above the header (seen on the simulator). The reference's header
+          row starts a few points under the sheet's edge (IMG_6528). */}
+      <View style={[styles.page, { paddingTop: space(3) }]}>
         <View style={styles.header}>
           <Pressable onPress={onClose} style={styles.headerBtn} hitSlop={8} accessibilityLabel="Close">
             <CloseIcon size={16} color={c.text} />
