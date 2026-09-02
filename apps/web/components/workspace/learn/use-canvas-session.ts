@@ -884,7 +884,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // visuals that were beside it, so a restored turn is text. Saying so here beats a future
           // reader assuming the pictures were lost somewhere in this function.
           const said = found.blocks.length === 0 ? lastThingSaid(found.moments) : null;
-          if (said) setAside({ blockId: null, kind: "reply", text: said });
+          // 🔴🔴🔴 SET UNCONDITIONALLY, BECAUSE SWITCHING CHATS DID NOT CLEAR THE LAST ONE. Owner,
+          // 2026-09-02: *"whenever I switch chats the user bubbles aren't changing into the history
+          // of the chat, it just keeps the same chat from the newest chat."* Reproduced by clicking
+          // between two real conversations on production: the URL changed and the previous chat's
+          // reply stayed on screen for as long as it was watched.
+          //
+          // `LearningCanvas` is the same component before and after a switch — only its `canvasId`
+          // prop changes — so React keeps every piece of state, and an `if (said)` here left the
+          // OUTGOING conversation's reply standing in the new one. A canvas that legitimately has
+          // nothing to restore (it holds a document, or it is empty) has to say so out loud.
+          setAside(said ? { blockId: null, kind: "reply", text: said } : null);
           setReady(true);
 
           // The course rides the territory marker; a refresh must keep it (acceptance item 10).

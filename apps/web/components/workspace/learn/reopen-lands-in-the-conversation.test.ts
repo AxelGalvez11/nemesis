@@ -90,7 +90,12 @@ test("🔴🔴🔴 a canvas holding a LESSON still reopens on the lesson", () =>
 
 test("🔴🔴🔴 it is WIRED: the load path seeds it and the surface is told about material", () => {
   // The link that killed `figure` for weeks: built, correct, and never called.
-  assert.match(SESSION, /if \(said\) setAside\(\{ blockId: null, kind: "reply", text: said \}\)/, "a reopened canvas no longer restores its conversation");
+  // 🔴 UNCONDITIONAL SINCE 2026-09-02, AND THE `if` WAS A BUG OF ITS OWN. Restoring only when there
+  // is something to restore left the PREVIOUS conversation's reply on screen when a learner switched
+  // to a chat that had nothing — `LearningCanvas` is the same component either side of a switch, so
+  // React keeps the state. What this guard protects is unchanged: a reopened conversation lands back
+  // in itself. The null branch is what makes that true of the chat you switch AWAY from too.
+  assert.match(SESSION, /setAside\(said \? \{ blockId: null, kind: "reply", text: said \} : null\);/, "a reopened canvas no longer restores its conversation");
   assert.match(CANVAS, /hasMaterial: canvas\.sources\.length > 0/, "the surface is guessing again about whether there was material");
 });
 

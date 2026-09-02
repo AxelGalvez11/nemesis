@@ -1904,11 +1904,15 @@ export function LearningCanvas({
     //
     // 🔴 THIS EFFECT IS `seededFor`-GUARDED, so it runs once per canvas and cannot overwrite a live
     // turn mid-answer.
+    // 🔴🔴🔴 SET UNCONDITIONALLY, FOR THE SAME REASON `aside` IS — SEE use-canvas-session.ts. The
+    // first version of this only assigned when there was something to assign, which fixed the
+    // reopen and left the SWITCH broken: `LearningCanvas` is the same component either side of a
+    // chat change, so an unassigned `currentSaid` is the previous conversation's question, still
+    // rendered above the new one's answer. Reproduced on production by clicking between two real
+    // chats; the bubble never changed.
     const held = liveShowsLast ? restored.at(-1) : null;
-    if (held?.said) {
-      setCurrentSaid(held.said);
-      setCurrentSaidVia(held.saidVia ?? null);
-    }
+    setCurrentSaid(held?.said ?? null);
+    setCurrentSaidVia(held?.saidVia ?? null);
   }, [canvas.blocks.length, canvas.createdAt, canvas.id, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history]);
 
   /**
@@ -2780,7 +2784,7 @@ export function LearningCanvas({
             🔴 IT STILL COVERS WHAT IT WAS WRITTEN FOR: a brand-new canvas waiting on its first
             answer has an empty thread, so `preparing` still speaks there. */}
         {threadOpen && (turnInFlight || (presence === "preparing" && thread.length === 0)) && !replyText.trim() && (
-          <CanvasThinkingPreview app={session.workApp} label={preparingLabel} web={session.searchedDomains.length > 0} />
+          <CanvasThinkingPreview app={session.workApp} domains={session.searchedDomains} label={preparingLabel} web={session.searchedDomains.length > 0} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
@@ -3548,7 +3552,12 @@ export function LearningCanvas({
         // computing the gate HERE means no cleanup path has to be remembered: between turns there
         // is no turn in flight, so there are no chips, whatever the session happens to be holding.
         // Same construction as `caption` on the line above.
-        domains={turnInFlight ? session.searchedDomains : undefined}
+        // 🔴 ONLY IN CANVAS VIEW, WHERE THE CAPTION IS ALSO HERE. In chat the caption moved into the
+        // thread on 2026-08-31 and the chips stayed behind, so the sentence naming a step sat at the
+        // top of the conversation while the sites it named sat beside the mascot over the composer
+        // (owner, 2026-09-02). They travel with the caption now; `threadOpen` is the same term that
+        // scopes it, one line below.
+        domains={!threadOpen && turnInFlight ? session.searchedDomains : undefined}
         // 🔴 THE SURFACE KNOWS, BECAUSE THE POSE NO LONGER DOES. The character works in `idle` now
         // that the dots are gone, and `idle` is also how it rests — so "come forward" has to be
         // said by whoever knows a turn is in flight rather than inferred from the animation.

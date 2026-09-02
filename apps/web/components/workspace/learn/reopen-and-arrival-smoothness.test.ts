@@ -26,6 +26,7 @@ const strip = (s: string) => s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*
 const DOCK = readFileSync("components/character/character-dock.tsx", "utf8");
 const CANVAS = readFileSync("components/workspace/learn/learning-canvas.tsx", "utf8");
 const UTTERANCE = readFileSync("components/workspace/learn/learner-utterance.tsx", "utf8");
+const SESSION = readFileSync("components/workspace/learn/use-canvas-session.ts", "utf8");
 
 test("🔴🔴🔴 the dock aims at where its anchor SITS, never at where an animation is holding it", () => {
   // A poller cannot follow a transform. `getBoundingClientRect` reports the painted box, so while
@@ -64,6 +65,32 @@ test("🔴🔴 the arrival marker is a prop on the bubble, never an element arou
   assert.match(UTTERANCE, /max-w-\[70%\] rounded-\[22px\] px-\[16px\] py-\[10px\]/, "the bubble drifted off the reference's measurements");
 });
 
+test("🔴🔴🔴 switching chats CLEARS the last one — an unassigned bubble is the previous conversation's", () => {
+  // 🔴🔴 THIS IS THE HALF THE FIRST FIX MISSED, AND MISSING IT LOOKED EXACTLY LIKE THE ORIGINAL BUG.
+  // Owner, 2026-09-02: *"whenever I switch chats the user bubbles aren't changing into the history
+  // of the chat, it just keeps the same chat from the newest chat."* Reproduced by clicking between
+  // two real conversations on production: the URL changed and the previous chat's bubble stayed on
+  // screen for as long as it was watched.
+  //
+  // `LearningCanvas` is the SAME COMPONENT either side of a chat switch — only its `canvasId` prop
+  // changes — so React keeps every piece of state it holds. Assigning the restored question only
+  // when there is one to assign therefore leaves the OUTGOING conversation's question standing
+  // above the incoming one's answer. Both halves of the pair have to be written on every switch,
+  // including with null.
+  assert.match(CANVAS, /setCurrentSaid\(held\?\.said \?\? null\);/, "the question is assigned conditionally again, so it survives into the next chat");
+  assert.match(CANVAS, /setCurrentSaidVia\(held\?\.saidVia \?\? null\);/, "the spoken flag survives into the next chat");
+  assert.ok(
+    !/if \(held\?\.said\) \{/.test(CANVAS),
+    "the restore went back to assigning only when it has something, which is what leaves the last chat on screen",
+  );
+  // And the same rule on the answer, which lives in the session rather than here.
+  assert.match(
+    SESSION,
+    /setAside\(said \? \{ blockId: null, kind: "reply", text: said \} : null\);/,
+    "the previous conversation's reply is left standing when the new one has nothing to restore",
+  );
+});
+
 test("🔴🔴🔴 reopening a chat brings back the QUESTION, not just the answer", () => {
   // The thread deliberately holds its newest exchange back when the live region is showing it —
   // and `use-canvas-session.ts` restores that exchange by seeding `aside` with `lastThingSaid`,
@@ -71,8 +98,7 @@ test("🔴🔴🔴 reopening a chat brings back the QUESTION, not just the answe
   // thread and restored nowhere. On a canvas with exactly ONE exchange the thread is then empty and
   // the whole conversation is one orphaned reply with no bubble above it.
   assert.match(CANVAS, /const held = liveShowsLast \? restored\.at\(-1\) : null;/, "the held-back turn is no longer identified, so its question cannot come back");
-  assert.match(CANVAS, /if \(held\?\.said\) \{\s*setCurrentSaid\(held\.said\);/, "the restored question is gone again");
-  assert.match(CANVAS, /setCurrentSaidVia\(held\.saidVia \?\? null\);/, "a restored spoken turn loses the fact that it was spoken");
+  assert.match(CANVAS, /setCurrentSaid\(held\?\.said \?\? null\);/, "the restored question is gone again");
   // 🔴 FROM `restored`, NOT RE-DERIVED. The turn the thread just decided to hold back is the exact
   // turn the live region has to show; taking it from the same array is what stops the two
   // disagreeing about which one that is.

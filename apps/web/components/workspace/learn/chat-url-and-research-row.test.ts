@@ -39,6 +39,29 @@ const code = (source: string) => source.replace(/^\s*\/\/.*$/gm, "").replace(/\/
 const CANVAS = code(CANVAS_RAW);
 const SESSION = code(readFileSync("components/workspace/learn/use-canvas-session.ts", "utf8"));
 
+test("🔴🔴🔴 the sites are drawn under the sentence that names them, not beside the mascot", () => {
+  // Owner, 2026-09-02: *"why are the favicons showing up at the bottom, they're supposed to be
+  // below the thinking preview… I don't want that."*
+  //
+  // `CharacterDock` has carried them since #795 because the thinking caption lived there at the
+  // time. The caption MOVED into the thread on 2026-08-31 when the canvas became a chat; the chips
+  // did not move with it. So the sentence sat at the top of the conversation and the sites it was
+  // describing sat 600px below, beside the character, on top of the composer.
+  const PREVIEW_SRC = readFileSync("components/workspace/learn/canvas-thinking-preview.tsx", "utf8");
+  assert.match(PREVIEW_SRC, /domains\?: readonly string\[\];/, "the thinking line cannot carry the sites it is reading");
+  assert.match(PREVIEW_SRC, /<DomainChips domains=\{domains\} \/>/, "the sites stopped being drawn under the line");
+  assert.match(
+    CANVAS,
+    /<CanvasThinkingPreview app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\}/,
+    "the line is no longer handed the sites",
+  );
+  // 🔴 AND THE DOCK ONLY DRAWS THEM WHERE THE CAPTION ALSO IS. `threadOpen` is the same term that
+  // scopes the caption; the two must never be scoped differently or they separate again.
+  assert.match(CANVAS, /domains=\{!threadOpen && turnInFlight \? session\.searchedDomains : undefined\}/,
+    "the character is drawing the sites in chat view again, away from the sentence they belong to");
+  assert.match(CANVAS, /caption=\{threadOpen \? null : preparingLabel\}/, "the caption and the sites are scoped differently, so they will separate again");
+});
+
 test("🔴🔴 the sites are a ROW, and a row cannot collapse into the composer", () => {
   // 🔴 THE COLLAPSE IS THE PART THAT LOOKS LIKE A CSS DETAIL AND IS ACTUALLY THE BUG. This row is
   // absolutely positioned beside the character with only a `left`, so its width is shrink-to-fit —
@@ -74,7 +97,7 @@ test("🔴🔴 the step wears a mark only when it has a source to name", () => {
   // on the first unrelated step that borrowed the verb.
   assert.match(
     CANVAS,
-    /<CanvasThinkingPreview app=\{session\.workApp\} label=\{preparingLabel\} web=\{session\.searchedDomains\.length > 0\} \/>/,
+    /<CanvasThinkingPreview app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\} web=\{session\.searchedDomains\.length > 0\} \/>/,
     "the globe is no longer driven by real sites, so it can appear over a step with no source behind it",
   );
   assert.ok(

@@ -69,11 +69,17 @@ test("🔴🔴🔴 a stale chip is unrepresentable, because the gate is computed
   // Calibration: drop the `turnInFlight ?` and this reddens. Between turns there IS no turn in
   // flight, so there are no chips whatever the session happens to still be holding — no cleanup
   // path has to be remembered on any of converse's exits.
+  // 🔴 AND `!threadOpen` JOINED IT ON 2026-09-02, WHICH IS A PLACEMENT RULE, NOT A STALENESS ONE.
+  // The chips followed the thinking caption into the thread (owner: *"the favicons are supposed to
+  // be below the thinking preview… I don't want that"* about them sitting by the mascot). In CHAT
+  // the caption and the chips are both drawn by `CanvasThinkingPreview`; in CANVAS both are still
+  // on the dock. `turnInFlight` is untouched and is still what makes a stale chip unrepresentable.
   assert.match(
     CANVAS,
-    /domains=\{turnInFlight \? session\.searchedDomains : undefined\}/,
+    /domains=\{!threadOpen && turnInFlight \? session\.searchedDomains : undefined\}/,
     "the dock can now show hosts after the turn has finished",
   );
+  assert.match(CANVAS, /caption=\{threadOpen \? null : preparingLabel\}/, "the caption and the chips are scoped differently, so they will separate again");
 });
 
 test("🔴 one host parser, shared with the pills and the sources panel", () => {

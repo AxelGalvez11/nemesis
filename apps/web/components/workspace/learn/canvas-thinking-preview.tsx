@@ -33,6 +33,7 @@
 // able to see that the region is busy, so they hold their resting contrast rather than vanishing.
 
 
+import { DomainChips } from "@/components/DomainChips";
 import { Icon } from "@/components/icons";
 import { logoFor } from "@/lib/workspace/app-logos";
 
@@ -40,9 +41,27 @@ import { logoFor } from "@/lib/workspace/app-logos";
 
 export function CanvasThinkingPreview({
   app = null,
+  domains = [],
   label = null,
   web = false,
 }: {
+  /**
+   * The sites this step is reading, drawn UNDER the sentence that names it.
+   *
+   * 🔴🔴 THEY USED TO HANG OFF THE CHARACTER, AT THE FOOT OF THE PAGE. Owner, 2026-09-02: *"why are
+   * the favicons showing up at the bottom, they're supposed to be below the thinking preview… I
+   * don't want that."* `CharacterDock` has carried them since #795 because that is where the
+   * thinking caption lived at the time — and the caption MOVED into the thread on 2026-08-31 when
+   * the canvas became a chat (thinking-and-rewind-match-the-reference.test.ts pins that). The chips
+   * did not move with it, so the sentence was at the top of the conversation and the sites it was
+   * describing were 600px below it, beside the mascot, over the composer.
+   *
+   * 🔴 THEY GO WHERE THE CAPTION GOES, WHICH IS VIEW-SCOPED AND STAYS THAT WAY. In CANVAS view the
+   * caption is still under the character and the dock still draws them there; in CHAT view both
+   * belong here. The caller passes them to exactly one of the two — see `threadOpen` in
+   * learning-canvas.tsx, which already scopes the caption the same way.
+   */
+  domains?: readonly string[];
   /**
    * This step is reading the open web, so it gets a globe.
    *
@@ -127,6 +146,16 @@ export function CanvasThinkingPreview({
         {!appLogo && web ? <Icon aria-hidden className="shrink-0 text-(--ui-text-tertiary)" name="globe" size={20} /> : null}
         <span className="canvas-thinking-word">{label ? label.replace(/…$/, "") : "Thinking"}</span>
       </p>
+      {/* 🔴 INDENTED TO THE SENTENCE, NOT TO THE COLUMN. The row above is a 20px mark and an 8px
+          gap, so its words start 28px in; chips flush to the column would hang left of the line
+          they belong to. With no mark there is nothing to clear and they sit flush.
+          🔴 AND THEY DO NOT SHIMMER. The caption shimmers because it names a step still running; a
+          site already read is a settled fact, and animating it would say the opposite. */}
+      {domains.length > 0 ? (
+        <div className="mt-1" style={{ paddingLeft: appLogo || web ? 28 : 0 }}>
+          <DomainChips domains={domains} />
+        </div>
+      ) : null}
     </div>
   );
 }
