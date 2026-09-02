@@ -36,6 +36,24 @@ test("🔴🔴🔴 an outright request for a document is not a borderline call",
     "the request is being detected by matching the learner's words instead of by intent");
 });
 
+test("🔴🔴🔴 offering is not an allowed answer to an outright request", () => {
+  // 🔴 THE FIRST FIX SHIPPED HALF-WORKING AND THIS IS THE OTHER HALF. Driven on production the same
+  // hour: the honesty rule worked exactly as written — *"I haven't made a document. I only answered
+  // your question in the chat"* — and then it asked *"would you like me to actually write one up?"*
+  // about a document he had asked for in plain words one message earlier.
+  //
+  // The wording handed it that. The honesty rule ended "either make one or say plainly that you have
+  // not, and offer", which reads as two equally good branches, and the cost paragraph above spends
+  // five sentences arguing for the second. Telling the truth and still not acting is, for the
+  // learner, the same outcome with better manners.
+  assert.match(ROUTER, /Never answer an outright request by OFFERING to do it\./,
+    "offering is an allowed answer again, so an explicit request can still end in a question");
+  assert.match(ROUTER, /such a request is never \\"borderline\\"/,
+    "an outright request can be read as borderline again, which is what the cost paragraph then decides");
+  assert.match(ROUTER, /That is the only case where offering is right\./,
+    "the honesty rule offers a way out again instead of naming the one case that earns it");
+});
+
 test("🔴🔴🔴 the reply may not announce a document the flag did not ask for", () => {
   // This is the defect, and it outranks the missing document. `reply` and `wantsReport` are two
   // fields of ONE envelope and nothing has ever made them agree, so the model can decline the run
