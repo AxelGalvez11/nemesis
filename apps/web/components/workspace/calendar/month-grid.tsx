@@ -14,7 +14,7 @@
 //   1. A TIMED EVENT IS A DOT AND WORDS, not a filled pill. Three or four
 //      filled pills stacked in one cell is more paint than text; that is what
 //      a busy day looked like. Only an all-day deadline keeps a solid bar —
-//      plus exams, see drawsAsBar in kind-meta.ts.
+//      see drawsAsBar in kind-meta.ts.
 //   2. HOW MANY FIT IS MEASURED, not the constant three. See month-cell.ts.
 //   3. "+N MORE" OPENS WHAT IS HIDDEN. It used to list the whole day again —
 //      the events already visible included — and drop every time while doing
@@ -299,7 +299,7 @@ function DayCell({ calendarHex, day, events, metrics, onOpenEvent, onPick, onSel
  *
  * A timed event is a coloured dot, its time and its name on the bare cell —
  * Google's own treatment, and the reason six events in a day stay readable.
- * An all-day deadline (and every exam) is a solid bar instead: see drawsAsBar.
+ * An all-day deadline is a solid bar instead: see drawsAsBar.
  */
 function EventLine({
   calendarHex,
@@ -321,7 +321,7 @@ function EventLine({
   const cancelled = event.status === "cancelled";
   const tentative = event.status === "tentative";
 
-  if (drawsAsBar(event.kind, event.time)) {
+  if (drawsAsBar(event.time)) {
     return (
       <button
         className={cn(

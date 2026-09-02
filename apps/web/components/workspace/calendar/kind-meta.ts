@@ -96,14 +96,17 @@ export const KIND_META: Record<CalendarEventKind, KindMeta> = {
 export const KIND_ORDER: readonly CalendarEventKind[] = ["assignment", "exam", "rotation", "class", "other"];
 
 /**
- * Which kinds are drawn as a solid bar in the month grid rather than a dot and
- * a line of text.
+ * What is drawn as a solid bar in the month grid rather than a dot and a line
+ * of text: anything without a time.
  *
- * Google's rule is "all-day items get a bar, timed ones get a dot", and an
- * untimed deadline is exactly an all-day item. `exam` is the one deliberate
- * addition: drawn as a dot it came out quieter than a reading deadline sitting
- * on the same day, which is the wrong way round on a student's calendar.
+ * Google's rule exactly — "all-day items get a bar, timed ones get a dot" — and
+ * an untimed deadline is exactly an all-day item.
+ *
+ * 🔴 `kind === "exam"` USED TO BE A SECOND REASON, and it went on 2026-09-01
+ * with the rest of the school-shaped behaviour. Once nothing on screen shows a
+ * kind, a bar that appears because an event is secretly an exam is a difference
+ * nobody can explain, undo, or reproduce on a new event.
  */
-export function drawsAsBar(kind: CalendarEventKind, time: string | undefined): boolean {
-  return !time || kind === "exam";
+export function drawsAsBar(time: string | undefined): boolean {
+  return !time;
 }
