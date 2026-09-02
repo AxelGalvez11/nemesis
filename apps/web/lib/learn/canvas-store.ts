@@ -220,13 +220,15 @@ function localRead(id: string): LearningCanvas | null {
   }
 }
 
-function localWrite(canvas: LearningCanvas): void {
+function localWrite(canvas: LearningCanvas): boolean {
   try {
     window.localStorage.setItem(LOCAL_PREFIX + canvas.id, JSON.stringify(canvas));
     const index = localIndex().filter((id) => id !== canvas.id);
     window.localStorage.setItem(LOCAL_INDEX, JSON.stringify([canvas.id, ...index].slice(0, 40)));
+    return true;
   } catch {
     // A full quota must not stop the lesson the learner is reading right now.
+    return false;
   }
 }
 
@@ -497,18 +499,33 @@ export async function loadCanvas(userId: string | null, id: string): Promise<Lea
   return localRead(id);
 }
 
-/** Persist. Always writes locally too, so a canvas is never lost to a transient network
- *  failure in the middle of a lesson. */
-export async function saveCanvas(userId: string | null, canvas: LearningCanvas): Promise<void> {
-  localWrite(canvas);
-  if (!userId) return;
+/**
+ * Persist. Always writes locally too, so a canvas is never lost to a transient network failure in
+ * the middle of a lesson.
+ *
+ * 🔴🔴 IT REPORTS WHETHER THE CANVAS CAN BE FOUND AGAIN, and that answer is load-bearing since
+ * 2026-09-02: the session puts the canvas's id in the address bar after its first save, and it must
+ * only do that once there is genuinely something at that address. `loadCanvas` falls back to the
+ * local copy on every path, so a cloud failure with a local write still counts as findable — but a
+ * full quota AND a cloud error does not, and pointing the URL at nothing would turn a refresh into
+ * a blank canvas standing where the learner's work was.
+ *
+ * Callers that do not care still write `void saveCanvas(…)` and are unaffected.
+ */
+export async function saveCanvas(userId: string | null, canvas: LearningCanvas): Promise<boolean> {
+  const local = localWrite(canvas);
+  // 🔴 NO BROADCAST WHEN SIGNED OUT, exactly as before. This function's shape changed to report
+  // findability; what it DOES must not, and the signed-out path never notified the lists.
+  if (!userId) return local;
   const { error } = await supabase.from(TABLE).upsert(canvasToRow(canvas, userId), { onConflict: "id" });
+  emitCanvasesChanged();
   if (error && !isMissingTableError(error)) {
     // Local copy already succeeded; a cloud failure is worth knowing about but not worth
     // interrupting the learner for.
     console.warn("[learn] canvas save failed", error.message);
+    return local;
   }
-  emitCanvasesChanged();
+  return true;
 }
 
 // ------------------------------------------------------------ topic territory
