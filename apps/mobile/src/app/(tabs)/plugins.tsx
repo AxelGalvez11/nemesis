@@ -74,17 +74,23 @@ export default function PluginsScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
-  const { setHeaderTitle } = useShell();
+  const { setHeaderCenter } = useShell();
   const [query, setQuery] = useState("");
 
-  // This screen draws its own centered title (with the reference's small
-  // ⌄) below the shared TopBar rather than using its header-title slot, so a
-  // dropdown glyph can sit right next to the word — the shared slot only
-  // ever renders plain text.
+  // Coordinator simulator measurement against IMG_6558: the reference's
+  // "Plugins ⌄" sits INSIDE the shared top bar (centred at ≈y67), not as a
+  // page heading below it. The plain headerTitle slot only ever renders
+  // text, so the ⌄ next to the word needs the CENTER CONTROL slot instead
+  // (setHeaderCenter) — same fix library.tsx's folder title got.
   useEffect(() => {
-    setHeaderTitle(null);
-    return () => setHeaderTitle(null);
-  }, [setHeaderTitle]);
+    setHeaderCenter(
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Plugins</Text>
+        <Text style={styles.titleChevron}>⌄</Text>
+      </View>,
+    );
+    return () => setHeaderCenter(null);
+  }, [setHeaderCenter, styles]);
 
   const trimmed = query.trim().toLowerCase();
   const visible = trimmed
@@ -98,11 +104,6 @@ export default function PluginsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.body, { paddingTop: contentTop + space(2), paddingBottom: contentBottom + 72 }]}
       >
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>Plugins</Text>
-          <Text style={styles.titleChevron}>⌄</Text>
-        </View>
-
         {installed.length > 0 ? (
           <>
             <Text style={styles.sectionLabel}>Installed</Text>
@@ -229,14 +230,19 @@ const createStyles = (c: ThemeColors) =>
     flex: { flex: 1, backgroundColor: c.bg },
     body: { paddingHorizontal: space(4), flexGrow: 1 },
 
-    titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(1), marginBottom: space(4) },
+    // Now rendered INSIDE the shared top bar via setHeaderCenter, not this
+    // page's own flow — see the effect above.
+    titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(1) },
     title: { ...type.title, color: c.text },
     // A small dropdown mark next to the title (IMG_6558) — decorative today,
     // same as the reference's own (it opens no menu there either in this
-    // screen's scope).
-    titleChevron: { fontSize: 13, color: c.text3, marginTop: 2 },
+    // screen's scope). 12pt per the coordinator's measurement.
+    titleChevron: { fontSize: 12, color: c.text3, marginTop: 2 },
 
-    sectionLabel: { ...type.small, color: c.text3, fontWeight: "500", marginTop: space(3), marginBottom: space(2.5) },
+    // 17pt semibold in the page's own text color, not the old 15pt grey —
+    // coordinator measurement against IMG_6558: the reference's "Installed"/
+    // "Popular" read as row-label weight/size, not a muted section caption.
+    sectionLabel: { ...type.title, color: c.text, marginTop: space(3), marginBottom: space(2.5) },
 
     installedRow: { flexDirection: "row", flexWrap: "wrap", gap: space(3), marginBottom: space(1) },
     tile: {

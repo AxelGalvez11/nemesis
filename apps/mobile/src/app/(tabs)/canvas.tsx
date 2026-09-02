@@ -514,7 +514,9 @@ export default function CanvasScreen() {
   const composerBottomPad = keyboardUp ? space(3) : contentBottom - space(1);
   // The last answer's action row (36pt) must clear the composer at the end of the scroll — seen sitting
   // under the card on the simulator, 2026-09-01.
-  const listBottomInset = composerBottomPad + COMPOSER_COMPACT_HEIGHT + space(2) + 36 + space(2);
+  // …and the character's dock above the composer (it never reserves space in the list, so the
+  // list reserves room for it instead — otherwise it sat on the last answer's action row).
+  const listBottomInset = composerBottomPad + COMPOSER_COMPACT_HEIGHT + space(2) + 36 + space(2) + CHARACTER_DOCK_SIZE;
   const footerSpacer = Math.max(0, listHeight - listBottomInset - contentTop - space(2) - lastTurnHeight);
   const placeholder = turns.length > 0 || pendingText !== null ? "Follow up" : "Ask Nemesis";
 

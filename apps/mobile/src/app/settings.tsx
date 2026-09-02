@@ -60,10 +60,24 @@ const CARD_RADIUS = 18;
 // hairline begins under "P" in "Personalization", not under the smiley).
 // = row's own horizontal padding + the icon column's width + its gap to the
 // label, i.e. exactly where <Text> begins in the row below.
-const ROW_PAD_H = space(4); // 16
+//
+// Coordinator simulator measurement (2026-09-01, second pass): row icons sat
+// at x≈36.7 against the reference's ≈42.7 — +6 here (16→22) closes that gap
+// (icons land at 22, near enough the measured 42.7 once the page's own
+// space(4) inset is added back in the row's parent).
+const ROW_PAD_H = space(4) + 6; // 22
 const ROW_ICON_W = 24;
 const ROW_ICON_GAP = space(3); // 12
-const DIVIDER_INSET = ROW_PAD_H + ROW_ICON_W + ROW_ICON_GAP; // 52
+const DIVIDER_INSET = ROW_PAD_H + ROW_ICON_W + ROW_ICON_GAP; // 58
+
+// Same simulator pass: the × row's ink sat ~62-68pt too low across the whole
+// header (× at y149 vs the reference's 81, badge at 232 vs 172, name at 267
+// vs 205) — this modal's own `insets.top` reads much larger than the sheet
+// actually needs (the pageSheet presentation already sits well below the
+// notch on its own), so the old `insets.top + space(2)` double-counted safe
+// area the sheet had already absorbed. A raw constant instead: the × row
+// starts ≈26pt below the sheet's own top edge, matching the reference.
+const CLOSE_BTN_TOP_PAD = 4;
 
 // Avatar + pencil badge — measured off IMG_6548 (native px ÷ 3): the avatar
 // circle is ~72pt (the task brief's "≈80pt" was a by-eye estimate; this is
@@ -110,7 +124,7 @@ export default function SettingsScreen() {
   };
 
   const CloseButton = (
-    <View style={[styles.modalTop, { paddingTop: insets.top + space(2) }]}>
+    <View style={[styles.modalTop, { paddingTop: CLOSE_BTN_TOP_PAD }]}>
       <Pressable onPress={close} style={styles.closeBtn} hitSlop={8} testID="settings-close" accessibilityLabel="Close settings">
         <CloseIcon size={17} color={c.text} />
       </Pressable>
@@ -282,7 +296,9 @@ function SettingRow({
         style={({ pressed }) => [styles.row, pressed && onPress && styles.rowPressed]}
       >
         <View style={styles.rowIcon}>
-          <Icon size={20} color={iconTint} strokeWidth={1.7} />
+          {/* 22, not 20 — coordinator measurement: reference ink stands ~18pt
+              tall (a 20-22pt glyph), ours read ~16.5pt at size 20. */}
+          <Icon size={22} color={iconTint} strokeWidth={1.7} />
         </View>
         <Text style={[styles.rowLabel, { color: labelColor }]} numberOfLines={1}>{label}</Text>
         {value ? <Text style={styles.rowValue} numberOfLines={1}>{value}</Text> : null}
@@ -358,7 +374,9 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: "500",
       marginTop: space(5),
       marginBottom: space(2),
-      marginLeft: space(2),
+      // space(2)+6 — same +6 the row icons got (see ROW_PAD_H), so the label
+      // lines up with them rather than sitting 6pt to their left.
+      marginLeft: space(2) + 6,
     },
     card: {
       backgroundColor: c.raised,
