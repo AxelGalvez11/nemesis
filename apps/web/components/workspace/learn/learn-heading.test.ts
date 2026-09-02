@@ -113,12 +113,38 @@ test("🔴 every subject is capitalised, and none of them shouts (2026-09-01)", 
   // lowercase". Each word is the name of a thing you can pick rather than a word in a sentence, so
   // all nine agree. Every WORD is capitalised, not just the first: "Contract Law", not "Contract
   // law" — there is no article or preposition among them to leave lowercase.
-  for (const subject of LEARN_SUBJECTS) {
+  // 🔴 EXCEPT THE FIRST, WHICH IS "anything" AND IS NOT A SUBJECT. Owner, 2026-09-01: *"I want the
+  // first thing for it to say is learn anything."* The rule above is that each word is the NAME OF
+  // A THING YOU CAN PICK; "anything" is the opposite of a pick, so it takes ordinary sentence case.
+  // Pinned by position AND by spelling, because "the first entry is exempt" is the kind of hole a
+  // second lowercase subject slips through.
+  assert.equal(LEARN_SUBJECTS[0], "anything", "the greeting no longer opens on the promise");
+  for (const subject of LEARN_SUBJECTS.slice(1)) {
     for (const word of subject.split(" ")) {
       assert.match(word, /^[A-Z]/, `"${subject}" is not capitalised`);
       assert.ok(word !== word.toUpperCase() || word.length === 1, `"${subject}" is shouting`);
     }
   }
+});
+
+test("🔴🔴 the tour is shuffled, after mount, and never moves the first word", () => {
+  // Owner, 2026-09-01: *"if you could randomize the way it presents things… that'd be great too."*
+  //
+  // 🔴 THE SHUFFLE CANNOT HAPPEN DURING RENDER. A random order is a different string on the server
+  // than in the browser, and React throws the whole tree away on that mismatch — the same
+  // constraint that already keeps the width measurement in an effect. So: declared order first,
+  // shuffled in an effect.
+  assert.match(HEADING, /useEffect\(\(\) => setOrder\(tour\(\)\), \[\]\)/, "the shuffle moved out of its effect");
+  assert.match(HEADING, /useState<readonly number\[\]>\(\(\) => LEARN_SUBJECTS\.map/, "the first render no longer uses the declared order");
+  assert.match(HEADING, /return \[0, \.\.\.rest\];/, "the shuffle now moves the first word too");
+  assert.match(HEADING, /const rest: number\[\] = LEARN_SUBJECTS\.map\(\(_, at\) => at\)\.slice\(1\)/, "the shuffle reaches index 0");
+  // 🔴 AND IT DOES NOT RE-SHUFFLE ON THE WRAP. That would have to happen inside the rotation's own
+  // state updater, and a `setState` nested in an updater is the shape that doubled every dictated
+  // sentence in #880 — invisible in a diff, wrong at runtime.
+  assert.ok(!/setStep\(\(current\) => \{[\s\S]{0,200}setOrder/.test(HEADING), "the shuffle moved inside a state updater");
+  // Every subject really is reachable: a tour that dropped one would still look random.
+  const list = HEADING.slice(HEADING.indexOf("export const LEARN_SUBJECTS"));
+  assert.equal((list.slice(0, list.indexOf("] as const")).match(/^\s*"/gm) ?? []).length, LEARN_SUBJECTS.length, "the list and the tour disagree about how many words there are");
 });
 
 test("🔴🔴 the last letter of a subject is never shaved (2026-09-01)", () => {

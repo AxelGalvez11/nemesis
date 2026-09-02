@@ -198,6 +198,40 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
     return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
   }, []);
 
+  /**
+   * 🔴🔴 THE NAV COLUMN'S WIDTH, PUBLISHED WHERE A PORTAL CAN READ IT. Owner, 2026-09-01, of
+   * ChatGPT's library: *"you keep the left sidebar and it just leaves the sidebar open and it'll
+   * just have the document viewer in there."* Measured in his own Chrome the same day: their
+   * viewer spans x=260 to the right edge — the main column exactly — while the 260px sidebar is
+   * untouched.
+   *
+   * Our readers are `position: fixed` and portalled to `document.body`, and they have to be: the
+   * canvas animates, and `fixed` resolves against a transformed ancestor rather than the viewport
+   * (output-preview.tsx carries that scar). But `SHELL_VARS` live on `[data-workspace]`, which a
+   * body-level portal is OUTSIDE of, so `var(--pane-chat-sidebar-width)` reads as nothing there.
+   *
+   * 🔴 SET ON `documentElement`, NOT COPIED AS A NUMBER. The value is the token expression itself,
+   * so the width still comes from `--nav-sidebar-width` / `--nav-rail-width` in `globals.css` and
+   * a reader inherits every change to them. Copying pixels here would be the second source of
+   * truth this file already deleted once.
+   *
+   * 🔴 ZERO ON A NARROW VIEWPORT, where the sidebar is an OVERLAY rather than a column: there is
+   * no gutter to leave, and leaving one would strand a phone's reader 84vw to the right.
+   */
+  useEffect(() => {
+    const column = narrowViewport
+      ? "0px"
+      : sidebarVisible
+        ? "var(--nav-sidebar-width)"
+        : railVisible
+          ? "var(--nav-rail-width)"
+          : "0px";
+    document.documentElement.style.setProperty("--nav-column", column);
+    return () => {
+      document.documentElement.style.removeProperty("--nav-column");
+    };
+  }, [narrowViewport, railVisible, sidebarVisible]);
+
   useEffect(() => {
     const addHoverDescriptions = (root: ParentNode) => {
       root.querySelectorAll<HTMLElement>("button[aria-label], a[aria-label], [role='button'][aria-label]").forEach((control) => {

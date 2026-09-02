@@ -105,7 +105,7 @@ export function StudyPanel({
     <div
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
-        full ? "left-0" : "border-l border-(--ui-stroke-tertiary)",
+        full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
         // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
         // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
         // and putting it back is how you restart a CSS animation, so releasing the drag handle made

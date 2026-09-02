@@ -24,6 +24,19 @@ import { signDeckFigures } from "@/lib/learn/deck-figures";
 import { DECK_CSS, SLIDE_PX_H, SLIDE_PX_W, sceneToHtml } from "@/lib/export/deck-html";
 import type { DeckPlan } from "@/lib/export/deck-plan";
 
+/**
+ * The deck as text a canvas can be given: the slide titles, their takeaway line and their points.
+ *
+ * 🔴 EVERYTHING ELSE ON A SLIDE IS HOW IT IS DRAWN. Layout, structures and figures are the deck's
+ * appearance; a conversation about what the deck SAYS would only be noise for them.
+ */
+function deckAsText(plan: DeckPlan): string {
+  const body = plan.slides
+    .map((slide, at) => [`## ${at + 1}. ${slide.title}`, slide.takeaway, ...slide.points.map((point) => `- ${point}`)].filter(Boolean).join("\n"))
+    .join("\n\n");
+  return `# ${plan.title}\n\n${body}`;
+}
+
 interface Props {
   plan: DeckPlan;
   designId: string;
@@ -35,9 +48,24 @@ interface Props {
   crumb?: string;
   /** Leave the deck. Absent draws no close, for a host that has its own way out. */
   onClose?: () => void;
+  /**
+   * Ask a question about this deck, in a new canvas.
+   *
+   * 🔴🔴 THE SAME BAR THE DOCUMENT READER GREW, FOR THE SAME REASON. Owner, 2026-09-01: *"I need
+   * all the artifacts, like slides, documents to open in the same manner"*, and of the reference's
+   * library: *"it also has this chat bar at the bottom so that you can ask a question about it, and
+   * then when you send it, it'll take you to a new chat."*
+   *
+   * 🔴 A DECK IS A PAGE AND THE READER IS AN OVERLAY, AND THEY STILL LOOK THE SAME. `/deck` renders
+   * INSIDE the workspace shell, so the sidebar was never covered here; with the shared header band
+   * and this bar, the three artifacts now open the same way without the deck having to become an
+   * overlay — which would have cost the real composed slides for an outline of them.
+   */
+  onAsk?: (question: string, material: { name: string; text: string }) => void;
 }
 
-export function DeckView({ plan, designId, credit = "Made with Nemesis", actions, crumb = "Library", onClose }: Props) {
+export function DeckView({ plan, designId, credit = "Made with Nemesis", actions, crumb = "Library", onAsk, onClose }: Props) {
+  const [question, setQuestion] = useState("");
   const [slides, setSlides] = useState<string[]>([]);
   const [at, setAt] = useState(0);
   const [presenting, setPresenting] = useState(false);
@@ -126,7 +154,7 @@ export function DeckView({ plan, designId, credit = "Made with Nemesis", actions
     // `--reader-room` to and the same one the canvas paints — and it measures rgb(253, 253, 253)
     // against the reference's rgb(252, 252, 252). Named directly rather than through
     // `--reader-room`, which is scoped to `.nemesis-reader` and undefined here.
-    <div className="flex h-full min-h-0 flex-col bg-(--ui-bg-editor)">
+    <div className="relative flex h-full min-h-0 flex-col bg-(--ui-bg-editor)">
       <style>{DECK_CSS}</style>
       {/* Every slide, stacked, for printing. The screen shows one at a time. */}
       <div aria-hidden="true" className="dk-print-only hidden" dangerouslySetInnerHTML={{ __html: slides.join("") }} />
@@ -189,6 +217,41 @@ export function DeckView({ plan, designId, credit = "Made with Nemesis", actions
           </button>
         </div>
       </div>
+
+      {/* 🔴 MEASURED ON THE REFERENCE, 2026-09-01: a 604x52 pill at radius 28, centred, 25px clear
+          of the bottom, reading "Ask about this file". Same numbers as the document reader's, from
+          the same measurement — see output-preview.tsx. */}
+      {onAsk && (
+        <form
+          className="dk-print-hide pointer-events-none absolute inset-x-0 bottom-[25px] z-10 flex justify-center px-[24px]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const asked = question.trim();
+            if (!asked) return;
+            onAsk(asked, { name: `${plan.title}.md`, text: deckAsText(plan) });
+          }}
+        >
+          <div className="pointer-events-auto flex h-[52px] w-full max-w-[604px] items-center gap-[8px] rounded-[28px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) pl-[20px] pr-[6px] shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+            <input
+              aria-label={`Ask about ${plan.title}`}
+              // 🔴 §46.3-exempt: the reference's own 16px, which is also the iOS zoom threshold for
+              // an input — not a step on the canvas type scale.
+              className="min-w-0 flex-1 bg-transparent text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Ask about this file"
+              value={question}
+            />
+            <button
+              aria-label="Ask"
+              className="grid size-[40px] shrink-0 place-items-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity disabled:opacity-30"
+              disabled={question.trim() === ""}
+              type="submit"
+            >
+              <Codicon name="arrow-up" size="20px" />
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="dk-print-hide relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
         <div className="flex h-full w-full items-center justify-center" ref={stage}>

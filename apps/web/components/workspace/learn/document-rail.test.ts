@@ -40,8 +40,11 @@ test("🔴🔴 the rail is full screen only, and only above a floor — both mea
   assert.match(preview, /\{full && !deck && !output\.sheet && <DocumentRail/, "the rail now draws docked, where its panel cannot fit beside the document");
   // 🔴 A SIBLING OF THE SCROLLER. Inside it, `absolute` resolves against the scrolled content and
   // the marks slide up the page with the text — a position indicator that does not hold position.
-  assert.match(preview, /<DocumentRail[\s\S]{0,160}<div className="min-h-0 flex-1 overflow-auto/, "the rail moved inside the scroller and will scroll away with the document");
-  assert.match(preview, /overflow-auto[^"]*" ref=\{setScroller\}/, "the rail lost the element it measures against");
+  assert.match(preview, /<DocumentRail[\s\S]{0,220}min-h-0 flex-1 overflow-auto/, "the rail moved inside the scroller and will scroll away with the document");
+  // 🔴 THE SCROLLER'S CLASS LIST IS BUILT BY `cn` SINCE 2026-09-01, when the Library's reader grew
+  // an ask bar and the scroller had to leave room for it — so this matches the ref rather than a
+  // literal string that now has an expression in front of it.
+  assert.match(preview, /overflow-auto[\s\S]{0,90}ref=\{setScroller\}/, "the rail lost the element it measures against");
   assert.equal(RAIL_MIN_HEADINGS, 3, "the floor moved; a document with one or two headings has no navigation problem");
 });
 

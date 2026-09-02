@@ -72,6 +72,7 @@ const DOWNLOAD_LABEL: Record<string, string> = {
 export function OutputPreview({
   canvasId = "",
   initialMode = "docked",
+  onAsk,
   onClose,
   output,
   comments,
@@ -105,6 +106,22 @@ export function OutputPreview({
   onRevise?: (output: CanvasOutput, ask: ReviseAsk) => Promise<string | null>;
   /** Restore the state before Nemesis's last change. Offered only while `revisions` holds one. */
   onUndo?: (output: CanvasOutput) => void;
+  /**
+   * Start a conversation about this document.
+   *
+   * 🔴🔴 THE LIBRARY PASSES IT AND THE CANVAS DOES NOT, WHICH IS THE WHOLE POINT. Owner,
+   * 2026-09-01, of ChatGPT's library: *"it also has like this chat bar at the bottom so that you
+   * can ask a question about it, and then when you send it, it'll take you to a new chat. So I
+   * think that'll be a good thing to have only for the library."* Inside a canvas the conversation
+   * is already on the other half of the screen; a second box for asking about the thing you are
+   * reading would be two composers on one page, and the wrong one would be nearer.
+   *
+   * The reader hands back the MATERIAL it is showing along with the question, because it is the
+   * only thing that has it: a note's body arrives here by fetch, and a deck's is a plan rather than
+   * text anywhere on disk. Absent material is a real answer — a PDF being built, a note that could
+   * not be reached — and the question still travels.
+   */
+  onAsk?: (question: string, material: { name: string; text: string } | null) => void;
 }) {
   const card = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"docked" | "full">(initialMode);
@@ -160,6 +177,25 @@ export function OutputPreview({
 
   const markdown = output.markdown ?? fetched ?? "";
   const deck = output.kind === "slides" ? output.deck : undefined;
+  /** What is typed in the ask bar. Empty except in the Library — see `onAsk`. */
+  const [question, setQuestion] = useState("");
+  /**
+   * The document, as text a canvas can be given.
+   *
+   * 🔴 A DECK IS A PLAN, NOT PROSE, so it is flattened here rather than shipped as JSON: the slide
+   * titles, their takeaway line and their points, which is what a learner means by "this deck".
+   * Everything else on a slide (layout, structure, figures) is how it is DRAWN and would be noise
+   * in a conversation about what it says.
+   */
+  const askMaterial = () => {
+    if (deck) {
+      const body = deck.slides
+        .map((slide, at) => [`## ${at + 1}. ${slide.title}`, slide.takeaway, ...slide.points.map((point) => `- ${point}`)].filter(Boolean).join("\n"))
+        .join("\n\n");
+      return { name: `${output.title}.md`, text: `# ${deck.title}\n\n${body}` };
+    }
+    return markdown ? { name: `${output.title}.md`, text: markdown } : null;
+  };
 
   // ── The annotate layer ────────────────────────────────────────────────────
   // Same store, same layer, same rules as the source reader — what differs on an output is only
@@ -354,7 +390,7 @@ export function OutputPreview({
     <div
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
-        full ? "left-0" : "border-l border-(--ui-stroke-tertiary)",
+        full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
         // The opening slide, on the shared `--pane-slide` clock.
         // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
         // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
@@ -492,7 +528,7 @@ export function OutputPreview({
           against the scrolled content and the marks would slide away up the page with the text.
           Out here it pins to the panel, which is what a position indicator has to do. */}
       {full && !deck && !output.sheet && <DocumentRail headings={headings} scroller={scroller} />}
-      <div className="min-h-0 flex-1 overflow-auto px-[24px] pb-[24px] pt-[25px]" ref={setScroller}>
+      <div className={cn("min-h-0 flex-1 overflow-auto px-[24px] pt-[25px]", full && onAsk ? "pb-[101px]" : "pb-[24px]")} ref={setScroller}>
         <div className="mx-auto w-full max-w-[816px] bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-primary)">
           {deck ? (
             <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} registerElement={canComment ? registerUnit : undefined} />
@@ -515,6 +551,46 @@ export function OutputPreview({
           )}
         </div>
       </div>
+
+      {/* 🔴🔴 MEASURED ON THE REFERENCE, 2026-09-01, in the owner's signed-in Chrome at 1470x836:
+          a 604x52 pill at radius 28, centred in the pane, 25px clear of the bottom, reading "Ask
+          about this file". It FLOATS over the document rather than taking a row from it — theirs
+          does, and a bar that pushed the page up would reflow a document every time it appeared.
+          The scroller gains matching room below so the last line is never parked underneath it.
+
+          🔴 FULL SCREEN ONLY. Docked, this panel is beside a conversation that already has a
+          composer, and the bar would be the second one on screen. */}
+      {full && onAsk && (
+        <form
+          className="pointer-events-none absolute inset-x-0 bottom-[25px] flex justify-center px-[24px]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const asked = question.trim();
+            if (!asked) return;
+            onAsk(asked, askMaterial());
+          }}
+        >
+          <div className="pointer-events-auto flex h-[52px] w-full max-w-[604px] items-center gap-[8px] rounded-[28px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) pl-[20px] pr-[6px] shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+            <input
+              aria-label={`Ask about ${output.title}`}
+              // 🔴 §46.3-exempt: this shares the reference's own 16px, which is also the iOS
+              // zoom threshold for an input — not a step on the canvas type scale.
+              className="min-w-0 flex-1 bg-transparent text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Ask about this file"
+              value={question}
+            />
+            <button
+              aria-label="Ask"
+              className="grid size-[40px] shrink-0 place-items-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity disabled:opacity-30"
+              disabled={question.trim() === ""}
+              type="submit"
+            >
+              <Codicon name="arrow-up" size="20px" />
+            </button>
+          </div>
+        </form>
+      )}
 
       {canComment && (
         <CommentLayer

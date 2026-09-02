@@ -61,6 +61,7 @@ import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
 import { replaceLibraryNoteBody } from "@/lib/workspace/library-write";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
+import { putPending } from "@/components/workspace/learn/pending-attachment";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -774,6 +775,39 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
   ].sort((a, b) => b.when.localeCompare(a.when));
 
   /**
+   * Ask a question about the document on screen, in a new canvas.
+   *
+   * 🔴🔴 Owner, 2026-09-01, of ChatGPT's library: *"it also has like this chat bar at the bottom so
+   * that you can ask a question about it, and then when you send it, it'll take you to a new chat.
+   * So I think that'll be a good thing to have only for the library."*
+   *
+   * 🔴 THE DOCUMENT TRAVELS WITH THE QUESTION, OR THE QUESTION IS UNANSWERABLE. "What does this
+   * mean?" is nothing on its own. `putPending` is the same hand-off the front door uses for a
+   * dropped file — a module variable, single-use, cleared as it is read — and the canvas that is
+   * about to mount picks it up as its own material. So the new conversation opens already holding
+   * the thing the learner was reading.
+   *
+   * 🔴 A REAL `File`, BUILT FROM TEXT WE ALREADY HAVE. The reader hands back the body it is showing
+   * because it is the only thing that has it: a note's markdown arrives there by fetch and a deck's
+   * is a plan rather than text anywhere on disk. Making a `File` from that string means the canvas
+   * ingests it through the ONE path every other attachment takes, rather than growing a second
+   * lane for material that came from inside the app.
+   *
+   * 🔴 `read: null` BECAUSE NOTHING HAS STARTED READING IT. The front door hands over an in-flight
+   * `extractFile` promise; there is no such read here, and claiming one would leave the canvas
+   * awaiting a promise nobody made.
+   */
+  const askAbout = useCallback(
+    (question: string, material: { name: string; text: string } | null) => {
+      if (material) {
+        putPending([{ file: new File([material.text], material.name, { type: "text/markdown" }), read: null }]);
+      }
+      router.push(`/learn?ask=${encodeURIComponent(question)}`);
+    },
+    [router],
+  );
+
+  /**
    * Hand a whole deck to the learner as a file.
    *
    * 🔴 IT READS THE DECK'S OWN CARDS, UNCAPPED. The peek this used to sit beside capped its read
@@ -1467,6 +1501,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           comments={{ preview: Boolean(preview), uid: userId }}
           initialMode="full"
           canvasId={reading.canvasId}
+          onAsk={askAbout}
           onClose={() => setReading(null)}
           // 🔴🔴 THE SECOND HALF OF THE OWNER'S SENTENCE: *"a comment or edit (IF ITS NEMESIS
           // MADE)"*. `onRevise` is passed only for a note this app wrote, so a document the

@@ -29,7 +29,14 @@
 // JavaScript context, one client-side navigation. It could not ride a URL or `sessionStorage`,
 // which is the same constraint that made this module a module variable in the first place.
 
-import { type ExtractedFile } from "@/lib/workspace/chat-attachments";
+// 🔴🔴 `import type`, NOT `import { type … }`, AND THE DIFFERENCE IS A BUILD THAT FINISHES. Both
+// erase the binding for TypeScript, but only the type-only FORM tells the bundler the module is
+// never needed at runtime. Written the other way, anything importing this file pulls in
+// `chat-attachments` and everything it reaches — pdf.js, the docx and xlsx readers, the whole
+// ingestion graph. The Library imported `putPending` on 2026-09-01 to hand a document to a new
+// canvas and its route stopped compiling: four minutes on "Compiling /dev-preview/library/outputs"
+// with no error, because a page that lists file NAMES had just been given every file PARSER.
+import type { ExtractedFile } from "@/lib/workspace/chat-attachments";
 
 export interface PendingAttachment {
   file: File;
