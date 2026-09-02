@@ -6,11 +6,15 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "paths": {
+      "@nemesis/shared": [
+        "../../packages/shared/src/index.ts"
+      ],
       "@/lib/supabase": [
         "./src/api/supabase"
       ],
       "@/*": [
-        "./src/*"
+        "./src/*",
+        "../web/*"
       ]
     }
   },

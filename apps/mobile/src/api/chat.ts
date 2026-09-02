@@ -189,7 +189,7 @@ function withFreshDateAnchor(query: string): string {
 
 /** Prompt-feeding copied from web's chat-api.ts::searchWebContext: fetch live
  *  results and format them into a context block the model is told to cite. */
-async function searchWebContext(
+export async function searchWebContext(
   uid: string,
   query: string,
   /** How many pages the model asked to read. Null means it did not choose. */
@@ -250,9 +250,17 @@ export interface ChatReply {
 export async function completeMessages(
   uid: string,
   wireMessages: WireMsg[],
-  options: { onDelta?: CompletionDeltaHandler; signal?: AbortSignal } = {},
+  options: { onDelta?: CompletionDeltaHandler; signal?: AbortSignal; decision?: ChatRouteDecision } = {},
 ): Promise<{ text: string | null; errorText: string | null }> {
-  const reply = await postChatCompletion(uid, wireMessages, routeForTurn(DEFAULT_INTENT, null), options.onDelta, undefined, undefined, options.signal);
+  const reply = await postChatCompletion(
+    uid,
+    wireMessages,
+    options.decision ?? routeForTurn(DEFAULT_INTENT, null),
+    options.onDelta,
+    undefined,
+    undefined,
+    options.signal,
+  );
   return { text: reply.text, errorText: reply.errorText };
 }
 
