@@ -757,17 +757,33 @@ async function recordSlidesLedger(canvasId: string, title: string): Promise<stri
  * the system not listening. So: a make-verb within arm's reach of an artifact noun, and the
  * turn must not OPEN as a question about making (how/why/what/when/where/whether). Everything
  * ambiguous falls through to the ordinary turn, which can always still offer.
+ *
+ * 🔴🔴🔴 "DOCUMENT" WAS MISSING, WHICH IS THE MOST OBVIOUS WORD OF THE LOT. Owner, 2026-09-02:
+ * *"I asked it to make a document and it literally did not, it just gave me reasoning out loud and
+ * no action, like what the heck."* This list has matched slides, flashcards and study notes since
+ * it was written, and `makeDocumentDeliverable` has existed the whole time and is imported one file
+ * away. "Make a document on it" simply hit nothing, fell through to an ordinary turn, and got
+ * talked about. Three separate prompt fixes chased the model's WORDS before this was read; each
+ * improved what it said and none of them could make a file, because the door was here.
+ *
+ * 🔴 AND IT CARRIES A LOOKAHEAD THE OTHERS DO NOT, BECAUSE "DOCUMENT" IS ALSO AN ADJECTIVE. This
+ * product is field-agnostic: "build a document parser" is an ordinary computer-science question and
+ * must not silently produce a file. The noun therefore only counts when the phrase ENDS on it or
+ * turns to what the document is about — "make a document on it", "create a document about X" — and
+ * never when another noun follows. Same rule the leading question-word guard serves: when it is
+ * ambiguous, teach.
  */
 export function readDeliverableAsk(text: string): DeliverableKind | null {
   const said = text.trim();
   if (/^(?:how|why|what|when|where|whether)\b/i.test(said)) return null;
   const match =
-    /\b(?:make|create|build|generate|give)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note))\b/i.exec(
+    /\b(?:make|create|build|generate|give|write)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note)|(documents?)(?=\s*(?:$|[.,;!?]|\b(?:on|about|for|from|of|with|covering|summari[sz]ing)\b)))\b/i.exec(
       said,
     );
   if (!match) return null;
   if (match[1]) return "slides";
   if (match[2]) return "flashcards";
+  if (match[4]) return "document";
   return "note";
 }
 

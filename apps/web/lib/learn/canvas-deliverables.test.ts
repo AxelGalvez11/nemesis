@@ -174,3 +174,31 @@ test("🔴🔴 cloze is reachable: the writer knows the syntax and the row is ty
   const cloze = readFileSync(new URL("../workspace/study-cloze.ts", import.meta.url), "utf8");
   assert.match(cloze, /export function activeClozeNumber/, "the rotation this rule exists for is gone");
 });
+
+test("🔴🔴🔴 \"make a document\" makes a document, and a document parser is still a question", () => {
+  // Owner, 2026-09-02: *"I asked it to make a document and it literally did not, it just gave me
+  // reasoning out loud and no action, like what the heck."* This list matched slides, flashcards and
+  // study notes and NOT the most obvious word of the lot, so the ask fell through to an ordinary
+  // turn. Three prompt fixes chased the model's words before anyone read this function; each
+  // improved what it said and none could make a file, because the door was here.
+  assert.equal(readDeliverableAsk("make a document on it"), "document");
+  assert.equal(readDeliverableAsk("create a document about the lecture"), "document");
+  assert.equal(readDeliverableAsk("write a document on ohms law"), "document");
+  assert.equal(readDeliverableAsk("make a document"), "document");
+
+  // 🔴 AND THE LOOKAHEAD EARNS ITS KEEP, BECAUSE "DOCUMENT" IS ALSO AN ADJECTIVE. Nemesis is
+  // field-agnostic (CLAUDE.md), so a computer-science student asking about parsing must not have
+  // their turn stolen by a file. The noun counts only when the phrase ends on it or turns to what
+  // the document is ABOUT.
+  assert.equal(readDeliverableAsk("build a document parser"), null);
+  assert.equal(readDeliverableAsk("give me an example of a document store"), null);
+  assert.equal(readDeliverableAsk("how do I make a document?"), null);
+
+  // Unchanged, and pinned here so widening the verbs cannot quietly widen these too.
+  assert.equal(readDeliverableAsk("make me a powerpoint on this"), "slides");
+  assert.equal(readDeliverableAsk("create flashcards for this"), "flashcards");
+  assert.equal(readDeliverableAsk("make a note of that"), null);
+  // 🔴 A REPORT IS STILL THE MODEL'S CALL, NOT A REGEX'S. `readResearchAsk` was deleted for good
+  // reasons this file records at length; "turn that into a report" belongs to `wantsReport`.
+  assert.equal(readDeliverableAsk("turn that into a report"), null);
+});
