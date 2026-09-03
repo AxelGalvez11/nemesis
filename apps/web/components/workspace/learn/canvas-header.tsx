@@ -19,11 +19,12 @@
 
 import type { AnnotationNote } from "@/lib/learn/annotation-note";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { cn } from "@/lib/utils";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
-import { SourcesControl } from "./canvas-controls";
+import { CONTROL, SourcesControl } from "./canvas-controls";
 import { useDocumentDock } from "./document-dock";
 import { CourseMapControl } from "./course-map";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
@@ -110,10 +111,21 @@ export function CanvasHeader({
           not a caption.
 
           🔴 THE SLOT ITSELF STAYS `flex-1`. Without it the controls on the right stop being on the
-          right. */}
-      <div className="flex min-w-0 flex-1 items-center">
-        <ReaderToggle sources={canvas.sources} />
-      </div>
+          right — it is a spacer, and it is EMPTY.
+
+          🔴🔴 THE READING-PANE DOOR STOOD HERE FOR ABOUT AN HOUR AND MOVED TO THE OTHER END. I put
+          it here because the owner's words were *"a sidebar icon on the top left"*, and both things
+          that were wrong with that are visible the moment it is on screen (owner, same evening:
+          *"the sidebar icon is on the wrong side … it should be on the right side"*):
+
+            1. THE PANE OPENS ON THE RIGHT. A door on the left points away from the thing it opens.
+            2. THE SHELL ALREADY PAINTS A PANEL GLYPH IN THIS EXACT CORNER — the nav rail's own
+               reopen toggle, which is what `--nav-toggle-inset` in canvas-surface.tsx reserves
+               room for. Two near-identical panel icons sat side by side, one for the sidebar on
+               the left and one for the pane on the right, and nothing on screen said which was
+               which. That is not a crowding problem, it is an ambiguity problem, and moving one of
+               them is the whole fix. */}
+      <div className="min-w-0 flex-1" />
 
       {/* §1: compact controls, floating. Not a toolbar — see the note at the top of
           canvas-controls.tsx for what that costs when it slips.
@@ -178,6 +190,11 @@ export function CanvasHeader({
               title={minimap.planTitle}
             />
           )}
+          {/* 🔴 LAST IN THE ROW, WHICH IS THE POINT: it is the control nearest the edge the pane
+              comes out of. Sources and the map open panels that float over the conversation; this
+              one opens the docked reader beside it, so it sits closest to where that reader lands.
+              Owner, 2026-09-03: *"the sidebar icon … should be on the right side."* */}
+          <ReaderToggle sources={canvas.sources} />
           {/* 🔴 NO `⋯` ANY MORE. The options menu and every row in it died on 2026-08-30 — the
               tombstone in canvas-controls.tsx carries the owner's words and where each row's
               feature went. A brand-new canvas still shows a bare title and nothing else. */}
@@ -192,12 +209,15 @@ export function CanvasHeader({
 }
 
 /**
- * The door to the reading pane, in the corner the canvas's name used to occupy.
+ * The door to the reading pane, at the right-hand end of the row, beside the pane it opens.
  *
- * 🔴🔴 IT ONLY EXISTS WHEN THERE IS SOMETHING BEHIND IT. Owner, 2026-09-03: *"when the sidebar
- * panel is able to be viewed the chat should also show a sidebar icon on the top left if there is
- * a sidebar that can be opened."* A canvas with no documents has no pane to open, so it shows a
- * bare corner — the same rule every other glyph on this row already follows.
+ * 🔴🔴 IT ONLY EXISTS WHEN THERE IS SOMETHING BEHIND IT. Owner, 2026-09-03: *"the chat should also
+ * show a sidebar icon if there is a sidebar that can be opened."* A canvas with no documents has no
+ * pane to open, so it shows nothing at all — the same rule every other glyph on this row follows.
+ *
+ * 🔴 AND IT IS ON THE RIGHT, NOT THE LEFT. See the tombstone in the row above: the left corner
+ * already belongs to the nav rail's own reopen toggle, and two panel glyphs in one corner say
+ * nothing about which panel either one opens.
  *
  * 🔴 CLOSING PUTS THE TABS ASIDE RATHER THAN DISCARDING THEM (`canReopen` / `reopen` in
  * document-dock.tsx), so glancing the pane away and back returns to the same document at the same
@@ -214,7 +234,12 @@ function ReaderToggle({ sources }: { sources: LearningCanvas["sources"] }) {
     <button
       aria-label={open ? "Close the reading pane" : "Open the reading pane"}
       aria-pressed={open}
-      className="pointer-events-auto grid size-[36px] shrink-0 place-items-center rounded-lg text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-hover) hover:text-(--ui-text-primary)"
+      // 🔴 THE ROW'S OWN RECIPE, NOT A LOOKALIKE. `CONTROL` is exported from canvas-controls.tsx
+      // precisely so a second file drawing one of these boxes cannot drift from it — the note there
+      // records that happening twice already. Standing next to Sources and the map, a button that
+      // is 36px and `rounded-lg` instead of 36px and `rounded-[8px]` reads as a misalignment
+      // nobody can name.
+      className={cn(CONTROL, "shrink-0", open && "bg-(--ui-bg-tertiary) text-(--ui-text-primary)")}
       data-testid="canvas-reader-toggle"
       onClick={() => {
         if (open) dock.closeAll();
@@ -227,7 +252,7 @@ function ReaderToggle({ sources }: { sources: LearningCanvas["sources"] }) {
       title={open ? "Close the reading pane" : "Open the reading pane"}
       type="button"
     >
-      <Codicon name="layout-sidebar-right" size="1.25rem" />
+      <Codicon name="layout-sidebar-right" size="20px" />
     </button>
   );
 }
