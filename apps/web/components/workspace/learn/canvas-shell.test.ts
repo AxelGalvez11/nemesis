@@ -52,25 +52,33 @@ test("the top controls are a transparent layer, never a header bar", () => {
   assert.match(header, /\bpointer-events-none\b/);
 });
 
-test("the left half of the strip is not a full-width click target", () => {
-  // 🔴 REPOINTED, NOT WEAKENED (2026-09-03). This used to read "the canvas title is a label" and
-  // matched the title's own `<span className="…flex-1…">`. The owner cut the title — *"remove the
-  // name of the chat … that's taken away from the reading of the chat"* — and the flex-1 slot is
-  // now a `<div>` holding an optional 36px door to the reading pane.
+test("the left half of the strip is EMPTY, and is not a click target", () => {
+  // 🔴 REPOINTED TWICE IN ONE DAY, AND BOTH TIMES BY WHAT THE OWNER SAW ON SCREEN. It began as
+  // "the canvas title is a label" and matched the title's own `<span …flex-1…>`. The title was cut
+  // (*"remove the name of the chat … that's taken away from the reading of the chat"*), a door to
+  // the reading pane took its place, and then that moved too (*"the sidebar icon is on the wrong
+  // side … it should be on the right side"*).
   //
-  // The property has not changed and is the reason the test exists: that slot spans the whole
-  // strip, and the conversation SCROLLS UNDERNEATH IT. Anything full-width and clickable there is a
-  // trap — selecting the top line of an answer hits the strip instead. The button inside is
-  // `pointer-events-auto` on purpose and is 36px wide; the container must never be.
+  // 🔴🔴 SO THE SLOT IS A SPACER NOW, AND KEEPING IT EMPTY IS THE POINT. The shell paints the nav
+  // rail's own reopen toggle in exactly this corner — `--nav-toggle-inset` in canvas-surface.tsx
+  // is the room it reserves. Anything panel-shaped put back here stands beside that toggle looking
+  // almost identical to it, and nothing on screen says which panel either one opens. That is what
+  // the owner was looking at.
+  //
+  // The original property still holds and still matters: this slot spans the whole strip and the
+  // conversation SCROLLS UNDERNEATH IT, so anything full-width and clickable here is a trap that
+  // eats a click meant for the top line of an answer.
   const source = read("canvas-header.tsx");
-  const slot = /<div className="(flex min-w-0 flex-1[^"]*)"/.exec(source);
-  assert.ok(slot?.[1], "expected the left half of the strip to still be the flex-1 element");
+  const slot = /<div className="(min-w-0 flex-1[^"]*)"\s*\/>/.exec(source);
+  assert.ok(slot?.[1], "the left half of the strip is no longer an empty flex-1 spacer");
   assert.ok(
     !/pointer-events-auto/.test(slot[1]),
     "the slot spans the whole strip; making it interactive blocks selecting the text beneath it",
   );
-  // And the title itself must not come back into it.
+  // And neither the name nor a second panel glyph comes back into that corner.
   assert.ok(!/canvas\.title \|\| "New canvas"/.test(source), "the canvas's name is being printed above the conversation again");
+  const header = source.slice(source.indexOf("return ("), source.indexOf("shrink-0 items-center gap-1"));
+  assert.ok(!/<ReaderToggle/.test(header), "the reading-pane door is back on the left, beside the nav rail's own toggle");
 });
 
 test("the shell reserves clearance with padding rather than a header element", () => {
