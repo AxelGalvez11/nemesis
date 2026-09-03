@@ -279,3 +279,40 @@ test("caption lines are joined into running text, not scattered by blank lines",
     "consecutive caption lines are not being joined into running text",
   );
 });
+
+// ---------------------------------------------------------------- the door, and the claim
+
+test("🔴 \"make me a document: <what it is about>\" makes a document", () => {
+  // Measured on production 2026-09-03 with thirty lectures attached. The lookahead admitted
+  // `.,;!?` and not a COLON, so this exact sentence fell through to an ordinary turn: no document
+  // was made, and the reply signed off "I've written this into your study document."
+  assert.equal(readDeliverableAsk("Make me a document: a study guide on insulin therapy"), "document");
+  assert.equal(readDeliverableAsk("make a document - everything I need for exam 1"), "document");
+  assert.equal(readDeliverableAsk("write me a document, covering the whole lecture"), "document");
+});
+
+test("the phrasings #1061 already fixed still work, and its refusals still refuse", () => {
+  // 🔴 THE REFUSALS ARE THE HALF THAT MATTERS. Nemesis is field-agnostic: "build a document parser"
+  // is an ordinary computer-science question and must never silently produce a file.
+  assert.equal(readDeliverableAsk("make a document on it"), "document");
+  assert.equal(readDeliverableAsk("create a document about the lecture"), "document");
+  assert.equal(readDeliverableAsk("build a document parser"), null);
+  assert.equal(readDeliverableAsk("give me an example of a document store"), null);
+  assert.equal(readDeliverableAsk("how do I make a document?"), null);
+});
+
+test("🔴 the reply may never claim a file it cannot create", () => {
+  // The existing ban was scoped to `wantsReport`, the research lane — the one thing the model can
+  // actually switch on. Study documents, decks and cards come from a phrase match the model neither
+  // sees nor controls, so the ban had a hole exactly the shape of the failure it was written to
+  // stop. Production, 2026-09-03: "I've written this into your study document", with zero canvas
+  // outputs, zero library documents and zero assets created.
+  const router = readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.match(router, /You cannot create a file yourself/, "the model is no longer told it cannot make a file");
+  assert.match(router, /never write a sentence claiming/, "nothing stops the reply announcing a file that does not exist");
+  for (const kind of ["study document", "slide deck", "spreadsheet", "flashcards"]) {
+    assert.ok(router.includes(kind), `the ban does not name ${kind}, so it reads as being about reports only`);
+  }
+});

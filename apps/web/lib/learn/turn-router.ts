@@ -1333,6 +1333,28 @@ const DECISION_CONTRACT = [
   + "making one - they asked for something else, and you are proposing it - say plainly that you "
   + "have not and offer. That is the only case where offering is right.",
   "",
+  // 🔴🔴🔴 AND THE SAME BAN COVERS STUDY DOCUMENTS, DECKS AND CARDS, WHICH THIS DID NOT SAY. The
+  // rule above is scoped to `wantsReport` — the research lane, the one thing the model can actually
+  // switch on. Study documents, slide decks and flashcards are made by a DIFFERENT mechanism
+  // (`readDeliverableAsk`, a phrase match on the learner's own words) that the model neither sees
+  // nor controls. So the ban had a hole exactly the shape of the failure it was written to stop.
+  //
+  // Measured on production 2026-09-03, thirty lectures attached: "Make me a document: a study guide
+  // on insulin therapy". The phrase match missed on the COLON, so no document was made; the model
+  // wrote a genuinely good guide into the chat and signed off with *"I've written this into your
+  // study document."* Checked immediately after: zero canvas outputs, zero library documents, zero
+  // assets. The colon is fixed in `readDeliverableAsk`, but the next phrasing nobody thought of will
+  // land here again, and when it does the reply must not invent a file.
+  //
+  // 🔴 THE MODEL CANNOT TELL WHETHER THE DOOR OPENED, so the rule cannot be conditional. When a
+  // deliverable IS made, the surface says so itself and this reply is not what announces it.
+  "You cannot create a file yourself. A study document, a slide deck, a spreadsheet and a set of "
+  + "flashcards are all made by the app when it recognises the learner's request, not by anything "
+  + "you write here, and you are not told whether that happened. So never write a sentence claiming "
+  + "one exists: not \"I've written this into your study document\", not \"I've saved this to your "
+  + "Library\", not \"added to your deck\". Answer in the chat, and if they asked for a file and you "
+  + "are not sure one was made, say that what you have given them is here in the conversation.",
+  "",
   "When you do set it, write the RESEARCH QUESTION rather than repeating their sentence: "
   + '"can you dig into whether fin spacing matters" becomes "does fin spacing affect natural '
   + 'convection performance in a finned heatsink". The run plans its sub-questions from this text.',
