@@ -1953,6 +1953,25 @@ export function LearningCanvas({
   const seededFor = useRef<string | null>(null);
   useEffect(() => {
     if (seededFor.current === canvas.id) return;
+    // 🔴🔴🔴 A TURN IN FLIGHT OWNS THE SURFACE, AND SEEDING OVER IT ERASED THE FIRST MESSAGE OF
+    // EVERY NEW CHAT. Reproduced on production, 2026-09-03: send from the front door and the
+    // answer arrives with NO question bubble above it and no file names; reload the same canvas
+    // and both are there. The canvas is minted DURING that first turn, so `canvas.id` goes from
+    // nothing to something while `converse` is running — this effect sees a canvas it has not
+    // seeded, runs against a moment log that is still empty, and assigns `null` over the sentence
+    // `converse` set half a second earlier.
+    //
+    // 🔴 IT IS DEFERRED, NOT SKIPPED, AND THE LATCH MOVES WITH IT. Returning without latching
+    // means the seed runs the moment the turn settles, by which point the moment log holds the
+    // exchange and the assignments below are correct rather than empty. Latching here and skipping
+    // the assignments would leave the canvas permanently unseeded.
+    //
+    // 🔴 THE UNCONDITIONAL ASSIGNMENT BELOW IS UNCHANGED AND IS STILL RIGHT. Its own note records
+    // what it fixed: switching chats does not remount this component, so an unassigned
+    // `currentSaid` is the PREVIOUS conversation's question standing over the new one's answer.
+    // That is a different situation from this one — there, a canvas is being replaced and has
+    // something to be replaced BY; here, a canvas is being born and there is nothing to seed from.
+    if (turnInFlight) return;
     seededFor.current = canvas.id;
     const source = {
       createdAt: canvas.createdAt,
@@ -2024,7 +2043,7 @@ export function LearningCanvas({
     // A restored turn is filed under its moment id, so `held.id` IS the rail row's id.
     onScreen.current.momentId = held?.id ?? null;
     setCurrentMomentId(held?.id ?? null);
-  }, [canvas.blocks.length, canvas.createdAt, canvas.id, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history]);
+  }, [canvas.blocks.length, canvas.createdAt, canvas.id, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history, turnInFlight]);
 
   /**
    * What the live region is showing, mirrored for `converse` to file when the next turn starts.

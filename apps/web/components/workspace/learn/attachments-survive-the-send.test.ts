@@ -73,3 +73,23 @@ test("🔴 the session files moments through that one function, not around it", 
   assert.match(SESSION, /const filed = fileMoment\(/, "recordMoment stopped filing through fileMoment");
   assert.ok(!/appendMoment/.test(SESSION), "the old append-without-folding path is back");
 });
+
+test("🔴🔴🔴 the first message of a new chat is not seeded over while it is still being answered", () => {
+  // Reproduced on production, 2026-09-03: send from the front door and the answer arrives with NO
+  // question bubble above it and no file names; reload the same canvas and both are there.
+  //
+  // 🔴 THE CANVAS IS MINTED DURING THAT FIRST TURN. `canvas.id` goes from nothing to something
+  // while `converse` is running, so the seed sees a canvas it has not seeded, reads a moment log
+  // that is still empty, and assigns `null` over the sentence `converse` set half a second
+  // earlier. Deferred rather than skipped: the latch moves with the return, so the seed runs the
+  // moment the turn settles and the log actually holds the exchange.
+  //
+  // Calibration: drop the `turnInFlight` guard and the first message of every new chat disappears
+  // until the page is reloaded.
+  const seed = CANVAS.slice(CANVAS.indexOf("const seededFor"), CANVAS.indexOf("setCurrentMomentId(held?.id ?? null)"));
+  assert.ok(seed.length > 200, "the seed effect is gone or was renamed");
+  assert.ok(
+    seed.indexOf("if (turnInFlight) return;") < seed.indexOf("seededFor.current = canvas.id"),
+    "the seed latches before it checks whether a turn owns the surface — deferring becomes skipping",
+  );
+});
