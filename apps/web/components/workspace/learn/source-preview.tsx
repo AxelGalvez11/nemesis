@@ -248,6 +248,7 @@ export function SourcePreview({
         >
           {open.map((source) => {
             const current = source.id === activeId;
+            const mark = fileMark(source.title, source.kind);
             return (
               <div
                 className={cn(
@@ -270,12 +271,7 @@ export function SourcePreview({
                       identical page glyphs, and this is the surface where telling a deck from a
                       spreadsheet at a glance matters most — the names truncate at 220px. See
                       lib/learn/kind-mark.ts. */}
-                  <Codicon
-                    className="shrink-0"
-                    name={fileMark(source.title, source.kind).icon}
-                    size="14px"
-                    style={{ color: `var(${fileMark(source.title, source.kind).tint})` }}
-                  />
+                  <Codicon className="shrink-0" name={mark.icon} size="14px" style={{ color: `var(${mark.tint})` }} />
                   <span
                     className={cn(
                       CHROME.crumb,
