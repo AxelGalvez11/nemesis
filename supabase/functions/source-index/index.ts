@@ -70,6 +70,16 @@ interface UnchunkedParse {
   /** 🔴 THE PARSE'S OWN VERSION, not the document's format. */
   parser_version: string
   structure: unknown
+  /**
+   * Identity of the chunkable content in THIS snapshot of `structure`.
+   *
+   * 🔴 IT TRAVELS WITH THE STRUCTURE, from the same read, and is handed straight back to
+   * `replace_source_chunks`. Recomputing it at write time would read whatever the row says then:
+   * a reparse landing between the claim and the insert would stamp the new digest onto chunks
+   * built from the old content, which is permanently stale and silent — the exact defect
+   * `20260903T40_reindex_when_the_parse_changes.sql` exists to end.
+   */
+  content_digest: string | null
 }
 
 function unauthorized(req: Request): boolean {
@@ -300,6 +310,7 @@ async function indexOne(parse: UnchunkedParse) {
       p_parsed_document_id: id,
       p_parser_version: parse.parser_version,
       p_path: placement?.folder_path ?? '',
+      p_source_digest: parse.content_digest ?? null,
       p_title: placement?.file_name ?? model.title ?? 'Untitled document',
       p_user_id: parse.user_id,
     })
