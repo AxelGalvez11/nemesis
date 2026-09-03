@@ -342,7 +342,10 @@ test("the coverage line sits OUTSIDE the untrusted fence", () => {
     { content: "Slide 1", coverage, label: "immunology.pptx", type: "application/pptx" },
   ]);
   const fenceAt = (block ?? "").indexOf(UNTRUSTED_FENCE);
-  const noticeAt = (block ?? "").indexOf("61 pictures were not read");
+  // "not read" until 2026-09-03, when the notice stopped calling an undescribed picture unread:
+  // that phrasing is what the model generalised into "the document was partly unreadable" about a
+  // lecture whose every page it had. The property under test here is the ORDER, not the wording.
+  const noticeAt = (block ?? "").indexOf("61 pictures were not described");
   assert.ok(noticeAt > -1, "the notice must be present");
   assert.ok(fenceAt > -1 && noticeAt < fenceAt, "the notice must come before the fence opens");
 });
@@ -352,7 +355,10 @@ test("a complete read spends no prompt on a disclaimer", () => {
   const [block] = fitAttachmentBlocks([
     { content: "All four pages.", coverage, label: "handout.pdf", type: "application/pdf" },
   ]);
-  assert.doesNotMatch(block ?? "", /Incomplete source/);
+  // 🔴 ANCHORED ON WHAT THE NOTICE ACTUALLY OPENS WITH. This read `/Incomplete source/` — a string
+  // the notice stopped emitting on 2026-09-03, which made the guard unfalsifiable rather than
+  // green. Both openings are listed so a future rename breaks the test instead of silencing it.
+  assert.doesNotMatch(block ?? "", /Source read in full|Source partly read|Not carried over/);
 });
 
 test("an attachment with NO coverage says nothing either way", () => {

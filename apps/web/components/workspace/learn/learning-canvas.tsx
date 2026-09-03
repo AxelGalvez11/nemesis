@@ -3558,7 +3558,11 @@ export function LearningCanvas({
             // and a remembered empty answer short-circuits before a lane runs — the identical screen,
             // every press. See `takeRelook` in `use-policy-runtime.ts`.
             onRetry={() => window.location.assign(`/learn?c=${canvas.id}&relook=1`)}
-            unread={canvas.sources.find((source) => source.coverageNote)?.coverageNote ?? null}
+            // The learner's spelling, like the sources panel beside it. `coverageNote` is the
+            // model's copy and reads as an instruction about "the student" when a person sees it.
+            unread={
+              canvas.sources.find((source) => source.coverageLabel ?? source.coverageNote)?.coverageLabel ?? null
+            }
           />
         )}
 
