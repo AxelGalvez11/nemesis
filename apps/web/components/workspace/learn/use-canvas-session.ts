@@ -739,6 +739,41 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   // Saving is debounced against a ref so a burst of edits writes once, and so the save always
   // sees the newest canvas rather than the one captured when the timer was set.
   const latest = useRef(canvas);
+
+  /**
+   * The next free source slot, claimed SYNCHRONOUSLY so two uploads cannot claim the same one.
+   *
+   * 🔴🔴🔴 TEN FILES DROPPED AT ONCE ARRIVED AS NINE, SILENTLY. The id was
+   * `s${latest.current.sources.length + 1}`, read after the parse and before an `await` that goes
+   * to the network. Ten uploads finish within milliseconds of each other, all read the same length,
+   * and all mint the same `sN`. `mergeSourceIntoCanvas` then matches them with `isSameDocument`'s
+   * `existing.id === arriving.id` branch and folds the loser into the winner. No error, no warning,
+   * and the learner's tenth lecture is simply not there.
+   *
+   * Measured on production 2026-09-03: ten files uploaded, `27-syllabus-ipt4.pdf` and
+   * `28-syllabus-pmmi.pdf` one millisecond apart (01:51:23.868 and 01:51:23.867). Nine sources
+   * landed on the canvas. Both files had parsed and indexed perfectly.
+   *
+   * 🔴 THE COMMENT ON THE OLD LINE SAW THE OTHER HALF OF THIS AND STOPPED THERE. It warned that
+   * removing a source would make the count go down and mint a colliding id. True, and the count
+   * never has to go DOWN for this to bite: two readers only have to see the same value. A
+   * high-water mark is monotonic, which fixes the hazard that was written down as well as the one
+   * that was not.
+   *
+   * Seeded per canvas, so opening a different one starts from that canvas's own highest slot.
+   */
+  const claimed = useRef<{ canvasId: string; next: number }>({ canvasId: "", next: 0 });
+  const claimSourceId = useCallback((): string => {
+    const current = latest.current;
+    const highest = current.sources.reduce((max, source) => {
+      const ordinal = /^s(\d+)$/.exec(source.id)?.[1];
+      return ordinal ? Math.max(max, Number(ordinal)) : max;
+    }, 0);
+    const held = claimed.current.canvasId === current.id ? claimed.current.next : 0;
+    const next = Math.max(highest, held) + 1;
+    claimed.current = { canvasId: current.id, next };
+    return `s${next}`;
+  }, []);
   latest.current = canvas;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1233,13 +1268,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // fire: production canvas `186d0749` holds one document three times, as s2/s3/s4.
           // Deduplication now happens there, on `librarySourceId`, which names the DOCUMENT.
           //
-          // 🔴 IF YOU EVER ADD "remove this source", THIS LINE BECOMES A BUG. With one of three
-          // sources removed the next attach mints `s3` again, collides with the survivor, and
-          // the id branch of `isSameDocument` overwrites a DIFFERENT document. Deriving from a
-          // count is safe only while the count never goes down. Make it monotonic then — not
-          // now, because renaming ids is a migration for every stored canvas and every anchor
-          // already written against one.
-          const sourceId = `s${latest.current.sources.length + 1}`;
+          // 🔴 CLAIMED, NOT COUNTED. See `claimSourceId` — deriving this from `sources.length`
+          // lost one file in every batch of ten, because ten concurrent uploads all read the same
+          // length before any of them had appended.
+          const sourceId = claimSourceId();
 
           // 🔴 READ BACK WHAT SURVIVED, RATHER THAN TRUSTING WHAT WAS RETURNED. The upload
           // response carries the model the parser produced in that request; the canvas has to
