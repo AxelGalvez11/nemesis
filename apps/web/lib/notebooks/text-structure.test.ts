@@ -158,9 +158,14 @@ test("🔴 real file → parseDocument → model → JSON → read back → cons
   // A canonical "unit" is one CITABLE BLOCK, not one page — so a text file yields as many units
   // as it has blocks, all anchored to the single body.
   assert.equal(context.units.length, readBack.blocks.length, "every block is citable");
+  // 🔴 THIS ASSERTION USED TO READ `u.anchor.page === 1`, UNDER THIS EXACT MESSAGE. It pinned the
+  // very fabrication its own words forbid: `unitsFromModel` wrote `block.unit + 1` for every model,
+  // so a text file — one flowing `body` unit — carried `page: 1` on every block. Harmless only
+  // while nothing rendered it, and from 2026-09-03 the grounding packet does. `unitPhrase` refuses
+  // a number for `body` and `image`, and the anchor now follows, so the message is finally true.
   assert.ok(
-    context.units.every((u) => u.anchor.page === 1),
-    "🔴 every anchor points at the one body unit — a text file must not mint page numbers it cannot know",
+    context.units.every((u) => u.anchor.page === undefined && u.anchor.unitKind === undefined),
+    "🔴 a text file must not mint page numbers it cannot know — absent, never 1",
   );
 
   // 🔴 AND THE LOCATOR RESOLVES, through the real consumer. This is the assertion that fails if

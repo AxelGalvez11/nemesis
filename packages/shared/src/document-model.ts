@@ -607,13 +607,31 @@ export function locate(doc: DocumentModel, block: DocBlock): DocLocator {
  * wrong, and a test asserts no `body` locator ever renders a number.
  */
 export function describeLocator(locator: DocLocator): string {
-  const where =
-    locator.unitKind === "body" || locator.unitKind === "image"
-      ? ""
-      : `${unitNoun(locator.unitKind)} ${locator.unit + 1}`;
+  const where = unitPhrase(locator.unitKind, locator.unit) ?? "";
   const path = locator.headingPath.length ? locator.headingPath.join(" › ") : "";
   if (where && path) return `${where} · ${path}`;
   return where || path || "this document";
+}
+
+/**
+ * "page 12", "slide 4", "sheet 2" — or NULL when this document has no such thing.
+ *
+ * 🔴 THE ONLY PLACE A UNIT NUMBER BECOMES WORDS, and the only place that decides whether one may
+ * exist at all. `describeLocator` above is one caller; the grounding packet the model reads is
+ * another. Two renderers would be two chances to number a Word document, and a locator that is
+ * wrong is worse than one that is missing — a learner sent to "page 3" of a file with no pages
+ * loses their trust in every citation, including the true ones.
+ *
+ * `body` and `image` return null on purpose. A .docx is one flowing `body` unit: it genuinely has
+ * no page 1, and the fact that its index happens to be 0 is not permission to say so.
+ *
+ * Takes the 0-BASED index the model stores and returns the 1-based number a reader counts, so no
+ * caller ever has to remember which side of that line it is on.
+ */
+export function unitPhrase(kind: DocUnitKind, unitIndex: number): string | null {
+  if (kind === "body" || kind === "image") return null;
+  if (!Number.isInteger(unitIndex) || unitIndex < 0) return null;
+  return `${unitNoun(kind)} ${unitIndex + 1}`;
 }
 
 function unitNoun(kind: DocUnitKind): string {

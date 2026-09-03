@@ -1,21 +1,28 @@
 // Turning an extracted document into something a generated block can honestly cite.
 //
-// 🔴 WHY EXCERPTS AND NOT PAGE NUMBERS.
+// 🔴 WHY EXCERPTS, AND WHY THEY NOW CARRY PAGE NUMBERS TOO.
 //
-// Nemesis cannot cite inside a document today. The reader can consume `&page=N`, but no
-// AI-facing path anywhere ever produces a locator — every citation the model is taught to
-// emit is file-level. Word documents have no internal units at all, and recording transcripts
-// are one undifferentiated column with no timestamps.
+// The rule has always been: never hand the model a locator it cannot know, because it will
+// confidently invent one. So we split the text ourselves, give each piece an id we minted, and
+// require the model to cite those ids. "Where did this come from?" then shows the learner the
+// actual sentences the block was built from — real provenance, nothing fabricated. That stays.
 //
-// Asking a model for a page number it cannot know produces a confident invention. So instead
-// we split the text ourselves, give each piece an id we minted, and require the model to cite
-// those ids. "Where did this come from?" then shows the learner the actual sentences the
-// block was built from — real provenance, nothing fabricated.
+// What changed on 2026-09-03 is that the invention is no longer the risk it was. `unitsFromModel`
+// measures `anchor.page` and `anchor.unitKind` off the stored document for every block of a
+// paginated file, and this builder simply threw both away. The owner's 83-page lecture reached the
+// model as 354 excerpts that knew their heading and not their page, so "what is on page 40?" was
+// unanswerable about a document we had read completely.
+//
+// So an excerpt carries `locator` when — and only when — the parse measured one. A Word document
+// is one flowing `body` unit and a transcript one undifferentiated column; both still get nothing,
+// enforced in ONE place (`unitPhrase` in @nemesis/shared) rather than judged again here. The
+// excerpt id remains the thing the model must cite: it addresses the exact text, which a page
+// number cannot.
 //
 // Labels are only ever copied from headings the extractor genuinely emitted (it writes
 // "## Slide 12" for decks). No heading, no label.
 
-import type { DocumentModel } from "@nemesis/shared";
+import { unitPhrase, type DocumentModel } from "@nemesis/shared";
 
 import {
   readableUnits,
@@ -134,8 +141,8 @@ export function buildExcerptsFromModel(sourceId: string, model: DocumentModel): 
 export function excerptsFromSourceContext(sourceId: string, context: SourceContext): SourceExcerpt[] {
   const excerpts: SourceExcerpt[] = [];
 
-  const push = (text: string, label: string | null, unitId: string) => {
-    excerpts.push({ id: `${sourceId}:e${excerpts.length + 1}`, label, text, unitId });
+  const push = (text: string, label: string | null, unitId: string, locator: string | null) => {
+    excerpts.push({ id: `${sourceId}:e${excerpts.length + 1}`, label, text, unitId, ...(locator ? { locator } : {}) });
   };
 
   for (const unit of readableUnits(context)) {
@@ -150,15 +157,25 @@ export function excerptsFromSourceContext(sourceId: string, context: SourceConte
     // Never generated: a unit with neither gets `null`, exactly as the other two builders do.
     const label = sectionOf(unit) ?? unit.unitLabel ?? null;
 
+    // 🔴 THE PARSE HAS ALWAYS KNOWN THIS AND NEVER PASSED IT ON. `unitsFromModel` writes
+    // `anchor.page` and `anchor.unitKind` for every block of a paginated document; this builder
+    // dropped both, so the model was handed 354 excerpts of an 83-page lecture with no way to say
+    // which page any of them came from. Rendered through the one shared helper, so a document
+    // with no pages still gets nothing rather than "page 1".
+    const locator =
+      unit.anchor?.page !== undefined && unit.anchor.unitKind
+        ? unitPhrase(unit.anchor.unitKind, unit.anchor.page - 1)
+        : null;
+
     // 🔴 A TABLE IS NEVER SPLIT, WHATEVER ITS SIZE — the same rule the chunker follows, for the
     // same reason: a grid with some of its rows is a different grid, and its cells only mean
     // anything beside their headers.
     if (unit.type === "table") {
-      push(text, label, unit.id);
+      push(text, label, unit.id, locator);
       continue;
     }
 
-    for (const piece of splitLong(text)) push(piece, label, unit.id);
+    for (const piece of splitLong(text)) push(piece, label, unit.id, locator);
   }
 
   return excerpts;
@@ -265,8 +282,13 @@ export function groundingBlock(sources: readonly CanvasSource[]): string {
   const headers = sources.map(
     (source) => `### SOURCE ${source.id} — ${source.title}${source.coverageNote ? `\n${source.coverageNote}` : ""}`,
   );
-  const lineFor = (excerpt: SourceExcerpt) =>
-    `[${excerpt.id}]${excerpt.label ? ` (${excerpt.label})` : ""} ${excerpt.text}`;
+  // The locator leads the heading: "page 12 · Spirometry" reads as an address, and the page is the
+  // half a learner can act on. Either may be absent, and a document with neither gets no
+  // parenthetical at all rather than an empty one.
+  const lineFor = (excerpt: SourceExcerpt) => {
+    const where = [excerpt.locator, excerpt.label].filter(Boolean).join(" · ");
+    return `[${excerpt.id}]${where ? ` (${where})` : ""} ${excerpt.text}`;
+  };
 
   let budget = MAX_GROUNDING_CHARS - headers.reduce((total, header) => total + header.length, 0);
   let dropped = 0;
@@ -373,7 +395,8 @@ export function materialText(sources: readonly CanvasSource[]): string {
 
     const lines: string[] = [];
     for (const excerpt of source.excerpts) {
-      const line = excerpt.label ? `${excerpt.label}: ${excerpt.text}` : excerpt.text;
+      const head = [excerpt.locator, excerpt.label].filter(Boolean).join(" · ");
+      const line = head ? `${head}: ${excerpt.text}` : excerpt.text;
       if (line.length > budget) {
         dropped += 1;
         continue;

@@ -108,8 +108,11 @@ export const CANVAS_BLOCK_TYPES: readonly CanvasBlockType[] = [
 ];
 
 /** Points at the excerpt a block was built from. `excerptId` is a stable id we minted when we
- *  split the source (see canvas-grounding.ts) — NOT a page number. Nemesis cannot cite below
- *  file level today, and a made-up page number is worse than an honest excerpt. */
+ *  split the source (see canvas-grounding.ts) — NOT a page number: it addresses the exact text,
+ *  which a page number cannot. A page number now travels ALONGSIDE it (`SourceExcerpt.locator`,
+ *  `unitIndex`/`unitKind` below) whenever the parse genuinely knows one. The old rule was "we
+ *  cannot cite below file level"; the rule that replaced it is narrower and still absolute — a
+ *  made-up locator is worse than none, so we only ever pass on the one the parse measured. */
 export interface SourceRef {
   sourceId: string;
   excerptId: string;
@@ -307,6 +310,20 @@ export interface SourceExcerpt {
    *  into the other explicitly — see `groundCanonicalAnchor` — instead of the two being assumed to
    *  match, which would produce a locator that passes every check and points at nothing. */
   unitId?: string;
+  /**
+   * Where in the document this sat, already in words: "page 12", "slide 4", "sheet 2".
+   *
+   * 🔴 ABSENT MEANS THE DOCUMENT HAS NO SUCH ADDRESS, NEVER "PAGE 1". A .docx is one flowing unit
+   * and a transcript is one column; both genuinely have nowhere to point, and `unitPhrase` in
+   * @nemesis/shared is the single place that decides so. Every caller renders through it, because
+   * a second renderer is a second chance to number a Word document, and one wrong citation costs
+   * the learner their trust in the true ones too.
+   *
+   * 🔴 WHY A STRING AND NOT A NUMBER. The number alone is a guess waiting to happen: a consumer
+   * holding `12` writes "page 12" about slide 12 of a deck. The noun and the number travel
+   * together or not at all.
+   */
+  locator?: string;
 }
 
 /** A recall prompt. Reveal-then-self-grade by default (§11): typing is opt-in, because the
