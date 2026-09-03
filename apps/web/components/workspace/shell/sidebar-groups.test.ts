@@ -81,9 +81,15 @@ test("🔴 nothing a learner READS in this sidebar calls a project a folder", ()
   for (const phrase of [...visible, ...menuText]) {
     assert.ok(!/folder/i.test(phrase), `"${phrase}" still says folder to the learner`);
   }
-  // And the create flow names the new row after the object it makes, not after the table it
-  // lives in: an untitled project used to arrive on screen called "New folder".
-  assert.ok(SIDEBAR.includes('createFolder(userId, "New project"'), "a new project is named after the table again");
+  // And the create flow never invents a name at all any more, which is the stronger version of
+  // what this line used to check. It read `createFolder(userId, "New project"` — guarding that an
+  // untitled project did not arrive on screen called "New folder". As of 2026-09-03 the learner
+  // names it in a dialog and nothing is inserted until they do, so there is no placeholder name
+  // left to get wrong. A literal name reaching this INSERT is the regression now.
+  assert.ok(
+    !/createFolder\([^)]*["'][A-Z]/.test(SIDEBAR),
+    "a new project is being inserted under a name nobody typed",
+  );
 });
 
 test("🔴 Pinned and Canvases ARE conditional — no heading over nothing", () => {

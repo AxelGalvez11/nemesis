@@ -228,7 +228,11 @@ test("🔴 a new project can be made without leaving the surface", () => {
   // Owner's choice, 2026-08-29: the picker ends with a New project row rather than sending someone
   // to the sidebar first.
   assert.match(PICKER, /New project/, "the inline create is gone");
-  assert.match(HOME, /const made = await createFolder\(userId, name\);/, "nothing creates the project");
+  // 🔴 REPOINTED 2026-09-03 FOR THE GLYPH, NOT LOOSENED. The row now opens a dialog rather than
+  // becoming a text field (see `project-create-dialog.test.ts` for why), and creating carries the
+  // icon the learner picked — so the call has two more arguments. The claim is unchanged: this
+  // surface, not the sidebar, is where a project gets made.
+  assert.match(HOME, /const made = await createFolder\(userId, name, null, icon\);/, "nothing creates the project");
   assert.match(HOME, /setFolders\(\(rows\) => \[\.\.\.rows, made\]\)/, "a new project does not join the list it was made from");
 });
 

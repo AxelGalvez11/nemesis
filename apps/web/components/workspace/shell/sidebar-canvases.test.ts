@@ -139,7 +139,12 @@ test("🔴 there is no door that makes a NEW sub-project", () => {
   // at the call site explains what was removed and says the words to do it.
   assert.doesNotMatch(SIDEBAR, />New sub-project</, "the sub-project menu item came back");
   assert.doesNotMatch(SIDEBAR, /newFolder\(folder\.id\)/, "something is creating a folder under another again");
-  assert.match(SIDEBAR, /createFolder\(userId, "New project", null\)/, "new projects must be filed at the top level");
+  // 🔴 REPOINTED, NOT WEAKENED (2026-09-03). This pinned `createFolder(userId, "New project", null)`
+  // — one string carrying two unrelated claims, the top-level `null` and a placeholder NAME. The
+  // name half is now wrong on purpose: a project is named in a dialog before it is written at all
+  // (see `project-create-dialog.test.ts`, which guards that no placeholder row can be left behind).
+  // The claim THIS test makes is the parent, and it is unchanged.
+  assert.match(SIDEBAR, /createFolder\(userId, name, null, icon\)/, "new projects must be filed at the top level");
 });
 
 test("🔴 projects order by recency through buildProjects — one rollup, shared with /projects", () => {
