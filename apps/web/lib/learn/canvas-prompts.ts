@@ -71,20 +71,30 @@ const CITATION_RULE =
  *  is not recoverable. What it must not do is name ordinary words, which is the one instruction
  *  that keeps the annotation layer from becoming noise.
  *
- *  🔴🔴 AND THIS RULE USED TO SAY THE OPPOSITE OF THAT PARAGRAPH, WHICH TURNED THE WHOLE VOCABULARY
- *  FEATURE OFF. It ended "leave the list empty when the block introduces no new vocabulary, most
- *  blocks should" — an explicit instruction to name nothing most of the time. Measured on
- *  production 2026-09-03: 12 of 266 blocks written in 30 days carried any terms at all, 4.5%, and
- *  `learner_lookups` held ONE row since 2026-08-20 while `learner_evidence` held 53.
+ *  🔴🔴 THIS RULE IS CURRENTLY NEVER SENT, AND THE CORRECTION MATTERS MORE THAN THE RULE. It used
+ *  to end "leave the list empty when the block introduces no new vocabulary, most blocks should" —
+ *  an instruction to name nothing most of the time, which contradicts the paragraph above it. That
+ *  was changed in #1091, and the reasoning given there was WRONG about the effect: it claimed
+ *  production evidence of a live lane ("12 of 266 blocks in 30 days"). Those 266 blocks are almost
+ *  all from before 2026-08-23.
  *
- *  Nothing downstream was broken. `canvas-vocabulary.ts` gates hard on purpose — at most two marks
- *  a block, one per 25 words, fewer for an advanced learner — and `learning-canvas.tsx` has wired
- *  the click through to `defineSelection` since #463. The generator and the gate were both being
- *  conservative, and only the gate is supposed to be: it exists precisely so this prompt does not
- *  have to guess which candidates are worth showing. Two layers of restraint multiply, and the
- *  product of them was nothing on the screen.
+ *  Measured 2026-09-03: of 176 canvases created since 2026-08-23, TWO carry any blocks at all, and
+ *  the newest canvas with blocks dates from that same day. `generateLesson` — the only caller of
+ *  `lessonMessages`, which is the only thing that embeds this rule — has no call site left.
+ *  `constructTerritory` replaced it for a topic-first canvas, and the upload path dropped it
+ *  deliberately under §24 ("source ingestion is not source summarization"). So the wording change
+ *  is right if this lane ever returns, and it changed nothing when it landed.
  *
- *  🔴 SO THE ASK IS "NAME WHAT YOU INTRODUCED", NOT "NAME SPARINGLY". The refusing is the gate's
+ *  🔴 AND THAT STRANDS A FEATURE THE OWNER ASKED FOR: *"I want users to be able to highlight a word
+ *  to define or explain and have nemesis keep track of that."* `canvas-vocabulary.ts` gates the
+ *  candidates, `canvas-document.tsx` paints them and `learning-canvas.tsx` has routed the click to
+ *  `defineSelection` since #463 — all of it hanging off `CanvasBlock.terms`, on a surface that is
+ *  no longer produced. `learner_lookups` holds ONE row, written 2026-08-20, against 53 in
+ *  `learner_evidence`. The prompt was never the reason. Moving the mark onto the surface that
+ *  exists now (the streamed answer) is the actual work, and it needs the answer contract to carry
+ *  its terms, because this file's whole argument is that terms are named at generation time.
+ *
+ *  🔴 THE ASK IS STILL "NAME WHAT YOU INTRODUCED", NOT "NAME SPARINGLY". The refusing is the gate's
  *  job and it is tested. `terms-are-asked-for.test.ts` pins that this rule cannot go back to
  *  telling the model to stay quiet.
  *
