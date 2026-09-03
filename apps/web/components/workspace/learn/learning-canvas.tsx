@@ -973,12 +973,26 @@ export function LearningCanvas({
    * inside `attachFiles` is synchronous, so a turn started immediately after this call still waits
    * for the material (#953).
    */
+  /**
+   * The file names the send just committed, held for the turn that is about to start.
+   *
+   * 🔴🔴 WITHOUT THIS THE SEND ERASED THEM. `commitStaged` clears the composer's cards, and the
+   * turn was filed with `attached: []` — so a learner who dropped seven lectures in, typed one
+   * sentence and pressed send watched the seven cards vanish and the conversation keep only the
+   * sentence. Owner, 2026-09-03: *"it only saved like the chat prompt… I need it to behave like a
+   * regular chat."*
+   *
+   * 🔴 A REF, NOT STATE, BECAUSE `converse` READS IT. Listing it as a dependency would rebuild that
+   * callback on every attachment, which is the same reason `onScreen` beside it is a ref.
+   */
+  const committedTitles = useRef<string[]>([]);
   const commitStaged = useCallback(() => {
     const entries = staged;
     if (entries.length === 0) return;
     const reads = entries.map((entry) => stagedReads.current.get(entry.id) ?? null);
     for (const entry of entries) stagedReads.current.delete(entry.id);
     setStaged([]);
+    committedTitles.current = entries.map((entry) => entry.file.name);
     void session.attachFiles(entries.map((entry) => entry.file), undefined, reads);
   }, [session, staged]);
 
@@ -1052,6 +1066,9 @@ export function LearningCanvas({
    * owner's own canvas: five markers, four anchors, and the fifth one blanked the page.
    */
   const [currentMomentId, setCurrentMomentId] = useState<string | null>(null);
+  /** The files sent with the turn the live region is showing, drawn above the learner's own words
+   *  exactly as a filed turn draws them. See `committedTitles`. */
+  const [currentAttached, setCurrentAttached] = useState<readonly string[]>([]);
   /**
    * What is on screen right now, mirrored where `converse` can read it without going stale.
    *
@@ -1067,8 +1084,11 @@ export function LearningCanvas({
     /** 🔴 THE MOMENT THIS EXCHANGE WAS RECORDED AS, carried so that when the next turn files it
      *  into the thread it keeps the id the History Rail points at. See `currentMomentId`. */
     momentId: string | null;
+    /** File names committed with this turn, so the thread keeps them when the turn is filed. */
+    attached: readonly string[];
   }>({
     aside: null,
+    attached: [],
     momentId: null,
     saidVia: null,
     output: null,
@@ -1101,7 +1121,10 @@ export function LearningCanvas({
           ...past,
           fileTurn({
             at: new Date().toISOString(),
-            attached: [],
+            // 🔴 WHAT THIS TURN WAS SENT WITH. It was `[]` — a literal, on the one field that
+            // answers "which documents is this answer about" — so the thread lost every
+            // attachment the moment it was filed.
+            attached: outgoing.attached,
             // 🔴🔴 THE MOMENT ID WHEN THERE IS ONE, because that id is what the History Rail's
             // row carries and `goToMoment` looks the anchor up by. The made-up `turn-N-…` form
             // below is now only the fallback for an exchange that was never recorded (a turn that
@@ -1123,9 +1146,15 @@ export function LearningCanvas({
       // 🔴 `momentId: null` — THIS TURN HAS NOT BEEN RECORDED YET. A moment is written when the
       // turn resolves, so between here and there the live region genuinely has no rail row, and
       // saying so is what keeps the previous turn's id from being read as this one's.
-      onScreen.current = { aside: null, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
+      // 🔴 THE COMMITTED FILES BELONG TO THIS TURN AND ARE TAKEN, NOT COPIED. Reading and clearing
+      // in one step is what stops the next turn inheriting the last one's attachments — the same
+      // single-use rule `takePending` states next door, for the same reason.
+      const attachedNow = committedTitles.current;
+      committedTitles.current = [];
+      onScreen.current = { aside: null, attached: attachedNow, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
       setCurrentSaid(trimmed);
       setCurrentSaidVia(spokenNow);
+      setCurrentAttached(attachedNow);
       setCurrentMomentId(null);
       // Owner picked option A from the mockup: the prompt goes to the top and stays there.
       setSendSeq((n) => n + 1);
@@ -1985,6 +2014,10 @@ export function LearningCanvas({
     const held = liveShowsLast ? restored.at(-1) : null;
     setCurrentSaid(held?.said ?? null);
     setCurrentSaidVia(held?.saidVia ?? null);
+    // 🔴 AND WHAT IT WAS SENT WITH. A restored turn carries its own `attached`; the held-back one
+    // is drawn by the live region instead of the thread, so it has to be handed them here or the
+    // newest exchange is the one exchange whose documents are invisible.
+    setCurrentAttached(held?.attached ?? []);
     // 🔴🔴 AND ITS MOMENT ID COMES WITH IT, WHICH IS THE HALF THAT WAS MISSING. Held back from the
     // thread, this exchange has no `[data-thread-turn]` of its own — so its marker, the newest one
     // on the rail and the one a learner is most likely to press, resolved to nothing and rewound.
@@ -2854,6 +2887,21 @@ export function LearningCanvas({
             marking only that one was a bug I shipped and caught on film: the selector matched
             nothing on the way in and the sentence appeared at its destination instead of
             travelling to it. Same warning as `#canvas-composer` carries in canvas-composer.tsx. */}
+        {/* 🔴🔴 THE FILES THIS TURN WAS SENT WITH, NAMED WHERE A CHAT NAMES THEM. `canvas-thread-turn.tsx`
+            has always drawn these for a filed turn; the live region drew nothing, so pressing send
+            made seven lectures disappear and left only the sentence. Owner, 2026-09-03: *"it only
+            saved like the chat prompt… I need it to behave like a regular chat."* Same list, same
+            type scale and same colour as the filed turn's, so the newest exchange does not look
+            like a different kind of thing from the one above it. */}
+        {threadOpen && currentAttached.length > 0 && (
+          <ul className="mx-auto mb-2 w-full max-w-(--canvas-column) space-y-1 px-6 text-right">
+            {currentAttached.map((title) => (
+              <li className="text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)" key={title}>
+                {title}
+              </li>
+            ))}
+          </ul>
+        )}
         {threadOpen && currentSaid?.trim() && (
           <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
             {/* 🔴 EDITING RE-ASKS, IT DOES NOT REWRITE HISTORY. `retryTurn` is `converse`, the one

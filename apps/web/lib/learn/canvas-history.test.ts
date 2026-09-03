@@ -15,7 +15,7 @@ import {
   MAX_ASSISTANT_TEXT,
   MAX_MOMENTS,
   MOMENT_TEXT_BUDGET,
-  appendMoment,
+  fileMoment,
   makeMoment,
   sameMoment,
 } from "./canvas-moment";
@@ -74,9 +74,9 @@ test("🔴 the rail's own module never imports React", () => {
 // ── the cap, which is what keeps the document from growing without bound ────────────────────
 
 test("moments are capped, oldest dropped first", () => {
-  let moments = appendMoment([], { kind: "user", userText: "first" }, "2026-08-23T10:00:00.000Z", "m0");
+  let moments = fileMoment([], { kind: "user", userText: "first" }, "2026-08-23T10:00:00.000Z", "m0").moments;
   for (let index = 1; index <= MAX_MOMENTS + 10; index += 1) {
-    moments = appendMoment(moments, { kind: "user", userText: `q${index}` }, "2026-08-23T10:00:00.000Z", `m${index}`);
+    moments = fileMoment(moments, { kind: "user", userText: `q${index}` }, "2026-08-23T10:00:00.000Z", `m${index}`).moments;
   }
   assert.equal(moments.length, MAX_MOMENTS);
   assert.ok(!moments.some((moment) => moment.userText === "first"), "the oldest moment survived the cap");
@@ -100,9 +100,46 @@ test("an ordinary answer is not marked truncated", () => {
 test("🔴 the same moment recorded twice in a row is one marker", () => {
   // Calibration: React runs effects twice in development StrictMode. Without `sameMoment` every
   // answer would land on the rail as two markers opening the same content.
-  const first = appendMoment([], { assistantText: "A.", kind: "assistant", userText: "Why?" }, "2026-08-23T10:00:00.000Z", "m0");
+  const first = fileMoment([], { assistantText: "A.", kind: "assistant", userText: "Why?" }, "2026-08-23T10:00:00.000Z", "m0").moments;
   assert.equal(sameMoment(first.at(-1), { assistantText: "A.", kind: "assistant", userText: "Why?" }), true);
   assert.equal(sameMoment(first.at(-1), { assistantText: "A.", kind: "assistant", userText: "Why not?" }), false);
+  // 🔴 AND FILING IT AGAIN CHANGES NOTHING, WHICH IS THE HALF THE PRODUCT ACTUALLY DEPENDS ON.
+  // `sameMoment` being right is only useful if `fileMoment` acts on it.
+  const twice = fileMoment(first, { assistantText: "A.", kind: "assistant", userText: "Why?" }, "2026-08-23T10:00:01.000Z", "m1");
+  assert.equal(twice.moments.length, 1, "one answer landed on the rail twice");
+  assert.equal(twice.id, "m0", "a duplicate did not report the row it duplicates");
+});
+
+test("🔴🔴🔴 attaching seven files records seven files, in ONE row", () => {
+  // Owner, 2026-09-03, on a canvas of his own: *"I dropped in these folders… when I refreshed the
+  // page… it pretty much didn't show the sources that I dropped in."*
+  //
+  // 🔴 SIX OF HIS SEVEN LECTURES WERE DELETED BY THE DUPLICATE GUARD. A `source` moment carries no
+  // text, no question and no response, so every field `sameMoment` compared was `undefined` on
+  // both sides and any two consecutive attachments were "the same moment recorded twice". Read out
+  // of his production row: `sources` held all seven files, `moments` held ONE source moment with
+  // `sourceIds: ["s1"]`.
+  //
+  // Calibration: drop `sameIds` from `sameMoment` and the first assertion reddens.
+  let moments: readonly CanvasMoment[] = [];
+  const names = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"];
+  for (const [at, sourceId] of names.entries()) {
+    moments = fileMoment(moments, { kind: "source", sourceIds: [sourceId] }, `2026-09-03T18:56:0${at}.000Z`, `m${at}`).moments;
+  }
+  assert.deepEqual(moments.at(0)?.sourceIds, names, "the attachments did not all survive");
+
+  // 🔴 AND THEY ARE ONE ROW, NOT SEVEN. Dropping a folder in calls this once per file; a row per
+  // file is seven lines in the conversation and seven marks on the rail, and thirty for thirty
+  // files, which is the case the owner actually works in.
+  assert.equal(moments.length, 1, "one drop became several rows");
+  assert.equal(moments[0]?.occurredAt, "2026-09-03T18:56:00.000Z", "the row's time moved to the last file");
+
+  // 🔴 ANYTHING IN BETWEEN ENDS THE RUN, because a file attached after an exchange belongs to that
+  // later part of the conversation rather than to the first drop.
+  const asked = fileMoment(moments, { kind: "assistant", userText: "help me learn this" }, "2026-09-03T18:57:00.000Z", "m7").moments;
+  const later = fileMoment(asked, { kind: "source", sourceIds: ["s8"] }, "2026-09-03T18:58:00.000Z", "m8").moments;
+  assert.equal(later.length, 3, "a later attachment folded back into the first drop");
+  assert.deepEqual(later.at(-1)?.sourceIds, ["s8"]);
 });
 
 // ── titles are structural, and that is what makes them field-agnostic ───────────────────────
@@ -249,16 +286,20 @@ test("🔴🔴 the row is STILL bounded — newest turns keep their text, oldest
   // Raising the per-answer cap without a total budget puts 80 x 16,000 = 1.2MB on every autosave.
   // That would be a different bug with the same cause: a number changed without the constraint
   // that justified it.
-  const long = "x".repeat(MAX_ASSISTANT_TEXT);
+  // 🔴 EACH ANSWER IS DISTINCT, AND IT HAS TO BE. Twenty byte-identical replies in a row are what
+  // `sameMoment` exists to collapse, so a fixture that repeats one string tests the duplicate guard
+  // rather than the budget. The length is what this test is about; the last three characters carry
+  // the turn number and the total is unchanged.
+  const long = "x".repeat(MAX_ASSISTANT_TEXT - 3);
   let moments: readonly CanvasMoment[] = [];
 
   for (let turn = 0; turn < 20; turn++) {
-    moments = appendMoment(
+    moments = fileMoment(
       moments,
-      { assistantText: long, kind: "assistant" },
+      { assistantText: `${long}${String(turn).padStart(3, "0")}`, kind: "assistant" },
       `2026-09-01T00:00:${String(turn).padStart(2, "0")}.000Z`,
       `m${turn}`,
-    );
+    ).moments;
   }
 
   const total = moments.reduce((sum, m) => sum + (m.assistantText?.length ?? 0), 0);

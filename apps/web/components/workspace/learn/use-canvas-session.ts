@@ -42,7 +42,7 @@ import {
 import { canvasNeedsName, firstUntriedExchange, nameCanvasFromExchange, type CanvasExchange } from "@/lib/learn/canvas-naming";
 import { blocksForConcepts, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
-import { appendMoment, lastThingSaid, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
+import { fileMoment, lastThingSaid, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import { isMakerCapability } from "@/lib/learn/composer-capability";
 import { researchStepLabel } from "@/lib/research/research-progress";
@@ -852,15 +852,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // StrictMode runs it twice besides. `latest.current` is the authoritative canvas at every
       // point between renders (it is written on render and inside `update`), so both the duplicate
       // check and the id can be decided from it synchronously.
+      // 🔴 `fileMoment` DECIDES BOTH, AND IS RUN TWICE ON PURPOSE. Once here against
+      // `latest.current` to learn the id, and once inside the updater against whatever React hands
+      // it, which is the list that is actually written. It is pure and cheap, and running it twice
+      // is how the answer stays one decision rather than a prediction beside a write that could
+      // disagree with it.
       const current = latest.current;
-      if (sameMoment(current.moments.at(-1), moment)) return current.moments.at(-1)?.id ?? null;
-      const id = `m${current.moments.length}-${Date.now()}`;
-      update((live) =>
-        sameMoment(live.moments.at(-1), moment)
-          ? live
-          : { ...live, moments: appendMoment(live.moments, moment, new Date().toISOString(), id) },
-      );
-      return id;
+      const at = `m${current.moments.length}-${Date.now()}`;
+      const filed = fileMoment(current.moments, moment, new Date().toISOString(), at);
+      update((live) => ({ ...live, moments: fileMoment(live.moments, moment, new Date().toISOString(), at).moments }));
+      return filed.id;
     },
     [update],
   );
