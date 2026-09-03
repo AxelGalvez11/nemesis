@@ -72,3 +72,14 @@ test("🔴 the door to the pane stands on the pane's own edge, once", () => {
 test("🔴🔴 a turn the door took takes the previous answer off the screen", () => {
   assert.match(CANVAS, /if \(!decision && made\) session\.dismissAside\(\);/, "the old answer stays under a door-made ask");
 });
+
+test("🔴🔴 in the conversation a map is a chip, never an inline tree; the tree lives in the pane", () => {
+  // Owner, 2026-09-03: *"I don't want it to open inline in chat... it should have an inline artifact
+  // chip in chat."* The block draws the tree only where there is no pane to open it in.
+  const block = read("./mindmap-block.tsx");
+  assert.match(block, /if \(!door\) \{[\s\S]{0,300}<MindmapView root=\{root\} variant="inline" \/>/, "the fallback tree is gone");
+  assert.match(block, /return <MindmapChip onOpen=\{\(\) => door\.open\(root\)\} root=\{root\} \/>;/, "the chat draws the tree inline again");
+  assert.match(block, /Mind map ready: <span className="font-medium">\{root\.label\}<\/span>/, "the chip lost the ready line the other artifacts have");
+  assert.match(block, /name="type-hierarchy" size="22px"/, "the chip does not wear the artifact card's 22px glyph");
+  assert.doesNotMatch(block, /\u2014/, "an em dash reached learner-facing copy");
+});

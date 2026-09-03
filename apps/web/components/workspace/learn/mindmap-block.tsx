@@ -1,6 +1,7 @@
 "use client";
 
-// A ```mermaid mindmap fence in an answer, drawn as the interactive tree instead of a static picture.
+// A ```mermaid mindmap fence in an answer: an artifact chip in the conversation, and the interactive
+// tree in the side pane.
 //
 // 🔴🔴 THE MODEL ALREADY WROTE MIND MAPS; THEY JUST COULD NOT BE TOUCHED. The router has asked for
 // a mermaid `mindmap` fence when "the learner asks for a flow chart, diagram, mind map or similar"
@@ -20,8 +21,9 @@
 
 import { createContext, useContext, useMemo } from "react";
 
+import { Codicon } from "@/components/desktop-ui/codicon";
 import { MindmapView } from "@/components/workspace/learn/mindmap-view";
-import { type MindmapNode, parseMermaidMindmap, withoutCitationMarks } from "@/lib/learn/mindmap-tree";
+import { type MindmapNode, mindmapStats, parseMermaidMindmap, withoutCitationMarks } from "@/lib/learn/mindmap-tree";
 
 export interface MindmapDoor {
   /** Open this tree in the right side panel. */
@@ -41,6 +43,40 @@ export function isMindmapChart(chart: string): boolean {
   return parseMermaidMindmap(chart) !== null;
 }
 
+/**
+ * The chip a map wears in the conversation, the same object the other artifacts are.
+ *
+ * 🔴🔴 NO TREE INLINE, BY OWNER ORDER (2026-09-03): *"I'm noticing that the mind map is opening
+ * in the chat inline. I don't want it to open inline in chat. For mind maps, it should open like
+ * the other ones. It should have an inline artifact chip in chat."* Same markup as
+ * `ArtifactCard` (the ready line, the icon, the title, the kind), so a map, a deck and a document
+ * read as one family; the count line says what is behind the chip. Pressing it opens the pane's
+ * map tab; the answer's own auto-open already put it there.
+ */
+function MindmapChip({ onOpen, root }: { onOpen: () => void; root: MindmapNode }) {
+  const stats = mindmapStats(root);
+  return (
+    <section aria-label="What Nemesis made" className="canvas-swap my-3" data-canvas-mindmap="">
+      <p className="m-0 mb-2 text-[length:var(--canvas-text-body)] text-(--ui-text-primary)">
+        Mind map ready: <span className="font-medium">{root.label}</span>
+      </p>
+      <button
+        className="flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
+        onClick={onOpen}
+        type="button"
+      >
+        <Codicon className="shrink-0" name="type-hierarchy" size="22px" style={{ color: "var(--ui-kind-green)" }} />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{root.label}</span>
+          <span className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">
+            Mind map, {stats.nodes} {stats.nodes === 1 ? "idea" : "ideas"}, {stats.depth} {stats.depth === 1 ? "level" : "levels"} deep
+          </span>
+        </span>
+      </button>
+    </section>
+  );
+}
+
 export function MindmapBlock({ chart }: { chart: string }) {
   const door = useMindmapDoor();
   const root = useMemo(() => {
@@ -48,9 +84,15 @@ export function MindmapBlock({ chart }: { chart: string }) {
     return parsed ? withoutCitationMarks(parsed) : null;
   }, [chart]);
   if (!root) return null;
-  return (
-    <div className="my-3" data-canvas-mindmap="">
-      <MindmapView onOpen={door ? () => door.open(root) : undefined} root={root} variant="inline" />
-    </div>
-  );
+  // 🔴 THE TREE IS DRAWN HERE ONLY WHERE THERE IS NO PANE TO OPEN IT IN (the Library, a preview
+  // harness). A chip that opens nothing would be a dead control; a tree in a surface with no pane
+  // is the honest fallback.
+  if (!door) {
+    return (
+      <div className="my-3" data-canvas-mindmap="">
+        <MindmapView root={root} variant="inline" />
+      </div>
+    );
+  }
+  return <MindmapChip onOpen={() => door.open(root)} root={root} />;
 }
