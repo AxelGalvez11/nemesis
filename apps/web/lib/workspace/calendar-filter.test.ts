@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { CalendarEvent } from "./calendar-model";
+import { EVENT_COLORS } from "./event-colors";
 import {
   colorKeyOf,
-  coloursInUse,
+  paletteColours,
   describeFilter,
   NO_COLOR,
   parseHiddenColors,
@@ -60,12 +61,24 @@ test("toggling does not mutate the set it was given", () => {
   assert.equal(toggleColor(after, "11").has("11"), false);
 });
 
-test("the control lists only the colours actually in use", () => {
-  // 🔴 NOT THE WHOLE PALETTE. Twelve swatches that mostly hide nothing is a wall,
-  // and the filter is read to answer "what is on this calendar".
-  assert.deepEqual(coloursInUse(EVENTS), [NO_COLOR, "7", "11"]);
-  assert.deepEqual(coloursInUse([event("a", "7")]), ["7"]);
-  assert.deepEqual(coloursInUse([]), []);
+test("🔴🔴 the control lists the WHOLE palette, which reverses what this test used to pin", () => {
+  // It asserted the opposite — "not the whole palette; twelve swatches that mostly hide nothing is
+  // a wall, and the filter is read to answer what is on this calendar". Owner, 2026-09-03, looking
+  // at the control on a real calendar: *"the show or hide colour icon doesn't show all the colours
+  // that are available… I want all the Google colours to be in Nemesis as well, like blue, red."*
+  //
+  // 🔴 THE OLD ARGUMENT HAD IT BACKWARDS. A control titled "Show or hide colours" that lists four
+  // swatches reads as *these are the colours this product has* — which is what he saw, and it is
+  // false: there are eleven, one press away in the event editor. It was answering a question
+  // nobody asked it while quietly misreporting the palette.
+  assert.deepEqual(paletteColours(), [NO_COLOR, "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]);
+  // 🔴 GOOGLE'S OWN IDS, IN GOOGLE'S OWN ORDER — the ids are what a synced event carries, so a
+  // list that reordered or renumbered them would filter the wrong colour after a sync.
+  assert.equal(paletteColours().length, EVENT_COLORS.length + 1, "a colour is missing from the control");
+  assert.deepEqual(paletteColours().slice(1), EVENT_COLORS.map((colour) => colour.id));
+  // 🔴 AND IT DOES NOT DEPEND ON THE EVENTS. An empty calendar shows the full palette too, which
+  // is the case the old behaviour got most wrong: it showed nothing at all.
+  assert.deepEqual(paletteColours(), paletteColours());
 });
 
 test("a stored preference round-trips", () => {

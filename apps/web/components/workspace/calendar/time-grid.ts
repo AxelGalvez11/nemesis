@@ -51,8 +51,16 @@ import { type CalendarEvent, isAllDay } from "@/lib/workspace/calendar-model";
  * is pinned is the ruled surface a week is read on, because that surface exists to be the same
  * shape as the reference. Section 13 of `docs/google-calendar-reference.md` records the reversal;
  * the harness expectations moved with it.
+ *
+ * 🔴🔴 AND 40 IS GOOGLE'S COMPACT RUNG, NOT A NUMBER I CHOSE. Owner, after 48 landed: *"especially
+ * with the week, the day view, it's still a bit big — if you could make it smaller please."* Google
+ * has a density ladder on this exact variable (section 6 of the reference): 40 / **48** / 60 / 72 /
+ * 80 / 96 / 116, and 40 is the rung BELOW its default, reached by `body.Defj0e`. Taking that rung
+ * keeps every number on the surface a real Google number — it is the setting a Google user picks
+ * when they want more day on screen, which is what was asked for. Going below it would be
+ * inventing, and 24-minute blocks already sit on `renderedBlockHeight`'s 14px floor here.
  */
-export const HOUR_HEIGHT = 48;
+export const HOUR_HEIGHT = 40;
 /** Drawn length of an event, until the data can say how long it really is. */
 export const DEFAULT_EVENT_MINUTES = 45;
 /** Never draw a block too short to read its title. */

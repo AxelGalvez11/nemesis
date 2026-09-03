@@ -398,3 +398,43 @@ so a day with four events drew two and "+2 more". After: four.
 `node measure-calendar.mjs "http://localhost:<port>/dev-preview/calendar-week"` — **0 mismatches**
 against Google's unconverted pixels. Hour row 54 -> **48**, gutter 57.4 -> **51.1**, hour label
 12.4 -> **11**, event title 13.5 -> **12**, event radius 6.8 -> **6**, now dot 13.5 -> **12**.
+
+### Round two, same day: the compact rung, the colours, and a gutter I broke
+
+Owner, after 48px landed: *"especially with the week, the day view, it's still a bit big."* Plus:
+*"make sure all of it — day, week, month, year, schedule, four days — the sizing matches and it
+also has the colouring too"*, and *"the show or hide colour icon doesn't show all the colours that
+are available… I want all the Google colours in Nemesis, like blue, red."*
+
+**The hour row is 40px — Google's COMPACT rung** (section 6's ladder: 40 / 48 / 60 / 72 / 80 / 96 /
+116, selected on Google by `body.Defj0e`). Taking a rung keeps every number on the surface a real
+Google number; it is the setting a Google user picks when they want more day on screen. Going below
+40 would be inventing, and 24-minute blocks already sit on `renderedBlockHeight`'s 14px floor there.
+
+**🔴 NARROWING A FIXED BOX MEANS RE-MEASURING THE WIDEST THING IN IT.** Taking `GUTTER_WIDTH` to
+Google's 51.1 clipped the timezone label — the owner sent a screenshot of "GMT-05" missing its G.
+"GMT-05" is wider than "12 AM", and I had only checked the hour labels.
+
+**🔴🔴 AND `scrollWidth` LIED ABOUT THE FIX.** It is an integer AND it clamps to the box, so a
+clipped label reports exactly the width it was clipped to and reads as a perfect fit. My first fix
+measured `clipped: false` and was still 7px over. Measured properly with a `Range`:
+
+| label | size | ink | room | spare |
+|---|---|---|---|---|
+| `GMT-04` | 10px | 41.25 | 46.59 | +5.34 |
+| `GMT+5:30` | 8px | 42.98 | 46.59 | +3.61 |
+| `All day` | 9px | 40.05 | 46.59 | +6.54 |
+
+Measure the glyphs with a Range, never the box they are in. The label also lost its leading zero on
+the half-hour form — `GMT+5:30`, which is Google's own spelling and two pixels this box cannot
+spare.
+
+**The colour filter lists the whole palette.** It listed only colours in use, which on a real
+calendar meant four swatches under a control called "Show or hide colours" — reading as *these are
+the colours this product has*, which is false. `paletteColours()` returns the no-colour bucket plus
+Google's eleven, in Google's order.
+
+**The year view stopped painting by a retired kind.** It ran `events.some((e) => e.kind === "exam")`
+and painted `--ui-exam`; every other view moved off kinds on 2026-09-01. A day now takes its events'
+colour when they agree on one, and falls back to the busy shading when they do not — a 16px disc
+cannot show three colours, and picking the first would make the year disagree with the month.

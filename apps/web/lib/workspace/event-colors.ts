@@ -118,3 +118,31 @@ export function paintForEvent(
     dot: { backgroundColor: hex },
   };
 }
+
+/**
+ * The one colour a whole day is drawn in, or null when its events disagree.
+ *
+ * 🔴 FOR THE YEAR VIEW, WHERE A DAY IS A 16px DISC. It cannot show three colours, and picking the
+ * first event's would make the year disagree with the month about what a Tuesday looks like — the
+ * same day, two answers, with nothing on screen explaining which won. So: agreement or nothing.
+ *
+ * 🔴 AN EMPTY DAY IS NULL, NOT THE CALENDAR'S COLOUR. A day with no events has no colour to be;
+ * painting it the calendar's would make an empty year solid blue.
+ *
+ * PURE, so "which day is which colour" is a test rather than something only visible by scrolling a
+ * year and squinting.
+ */
+export function colourOfDay(
+  events: readonly { colorId?: string; calendarId?: string }[],
+  calendarColorHex: (calendarId: string | undefined) => string | null,
+): string | null {
+  if (events.length === 0) return null;
+  let agreed: string | null = null;
+  for (const event of events) {
+    const hex = paintForEvent(event, calendarColorHex)?.dot.backgroundColor ?? null;
+    if (!hex) return null;
+    if (agreed === null) agreed = hex;
+    else if (agreed !== hex) return null;
+  }
+  return agreed;
+}
