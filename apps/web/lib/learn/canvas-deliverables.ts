@@ -37,6 +37,7 @@ import type { OnResearchStep } from "@/lib/research/research-model";
 import { runResearch } from "@/lib/research/run-research";
 
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
+import { materialText } from "./canvas-grounding";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
 import { deckName } from "./deck-name";
 import { findLabelledFigure } from "./figure-occlusion-api";
@@ -80,13 +81,44 @@ const DECK_MAX_TOKENS = 8192;
 const CARDS_MAX_TOKENS = 8192;
 const TABLE_MAX_TOKENS = 4096;
 
-/** How much of the canvas the model sees. Enough for a study artifact; not the whole
- *  transcript of a long session. */
+/** How much of the canvas CONVERSATION the model sees. Enough for a study artifact; not the whole
+ *  transcript of a long session. The attached files are budgeted separately — see `canvasBrief`. */
 const BRIEF_LIMIT = 7000;
+
+/** Said before the attached files, because a model handed a title and a document has to be told
+ *  which of the two it is writing about. */
+const MATERIAL_LEAD =
+  "The learner's own attached material is below. Build this from what it actually says, covering it " +
+  "end to end. Do not write about the title instead.";
 
 /**
  * Everything the canvas knows, flattened for a prompt: the title, what it set out to teach, the
- * taught blocks in order, and — since 2026-08-24 — WHAT WAS ACTUALLY SAID.
+ * taught blocks in order, WHAT WAS ACTUALLY SAID, and — since 2026-09-02 — THE FILES THE LEARNER
+ * ATTACHED.
+ *
+ * 🔴🔴🔴 THE FILES WERE THE ONE THING MISSING, AND EVERY DELIVERABLE WAS BLIND TO THEM. This read
+ * the title, the blocks and the conversation, and never once touched `canvas.sources`. Chat could
+ * see an attached document — that is how `[s1:e4]` citations resolve at all — but every FILE the
+ * canvas produced was written from the chat around the document instead of from the document.
+ *
+ * Owner, 2026-09-02, on a two-hour COPD pharmacotherapy lecture: *"i dropped in my lecture
+ * transcript and i dont think it read it well. because i asked for a document and it was not
+ * related at all."* It had read the transcript perfectly: 2,530 excerpts, parsed and stored. The
+ * whole brief the document writer received was 190 characters of it:
+ *
+ *     Topic: Still fired up to be here
+ *     What was taught in conversation:
+ *     Q: this is transcript from lecture
+ *     Thanks for sharing the transcript. What would you like to do with it?
+ *
+ * The namer had taken its title from the transcript's first caption line, so "Still fired up to be
+ * here" was the only subject in the prompt — and the model wrote a competent, well-structured essay
+ * about that phrase as a figure of speech, with a table of the settings it gets used in. It was not
+ * hallucinating. It was answering the only question it was asked.
+ *
+ * 🔴 THE SYMPTOM POINTED AT THE PARSER AND THE PARSER WAS FINE. Diagnose this class of report from
+ * `learning_canvases`, not from the reply: the excerpt COUNT proves the read, the BRIEF proves the
+ * write. Those are two different questions and this bug lived between them.
  *
  * 🔴🔴 THE CONVERSATION IS MATERIAL, AND LEAVING IT OUT MADE THESE THREE UNREACHABLE. This read
  * `canvas.blocks` alone, which was right while every lesson arrived as blocks. Once teaching moved
@@ -114,7 +146,7 @@ export function canvasBrief(canvas: LearningCanvas): string {
       return [asked ? `Q: ${asked}` : "", answered].filter(Boolean).join("\n");
     })
     .filter(Boolean);
-  const brief = [
+  const context = [
     `Topic: ${canvas.title || "(untitled)"}`,
     concepts.length ? `Concepts: ${concepts.join("; ")}` : "",
     "",
@@ -122,18 +154,31 @@ export function canvasBrief(canvas: LearningCanvas): string {
     said.length ? `What was taught in conversation:\n${said.join("\n\n")}` : "",
   ]
     .filter(Boolean)
-    .join("\n");
-  return brief.slice(0, BRIEF_LIMIT);
+    .join("\n")
+    .slice(0, BRIEF_LIMIT);
+
+  // 🔴 THE ATTACHED FILES GO IN LAST AND ARE BUDGETED SEPARATELY, because they are the largest
+  // thing here and `BRIEF_LIMIT` is sized for a conversation. Slicing them together at 7,000
+  // characters would put a lecture's opening pleasantries in and the lecture itself out.
+  const material = materialText(canvas.sources);
+  return material ? `${context}\n\n${MATERIAL_LEAD}\n\n${material}` : context;
 }
 
 /**
  * Whether there is anything to make a deliverable FROM.
  *
  * 🔴 THE GATE STAYS, BECAUSE THE FAILURE IT PREVENTS IS REAL: a model asked for flashcards about a
- * bare title returns confident filler. What changed is what counts as material — taught blocks OR
- * something Nemesis actually said. An empty canvas still refuses, and still says so plainly.
+ * bare title returns confident filler. What changed is what counts as material — an ATTACHED FILE,
+ * taught blocks, OR something Nemesis actually said. An empty canvas still refuses, and still says
+ * so plainly.
+ *
+ * 🔴 ATTACHED FILES ARE CHECKED FIRST, AND THAT ORDER IS THE POINT. A canvas holding a 2,530-line
+ * lecture and nothing else passed this gate only by accident, on the throwaway "what would you like
+ * to do with it?" that Nemesis had replied — the strongest material on the canvas was the one thing
+ * the gate could not see. Drop a file, say nothing, ask for a document: before this, that refused.
  */
 export function canvasHasMaterial(canvas: LearningCanvas): boolean {
+  if (canvas.sources.some((source) => source.excerpts.some((excerpt) => excerpt.text.trim().length > 0))) return true;
   if (canvas.blocks.some((block) => block.content.trim().length > 0)) return true;
   return canvas.moments.some((moment) => (moment.assistantText ?? "").trim().length > 0);
 }
