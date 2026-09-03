@@ -29,25 +29,42 @@
 // set inline because a Tailwind `hidden` class and this element's `flex` class have the same
 // specificity, so which one wins would depend on stylesheet order.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { cn } from "@/lib/utils";
 
-import { CHROME } from "./reader-chrome";
+import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
+import { biggerThan, CHROME, type ReaderMode } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
 export function StudyPanel({
+  actions,
   children,
   crumb = "Study",
   initialMode = "docked",
+  onAsk,
   onClose,
   open,
   title,
 }: {
-  children: React.ReactNode;
+  /**
+   * Header controls this panel's contents supply, drawn left of the size toggle.
+   *
+   * 🔴🔴 THE OWNER ASKED FOR THE DOCUMENT'S TOOLBAR ON EVERY ARTIFACT (2026-09-03): *"it doesn't
+   * have the same toolbar… it should be the same, basically the one it has for the document."* The
+   * document reader draws Download, Full screen, Close in that order, so a deck's Download belongs
+   * HERE rather than in a second header of its own — same slot, same 40px pitch, same order.
+   *
+   * 🔴 A DECK GETS NO COMMENT BUTTON, AND THAT IS THE ONE DELIBERATE DIFFERENCE. The document's
+   * comment mode pins a bubble to a paragraph it registered as a unit; a card has no such units and
+   * nothing to annotate. Drawing the control anyway would be a dead one, which is the thing
+   * `capabilities-are-live.test.ts` exists to stop.
+   */
+  actions?: ReactNode;
+  children: ReactNode;
   /** The muted first half of the header path. */
   crumb?: string;
   /**
@@ -67,16 +84,35 @@ export function StudyPanel({
    * only decides where you land.
    */
   initialMode?: "docked" | "full";
+  /**
+   * Ask a question about what is open, in a new conversation. Absent draws no bar.
+   *
+   * 🔴 THE LIBRARY ONLY, exactly as the document reader has it. Docked beside a canvas the bar
+   * would be the second composer on screen, with the wrong one nearer.
+   */
+  onAsk?: (question: string) => void;
   onClose: () => void;
   /** False keeps the children mounted and takes the panel off screen. */
   open: boolean;
   title: string;
 }) {
-  const [mode, setMode] = useState<"docked" | "full">(initialMode);
+  /**
+   * 🔴🔴 THREE SIZES SINCE 2026-09-03, AND HAVING ONLY TWO WAS THE DEFECT. Owner, of a deck opened
+   * from the Library: *"it opens full screen and when you undo the full screen it kind of does
+   * this, which is different than the documents one."* Both artifacts open `full` there, and the
+   * same-looking button then stepped the document UP to `maximized` and this panel DOWN to a narrow
+   * sidebar laid over a shelf of file names. The step is shared now — see `reader-chrome.ts`.
+   */
+  const [mode, setMode] = useState<ReaderMode>(initialMode);
   // 🔴 THE `study` SLOT, NOT THE READER'S. Same hook and same drag; a different remembered width,
   // because a card is not a document. See the note on DOCK_SLOTS — this was measured on screen.
   const { dragging, onDragStart, width: dock } = useDockWidth("study");
-  const full = mode === "full";
+  /** Anything that is not the side sheet. */
+  const full = mode === "full" || mode === "maximized";
+  /** 🔴 THE RAIL IS COVERED ONLY HERE. `full` deliberately stops at `--nav-column` so Library,
+   *  Projects and the rest stay reachable while a deck is open — the owner's own description of the
+   *  reference: *"you keep the left sidebar and it just leaves the sidebar open."* */
+  const maximized = mode === "maximized";
 
   // Push the surface by exactly the docked width; claim nothing while full screen (it covers
   // everything) or while closed (there is nothing beside the canvas).
@@ -105,7 +141,7 @@ export function StudyPanel({
     <div
       className={cn(
         "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
-        full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
+        maximized ? "left-0 z-[60]" : full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
         // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
         // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
         // and putting it back is how you restart a CSS animation, so releasing the drag handle made
@@ -143,15 +179,20 @@ export function StudyPanel({
           <span className="text-(--ui-text-quaternary)">{crumb}&nbsp;/&nbsp;</span>
           {title}
         </span>
+        {actions}
         <button
-          aria-label={full ? "Exit full screen" : "Full screen"}
+          aria-label={mode === initialMode ? "Full screen" : "Exit full screen"}
           className={CHROME.button}
           data-testid="study-panel-full"
-          onClick={() => setMode(full ? "docked" : "full")}
-          title={full ? "Exit full screen" : "Full screen"}
+          // 🔴 AGAINST WHERE IT OPENED, NOT A FIXED PAIR — the same rule the document reader
+          // follows. From a canvas (`docked`) the step up is `full`; from the Library (`full`) it
+          // is `maximized`. One press out, one press back, and the Library can never reach the
+          // side sheet, which is the arrangement the owner reported as wrong.
+          onClick={() => setMode(mode === initialMode ? biggerThan(initialMode) : initialMode)}
+          title={mode === initialMode ? "Full screen" : "Exit full screen"}
           type="button"
         >
-          <Codicon name={full ? "screen-normal" : "screen-full"} size={CHROME.icon} />
+          <Codicon name={mode === initialMode ? "screen-full" : "screen-normal"} size={CHROME.icon} />
         </button>
         {!full && (
           <button aria-label="Close" className={CHROME.button} data-testid="study-panel-close" onClick={onClose} title="Close" type="button">
@@ -159,7 +200,11 @@ export function StudyPanel({
           </button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+      <div className={cn("min-h-0 flex-1 overflow-auto", full && onAsk && ASK_CLEARANCE)}>{children}</div>
+      {/* 🔴 THE SAME BAR THE DOCUMENT READER DRAWS, from the same module — see `reader-ask.tsx`.
+          Typing in it cannot grade a card: `review-session.tsx` scopes its Space and 1-4 hotkeys to
+          its own subtree while `bare`, and this sits outside it. */}
+      {full && onAsk && <ReaderAsk label={title} onAsk={onAsk} />}
     </div>,
     host,
   );

@@ -31,3 +31,32 @@ export const CHROME = {
  * twice and reads as a sidebar rather than as the thing you opened.
  */
 export const DOCK_FRACTION = 2 / 3;
+
+/**
+ * The three sizes any opened artifact can take.
+ *
+ * 🔴🔴 SHARED SINCE 2026-09-03, AND SPLITTING IT WAS THE BUG. The document reader grew a third
+ * size on 2026-09-01 (owner: *"when users open the initial artifact in the library, it should take
+ * up the whole screen except for the sidebar. And then if they want a full screen, then the sidebar
+ * will disappear."*) and the flashcard panel did not, so it still only knew `docked | full`. From
+ * the Library both open full — and then one press of the same-looking button gave the document a
+ * bigger view and the deck a narrow sidebar over a shelf. Owner, 2026-09-03: *"when you undo the
+ * full screen it kind of does this, which is different than the documents one."*
+ *
+ *   docked      a side sheet at the dragged width, with the surface beside it. The canvas.
+ *   full        everything but the nav rail (`--nav-column`). The Library's opening size.
+ *   maximized   everything, rail included. Nothing but the artifact.
+ */
+export type ReaderMode = "docked" | "full" | "maximized";
+
+/**
+ * One step bigger than the size a panel opened at. PURE.
+ *
+ * 🔴 THE TOGGLE IS A PAIR, NOT A CYCLE, AND IT KEYS ON WHERE THE PANEL OPENED. A canvas opens
+ * `docked` and its button has always meant "fill the window", which is `full`; the Library opens
+ * `full` and its button means "and lose the rail too". A three-way cycle on one control would make
+ * getting back a double press, and would change the canvas's behaviour to fix the Library's.
+ */
+export function biggerThan(opened: ReaderMode): ReaderMode {
+  return opened === "docked" ? "full" : "maximized";
+}

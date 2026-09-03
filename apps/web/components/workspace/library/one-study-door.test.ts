@@ -172,7 +172,10 @@ test("🔴 neither is mounted until it is pressed", () => {
   // Library must not pay that on arrival — the same rule DeckReview is held to.
   assert.ok(!/<LibraryAnkiImport[^>]*\sopen=/.test(OUTPUTS), "the importer is always mounted");
   assert.ok(!/<LibraryProgress[^>]*\sopen=/.test(OUTPUTS), "progress is always mounted");
-  assert.match(OUTPUTS, /\{reviewing && <DeckReview /, "the review mount stopped being conditional");
+  // 🔴 REPOINTED 2026-09-03: the mount grew props (crumb, Download, the ask bar) and JSX with props
+  // wraps in parentheses, so a pattern demanding `&& <DeckReview ` on one line reddened on correct
+  // code. The RULE — conditional, never `open={…}` — is unchanged and still asserted.
+  assert.match(OUTPUTS, /\{reviewing && \(?\s*<DeckReview\b/, "the review mount stopped being conditional");
 });
 
 test("🔴 the shelves load on the account and nothing else", () => {

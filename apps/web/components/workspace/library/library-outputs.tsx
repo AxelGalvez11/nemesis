@@ -52,6 +52,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
+import { Codicon } from "@/components/desktop-ui/codicon";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { DeckShare } from "./deck-share";
 import { deckFileName, deckToAnkiText } from "@/lib/workspace/deck-export";
@@ -61,6 +62,7 @@ import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
 import { replaceLibraryNoteBody } from "@/lib/workspace/library-write";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
+import { CHROME } from "@/components/workspace/learn/reader-chrome";
 import { putPending } from "@/components/workspace/learn/pending-attachment";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { supabase } from "@/lib/supabase";
@@ -1545,7 +1547,37 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           deck came out of. Here it is a list of file names, and squeezing that beside a card you
           are trying to answer helps nobody. Full screen is still one button from docked either
           way; this only decides where you land. See study-panel.tsx. */}
-      {reviewing && <DeckReview deckId={reviewing} initialMode="full" onClose={() => setReviewing(null)} />}
+      {/* 🔴🔴 THE SAME HEADER AND THE SAME BAR AS THE DOCUMENT BESIDE IT (owner, 2026-09-03: *"it
+          doesn't have the same toolbar… it should be the same, basically the one it has for the
+          document"*). Three things were different and all three are supplied from here: the crumb
+          said "Flashcards" where a document opened from this shelf says "Library"; the header
+          carried no Download, though the row's ⋯ has offered one all along; and there was no ask
+          bar at all. Download is passed IN rather than rebuilt inside the panel, so `takeDeck`
+          stays the one place that turns a deck into a file. */}
+      {reviewing && (
+        <DeckReview
+          actions={
+            <button
+              aria-label="Download for Anki"
+              className={cn(CHROME.button, "disabled:opacity-40")}
+              disabled={downloading === reviewing}
+              onClick={() => {
+                const row = decks.find((deck) => deck.id === reviewing);
+                if (row) void takeDeck(row);
+              }}
+              title="Download for Anki"
+              type="button"
+            >
+              <Codicon name="download" size={CHROME.icon} />
+            </button>
+          }
+          crumb="Library"
+          deckId={reviewing}
+          initialMode="full"
+          onAsk={askAbout}
+          onClose={() => setReviewing(null)}
+        />
+      )}
       {/* 🔴 The Anki import and Progress dialogs were removed with their buttons (owner,
           2026-08-24), and the occlusion EDITOR went the same way the day after (owner,
           2026-08-25: "I don't want users to edit flashcards, really"). In all three cases the
