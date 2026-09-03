@@ -482,3 +482,29 @@ test("🔴🔴 the character stands down while a moment is being read", () => {
     "the character is back on top of the rewound answer",
   );
 });
+
+// ── the rail is a fixture, and a fixture never covers a control ─────────────────────────────────
+
+test("🔴🔴 the canvas chrome outranks the rail, so a panel opened from it is not printed on", () => {
+  // Owner, 2026-09-03, with the Sources panel open: *"when you open the source you can still see
+  // the right rail ticker; the source panel shall open in front of that."* Reproduced on
+  // production: the rail's marks printed across the open panel.
+  //
+  // 🔴 THE PANEL'S OWN z-index WAS NEVER THE QUESTION. It carries `z-40` and always did. It lives
+  // inside the chrome header, and a header with a z-index is a stacking context — so the panel
+  // could only ever compete at whatever level its ancestor holds. That was `z-30`, the same level
+  // the rail's column holds, and equal levels are settled by document order: the rail is mounted
+  // after the header, so it painted last.
+  //
+  // 🔴 A COMPARISON, NOT TWO PINNED NUMBERS. What matters is that one is strictly above the other;
+  // pinning "z-40 here, z-30 there" would redden on any future re-levelling that kept the rule.
+  const surface = strip(read("canvas-surface.tsx"));
+  const chrome = /canvas-chrome-in[^"]*\bz-(\d+)\b/.exec(surface);
+  const rail = /absolute inset-y-0 right-0 z-(\d+)/.exec(RAIL_CODE);
+  assert.ok(chrome, "the canvas chrome header lost its stacking level");
+  assert.ok(rail, "the history rail's column lost its stacking level");
+  assert.ok(
+    Number(chrome[1]) > Number(rail[1]),
+    `the chrome sits at z-${chrome[1]} and the rail at z-${rail[1]} — equal or lower means the rail prints over every control the header holds`,
+  );
+});
