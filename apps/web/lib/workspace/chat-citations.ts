@@ -119,6 +119,14 @@ const FILE_REF_RE = /([ \t]*)\[(s\d{1,3}:e\d{1,4}(?:\s*,\s*s\d{1,3}:e\d{1,4})*)\
 export interface FileCitation {
   id: string;
   title: string;
+  /**
+   * The durable `library_sources.id`, when this document was filed.
+   *
+   * 🔴 CARRIED SO THE PILL CAN BE OPENED, which is the whole reason it exists. Null is a real and
+   * common state — every ephemeral attachment has none — and a pill with no filed row still opens
+   * a tab showing what was cited, exactly as `SourceTab` documents.
+   */
+  librarySourceId?: string | null;
 }
 
 /**

@@ -1191,16 +1191,28 @@ test("🔴🔴🔴 the learner's own files are citable, by the id the model alre
   assert.match(prompt, /cite the numbered result inline like this: \[1\]/, "the web citation rule was disturbed");
 });
 
-test("🔴 a file pill is not a link, and the id never reaches the prose", () => {
-  // There is nowhere on the public internet to send anyone for a file the learner uploaded, and a
-  // pill that looks clickable and goes nowhere is worse than one that plainly is not. Opening the
-  // document belongs to the sources panel, which already does it.
+test("🔴 a file pill is never an anchor, and the id never reaches the prose", () => {
+  // There is nowhere on the public internet to send anyone for a file the learner uploaded, so an
+  // ANCHOR is still wrong: it promises a navigation, and middle-clicking it would open a page that
+  // does not exist. That half stands and is still asserted.
+  //
+  // 🔴 THE OTHER HALF WAS REVERSED ON 2026-09-03, DELIBERATELY. This also read "a pill that looks
+  // clickable and goes nowhere is worse than one that plainly is not... opening the document
+  // belongs to the sources panel", and that was true only while there was nowhere on THIS surface
+  // to go. The reading pane has held several documents at once since #913. Measured on production:
+  // every file pill rendered as a `<span>` with `cursor: auto`, so clicking the document a sentence
+  // cites — the obvious gesture — did nothing at all. It is a BUTTON now, which is neither an
+  // anchor nor a dead span. See `lib/workspace/file-pill-opens.test.ts` for the behaviour.
   const md = readFileSync(new URL("../workspace/chat-markdown.tsx", import.meta.url), "utf8");
   const start = md.indexOf("const fileRef = href?.startsWith");
   assert.ok(start > 0, "the file-pill branch is gone");
-  const body = md.slice(start, start + 1_800);
+  const body = md.slice(start, md.indexOf("const citeIndex", start));
   assert.ok(!/<a\b/.test(body), "the file pill became an anchor with nowhere to go");
-  assert.match(body, /data-cite-file=\{fileRef\}/, "the pill no longer says which document it stands for");
+  assert.equal(
+    (body.match(/data-cite-file=\{fileRef\}/g) ?? []).length,
+    2,
+    "both the openable pill and the inert one must say which document they stand for",
+  );
 });
 
 test("🔴 the prompt names the list form the parser accepts", () => {

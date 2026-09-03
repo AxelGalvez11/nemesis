@@ -34,11 +34,23 @@ test("🔴🔴 the components map is memoised, not rebuilt on every render", () 
     /import \{[^}]*\buseMemo\b[^}]*\} from "react";/,
     "useMemo is no longer imported — the components map cannot be memoised without it",
   );
-  assert.match(
-    SOURCE,
-    /const components = useMemo\(\s*\n\s*\(\) => markdownComponents\(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations\),\s*\n\s*\[onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations\],\s*\n\s*\);/,
-    "markdownComponents(...) is no longer memoised with useMemo, or its dependency list changed",
-  );
+  // 🔴 REPOINTED 2026-09-03, AND THE COMMENT ABOVE PREDICTED IT: this pinned both argument lists
+  // character for character, which is "a guard about the shape of a line" exactly as that note
+  // warns against. It went red when the file pill gained the two things it needs to be clickable.
+  //
+  // The property has two halves and both matter. Memoised, or the answer remounts on every audio
+  // tick and blinks. AND every argument is a dependency, or the memo freezes the first render's
+  // values in — which for `files`/`onOpenFile` means a pill opens whatever document happened to be
+  // cited when the answer first mounted. Checked generically so the next argument cannot be added
+  // to one list and forgotten in the other.
+  const memo = /const components = useMemo\(\s*\n\s*\(\) => markdownComponents\(([^)]*)\),\s*\n(?:\s*\/\/[^\n]*\n)*\s*\[([^\]]*)\],/.exec(SOURCE);
+  assert.ok(memo, "markdownComponents(...) is no longer memoised with useMemo");
+  const args = memo![1]!.split(",").map((a) => a.trim()).filter(Boolean);
+  const deps = memo![2]!.split(",").map((a) => a.trim()).filter(Boolean);
+  assert.ok(args.length > 0, "the memo passes nothing, so it cannot be rendering the answer");
+  for (const arg of args) {
+    assert.ok(deps.includes(arg), `\`${arg}\` is closed over by the memoised renderers but is not a dependency`);
+  }
   assert.match(
     SOURCE,
     /<ReactMarkdown\s*\n\s*components=\{components\}/,

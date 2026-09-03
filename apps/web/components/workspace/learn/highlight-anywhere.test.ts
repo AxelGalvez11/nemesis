@@ -47,7 +47,11 @@ test("🔴🔴 the conversational reply is a selectable region", () => {
   // offsets are measured per marked element. The property is that the reply's prose is markable and
   // that the first run keeps the id other lanes probe by.
   assert.match(canvasCode, /selectableRegion\(index === 0 \? "reply" : `reply-\$\{index\}`\)/);
-  assert.match(canvasCode, /<AssistantMarkdown[\s\S]{0,600}?text=\{segment\.text\}/, "the reply no longer renders its own text");
+  // 🔴 THE WINDOW, NOT THE PROPERTY. 600 characters was enough until the reply's markdown gained
+  // `onOpenFile` and its note; the thing being asserted — that the reply renders its own text
+  // through AssistantMarkdown — never changed. Widened rather than made exact, because pinning the
+  // prop order is the mistake this file's comment history is entirely about.
+  assert.match(canvasCode, /<AssistantMarkdown[\s\S]{0,1200}?text=\{segment\.text\}/, "the reply no longer renders its own text");
   // 🔴 REPOINTED AGAIN 2026-08-20, and the reason is the reason this comment keeps growing: this
   // line has now pinned an exact call THREE times. The property is that the reply is split before
   // it is rendered, not how many arguments the splitter takes — it gained a second one when a reply

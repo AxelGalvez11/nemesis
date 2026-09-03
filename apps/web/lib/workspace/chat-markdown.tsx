@@ -136,6 +136,10 @@ function markdownComponents(
   sources?: ReadonlyArray<CitationSource>,
   /** Draw citations as ChatGPT does: favicon + site name + "+N". See the branch that reads it. */
   namedCitations = false,
+  /** The learner's attached documents, so a file pill can name the one it opens. */
+  files?: ReadonlyArray<FileCitation>,
+  /** Open one of them. Absent on surfaces with no reading pane, which keeps the pill inert there. */
+  onOpenFile?: (file: FileCitation) => void,
 ): Components {
   return {
     a: ({ children, href }) => {
@@ -181,9 +185,40 @@ function markdownComponents(
       if (fileRef) {
         const extra = Number.parseInt(href!.slice("#nemesis-file=".length).split(".")[1] ?? "0", 10) || 0;
         const name = typeof children === "string" ? children : String(children ?? fileRef);
+        // 🔴🔴🔴 IT OPENS NOW, AND THE COMMENT ABOVE EXPLAINS WHY IT DID NOT. "There is nowhere on
+        // the public internet to send anyone" was true and is not the question: the destination is
+        // the reading pane on this surface, which has held several documents at once since #913 and
+        // which nothing in an answer could reach. Measured on production 2026-09-03: every file pill
+        // rendered as a `<span>` with `cursor: auto`, so the only gesture a learner would try —
+        // click the document a sentence cites — did nothing at all.
+        //
+        // 🔴 STILL INERT WHERE THERE IS NO PANE. `onOpenFile` is absent in the Library reader and
+        // anywhere else this renderer is used, and a pill that looks clickable and goes nowhere is
+        // worse than one that plainly does not — which is the half of the original note that stands.
+        const file = onOpenFile ? files?.find((candidate) => candidate.id === fileRef) : undefined;
+        const shell =
+          "mx-[2px] inline-flex h-[18px] max-w-[220px] translate-y-[4px] items-center gap-[3px] rounded-[12px] bg-(--ui-bg-tertiary) pl-[5px] pr-[6px] align-baseline text-[9px] font-medium leading-none text-(--ui-text-secondary)";
+        if (file && onOpenFile) {
+          return (
+            <button
+              className={`${shell} cursor-pointer transition-colors hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary)`}
+              data-cite-file={fileRef}
+              onClick={() => onOpenFile(file)}
+              title={extra > 0 ? `Open ${name} and ${extra} more` : `Open ${name}`}
+              type="button"
+            >
+              <svg aria-hidden="true" className="size-[10px] shrink-0" fill="none" viewBox="0 0 12 12">
+                <path d="M3 1.25h3.5L9.25 4v6.75H3z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.1" />
+                <path d="M6.5 1.25V4h2.75" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.1" />
+              </svg>
+              <span className="truncate">{name}</span>
+              {extra > 0 && <span className="shrink-0 opacity-70">+{extra}</span>}
+            </button>
+          );
+        }
         return (
           <span
-            className="mx-[2px] inline-flex h-[18px] max-w-[220px] translate-y-[4px] items-center gap-[3px] rounded-[12px] bg-(--ui-bg-tertiary) pl-[5px] pr-[6px] align-baseline text-[9px] font-medium leading-none text-(--ui-text-secondary)"
+            className={shell}
             data-cite-file={fileRef}
             title={extra > 0 ? `${name} and ${extra} more` : name}
           >
@@ -449,6 +484,7 @@ export function AssistantMarkdown({
   htmlSubSup = false,
   singleDollarMath = false,
   namedCitations = false,
+  onOpenFile,
 }: {
   className?: string;
   text: string;
@@ -459,6 +495,15 @@ export function AssistantMarkdown({
    *  Supplying them turns those markers into file pills; omitting them DELETES the markers, on
    *  the same rule as `[n]`: a marker with nothing behind it is never printed. */
   files?: ReadonlyArray<FileCitation>;
+  /**
+   * Open one of those documents. Supplying it makes every file pill a real button.
+   *
+   * 🔴 A PROP, NOT A CONTEXT READ, BECAUSE OF WHERE THIS FILE LIVES. The reading pane's state is a
+   * React context owned by the canvas; reaching into it from `lib/workspace` would make a generic
+   * markdown renderer depend on one surface's component tree. The canvas passes this in, the
+   * Library reader does not, and the pill stays inert exactly where there is nothing to open.
+   */
+  onOpenFile?: (file: FileCitation) => void;
   onWikiLink?: (target: string) => void;
   isWikiLinkAvailable?: (target: string) => boolean;
   externalLinksInNewTab?: boolean;
@@ -550,8 +595,14 @@ export function AssistantMarkdown({
   // new answer still mounts fresh and still fades in: the key on the wrapping `<div>` in
   // `learning-canvas.tsx` is unchanged, and mounting is exactly when this animation is meant to run.
   const components = useMemo(
-    () => markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations),
-    [onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations],
+    () => markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations, files, onOpenFile),
+    // 🔴 `files` AND `onOpenFile` BELONG HERE, AND BOTH ARE STABLE BY CONSTRUCTION AT THE CALL
+    // SITE — `citableFiles` is a `useMemo` over `canvas.sources`, `onOpenFile` a `useCallback`.
+    // Omitting them would freeze the first render's values into every later one, which for a pill
+    // means clicking it opens whatever document happened to be cited when the answer first mounted.
+    // Including unstable ones would restart the fade-in on every keystroke, which is what the note
+    // above is protecting.
+    [onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources, namedCitations, files, onOpenFile],
   );
 
   return (

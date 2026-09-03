@@ -1748,8 +1748,44 @@ export function LearningCanvas({
    *  is grounding for the model, not something a pill needs, and passing the whole object would
    *  re-render the answer whenever any of it changed. */
   const citableFiles = useMemo(
-    () => canvas.sources.map((source) => ({ id: source.id, title: source.title })),
+    () =>
+      canvas.sources.map((source) => ({
+        id: source.id,
+        // 🔴 CARRIED SO THE PILL CAN OPEN. Everything else on a `CanvasSource` still stays out —
+        // this is the one extra field, and it is the one the reading pane needs to fetch the
+        // document rather than only name it.
+        librarySourceId: source.librarySourceId ?? null,
+        title: source.title,
+      })),
     [canvas.sources],
+  );
+
+  /**
+   * Open a cited document in the reading pane, which has held several at once since #913.
+   *
+   * 🔴🔴 THE GESTURE WAS DEAD UNTIL NOW. Every file pill in an answer rendered as a `<span>` with
+   * `cursor: auto` — measured on production 2026-09-03 — so clicking the document a sentence cites,
+   * which is the obvious thing to try, did nothing at all. The pane existed, the tabs existed,
+   * nothing could reach them from the conversation.
+   *
+   * 🔴 A `useCallback`, BECAUSE `AssistantMarkdown` MEMOISES ITS RENDERERS ON THIS. An inline arrow
+   * would be a new function every render, which rebuilds the components object and restarts the
+   * answer's fade-in on every keystroke — the exact thing that file's own note is protecting.
+   */
+  const openCitedFile = useCallback(
+    (file: { id: string; librarySourceId?: string | null; title: string }) => {
+      sourceTabs.open({
+        // No excerpt: the pill names a DOCUMENT, not the sentence inside it, which is the same
+        // distinction `chat-citations.ts` makes when it resolves `s1:e4` down to `s1`.
+        excerpt: "",
+        kind: "document",
+        label: file.title,
+        librarySourceId: file.librarySourceId ?? null,
+        section: null,
+        title: file.title,
+      });
+    },
+    [sourceTabs],
   );
 
   /** The reply's own text and its index-aligned pages, hoisted out of the JSX.
@@ -2699,7 +2735,7 @@ export function LearningCanvas({
         {threadOpen && thread.length > 0 && (
           <div className="flex flex-col gap-10 pb-10" data-canvas-thread="">
             {thread.map((turn) => (
-              <CanvasThreadTurnView files={citableFiles} key={turn.id} onOpenOutput={setOpenArtifact} onRetry={retryTurn} turn={turn} />
+              <CanvasThreadTurnView files={citableFiles} key={turn.id} onOpenFile={openCitedFile} onOpenOutput={setOpenArtifact} onRetry={retryTurn} turn={turn} />
             ))}
           </div>
         )}
@@ -2981,6 +3017,7 @@ export function LearningCanvas({
                       // canvas's own order, because the model cites by ID (`[s1:e4]`) and not by
                       // position: there is no numbering here that could drift out of step.
                       files={citableFiles}
+                      onOpenFile={openCitedFile}
                       sources={replyConsulted}
                       text={segment.text}
                     />
