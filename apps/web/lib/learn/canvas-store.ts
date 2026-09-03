@@ -25,7 +25,7 @@ import { validateEvaluation } from "./canvas-judge";
 import { isEvidenceStage } from "./canvas-hosting";
 import { stateAfterSourceAttached } from "./canvas-state";
 import { readTerritory, type CanvasTerritory } from "./canvas-territory";
-import { documentTitle } from "./document-title";
+import { documentTitle, nameFromFile } from "./document-title";
 
 const TABLE = "learning_canvases";
 const LOCAL_PREFIX = "nemesis.learn.canvas.v1.";
@@ -819,7 +819,15 @@ export function mergeSourceIntoCanvas(canvas: LearningCanvas, source: CanvasSour
     // 🔴 AN UNUSABLE NAME LEAVES THE CANVAS UNNAMED, and that is deliberate: the header reads
     // "New canvas", which is honest, and the learner can rename it. Putting a row of column names
     // in the sidebar for ever is not the safer failure.
-    title: canvas.title || documentTitle(source.title),
+    //
+    // 🔴🔴 `nameFromFile` FIRST SINCE 2026-09-03, BECAUSE A SOURCE IS NOW CALLED `08-insulin.pdf`.
+    // Sources keep the learner's own file name letter for letter (see `attachedFileTitle`), and a
+    // CANVAS is a conversation rather than a file: naming one `08-insulin.pdf` puts a file
+    // extension in the sidebar and in the browser tab. This reads the source's name the way a
+    // person reads a file name, and `documentTitle` then applies the same shape tests it always
+    // did — a table header row still names nothing, because stripping a would-be extension off a
+    // row of column names leaves a row of column names.
+    title: canvas.title || documentTitle(nameFromFile(source.title)),
     state: stateAfterSourceAttached(canvas),
     updatedAt: new Date().toISOString(),
   };

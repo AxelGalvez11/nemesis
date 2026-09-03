@@ -88,7 +88,14 @@ export function looksLikeTitle(value: string): boolean {
   return clean.length <= TITLE_MAX * 3;
 }
 
-/** A file name as a person would read it: no extension, no separators pretending to be spaces. */
+/**
+ * A file name as a person would read it: no extension, no separators pretending to be spaces.
+ *
+ * 🔴🔴 THIS IS FOR NAMING A *CANVAS*, NOT FOR NAMING A SOURCE. A canvas is a conversation and wants
+ * a readable name; a source is a FILE the learner put there and wants its own name back, letter for
+ * letter. See `attachedFileTitle` below and the owner report it carries. Sending a source through
+ * here is what produced `08 insulin` from `08-insulin.pdf`.
+ */
 export function nameFromFile(fileName: string): string {
   return normalise(
     fileName
@@ -97,6 +104,43 @@ export function nameFromFile(fileName: string): string {
       // Hyphens between words become spaces; a hyphen inside a word (e-mail, X-ray) stays.
       .replace(/(?<=[\p{L}\p{N}])-(?=[\p{L}\p{N}])/gu, " "),
   );
+}
+
+/**
+ * What an ATTACHED FILE is called: what the learner called it, character for character.
+ *
+ * 🔴🔴 THE FILE NAME IS NOT A CANDIDATE TO BE IMPROVED. Owner, 2026-09-03, looking at his own
+ * uploads: *"these are being renamed — shouldn't they keep their original file names? Sources need
+ * to be the original file names."* He had dropped in `08-insulin.pdf` and `49-hypoglycemic-agents.pdf`
+ * and the shelf, the pills and the citations all read `08 insulin` and `49 hypoglycemic agents`.
+ *
+ * Nothing was lost or guessed — `library_sources.file_name` held the real name the whole time. The
+ * canvas simply asked `documentTitle`, which asks `nameFromFile`, which is written to make a name
+ * READABLE: drop the extension, turn the separators into spaces. That is the right answer for a
+ * canvas and the wrong answer for a source, because a learner looking for a file scans for the
+ * string they saved, and `08 insulin` is not a file that exists on their computer.
+ *
+ * 🔴 THE 2026-08-26 AND 2026-09-01 FIXES BOTH SURVIVE, AND THIS IS WHY. `documentTitle` exists to
+ * stop a document's own first line (a table header row, a first paragraph) becoming its name, and
+ * to stop two files collapsing into the same string. Handing back the file name verbatim satisfies
+ * both by construction: the extractor's offer is never consulted while there is a real file name,
+ * and two different files cannot produce one title.
+ *
+ * 🔴 THE FALLBACK IS THE WHOLE OF THE OLD BEHAVIOUR. A file with no usable name at all — "", "  ",
+ * "---.pdf" — still has to be called something, and there `documentTitle` is exactly right.
+ *
+ * @param fileName the name the file arrived under.
+ * @param candidate whatever the extractor offered, used only when the file name is unusable.
+ */
+export function attachedFileTitle(fileName: string, candidate?: string | null): string {
+  // Collapse runs of whitespace and trim, and change nothing else: no case folding, no separator
+  // rewriting, and above all no extension stripping.
+  const own = fileName.replace(/\s+/g, " ").trim();
+  // 🔴 THE TEST IS ON WHAT THE NAME SAYS, NOT ON THE RAW STRING. `---.pdf` has three letters in it
+  // and names nothing; reading it the way a person reads a file name is what tells those two apart.
+  // The reading is used ONLY to decide, never returned.
+  if (own && HAS_WORDS.test(nameFromFile(own))) return own;
+  return documentTitle(candidate, fileName);
 }
 
 /**

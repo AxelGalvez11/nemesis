@@ -257,3 +257,65 @@ export async function refreshedCoverageNotes(
   });
   return changed ? next : sources;
 }
+
+/** The Library's own name for each of these filed sources, in one round trip. */
+async function loadFiledNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
+  const { data, error } = await supabase.from("library_sources").select("id,file_name").in("id", [...ids]);
+  if (error || !data) return new Map();
+  const names = new Map<string, string>();
+  for (const row of data as { id?: unknown; file_name?: unknown }[]) {
+    if (typeof row.id === "string" && typeof row.file_name === "string" && row.file_name.trim()) {
+      names.set(row.id, row.file_name.trim());
+    }
+  }
+  return names;
+}
+
+/**
+ * Put back the file name a source was filed under, for canvases written while it was being changed.
+ *
+ * 🔴🔴 THE NAMES WERE PRETTIFIED ON THE WAY IN, AND THE CANVAS IS WHERE THE COPY LIVES. Owner,
+ * 2026-09-03: *"these are being renamed. Shouldn't they keep their original file names?"* The
+ * attach path now hands the file name straight through (`attachedFileTitle`), but a canvas holds
+ * its own copy of every source's title, so the 28 canvases already written keep saying `08 insulin`
+ * about a row whose `file_name` is `08-insulin.pdf`, for ever, unless something looks again.
+ *
+ * 🔴 THE SAME SHAPE AS `refreshedCoverageNotes` DIRECTLY ABOVE, AND FOR THE SAME REASON. That
+ * function exists because a coverage note was a snapshot nothing ever revisited; this is the same
+ * failure about a different field. Correcting on READ rather than by an UPDATE over production rows
+ * means a wrong judgement here costs one function, not a restore from a backup we do not have.
+ *
+ * 🔴 `library_sources.file_name` IS THE AUTHORITY, NOT A SECOND OPINION. It is what the learner
+ * uploaded and the one name they can change (from the Library), so a rename there now reaches every
+ * canvas holding that document instead of stopping at the Library page.
+ *
+ * 🔴 A PROMOTED WEB PAGE IS LEFT ALONE, AND THIS IS THE HALF THAT WOULD DO REAL DAMAGE WITHOUT IT.
+ * `attachUrl` files a page as `<page title>.md`, a file name we invented — measured on production,
+ * 136 of the 217 stale titles are these. Restoring those would replace "Hydroxy group - Wikipedia"
+ * with "Hydroxy group - Wikipedia.md" and show the learner an extension no page ever had.
+ * `sourceUrl` is present for exactly and only those, which is what this reads.
+ *
+ * 🔴 SAME LIST BACK WHEN NOTHING CHANGED, so the caller can skip the write.
+ */
+export async function restoredFileNames(
+  sources: readonly CanvasSource[],
+  load: (ids: readonly string[]) => Promise<ReadonlyMap<string, string>> = loadFiledNames,
+): Promise<readonly CanvasSource[]> {
+  const filed = sources.filter((source) => source.librarySourceId && !source.sourceUrl);
+  if (filed.length === 0) return sources;
+
+  const names = await load(filed.map((source) => source.librarySourceId!));
+  if (names.size === 0) return sources;
+
+  let changed = false;
+  const next = sources.map((source) => {
+    if (!source.librarySourceId || source.sourceUrl) return source;
+    const name = names.get(source.librarySourceId);
+    // 🔴 A MISSING ROW CHANGES NOTHING. "The Library did not answer" is not "this source has no
+    // name" — blanking a title on a failed lookup would be a far worse bug than the stale one.
+    if (!name || name === source.title) return source;
+    changed = true;
+    return { ...source, title: name };
+  });
+  return changed ? next : sources;
+}

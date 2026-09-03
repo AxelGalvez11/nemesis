@@ -14,7 +14,7 @@ import { coverageNoticeForModel, readCoverage } from "@nemesis/shared";
 import { useAuth } from "@/components/AuthProvider";
 import { deviceKey, searchWebContext } from "@/lib/workspace/chat-api";
 import type { CanvasVisualRequest } from "@/lib/learn/canvas-visual";
-import { documentTitle } from "@/lib/learn/document-title";
+import { attachedFileTitle, documentTitle } from "@/lib/learn/document-title";
 import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import type { ChatWebResult } from "@/lib/workspace/chat-web-search";
 import type { ComposerCapability } from "@/lib/learn/composer-capability";
@@ -49,7 +49,7 @@ import { isMakerCapability } from "@/lib/learn/composer-capability";
 import { researchStepLabel } from "@/lib/research/research-progress";
 import { planResearch } from "@/lib/research/run-research";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
-import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes, storedCoverageNote } from "@/lib/learn/canvas-sources";
+import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes, restoredFileNames, storedCoverageNote } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
@@ -1036,7 +1036,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           //
           // 🔴 AND IT ONLY WRITES WHEN SOMETHING CHANGED. `refreshedCoverageNotes` returns the same
           // array when every note is unchanged, so the common case costs one read and no write.
-          const refreshed = await refreshedCoverageNotes(found.sources);
+          //
+          // 🔴🔴 THE FILE NAMES ARE PUT BACK IN THE SAME PASS, AND FOR THE SAME REASON THE NOTES
+          // ARE. Owner, 2026-09-03: *"these are being renamed. Shouldn't they keep their original
+          // file names?"* The attach path above no longer prettifies them, but a canvas holds its
+          // own copy of every title, so the canvases already written would go on saying
+          // `08 insulin` about a file called `08-insulin.pdf` for ever. `restoredFileNames` reads
+          // `library_sources.file_name` — one query for the whole canvas — and leaves a promoted
+          // web page alone, whose "file name" is one we invented. See lib/learn/canvas-sources.ts.
+          const refreshed = await restoredFileNames(await refreshedCoverageNotes(found.sources));
           if (alive && refreshed !== found.sources) {
             const updated = { ...latest.current, sources: [...refreshed] };
             setCanvas(updated);
@@ -1301,6 +1309,30 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             ? ((await storedCoverageNote(extracted.librarySourceId)) ?? undefined)
             : (coverageNote(extracted.coverage) ?? undefined);
 
+          // 🔴🔴 A FILE THE LEARNER CHOSE KEEPS THE NAME THE LEARNER CHOSE, AS OF 2026-09-03 — the
+          // image rule below, generalised, rather than a second rule beside it. Owner: *"these are
+          // being renamed. Shouldn't they keep their original file names? Sources need to be the
+          // original file names."* He had dropped in `08-insulin.pdf`; the shelf, the pills and the
+          // citations all read `08 insulin`. Nothing had been lost — `library_sources.file_name`
+          // held the real name throughout — but `documentTitle` falls back to `nameFromFile`, which
+          // drops the extension and turns the separators into spaces because that is what makes a
+          // CANVAS readable. A source is not a canvas: it is a file he has a copy of on his own
+          // computer, and he scans the shelf for the string he saved.
+          //
+          // 🔴 A PROMOTED WEB PAGE IS THE ONE EXCEPTION, AND `sourceUrl` IS HOW IT IS KNOWN. Its
+          // "file" is one we invented a moment earlier (`prepareWebSourcePromotion` writes
+          // `<page title>.md`), so handing that name back verbatim would show the learner a file
+          // extension no page they visited ever had. There the old reading is exactly right.
+          //
+          // 🔴 THE OFFER IS STILL CHECKED FOR ITS SHAPE AND NEVER TAKEN WHOLE (owner 2026-08-26:
+          // *"the title of the canvas became really long after adding the docs"*).
+          // `extracted.title` is usually the first line of the parse, which is the title for most
+          // documents and a row of column names for one that opens on a table; both paths below
+          // still run it past `document-title.ts` rather than trusting it.
+          const attachedTitle = sourceUrl
+            ? documentTitle(extracted.title, file.name)
+            : attachedFileTitle(file.name, extracted.title);
+
           const source: CanvasSource = {
             id: sourceId,
             // 🔴🔴 AN IMAGE IS TITLED BY ITS FILE, NOT BY WHAT A MODEL SAW IN IT. Reported
@@ -1313,14 +1345,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             //
             // 🔴 THE DESCRIPTION IS NOT DISCARDED — it is the source's CONTENT, which is exactly
             // what a vision read produces and what the canvas learns from. Only the NAME changes,
-            // to the one the learner recognises.
-            // 🔴 THE OFFER IS CHECKED FOR ITS SHAPE, NOT TAKEN (owner 2026-08-26: *"the title of
-            // the canvas became really long after adding the docs"*). `extracted.title` is usually
-            // the first line of the parse, which is the title for most documents and a row of
-            // column names for one that opens on a table. `documentTitle` rejects a row, a rule
-            // and a first paragraph, and falls back to the file name — which is the name the
-            // learner already recognises. See lib/learn/document-title.ts.
-            title: extracted.kind === "image" ? file.name : documentTitle(extracted.title, file.name),
+            // to the one the learner recognises. `attachedTitle` above now says the same thing
+            // about every other kind of file, which is why this branch is no longer the exception
+            // it was written as.
+            title: extracted.kind === "image" ? file.name : attachedTitle,
             kind: extracted.kind ?? "text",
             // Three inputs, in order of how much is known about them, and the fallbacks are
             // fallbacks rather than dead code: an image has no structural pass at all, and a PDF

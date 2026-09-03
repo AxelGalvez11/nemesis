@@ -186,17 +186,23 @@ const SOURCE: CanvasSource = {
   excerpts: [{ id: "s1:e1", label: null, text: "one" }],
 };
 
+// 🔴 THE EXPECTED TITLES LOST THEIR EXTENSIONS ON 2026-09-03, AND THE INVARIANT DID NOT MOVE. A
+// source now carries the learner's own file name (`attachedFileTitle`), so `mergeSourceIntoCanvas`
+// reads it the way a person reads a file name before naming the CANVAS after it — otherwise a chat
+// dropped a PDF into would be called "Lecture.pdf" in the sidebar and in the browser tab. What
+// these two tests are about is unchanged: the first source names an empty canvas, and a later one
+// never renames it.
 test("attaching the first source moves an empty canvas along and names it", () => {
   const after = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), SOURCE);
   assert.equal(after.state, "sources_attached");
   assert.equal(after.sources.length, 1);
-  assert.equal(after.title, "Lecture.pdf");
+  assert.equal(after.title, "Lecture");
 });
 
 test("attaching a second source does not rename a canvas that already has a title", () => {
   const first = mergeSourceIntoCanvas(emptyCanvas("c1", NOW), SOURCE);
   const after = mergeSourceIntoCanvas(first, { ...SOURCE, id: "s2", title: "Slides.pptx" });
-  assert.equal(after.title, "Lecture.pdf");
+  assert.equal(after.title, "Lecture");
   assert.equal(after.sources.length, 2);
 });
 
