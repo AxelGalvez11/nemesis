@@ -36,7 +36,7 @@
  * Deriving costs one function call and cannot drift.
  */
 
-import { describeCoverage, readCoverage } from "@nemesis/shared";
+import { describeCoverage, readCoverage, textIsWhole } from "@nemesis/shared";
 
 /** The `library_sources` half: enqueue, lease, retry, pre-artifact failure. */
 export interface SourceParseRow {
@@ -201,6 +201,24 @@ export function describeDocument(
     // 🔴 Completion comes from `complete` + coverage, NOT from the link.
     if (!parsed.complete) {
       const record = readCoverage(parsed.coverage);
+      // 🔴🔴🔴 A DOCUMENT WHOSE ONLY GAP IS PICTURES IS A DOCUMENT THAT WAS READ. Owner ruling,
+      // 2026-09-03: *"I don't want users seeing 'x pictures not read' at ALL… what matters most is
+      // that it understands content."*
+      //
+      // 🔴 DELETING THE PICTURE SENTENCE ALONE MADE THIS WORSE, WHICH IS WHY THIS LINE EXISTS.
+      // `describeCoverage` stopped naming pictures in the same change; that emptied `detail` for
+      // exactly these documents and dropped them through to the fallback below — *"Read, with some
+      // parts missing"* — which is the vague line the previous pass had just finished replacing.
+      // Quieting a specific gap without reclassifying the document turns a precise warning into an
+      // imprecise one, which is the worse of the two.
+      //
+      // 🔴 `textIsWhole` IS THE RIGHT TEST AND ALREADY EXISTED. Its own note: *"Pictures are
+      // deliberately not part of this question: they are a separate lane with a separate fix."*
+      // Every page read, no region the parser gave up on, nothing clipped. On production that is
+      // 24 of 27 partially-parsed documents.
+      //
+      // 🔴 A DOCUMENT THAT REALLY LOST PAGES STILL SAYS SO, first and unchanged, below.
+      if (record && textIsWhole(record)) return { kind: "parsed" };
       return {
         detail: record ? describeCoverage(record) : null,
         kind: "partially_parsed",
