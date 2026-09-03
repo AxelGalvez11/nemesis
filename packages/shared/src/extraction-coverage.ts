@@ -42,8 +42,15 @@ export const EXTRACTION_COVERAGE_VERSION = 1;
  *
  * Not a package version: extraction quality does not move with the app's
  * release number, and tying them would reparse the world on every deploy.
+ *
+ * 2026-09-03: `extract-2026-08-16` -> `extract-2026-09-03`. A slide whose diagram is
+ * shattered into fragments is now read WHOLE rather than shard by shard, and
+ * `MAX_VISION_PAGES` rose 40 -> 120 to make room for it. Both are exactly what the rule
+ * above names — "a new parser… a raised page cap" — and without the bump every document
+ * already in the library keeps the parse that read nothing off its diagram slides. On the
+ * owner's own lecture that is 22 slides of 83.
  */
-export const PARSER_VERSION = "extract-2026-08-16";
+export const PARSER_VERSION = "extract-2026-09-03";
 
 /** What the document divides into. `document` is the honest answer for a file
  *  with no meaningful subdivision — better than inventing "page 1 of 1". */
