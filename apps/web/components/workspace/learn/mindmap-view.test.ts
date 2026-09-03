@@ -119,8 +119,9 @@ test("🔴 no em dash in the map, its tree, or this file", () => {
   }
 });
 
-test("🔴 a citation mark inside a node label is dropped before the tree is drawn", () => {
+test("🔴 a citation mark inside a node label is dropped before the tree is drawn, on both paths", () => {
   const block = readFileSync(new URL("./mindmap-block.tsx", import.meta.url), "utf8");
-  assert.match(block, /const CITATION_MARK = \/\\s\*\\\[s\\d\+:e\\d\+/, "the citation pattern is gone");
-  assert.match(block, /return parsed \? withoutCitations\(parsed\) : null;/, "labels are drawn with their marks again");
+  const canvas = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  assert.match(block, /return parsed \? withoutCitationMarks\(parsed\) : null;/, "the inline block draws labels with their marks again");
+  assert.match(canvas, /const root = withoutCitationMarks\(parsed\);\s*openedMapFor\.current = replyText;/, "the pane's auto-opened map keeps its marks");
 });

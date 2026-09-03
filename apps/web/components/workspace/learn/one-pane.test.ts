@@ -56,7 +56,7 @@ test("🔴🔴 the canvas mounts each study body from the item in front, never f
 
 test("🔴🔴 a map the answer drew opens itself in the pane, once per answer", () => {
   assert.match(CANVAS, /const openedMapFor = useRef<string \| null>\(null\);/);
-  assert.match(CANVAS, /const root = parseMermaidMindmap\(match\[1\] \?\? ""\);\s*if \(!root\) continue;\s*openedMapFor\.current = replyText;\s*dock\.openMindmap\(root, root\.label\);/, "a drawn map no longer opens itself");
+  assert.match(CANVAS, /const parsed = parseMermaidMindmap\(match\[1\] \?\? ""\);\s*if \(!parsed\) continue;[\s\S]{0,400}?const root = withoutCitationMarks\(parsed\);\s*openedMapFor\.current = replyText;\s*dock\.openMindmap\(root, root\.label\);/, "a drawn map no longer opens itself");
   // The inline door and the outputs shelf go through the same dock.
   assert.match(CANVAS, /open: \(root: MindmapNode\) => dock\.openMindmap\(root, root\.label\)/);
   assert.match(CONTROLS, /onReviewDeck=\{dock\.openDeck\}/, "the outputs shelf opens a deck outside the dock");
