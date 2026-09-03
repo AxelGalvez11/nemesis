@@ -86,6 +86,17 @@ export interface DocumentDock {
   /** Bring one tab to the front, by `DockItem.key`. */
   select: (key: string) => void;
   closeAll: () => void;
+  /**
+   * Whether closing put something aside that `reopen` would bring back.
+   *
+   * 🔴 THIS IS WHAT MAKES THE CORNER TOGGLE A TOGGLE. Owner, 2026-09-03: *"the chat should also
+   * show a sidebar icon on the top left if there is a sidebar that can be opened."* A door that
+   * always reopens the FIRST document would throw away the learner's place every time they
+   * glanced away from lecture nine.
+   */
+  readonly canReopen: boolean;
+  /** Put back exactly what was open when the panel was last closed. */
+  reopen: () => void;
 }
 
 const DocumentDockContext = createContext<DocumentDock | null>(null);
@@ -98,6 +109,24 @@ const DocumentDockContext = createContext<DocumentDock | null>(null);
  * branch returning anything else is a canvas a learner can enter and not leave. So the state is
  * made here, in the canvas's own body, and carried down by providers placed INSIDE the surface.
  */
+interface DockState {
+  open: DockItem[];
+  activeId: string | null;
+  /** What was open when the panel was last closed, or null when nothing is put by. */
+  shut: { open: DockItem[]; activeId: string | null } | null;
+}
+
+/** What to remember when the panel closes — never an empty list, which would arm a door onto
+ *  nothing and make the corner toggle appear on a canvas the learner has not opened anything in.
+ *
+ *  🔴 NOT NAMED `setAside`, WHICH IS THE OBVIOUS NAME AND WAS THE FIRST ONE. `source-preview.test.ts`
+ *  bans a `set[A-Z]…(` call inside the `setDocs` updater — the nested-setState defect this file's
+ *  header warns about — and a pure helper called `setAside` reads as exactly that to the guard.
+ *  Renaming the helper keeps the guard at full strength; loosening its regex would not have. */
+function keptAside(current: DockState): DockState["shut"] {
+  return current.open.length > 0 ? { activeId: current.activeId, open: current.open } : current.shut;
+}
+
 export function useDocumentDockState(sources: readonly CanvasSource[]): DocumentDock {
   /**
    * 🔴 ONE PIECE OF STATE, NOT TWO, AND THAT IS DELIBERATE. Closing the front tab has to choose a
@@ -106,11 +135,14 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
    * once (see `dictation-doubled-every-sentence`), invisible in a diff and impossible to reason
    * about because the updater runs twice under StrictMode.
    */
-  const [docs, setDocs] = useState<{ open: DockItem[]; activeId: string | null }>({ activeId: null, open: [] });
+  const [docs, setDocs] = useState<DockState>({ activeId: null, open: [], shut: null });
 
   const put = useCallback((item: DockItem) => {
     setDocs((current) => ({
       activeId: item.key,
+      // Opening anything at all retires what was set aside: the learner has chosen a new place,
+      // and a reopen that jumped somewhere else would be a door with a memory of its own.
+      shut: null,
       // Opening something already open brings it forward rather than listing it twice.
       // 🔴 THE STORED ROW IS REPLACED, NOT KEPT. A revision lands in `canvas.outputs` and the object
       // captured when the tab was first opened predates it, so re-opening has to adopt the fresh
@@ -135,12 +167,21 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
       const open = current.open.filter((entry) => entry.key !== key);
       // Closing the front tab falls back to the most recently opened one still there, not to the
       // first: the learner's attention was at the end of the strip, which is where they put it.
-      return { activeId: current.activeId === key ? (open[open.length - 1]?.key ?? null) : current.activeId, open };
+      return {
+        activeId: current.activeId === key ? (open[open.length - 1]?.key ?? null) : current.activeId,
+        open,
+        // Closing the LAST tab is what shuts the panel, so that is the moment worth remembering.
+        shut: open.length === 0 ? keptAside(current) : current.shut,
+      };
     });
   }, []);
 
   const select = useCallback((key: string) => setDocs((current) => ({ ...current, activeId: key })), []);
-  const closeAll = useCallback(() => setDocs({ activeId: null, open: [] }), []);
+  const closeAll = useCallback(() => setDocs((current) => ({ activeId: null, open: [], shut: keptAside(current) })), []);
+  const reopen = useCallback(
+    () => setDocs((current) => (current.shut ? { ...current.shut, shut: null } : current)),
+    [],
+  );
 
   const openPill = useCallback(
     (pill: DocumentPill) => {
@@ -178,6 +219,7 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
       // field's own comment on `DocumentDock`.
       activeId: active?.kind === "document" ? active.source.id : null,
       activeKey: docs.activeId,
+      canReopen: (docs.shut?.open.length ?? 0) > 0,
       close,
       closeAll,
       items: docs.open,
@@ -185,9 +227,10 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
       openDocument,
       openOutput,
       openPill,
+      reopen,
       select,
     }),
-    [active, close, closeAll, docs.activeId, docs.open, documents, openDocument, openOutput, openPill, select],
+    [active, close, closeAll, docs.activeId, docs.open, docs.shut, documents, openDocument, openOutput, openPill, reopen, select],
   );
 }
 

@@ -42,12 +42,19 @@ test("🔴🔴 pressing send does not erase what was attached to it", () => {
   assert.match(CANVAS, /const attachedNow = committedTitles\.current;\s*committedTitles\.current = \[\];/, "the committed titles are no longer taken single-use");
 });
 
-test("🔴 the live turn NAMES its files, the way a filed turn already did", () => {
-  // `canvas-thread-turn.tsx` has drawn `turn.attached` as a list since the thread existed. The
-  // live region drew nothing, so the newest exchange — the one on screen — was the only one whose
-  // documents were invisible.
-  assert.match(CANVAS, /threadOpen && currentAttached\.length > 0 && \(/, "the live turn stopped naming its files");
-  assert.match(CANVAS, /setCurrentAttached\(held\?\.attached \?\? \[\]\)/, "a reopened canvas does not name the newest turn's files");
+test("🪦 no turn PRINTS its file names — the owner cut that the same afternoon", () => {
+  // 🔴 THIS TEST IS THE REVERSAL, NOT A RELAXATION. The two assertions it replaces required the
+  // live region to draw `currentAttached`, and the owner asked for the opposite within the hour:
+  // *"it shows the names of the PowerPoints or the documents that were dropped in. I don't need
+  // that there … it's always showing that."* On his canvases that list is seven lines above every
+  // question, which is most of the screen.
+  //
+  // What must NOT come back is the printing. What must survive is everything below: the turn is
+  // still FILED with its attachments, and they are still in the sources panel and the reading
+  // pane. Deleting the whole feature would have taken the fix out with the list.
+  const THREAD = strip(read("./canvas-thread-turn.tsx"));
+  assert.ok(!/turn\.attached\.map/.test(THREAD), "a filed turn is printing its file names again");
+  assert.ok(!/currentAttached/.test(CANVAS), "the live turn is printing its file names again");
 });
 
 test("🔴🔴🔴 two different files are not 'the same moment recorded twice'", () => {
@@ -110,7 +117,12 @@ test("🔴🔴🔴 the first message of a new chat is not seeded over while it i
   // chat again until it is reloaded.
   assert.match(seed, /const switching = seededFor\.current !== null && seededFor\.current !== canvas\.id;/, "the seed stopped telling a switch from a first seed");
   assert.match(seed, /if \(switching \|\| held\?\.said\) setCurrentSaid/, "a first seed can erase the live question again");
-  assert.match(seed, /if \(switching \|\| held\?\.attached\?\.length\) setCurrentAttached/, "a first seed can erase the live attachments again");
+  // 🪦 THE THIRD LINE OF THIS GUARD WAS `setCurrentAttached`, AND THERE IS NOTHING LEFT TO GUARD.
+  // The owner cut the printed file names hours after they shipped (*"it's always showing that"* —
+  // see the tombstone in canvas-thread-turn.tsx), so the live region holds no attachment state for
+  // a first seed to erase. The rule itself is unchanged and is still asserted twice above: a first
+  // seed ADDS, a switch REPLACES. If the names ever come back, this line comes back with them.
+  assert.ok(!/setCurrentAttached/.test(seed), "the live turn is holding attachment state again — restore the third guard with it");
   assert.ok(
     seed.indexOf("if (restored.length > 0) seededFor.current") > seed.indexOf("const restored = history"),
     "the latch runs before the seeding it is meant to record",

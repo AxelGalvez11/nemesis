@@ -52,14 +52,25 @@ test("the top controls are a transparent layer, never a header bar", () => {
   assert.match(header, /\bpointer-events-none\b/);
 });
 
-test("the canvas title is a label, not a full-width click target", () => {
+test("the left half of the strip is not a full-width click target", () => {
+  // 🔴 REPOINTED, NOT WEAKENED (2026-09-03). This used to read "the canvas title is a label" and
+  // matched the title's own `<span className="…flex-1…">`. The owner cut the title — *"remove the
+  // name of the chat … that's taken away from the reading of the chat"* — and the flex-1 slot is
+  // now a `<div>` holding an optional 36px door to the reading pane.
+  //
+  // The property has not changed and is the reason the test exists: that slot spans the whole
+  // strip, and the conversation SCROLLS UNDERNEATH IT. Anything full-width and clickable there is a
+  // trap — selecting the top line of an answer hits the strip instead. The button inside is
+  // `pointer-events-auto` on purpose and is 36px wide; the container must never be.
   const source = read("canvas-header.tsx");
-  const title = /<span className="([^"]*flex-1[^"]*)"/.exec(source);
-  assert.ok(title?.[1], "expected the title span to still be the flex-1 element");
+  const slot = /<div className="(flex min-w-0 flex-1[^"]*)"/.exec(source);
+  assert.ok(slot?.[1], "expected the left half of the strip to still be the flex-1 element");
   assert.ok(
-    !/pointer-events-auto/.test(title[1]),
-    "the title spans the whole strip; making it interactive blocks selecting the text beneath it",
+    !/pointer-events-auto/.test(slot[1]),
+    "the slot spans the whole strip; making it interactive blocks selecting the text beneath it",
   );
+  // And the title itself must not come back into it.
+  assert.ok(!/canvas\.title \|\| "New canvas"/.test(source), "the canvas's name is being printed above the conversation again");
 });
 
 test("the shell reserves clearance with padding rather than a header element", () => {

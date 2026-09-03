@@ -118,5 +118,5 @@ test("a slide's searchable text covers its title, body and notes", () => {
 
 test("an unreadable slide part yields an empty slide rather than throwing", () => {
   const parsed = parseSlide(4, "", null, "ppt/slides/slide4.xml", null);
-  assert.deepEqual(parsed, { index: 4, title: null, paragraphs: [], pictures: [], notes: null });
+  assert.deepEqual(parsed, { index: 4, title: null, paragraphs: [], pictures: [], notes: null, shapes: [] });
 });
