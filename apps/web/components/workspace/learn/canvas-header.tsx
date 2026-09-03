@@ -17,6 +17,7 @@
 // 🔴 STILL NOT A HEADER BAR. No container, no background, no border, no shadow, no backdrop —
 // those assertions moved to canvas-surface.tsx along with the element that carries them.
 
+import type { AnnotationNote } from "@/lib/learn/annotation-note";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
@@ -39,7 +40,7 @@ interface CanvasHeaderProps {
   making?: DeliverableKind | null;
   /** A question asked from inside the open document. Threaded through rather than resolved here:
    *  the header knows nothing about turns, and the canvas already owns exactly one route for one. */
-  onSendToChat?: (prompt: string, files: File[]) => void;
+  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[]) => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** The card or question being answered right now, so the objectives panel can say which one

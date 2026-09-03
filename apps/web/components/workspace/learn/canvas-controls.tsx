@@ -21,6 +21,7 @@
 // below say where each went and why. `SessionControl` stays exported and unrendered (its own
 // note explains that), which is why `MenuItem` is still in the file.
 
+import type { AnnotationNote } from "@/lib/learn/annotation-note";
 import { Children, useCallback, useEffect, useRef, useState } from "react";
 
 
@@ -190,7 +191,7 @@ export function SourcesControl({
   /** A question asked FROM the open document: a highlighted passage or a marked area, with one of
    *  the reader's actions on it. Absent means the reader shows no action bar at all — see
    *  `SourcePreview`. */
-  onSendToChat?: (prompt: string, files: File[]) => void;
+  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[]) => void;
   outputTools?: OutputTools;
 }) {
   const [open, setOpen] = useState(false);

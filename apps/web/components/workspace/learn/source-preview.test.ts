@@ -141,7 +141,12 @@ test("🔴🔴 the panel HAS a chat lane now, and the reader still hides its too
   // asserted below, because the Library's attachment popup still mounts the reader without a route.
   assert.match(PREVIEW, /onSendToChat=\{onSendToChat\}/, "the panel no longer forwards a way to ask about a selection");
   const reader = strip(readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8"));
-  assert.match(reader, /onSendToChat\?: \(prompt: string, files: File\[\]\) => void;/, "the reader requires a chat lane again, which forces a dead toolbar wherever there is none");
+  // 🔴 THE SIGNATURE GREW A THIRD ARGUMENT 2026-09-03 — `notes`, what the learner marked — so this
+  // matches the prop being OPTIONAL rather than its exact shape. What it protects is unchanged and
+  // is the `?`: a reader mounted without a chat lane (the Library's attachment popup) must not grow
+  // a dead toolbar. Pinning the full parameter list made a test about dead toolbars fail because an
+  // annotation learned to describe itself.
+  assert.match(reader, /onSendToChat\?: \(prompt: string, files: File\[\]/, "the reader requires a chat lane again, which forces a dead toolbar wherever there is none");
   // 🔴 REPOINTED 2026-09-01. The bar this line pinned is gone — a highlight opens a comment box now
   // (owner: *"only comment like 'send to nemesis' or 'add comment'"*). The property it protected is
   // NOT gone and is asserted in its new form: without a chat lane the Send button is not rendered

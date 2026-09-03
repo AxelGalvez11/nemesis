@@ -6,6 +6,8 @@
 // assistant column, and no route change between reading, recalling and being tested — the
 // canvas itself is the interface, and the command bar is the only control.
 
+import type { AnnotationNote } from "@/lib/learn/annotation-note";
+import { AnnotationNoteView } from "./annotation-note-view";
 import { advance as advanceRead } from "@/lib/workspace/read-progress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -1054,6 +1056,9 @@ export function LearningCanvas({
    */
   const [currentSaid, setCurrentSaid] = useState<string | null>(null);
   const [currentSaidVia, setCurrentSaidVia] = useState<"spoken" | null>(null);
+  /** What the learner marked on a document for the turn being answered. Empty on every other turn.
+   *  🔴 IT LIVES BESIDE `currentSaid` BECAUSE IT BELONGS TO THE SAME SENTENCE, and dies with it. */
+  const [currentNotes, setCurrentNotes] = useState<readonly AnnotationNote[]>([]);
   /**
    * The moment id of the exchange the live region is showing, or null while a turn is still in
    * flight and no moment has been recorded for it yet.
@@ -1150,6 +1155,10 @@ export function LearningCanvas({
       committedTitles.current = [];
       onScreen.current = { aside: null, attached: attachedNow, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
       setCurrentSaid(trimmed);
+      // 🔴 EVERY ORDINARY SEND CLEARS THE MARKS. Without this the crop from an annotation would
+      // hang above the NEXT question too, which is the same class of bug as a sticky attachment
+      // chip: a picture claiming to be about a sentence it has nothing to do with.
+      setCurrentNotes((held) => (held.length > 0 ? [] : held));
       setCurrentSaidVia(spokenNow);
       setCurrentMomentId(null);
       // Owner picked option A from the mockup: the prompt goes to the top and stays there.
@@ -2614,7 +2623,11 @@ export function LearningCanvas({
   };
   const undoOutput = (output: CanvasOutput) => session.updateOutput(output.id, undoRevision);
 
-  const askFromReader = async (asked: string, files: File[]) => {
+  const askFromReader = async (asked: string, files: File[], notes?: readonly AnnotationNote[]) => {
+    // 🔴 SET BEFORE THE SEND, CLEARED BY THE NEXT ONE. The turn being answered draws these above
+    // the learner's sentence; a turn that marked nothing must draw nothing, so this cannot be
+    // sticky. `converse` clears it for every ordinary send.
+    setCurrentNotes(notes && notes.length > 0 ? notes : []);
     // 🔴 THE READER'S OWN SEND COMMITS DIRECTLY AND WAITS. Everywhere else material is staged and
     // committed by the composer's send; here the question and the picture are one gesture, so
     // there is no staging step to pass through — and the turn must not start before the picture is
@@ -2955,6 +2968,14 @@ export function LearningCanvas({
             asked for. */}
         {threadOpen && currentSaid?.trim() && (
           <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
+            {/* 🔴🔴 THE REGION FIRST, THEN THE COUNT, THEN THE SENTENCE — the reference's order, and
+                the only one that reads. Owner, 2026-09-03, with screenshots: the cropped bit of the
+                chart sits above the message and a count chip sits between them.
+                🪦 THIS IS NOT THE FILE LIST HE CUT. That printed what you had uploaded, on every
+                turn, and he removed it the same afternoon it shipped. This appears only on a turn
+                where you marked something, and it shows the thing you marked. See
+                lib/learn/annotation-note.ts. */}
+            <AnnotationNoteView notes={currentNotes} />
             {/* 🔴 EDITING RE-ASKS, IT DOES NOT REWRITE HISTORY. `retryTurn` is `converse`, the one
                 path a turn has ever taken, so the exchange being edited files into the thread
                 exactly as it would have and the new sentence becomes the current turn. Nothing is
