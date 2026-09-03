@@ -418,3 +418,21 @@ export function labelPaths(root: MindmapNode): Map<string, string[]> {
   walk(root, []);
   return paths;
 }
+
+/**
+ * A citation mark inside a node label, as the model writes them in prose: `[s3:e12]`.
+ *
+ * 🔴 SEEN ON PRODUCTION 2026-09-03, first map drawn: "Arises in the bone marrow [s3:e4]". The
+ * router asks for every claim to carry its excerpt id and the model obliged inside the tree, where
+ * a mark cannot become a pill. Both readers of a fence (the inline block and the pane's auto-open)
+ * drop it through this one helper; the prose around the map still cites.
+ */
+const CITATION_MARK = /\s*\[s\d+:e\d+(?:,\s*s\d+:e\d+)*\]/g;
+
+export function withoutCitationMarks(node: MindmapNode): MindmapNode {
+  return {
+    ...node,
+    children: node.children.map(withoutCitationMarks),
+    label: node.label.replace(CITATION_MARK, "").replace(/\s{2,}/g, " ").trim() || node.label,
+  };
+}

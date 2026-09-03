@@ -18,7 +18,7 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { createReadPool } from "@/lib/learn/read-pool";
 import { readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
-import { type MindmapNode, parseMermaidMindmap } from "@/lib/learn/mindmap-tree";
+import { type MindmapNode, parseMermaidMindmap, withoutCitationMarks } from "@/lib/learn/mindmap-tree";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
@@ -1971,8 +1971,11 @@ export function LearningCanvas({
     if (!replyText.trim() || openedMapFor.current === replyText) return;
     const fence = /```mermaid\s*\n([\s\S]*?)```/g;
     for (const match of replyText.matchAll(fence)) {
-      const root = parseMermaidMindmap(match[1] ?? "");
-      if (!root) continue;
+      const parsed = parseMermaidMindmap(match[1] ?? "");
+      if (!parsed) continue;
+      // 🔴 THE SAME LABELS THE INLINE BLOCK DRAWS: a citation mark is dropped here too, or the pane
+      // shows "[s3:e90]" beside a node the conversation shows clean (seen on production 2026-09-03).
+      const root = withoutCitationMarks(parsed);
       openedMapFor.current = replyText;
       dock.openMindmap(root, root.label);
       return;

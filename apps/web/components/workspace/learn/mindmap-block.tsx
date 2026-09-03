@@ -21,7 +21,7 @@
 import { createContext, useContext, useMemo } from "react";
 
 import { MindmapView } from "@/components/workspace/learn/mindmap-view";
-import { type MindmapNode, parseMermaidMindmap } from "@/lib/learn/mindmap-tree";
+import { type MindmapNode, parseMermaidMindmap, withoutCitationMarks } from "@/lib/learn/mindmap-tree";
 
 export interface MindmapDoor {
   /** Open this tree in the right side panel. */
@@ -41,28 +41,11 @@ export function isMindmapChart(chart: string): boolean {
   return parseMermaidMindmap(chart) !== null;
 }
 
-/**
- * A citation mark inside a node label, as the model writes them in prose: `[s3:e12]`.
- *
- * 🔴 SEEN ON PRODUCTION 2026-09-03, first map drawn: "Arises in the bone marrow [s3:e4]". The
- * router asks for every claim to carry its excerpt id and the model obliged inside the tree, where
- * a mark cannot become a pill. It is dropped from the label; the prose around the map still cites.
- */
-const CITATION_MARK = /\s*\[s\d+:e\d+(?:,\s*s\d+:e\d+)*\]/g;
-
-function withoutCitations(node: MindmapNode): MindmapNode {
-  return {
-    ...node,
-    children: node.children.map(withoutCitations),
-    label: node.label.replace(CITATION_MARK, "").replace(/\s{2,}/g, " ").trim() || node.label,
-  };
-}
-
 export function MindmapBlock({ chart }: { chart: string }) {
   const door = useMindmapDoor();
   const root = useMemo(() => {
     const parsed = parseMermaidMindmap(chart);
-    return parsed ? withoutCitations(parsed) : null;
+    return parsed ? withoutCitationMarks(parsed) : null;
   }, [chart]);
   if (!root) return null;
   return (

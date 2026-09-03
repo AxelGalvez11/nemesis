@@ -26,8 +26,7 @@ import {
   topExpanded,
   type LaidNode,
   type MindmapLayout,
-  type MindmapNode,
-} from "./mindmap-tree";
+  type MindmapNode, withoutCitationMarks } from "./mindmap-tree";
 
 /** A law map wearing every mermaid shape at once, fenced the way the model hands it over. */
 const SHAPES = `\`\`\`mermaid
@@ -377,4 +376,13 @@ test("a leaf knows the labels above it", () => {
   const paths = labelPaths(root);
   assert.deepEqual(paths.get("n0.2.1"), ["Commerce power", "Substantial effects", "Economic activity"]);
   assert.deepEqual(paths.get("n0"), ["Commerce power"]);
+});
+
+test("🔴 withoutCitationMarks drops [sN:eM] marks from every label and leaves everything else", () => {
+  const root = { children: [{ children: [], id: "n0.0", label: "Arises in the bone marrow [s3:e90]" }, { children: [], id: "n0.1", label: "Isotypes [s3:e20, s3:e21]" }], id: "n0", label: "B cells" };
+  const clean = withoutCitationMarks(root);
+  assert.equal(clean.children[0]!.label, "Arises in the bone marrow");
+  assert.equal(clean.children[1]!.label, "Isotypes");
+  assert.equal(clean.label, "B cells");
+  assert.equal(withoutCitationMarks({ children: [], id: "x", label: "[s1:e1]" }).label, "[s1:e1]", "a label that is only a mark keeps it rather than going blank");
 });
