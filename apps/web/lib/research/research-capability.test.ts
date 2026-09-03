@@ -91,8 +91,14 @@ test("no countdown starts a metered run on its own", () => {
 });
 
 test("the learner is told what the run cost, not just that it finished", () => {
+  // 🔴 REPOINTED, NOT DELETED. This pinned the numbers reaching the transient notice strip beside
+  // the artifact card. The strip is gone (owner, 2026-09-03: the artifact chip is the only inline
+  // announcement), so the invariant now has to be satisfied where it actually survives: the report
+  // itself. That is strictly better than a strip the learner had one moment to read.
   const deliverables = code("../learn/canvas-deliverables.ts");
-  assert.match(deliverables, /note: researchSummaryLine\(outcome\)/, "the numbers do not reach the notice");
-  const session = code("../../components/workspace/learn/use-canvas-session.ts");
-  assert.match(session, /result\.note/, "the notice ignores what the maker reported");
+  assert.match(deliverables, /note: researchSummaryLine\(outcome\)/, "the maker no longer computes what the run cost");
+  const markdown = code("./report-markdown.ts");
+  assert.match(markdown, /searched\} searches/, "the report's own footer lost the search count");
+  assert.match(markdown, /facts kept with the passage each came from/, "the footer lost what was kept and why");
+  assert.match(markdown, /removed for saying more than those sources did/, "the footer lost what was dropped");
 });

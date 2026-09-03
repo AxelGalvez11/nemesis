@@ -109,25 +109,28 @@ test("🔴🔴 a made file is an ARTIFACT you open, not a download the row fires
   assert.match(preview, /docBlocks\(/, "the preview renders markdown by some other route than the writers do");
 });
 
-test("🔴 the finished notice is a Record, because the chain it replaced was already lying", () => {
-  // It ended `: "Note saved to your Library."` — the branch every unnamed kind fell into. Making a
-  // spreadsheet therefore announced a note, saved somewhere it had never been. A chain of ternaries
-  // has no missing case for a compiler to find; a Record over the union does.
+test("🔴 one artifact, one announcement: no notice strip beside the card", () => {
+  // 🔴 REPOINTED, NOT DELETED. This used to pin `MADE_NOTICE`, a Record of per-kind sentences, and
+  // the three things it protected were: no kind gets another kind's sentence, nobody is sent to the
+  // Library for a file that is not filed there, and flashcards stay silent because the turn already
+  // spoke. All three are now true because there is NO strip at all — which is the strongest version
+  // of each of them, and the reason the guard moved rather than went.
+  //
+  // Owner, 2026-09-03: *"I don't want it like the one that's showing in the Nemesis that says
+  // document ready, open it from output panel... the artifact chip should be the only one that
+  // shows in line."* Same ruling he made on 2026-08-31 about the flashcards chip; the file kinds
+  // had kept theirs on the argument that they alone named the outputs panel, and naming the outputs
+  // panel is exactly what he is asking us to stop doing.
   const session = code("../../components/workspace/learn/use-canvas-session.ts");
-  assert.match(session, /const MADE_NOTICE: Record<DeliverableKind, string \| null>/, "the notice can fall through to the wrong kind again");
-  assert.match(session, /MADE_NOTICE\[kind\]/, "the notice is not read from the record");
-  // 🔴 AND IT MUST NOT SEND ANYBODY TO THE LIBRARY FOR A FILE THAT IS NOT THERE. Documents, PDFs
-  // and spreadsheets live on the canvas as artifacts; only the other three are filed.
-  const notice = session.slice(session.indexOf("const MADE_NOTICE"), session.indexOf("};", session.indexOf("const MADE_NOTICE")));
-  for (const kind of ["document", "pdf", "sheet"]) {
-    const line = notice.split("\n").find((l) => l.trim().startsWith(`${kind}:`)) ?? "";
-    assert.ok(!/Library/.test(line), `🔴 the ${kind} notice sends the learner to the Library, where it is not`);
-  }
-  // 🔴 AND FLASHCARDS SAY NOTHING, BECAUSE THE TURN ALREADY DID. Owner, 2026-08-31: *"remove the
-  // 'flashcards saved' chip, that's not needed"* — the transcript prints "Flashcards ready: <name>"
-  // with the deck row beneath it, so the strip was a second announcement of the same event.
-  const cards = notice.split("\n").find((l) => l.trim().startsWith("flashcards:")) ?? "";
-  assert.match(cards, /flashcards: null,/, "🔴 the flashcards notice is back, on top of the row the turn already printed");
+  assert.ok(!/MADE_NOTICE/.test(session), "the per-kind notice strip is back beside the artifact card");
+  assert.ok(
+    !/Open it from the outputs panel/.test(session),
+    "something is telling the learner where to look again; the card is the door",
+  );
+  // 🔴 AND THE CARD IS STILL PAINTED, or removing the strip would have removed the only hand-over.
+  assert.match(session, /setMadeArtifact\(result\.output\)/, "the artifact no longer reaches the conversation at all");
+  const turn = code("../../components/workspace/learn/canvas-thread-turn.tsx");
+  assert.match(turn, /<ArtifactCard/, "the thread stopped painting the card that is now the only announcement");
 });
 
 test("only Course reaches the turn model; the rest are decisions already made", () => {
