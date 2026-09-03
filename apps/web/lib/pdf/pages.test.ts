@@ -46,7 +46,11 @@ test("a document that reads fine costs nothing", () => {
 // ── The cap ──────────────────────────────────────────────────────────────────
 
 test("no more pages than the per-document ceiling are sent", () => {
-  const many = Array.from({ length: 100 }, () => "");
+  // 🔴 SIZED OFF THE CONSTANT, NOT OFF A NUMBER THAT HAPPENED TO EXCEED IT. This was a literal
+  // 100, which was over the ceiling while it was 40 and under it once the ceiling became 120 on
+  // 2026-09-03 — so the test stopped exercising the cap and reported that as a failure. A fixture
+  // that has to be re-read every time a constant moves is not pinning the constant.
+  const many = Array.from({ length: MAX_VISION_PAGES + 10 }, () => "");
   assert.equal(unreadPages(many).length, MAX_VISION_PAGES);
 });
 
@@ -69,9 +73,12 @@ test("the pages that are sent stay in document order", () => {
 // as one the text layer covered would hide the loss the cap exists to bound — and
 // "read from text" is exactly the lie this whole file was written to stop telling.
 test("every picture-page is counted, including the ones the cap excluded", () => {
-  const pages = Array.from({ length: 50 }, () => "");
-  assert.equal(thinPages(pages).length, 50);
-  assert.equal(unreadPages(pages).length, MAX_VISION_PAGES);
+  // Same fixture rule as above: it must genuinely exceed the ceiling to prove the cap counts what
+  // it declines to send.
+  const beyond = MAX_VISION_PAGES + 10;
+  const pages = Array.from({ length: beyond }, () => "");
+  assert.equal(thinPages(pages).length, beyond, "every picture-page is counted");
+  assert.equal(unreadPages(pages).length, MAX_VISION_PAGES, "and only the ceiling is sent");
 });
 
 test("a document under the cap sends every page it counts", () => {
