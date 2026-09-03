@@ -12,7 +12,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { decideReuse, type ExistingParse } from "./parse-reuse";
+import { PARSER_VERSION } from "@nemesis/shared";
+
+import { decideReuse, readByAnOlderParser, type ExistingParse } from "./parse-reuse";
 
 function parse(overrides: Partial<ExistingParse> = {}): ExistingParse {
   return {
@@ -20,6 +22,12 @@ function parse(overrides: Partial<ExistingParse> = {}): ExistingParse {
     docKind: "pdf",
     id: "00000000-0000-0000-0000-000000000001",
     parserVersion: "extract-2026-08-13",
+    // 🔴 THE COLUMN AND THE READER ARE DIFFERENT FACTS, and only the second can be compared. The
+    // column above is whatever LANE finished the read (`pages`, `figures`, a vendor id); this is
+    // the parser that produced it. Defaulted to the current one so these cases keep asking what
+    // they were written to ask — is a same-generation parse reused — rather than silently becoming
+    // staleness tests.
+    readerVersion: PARSER_VERSION,
     state: "parsed",
     unitCount: 12,
     ...overrides,
@@ -110,7 +118,7 @@ test("🔴 the migration does not deduplicate across users", () => {
 
 test("🔴 an explicit reprocess refuses reuse — the whole point of asking", () => {
   const decision = decideReuse(
-    { complete: false, docKind: "pdf", id: "p1", parserVersion: "extract-2026-08-16", state: "partially_parsed", unitCount: 47 },
+    { complete: false, docKind: "pdf", id: "p1", parserVersion: "extract-2026-08-16", readerVersion: PARSER_VERSION, state: "partially_parsed", unitCount: 47 },
     { reprocessRequested: true },
   );
   assert.equal(decision.reuse, false);
@@ -132,4 +140,48 @@ test("🔴 and the WORKER passes it, which is the half that was missing", () => 
     /job\.parse_reprocess_target/,
     "the request is not read off the claimed row, so it can drift from the predicate that claimed it",
   );
+});
+
+/**
+ * 🔴🔴 AN IMPROVEMENT TO EXTRACTION MUST BE ABLE TO REACH A FILE WE HAVE ALREADY SEEN.
+ *
+ * Until 2026-09-03 it could not. Reuse matched on bytes alone, and the documented upgrade path —
+ * "a deliberate act with a caller" — ran on `parse_reprocess_target`, which only
+ * `POST /api/library/sources/:id/parse {"reprocess":true}` sets: a body no surface in the app
+ * sends, behind a worker nudge needing a secret no person holds. So re-uploading a lecture returned
+ * the same stored parse for ever.
+ *
+ * It stopped being theoretical the day reading a shattered diagram whole (#1111) recovered 30
+ * slides across 5 of the owner's own lectures that had been read as nothing.
+ */
+test("🔴 a parse from an older version of OUR parser is not reused", () => {
+  const decision = decideReuse(parse({ readerVersion: "extract-2026-08-16" }), { currentParserVersion: "extract-2026-09-03" });
+  assert.equal(decision.reuse, false);
+  assert.equal(decision.reuse === false ? decision.reason : null, "read-by-an-older-parser");
+});
+
+test("🔴 a vendor read IS reused — our bump did not improve it and repeating it costs money", () => {
+  const decision = decideReuse(parse({ readerVersion: "mistral/mistral-ocr-latest" }), {
+    currentParserVersion: "extract-2026-09-03",
+  });
+  assert.equal(decision.reuse, true, "an external OCR read is somebody else's answer, not a stale one of ours");
+});
+
+test("an unknown reader is reused, because unknown is not stale", () => {
+  // Rows predating the coverage record have no reader version. Refusing those would re-read the
+  // corpus on the strength of a missing field.
+  assert.equal(decideReuse(parse({ readerVersion: null }), { currentParserVersion: "extract-2026-09-03" }).reuse, true);
+});
+
+test("the family test comes from the constant, not from a hardcoded prefix", () => {
+  assert.equal(readByAnOlderParser("extract-2026-08-16", "extract-2026-09-03"), true);
+  assert.equal(readByAnOlderParser("extract-2026-09-03", "extract-2026-09-03"), false, "same version is not stale");
+  assert.equal(readByAnOlderParser("mistral/mistral-ocr-latest", "extract-2026-09-03"), false);
+  assert.equal(readByAnOlderParser("gemini-3.7-flash", "extract-2026-09-03"), false);
+  assert.equal(readByAnOlderParser(null, "extract-2026-09-03"), false);
+  // 🔴 The column values that are LANE names, not versions. These never reach `readerVersion` —
+  // the coverage record holds the real parser for all of them — but if they ever did, they must not
+  // be mistaken for one of ours.
+  assert.equal(readByAnOlderParser("pages", "extract-2026-09-03"), false);
+  assert.equal(readByAnOlderParser("figures", "extract-2026-09-03"), false);
 });
