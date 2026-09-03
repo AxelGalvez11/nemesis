@@ -16,7 +16,7 @@
 // was just fixed — and this codebase has discarded a computed document model at a boundary three
 // times already.
 
-import { blockToText, readCoverage, readStructureEnvelope, type DocBlock, type DocEmphasis, type DocumentModel } from "@nemesis/shared";
+import { blockToText, readCoverage, readStructureEnvelope, unitPhrase, type DocBlock, type DocEmphasis, type DocumentModel } from "@nemesis/shared";
 
 // 🔴 THE ONE EDGE FROM `sources` INTO `learn`, AND IT IS DELIBERATE. `figure-labels.ts` has no
 // imports of its own — it is a pure leaf describing the SHAPE of a figure's labels, which is a fact
@@ -66,8 +66,19 @@ export interface CanonicalSourceAnchor {
   sourceId: string;
   /** The block this came from, when the parse produced blocks. */
   unitId?: string;
-  /** 1-based page/slide/sheet. 🔴 Present ONLY when the stored model actually knows it. */
+  /** 1-based page/slide/sheet. 🔴 Present ONLY when the stored model actually knows it.
+   *
+   *  🔴 AND ONLY WHEN THE DOCUMENT HAS SUCH A THING. Until 2026-09-03 this was written as
+   *  `block.unit + 1` for EVERY model, so every Word document — one flowing `body` unit — carried
+   *  `page: 1`. Nothing rendered it yet, which is the only reason it was never seen; the moment
+   *  anything did, a .docx would have cited "page 1" of a file with no pages. `unitPhrase` in
+   *  @nemesis/shared owns that judgement now and this field follows it. */
   page?: number;
+  /** What to CALL that number. Absent exactly when `page` is absent.
+   *
+   *  🔴 THE NUMBER WITHOUT THE NOUN IS A GUESS WAITING TO HAPPEN. A consumer holding only `page`
+   *  writes "page 12" about slide 12 of a deck, which is wrong in the one way a learner notices. */
+  unitKind?: "page" | "slide" | "sheet";
   /** Headings this sits under, outermost first. */
   headingPath?: string[];
   /** The bridge across reparses. */
@@ -451,7 +462,11 @@ function unitsFromModel(model: DocumentModel, sourceId: string): CanonicalSource
   return model.blocks.map((block) => ({
     anchor: {
       // The model's `unit` is a 0-based index into pages/slides/sheets; a reader counts from 1.
-      page: block.unit + 1,
+      // 🔴 ASK `unitPhrase` WHETHER A NUMBER IS HONEST AT ALL rather than assuming one is. A
+      // `body` unit (Word, a transcript) has no page and must carry none.
+      ...(unitPhrase(model.units[block.unit]?.kind ?? "body", block.unit)
+        ? { page: block.unit + 1, unitKind: model.units[block.unit]!.kind as "page" | "slide" | "sheet" }
+        : {}),
       sourceId,
       unitId: block.id,
       ...(block.headingPath.length > 0 ? { headingPath: block.headingPath } : {}),
