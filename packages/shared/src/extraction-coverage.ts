@@ -638,11 +638,17 @@ export function coverageNoticeForModel(coverage: ExtractionCoverage): string | n
   const whole = textIsWhole(coverage);
   const units = coverage.units.toLocaleString();
   const word = unitWord(coverage.unitKind, coverage.units);
+  // 🔴 ONE UNIT IS NOT "ALL 1". A docx is a single `document` unit and a one-page handout a single
+  // `page`, so the plural phrasing produced "the text and tables of all 1 document are below" in
+  // the model's packet. A notice whose job is to be believed cannot read like a template.
+  const read = unitsRead(coverage);
   const present = whole
-    ? `Source read in full: the text and tables of all ${units} ${word} are below.`
-    : `Source partly read: ${unitsRead(coverage).toLocaleString()} of ${units} ${word} were read and are below.`;
+    ? coverage.units === 1
+      ? `Source read in full: the text and tables of this ${unitWord(coverage.unitKind, 1)} are below.`
+      : `Source read in full: the text and tables of all ${units} ${word} are below.`
+    : `Source partly read: ${read.toLocaleString()} of ${units} ${word} ${read === 1 ? "was" : "were"} read and ${read === 1 ? "is" : "are"} below.`;
   const rule = whole
-    ? `The words and tables of this document are COMPLETE. Do not say that any ${unitWord(coverage.unitKind, 1)}, or its text or tables, was missing, unreadable or only partly read. Raise the pictures only if the student asks about something a picture would have shown.`
+    ? `The words and tables of this document are COMPLETE. Do not say that ${coverage.units === 1 ? "this" : "any"} ${unitWord(coverage.unitKind, 1)}, or its text or tables, was missing, unreadable or only partly read. Raise the pictures only if the student asks about something a picture would have shown.`
     : "If the student's question depends on what is missing, say so plainly rather than answering as though you read the whole document.";
   return `[${present} Not carried over: ${facts.join("; ")}. ${rule}]`;
 }

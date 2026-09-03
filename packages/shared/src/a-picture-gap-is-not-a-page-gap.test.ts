@@ -120,3 +120,23 @@ test("a fully read document still says nothing at all", () => {
   const clean = readCoverage({ ...HIS_LECTURE, state: "complete" }) as ExtractionCoverage;
   assert.equal(coverageNoticeForModel(clean), null, "a complete read must not acquire a new sentence");
 });
+
+test("a single-unit file does not read like a filled-in template", () => {
+  // Measured on production 2026-09-03 (canvas 4f775a4a): a .docx is ONE `document` unit, and the
+  // plural phrasing put "the text and tables of all 1 document are below" in the model's packet.
+  const docx = readCoverage({
+    state: "partial", units: 1, version: 1, unitKind: "document",
+    figures: { found: 1, described: 0, skipped: 1, reasons: { "not-examined": 1 } },
+    unitsBoth: 0, truncation: [], unitsNative: 1, unitsUnread: 0, unitsVision: 0,
+    parserVersion: "extract-2026-08-16",
+  }) as ExtractionCoverage;
+  const notice = coverageNoticeForModel(docx) ?? "";
+  assert.doesNotMatch(notice, /all 1 /, `"all 1 document" is a template leaking through: ${notice}`);
+  assert.match(notice, /the text and tables of this document are below/);
+  assert.match(notice, /Do not say that this document/);
+
+  // The half-read branch has the same agreement problem from the other side.
+  const half = readCoverage({ ...docx, units: 3, unitsNative: 1, unitsUnread: 2 }) as ExtractionCoverage;
+  const halfNotice = coverageNoticeForModel(half) ?? "";
+  assert.match(halfNotice, /1 of 3 documents was read and is below/, halfNotice);
+});
