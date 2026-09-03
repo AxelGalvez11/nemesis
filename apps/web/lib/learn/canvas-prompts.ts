@@ -71,16 +71,33 @@ const CITATION_RULE =
  *  is not recoverable. What it must not do is name ordinary words, which is the one instruction
  *  that keeps the annotation layer from becoming noise.
  *
+ *  🔴🔴 AND THIS RULE USED TO SAY THE OPPOSITE OF THAT PARAGRAPH, WHICH TURNED THE WHOLE VOCABULARY
+ *  FEATURE OFF. It ended "leave the list empty when the block introduces no new vocabulary, most
+ *  blocks should" — an explicit instruction to name nothing most of the time. Measured on
+ *  production 2026-09-03: 12 of 266 blocks written in 30 days carried any terms at all, 4.5%, and
+ *  `learner_lookups` held ONE row since 2026-08-20 while `learner_evidence` held 53.
+ *
+ *  Nothing downstream was broken. `canvas-vocabulary.ts` gates hard on purpose — at most two marks
+ *  a block, one per 25 words, fewer for an advanced learner — and `learning-canvas.tsx` has wired
+ *  the click through to `defineSelection` since #463. The generator and the gate were both being
+ *  conservative, and only the gate is supposed to be: it exists precisely so this prompt does not
+ *  have to guess which candidates are worth showing. Two layers of restraint multiply, and the
+ *  product of them was nothing on the screen.
+ *
+ *  🔴 SO THE ASK IS "NAME WHAT YOU INTRODUCED", NOT "NAME SPARINGLY". The refusing is the gate's
+ *  job and it is tested. `terms-are-asked-for.test.ts` pins that this rule cannot go back to
+ *  telling the model to stay quiet.
+ *
  *  Written without a single subject-matter example on purpose. "Terms like myocardial or
  *  hypertension" would quietly teach the model that this feature is about medicine, and the
  *  same prompt has to work for a statute, a stress-strain curve and a verb paradigm. */
 const TERMS_RULE =
   '"terms" names the vocabulary THIS block introduces that a learner at this level probably has not met yet: ' +
-  'each entry is {"term":"…","conceptId":"k1"}. Name at most 3 per block, fewest first, and leave the list empty ' +
-  "when the block introduces no new vocabulary, most blocks should. Each term MUST appear in that block's content " +
-  "spelled exactly as you write it here. Name a term only if a learner who did not know it would be unable to follow " +
-  "the sentence containing it. Do not name ordinary words, words the document has already introduced, or words that " +
-  "are merely long.";
+  'each entry is {"term":"…","conceptId":"k1"}. Name up to 3 per block. Name every term a learner who did not ' +
+  "know it would be unable to follow the sentence containing it, and leave the list empty only when the block " +
+  "genuinely introduces none, such as a heading or a linking sentence. Each term MUST appear in that block's content " +
+  "spelled exactly as you write it here. Do not name ordinary words, words the document has already introduced, " +
+  "or words that are merely long.";
 
 /** The contract every selection answer follows, identical on every selection. */
 const SELECTION_ANSWER_RULE =
