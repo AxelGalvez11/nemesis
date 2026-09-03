@@ -2097,7 +2097,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // RATHER THAN REPLACING IT. Course rides in the packet, research stopped above, the makers
       // returned above; Web search alone continues into an ordinary turn with one thing decided.
       const forceWeb = capability === "search";
-      const result = await askCanvasChat(id, latest.current, said, { ...surroundings, arrived }, undefined, staged?.content ?? "", (found, domains) => {
+      const runTurn = (extra: Partial<TurnSurroundings> = {}) => askCanvasChat(id, latest.current, said, { ...surroundings, arrived, ...extra }, undefined, staged?.content ?? "", (found, domains) => {
         // 🔴 THE HOSTS TRACK THE BEAT THEY ARRIVED ON. `[]` on the outgoing request clears the
         // previous round; the real list replaces it the moment the results land.
         setSearchedDomains(domains);
@@ -2148,6 +2148,18 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         setDraft(prose);
         draftedRef.current = true;
       });
+      let result = await runTurn();
+      // 🔴🔴 A "study" THAT CANNOT RUN IS RE-ASKED AS A REPLY, ONCE. Measured on production
+      // 2026-09-03, minutes after the arrival turn shipped: eleven lectures, the learner picked
+      // "COPD and asthma" on the card, and the whole answer was "The files are on the screen. Pick
+      // where you want to begin." The model chose `study` to go and build, the branch below
+      // refuses `study` on a canvas with no study document (owner order 2026-08-24, no rigid lane),
+      // and what was left was the few-word `say` the contract asks for on a study turn. The
+      // contract now says a picked option is taught as a reply, but a prompt is a request; this is
+      // the rule. One extra call, only on this shape, and the caption stays up meanwhile.
+      if (result.decision?.then === "study" && !result.decision.question && isPreContent(latest.current.state)) {
+        result = await runTurn({ studyUnavailable: true });
+      }
       setBusy({ kind: null });
       setMilestones([]);
       setStage("decided");

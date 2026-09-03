@@ -17,6 +17,7 @@ import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { createReadPool } from "@/lib/learn/read-pool";
+import { readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { MindmapNode } from "@/lib/learn/mindmap-tree";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
@@ -59,7 +60,7 @@ import { type AttachmentState } from "./attachment-card";
 import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
 import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { CanvasComposer } from "./canvas-composer";
-import { COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
+import { COMPOSER_CAPABILITIES, type ComposerCapability, isMakerCapability } from "@/lib/learn/composer-capability";
 import { planTerritories } from "@/lib/learn/curriculum-plan";
 
 /**
@@ -126,6 +127,17 @@ import { DocumentDockProvider, useDocumentDockState } from "./document-dock";
  * bound nothing; one per page is what bounds a fifty-file drop to a handful of uploads in flight.
  */
 const stagedReadPool = createReadPool();
+
+/** What the door made, named the way a learner would, for the six-turn window. */
+const MADE_NOUN: Record<DeliverableKind, string> = {
+  document: "document",
+  flashcards: "flashcard deck",
+  note: "note",
+  pdf: "PDF",
+  report: "research report",
+  sheet: "spreadsheet",
+  slides: "slide deck",
+};
 
 /**
  * Where the `×` puts the learner down.
@@ -1228,7 +1240,16 @@ export function LearningCanvas({
         // the conversation loop's playback-finished rule fires); one whose reply is coming is
         // continued by the autoplay effect and must NOT be sealed here. No-op when nothing primed.
         voiceRef.current?.concludePrime(Boolean(decision?.say));
-        remember({ replied: decision?.say ?? "", said: trimmed });
+        // 🔴🔴 A TURN THE DOOR TOOK IS REMEMBERED AS DONE. `session.converse` returns null when a
+        // phrase or a declared maker made the thing instead of the model answering, and this line
+        // used to file that as an ask with an EMPTY reply. Measured on production 2026-09-03: "make
+        // me flashcards on the transporters" made its deck; the next ask, a mind map, arrived with
+        // the flashcards line still open in the window, so the model "took the transporter request
+        // first", made a SECOND deck, and claimed a map it never drew. The window now says what
+        // happened, in words the model can read as finished.
+        const made = withCapability && isMakerCapability(withCapability) ? withCapability : readDeliverableAsk(trimmed);
+        const doorReply = !decision && made ? `(Nemesis made the ${MADE_NOUN[made]} from the material; it is open beside the conversation.)` : "";
+        remember({ replied: decision?.say ?? doorReply, said: trimmed });
         // 🔴🔴 THE ONE THING ON THIS CANVAS THAT EXISTED NOWHERE DURABLE. `conversation` above is a
         // ref, capped at six turns, and its own comment says it is deliberately not persisted — so
         // "what I asked and what Nemesis said" was gone on refresh, which is exactly the history the

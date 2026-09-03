@@ -493,6 +493,14 @@ export interface TurnContext {
    * flag is how the state block explains it.
    */
   saidNothing?: boolean;
+  /**
+   * Nothing can be built on this canvas this turn, so a "study" answer would be a stub.
+   *
+   * 🔴 THE RE-ASK'S ONE FACT. The session sets it after a "study" decision came back on a canvas
+   * with no study document (see use-canvas-session.ts); the state block turns it into the
+   * instruction to teach in the reply instead.
+   */
+  studyUnavailable?: boolean;
   /** How many passages the study document holds. */
   passages: number;
   /**
@@ -1840,7 +1848,10 @@ const DECISION_CONTRACT = [
   + "documents in their own order; offer it, never impose it, and never by rote. If their words "
   + "already say where to start, or there is a single short document, skip the question and go. "
   + "The text before the card is this account of what arrived, and on an arrival it may run to a "
-  + "short paragraph: the one-sentence cap on text above a card does not apply here.",
+  + "short paragraph: the one-sentence cap on text above a card does not apply here. Once they "
+  + "have answered the card, the next turn is a \"reply\" that teaches what they picked, in "
+  + "full, here in the conversation: a fresh canvas has no document to build, so a \"study\" "
+  + "with a few words of \"say\" would leave them with nothing.",
   "",
   "\"teach me biology\" or \"create a course on biology\" is worth a question: general biology, "
   + "cell and molecular biology and human biology are different courses, and building the wrong one "
@@ -1993,6 +2004,13 @@ export function stateBlock(context: TurnContext): string {
       : "The study document is empty, so this canvas has not begun teaching.",
   );
   if (context.lessonInProgress) lines.push("A lesson is in progress on this canvas right now.");
+  if (context.studyUnavailable) {
+    lines.push(
+      "Nothing can be built on this canvas this turn: there is no study document to write into. "
+      + "Do not choose \"study\" and do not ask a question. Answer as a full \"reply\" and teach "
+      + "what they asked for right here in the conversation, in full.",
+    );
+  }
   if (context.courseRequested) {
     // 🔴 LEARNER-FACING PROSE, NO INTERNAL IDENTIFIERS — the same rule the whole block obeys, and
     // turn-router.test.ts pins. "Course" is the word on the chip the learner pressed, so it is

@@ -104,6 +104,13 @@ export interface TurnSurroundings {
    * turn that carried no files, so the arrival rule in the router cannot fire on turn forty.
    */
   arrived?: number;
+  /**
+   * The turn is being re-asked because "study" came back on a canvas that has no study document.
+   *
+   * 🔴 SET BY THE SESSION FOR ONE RE-ASK, never by a caller deciding what kind of answer it wants:
+   * the state block tells the model nothing can be built this turn, so it teaches in the reply.
+   */
+  studyUnavailable?: boolean;
   /** Whether the teaching policy is contributing anything right now. */
   lessonInProgress: boolean;
   /** This turn was spoken inside a live voice conversation; the reply will be read aloud.
@@ -466,6 +473,7 @@ export async function askCanvasChat(
       turnRouterMessages({
         context: {
           ...(surroundings.arrived ? { arrived: surroundings.arrived, saidNothing: question.trim().length === 0 } : {}),
+          ...(surroundings.studyUnavailable ? { studyUnavailable: true } : {}),
           canvasTitle: canvas.title,
           clarified: surroundings.clarified,
           demonstrated: surroundings.demonstrated,
