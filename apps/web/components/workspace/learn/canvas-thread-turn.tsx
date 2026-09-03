@@ -33,6 +33,7 @@ import { SemanticVisual } from "./semantic-visual";
 
 export function CanvasThreadTurnView({
   files,
+  onOpenFile,
   onOpenOutput,
   onRetry,
   turn,
@@ -42,7 +43,10 @@ export function CanvasThreadTurnView({
    *  🔴 A PROP, NOT A FIELD ON THE TURN. Documents belong to the CANVAS: the same lecture backs
    *  every answer in the thread, and copying it onto each turn would store one shelf N times and
    *  let the copies disagree the first time a source was renamed. */
-  files: ReadonlyArray<{ id: string; title: string }>;
+  files: ReadonlyArray<{ id: string; librarySourceId?: string | null; title: string }>;
+  /** Open a cited document in the reading pane. Absent on a surface with no pane, which keeps the
+   *  pill inert there rather than clickable and dead. */
+  onOpenFile?: (file: { id: string; librarySourceId?: string | null; title: string }) => void;
   /** Opening what the turn produced. The card is not a dead control in the thread. */
   onOpenOutput: (output: NonNullable<CanvasThreadTurn["output"]>) => void;
   /** Re-asks this turn's question. Absent when the turn carries no question to re-ask. */
@@ -106,6 +110,7 @@ export function CanvasThreadTurnView({
                 // is on screen and turns into nothing once it scrolls into the thread is the exact
                 // class of loss this component was written to end — see its header.
                 files={files}
+                onOpenFile={onOpenFile}
                 sources={turn.sources.length ? turn.sources : undefined}
                 text={segment.text}
               />
