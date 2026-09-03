@@ -2362,8 +2362,22 @@ export function LearningCanvas({
             mid-session render of it to protect against, so it needs no `ARRIVING_MS` window.
             🔴 EXCEPT ON THE WALK IN, where it must not fade at all: see `arriving` above. */}
         <div className={`flex h-full items-center justify-center${arrival.from ? "" : " canvas-enter"}`}>
-          {/* Nothing is docked yet — there is no composer to stand above — so the character
-              simply holds the middle, which is where it would have walked to anyway.
+          {/* Nothing is docked yet — there is no composer to stand above — so the character stands
+              in the CORNER, which is where the real dock will put it a moment later.
+              🔴🔴 IT HELD THE MIDDLE UNTIL 2026-09-02, AND THAT WAS CANVAS-ERA FURNITURE LEFT
+              STANDING. "Where it would have walked to anyway" was true while the canvas was the
+              product and the character held the centre of it. Since the owner made chat the default
+              (#995/#999) the character's home is the composer's top-left corner, so the middle is
+              now a place it will never end up — this branch parked it there for the length of a
+              database read and the real dock then moved it. Owner, 2026-09-02: *"why is the mascot
+              still moving to the middle? That's from the canvas that we removed."* And on
+              2026-08-30, the same defect seen from the other end: *"the mascot seems to move to the
+              bottom then back to the middle then back to the chat composer."*
+              🔴 IT READS THE SAME TERM THE REAL DOCK DOES, so the loading state and the surface it
+              precedes cannot disagree about where the character lives. The corner is the same corner
+              working pose with no centre claim, and it is where `anchor="#canvas-composer"` with
+              `place="above"` lands once there is a composer to measure. Standing here means the
+              handover is a fade in place rather than a journey across the screen.
               🔴🔴 `station` IS PASSED, AND THE COMMENT ABOVE WAS A LIE WITHOUT IT. The dock falls back
               to `stationOf(shown)`, which reads the POSE — and `stations.ts` says in its own header
               that the derived station broke on purpose the day the working poses stopped being
@@ -2381,7 +2395,7 @@ export function LearningCanvas({
               remove, reintroduced by the loading state. `useArrival` is already walking the real
               dock in; this branch simply has nothing to add for those few frames. */}
           {!arrival.from && (
-            <CharacterDock bottom={0} contain left={0} station="centre" state={stateForCanvas({ thinking: true, preparing: true })} />
+            <CharacterDock bottom={0} contain left={0} station={threadOpen ? "corner" : "centre"} state={stateForCanvas({ thinking: true, preparing: true })} />
           )}
           {/* This branch is one database read long and shows no caption, so the dock's own
               animation is the whole of what says "working" here. Nothing draws a second one. */}
@@ -3757,13 +3771,25 @@ export function LearningCanvas({
         // takes a poke; only the journey is dropped. `stateForCanvas` below is not conditioned on
         // the view, because what the character IS doing has not changed — only where it stands.
         // 🔴 THE HANDOVER TERM IS OUTSIDE THE VIEW GATE, DELIBERATELY, AND THE FIRST DRAFT HAD IT
-        // INSIDE. `handedOver` is the front door's own character arriving here — it is already at
-        // the centre station on the previous screen, and `handoff-and-mascot.test.ts` records the
-        // measurement from when this broke: it appeared at (493, 648) and walked to (728, 378) in
-        // full view. Gating that on the view would have reproduced exactly that walk, mirrored,
-        // for every learner in the chat — which is now every learner by default. It clears the
-        // moment anything real happens, and from then on the rule above applies.
-        station={handedOver || (!threadOpen && (turnInFlight || presence === "preparing")) ? "centre" : "corner"}
+        // 🔴🔴 `handedOver` IS INSIDE THE `!threadOpen` GROUP NOW, AND UNTIL 2026-09-02 IT WAS
+        // OUTSIDE IT ON PURPOSE. The old note argued: it "is the front door's own character
+        // arriving here — it is already at the centre on the previous screen", so gating it would
+        // make the character walk in from the corner for every learner in the chat.
+        //
+        // That was true while the canvas was the product. It stopped being true when the owner made
+        // chat the default (#995/#999): the character's home in a chat is the composer's top-left,
+        // so holding the centre for the handover window sends it somewhere it will never stay, and
+        // `setHandedOver(false)` on the first real event then moves it. Owner, 2026-09-02: *"why is
+        // the mascot still moving to the middle? That's from the canvas that we removed."* The same
+        // defect from the other end on 2026-08-30: *"the mascot seems to move to the bottom then
+        // back to the middle then back to the chat composer."*
+        //
+        // 🔴 CANVAS VIEW IS UNTOUCHED. With `threadOpen` false every term reads exactly as before,
+        // handover included, so a canvas still receives its character at the centre. What changed is
+        // only which of the two homes the handover aims at, and it now aims at the one the surface
+        // actually uses. The front door's character is centred ABOVE ITS COMPOSER, and in a chat the
+        // composer's corner is the nearer of the two anyway.
+        station={!threadOpen && (handedOver || turnInFlight || presence === "preparing") ? "centre" : "corner"}
         contain
         // 🔴🔴 NO `marker` IS PASSED, AND THAT IS THE WHOLE OF IT (owner 2026-08-26: *"remove the
         // random question mark, exclamation mark above the mascot"*).

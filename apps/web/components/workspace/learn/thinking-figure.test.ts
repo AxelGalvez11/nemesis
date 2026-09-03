@@ -73,7 +73,13 @@ test("🔴 the surface says where the character stands, because the pose no long
   // in a regular chat"*), while `handedOver` stays outside the gate for exactly the reason the
   // paragraph above gives — it is the front door's character already at the centre, and gating it
   // would reproduce that measured walk mirrored.
-  assert.match(CANVAS, /station=\{handedOver \|\| \(!threadOpen && \(turnInFlight \|\| presence === "preparing"\)\) \? "centre" : "corner"\}/);
+  // 🔴 REPOINTED 2026-09-02: `handedOver` moved INSIDE the `!threadOpen` group. It was outside it
+  // deliberately — the handover is the front door's character arriving, which used to be arriving
+  // at a centre — but chat is the default now and the character's home there is the composer's
+  // corner, so holding the centre for the handover moved it somewhere it never stays. Owner: *"why
+  // is the mascot still moving to the middle? That's from the canvas that we removed."* Canvas view
+  // is unchanged: with `threadOpen` false every term reads exactly as it did.
+  assert.match(CANVAS, /station=\{!threadOpen && \(handedOver \|\| turnInFlight \|\| presence === "preparing"\) \? "centre" : "corner"\}/);
   // 🔴 AND THE DERIVED DEFAULT SURVIVES FOR EVERY CALLER WITH NO OPINION. A prop that silently
   // became mandatory would move the character on surfaces nobody had looked at.
   assert.match(STATIONS, /export function stationOf/);
