@@ -202,3 +202,21 @@ test("the default window looks back a month and forward a term", () => {
   assert.equal(window.timeMax, "2027-03-01T00:00:00.000Z");
   assert.ok(window.timeMin < window.timeMax);
 });
+
+test("a cancelled event Nemesis has never seen is not imported", () => {
+  // 🔴 MEASURED AGAINST THE OWNER'S REAL CALENDAR: 189 events in one term, 50 of them cancelled.
+  // Importing those adds 50 struck-through rows for things that are not happening and that Nemesis
+  // never claimed were — a quarter of the calendar, and it reads as the feature being broken.
+  const plan = planPull([googleEvent("g1", { status: "cancelled" }), googleEvent("g2")], []);
+  assert.equal(plan.insert.length, 1);
+  assert.equal(plan.insert[0]?.externalId, "g2");
+});
+
+test("a cancellation of an event Nemesis DOES hold still arrives", () => {
+  // 🔴 THE OTHER HALF, AND IT IS WHY `showDeleted` IS ASKED FOR AT ALL. A lecture the student called
+  // off in Google must stop claiming to be happening here; without this the meeting simply stops
+  // being mentioned and Nemesis goes on showing a class that is not running.
+  const plan = planPull([googleEvent("g1", { etag: '"v2"', status: "cancelled" })], [linkedRow("local-1", "g1")]);
+  assert.equal(plan.update.length, 1);
+  assert.equal(plan.update[0]?.event.status, "cancelled");
+});

@@ -14,7 +14,7 @@
 
 import { supabase } from "@/lib/supabase";
 
-import { decodeCalendarEvent, encodeCalendarEvent } from "./calendar-codec";
+import { decodeCalendarEvent, type DecodedCalendarEvent, encodeCalendarEvent } from "./calendar-codec";
 import { fetchAllRows } from "./supabase-paging";
 
 export type CalendarEventKind = "assignment" | "exam" | "rotation" | "class" | "other";
@@ -401,8 +401,16 @@ export async function loadCalendarEvents(ctx: CalendarCloudCtx): Promise<Calenda
  *  whole-file saveCalendarEvents. Always writes source:'manual': the UI never
  *  routes an agent-authored event here (see openEvent's view/edit dispatch in
  *  calendar-workspace.tsx), and this is the second line of defense. */
-export async function saveCalendarEvent(event: CalendarEvent, ctx: CalendarCloudCtx): Promise<CalendarEvent> {
-  const manualEvent: CalendarEvent = { ...event, source: "manual" };
+// 🔴 THE SIGNATURE SAYS `DecodedCalendarEvent` NOW BECAUSE THAT IS WHAT IT ALWAYS HANDLED. It
+// encodes through `encodeCalendarEvent`, which reads provenance and the link to an outside
+// calendar, and it returns `sanitizeEvent`, which decodes them back. Claiming the narrower type
+// meant a caller with a Google-linked event could not pass it without the compiler objecting to
+// fields this function was already storing correctly.
+export async function saveCalendarEvent(
+  event: DecodedCalendarEvent,
+  ctx: CalendarCloudCtx,
+): Promise<DecodedCalendarEvent> {
+  const manualEvent: DecodedCalendarEvent = { ...event, source: "manual" };
   if (ctx.preview || !ctx.userId) {
     const state = await readLocalCalendarState(CALENDAR_STORAGE_KEY);
     const next: CalendarState = { events: [...state.events.filter((e) => e.id !== manualEvent.id), manualEvent] };
