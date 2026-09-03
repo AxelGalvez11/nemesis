@@ -108,6 +108,37 @@ test("🔴🔴 one sidebar: a document and an artifact are tabs in it, never two
     "the document panel no longer stands down when an artifact is in front");
 });
 
+test("🔴 the sidebar carries the same controls whatever kind of thing is in it", () => {
+  // Owner, 2026-09-03, with a picture of the four: comment, download, full screen, close —
+  // *"these icons should be in the sidebar always"*. They were the ARTIFACT panel's header. A
+  // document opened in the same sidebar had close and nothing else: no way to get the file back
+  // out, and no way to read it whole. One sidebar showing two kinds of thing with two sets of
+  // buttons is the inconsistency that made it read as two panels even after it became one.
+  const document_ = code(read("./source-preview.tsx"));
+  const artifact = code(read("./output-preview.tsx"));
+  for (const [name, source] of [["the document panel", document_], ["the artifact panel", artifact]] as const) {
+    assert.match(source, /name="download"/u, `${name} cannot hand the file back`);
+    assert.match(source, /screen-full/u, `${name} cannot be read full screen`);
+    assert.match(source, /name="close"/u, `${name} has no way out`);
+  }
+
+  // 🔴 THE DOWNLOAD GOES THROUGH `resolveUrl`, WHICH IS THE ONLY ROUTE TO THE BYTES. Storage is not
+  // public, so a link built any other way is either dead or a signed url that outlives its session.
+  assert.match(document_, /await state\.source\.resolveUrl\(\)/u, "the document download stopped minting a fresh url");
+  // 🔴 AND FULL SCREEN PUSHES NOTHING. It covers the surface, so claiming an inset for it would
+  // reserve a column beside something already filling the window.
+  assert.match(document_, /useDeclareSidePanel\(active && !full \? width : 0, dragging\)/u,
+    "full screen still pushes the conversation aside");
+
+  // 🔴 COMMENT IS THE ONE THAT IS NOT DUPLICATED, AND THAT IS THE POINT OF THIS CLAUSE. A
+  // document's comment mode belongs to the reader — `document-reader.tsx` owns the state and
+  // already draws a control for it one row below the header. A second button here would be two
+  // owners of one mode, which this repo has paid for before.
+  assert.doesNotMatch(document_, /data-testid="output-comment-mode"/u, "the document panel grew a second comment control");
+  assert.match(code(read("../reader/reader-top-bar.tsx")), /commenting \? "Stop commenting" : "Comment on the document"/u,
+    "the reader lost the comment control the panel is deliberately not duplicating");
+});
+
 test("🔴🔴 there is ONE document reader, and the citation chip opens it", () => {
   // 🔴 THERE WERE TWO, AND THE CHIP LED TO THE WORSE ONE. Owner, 2026-09-03: *"clicking on the
   // inline source chip should open documents on the right sidebar, NOT this new sidebar"*, and of
