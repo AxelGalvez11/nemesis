@@ -40,6 +40,7 @@
 import { descriptionWithoutLabels, parseFigureLabels, type FigureLabel } from "@/lib/learn/figure-labels";
 import { PAGE_BATCH_SIZE, PAGE_CONCURRENCY, parsePageTranscripts } from "@/lib/pdf/pages";
 import { currentFigureCache, splitByCache, type FigureDescription } from "@/lib/pdf/figure-cache";
+import { figureDescriptionText } from "@/lib/pdf/figure-table";
 import { figureContentKey } from "@/lib/notebooks/figure-assets";
 import { currentVisionLedger } from "@/lib/pdf/vision-budget";
 
@@ -97,11 +98,27 @@ export const VISION_PROMPT =
  */
 export const FIGURE_PROMPT =
   "These are figures taken from a lecture slide deck. Each image is immediately preceded by an opaque " +
-  "identifier such as [[figure 1]]. For EACH image, in one to three sentences, " +
+  "identifier such as [[figure 1]]. Begin each answer with that image's exact identifier. " +
+  "Return every identifier exactly once and nothing else. " +
+  // 🔴🔴 A TABLE IS TRANSCRIBED, NOT DESCRIBED, AND THE SENTENCE CAP BELOW IS WHY THIS CLAUSE
+  // EXISTS. Measured on production 2026-09-03: `08-insulin.pdf` carries its onset/peak/duration
+  // table as a pasted screenshot, so no ruled geometry exists for `table-lattice.ts` to find and
+  // the page is far too text-rich for `pages.ts` to send. The figure lane DID reach it, sent the
+  // pixels, and was answered — under "in one to three sentences" — with
+  //   "…For each preparation, values are provided for Onset, Peak time, and Duration in hours."
+  // Values are provided, and not one of them came back. The document then reported `complete`.
+  // A cap that is a cost ceiling for a diagram is a data-loss guarantee for a grid, so a grid gets
+  // its own instruction. See `figure-table.ts` for the full measurement.
+  "If an image is a TABLE — values laid out in rows and columns — do NOT describe it and do NOT " +
+  "summarise it. Transcribe it. On the lines after the identifier write one markdown row per " +
+  "printed row, cells separated by |, the header row first and then every data row in printed " +
+  "order. Copy each cell exactly as printed, including units, ranges, symbols and footnote marks. " +
+  "Never round a value, never merge two rows, never leave a row out, and never invent a cell — " +
+  "write an empty cell where the table prints nothing. " +
+  "For any OTHER image, in one to three sentences, " +
   "say what it shows and state the relationships or values it conveys — labels, axes, directions, groupings, " +
   "and any text printed in it. Describe only what is visible; never infer facts the image does not show. " +
   "If an image is a logo, a decorative photo, or otherwise carries no teaching content, answer exactly 'none'. " +
-  "Begin each answer with that image's exact identifier. Return every identifier exactly once and nothing else. " +
   // 🔴 THE LABELS RIDE ON THE CALL THAT WAS ALREADY BEING MADE (§46.6). A diagram becomes a
   // cognitive object rather than an illustration only if Nemesis knows WHAT is labelled and WHERE
   // — "hiding labels or regions ... asking the learner to identify them" is impossible from prose.
@@ -123,6 +140,21 @@ export const FIGURE_PROMPT =
   // positional in any discipline.
   "List at most 12 labels per image; when a diagram names more parts than that, choose the ones " +
   "a teacher would most likely ask a student to identify.";
+
+/**
+ * Which question produced a cached answer.
+ *
+ * 🔴🔴 A CACHE KEYED ONLY ON THE PIXELS SERVES THE OLD PROMPT'S ANSWER FOREVER. `figure_descriptions`
+ * is keyed on `(user_id, content_key)` — the normalized image bytes — which is exactly right for
+ * "this learner has already paid to have this picture described" and exactly wrong the moment the
+ * question changes. Without this, the very reparse that proves the table clause works would be
+ * served the caption that motivated it, and every table already cached as a sentence would stay a
+ * sentence for the life of the account. The bytes are the same picture; they are not the same read.
+ *
+ * 🔴 CHANGE IT ONLY WHEN THE ANSWER'S SHAPE CHANGES. Every bump re-bills every cached figure once,
+ * so a wording tidy-up is not a version and a new instruction is.
+ */
+export const FIGURE_PROMPT_VERSION = "figures-2026-09-03-tables";
 
 /**
  * Reading PAGES whose content is a picture — a slide exported as an image, a
@@ -307,6 +339,28 @@ export function parseFigureDescriptions(reply: string, expected: number): string
  * batch. The returned array follows request order regardless of response order.
  */
 export function parseAttributedFigureDescriptions(reply: string, expected: number): string[] | null {
+  const entries = parseAttributedFigureEntries(reply, expected);
+  return entries?.map((entry) => entry.split(/\r?\n/).join(" ").trim()) ?? null;
+}
+
+/**
+ * The same split, with each entry's OWN LINE STRUCTURE intact.
+ *
+ * 🔴🔴 THE LINES ARE THE TABLE. `parseAttributedFigureDescriptions` flattens an entry to one
+ * string with spaces, which is right for prose and destroys a grid: a transcribed table arrives
+ * as `| Insulin | Onset | … | | --- | … | | Lispro | …`, with every value present, every row
+ * boundary gone, and no way to tell a row break from a wrapped sentence. That is a silent
+ * downgrade of the one thing the table clause in `FIGURE_PROMPT` exists to recover.
+ *
+ * 🔴 AND IT IS A NEW DOOR RATHER THAN A CHANGED ONE. `parseFigureLabels` was written against the
+ * space-joined form — its own header records nearly dying at that boundary — and the legacy
+ * numbered parser has tests that assert the join. Both keep exactly the behaviour they had; this
+ * returns the raw entry and `readFiguresWithVision` is the only caller that wants it.
+ *
+ * Attribution is unchanged and still absolute: an identifier must appear exactly once, and an
+ * unknown, duplicate or missing id refuses the whole batch. PURE.
+ */
+export function parseAttributedFigureEntries(reply: string, expected: number): string[] | null {
   if (expected <= 0) return [];
   const entries = new Map<number, string[]>();
   let current: number | null = null;
@@ -323,7 +377,7 @@ export function parseAttributedFigureDescriptions(reply: string, expected: numbe
   }
   if (entries.size !== expected) return null;
   return Array.from({ length: expected }, (_, index) => {
-    const entry = entries.get(index + 1)!.join(" ").trim();
+    const entry = entries.get(index + 1)!.join("\n").trim();
     return /^none\b/i.test(entry) ? "" : entry;
   });
 }
@@ -431,7 +485,7 @@ export async function readFiguresWithVision(
   const keyOf = (image: VisionImage) => figureContentKey(image.bytes);
   let alreadyKnown = new Map<string, FigureDescription>();
   try {
-    alreadyKnown = await currentFigureCache().get(images.map(keyOf));
+    alreadyKnown = await currentFigureCache().get(images.map(keyOf), FIGURE_PROMPT_VERSION);
   } catch {
     // A cache that cannot be read is a cache that misses. Never a reason to fail a parse.
   }
@@ -498,7 +552,9 @@ export async function readFiguresWithVision(
     // One failed batch loses its own descriptions and nothing else.
     if (!reply) return "unreachable";
     reached = true;
-    const parsed = parseAttributedFigureDescriptions(reply.text, group.length);
+    // 🔴 THE RAW ENTRIES, NOT THE FLATTENED ONES. A transcribed grid only survives with its line
+    // breaks — see `parseAttributedFigureEntries`.
+    const parsed = parseAttributedFigureEntries(reply.text, group.length);
     if (!parsed) {
       // 🔴 A FALLBACK THAT HIDES ITS OWN REASON IS A LEAK, AND THIS ONE HID THE COMMONEST ONE.
       // Coverage can now say these figures have no usable read, but not WHY — and "the reply
@@ -525,7 +581,10 @@ export async function readFiguresWithVision(
       // that only want a caption must not suddenly receive a machine-readable line inside it —
       // that string is shown to learners and written into the document model.
       const labels = parseFigureLabels(entry);
-      const description = descriptionWithoutLabels(entry);
+      // 🔴 THE GRID IS NORMALISED HERE, ONCE, so a table read out of a picture reaches a model in
+      // the same markdown a Word table and a spreadsheet do — `figureDescriptionText` renders it
+      // through `tableToMarkdown`. An entry with no grid in it comes back unchanged.
+      const description = figureDescriptionText(descriptionWithoutLabels(entry));
       if (description) out.set(image.name, description);
       if (labels.length > 0) found.set(image.name, labels);
     });
@@ -619,7 +678,7 @@ export async function readFiguresWithVision(
     }));
   if (learned.length > 0) {
     try {
-      await currentFigureCache().put(learned);
+      await currentFigureCache().put(learned, FIGURE_PROMPT_VERSION);
     } catch {
       /* remembering is an optimisation; forgetting costs money and nothing else */
     }
