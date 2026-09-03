@@ -11,20 +11,38 @@
 // answer, never both, which is the one thing a citation exists to let you do. Owner picked the
 // split layout on 2026-08-30 after seeing all three.
 //
-// 🔴 ALWAYS ABSOLUTE, NEVER A FLEX SIBLING. At `xl` the canvas shrinks to `calc(100% - 360px)` and
-// the pane sits in the gap, which LOOKS like a split without either the canvas or the composer
-// having to become flex children. `xl:relative` was tried and is wrong: with no flex parent the
-// pane flows as a block and lands at the top-left, full width, above the conversation. Only the
-// width and the scrim change across the breakpoint.
+// 🔴🔴 IT IS THE SAME DOCKED PANEL AS THE OTHER THREE NOW, AND IT WAS THE ONLY ONE THAT WAS NOT.
+// Owner, 2026-09-03: *"i noticed you created a new sidebar panel? what happened to the ones we
+// already had? we need the sidebar like in chatgpt."*
+//
+// `output-preview`, `study-panel` and `source-preview` all dock through `useDockWidth` +
+// `useDeclareSidePanel`: the learner drags the edge, the fraction persists, the canvas is PUSHED
+// rather than covered, the sidebar collapses to its rail, and everything moves on the one
+// `--pane-slide` clock. This pane instead sat at a hardcoded `360px` with its own scrim and its own
+// inset computed by hand in `learning-canvas.tsx` — so pressing a citation opened a reader that
+// behaved like nothing else in the product.
+//
+// The width is what gave it away. Measured in the owner's own browser: his stored reader fraction
+// is 0.644, so the header's Sources panel opens at 947px on his 1470px window — near enough
+// ChatGPT's own 970px document reader. The citation pane opened the SAME documents at 360px, which
+// renders a US Letter page (816px at 100%) into a 330px column. Two viewers of one thing, one of
+// them a third the size, is what "what happened to the ones we already had" was pointing at.
+//
+// 🔴 SHARING THE `reader` SLOT IS THE POINT, NOT AN ECONOMY. Both surfaces show a library document
+// against the conversation, so they are one preference: drag either and the other follows, because
+// the fraction is stored under one key. A second slot would have been a second thing to set.
 //
 // 🔴 THE STATE LIVES IN A CONTEXT BECAUSE THE PILLS ARE NOT NEARBY. `CanvasSourcePills` renders
 // deep inside `canvas-policy-view`, inside the message list. Threading an `onOpen` callback down
 // through the policy view to every claim would touch a dozen components that have no business
 // knowing a reading pane exists.
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { LibrarySourceReader } from "@/components/workspace/reader/library-source-reader";
+import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
+import { useDockWidth } from "./use-dock-width";
 import { cn } from "@/lib/utils";
 import {
   NO_TABS,
@@ -187,44 +205,60 @@ function TabBody({ tab }: { tab: SourceTab }) {
 export function SourceTabPane() {
   const api = useSourceTabs();
   const tab = api ? activeTab(api.state) : null;
-  const onScrim = useCallback(() => api?.closeAll(), [api]);
-  if (!api || api.state.tabs.length === 0 || !tab) return null;
+  const { dragging, onDragStart, width } = useDockWidth();
+  const open = Boolean(api && api.state.tabs.length > 0 && tab);
 
-  return (
-    <>
-      {/* Below xl the pane floats, so the canvas underneath needs a scrim to read as inactive. */}
-      <button
-        aria-label="Close sources"
-        className="absolute inset-0 z-30 cursor-default bg-black/10 xl:hidden"
-        onClick={onScrim}
-        type="button"
+  // 🔴 BEFORE THE EARLY RETURN, AND ZERO IS HOW IT SAYS "CLOSED". Both halves are load-bearing:
+  // a hook cannot sit behind a condition, and `panes-share-one-clock.test.ts` records at length
+  // what happened when a closed panel claimed a 0 inset as a real dock — `sidebarVisible` went
+  // false the moment a canvas rendered and the rail's Expand button did nothing, for ever.
+  useDeclareSidePanel(open ? width : 0, dragging);
+
+  if (!api || !tab || !open) return null;
+
+  // 🔴 PORTALLED AND `fixed`, THE SHAPE THE OTHER THREE PANES USE. It used to be `absolute` inside
+  // the canvas with a scrim below `xl`, which is what a panel that COVERS needs. This one pushes,
+  // so there is nothing to dim: the conversation stays live beside it, which is the entire reason
+  // a citation opens a pane rather than the modal it replaced.
+  return createPortal(
+    <aside
+      aria-label="Sources"
+      // `reader-dock-in` is the shared entrance on `--pane-slide`. Unconditional: gating it on
+      // `!dragging` is what made the panel replay its slide on every drag release.
+      className="reader-dock-in fixed inset-y-0 right-0 z-50 flex flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)"
+      data-workspace
+      style={{ width }}
+    >
+      {/* The grip sits on the left edge, the edge that moves — 6px, `col-resize`, no paint until
+          hover. Identical to the Sources panel's, because it is the same gesture. */}
+      <div
+        aria-label="Resize the panel"
+        className="absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-(--ui-action)/40"
+        onPointerDown={onDragStart}
+        role="separator"
       />
-      <aside
-        aria-label="Sources"
-        className="absolute inset-y-0 right-0 z-40 flex w-full max-w-[520px] flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) shadow-[-14px_0_30px_rgba(0,0,0,0.13)] xl:w-[360px] xl:max-w-none xl:shadow-none"
-      >
-        <TabStrip api={api} />
-        {/* 🔴🔴 EVERY OPEN TAB STAYS MOUNTED; ONLY THE FRONT ONE IS SHOWN. Rendering just the active
-            tab meant switching back to a document UNMOUNTED the reader and mounted a fresh one, so
-            the file was fetched, re-parsed by pdf.js and re-rendered from page one every single
-            time — with the scroll position, the zoom and the search lost with it. The owner called
-            it out on 2026-09-01: *"slow (it has to load each pdf continually)"*.
+      <TabStrip api={api} />
+      {/* 🔴🔴 EVERY OPEN TAB STAYS MOUNTED; ONLY THE FRONT ONE IS SHOWN. Rendering just the active
+          tab meant switching back to a document UNMOUNTED the reader and mounted a fresh one, so
+          the file was fetched, re-parsed by pdf.js and re-rendered from page one every single
+          time — with the scroll position, the zoom and the search lost with it. The owner called
+          it out on 2026-09-01: *"slow (it has to load each pdf continually)"*.
 
-            🔴 IT IS BOUNDED BY `MAX_TABS`, WHICH IS WHY THIS IS AFFORDABLE. `openTab` already
-            evicts past six, so the worst case is six mounted readers rather than an unbounded
-            pile — the reason the original chose one was memory, and the cap already answers it.
-            `hidden` rather than unmounting keeps pdf.js's rendered canvases alive, which is the
-            whole cost being avoided. */}
-        {api.state.tabs.map((open) => (
-          <div
-            aria-hidden={open.key !== tab.key}
-            className={cn("min-h-0 flex-1 flex-col", open.key === tab.key ? "flex" : "hidden")}
-            key={open.key}
-          >
-            <TabBody tab={open} />
-          </div>
-        ))}
-      </aside>
-    </>
+          🔴 IT IS BOUNDED BY `MAX_TABS`, WHICH IS WHY THIS IS AFFORDABLE. `openTab` already
+          evicts past six, so the worst case is six mounted readers rather than an unbounded
+          pile — the reason the original chose one was memory, and the cap already answers it.
+          `hidden` rather than unmounting keeps pdf.js's rendered canvases alive, which is the
+          whole cost being avoided. */}
+      {api.state.tabs.map((openTab) => (
+        <div
+          aria-hidden={openTab.key !== tab.key}
+          className={cn("min-h-0 flex-1 flex-col", openTab.key === tab.key ? "flex" : "hidden")}
+          key={openTab.key}
+        >
+          <TabBody tab={openTab} />
+        </div>
+      ))}
+    </aside>,
+    document.body,
   );
 }

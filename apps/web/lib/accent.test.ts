@@ -231,13 +231,35 @@ test("🔴 the stylesheet consumes BOTH renderings, one per theme", () => {
   // half the product quietly ignores it.
   //
   // Calibration: drop `var(--accent-fill-dark, …)` from the dark block and this reddens.
-  const css = read("../app/styles/desktop-ui.css");
-  for (const property of ["--ui-action", "--theme-primary", "--theme-midground", "--theme-warm"]) {
-    assert.ok(css.includes(`${property}: var(--accent-fill-light,`), `light's ${property} ignores the accent`);
-    assert.ok(css.includes(`${property}: var(--accent-fill-dark,`), `dark's ${property} ignores the accent`);
-  }
+  //
+  // 🔴 COMMENTS ARE STRIPPED FIRST. Both halves of this test search the stylesheet for a
+  // declaration, and the second half asserts one is ABSENT — so a sentence in a CSS comment
+  // that happens to quote the declaration would fail the test while the stylesheet is
+  // correct. That has already happened once in this repo, to a guard whose own explanatory
+  // comment was the only thing it matched.
+  const css = read("../app/styles/desktop-ui.css").replace(/\/\*[\s\S]*?\*\//gu, "");
+  assert.ok(css.includes("--ui-action: var(--accent-fill-light,"), "light's --ui-action ignores the accent");
+  assert.ok(css.includes("--ui-action: var(--accent-fill-dark,"), "dark's --ui-action ignores the accent");
   assert.ok(css.includes("--ui-action-glyph: var(--accent-glyph-light,"), "light's glyph ignores the accent");
   assert.ok(css.includes("--ui-action-glyph: var(--accent-glyph-dark,"), "dark's glyph ignores the accent");
+
+  // 🔴 AND THE ACCENT REACHES NOTHING ELSE (owner 2026-09-03: "remove any color accents
+  // throughout the app, there should only be accents on the mascot and the send button and
+  // chat bubble color"). These three tokens are the app's whole chrome — `--theme-primary`
+  // alone feeds `--acid`, `--fill-hover`, `--line-acid`, `--shadow-acid` and `--dt-primary`,
+  // and is read directly by 120 call sites — so while they took the accent, one colour
+  // choice tinted the plan badge, the account initial, every citation chip, every hover
+  // surface and every focus ring. Measured on the owner's own canvas before the change: 98
+  // saturated elements on one screen.
+  //
+  // Calibration: restore `var(--accent-fill-light, #404040)` on any of the three and this
+  // fails, naming it.
+  for (const property of ["--theme-primary", "--theme-midground", "--theme-warm"]) {
+    assert.ok(
+      !css.includes(`${property}: var(--accent-fill`),
+      `${property} takes the accent again — the chrome will re-tint with the character`,
+    );
+  }
 });
 
 test("🔴🔴🔴 the character is the accent, and there is no second colour preference", () => {

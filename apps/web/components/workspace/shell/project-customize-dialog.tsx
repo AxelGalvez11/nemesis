@@ -44,17 +44,19 @@ export const PROJECT_ICONS: readonly string[] = [
   "flame",
 ];
 
-/** The tints a project may wear. Hex presets, dark-and-light safe; null is the plain row colour. */
-export const PROJECT_COLORS: readonly { name: string; value: string | null }[] = [
-  { name: "Default", value: null },
-  { name: "Red", value: "#e5484d" },
-  { name: "Orange", value: "#f76b15" },
-  { name: "Amber", value: "#ffb224" },
-  { name: "Green", value: "#46a758" },
-  { name: "Blue", value: "#0091ff" },
-  { name: "Purple", value: "#8e4ec6" },
-  { name: "Pink", value: "#d6409f" },
-];
+// 🔴 A PROJECT'S COLOUR IS GONE, AND ITS ICON IS NOT (owner 2026-09-03: "remove any color
+// accents throughout the app, there should only be accents on the mascot and the send button and
+// chat bubble color"). This surface shipped 2026-08-30 with a seven-swatch palette, and a green
+// `#46a758` flask in the sidebar is what prompted the instruction — it was the one saturated thing
+// on screen that the character accent could not explain.
+//
+// 🔴 THE PICKER WENT WITH IT RATHER THAN JUST THE PAINT. Leaving the swatches while ignoring what
+// they set would be a dead control, which this repo has a standing rule against; a project is
+// identified by its glyph now, and the glyph choice is untouched.
+//
+// `folders.color` is still a column and still holds whatever anyone picked. Nothing reads it, so
+// nothing shows it, and restoring the feature is a matter of putting this list back — but a
+// SECOND colour system beside the character accent is exactly what the instruction removed.
 
 export function ProjectCustomizeDialog({
   folder,
@@ -70,7 +72,6 @@ export function ProjectCustomizeDialog({
   userId: string | null;
 }) {
   const [icon, setIcon] = useState<string | null>(null);
-  const [color, setColor] = useState<string | null>(null);
   const [instructions, setInstructions] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -78,7 +79,6 @@ export function ProjectCustomizeDialog({
   useEffect(() => {
     if (!folder) return;
     setIcon(folder.icon ?? null);
-    setColor(folder.color ?? null);
     setInstructions(folder.instructions ?? "");
   }, [folder]);
 
@@ -86,7 +86,9 @@ export function ProjectCustomizeDialog({
     if (!folder) return;
     setSaving(true);
     const ok = await customizeFolder(userId, folder.id, {
-      color,
+      // 🔴 NO `color` KEY AT ALL, not `color: null`. Writing null would erase whatever a
+      // project already wears every time anyone saves an instruction, which turns a
+      // reversible removal into a destructive one.
       // "folder" IS the default glyph; storing it as null keeps "no choice" and "chose the
       // default" the same state, so a future default change reaches everyone who never picked.
       icon: icon === "folder" ? null : icon,
@@ -126,38 +128,7 @@ export function ProjectCustomizeDialog({
                     onClick={() => setIcon(name)}
                     type="button"
                   >
-                    <Codicon name={name} size="16px" style={color ? { color } : undefined} />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-2 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
-              Color
-            </p>
-            <div className="flex items-center gap-1.5">
-              {PROJECT_COLORS.map((preset) => {
-                const chosen = color === preset.value;
-                return (
-                  <button
-                    aria-label={preset.name}
-                    aria-pressed={chosen}
-                    className={cn(
-                      "grid size-7 place-items-center rounded-full border border-transparent transition-colors hover:bg-(--ui-control-hover-background)",
-                      chosen && "border-(--ui-stroke-primary)",
-                    )}
-                    key={preset.name}
-                    onClick={() => setColor(preset.value)}
-                    title={preset.name}
-                    type="button"
-                  >
-                    {preset.value ? (
-                      <span className="size-4 rounded-full" style={{ backgroundColor: preset.value }} />
-                    ) : (
-                      <span className="size-4 rounded-full border border-(--ui-stroke-primary)" />
-                    )}
+                    <Codicon name={name} size="16px" />
                   </button>
                 );
               })}

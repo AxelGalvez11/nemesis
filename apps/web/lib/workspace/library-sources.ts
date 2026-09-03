@@ -188,7 +188,9 @@ export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
     coverage: null,
     // read, with gaps — the fixtures cover every state on purpose, so the
     // preview harness is where a status style is reviewed.
-    status: { kind: "partially_parsed", units: 57, unitsUnread: 2 },
+    // The sentence is `describeCoverage`'s own, so the harness shows the line a learner now gets
+    // rather than the vague one it replaced.
+    status: { detail: "55 of 57 slides could be read.", kind: "partially_parsed", units: 57, unitsUnread: 2 },
   },
   {
     id: "preview-src-hours",

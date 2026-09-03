@@ -108,6 +108,62 @@ test("🔴 partially parsed — LINKED but NOT complete", () => {
   assert.match(documentStatusLine(s), /9 of 40/);
 });
 
+test("🔴 a gap smaller than a page is NAMED, not called 'some parts missing'", () => {
+  // 🔴 THE RECORD BELOW IS PRODUCTION, COPIED FROM `parsed_documents`. It is
+  // 49-hypoglycemic-agents.pdf, the file the owner was looking at when he asked
+  // why his reader said "read with some parts missing": all 67 pages read (59
+  // from their own text, 8 by vision), zero unread, and two pictures in a format
+  // nothing could open. The old line could not mention the pictures — the status
+  // it was handed had already thrown them away — so it fell through to a
+  // sentence that reads like half the lecture went missing.
+  const s = describeDocument(
+    src({ parsedDocumentId: "pd-1" }),
+    doc({
+      complete: false,
+      coverage: {
+        figures: { described: 56, found: 70, reasons: { decorative: 6, "examined-empty": 6, "unreadable-format": 2 }, skipped: 14 },
+        state: "partial",
+        truncation: [],
+        unitKind: "page",
+        units: 67,
+        unitsBoth: 0,
+        unitsNative: 59,
+        unitsUnread: 0,
+        unitsVision: 8,
+      },
+      state: "partially_parsed",
+    }),
+    NOW,
+  );
+  assert.equal(s.kind, "partially_parsed");
+  const line = documentStatusLine(s);
+  // What is actually missing, and how much of it.
+  assert.match(line, /2 pictures/, `the two unreadable pictures must be named: ${line}`);
+  // 🔴 THE CALIBRATION. This is the exact sentence the owner reported, and it
+  // must not be what this record produces.
+  assert.doesNotMatch(line, /some parts missing/, `the vague line must not be reachable here: ${line}`);
+  // Every page WAS read, so the line must not imply otherwise.
+  assert.match(line, /^Read\./u, `a document whose every page read leads with that: ${line}`);
+  // 🔴 AND THE SIX `examined-empty` FIGURES MUST NOT BE COUNTED. A model looked
+  // at them and said they carry nothing, which is the decorative verdict reached
+  // by looking. If they were still counted the sentence would say 8, not 2.
+  assert.doesNotMatch(line, /8 pictures/, `examined-empty must not be counted as lost: ${line}`);
+});
+
+test("a record too old to describe itself still says something true", () => {
+  // `readCoverage` refuses a record missing its unit breakdown, and rows written
+  // before that shape existed are exactly that. The unit counts still come off
+  // the raw jsonb, so the older, blunter sentence is still available.
+  const s = describeDocument(
+    src({ parsedDocumentId: "pd-1" }),
+    doc({ complete: false, coverage: { state: "partial", units: 40, unitsUnread: 9 }, state: "partially_parsed" }),
+    NOW,
+  );
+  assert.equal(s.kind, "partially_parsed");
+  assert.equal(s.kind === "partially_parsed" ? s.detail : "unset", null, "an unreadable record describes nothing");
+  assert.match(documentStatusLine(s), /9 of 40/);
+});
+
 test("parsed — complete, and only then", () => {
   const s = describeDocument(src({ parsedDocumentId: "pd-1" }), doc(), NOW);
   assert.equal(s.kind, "parsed");
@@ -215,7 +271,7 @@ test("every status produces a line that never claims more than it knows", () => 
     { attempts: 0, kind: "pending" },
     { attempts: 1, kind: "parsing" },
     { attempts: 2, kind: "retrying", nextAttemptAt: NOW.toISOString() },
-    { kind: "partially_parsed", units: 10, unitsUnread: 3 },
+    { detail: null, kind: "partially_parsed", units: 10, unitsUnread: 3 },
     { kind: "parsed" },
     { kind: "indexing", stage: "chunking" },
     { kind: "ready" },

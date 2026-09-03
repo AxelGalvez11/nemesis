@@ -534,13 +534,15 @@ export function SidebarCanvases({
                 type="button"
               >
                 {/* 🔴 THE PROJECT'S OWN LOOK (owner 2026-08-30, the reference's model): a custom
-                    glyph holds steady open or closed, at the reference's 20px, and the colour
-                    tints ONLY this glyph — an identity mark, never a second theme. */}
+                    glyph holds steady open or closed, at the reference's 20px.
+                    🔴 AND IT IS NO LONGER TINTED (owner 2026-09-03: "remove any color accents
+                    throughout the app"). A `style` prop here was the last place a stored
+                    `folders.color` reached the screen; see project-customize-dialog.tsx for why
+                    the picker went with it rather than the paint alone. */}
                 <Codicon
                   className="shrink-0"
                   name={folder.icon ?? (isOpen ? "folder-opened" : "folder")}
                   size="20px"
-                  style={folder.color ? { color: folder.color } : undefined}
                 />
                 <span className="min-w-0 flex-1 truncate">{folder.name}</span>
               </button>

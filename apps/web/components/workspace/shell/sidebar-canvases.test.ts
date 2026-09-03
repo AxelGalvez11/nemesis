@@ -53,9 +53,15 @@ test("a course canvas is KNOWN in both lists, but the sidebar row wears no icon 
   assert.match(index, /territory->plan->>title/, "the Library search no longer selects the course title");
 });
 
-test("🔴 projects wear the learner's icon and colour, and canvases never do (owner 2026-08-30)", () => {
+test("🔴 projects wear the learner's icon, and no colour at all (owner 2026-08-30, amended 2026-09-03)", () => {
   assert.match(SIDEBAR, /folder\.icon \?\? \(isOpen/, "the folder row ignores the custom icon");
-  assert.match(SIDEBAR, /folder\.color \? \{ color: folder\.color \}/, "the folder row ignores the custom colour");
+  // 🔴 THE COLOUR HALF WAS REVERSED (owner 2026-09-03: "remove any color accents throughout the
+  // app, there should only be accents on the mascot and the send button and chat bubble color").
+  // A green `#46a758` flask on this very row is what prompted it. The icon half stands, above.
+  // Comments stripped: this asserts an ABSENCE and the note left on the row quotes what it looks
+  // for. See project-customization.test.ts for the matching guard on the dialog.
+  const code = SIDEBAR.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+  assert.doesNotMatch(code, /folder\.color/u, "the project glyph is tinted again");
   // Renamed from "Customize" 2026-08-30 to the reference's own words, measured in the owner's
   // Chrome: the project menu row that opens this dialog reads "Project settings" there.
   assert.ok(SIDEBAR.includes(">Project settings</DropdownMenuItem>"), "the Project settings door left the project menu");

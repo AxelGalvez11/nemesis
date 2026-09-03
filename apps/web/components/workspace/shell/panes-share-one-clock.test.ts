@@ -19,7 +19,19 @@ const read = (path: string) => code(readFileSync(new URL(path, import.meta.url),
 const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 const SURFACE = read("../learn/canvas-surface.tsx");
 const PANEL = read("../../workspace/shell/side-panel.tsx");
-const PANES = ["../learn/output-preview.tsx", "../learn/source-preview.tsx", "../learn/study-panel.tsx"] as const;
+// 🔴 FOUR, AND THE FOURTH IS THE ONE THAT WAS MISSING (owner 2026-09-03: "i noticed you created a
+// new sidebar panel? what happened to the ones we already had? we need the sidebar like in
+// chatgpt"). `source-tab-viewer` — the pane a citation opens — docked itself: a hardcoded 360px, no
+// drag, its own scrim, and an inset computed by hand in `learning-canvas.tsx`. So three panels
+// pushed the conversation on the shared clock and a fourth covered it at a third of their width,
+// which is why opening a document from a citation did not feel like the same product. Adding it to
+// this list is what stops that happening again: every rule below now applies to it too.
+const PANES = [
+  "../learn/output-preview.tsx",
+  "../learn/source-preview.tsx",
+  "../learn/study-panel.tsx",
+  "../learn/source-tab-viewer.tsx",
+] as const;
 
 test("🔴🔴 every pane that moves reads ONE clock", () => {
   // They ran on 220ms cubic-bezier(0.16,1,0.3,1), 200ms ease-out and 240ms cubic-bezier(0.22,1,
