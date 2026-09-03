@@ -241,7 +241,24 @@ function splitOnWords(text: string): string[] {
   return out;
 }
 
-/** The grounding the model reads, with every excerpt tagged by the id it must cite. */
+/**
+ * The grounding the model reads, with every excerpt tagged by the id it must cite.
+ *
+ * 🔴🔴 THE HEADER USED TO EDITORIALISE, AND ITS EDITORIAL WAS WRONG ABOUT 24 DOCUMENTS IN 27.
+ * Every source carrying any coverage note at all was introduced to the model as
+ * `(Nemesis could not read all of this: ...)` — a flat claim of incomplete reading, hardcoded,
+ * with no idea what the note underneath it actually said. On production 2026-09-03, 24 of the 27
+ * partially-parsed documents have `unitsUnread: 0`: their text and tables are whole and only
+ * pictures were capped. So the model met TWO assertions that the lecture was half-read before it
+ * reached a single excerpt, and it passed them on (canvas
+ * `c9749731-2c62-4598-862f-48b0adca48f5`: "partly unreadable to me, 11 of 83 pages ... didn't come
+ * through", about a document whose every page was read).
+ *
+ * `coverageNoticeForModel` states what WAS read before what was not, and forbids exactly that
+ * claim when the text is whole. It is a complete sentence and it needs no introduction. A wrapper
+ * that adds a verdict the note does not support is a second owner of the claim, and the two
+ * disagreed.
+ */
 export function groundingBlock(sources: readonly CanvasSource[]): string {
   if (sources.length === 0) return "";
 
@@ -251,7 +268,7 @@ export function groundingBlock(sources: readonly CanvasSource[]): string {
 
   for (const source of sources) {
     const header = `### SOURCE ${source.id} — ${source.title}${
-      source.coverageNote ? `\n(Nemesis could not read all of this: ${source.coverageNote})` : ""
+      source.coverageNote ? `\n${source.coverageNote}` : ""
     }`;
     parts.push(header);
     budget -= header.length;
@@ -315,7 +332,7 @@ export function materialText(sources: readonly CanvasSource[]): string {
 
   for (const source of sources) {
     const header = `### ${source.title}${
-      source.coverageNote ? `\n(Nemesis could not read all of this: ${source.coverageNote})` : ""
+      source.coverageNote ? `\n${source.coverageNote}` : ""
     }`;
     parts.push(header);
     budget -= header.length;

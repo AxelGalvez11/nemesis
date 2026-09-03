@@ -543,36 +543,108 @@ export function describeCoverage(coverage: ExtractionCoverage): string | null {
 }
 
 /**
+ * Whether the document's own WORDS arrived whole.
+ *
+ * Every unit read, no region the parser gave up on, nothing clipped on the way
+ * out of the extractor. Pictures are deliberately not part of this question:
+ * they are a separate lane with a separate fix, and conflating the two is the
+ * defect this predicate exists to end.
+ */
+export function textIsWhole(coverage: ExtractionCoverage): boolean {
+  if (coverage.state === "failed") return false;
+  if (coverage.unitsUnread > 0) return false;
+  if ((coverage.unreadableRegions ?? 0) > 0) return false;
+  return !coverage.truncation.some((entry) => entry.stage === "extract");
+}
+
+/**
  * The same facts, addressed to the model, with the instruction that makes them
  * useful.
  *
  * 🔴 STATING THE GAP IS NOT ENOUGH — the model has to be told what to DO about
  * it, or it will helpfully answer from the part it has and never mention the
- * part it does not. The wording mirrors the truncation notice already used for
- * prompt-budget clipping in chat-attachments.ts, so the model meets one
- * consistent rule rather than two competing ones.
+ * part it does not.
+ *
+ * 🔴🔴🔴 AND STATING ONLY THE GAP IS WORSE THAN SAYING NOTHING, because the model
+ * fills in the rest. Measured on production 2026-09-03, canvas
+ * `c9749731-2c62-4598-862f-48b0adca48f5`. An 83-page pharmacy lecture was read
+ * in full: `unitsUnread: 0`, 43 pages off the text layer and 40 through vision,
+ * 354 excerpts, every one carrying its heading, 36 of them tables. Its pictures
+ * were another story — 846 found, 534 furniture, 192 past this document's
+ * picture ceiling and 63 in a vector format nothing here rasterises — so the
+ * notice it carried read, in full:
+ *
+ *   [Incomplete source: 255 pictures were not read. If the student's question
+ *    depends on what is missing, say so plainly rather than answering as though
+ *    you read the whole document.]
+ *
+ * Not one word of that is about text. What the student was then told was:
+ *
+ *   "the deeper asthma slides you attached were partly unreadable to me, 11 of
+ *    83 pages and 333 pictures didn't come through"
+ *
+ * Both numbers are inventions — nothing ever said a page was unread, and the
+ * count it was given was 255. The notice supplied the shape of the claim and the
+ * model supplied the digits, which is what a prompt does when it names a hole,
+ * never names the ground, and signs off "rather than answering as though you
+ * read the whole document" at a model that HAD read the whole document.
+ *
+ * 🔴 SO THE NOTICE NOW LEADS WITH WHAT IS PRESENT. Three rules, and each one is
+ * load-bearing:
+ *
+ *   1. WHAT WAS READ COMES FIRST. A model cannot infer intact text from a
+ *      sentence that only lists absences, and 24 of the 27 partial documents on
+ *      production have every page read — so the picture-only gap is not the edge
+ *      case here, it is almost the whole population.
+ *   2. THE GAPS ARE ORDERED BY WHAT THEY COST. Text, then regions, then the
+ *      pictures last (owner ruling 2026-09-03: "what matters most is the text
+ *      should come through correctly, the tables should be seen correctly,
+ *      pictures are nice to have"). The old order opened on pictures because
+ *      that clause happened to be written second.
+ *   3. WHEN THE TEXT IS WHOLE, THE FALSE CLAIM IS NAMED AND FORBIDDEN. A general
+ *      instruction to "say what is missing" is exactly what produced "11 of 83
+ *      pages". Naming the sentence the model may not write is the only version
+ *      of this that held.
+ *
+ * 🔴 WHAT THIS IS NOT. It does not quiet a real gap: `state`, `lostFigures` and
+ * the learner's badge are untouched, a document that lost pages still says so
+ * first, and the picture count is still in the packet. The disclosure was never
+ * the problem. Its silence about the other 90% of the document was.
  */
 export function coverageNoticeForModel(coverage: ExtractionCoverage): string | null {
   if (coverage.state === "complete") return null;
   if (coverage.state === "failed") {
     return "[Nothing in this file could be read. Do not answer as though you have its contents; say it could not be read.]";
   }
+  // Ordered by what the absence costs a student, not by how it was measured.
   const facts: string[] = [];
   if (coverage.unitsUnread > 0) {
     facts.push(
       `${coverage.unitsUnread.toLocaleString()} of ${coverage.units.toLocaleString()} ${unitWord(coverage.unitKind, coverage.units)} could NOT be read and are not below`,
     );
   }
-  const lost = lostFigures(coverage.figures);
-  if (lost > 0) facts.push(`${lost} ${lost === 1 ? "picture was" : "pictures were"} not read`);
+  const cut = coverage.truncation.find((entry) => entry.stage === "extract");
+  if (cut) facts.push(`${cut.dropped.toLocaleString()} characters were dropped when the file was read`);
   const unreadable = coverage.unreadableRegions ?? 0;
   if (unreadable > 0) {
     facts.push(`${unreadable} ${unreadable === 1 ? "region" : "regions"} (such as a formula) could not be turned into text`);
   }
-  const cut = coverage.truncation.find((entry) => entry.stage === "extract");
-  if (cut) facts.push(`${cut.dropped.toLocaleString()} characters were dropped when the file was read`);
+  const lost = lostFigures(coverage.figures);
+  if (lost > 0) {
+    facts.push(`${lost} ${lost === 1 ? "picture was" : "pictures were"} not described`);
+  }
   if (facts.length === 0) return null;
-  return `[Incomplete source: ${facts.join("; ")}. If the student's question depends on what is missing, say so plainly rather than answering as though you read the whole document.]`;
+
+  const whole = textIsWhole(coverage);
+  const units = coverage.units.toLocaleString();
+  const word = unitWord(coverage.unitKind, coverage.units);
+  const present = whole
+    ? `Source read in full: the text and tables of all ${units} ${word} are below.`
+    : `Source partly read: ${unitsRead(coverage).toLocaleString()} of ${units} ${word} were read and are below.`;
+  const rule = whole
+    ? `The words and tables of this document are COMPLETE. Do not say that any ${unitWord(coverage.unitKind, 1)}, or its text or tables, was missing, unreadable or only partly read. Raise the pictures only if the student asks about something a picture would have shown.`
+    : "If the student's question depends on what is missing, say so plainly rather than answering as though you read the whole document.";
+  return `[${present} Not carried over: ${facts.join("; ")}. ${rule}]`;
 }
 
 /**

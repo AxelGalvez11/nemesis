@@ -36,6 +36,12 @@ export function CanvasQuiet({
   /**
    * What the parse could not read, in the reader's own words, when it could not read all of it.
    *
+   * 🔴 THE READER'S WORDS MEANS `coverageLabel`, NOT `coverageNote`. This printed the string
+   * addressed to the model, inside a sentence of its own that contradicted it: "It read the text of
+   * this document, but not all of it" is a claim about TEXT, and on 24 of production's 27 partial
+   * documents the text is whole and only pictures were capped. Same defect as the sources panel
+   * (see `coverageNoticeForLearner`), same fix: one parsed coverage, the learner's rendering here.
+   *
    * 🔴🔴 THE DIFFERENCE BETWEEN "NOTHING HERE" AND "I COULD NOT SEE THE PART THAT MATTERS".
    * Reported 2026-08-21 with a 276-page-excerpt lecture that produced no questions: the text read
    * perfectly and 28 pictures did not, and on a slide deck the pictures are the tables. The
@@ -76,8 +82,8 @@ export function CanvasQuiet({
           anything. */}
       {unread && (
         <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
-          It read the text of this document, but not all of it: {unread.replace(/\.$/, "")}. Questions come
-          mostly from tables and diagrams, which is often what a picture holds.
+          It read the text of this document. What it could not read: {unread.replace(/\.$/, "")}. Questions
+          come mostly from tables and diagrams, which is often what a picture holds.
         </p>
       )}
       <p className="mt-2 text-[length:var(--canvas-text-small)] text-(--ui-text-quaternary)">
