@@ -16,7 +16,6 @@ import {
   selectionRequestMessages,
   teachingMessages,
   territoryMessages,
-  testMessages,
   regionClarificationRule,} from "./canvas-prompts";
 import type { CanvasBlock } from "./canvas-model";
 
@@ -28,7 +27,9 @@ test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shar
   // interface chrome, so it has to be an instruction the model actually receives.
   //
   // 🔴 COUNTED RATHER THAN SPOT-CHECKED, BECAUSE THE ONE THAT WOULD LEAK IS THE ONE NOBODY THINKS
-  // OF. Ten of the eleven system prompts here are the shared `CANVAS_SYSTEM`; the eleventh is the
+  // OF. (The census was twelve until 2026-09-03, when the retired `testMessages` left it; the
+  // guard is the LOOP, not any one row, so a builder leaving takes its row and nothing else.)
+  // Ten of the eleven system prompts here are the shared `CANVAS_SYSTEM`; the eleventh is the
   // judge's own, and the judge writes the FEEDBACK a learner reads — the exact surface the owner
   // was looking at when they made the rule. Asserting "the shared prompt has it" would have passed
   // while that one leaked. A twelfth builder added later fails this until it opts in.
@@ -83,7 +84,6 @@ test("🔴 NO EM DASHES: every system prompt carries the rule, not just the shar
       }),
     ),
     territory: systemOf(territoryMessages({ count: 8, sources: [], topic: "t" })),
-    test: systemOf(testMessages({ blocks: [BLOCK], canvasTitle: "c", concepts: [], count: 4, format: "free" })),
   };
 
   for (const [name, prompts] of Object.entries(everyBuilder)) {
@@ -611,4 +611,29 @@ test("🔴 the lesson prompt prefers a lookup over recall for a named compound",
   assert.match(system, /"compound":"aspirin"/, "a lesson cannot reach the resolver");
   assert.match(system, /looked up from a chemical database/);
   assert.match(system, /Use "value" only for a generic group/, "the wildcard channel was pushed aside");
+});
+
+// 🔴🔴🔴 A RETIREMENT NEEDS A GUARD, or it comes back by accident on the next refactor that is
+// looking for "the canvas test writer" and finds an empty space where one used to be.
+//
+// Retired 2026-09-03: `testMessages` here, `generateTest` in canvas-api.ts, `runTest` in
+// use-canvas-session.ts. The chain had ZERO reachable entrances (§38 deleted `startTest`,
+// `startRetest` and `startChoiceTest` by owner ruling and nothing replaced them), and it built its
+// paper from `canvas.blocks` and `canvas.concepts`, which on production held nothing on 230 and 241
+// of 244 canvases respectively. A generator that writes six questions from an empty document is
+// worse than no generator, because it ships with the product's name on it.
+//
+// The lane that survives is `check` in turn-router.ts, written inside the turn that taught the
+// material. Reopening a canvas test stage is a PRODUCT decision and needs an owner ruling; this
+// guard is here so it is taken deliberately rather than reintroduced by a helpful cleanup.
+test("🔴 the canvas's second test writer stays retired", () => {
+  const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
+  const api = readFileSync(new URL("./canvas-api.ts", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("../../components/workspace/learn/use-canvas-session.ts", import.meta.url), "utf8");
+  assert.ok(!/export function testMessages/.test(prompts), "the retired canvas test prompt is back");
+  assert.ok(!/export async function generateTest/.test(api), "the retired canvas test generator is back");
+  assert.ok(!/const runTest = useCallback/.test(hook), "the retired canvas test stage is back");
+  // The reason has to travel with the absence, or the next reader deletes the note and restores
+  // the code in the same commit.
+  assert.match(prompts, /RETIRED 2026-09-03/, "the retirement lost its account of why");
 });

@@ -609,79 +609,31 @@ export function causalMessages(input: { sources: readonly CanvasSource[]; topic:
   ];
 }
 
-// ---------------------------------------------------------------------- test
+// ------------------------------------------------------- test (RETIRED 2026-09-03)
 
-/** The free-response formats, described by what they ask the learner to DO.
- *
- *  🔴 Structural, never subject-matter. Every line below has to read sensibly for a nursing
- *  student, a first-year law student and someone learning to weld — that is the test, and it is
- *  why there is no format here for naming a thing from a list of things. */
-const FREE_KIND_RULES =
-  '- "define": ask what a term means, in the learner\'s own words.\n' +
-  '- "explain": ask WHY something is the case, not whether it is.\n' +
-  '- "mechanism": ask them to walk through how something happens, step by step, in order.\n' +
-  '- "compare": ask how two things differ, and require both sides.\n' +
-  '- "apply": give a short concrete situation and ask what follows and why.\n' +
-  '- "recall": ask them to reproduce something from memory without prompting.';
-
-export function testMessages(input: {
-  canvasTitle: string;
-  blocks: readonly CanvasBlock[];
-  concepts: readonly CanvasConcept[];
-  count: number;
-  /** Free response unless something specifically needs recognition (§18). */
-  format: RetrievalFormat;
-  /** When set, the test is the retest and covers only these concepts. */
-  onlyConceptIds?: readonly string[];
-}): WireMsg[] {
-  const focus = input.onlyConceptIds?.length
-    ? input.concepts.filter((concept) => input.onlyConceptIds?.includes(concept.id))
-    : input.concepts;
-
-  const scope = input.onlyConceptIds?.length
-    ? "This is a RETEST. Ask only about the concepts listed below, the ones the learner got wrong. Do not test anything else.\n\n"
-    : "Spread the questions across the concepts below.\n\n";
-  const conceptList = `Concepts to test: ${focus.map((c) => `${c.id}=${c.label}`).join(", ")}\n\n`;
-
-  if (input.format === "free") {
-    return [
-      { content: CANVAS_SYSTEM, role: "system" },
-      {
-        content:
-          `Write ${input.count} retrieval prompts on "${input.canvasTitle}" that the learner answers IN THEIR OWN WORDS.\n\n` +
-          "These are not multiple choice and must not be answerable with yes/no or a single word. Each one asks the " +
-          "learner to say something back: an explanation, a comparison, a sequence, or an application. Ask about one " +
-          "thing at a time, a prompt with three questions in it produces an answer that cannot be judged.\n\n" +
-          `Choose a kind for each prompt:\n${FREE_KIND_RULES}\n\n` +
-          `${scope}${conceptList}` +
-          'Return JSON: {"questions":[{"kind":"explain","q":"…","expected":["…","…"],"why":"…","conceptId":"k1","sourceRefs":[…]}]}\n\n' +
-          "`expected` is the list of points a complete answer has to make, 2 to 4 short, checkable statements, each " +
-          "one thing. These are what a judge will check the learner's answer against, so write them as claims, not as " +
-          "topics: \"says the pressure drops before the valve opens\", not \"pressure\". `why` is the full model answer, " +
-          "shown only after they have committed to their own. `conceptId` MUST be one of the ids above.\n\n" +
-          `Document:\n${documentText(input.blocks)}`,
-        role: "user",
-      },
-    ];
-  }
-
-  return [
-    { content: CANVAS_SYSTEM, role: "system" },
-    {
-      content:
-        `Write a practice test of ${input.count} multiple-choice questions on "${input.canvasTitle}".\n\n` +
-        // Shared with the Study tab's generator and the chat test-craft skill, so improving
-        // the craft improves all three at once (see item-writing.ts).
-        `Follow these rules:\n${EXAM_ITEM_RULES}\n\n` +
-        `${scope}${conceptList}` +
-        'Return JSON: {"questions":[{"q":"…","options":["…","…","…","…"],"answer":<index>,"why":"…","conceptId":"k1","sourceRefs":[…]}]}: ' +
-        "4 options each, answer is the 0-based index of the correct option, why explains what makes the wrong options wrong, " +
-        "and conceptId MUST be one of the ids above. A question with no concept is useless here.\n\n" +
-        `Document:\n${documentText(input.blocks)}`,
-      role: "user",
-    },
-  ];
-}
+// 🔴🔴🔴 `testMessages` AND ITS FREE-RESPONSE FORMATS ARE GONE, AND SO IS `generateTest` IN
+// canvas-api.ts AND `runTest` IN use-canvas-session.ts. That was the whole chain, and NOTHING
+// COULD REACH IT: `runTest` had zero call sites and was not on the hook's returned surface, because
+// §38 deleted every entrance to it on purpose (owner: "The only button should be 'continue' below
+// reading passages, thats it"). The three functions were still here, still maintained, still
+// imported, and unreachable from any state a learner can be in.
+//
+// 🔴 AND IT WAS STARVED AS WELL AS SHUT. It built its material from `documentText(canvas.blocks)`
+// and scoped itself to `canvas.concepts`. Measured on production the day this was removed: of 244
+// canvases, 14 held any block and 3 held any concept. If a door had reopened, it would have asked a
+// model to write six questions from an empty document against an empty concept list, which is a
+// fabricated test with the product's name on it.
+//
+// 🔴 THE LANE THAT SHIPS IS `check` IN turn-router.ts, and it is a better one: it writes the
+// questions inside the turn that taught the material, so it sees the retrieved passages and the
+// conversation rather than a block list nothing fills any more. Retiring this leaves exactly one
+// test writer per surface, which is the whole point of item-writing.ts.
+//
+// 🔴 WHAT DELIBERATELY STAYS. `parseTestQuestions` and `parseFreeQuestions` in canvas-parse.ts read
+// a shape the canvas still STORES and renders (`canvas.questions`), so they are the reader for
+// existing rows rather than dead code, and their tests still guard that shape. `canvas-state.ts`
+// still permits the "test" and "retest" transitions for the same reason. Reopening an entrance is a
+// product decision and not an engineering one; it needs a written owner ruling, not a revert.
 
 // ------------------------------------------------------------------- judging
 

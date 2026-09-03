@@ -31,7 +31,6 @@ import {
   explainBlock,
   generateRelearn,
   generateRecall,
-  generateTest,
   applyTeachingAction,
   cardAsTask,
   evaluateLearningResponse,
@@ -41,7 +40,7 @@ import {
   runCommand,
 } from "@/lib/learn/canvas-api";
 import { canvasNeedsName, firstUntriedExchange, nameCanvasFromExchange, type CanvasExchange } from "@/lib/learn/canvas-naming";
-import { blocksForConcepts, clearEvidenceForRetest, diagnose } from "@/lib/learn/canvas-diagnosis";
+import { blocksForConcepts, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { appendMoment, lastThingSaid, sameMoment, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
@@ -63,14 +62,13 @@ import {
   type CanvasState,
   type LearningCanvas,
   type ResponseEvaluation,
-  type RetrievalFormat,
   type CanvasOutput,
 } from "@/lib/learn/canvas-model";
 import type { RelearnMiss } from "@/lib/learn/canvas-prompts";
 import { applyOps, applyRewrite, restoreBlock } from "@/lib/learn/canvas-ops";
 import { finishReading } from "@/lib/learn/canvas-reading";
 import type { CanvasSelection } from "@/lib/learn/canvas-selection";
-import { canStart, canTransition } from "@/lib/learn/canvas-state";
+import { canStart } from "@/lib/learn/canvas-state";
 import { RECALL_PLACEHOLDER, RESPONSE_PLACEHOLDER } from "@/lib/learn/canvas-tasks";
 import { readingSubjectFor, thinkingCopy } from "@/lib/learn/thinking-phases";
 import { canvasAddress } from "@/lib/learn/learn-entry";
@@ -91,8 +89,6 @@ import { runConfirmed, type PendingConfirmation, type ProducedTest } from "@/lib
 import { prepareWebSourcePromotion } from "./web-source-promotion";
 
 const RECALL_CARDS = 8;
-const TEST_QUESTIONS = 6;
-const RETEST_QUESTIONS = 4;
 
 /** What the canvas is asking for right now, if anything.
  *
@@ -2542,51 +2538,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [gradeRecall],
   );
 
-  // --------------------------------------------------------------------- test
-
-  const runTest = useCallback(
-    async (state: "test" | "retest", format: RetrievalFormat = "free") => {
-      // Retired — see `startRecall`. This one call covers `startTest`, `startRetest` AND
-      // `startChoiceTest`, which all delegate here, so there is no fourth entrance behind them.
-      if (!canTransition(latest.current.state, state)) return;
-      const id = requireUid();
-      if (!id) return;
-      setError(null);
-      setBusy({ kind: "test", label: state === "retest" ? "Writing your retest" : "Writing your test" });
-      const retest = state === "retest";
-      const result = await generateTest(
-        id,
-        latest.current,
-        retest ? RETEST_QUESTIONS : TEST_QUESTIONS,
-        format,
-        retest ? latest.current.weakConceptIds : undefined,
-      );
-      setBusy({ kind: null });
-      if (!result.value) {
-        setError(result.error);
-        canvasCapture("canvas_generation_failed", latest.current, { stage: state, format });
-        return;
-      }
-      captureStateChange(latest.current, "test");
-      setCursor(0);
-      update((current) => ({
-        // A retest replaces the evidence about the concepts it re-assesses — including the
-        // recall grades. Without that a single "Again" kept a concept weak forever and the
-        // canvas could never be finished.
-        //
-        // The plain-test branch clears responses alongside answers for the same reason: a new
-        // set of questions makes the old ones' evidence stale, and evidence that outlives its
-        // round is what made this state unreachable the first time.
-        ...(retest
-          ? clearEvidenceForRetest(current, current.weakConceptIds)
-          : { ...current, answers: [], responses: [] }),
-        questions: result.value ?? [],
-        state,
-      }));
-    },
-    [requireUid, update],
-  );
-
+  // ----------------------------------------------- test (RETIRED 2026-09-03)
+  // `runTest` is gone, with `generateTest` and `testMessages` behind it. It had ZERO call sites and
+  // was never on this hook's returned surface: §38 deleted `startTest`, `startRetest` and
+  // `startChoiceTest` (see the note above `gradeRecall`) and nothing replaced them, so the whole
+  // chain had been unreachable since. It also built its paper from `canvas.blocks`, empty on 230 of
+  // 244 production canvases. The quiz a learner actually gets is written inside the turn that
+  // taught the material (`check`, turn-router.ts), which sees the retrieved passages. See
+  // canvas-prompts.ts for the full account.
 
   const answer = useCallback(
     (questionId: string, picked: number) => {
