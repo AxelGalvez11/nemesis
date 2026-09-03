@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { DEFAULT_DECK_SIZE, deckSize, parseSlide, slideIsPlaced } from "./pptx-slides";
+import { openOfficeArchive } from "./office-zip";
+import {
+  DEFAULT_DECK_SIZE,
+  deckSize,
+  layoutPathFor,
+  masterPathFor,
+  notesPathFor,
+  parseSlide,
+  relsPathFor,
+  slideIsPlaced,
+  slideOrder,
+} from "./pptx-slides";
 import { at } from "./test-helpers";
 
 // A slide is drawn where its author put things.
@@ -161,4 +173,49 @@ test("the deck's own type size, alignment and bullets survive the parse", () => 
   // caption and floating label.
   assert.equal(at(found.paragraphs, 2).bullet, null);
   assert.equal(found.placeholder, "body");
+});
+
+test("🔴 the shipped preview fixture takes the PLACED path, not the fallback", () => {
+  // 🔴🔴 THE HARNESS HAS TO SHOW THE LANE REAL DECKS TAKE. `public/reader-sample.pptx` is what
+  // /dev-preview/reader opens without an account, and the hand-written version of it carried no
+  // `p:spPr`, no `a:xfrm`, no layout and no master — so every slide in it fell back to the template
+  // and the placed renderer could not be reviewed anywhere but production. Regenerate with
+  // `scripts/make-deck-fixture.mts`; this test is what stops it quietly reverting to a deck that
+  // proves nothing.
+  const bytes = readFileSync(new URL("../../public/reader-sample.pptx", import.meta.url));
+  const archive = openOfficeArchive(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+  const presentation = archive.text("ppt/presentation.xml");
+  const size = deckSize(presentation);
+  const order = slideOrder(archive.files, presentation, archive.text("ppt/_rels/presentation.xml.rels"));
+  assert.ok(order.length >= 3, "the fixture deck lost slides");
+
+  const parsed = order.map((path, index) => {
+    const rels = archive.text(relsPathFor(path));
+    const layoutPath = layoutPathFor(rels, path);
+    const layoutRels = layoutPath ? archive.text(relsPathFor(layoutPath)) : null;
+    const masterPath = layoutPath ? masterPathFor(layoutRels, layoutPath) : null;
+    const notes = notesPathFor(rels, path);
+    return parseSlide(
+      index + 1,
+      archive.text(path) ?? "",
+      rels,
+      path,
+      notes ? archive.text(notes) : null,
+      [layoutPath ? archive.text(layoutPath) : null, masterPath ? archive.text(masterPath) : null],
+      size,
+    );
+  });
+
+  for (const slide of parsed) {
+    assert.ok(slideIsPlaced(slide), `fixture slide ${slide.index} falls back to the template`);
+    for (const shape of slide.shapes) assert.ok(shape.box, `fixture slide ${slide.index} has an unplaced shape`);
+  }
+
+  // Every case the renderer has to get right is actually IN the fixture, so the preview shows them:
+  // inherited placeholder boxes, two columns told apart only by `idx`, and a grouped shape.
+  const columns = at(parsed, 1).shapes.filter((shape) => shape.placeholder === "body");
+  assert.equal(columns.length, 2, "the two-column slide lost a column");
+  assert.ok(at(columns, 0).box!.x < at(columns, 1).box!.x, "the two body placeholders resolved to the same box");
+  const grouped = at(parsed, 2).shapes.at(-1);
+  assert.ok(grouped?.box && grouped.box.x > 0.05 && grouped.box.x < 0.1, "the grouped shape is not in slide space");
 });
