@@ -225,21 +225,49 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
                 // Google rules its columns on the RIGHT and paints the last
                 // one's rule in the page colour, so the week does not close
                 // with a line down its edge. Ours closed on both sides.
-                "group relative flex flex-col items-center justify-center border-r pb-[0.125rem] pt-[0.25rem] last:border-transparent",
+                // 2px above, 4px below at this root — Google's own gaps, which
+                // with its 32px label box and 46px numeral box make the band
+                // exactly 84px. See the note on the label below.
+                "group relative flex flex-col items-center justify-center border-r pb-[0.2222rem] pt-[0.1111rem] last:border-transparent",
                 RULE,
               )}
               key={day.key}
             >
               <span
                 className={cn(
-                  // 11px/32px, weight 500, 0.8px tracking at Google's 16px root.
-                  // 🔴 leading-[1.5rem], DOWN FROM 2rem. Owner 2026-09-01: "the
-                  // weekday row is a tad bit too big." This is the one place the
-                  // header deliberately leaves Google, whose weekday line box is
-                  // 32px (2rem converted); the numeral and its disc below are
-                  // still Google's exactly, so the row loses 9px and nothing
-                  // else moves.
-                  "text-[0.6875rem] font-medium uppercase leading-[1.5rem] tracking-[0.0727em]",
+                  // 🔴🔴 THIS WHOLE BLOCK IS NOW GOOGLE'S ABSOLUTE PIXELS, NOT ITS
+                  // PROPORTIONS, AND THAT IS THE THIRD REVISION OF ONE ROW.
+                  // Owner, 2026-09-03: *"the weekday row still feels a bit too
+                  // big, it needs to be smaller, better fitted — just compare
+                  // with Google Calendar please."*
+                  //
+                  // 🔴 THE BAND WAS ALREADY THE RIGHT HEIGHT AND THAT IS WHY
+                  // TRIMMING IT AGAIN WOULD NOT HAVE FIXED THIS. Measured, both
+                  // sides, 2026-09-03: Google's day-header band is 84px and ours
+                  // was 85.5. What was wrong was everything INSIDE it — 12.375px
+                  // label against Google's 11, a 29.25px numeral against its 26,
+                  // a 51.75px disc against its 46.58 — because every number here
+                  // was converted by RATIO from Google's 16px root to this app's
+                  // 18px one, which reproduces the proportion and inflates the
+                  // object by 12.5%. The band only matched because the previous
+                  // pass had cut the label's line box 9px BELOW Google's to
+                  // compensate, so a too-big numeral sat in a too-short row.
+                  //
+                  // 🔴 SO THE CONVERSION IS INVERTED FOR THIS BLOCK: Google's
+                  // pixels divided by our 18px root, which lands the drawn size
+                  // on Google's exactly and still scales with the root. 11/18 =
+                  // 0.6111rem in a 32/18 = 1.7778rem line box; 0.8px of tracking
+                  // is 0.0727em of an 11px font, so the em value was right all
+                  // along and only looked wrong at 12.375px (it computed to
+                  // 0.9px). Band: 2 + 32 + 46 + 4 = 84.
+                  //
+                  // 🔴 THE REST OF THE CALENDAR STAYS RATIO-CONVERTED, on purpose.
+                  // The owner said the grid and the events look right; only this
+                  // row was reported. Do not "finish the job" by shrinking the
+                  // hour rows to match — that is a different change he has not
+                  // asked for, and `docs/google-calendar-reference.md` records
+                  // both conversions and which surface uses which.
+                  "text-[0.6111rem] font-medium uppercase leading-[1.7778rem] tracking-[0.0727em]",
                   day.isToday ? "text-foreground" : "text-(--ui-text-secondary)",
                 )}
               >
@@ -247,22 +275,19 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
               </span>
               <span
                 className={cn(
-                  // 🔴 THIS NUMBER HAS BEEN REVERSED TWICE. READ BEFORE MOVING IT.
-                  // Google draws a 26px numeral in a 46px disc; converted to
-                  // this app's 18px root that is 1.625rem in 2.875rem, which is
-                  // what stands here.
+                  // 🔴 THIS NUMBER HAS BEEN REVERSED THREE TIMES. READ BEFORE
+                  // MOVING IT.
                   //   - 2026-08-02, owner: "these numbers are too big" -> cut to
-                  //     1.125rem in 2.125rem.
+                  //     1.125rem in 2.125rem, a size nothing was measured for.
                   //   - 2026-09-01, owner: "it all needs to match one to one"
-                  //     -> back to Google's proportion.
-                  // The note that sat here claimed the ratio "landed a quarter
-                  // larger than the thing it was matching". It did not: a copied
-                  // rem value is the same relative size by construction. What
-                  // WAS wrong was the root it assumed (20px, actually 18).
-                  // Google: 26px numeral in a 46px disc, i.e. 1.625rem in
-                  // 2.875rem. Past days drop to the secondary text colour;
-                  // today and everything after it stay at full strength.
-                  "grid size-[2.875rem] place-items-center rounded-full text-[1.625rem] font-normal leading-none tabular-nums",
+                  //     -> Google's PROPORTION, 1.625rem in 2.875rem.
+                  //   - 2026-09-03, owner: "smaller, better fitted, compare with
+                  //     Google" -> Google's SIZE, 26px in a 46px disc, written
+                  //     as 26/18 and 46/18 rem. See the label's note above for
+                  //     why the proportion was the wrong quantity to copy.
+                  // Past days drop to the secondary text colour; today and
+                  // everything after it stay at full strength.
+                  "grid size-[2.5556rem] place-items-center rounded-full text-[1.4444rem] font-normal leading-none tabular-nums",
                   day.isToday && "bg-foreground text-background",
                   !day.isToday && (isPast(day) ? "text-(--ui-text-tertiary)" : "text-foreground"),
                 )}

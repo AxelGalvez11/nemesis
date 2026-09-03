@@ -32,6 +32,29 @@ export default function ReadingStatePreview() {
         <AttachmentCard name="Scan of the whiteboard.heic" onRemove={() => undefined} onRetry={() => undefined} state="failed" />
       </div>
 
+      <h2 className="mb-[12px] mt-[40px] text-[13px] font-semibold">One mark per kind of file</h2>
+      <p className="mb-[16px] max-w-[620px] text-[12.5px] leading-[1.6] text-(--ui-text-tertiary)">
+        Owner, 2026-09-03: <em>&ldquo;when I attach documents it should also have the icon for like
+        PowerPoint slide or DOCX, PDF etc.&rdquo;</em> The glyph and the colour are
+        <code> kind-mark.ts</code>&rsquo;s, the same pair the sources panel and the artifact card
+        draw, so a file that goes in and a file that comes out look like the same kind of thing.
+      </p>
+      <div className="flex max-w-[560px] flex-col gap-[14px]">
+        {[
+          "Lecture 7 — Enzyme kinetics.pdf",
+          "Seminar notes.docx",
+          "Week 4 lecture.pptx",
+          "Grade book.xlsx",
+          "Readings.csv",
+          "Scan of the whiteboard.png",
+          "Reading list.md",
+          "Ward round.m4a",
+          "archive.zip",
+        ].map((name) => (
+          <AttachmentCard key={name} name={name} onRemove={() => undefined} state="ready" />
+        ))}
+      </div>
+
       <h2 className="mb-[12px] mt-[40px] text-[13px] font-semibold">The arc, at each stop</h2>
       <div className="flex max-w-[560px] flex-col gap-[14px]">
         {[["queued", 0], ["authorised", 0.1], ["uploaded", 0.6], ["read", 1]].map(([label, at]) => (

@@ -28,6 +28,8 @@
 //
 // PURE. No React, no I/O.
 
+import { KIND_MARKS } from "./kind-mark";
+
 /**
  * The capabilities the composer can attach to one submission.
  *
@@ -142,33 +144,44 @@ export const CAPABILITY_COPY: Record<ComposerCapability, CapabilityCopy> = {
   // 🔴 THE FOUR MAKERS NAME THE THING THE LEARNER GETS, NOT THE FORMAT'S FILE EXTENSION. "Document"
   // rather than ".docx", because §38's copy rule is that a control says what you get — and because
   // somebody who wants a Word file and somebody who wants "a write-up" are the same person.
+  // 🔴🔴 THE FOUR MAKERS WEAR THE FILE MARKS, THEY DO NOT RESTATE THEM. Every one of these rows
+  // produces a file, and `kind-mark.ts` already decides what each kind of file looks like — so
+  // spelling the glyph and the token out again here was a fourth copy of one vocabulary, and it
+  // had already drifted: this menu drew a CAMCORDER beside "Presentation" for weeks after the
+  // artifact card had been given a slide, because they were separate literals nobody compared.
+  // Owner, 2026-09-03, looking at this exact menu: *"it should have the icon for like PowerPoint
+  // slide or DOCX, PDF."*
+  //
+  // 🔴 THE OTHER THREE KEEP THEIR OWN. Course, Deep research and Web search do not produce a file,
+  // so there is no kind for a file mark to be right about; a map, a telescope and a globe are
+  // theirs and are not in that table.
   document: {
     detail: "Write and download a Word file",
-    icon: "file",
+    icon: KIND_MARKS.document.icon,
     label: "Document",
     prompt: "What should the document be about?",
-    tint: "--ui-kind-blue",
+    tint: KIND_MARKS.document.tint,
   },
   pdf: {
     detail: "Write and download a PDF",
-    icon: "file-pdf",
+    icon: KIND_MARKS.pdf.icon,
     label: "PDF",
     prompt: "What should the PDF be about?",
-    tint: "--ui-kind-red",
+    tint: KIND_MARKS.pdf.tint,
   },
   sheet: {
     detail: "Build a table you can open in Excel",
-    icon: "table",
+    icon: KIND_MARKS.sheet.icon,
     label: "Spreadsheet",
     prompt: "What should the spreadsheet cover?",
-    tint: "--ui-kind-green",
+    tint: KIND_MARKS.sheet.tint,
   },
   slides: {
     detail: "Build a slide deck",
-    icon: "device-camera-video",
+    icon: KIND_MARKS.slides.icon,
     label: "Presentation",
     prompt: "What should the deck be about?",
-    tint: "--ui-kind-amber",
+    tint: KIND_MARKS.slides.tint,
   },
 };
 

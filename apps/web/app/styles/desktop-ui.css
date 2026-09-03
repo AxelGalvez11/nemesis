@@ -374,19 +374,34 @@
        Decoration, not text: these tint 16px glyphs beside a label that carries the
        meaning in words, so the bar is legibility rather than WCAG body-text contrast.
        Every value is checked against the resolved --ui-bg-elevated in both themes. */
-    /* 🔴 ALL SIX ARE THE SAME QUIET GREY NOW (owner 2026-09-03: "remove any color accents
-       throughout the app"). The block above already argued these are "Decoration, not text:
-       these tint 16px glyphs beside a label that carries the meaning in words" — which is
-       exactly why they can go: nothing a learner needs was ever carried by the hue. The six
-       names survive so no call site changes and none of them becomes dead; they simply all
-       resolve to the same ink. Give one of them a hue back and it is a colour accent again,
-       which is what `accent-boundary.test.ts` refuses. */
-    --ui-kind-blue: var(--ui-text-secondary);
-    --ui-kind-red: var(--ui-text-secondary);
-    --ui-kind-green: var(--ui-text-secondary);
-    --ui-kind-amber: var(--ui-text-secondary);
-    --ui-kind-purple: var(--ui-text-secondary);
-    --ui-kind-cyan: var(--ui-text-secondary);
+    /* 🔴🔴🔴 THE HUES ARE BACK, AND THE REVERSAL IS A DISTINCTION RATHER THAN A CHANGE OF MIND.
+       Owner, 2026-09-03, hours after the sweep: *"the pop-up for the plus icon and then the
+       landing page… someone took out the colors for that, I need them to have colors"*, in the
+       same breath as *"when I attach documents it should have the icon for PowerPoint, DOCX,
+       PDF"*. He is right that these are not what he asked to remove.
+
+       🔴 AN ACCENT AND A KIND TINT ARE DIFFERENT OBJECTS, and flattening these treated them as
+       one. The ACCENT is the character's colour: the learner picks it, it changes, and it means
+       nothing except "this is the thing you act with" — which is why it belongs on the mascot,
+       the send button and the chat bubble and nowhere else. These six are FIXED IDENTITY
+       COLOURS for kinds of file: a PDF is red, a Word file is blue, a spreadsheet is green, a
+       deck is amber, in every account, forever. They carry the same information the extension
+       does, at a glance, in a list of thirty files where the names are all truncated. Every
+       product that shows files does this.
+
+       🔴 SO `accent.test.ts`'s BOUNDARY IS UNTOUCHED AND STILL HOLDS. It refuses the accent on
+       `--theme-primary`, `--theme-midground` and `--theme-warm` — the three tokens that feed the
+       whole chrome and put 98 saturated elements on one screen. Nothing here reads the accent;
+       these are constants. The two rules do not overlap and neither replaces the other.
+
+       Values below are the pre-sweep ones exactly, which were checked against the resolved
+       --ui-bg-elevated in both themes at the 3:1 bar `capability-chip.test.ts` measures. */
+    --ui-kind-blue: #2f6fd0;
+    --ui-kind-red: #cf2d56;
+    --ui-kind-green: #1f8a65;
+    --ui-kind-amber: #c08532;
+    --ui-kind-purple: #7a6fc0;
+    --ui-kind-cyan: #3f7d8c;
     --context-usage-system: color-mix(in srgb, var(--ui-base) 55%, transparent);
     --context-usage-tools: var(--ui-purple);
     --context-usage-rules: var(--ui-green);
@@ -757,13 +772,14 @@
        walked into. Lifted to 6.58:1, same hue family, still unmistakably blue. */
     --ui-learner: #5b9bff;
     /* The file-kind tints, lifted for a near-black ground. Same hues, same order. */
-    /* Same grey as the light block, for the reason stated there. */
-    --ui-kind-blue: var(--ui-text-secondary);
-    --ui-kind-red: var(--ui-text-secondary);
-    --ui-kind-green: var(--ui-text-secondary);
-    --ui-kind-amber: var(--ui-text-secondary);
-    --ui-kind-purple: var(--ui-text-secondary);
-    --ui-kind-cyan: var(--ui-text-secondary);
+    /* Restored with the light block — see the reversal note there. Same hues, lifted for a
+       near-black ground. */
+    --ui-kind-blue: #6aa5f5;
+    --ui-kind-red: #e75e78;
+    --ui-kind-green: #55a583;
+    --ui-kind-amber: #d9a44e;
+    --ui-kind-purple: #a99bea;
+    --ui-kind-cyan: #6f9ba6;
     /* Dark's --ui-action must be LIGHTER than light's, not darker: the glyph on
        it is --ui-bg-editor, which is near-black here, so the fill carries a dark
        glyph. Same inversion the graphite pair already made (#404040 → #6e6e6e).

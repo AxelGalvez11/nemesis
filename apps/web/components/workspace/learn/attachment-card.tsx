@@ -29,6 +29,8 @@
 // push the send button off the row. Everything vertical, which is what the eye actually compares
 // when the two sit side by side, is measured.
 
+import { Codicon } from "@/components/desktop-ui/codicon";
+import { fileMark } from "@/lib/learn/kind-mark";
 import { cn } from "@/lib/utils";
 import { ARC_CIRCUMFERENCE, dashOffsetFor } from "@/lib/workspace/read-progress";
 
@@ -47,23 +49,22 @@ export function fileKind(name: string): string {
 }
 
 /**
- * 🔴 THE ICON IS COLOURED BY TYPE, WHICH IS THE OTHER HALF OF READING AS A FILE. The reference's
- * PDF glyph measured `rgb(255, 59, 48)` — not its text colour, not its accent. A single grey glyph
- * for every format is what made ours read as a generic tag.
+ * 🔴🔴 THE MARK COMES FROM `kind-mark.ts`, AND THIS FILE NO LONGER HAS AN OPINION. Owner,
+ * 2026-09-03: *"when I attach documents it should also have the icon for like PowerPoint slide or
+ * DOCX, PDF etc… everything should have an icon, that's attached in the chat composer."*
  *
- * Deliberately a short list with a neutral fallback rather than a table of every format: an
- * unlisted type gets the neutral document, which is correct rather than absent.
+ * 🔴 WHAT WAS HERE WAS A THIRD VOCABULARY, AND IT DREW ONE SHAPE. This file kept its own eight-row
+ * hex table and one hand-drawn page-with-a-folded-corner, tinted — so a deck, a spreadsheet and a
+ * PDF were the same outline in three colours, and the colours were literals that agreed with
+ * nothing. Meanwhile `artifact-card.tsx` had a glyph and a token per kind for the files a canvas
+ * MAKES, and the sources panel had just been moved onto the same table. A file that goes in and a
+ * file that comes out are the same kind of object; three tables for one question is how they stop
+ * looking like it.
+ *
+ * So the composer reads `fileMark`, exactly as the sources panel and the artifact card do: one
+ * glyph per kind, one token per kind, and an unrecognised extension gets the quiet grey page
+ * rather than a confident wrong colour.
  */
-const INK: Readonly<Record<string, string>> = {
-  PDF: "#ff3b30",
-  DOC: "#2b7cd3",
-  DOCX: "#2b7cd3",
-  XLS: "#1d9d61",
-  XLSX: "#1d9d61",
-  CSV: "#1d9d61",
-  PPT: "#e06c34",
-  PPTX: "#e06c34",
-};
 
 /**
  * A filling arc where the file's own glyph used to sit.
@@ -112,22 +113,6 @@ function ReadingArc({ progress }: { progress: number }) {
   );
 }
 
-function DocGlyph({ tint }: { tint: string }) {
-  // A page with a folded corner, drawn rather than pulled from the icon font, because the font's
-  // `file` glyph is a 14px UI mark and this is a 24px object with a colour of its own.
-  return (
-    <svg aria-hidden="true" fill="none" height={24} viewBox="0 0 24 24" width={24}>
-      <path
-        d="M6 3.5h7.2L19 9.3V20a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 20V5A1.5 1.5 0 0 1 6.5 3.5Z"
-        stroke={tint}
-        strokeLinejoin="round"
-        strokeWidth={1.6}
-      />
-      <path d="M13 3.6V9.5h5.9" stroke={tint} strokeLinejoin="round" strokeWidth={1.6} />
-    </svg>
-  );
-}
-
 /**
  * Where this file has got to.
  *
@@ -173,6 +158,10 @@ export function AttachmentCard({
   state?: AttachmentState;
 }) {
   const kind = fileKind(name);
+  // 🔴 THE NAME IS ALL THERE IS HERE, AND THAT IS ENOUGH. A composer attachment is a `File` the
+  // learner just chose, so its extension is always present — the second argument exists for
+  // sources restored from canvases whose titles were prettified before 2026-09-03.
+  const mark = fileMark(name);
   // 🔴 THE NAME OF THE STEP, NOT AN ADJECTIVE ABOUT THE FILE. "Reading…" is what Nemesis is doing;
   // "Couldn't read" says the one thing the learner can act on (remove it, or send anyway and ask
   // about the rest). Neither line is a status code dressed up as English.
@@ -202,8 +191,16 @@ export function AttachmentCard({
           nothing, it wraps"). The cost that comment named is real and is now paid on purpose: the
           card stops saying which KIND of file is being read while it reads. The owner chose the
           trade; the glyph returns the instant the read lands. */}
-      <span className="shrink-0">
-        {state === "reading" ? <ReadingArc progress={progress} /> : <DocGlyph tint={INK[kind] ?? "var(--ui-text-tertiary)"} />}
+      <span className="flex size-[24px] shrink-0 items-center justify-center">
+        {state === "reading" ? (
+          <ReadingArc progress={progress} />
+        ) : (
+          // 🔴 22px INSIDE A 24px BOX. The reference's mark measures 24 square; a codicon is a font
+          // glyph with its own bearing, so setting the font size to 24 draws a mark that overflows
+          // the box the card's 12px gap is measured from. 22 lands the drawn shape on the
+          // reference's 24, which is what the eye compares.
+          <Codicon name={mark.icon} size="22px" style={{ color: `var(${mark.tint})` }} />
+        )}
       </span>
       <span className="flex min-w-0 flex-col">
         {/* 🔴 THE SCALE'S OWN STEPS, WHICH HAPPEN TO BE THE REFERENCE'S NUMBERS EXACTLY.

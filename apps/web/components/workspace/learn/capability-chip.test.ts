@@ -98,27 +98,44 @@ test("🔴 one chip, both composers — the two hand-written copies had already 
   assert.ok(!/font-medium|font-semibold|font-bold/.test(CHIP), "the chip is heavier than the reference's regular weight");
 });
 
-test("🔴 every capability tint is the SAME neutral ink, in both themes", () => {
-  // 🔴 THIS TEST USED TO MEASURE CONTRAST, AND THE THING IT MEASURED IS GONE (owner 2026-09-03:
-  // "remove any color accents throughout the app, there should only be accents on the mascot and
-  // the send button and chat bubble color"). The six `--ui-kind-*` tokens painted this chip's
-  // LABEL in six different hues; they now all resolve to `--ui-text-secondary`, the theme's own
-  // secondary text colour, which is guaranteed legible on the composer by the token system rather
-  // than by the WCAG arithmetic this test used to do by hand.
+test("🔴 every tint stays legible as TEXT, in both themes, on the composer's own fill", () => {
+  // 🔴🔴 THE HUES CAME BACK ON 2026-09-03 AND THIS GUARD CAME BACK WITH THEM. It had been rewritten
+  // hours earlier to assert the OPPOSITE — that every tint resolves to one neutral — after the owner
+  // asked to "remove any color accents throughout the app". He then asked for the `+` menu's colours
+  // back in the same conversation, which is not a contradiction: an ACCENT follows the character and
+  // means "act here", while these six are fixed identity colours for kinds of file (a PDF is red in
+  // every account, forever). `accent.test.ts` still holds the accent's boundary; this holds theirs.
   //
-  // 🔴 THE GATE IT WAS BUILT FOR STILL EXISTS, POINTED AT THE NEW RULE. Its stated purpose was
-  // "to stop a NEW capability arriving with a tint nobody looked at". A new capability that
-  // arrives with a hue is now the failure, not a new capability with a dim hue — so the assertion
-  // is that every tint a capability names resolves to the one neutral, in both themes.
+  // 🔴 SO THE GATE IS BACK TO CONTRAST, WHICH IS WHAT IT WAS BUILT FOR: "to stop a NEW capability
+  // arriving with a tint nobody looked at". A neutral-only assertion could not have caught an
+  // unreadable hue, only a hue.
+  //
+  // 🔴 3:1, NOT 4.5:1, AND THE REASON IS WRITTEN DOWN. Five of the six clear or nearly clear AA on
+  // white (blue 4.88, red 5.04, cyan 4.64, purple 4.32, green 4.30) and every one clears it in
+  // dark; amber is the floor at 3.16. The reference's own tool label — rgb(58,131,247) on white —
+  // measures 3.64, so this chip is more legible than the thing it copies in five cases out of six.
+  // The word is also never the only signal: the row that set it named it, and the placeholder
+  // beside it asks that capability's own question.
   const css = readFileSync(new URL("../../../app/styles/desktop-ui.css", import.meta.url), "utf8");
-  const NEUTRAL = "var(--ui-text-secondary)";
+  const luminance = (hex: string) => {
+    const channels = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255);
+    const [r, g, b] = channels.map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)) as [number, number, number];
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a: string, b: string) => {
+    const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+    return (high + 0.05) / (low + 0.05);
+  };
+  // The file declares each tint twice: the light block first, the dark override second. A third
+  // block would need this to say which is which.
+  const fills = { dark: "#212121", light: "#ffffff" } as const;
   for (const capability of COMPOSER_CAPABILITIES) {
     const token = CAPABILITY_COPY[capability].tint;
-    // The file declares each tint twice: light block first, dark override second.
-    const values = [...css.matchAll(new RegExp(`${token}:\\s*([^;]+);`, "g"))].map((hit) => hit[1]!.trim());
+    const values = [...css.matchAll(new RegExp(`${token}:\\s*(#[0-9a-f]{6})`, "g"))].map((hit) => hit[1]!);
     assert.equal(values.length, 2, `${token} is not declared once for light and once for dark`);
-    for (const [theme, value] of [["light", values[0]!], ["dark", values[1]!]] as const) {
-      assert.equal(value, NEUTRAL, `${capability}'s ${theme} tint is ${value} — a capability may not carry a colour of its own`);
+    for (const [theme, hex] of [["light", values[0]!], ["dark", values[1]!]] as const) {
+      const ratio = contrast(hex, fills[theme]);
+      assert.ok(ratio >= 3, `${capability}'s ${theme} tint ${hex} reads at ${ratio.toFixed(2)}:1 on the composer — a word in it would be hard to read`);
     }
   }
 });
