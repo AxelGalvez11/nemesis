@@ -1,0 +1,139 @@
+{
+  "GOOGLECALENDAR_CREATE_EVENT": {
+    "properties": {
+      "attendees": {
+        "type": "array"
+      },
+      "calendar_id": {
+        "type": "string"
+      },
+      "create_meeting_room": {
+        "type": "boolean"
+      },
+      "description": {
+        "type": "string"
+      },
+      "eventType": {
+        "enum": [
+          "birthday",
+          "default",
+          "focusTime",
+          "outOfOffice",
+          "workingLocation"
+        ],
+        "type": "string"
+      },
+      "event_duration_hour": {
+        "maximum": 24,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "event_duration_minutes": {
+        "maximum": 59,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "exclude_organizer": {
+        "type": "boolean"
+      },
+      "guestsCanInviteOthers": {
+        "type": "boolean"
+      },
+      "guestsCanSeeOtherGuests": {
+        "type": "boolean"
+      },
+      "guests_can_modify": {
+        "type": "boolean"
+      },
+      "location": {
+        "type": "string"
+      },
+      "recurrence": {
+        "type": "array"
+      },
+      "send_updates": {
+        "type": "boolean"
+      },
+      "start_datetime": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "timezone": {
+        "type": "string"
+      },
+      "transparency": {
+        "enum": [
+          "opaque",
+          "transparent"
+        ],
+        "type": "string"
+      },
+      "visibility": {
+        "enum": [
+          "default",
+          "public",
+          "private",
+          "confidential"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "start_datetime"
+    ]
+  },
+  "GOOGLECALENDAR_PATCH_EVENT": {
+    "properties": {
+      "attendees": {
+        "type": "array"
+      },
+      "calendar_id": {
+        "type": "string"
+      },
+      "conference_data_version": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "description": {
+        "type": "string"
+      },
+      "end_time": {
+        "type": "string"
+      },
+      "event_id": {
+        "type": "string"
+      },
+      "location": {
+        "type": "string"
+      },
+      "max_attendees": {
+        "type": "integer"
+      },
+      "rsvp_response": {
+        "type": "string"
+      },
+      "send_updates": {
+        "type": "string"
+      },
+      "start_time": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "supports_attachments": {
+        "type": "boolean"
+      },
+      "timezone": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "calendar_id",
+      "event_id"
+    ]
+  }
+}

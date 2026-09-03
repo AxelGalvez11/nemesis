@@ -388,3 +388,173 @@ export function findCalendarIssues(
 
   return { conflicting_versions, exact_duplicates, overlaps, probable_duplicates };
 }
+
+// ── The same event, in two calendars, disagreeing ──────────────────────────
+// Owner 2026-09-02, verbatim: "be able to resolve discrepancies with
+// scheduling."
+//
+// 🔴 A FIFTH KIND OF FINDING, NOT A FIFTH COPY OF THE OVERLAP CODE. Everything
+// above audits ONE calendar against itself: two rows that are secretly the same
+// thing, or two things booked on top of each other. This audits one calendar
+// against ANOTHER — the student moved their exam in Google, or Nemesis moved it
+// here, and now the two disagree about when it is. That is a question the
+// findings above cannot ask, because until `externalId` existed there was no way
+// to know that two rows in two systems were the same event at all.
+//
+// 🔴 IT SHARES THIS FILE'S VOCABULARY ON PURPOSE. `CalendarIssueEventRef`,
+// `normalizeTitle`, `minutesOf` and the row-id rule are all reused rather than
+// re-implemented, so a change to what "the same time" means lands on both.
+//
+// 🔴🔴 AND IT NEVER RESOLVES ANYTHING BY ITSELF. `suggested` says who moved most
+// recently and that is ALL it is: a recommendation for a student to accept. The
+// whole file's standing rule is that a clash is real life and the call is the
+// student's, and silently overwriting the date of somebody's exam because a
+// timestamp sorted later is the worst possible place to break it.
+
+/** What two copies of one event can disagree about. */
+export type DisagreementField = "date" | "time" | "endTime" | "title" | "location";
+
+export interface FieldDisagreement {
+  field: DisagreementField;
+  /** What the Nemesis row says. Empty string means it says nothing. */
+  nemesis: string;
+  /** What the outside calendar says. */
+  provider: string;
+}
+
+export interface ProviderDisagreement {
+  /** The Nemesis row, by its real `calendar_events` id. */
+  local: CalendarIssueEventRef;
+  /** The provider's copy, as it would look on this calendar. */
+  provider: CalendarIssueEventRef;
+  /** Which outside calendar, and which event in it. */
+  providerName: string;
+  externalId: string;
+  fields: FieldDisagreement[];
+  /**
+   * Who changed it most recently, when both sides can say.
+   *
+   * 🔴 "unknown" IS A REAL ANSWER AND THE COMMON ONE. It needs BOTH a provider
+   * timestamp and the moment Nemesis last reconciled; a row that has never been
+   * synced has no second half, so there is nothing to compare and the honest
+   * answer is that we cannot tell. Guessing "the provider" here would quietly
+   * make Google win every argument by default.
+   */
+  suggested: "nemesis" | "provider" | "unknown";
+}
+
+/** The same clock, however each side wrote it down. "9:00" and "09:00:00" are
+ *  one time, and a disagreement reported between them is noise. */
+function sameClock(a: string | undefined, b: string | undefined): boolean {
+  const left = minutesOf(a);
+  const right = minutesOf(b);
+  if (left === null && right === null) return (a ?? "") === (b ?? "");
+  return left === right;
+}
+
+/** Free text, compared the way a person would read it. */
+const sameText = (a: string | undefined, b: string | undefined) =>
+  (a ?? "").trim().toLowerCase().replace(/\s+/g, " ") === (b ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+/** An event carrying enough of a link to be matched against an outside copy. */
+interface LinkedRow extends CalendarEvent {
+  externalId?: string;
+  externalProvider?: string;
+  externalCalendar?: string;
+  externalUpdated?: string;
+  externalSyncedAt?: string;
+  updatedAt?: string;
+}
+
+/** The one string that says "this row and that event are the same event". */
+const linkKeyOf = (row: LinkedRow) =>
+  row.externalProvider && row.externalId
+    ? `${row.externalProvider}|${row.externalCalendar ?? "primary"}|${row.externalId}`
+    : "";
+
+/**
+ * Where a Nemesis row and its copy in an outside calendar disagree.
+ *
+ * Both lists are whole events, not occurrences: a repeating series is one row
+ * on each side, and comparing every meeting of it would report one problem
+ * fifty times — the same flood `collapseRepeats` exists to prevent above.
+ *
+ * 🔴 ROWS WITH NO LINK ARE NOT A DISAGREEMENT. An event that lives only in
+ * Nemesis and one that lives only in Google are not two versions of anything;
+ * they are two events. Reporting them here would turn every unsynced calendar
+ * into a wall of false conflicts on the first run.
+ */
+export function findProviderDisagreements(
+  local: readonly LinkedRow[],
+  provider: readonly LinkedRow[],
+): ProviderDisagreement[] {
+  const byLink = new Map<string, LinkedRow>();
+  for (const row of local) {
+    const key = linkKeyOf(row);
+    if (key) byLink.set(key, row);
+  }
+
+  const out: ProviderDisagreement[] = [];
+  for (const remote of provider) {
+    const key = linkKeyOf(remote);
+    if (!key) continue;
+    const mine = byLink.get(key);
+    if (!mine) continue;
+
+    const fields: FieldDisagreement[] = [];
+    if (mine.date !== remote.date) fields.push({ field: "date", nemesis: mine.date, provider: remote.date });
+    if (!sameClock(mine.time, remote.time)) {
+      fields.push({ field: "time", nemesis: mine.time ?? "", provider: remote.time ?? "" });
+    }
+    if (!sameClock(mine.endTime, remote.endTime)) {
+      fields.push({ field: "endTime", nemesis: mine.endTime ?? "", provider: remote.endTime ?? "" });
+    }
+    if (!sameText(mine.title, remote.title)) {
+      fields.push({ field: "title", nemesis: mine.title, provider: remote.title });
+    }
+    if (!sameText(mine.location, remote.location)) {
+      fields.push({ field: "location", nemesis: mine.location ?? "", provider: remote.location ?? "" });
+    }
+    if (fields.length === 0) continue;
+
+    out.push({
+      externalId: remote.externalId!,
+      fields,
+      local: issueRef(mine),
+      provider: issueRef(remote),
+      providerName: remote.externalProvider ?? "google",
+      suggested: whoMovedLast(mine, remote),
+    });
+  }
+  return out.sort((a, b) => a.local.date.localeCompare(b.local.date) || a.local.title.localeCompare(b.local.title));
+}
+
+/**
+ * Which side changed since the two were last agreed.
+ *
+ * 🔴 IT COMPARES EACH SIDE TO THE LAST SYNC, NOT TO EACH OTHER. Comparing the
+ * two timestamps directly answers "which was touched more recently", which is a
+ * different question and gets it wrong the moment a student edits in Nemesis and
+ * Google's copy happens to carry a later `updated` from some unrelated change.
+ * The question that matters is which side has moved SINCE they last agreed, and
+ * if both have, nobody wins automatically and the student decides.
+ */
+function whoMovedLast(mine: LinkedRow, remote: LinkedRow): ProviderDisagreement["suggested"] {
+  const agreedAt = mine.externalSyncedAt;
+  if (!agreedAt) return "unknown";
+  const providerMoved = !!remote.externalUpdated && remote.externalUpdated > agreedAt;
+  const nemesisMoved = !!mine.updatedAt && mine.updatedAt > agreedAt;
+  if (providerMoved && !nemesisMoved) return "provider";
+  if (nemesisMoved && !providerMoved) return "nemesis";
+  return "unknown";
+}
+
+/** One plain-English line about what disagrees. Empty when nothing does. */
+export function disagreementSummary(found: readonly ProviderDisagreement[]): string {
+  if (found.length === 0) return "";
+  const first = found[0]!;
+  const what = first.fields.map((entry) => entry.field === "endTime" ? "end time" : entry.field).join(" and ");
+  const rest = found.length - 1;
+  const also = rest > 0 ? `, and ${rest} other${rest === 1 ? "" : "s"}` : "";
+  return `${first.local.title} has a different ${what} in Google than it does here${also}.`;
+}
