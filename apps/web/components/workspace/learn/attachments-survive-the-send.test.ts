@@ -86,10 +86,22 @@ test("🔴🔴🔴 the first message of a new chat is not seeded over while it i
   //
   // Calibration: drop the `turnInFlight` guard and the first message of every new chat disappears
   // until the page is reloaded.
-  const seed = CANVAS.slice(CANVAS.indexOf("const seededFor"), CANVAS.indexOf("setCurrentMomentId(held?.id ?? null)"));
+  const seed = CANVAS.slice(CANVAS.indexOf("const seededFor"), CANVAS.indexOf("}, [canvas.blocks.length"));
   assert.ok(seed.length > 200, "the seed effect is gone or was renamed");
+  assert.match(seed, /if \(turnInFlight\) return;/, "the seed no longer stands aside while a turn owns the surface");
+
+  // 🔴🔴 AND DEFERRING ALONE WAS NOT ENOUGH, WHICH IS WHY THE LATCH MOVED. On the front door the
+  // canvas is MINTED FIRST and the opening ask is fired by a later effect, so the seed runs at
+  // mount with nothing in flight, against an empty moment log — and if it latches there it never
+  // runs again for that canvas. Measured on production after the deferral shipped: still no
+  // question bubble and no file names until a reload.
+  //
+  // Calibration: move the latch back to the top of the effect and the first message of every new
+  // chat disappears again until the page is reloaded.
+  assert.match(seed, /if \(restored\.length > 0\) seededFor\.current = canvas\.id;/, "the seed latches on a canvas it had nothing to seed from");
   assert.ok(
-    seed.indexOf("if (turnInFlight) return;") < seed.indexOf("seededFor.current = canvas.id"),
-    "the seed latches before it checks whether a turn owns the surface — deferring becomes skipping",
+    seed.indexOf("if (restored.length > 0) seededFor.current") > seed.indexOf("const restored = history"),
+    "the latch runs before the seeding it is meant to record",
   );
+  assert.equal((seed.match(/seededFor\.current = canvas\.id/g) ?? []).length, 1, "there is a second place that latches the seed");
 });

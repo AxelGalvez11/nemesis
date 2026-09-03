@@ -1972,7 +1972,6 @@ export function LearningCanvas({
     // That is a different situation from this one — there, a canvas is being replaced and has
     // something to be replaced BY; here, a canvas is being born and there is nothing to seed from.
     if (turnInFlight) return;
-    seededFor.current = canvas.id;
     const source = {
       createdAt: canvas.createdAt,
       moments: canvas.moments,
@@ -2043,6 +2042,18 @@ export function LearningCanvas({
     // A restored turn is filed under its moment id, so `held.id` IS the rail row's id.
     onScreen.current.momentId = held?.id ?? null;
     setCurrentMomentId(held?.id ?? null);
+    // 🔴🔴🔴 THE LATCH GOES LAST, AND ONLY WHEN THERE WAS SOMETHING TO SEED. It used to be the
+    // first line of this effect, which is why deferring on `turnInFlight` alone did not fix the
+    // front door: on that path the canvas is MINTED FIRST and the opening ask is fired by a later
+    // effect, so the seed runs at mount against an empty moment log, latches, writes nulls — and
+    // never runs again for that canvas. Measured on production after the deferral shipped: still
+    // no question bubble and no file names until a reload.
+    //
+    // Not latching on an empty canvas costs a few extra runs of a pure projection and buys the
+    // property that matters: the seed is still waiting when the first exchange is recorded, and
+    // then it assigns the real thing. It cannot clobber the live turn on the way there, because
+    // the `turnInFlight` return above holds it for the whole time that turn owns the surface.
+    if (restored.length > 0) seededFor.current = canvas.id;
   }, [canvas.blocks.length, canvas.createdAt, canvas.id, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history, turnInFlight]);
 
   /**
