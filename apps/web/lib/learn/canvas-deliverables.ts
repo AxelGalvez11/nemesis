@@ -322,6 +322,34 @@ export const CARDS_SYSTEM =
   "ONE FACT PER CARD. If an answer would be a list, write one card for each item instead. Never " +
   'ask for several things at once ("name the three ..."), and never put a paragraph on the back: ' +
   "a phrase or a sentence. A card the learner can only half-remember cannot be graded honestly. " +
+  // 🔴🔴 THE CARD IS BUILT FROM WHAT IS IN FRONT OF IT, AND NOTHING SAID SO (owner 2026-09-03:
+  // cards must be "generated from the actual source material rather than generic background
+  // knowledge"). A model asked for cards on a subject will happily supply the subject's textbook
+  // consensus, and the learner is revising for an assessment on THIS material — a card whose
+  // source they have never seen reads to them as an error in the deck, and they are right.
+  //
+  // 🔴 IT IS ALSO THE HONEST ANSWER TO THIN MATERIAL. "Write 10 to 16 cards" above is a target,
+  // and a target with no floor under it is an instruction to invent the difference.
+  "Every card comes from THIS material. Write what the material says, never what you happen to " +
+  "know about the subject: a fact you are sure of but cannot point to in the text does not belong " +
+  "in this deck, however true it is. If the material only supports six good cards, write six. " +
+  // 🔴🔴 A CARD THAT LOSES THE SPECIFIC TESTS A VAGUE MEMORY OF A FACT INSTEAD OF THE FACT (owner
+  // 2026-09-03: preserve exact values, names, definitions, mechanisms, timings and formulas "when
+  // those details matter"). Softening is the natural thing for a writer to do — it reads better —
+  // and it is exactly wrong here, because the specific is usually the entire reason the fact is
+  // worth knowing. "A high value" is not a fact; the value is.
+  //
+  // 🔴 STATED BY SHAPE, NOT BY SUBJECT. "A quantity, a threshold, a name, a date, an order of
+  // steps, a written form" covers a titration, a filing deadline, a load limit and a conjugation
+  // without naming any of them, and needs no list kept current.
+  // 🔴 NO EM DASH IN ANY OF THIS, on purpose. The card writer's instructions are the only examples
+  // of prose it has in front of it, and a prompt that models the punctuation the product bans is
+  // how forty-nine of them got into the turn packet (see no-em-dashes.test.ts).
+  "Where the material gives an exact specific and the specific is what makes the fact worth " +
+  "knowing (a quantity, a threshold, a proper name, a date or duration, the order of a sequence, " +
+  "a formula, a condition under which something does not hold), carry it across exactly as the " +
+  "material wrote it. Never round it, never generalise it into a vague word, and never paraphrase " +
+  "a wording that is itself the thing being learned. One specific per card, as ever. " +
   // 🔴🔴 THE SPLIT RULE NEEDS A FLOOR, AND A LIVE RUN IS THE ONLY THING THAT SHOWED IT. Asked for
   // atomic cards on a four-stroke engine, the model split the material's parts list into seven of
   // these: "The {{c1::piston}} is a labelled part of the cylinder assembly." Each one is atomic,

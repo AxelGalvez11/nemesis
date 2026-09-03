@@ -75,3 +75,25 @@ test("specifics come from the student's material, never from the model", () => {
   assert.match(EXAM_ITEM_RULES, /Never invent a specific/);
   assert.match(EXAM_ITEM_RULES, /student's own material/);
 });
+
+// 🔴🔴 THE ONE THING ON THE OWNER'S LIST THESE RULES DID NOT COVER (2026-09-03: questions must
+// "vary in difficulty"). Every rule above makes a single item sound; none of them said anything
+// about the SET. Nine items pitched identically measure one point on the scale, so a student who
+// scores 6/9 learns that they got six right and nothing about where they actually stand.
+//
+// 🔴 AND THE SECOND HALF IS WHAT STOPS THE RULE BEING CHEATED. The easiest way to make an item
+// "harder" is to word it vaguely, run it long, or bury the question in the middle of the stem.
+// All three make it harder to ANSWER without making it harder to KNOW, which punishes the careful
+// reader and rewards the guesser: the exact flaw the rest of the file exists to prevent.
+test("🔴 the paper is asked for a spread of difficulty, earned by structure", () => {
+  assert.match(EXAM_ITEM_RULES, /Spread the difficulty across the paper/, "nothing asks the paper to vary in difficulty");
+  assert.match(EXAM_ITEM_RULES, /more steps between the stem and the answer/, "difficulty is no longer defined by the item's structure");
+  assert.match(EXAM_ITEM_RULES, /near miss rather than an obvious error/, "the distractor half of difficulty was lost");
+  assert.match(EXAM_ITEM_RULES, /Never make an item harder by making it vaguer/, "an item may be made hard by being unclear again");
+  // The short form rides in every tool description, so it carries the rule too or the two drift.
+  assert.match(EXAM_ITEM_RULES_SHORT, /difficulty spread across the paper/, "the short form lost the difficulty rule");
+  // A difficulty rule is the easiest place to smuggle in a subject: "a hard pharmacology item"
+  // reads naturally and is wrong. The two tests above already scan the whole constant, and this
+  // states the intent at the point it would break.
+  assert.doesNotMatch(EXAM_ITEM_RULES, /easy, medium|three easy|label each question/i, "difficulty became a label to sort items into rather than a property of them");
+});

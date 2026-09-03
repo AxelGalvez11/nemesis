@@ -130,6 +130,27 @@ test("🔴🔴 the card writer is told ONE FACT PER CARD, and to split a list", 
   // engine deck was cloze restatements of its own questions. Two schedules for one memory.
   assert.match(CARDS_PROMPT, /Each fact appears ONCE, in one form/, "a fact may be written twice again");
 
+  // 🔴🔴 THE DECK IS BUILT FROM WHAT IS IN FRONT OF IT (owner 2026-09-03: cards must be "generated
+  // from the actual source material rather than generic background knowledge"). Nothing said so. A
+  // model asked for cards on a subject supplies that subject's textbook consensus quite happily,
+  // and the learner is revising for an assessment on THIS material: a card whose source they have
+  // never seen reads to them as an error in the deck, and they are right.
+  assert.match(CARDS_PROMPT, /Every card comes from THIS material/, "the card writer may draw on background knowledge again");
+  assert.match(CARDS_PROMPT, /cannot point to in the text does not belong/, "an unsourced fact may land on a card again");
+  // "Write 10 to 16 cards" is a target, and a target with no floor under it is an instruction to
+  // invent the difference when the material is thin.
+  assert.match(CARDS_PROMPT, /If the material only supports six good cards, write six/, "the count outranks the material again");
+
+  // 🔴🔴 A CARD THAT LOSES THE SPECIFIC TESTS A VAGUE MEMORY OF A FACT INSTEAD OF THE FACT (owner
+  // 2026-09-03: preserve exact values, names, definitions, mechanisms, timings and formulas "when
+  // those details matter"). Softening reads better, which is why a writer does it, and it is
+  // exactly wrong here: the specific is usually the entire reason the fact is worth knowing.
+  assert.match(CARDS_PROMPT, /carry it across exactly as the material wrote it/, "an exact specific may be paraphrased away again");
+  assert.match(CARDS_PROMPT, /Never round it, never generalise it into a vague word/, "a value may be rounded or softened again");
+  // 🔴 STATED BY SHAPE. A list naming any field would tell the model to write that field's cards
+  // for everybody, which is the same mistake the item-writing rules were neutralised for.
+  assert.doesNotMatch(CARDS_PROMPT, /\b(dose|drug|patient|clinical|contraindicat|statute|plaintiff)/i, "a subject crept into the card writer's prompt");
+
   // 🔴 THE PARSER'S CAP IS A SAFETY LIMIT, NOT THE RULE. Lowering it to enforce atomicity would
   // cut answers off mid-sentence, which is worse than a long one. The instruction does this job.
   const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
