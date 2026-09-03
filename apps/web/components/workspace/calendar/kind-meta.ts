@@ -46,6 +46,12 @@ export interface KindMeta {
  *
  * `KIND_META` survives for the syllabus import preview, which reviews what an
  * import decided and is the one place the kind is still a thing a person reads.
+ *
+ * 🔴🔴 AND THIS IS THE LAST RESORT NOW, NOT THE COMMON CASE (2026-09-03). It used to paint every
+ * event nobody had individually coloured, which was every event: `paintForEvent` falls back here
+ * only when neither the event nor its CALENDAR has a colour, and no calendar had ever been given
+ * one. `PRIMARY_CALENDAR` carries Google's Blueberry now, so this grey is reached only by an event
+ * on a calendar somebody has deliberately left uncoloured.
  */
 export const DEFAULT_PAINT: KindMeta = {
   bar: "bg-(--ui-text-tertiary) text-background",

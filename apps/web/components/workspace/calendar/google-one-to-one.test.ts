@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { hourLabel } from "./format";
+import { calendarColorOf } from "@/lib/workspace/calendar-colors";
+import { PRIMARY_CALENDAR } from "@/lib/workspace/calendars";
+import { paintForEvent } from "@/lib/workspace/event-colors";
 import { HOUR_HEIGHT } from "./time-grid";
 
 // Guards the one-to-one match with Google Calendar (owner 2026-09-01: "it all
@@ -51,6 +54,48 @@ test("🔴🔴 the month cell spends its height on events, not on its own chrome
   // 🔴 CALIBRATION, AS ABSENCES: each of these is what it was, and any one coming back undoes it.
   assert.doesNotMatch(month, /size-7 cursor-pointer/, "the 31.5px date disc is back");
   assert.doesNotMatch(month, /gap-1 border-b border-r/, "the 9px cell gap is back");
+});
+
+test("🔴🔴 an event nobody has coloured takes its CALENDAR's colour, the way Google does", () => {
+  // Owner, 2026-09-03: *"make sure that Google Calendar's colours actually map onto the colours in
+  // Nemesis… so that it looks more colourful."* Every event on the surface was grey, and the reason
+  // was not the palette — both of Google's palettes are here, with Google's own ids and hexes.
+  //
+  // 🔴 THE CHAIN WAS BUILT AND COULD NOT FINISH. `paintForEvent` is the event's colour, then its
+  // calendar's, then a fallback — Google's own order. Step two had nothing to say: no calendar had
+  // ever been given a colour, because nothing creates one and `PRIMARY_CALENDAR` carried none. So
+  // every event fell through to `DEFAULT_PAINT`, which is `--ui-text-tertiary` grey by the
+  // 2026-09-01 ruling that retired kinds.
+  const hex = (id: string | undefined) => calendarColorOf(id)?.hex ?? null;
+  assert.equal(PRIMARY_CALENDAR.colorId, "16", "the primary calendar lost its colour, so the grid is grey again");
+  assert.equal(hex(PRIMARY_CALENDAR.colorId), "#4986e7", "the primary's colour is not Google's Blueberry");
+  // 🔴 AND THE PAINT ACTUALLY RESOLVES. Asserting the constant alone passes in a build where the
+  // lookup cannot see it, which is exactly the bug underneath this one.
+  const paint = paintForEvent({ calendarId: "" }, (id) => hex(id === "" ? PRIMARY_CALENDAR.colorId : undefined));
+  assert.equal(paint?.dot.backgroundColor, "#4986e7", "an uncoloured event resolves to no paint again");
+  // An event the student HAS coloured still wins: Google's precedence, unchanged.
+  const own = paintForEvent({ calendarId: "", colorId: "11" }, () => "#4986e7");
+  assert.equal(own?.dot.backgroundColor, "#d50000", "a per-event colour stopped overriding the calendar's");
+});
+
+test("🔴🔴 the colour lookup searches the list the PRIMARY calendar is actually in", () => {
+  // 🔴 THIS IS THE LINE THAT MADE THE FIX REAL, AND IT IS EASY TO MISS. The stored list holds only
+  // calendars a student has MADE; the primary one is never stored and is prepended by
+  // `calendarList`. Looking an event up in `calendars` means looking it up in a list it is never
+  // in — so giving `PRIMARY_CALENDAR` a colour changes nothing at all until this reads
+  // `allCalendars`.
+  const workspace = readFileSync(new URL("./calendar-workspace.tsx", import.meta.url), "utf8");
+  assert.match(workspace, /allCalendars\.find\(\(entry\) => entry\.id === \(calendarId \?\? ""\)\)/, "the colour lookup cannot see the primary calendar");
+  assert.doesNotMatch(workspace, /calendars\.find\(\(entry\) => entry\.id === calendarId\)/, "the lookup went back to the stored-only list");
+});
+
+test("🔴 the view title is Google's 22px, not 22 converted", () => {
+  // Measured on the live app 2026-09-03: 22px / 400 / "Google Sans". Ours was `1.375rem`, which is
+  // 24.75 at this root — the same ninth section 13 of the reference took off the grid, and a title
+  // is the one piece of chrome big enough for it to read.
+  const header = readFileSync(new URL("./calendar-header.tsx", import.meta.url), "utf8");
+  assert.match(header, /truncate text-\[22px\] font-normal/, "the view title left Google's 22px");
+  assert.doesNotMatch(header, /text-\[1\.375rem\]/, "the ratio-converted title is back");
 });
 
 test("midday is a number, the way Google writes it", () => {
