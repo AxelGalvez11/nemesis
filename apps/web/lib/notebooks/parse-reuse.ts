@@ -30,20 +30,45 @@
  *
  * 🔴 AND IT IS NOT A REPROCESS DECISION. `decideEnqueue`/`needsReprocess` already own "should these
  * bytes be read AGAIN because something moved". This owns the narrower and cheaper question: "is
- * there already an answer for these bytes". A parse produced by an older parser version is still an
- * answer; getting a better one is a deliberate act with a caller, exactly as it is today.
+ * there already an answer for these bytes".
+ *
+ * 🔴🔴 WITH ONE EXCEPTION, ADDED 2026-09-03, AND IT REPLACES A SENTENCE THAT USED TO SIT HERE: "a
+ * parse produced by an older parser version is still an answer; getting a better one is a
+ * deliberate act with a caller, exactly as it is today." Sound reasoning on a false premise —
+ * there was no reachable caller, so an improvement to extraction could never reach a file we had
+ * already seen. See `read-by-an-older-parser` below for the measurement that ended it.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { readStructureEnvelope, type DocumentModel, type ExtractionCoverage } from "@nemesis/shared";
+import { PARSER_VERSION, readCoverage, readStructureEnvelope, type DocumentModel, type ExtractionCoverage } from "@nemesis/shared";
 
 import { adminClient } from "@/lib/server";
 
 /** A parse that already exists for these bytes, reduced to what a decision needs. */
 export interface ExistingParse {
   readonly id: string;
+  /**
+   * The `parser_version` COLUMN, which is not always a parser version.
+   *
+   * 🔴 IT IS OVERLOADED AND CANNOT BE COMPARED. `persistParse` writes `input.readBy ?? PARSER_VERSION`,
+   * and `readBy` is the LANE that finished the read. Measured on production 2026-09-03: 16 rows say
+   * `pages`, 10 say `figures`, 2 say `gemini-3.7-flash`, and every one of them was produced by
+   * `extract-2026-08-16`. Use `readerVersion` below for any comparison; this stays for logs.
+   */
   readonly parserVersion: string;
+  /**
+   * Which parser actually produced it, out of `coverage.parserVersion`.
+   *
+   * 🔴 THE HONEST FIELD, AND IT WAS ALREADY BEING STORED. The coverage record carries the real
+   * `PARSER_VERSION` even on rows whose column says `pages`, and a genuine external read carries
+   * the vendor's own id (`mistral/mistral-ocr-latest`) — so this distinguishes "an older version of
+   * OUR parser" from "somebody else read this", which the column cannot.
+   *
+   * Null when the row predates coverage or stores an unreadable one, which means "unknown" and is
+   * treated as reusable: refusing to reuse on a missing field would re-read the corpus.
+   */
+  readonly readerVersion: string | null;
   readonly state: string;
   readonly complete: boolean;
   readonly docKind: string;
@@ -72,7 +97,29 @@ export type ReuseDecision =
          */
         | "existing-parse-failed"
         /** The caller asked for a reparse. Reuse would be answering a different question. */
-        | "reprocess-requested";
+        | "reprocess-requested"
+        /**
+         * An older version of OUR parser produced it, and the current one reads more.
+         *
+         * 🔴 THE HEADER ABOVE USED TO SAY THE OPPOSITE — "a parse produced by an older parser
+         * version is still an answer; getting a better one is a deliberate act with a caller,
+         * exactly as it is today." The reasoning was sound and its premise was false: THERE IS NO
+         * REACHABLE CALLER. The upgrade path runs on `parse_reprocess_target`, which only
+         * `POST /api/library/sources/:id/parse {"reprocess":true}` sets — a body no surface in the
+         * app sends, behind a worker nudge needing a secret no person holds. So "deliberate act"
+         * described something that had never happened, and every improvement to extraction reached
+         * new files only, for ever.
+         *
+         * Measured 2026-09-03, the day that stopped being theoretical: reading a shattered diagram
+         * whole (#1111) recovered 30 slides across 5 of the owner's own lectures that had been read
+         * as nothing — and re-uploading any of them returned the same bad parse, because these
+         * bytes were already known.
+         *
+         * 🔴 ONLY OUR OWN PARSER, AND ONLY BACKWARDS. A vendor read (`mistral/mistral-ocr-latest`)
+         * is not improved by our bump and costs real money to repeat, so it is reused. An unknown
+         * version is reused. This fires on exactly one case: we read it, and we read it worse.
+         */
+        | "read-by-an-older-parser";
     };
 
 /**
@@ -86,12 +133,28 @@ export type ReuseDecision =
  */
 export function decideReuse(
   existing: ExistingParse | null,
-  options: { reprocessRequested?: boolean } = {},
+  options: { reprocessRequested?: boolean; currentParserVersion?: string } = {},
 ): ReuseDecision {
   if (options.reprocessRequested) return { reason: "reprocess-requested", reuse: false };
   if (!existing) return { reason: "no-existing-parse", reuse: false };
   if (existing.state === "failed") return { reason: "existing-parse-failed", reuse: false };
+  if (readByAnOlderParser(existing.readerVersion, options.currentParserVersion ?? PARSER_VERSION)) {
+    return { reason: "read-by-an-older-parser", reuse: false };
+  }
   return { parse: existing, reason: "same-bytes-already-parsed", reuse: true };
+}
+
+/**
+ * Did an EARLIER version of our own parser produce this? PURE.
+ *
+ * 🔴 THE FAMILY TEST IS DERIVED FROM `PARSER_VERSION` ITSELF, never hardcoded. Ours are
+ * `extract-YYYY-MM-DD`; a vendor's are model ids. Taking the prefix from the current constant means
+ * renaming the scheme cannot leave this function quietly matching nothing.
+ */
+export function readByAnOlderParser(stored: string | null, current: string): boolean {
+  if (!stored || stored === current) return false;
+  const family = `${current.split("-")[0]}-`;
+  return stored.startsWith(family);
 }
 
 /**
@@ -114,7 +177,9 @@ export async function findReusableParse(
   try {
     const { data, error } = await admin
       .from("parsed_documents")
-      .select("id,parser_version,state,complete,doc_kind,unit_count,updated_at")
+      // `coverage` joins the list for `readerVersion`: the column beside it says which LANE
+      // finished, not which parser ran, and only one of those can be compared.
+      .select("id,parser_version,state,complete,doc_kind,unit_count,updated_at,coverage")
       // 🔴 BOTH COLUMNS, ALWAYS. `user_id` is not a filter that could be dropped for convenience;
       // it is the whole of the privacy argument above, and it is the prefix of the identity index
       // so it costs nothing.
@@ -131,6 +196,7 @@ export async function findReusableParse(
       docKind: String(data.doc_kind ?? ""),
       id: String(data.id),
       parserVersion: String(data.parser_version ?? ""),
+      readerVersion: readCoverage(data.coverage)?.parserVersion ?? null,
       state: String(data.state ?? ""),
       unitCount: Number(data.unit_count ?? 0),
     };
