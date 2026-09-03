@@ -658,12 +658,23 @@ function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) =>
           as though you read the whole document." An instruction, about them, in the third person.
           Measured on 22 sources in production, 2026-09-03.
           `coverageLabel` is the same parsed coverage rendered short, so the panel and the packet
-          cannot disagree about what was missed. Older canvases have no label until
-          `refreshedCoverageNotes` fills one on open, and the note is the fallback until then: a
-          clumsy disclosure beats a silent upgrade from partial to whole. */}
-      {(source.coverageLabel ?? source.coverageNote) && (
+          cannot disagree about what was missed.
+
+          🔴🔴🔴 AND THE FALLBACK TO `coverageNote` IS GONE, BECAUSE IT PUT THE MODEL'S COPY BACK ON
+          SCREEN THE MOMENT THE LABEL WENT QUIET. Caught on production the same day: with picture
+          counts removed from the learner's sentence (owner: *"I don't want users seeing 'x pictures
+          not read' at all"*), `coverageLabel` correctly became null for a picture-only gap — and
+          three of his lecture rows immediately started showing "Source read in full: the te…" in
+          amber instead. That is `coverageNoticeForModel`, an instruction addressed to a model,
+          truncated mid-word, dressed as a warning.
+
+          A fallback whose whole job is "show something when the learner's copy is empty" cannot be
+          right, because empty IS the learner's copy for every gap we have decided not to report.
+          The old argument for it — older canvases have no label until `refreshedCoverageNotes`
+          fills one on open — is answered by that refresh, which runs on open. */}
+      {source.coverageLabel && (
         <span className="min-w-0 max-w-[45%] truncate text-[length:var(--canvas-text-meta)] text-amber-500">
-          {source.coverageLabel ?? source.coverageNote!.replace(/^\[|\]$/g, "")}
+          {source.coverageLabel}
         </span>
       )}
       {/* 🔴🔴 A FILE THAT DID NOT READ MUST NOT LOOK LIKE ONE THAT DID. `coverageNote` above only
@@ -671,7 +682,7 @@ function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) =>
           the worst case was the one that rendered as a perfectly ordinary row. Measured on
           production 2026-09-03: a source carrying `parseQuality: "degraded"`, one excerpt for the
           whole file and ZERO passages in the search index, shown with no marking whatsoever. */}
-      {!(source.coverageLabel ?? source.coverageNote) && sourceReadWarning(source) && (
+      {!source.coverageLabel && sourceReadWarning(source) && (
         <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-amber-500">
           {sourceReadWarning(source)}
         </span>

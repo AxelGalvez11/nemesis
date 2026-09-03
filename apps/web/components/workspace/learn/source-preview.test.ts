@@ -301,7 +301,10 @@ test("🔴 a row is ONE line — the descriptions are gone", () => {
   // 🔴 AND THE ONE SECOND LINE THAT IS NOT A DESCRIPTION MUST SURVIVE. A source Nemesis could only
   // half read has to say so where the source is named; dropping this with the rest would have the
   // panel quietly claim a partial read was a whole one.
-  assert.match(CONTROLS, /source\.coverageNote/, "a half-read source no longer says so");
+  // 🔴 `coverageLabel`, NOT `coverageNote` — the learner's spelling. The row still carries a
+  // disclosure; what it may not carry is the sentence written for the model (see
+  // `model-copy-stays-with-the-model.test.ts` for the two separate times that reached a learner).
+  assert.match(CONTROLS, /source\.coverageLabel/, "a half-read source no longer says so");
   // What kind of output a row is moved onto the icon, which is where it costs no line at all.
   assert.match(CONTROLS, /const OUTPUT_ICONS: Record<string, string>/, "output rows lost the icon that says what they are");
 });

@@ -3561,9 +3561,10 @@ export function LearningCanvas({
             onRetry={() => window.location.assign(`/learn?c=${canvas.id}&relook=1`)}
             // The learner's spelling, like the sources panel beside it. `coverageNote` is the
             // model's copy and reads as an instruction about "the student" when a person sees it.
-            unread={
-              canvas.sources.find((source) => source.coverageLabel ?? source.coverageNote)?.coverageLabel ?? null
-            }
+            // 🔴 `coverageLabel` ON BOTH SIDES. Finding a source by `coverageNote` and then reading
+            // its LABEL returned null for exactly the sources whose note is the model's and whose
+            // label is deliberately empty — a search that could only ever find the wrong row.
+            unread={canvas.sources.find((source) => source.coverageLabel)?.coverageLabel ?? null}
           />
         )}
 
