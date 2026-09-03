@@ -35,6 +35,12 @@ on:
       # and nobody could see it. It is the one function whose silence costs money rather than a
       # feature: it counts what we are billed AND enforces the plan caps.
       - "supabase/functions/nemesis-llm/**"
+      # 🔴 THE INDEXER, ADDED 2026-09-03. It was NOT in this list, so a change to it shipped only if
+      # somebody deployed it by hand — the exact drift that left `nemesis-llm` eleven days behind
+      # the repo. Its silence costs a document being searchable, which is invisible from the
+      # outside: the file is attached, parsed and complete, and answers no question.
+      - "supabase/functions/source-index/**"
+      - "supabase/functions/core-source-sync/**"
   # Deliberately available by hand too: a deploy that can only be triggered by a code change cannot
   # be re-run after a transient platform failure without an empty commit.
   workflow_dispatch: {}
@@ -74,6 +80,7 @@ jobs:
         run: |
           deno check supabase/functions/nemesis-literature/index.ts
           deno check --node-modules-dir=auto supabase/functions/nemesis-llm/index.ts
+          deno check --node-modules-dir=auto supabase/functions/source-index/index.ts
 
       - uses: supabase/setup-cli@v1
         with:
@@ -146,6 +153,48 @@ jobs:
               echo "::error::Supabase refused the access token — it has most likely EXPIRED. Generate a new one at https://supabase.com/dashboard/account/tokens, overwrite the NEMESIS_DEPLOY secret with it, and re-run this workflow."
             fi
             exit $status
+          fi
+
+      # 🔴 SAME CREDENTIAL, SEPARATE STEP, so a failure names WHICH function did not ship.
+      # `--no-verify-jwt` because this function does its own, STRICTER check: `unauthorized()`
+      # requires an exact `Bearer <service role>` rather than merely a well-formed JWT. Deploying it
+      # with platform verification would add a second gate in front of the one that actually
+      # governs, and the only thing that could change is pg_net's call being refused before the
+      # function ever sees it — which is silent, because a document that is never indexed looks
+      # exactly like a document with nothing to say.
+      - name: Deploy source-index
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.NEMESIS_DEPLOY }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::The NEMESIS_DEPLOY secret is not set (or is empty). Generate a token at https://supabase.com/dashboard/account/tokens and add it under Settings → Secrets and variables → Actions, named exactly NEMESIS_DEPLOY."
+            exit 1
+          fi
+          set +e
+          out=$(supabase functions deploy source-index \
+            --project-ref qyjmivntajbigjswhahb \
+            --no-verify-jwt 2>&1)
+          status=$?
+          set -e
+          echo "$out"
+          if [ $status -ne 0 ]; then
+            if echo "$out" | grep -qiE 'unauthorized|401|invalid access token|token .*(expired|invalid)|expired'; then
+              echo "::error::Supabase refused the access token — it has most likely EXPIRED. Generate a new one at https://supabase.com/dashboard/account/tokens, overwrite the NEMESIS_DEPLOY secret with it, and re-run this workflow."
+            fi
+            exit $status
+          fi
+
+      # 🔴 401 IS THE PASS HERE TOO. It proves the indexer booted and still refuses a caller who is
+      # not holding the service role. A 200 would mean anyone can start an embedding run.
+      - name: Confirm the indexer answers, and still refuses a caller with no key
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://qyjmivntajbigjswhahb.supabase.co/functions/v1/source-index" \
+            -H "Content-Type: application/json" -d '{}')
+          echo "source-index answered $code"
+          if [ "$code" != "401" ]; then
+            echo "::error::source-index answered $code to a request with no credential; 401 is the only correct answer."
+            exit 1
           fi
 
       # 🔴 401 IS THE PASS. An unauthenticated completion must be REFUSED — that proves the
