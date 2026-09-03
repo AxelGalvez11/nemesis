@@ -191,6 +191,26 @@ function computed(text: string, signal?: AbortSignal): Promise<string> {
 
 // -------------------------------------------------------------------- lesson
 
+/**
+ * 🔴🔴 THIS HAS NO CALL SITE, AND EVERYTHING HANGING OFF IT IS THEREFORE DORMANT. Verified
+ * 2026-09-03: every remaining mention of `generateLesson` in the repo is a comment saying it USED
+ * to be called. `constructTerritory` replaced it for a topic-first canvas (see its own note on
+ * paying twice), and `use-canvas-session.ts` dropped it from the upload path deliberately under
+ * §24, "source ingestion is not source summarization".
+ *
+ * Measured on production the same day: of 176 canvases created since 2026-08-23, two carry any
+ * blocks, and the newest canvas with blocks is from that day. So this function is the reason the
+ * whole `CanvasBlock` document surface is empty in recent data, and that is by design.
+ *
+ * 🔴 IT IS PARKED, NOT DEAD, WHICH IS WHY IT IS STILL HERE. Removing it would also remove the only
+ * caller of `lessonMessages`, `BLOCK_SHAPE` and `TERMS_RULE`, and take `canvas-vocabulary.ts` and
+ * `CanvasBlock.terms` with them. Read `canvas-prompts.ts`'s note on `TERMS_RULE` before touching
+ * any of that: the owner's highlight-a-word-to-define feature is wired end to end against this
+ * surface, so this code is the record of how that is supposed to work, not clutter.
+ *
+ * If you are here because vocabulary marks never appear, the prompt is not the reason. The marks
+ * hang off blocks nothing produces any more.
+ */
 export async function generateLesson(
   uid: string,
   input: { topic: string; level: LearningCanvas["level"]; sources: readonly CanvasSource[] },
