@@ -557,6 +557,21 @@ const MAKING_LABELS: Record<DeliverableKind, string> = {
  */
 const ALREADY_MAKING = "Something else is still being made. Wait for it to finish, then try again.";
 
+/**
+ * What a learner is told when the canvas named in the address did not come back.
+ *
+ * 🔴 ONE SENTENCE FOR BOTH FAILURES, BECAUSE THE READ CANNOT TELL THEM APART. A load that threw and
+ * a load that returned nothing are the same event from the learner's side: the chat they clicked is
+ * not on the screen. `loadCanvas` gives us no way to distinguish "this row is gone" from "this row
+ * could not be read just now" — a row policy hides an unreadable row exactly as a missing one — so
+ * a message that guessed between them would be wrong half the time.
+ *
+ * 🔴 "Nothing on it is lost" IS A CLAIM, AND IT IS TRUE. Deletion here is a soft delete and the read
+ * does not filter on it, so a row that fails to come back has not been deleted; it has failed to be
+ * read. Saying so is the whole point after a week of the product losing conversations.
+ */
+const CANVAS_DID_NOT_OPEN = "This chat didn't open. Nothing on it is lost. Check your connection, then open it again.";
+
 export function useCanvasSession(canvasId: string | null): CanvasSession {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
@@ -832,6 +847,59 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     [update],
   );
 
+  /**
+   * Put down everything that belonged to the canvas we are leaving.
+   *
+   * 🔴🔴🔴 SWITCHING CHATS DOES NOT REMOUNT ANYTHING, WHICH IS WHY THIS HAS TO EXIST. Owner,
+   * 2026-09-02: *"going back into chat history … it was glitchy, it wasn't even showing up."*
+   * A sidebar row pushes `/learn?c=<id>`, which changes only the query string, so `LearningCanvas`
+   * is the same component either side of the switch and React keeps EVERY piece of state in this
+   * hook. Two fixes earlier the same day made `aside`, the thread and the question bubble assign
+   * unconditionally, which fixed the three things anyone had looked at; the other eighteen were
+   * still carried across. A research plan from the last chat, a document card it handed back, a
+   * thinking caption, a half-finished test, and — worst of the set — an error banner from a canvas
+   * that failed to open, which then stood over every chat opened afterwards.
+   *
+   * 🔴 IT IS EVERY PIECE OF PER-CANVAS STATE OR IT IS WORTHLESS. A list that covers most of them
+   * fails in exactly the way the three already-fixed ones did: invisibly, on whichever field the
+   * next feature adds. `canvas-history-does-not-leak.test.ts` reads the `useState` declarations out
+   * of this file and requires each one to be named here or excused by name, so the day a
+   * twenty-fifth is added the guard goes red rather than the product going strange.
+   *
+   * 🔴 `canvas` AND `ready` ARE NOT HERE ON PURPOSE. The load effect owns both: it has to decide
+   * between "hold the arrival screen" and "put the loaded canvas up", and splitting that decision
+   * across two functions is how they start disagreeing.
+   */
+  const forgetPreviousCanvas = useCallback(() => {
+    // 🔴 `makingRef` IS DELIBERATELY LEFT ALONE. It is the one-deliverable-at-a-time latch, and the
+    // run it is holding is still executing after the switch — clearing it here would let a second
+    // paid run start beside the first. `making` is only what the Outputs tab paints, so it goes.
+    setMaking(null);
+    setBusy({ kind: null });
+    setMilestones([]);
+    setStage("decided");
+    setWork(null);
+    setWorkApp(null);
+    setError(null);
+    setOpening(null);
+    setAside(null);
+    setLookedUp([]);
+    setClarifying(null);
+    setClarified([]);
+    setResearchPlan(null);
+    setMadeArtifact(null);
+    setTestRequested(false);
+    setTestOffer("quiz");
+    setMemoryNotice(0);
+    setSearchedDomains([]);
+    setTestQuestions(null);
+    setJudging(null);
+    setCursor(0);
+    setSelectionBusy(false);
+    setSelectionError(null);
+    setCoursePlan(null);
+  }, []);
+
   // Load, or start fresh.
   useEffect(() => {
     let alive = true;
@@ -845,6 +913,17 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setReady(true);
       return;
     }
+    if (canvasId) {
+      // 🔴🔴🔴 THE CHAT BEING LEFT MUST COME OFF THE SCREEN BEFORE THE NEXT ONE ARRIVES. Owner,
+      // 2026-09-02: *"going back into chat history … it was glitchy."* Opening a chat from the
+      // sidebar changes the query string and nothing else, so nothing remounts and this read is the
+      // only thing that swaps the content — and it is a database round trip. Until it landed, the
+      // conversation the learner had just left stayed fully painted underneath the new chat's
+      // address. Going back to the arrival screen for the length of the read is the same screen a
+      // deep link and a refresh already show, and it cannot show the wrong conversation.
+      setReady(false);
+      forgetPreviousCanvas();
+    }
     void (async () => {
       if (canvasId) {
         let found: Awaited<ReturnType<typeof loadCanvas>> = null;
@@ -857,7 +936,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           // canvas). And it must NOT fall through to `newCanvas()` either: an empty fresh canvas
           // standing where their work was reads as the work being gone, which is worse than the
           // truth. The truth is a sentence, on the same screen, with the exit still above it.
-          if (alive) setError("This canvas didn't load. Check your connection, then open it again. Nothing on it is lost.");
+          if (alive) setError(CANVAS_DID_NOT_OPEN);
           return;
         }
         if (alive && found) {
@@ -931,6 +1010,29 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           }
           return;
         }
+        // 🔴🔴🔴 A NAMED CANVAS THAT CAME BACK EMPTY IS NOT AN INVITATION TO MINT A NEW ONE. Owner,
+        // 2026-09-02: *"going back into previous chats … it wasn't even showing up."* Reproduced on
+        // production the same day: open `/learn?c=<id>` for a row this browser cannot read and the
+        // header says "New canvas", the body is blank, and NOTHING says anything went wrong. The
+        // learner's own conversation is still in the database, one address away.
+        //
+        // 🔴 AND THE READ CANNOT TELL "GONE" FROM "UNREACHABLE", WHICH IS WHY BOTH LAND HERE.
+        // `loadCanvas` ends in `.maybeSingle()` under a `auth.uid() = user_id` row policy, so a row
+        // the learner owns comes back as `{ data: null, error: null }` — indistinguishable from a
+        // row that does not exist — for the whole of any window where the session token is being
+        // refreshed, plus every ordinary network failure, since the local fallback is empty on any
+        // device that did not write the canvas in the first place.
+        //
+        // 🔴 THE CATCH BRANCH ABOVE ALREADY DECIDED THIS, AND ONLY THIS PATH IGNORED IT: *"an empty
+        // fresh canvas standing where their work was reads as the work being gone, which is worse
+        // than the truth."* Same sentence, same screen, same exit above it.
+        //
+        // 🔴 AND THE ADDRESS MAKES IT COMPOUND. `addressed.current` is already true whenever the URL
+        // named a canvas, so the minted canvas never wrote its own id into the bar: the learner typed
+        // into a blank page at `?c=<the old one>`, the work saved under a NEW id, and reloading took
+        // them back to the empty screen with no trace of where it went.
+        if (alive) setError(CANVAS_DID_NOT_OPEN);
+        return;
       }
       if (!alive) return;
       const fresh = newCanvas();
@@ -942,7 +1044,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     return () => {
       alive = false;
     };
-  }, [canvasId, uid]);
+  }, [canvasId, forgetPreviousCanvas, uid]);
 
   /**
    * The canvas names itself after the first thing said on it.
@@ -2642,6 +2744,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     const fresh = newCanvas();
     latest.current = fresh;
     setCanvas(fresh);
+    // 🔴 STARTING OVER IS A CANVAS CHANGE TOO. Without this the new canvas inherited the previous
+    // one's thinking caption, research plan, document card and error banner — the same leak the
+    // sidebar switch had, through the other door.
+    forgetPreviousCanvas();
     // 🔴 THE OLD ADDRESS IS NOW A LIE, so it goes before the new canvas has earned one. Leaving
     // `?c=<previous>` on screen means a reload reopens the canvas the learner just left, and the
     // fresh one they are typing into vanishes with no trace of why.
@@ -2652,7 +2758,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
     canvasCapture("canvas_created", fresh);
-  }, []);
+  }, [forgetPreviousCanvas]);
 
   // ── The one thing being asked, and the one way to answer it ─────────────
   //
