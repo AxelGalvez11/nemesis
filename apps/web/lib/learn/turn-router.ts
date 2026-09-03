@@ -42,6 +42,7 @@
 import { THINKING_STANCE } from "@nemesis/shared";
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
+import { EXAM_ITEM_RULES_SHORT } from "@/lib/workspace/item-writing";
 
 import { readChatCheck } from "./chat-check";
 import { readFigureSubject } from "./figure-subject";
@@ -1575,6 +1576,20 @@ const DECISION_CONTRACT = [
   + "them either: no \"here it is\", no \"five questions coming up\", no describing what the quiz "
   + "is about to ask. The learner is looking at it. Answer whatever they actually asked, and if "
   + "they asked for nothing but the check, one short line is the whole answer.",
+  "",
+  // 🔴🔴🔴 THE LANE THAT SHIPS WAS THE ONE NOT FOLLOWING THE CRAFT. `item-writing.ts` exists so the
+  // app's test writers cannot drift apart, and its own header says exactly that: "Both import this
+  // constant, so improving the craft improves both at once and neither lane can quietly fall behind
+  // the other." It reached the Study tab's generator and the canvas test prompt. It never reached
+  // HERE, and this is the only place a learner's quiz is actually written: every chip under every
+  // reply comes out of `check`, and the retired canvas stage produced none of them.
+  //
+  // Two of its rules had been hand-paraphrased in the paragraph above (tempting distractors, vary
+  // the seat) and the rest were simply absent, so a quiz could carry "all of the above", a negative
+  // stem, a giveaway longest option, or nine questions pitched identically. They stay where they
+  // are as well: this adds the shared rules beside them rather than trading one wording for
+  // another, because the paragraph above also carries the grounding rule that fixed #2026-08-27.
+  `Write those questions to the standard the rest of the product writes exam questions to: ${EXAM_ITEM_RULES_SHORT}`,
   "",
   // 🔴🔴 REPORTED ON PRODUCTION, 2026-08-26: *"i asked for a quiz and it put it in chat not as
   // component."* The reply opened *"Here's your diagnostic quiz"* and then printed nine numbered

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
+import { EXAM_ITEM_RULES_SHORT } from "@/lib/workspace/item-writing";
+
 import {
   HISTORY_TURNS,
   courseGate,
@@ -1284,4 +1286,23 @@ test("the chat surface can actually render the table it is now told to write", (
   assert.match(markdown, /remarkGfm/, "GFM is gone, so a markdown table renders as literal pipe characters");
   assert.match(markdown, /table: \(\{ children \}\) =>/, "the table renderer is gone");
   assert.match(markdown, /overflow-x-auto/, "a wide comparison table will push the whole page sideways");
+});
+
+// 🔴🔴🔴 THE LANE THAT SHIPS WAS THE ONE NOT FOLLOWING THE CRAFT. `item-writing.ts` was written so
+// the app's test writers cannot drift apart, and its header says so in as many words. It reached
+// the Study tab's generator and the canvas's own test prompt. It never reached HERE, and this is
+// the only place a learner's quiz is actually written: every chip under every reply comes out of
+// `check`. Two of the rules had been paraphrased into the contract by hand and the other seven were
+// absent, so a quiz could carry "all of the above", a negative stem or a giveaway longest option.
+//
+// Asserted against the ASSEMBLED PACKET rather than the constant, because a rule that exists in a
+// module and never reaches the wire is the failure this is guarding against.
+test("🔴 the quiz the learner actually gets follows the shared item-writing rules", () => {
+  const packet = turnRouterMessages({ context: EMPTY, utterance: "quiz me on this" })
+    .map((message) => message.content)
+    .join("\n\n");
+  assert.ok(packet.includes(EXAM_ITEM_RULES_SHORT), "the live quiz lane no longer carries the shared item-writing rules");
+  // The grounding rule that fixed the 2026-08-27 report lives in the same paragraph and must not
+  // have been traded away for the shared ones.
+  assert.match(packet, /the questions come from ITS content and nowhere else/, "the quiz lost its grounding rule");
 });

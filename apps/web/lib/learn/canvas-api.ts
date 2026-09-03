@@ -26,19 +26,16 @@ import {
   type CanvasFreeQuestion,
   type LearnerResponse,
   type ResponseEvaluation,
-  type RetrievalFormat,
   type RetrievalTask,
 } from "./canvas-model";
 import { parseCanvasOps, validateOps, type CanvasOp } from "./canvas-ops";
 import {
-  parseFreeQuestions,
   parseLesson,
   parseTeachingReply,
   parseRecallCards,
   parseSelectionAnswer,
   parseSelectionRequest,
   parseShortAnswer,
-  parseTestQuestions,
   type ParsedLesson,
 } from "./canvas-parse";
 import {
@@ -53,7 +50,6 @@ import {
   teachingMessages,
   causalMessages,
   territoryMessages,
-  testMessages,
   type EvaluationInput,
   type RelearnMiss,
 } from "./canvas-prompts";
@@ -427,39 +423,11 @@ export async function constructCausalKnowledge(
   };
 }
 
-// ---------------------------------------------------------------------- test
-
-export async function generateTest(
-  uid: string,
-  canvas: LearningCanvas,
-  count: number,
-  format: RetrievalFormat,
-  onlyConceptIds?: readonly string[],
-  signal?: AbortSignal,
-): Promise<CanvasCallResult<CanvasQuestion[]>> {
-  const { text, error } = await ask(
-    uid,
-    testMessages({
-      canvasTitle: canvas.title,
-      blocks: canvas.blocks,
-      concepts: canvas.concepts,
-      count,
-      format,
-      ...(onlyConceptIds?.length ? { onlyConceptIds } : {}),
-    }),
-    signal,
-  );
-  if (error) return { value: null, error };
-  const conceptIds = canvas.concepts.map((concept) => concept.id);
-  const questions: CanvasQuestion[] = text
-    ? format === "free"
-      ? parseFreeQuestions(text, conceptIds, canvas.sources)
-      : parseTestQuestions(text, conceptIds, canvas.sources)
-    : [];
-  return questions.length
-    ? { value: questions, error: null }
-    : { value: null, error: "Nemesis couldn't write questions for this. Try generating the lesson again." };
-}
+// ------------------------------------------------- test (RETIRED 2026-09-03)
+// `generateTest` is gone with `testMessages` and `runTest`. Nothing could reach any of the three:
+// §38 deleted the entrances by owner ruling, and the generator had been building from
+// `canvas.blocks`, empty on 230 of 244 production canvases. See the note at the head of
+// canvas-prompts.ts's own retired section for the full account and for what deliberately stayed.
 
 // ------------------------------------------------------------------- judging
 
