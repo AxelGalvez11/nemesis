@@ -315,19 +315,46 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         // 🔴 A MODE, NOT A MODIFIER KEY. The document's drag already means text selection; a comment
         // needs the same drag. One drag cannot mean two things, so the learner chooses which the
         // page is doing — the same argument the old mark-an-area toggle made, absorbed here.
+        // 🔴🔴 IT GROWS INTO ITS OWN LABEL, AND THAT IS READ OFF THE REFERENCE RATHER THAN INVENTED.
+        // Owner, 2026-09-03: *"i want a match 1 to 1, not an estimate."* ChatGPT's desktop app is
+        // Electron, so its component source is on disk; `annotation-mode-button-*.js` inside
+        // `app.asar` says exactly this. Off, the control is icon-only and square. On, it widens and
+        // a label slides out of zero width beside the icon. Both halves animate on their own
+        // property list, and both stand still under `prefers-reduced-motion`.
+        //
+        // 🔴 THE LABEL IS THE STATE, WHICH IS WHY THIS IS NOT DECORATION. A square button that only
+        // changes colour says "something is on" and leaves the learner to work out what; the word
+        // "Annotating" says which mode the document's drag is in, at the moment it stops meaning
+        // text selection. That is the one thing the old toggle could not tell anyone.
         <button
-          aria-label={commenting ? "Stop commenting" : "Comment on the document"}
+          aria-label={commenting ? "Stop annotating" : "Annotate the document"}
           aria-pressed={commenting}
           className={cn(
-            "grid size-7 shrink-0 place-items-center rounded-md hover:bg-(--ui-bg-tertiary)",
-            commenting ? "bg-(--ui-action) text-(--ui-action-glyph)" : "text-(--ui-text-tertiary) hover:text-foreground",
+            "ease-basic flex h-7 shrink-0 items-center overflow-hidden rounded-md",
+            "transition-[max-width,padding,background-color,color] duration-300 motion-reduce:transition-none",
+            commenting
+              ? "max-w-40 justify-start bg-(--ui-action) px-[7px] text-(--ui-action-glyph)"
+              : "max-w-7 min-w-7 justify-center px-0 text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground",
           )}
           data-testid="reader-comment-mode"
           onClick={onToggleCommenting}
-          title={commenting ? "Commenting: click a spot or drag a box. Turn off to select text again." : "Comment on the document"}
+          title={commenting ? "Annotating: click a spot or drag a box. Turn off to select text again." : "Annotate the document"}
           type="button"
         >
-          <Codicon name="comment" size="0.85rem" />
+          <Codicon className="shrink-0" name="comment" size="0.85rem" />
+          {/* 🔴 ALWAYS IN THE DOM, WIDTH-ANIMATED TO NOTHING — never conditionally rendered. A label
+              that mounts on activation cannot animate out of zero width, so the button would jump
+              to its full size in one frame, which is the artefact the reference's own transition
+              list exists to avoid. */}
+          <span
+            className={cn(
+              "ease-basic min-w-0 overflow-hidden whitespace-nowrap text-[length:var(--canvas-text-meta)] leading-[20px]",
+              "transition-[max-width,opacity,margin-inline-start] duration-300 motion-reduce:transition-none",
+              commenting ? "ms-[5px] max-w-32 opacity-100" : "ms-0 max-w-0 opacity-0",
+            )}
+          >
+            Annotating
+          </span>
         </button>
       )}
 

@@ -192,8 +192,18 @@ test("🔴 the sidebar carries the same controls whatever kind of thing is in it
   // already draws a control for it one row below the header. A second button here would be two
   // owners of one mode, which this repo has paid for before.
   assert.doesNotMatch(document_, /data-testid="output-comment-mode"/u, "the document panel grew a second comment control");
-  assert.match(code(read("../reader/reader-top-bar.tsx")), /commenting \? "Stop commenting" : "Comment on the document"/u,
+  // 🔴 REWORDED 2026-09-03 EVENING: the control is called ANNOTATING now, and it grows into its own
+  // label rather than only changing colour. Read off ChatGPT's desktop app, whose Electron bundle
+  // carries the component (`annotation-mode-button-*.js`). What this clause protects is unchanged —
+  // the reader owns the mode and the panel does not draw a second control for it.
+  const topBar = code(read("../reader/reader-top-bar.tsx"));
+  assert.match(topBar, /commenting \? "Stop annotating" : "Annotate the document"/u,
     "the reader lost the comment control the panel is deliberately not duplicating");
+  // 🔴 AND IT MUST STILL SAY WHICH MODE IT IS IN. A square button that only changes colour cannot;
+  // the word is the whole reason this stopped being an icon. Calibration: drop the span and this
+  // reddens.
+  assert.match(topBar, /Annotating\s*<\/span>/u, "the annotate toggle no longer names the mode it is in");
+  assert.match(topBar, /max-w-40 justify-start/u, "the toggle stopped growing into its label");
 });
 
 test("🔴 no '…' menu in the sidebar", () => {

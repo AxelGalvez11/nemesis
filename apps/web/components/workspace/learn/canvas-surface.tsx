@@ -264,14 +264,14 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
           letters have a fade on top" — and it was reproducible on any screen whose first line sits
           at the top of the column, which for a retrieval is the question itself.
 
-          🔴 SOLID, AND SHORTER THAN THE CONTENT'S RESTING OFFSET. 56px clears the 12px/32px control
-          row with room to spare and still stops 8px short of `pt-[64px]`, so at rest it covers
+          🔴 SOLID, AND SHORTER THAN THE CONTENT'S RESTING OFFSET. 44px clears the 12px/28px control
+          row and still stops 4px short of `pt-[48px]`, so at rest it covers
           nothing at all and there is no row where a letter is half-painted. It draws no visible
           edge for the same reason the gradient claimed to: it is the page's own colour. What it
           gives up is the soft hand-off — scrolled text now ends at a hard line instead of thinning
           out — which is what the reference does too, and is the price of text that is never
           half-erased. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[56px] bg-(--ui-bg-editor)" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[44px] bg-(--ui-bg-editor)" />
 
       {draggingOver && <FileDropOverlay note="Drop any file here to add it to this canvas" />}
 

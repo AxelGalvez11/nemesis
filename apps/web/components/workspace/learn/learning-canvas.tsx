@@ -2828,8 +2828,14 @@ export function LearningCanvas({
       <DocumentDockProvider value={dock}>
       {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
           header height — nothing is reserved, painted or bounded up there; the page simply
-          starts below where the controls sit (12px inset + 28px control + 24px breathing room,
-          compact-UI pass -- was 16+32+24=72, tightened alongside the header it clears). */}
+          starts below where the controls sit (12px inset + 28px control + 8px breathing room).
+          🔴 48, DOWN FROM 64 (owner, 2026-09-03: *"there's still like a header block ... at the
+          top, if you could remove that, too, because so we can have more space for the text"*).
+          There is no block to remove — nothing paints a bar up there, and has not since §38.2 —
+          so what he is looking at is this clearance and the mask below it. The controls genuinely
+          occupy 12 to 40px and text cannot start under them, so the only honest saving is the
+          breathing room: 24px of it was three times what the gap needs. The controls have NOT
+          moved (owner, same message: keep the top-right icons where they are). */}
       {/* Command-Enter presses whatever Continue is on screen. Renders nothing. */}
       <ContinueHotkey onContinue={advance} />
 
@@ -2874,7 +2880,7 @@ export function LearningCanvas({
           z-20/z-30 in `CanvasSurface` and must stay pressable — a history view that trapped the
           learner would be a worse bug than the one it fixes. */}
       {viewing && (
-        <div className="absolute inset-0 z-10 overflow-y-auto bg-(--ui-bg-editor) pb-[160px] pt-[64px]">
+        <div className="absolute inset-0 z-10 overflow-y-auto bg-(--ui-bg-editor) pb-[160px] pt-[48px]">
           <CanvasFade contentKey={`moment:${viewing.momentId}`}>
             <CanvasHistoryView moment={viewing} onReturn={() => setRewound(null)} />
           </CanvasFade>
