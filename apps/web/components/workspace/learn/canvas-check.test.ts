@@ -54,14 +54,17 @@ test("🔴🔴 a test is never a mode: every turn re-answers the question", () =
   // §38 permits a test as a PHRASE precisely because it cannot become a state the learner sits
   // inside. Assigning the decision's value (rather than only ever setting it true) is what makes
   // that structural: the next turn clears it whether or not anyone remembered to.
-  // 🔴 REPOINTED 2026-08-26: the flag is now assigned from `wantsTest || wantsCards`, because
-  // "make me flashcards" opens the same card. The PROPERTY is unchanged and is the only thing that
-  // matters here — it is ASSIGNED from the decision on every turn rather than only ever set true,
-  // so the next turn clears it whether or not anyone remembered to.
+  // 🔴 REPOINTED 2026-08-26 to `wantsTest || wantsCards`, and REPOINTED AGAIN 2026-09-03: "make me
+  // flashcards" no longer opens this card at all. It makes a real deck through the card writer
+  // (owner: *"the flashcards to be as atomic as possible... based on concepts"*), and the deck
+  // opens docked in the same panel. The check is a quiz. The PROPERTY is unchanged and is the only
+  // thing that matters here: the flag is ASSIGNED from the decision on every turn rather than only
+  // ever set true, so the next turn clears it whether or not anyone remembered to.
+  assert.match(SESSION, /setTestRequested\(decision\.wantsTest\)/, "a test request can now survive into the next turn");
   assert.match(
     SESSION,
-    /setTestRequested\(decision\.wantsTest \|\| decision\.wantsCards\)/,
-    "a test request can now survive into the next turn",
+    /if \(decision\.wantsCards\) void makeDeliverable\("flashcards", said, undefined, true\)/,
+    "a flashcards ask read by the model no longer makes a deck",
   );
   assert.ok(!/setTestRequested\(true\)/.test(SESSION), "something sets the test flag without a decision behind it");
 });

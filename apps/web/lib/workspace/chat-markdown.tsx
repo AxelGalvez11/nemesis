@@ -29,6 +29,7 @@ import { citationsToMarkdown, fileRefsToMarkdown, groupCitationRuns, groupFileRu
 import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { escapeCurrencyDollars, normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
+import { isMindmapChart, MindmapBlock } from "@/components/workspace/learn/mindmap-block";
 import { MermaidDiagram } from "@/lib/workspace/mermaid-diagram";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
@@ -424,7 +425,12 @@ function markdownComponents(
       if (isValidElement(only)) {
         const fence = only.props as { className?: string; children?: unknown };
         if (/language-mermaid/.test(fence.className ?? "")) {
-          return <MermaidDiagram chart={typeof fence.children === "string" ? fence.children : String(fence.children ?? "")} />;
+          const chart = typeof fence.children === "string" ? fence.children : String(fence.children ?? "");
+          // 🔴 A MIND MAP IS THE ONE DIAGRAM A LEARNER CLIMBS RATHER THAN READS (owner 2026-09-03:
+          // "one that I can click on and then reveals more nodes"), so it goes to the interactive
+          // tree; every other mermaid shape still draws through the engine. See mindmap-block.tsx.
+          if (isMindmapChart(chart)) return <MindmapBlock chart={chart} />;
+          return <MermaidDiagram chart={chart} />;
         }
       }
       // 🔴 THE FENCE'S LANGUAGE IS THE HEADER'S LABEL, and it is read from the same className the

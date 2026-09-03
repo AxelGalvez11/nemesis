@@ -36,7 +36,7 @@ test("🔴🔴 every capability is routed somewhere — none is a row that does 
     // Rides in the turn packet as a fact the model weighs.
     course: () => /capability === "course"/.test(SESSION),
     // Plans, shows the card, and spends nothing until Start.
-    research: () => /if \(capability === "research"\)/.test(SESSION),
+    research: () => /if \(capability === "research" && said\)/.test(SESSION),
     // Forces the first round to search.
     search: () => /const forceWeb = capability === "search"/.test(SESSION) && /forceWeb && decision/.test(CHAT),
     // Goes straight to its maker.

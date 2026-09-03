@@ -1,6 +1,6 @@
 "use client";
 
-// The three files a canvas can hand you: a Word document, a PDF, and a spreadsheet.
+// The four files a canvas can hand you: a Word document, a PDF, a spreadsheet, and a Markdown note.
 //
 // 🔴 BUILT IN THE BROWSER AT CLICK TIME, LIKE THE DECK. `deck-download.ts` established the shape and
 // the reason: the file is a deterministic function of content + format, so nothing is ever uploaded
@@ -262,4 +262,36 @@ export function sheetBlob(data: SheetData): Blob {
 
 export async function downloadSheet(data: SheetData, title: string): Promise<void> {
   saveBlob(sheetBlob(data), docFilename(title, "csv"));
+}
+
+// ---------------------------------------------------------------- Markdown
+
+/**
+ * The note, as the text it already is.
+ *
+ * 🔴🔴 A NOTE WAS DOWNLOADED AS A WORD FILE, AND THE OWNER'S OWN HABIT IS THE OPPOSITE. Owner,
+ * 2026-09-03: *"for me personally, when I study, I like to make a markdown file of all the points
+ * that I should be able to recall from memory myself."* The note IS Markdown from the moment the
+ * model writes it, and `output-preview.tsx` ran it through the .docx writer on the way out: every
+ * heading, bold term and bullet re-encoded into a format the learner did not ask for, and a file
+ * that a text editor, Obsidian or a git repository would have read as-is arrived as one only Word
+ * opens.
+ *
+ * 🔴 NO PARSER, NO LIBRARY, NO TRANSFORM. The bytes are the string. It is the one writer whose
+ * output a test can compare for equality rather than by file signature, because the check is that
+ * nothing was done to it.
+ *
+ * 🔴 NO BOM, UNLIKE THE CSV. Excel needs one to read UTF-8; a Markdown reader treats it as a
+ * character in front of the first heading, and a `# title` with an invisible byte before the `#`
+ * is not a heading to several parsers. The type is UTF-8 by declaration instead.
+ *
+ * 🔴 SPLIT INTO BYTES AND SAVE, like the other three, so the bytes can be checked without a
+ * download dialog.
+ */
+export function markdownBlob(markdown: string): Blob {
+  return new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+}
+
+export async function downloadMarkdown(markdown: string, title: string): Promise<void> {
+  saveBlob(markdownBlob(markdown), docFilename(title, "md"));
 }

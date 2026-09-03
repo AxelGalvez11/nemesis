@@ -23,6 +23,8 @@
 // database — and the caller falls back to reading the material in order, which is what it did
 // before this file existed.
 
+import { contentWords, NAME_MIN_WORD } from "@nemesis/shared";
+
 import { supabase } from "@/lib/supabase";
 
 import type { CanvasSource, SourceExcerpt } from "./canvas-model";
@@ -63,6 +65,40 @@ export interface RetrievedChunk {
 }
 
 /**
+ * The round trips retrieval makes, as a seam a test can stand in for.
+ *
+ * 🔴 THE SHAPE IS `supabase.rpc`'S AND NOTHING MORE. Every live call still goes through the one
+ * shared client (same session, same RLS, same cost attribution). The seam exists because the
+ * fairness below is a MERGE of two calls plus a retry, and a merge that can only be proved on
+ * production is a merge that will be wrong on production first.
+ */
+export type RetrievalRpc = (
+  fn: string,
+  args: Record<string, unknown>,
+) => PromiseLike<{ data: unknown; error: unknown }>;
+
+const liveRpc: RetrievalRpc = (fn, args) => supabase.rpc(fn, args);
+
+/**
+ * How many passages one document may contribute before the global limit is applied.
+ *
+ * 🔴🔴🔴 A FLAT TOP-K LETS ONE DOCUMENT TAKE EVERY SEAT. `match_canvas_chunks` used to rank every
+ * chunk of every attached document together and return the best 24, which with fifty documents
+ * means the one lecture that shares the question's vocabulary supplies all 24 and the other
+ * forty-nine are a title in the inventory above no text. Capping each document at its share of the
+ * limit (never below two, so a document can still show a passage and its follow-on) is what makes
+ * the first page of results spread across the pile.
+ *
+ * Zero means no cap, which is the function's old behaviour exactly; one document needs no cap.
+ *
+ * PURE.
+ */
+export function perDocumentCap(limit: number, documents: number): number {
+  if (documents <= 1) return 0;
+  return Math.max(2, Math.ceil(limit / documents));
+}
+
+/**
  * The parsed-document ids behind a canvas's attached sources.
  *
  * 🔴 TWO HOPS, AND BOTH ARE REAL COLUMNS RATHER THAN A GUESS. A canvas source carries
@@ -92,9 +128,10 @@ export async function retrieveChunks(
   sources: readonly CanvasSource[],
   query: string,
   limit: number = TURN_CHUNKS,
+  rpc?: RetrievalRpc,
 ): Promise<RetrievedChunk[] | null> {
   const documentIds = await canvasDocumentIds(sources);
-  return await retrieveInDocuments(documentIds, query, limit);
+  return await retrieveInDocuments(documentIds, query, limit, rpc);
 }
 
 /**
@@ -113,27 +150,76 @@ export async function retrieveInDocuments(
   documentIds: readonly string[],
   query: string,
   limit: number = TURN_CHUNKS,
+  rpc: RetrievalRpc = liveRpc,
 ): Promise<RetrievedChunk[] | null> {
   const asked = query.trim();
   if (!asked) return null;
   if (documentIds.length === 0) return null;
 
   // 🔴 THE SAME EMBEDDER THAT PRODUCED THE STORED VECTORS, reached the same way. Two clients drift,
-  // and a mismatched vector space fails as bad results rather than as an error — the worst kind of
+  // and a mismatched vector space fails as bad results rather than as an error: the worst kind of
   // failure to own, because nothing looks broken.
-  const embedded = await supabase.rpc("embed_teaching_query", { q: asked.slice(0, 2000) });
+  const embedded = await rpc("embed_teaching_query", { q: asked.slice(0, 2000) });
   const embedding = embedded.data;
   if (embedded.error || !embedding) return null;
 
-  const matched = await supabase.rpc("match_canvas_chunks", {
-    match_count: limit,
-    match_threshold: MATCH_THRESHOLD,
-    parsed_document_ids: [...documentIds],
-    query_embedding: embedding,
-  });
-  if (matched.error || !Array.isArray(matched.data) || matched.data.length === 0) return null;
+  /**
+   * 🔴 FAIR FIRST, FLAT IF THE DATABASE IS OLDER THAN THIS CODE. `per_document` arrived with the
+   * migration `20260903T20_match_canvas_chunks_per_doc.sql`, which the owner applies by hand, so
+   * for some window the deployed function will not know the parameter and PostgREST will refuse
+   * the call. That refusal reports differently across PostgREST versions (a missing function, an
+   * ambiguous one), so the retry is on ANY error rather than on a guessed code: one extra call on
+   * a path that has already failed, and the answer is the flat top-k retrieval that shipped the day
+   * before rather than no retrieval at all. Once the flat shape has been needed it is used for the
+   * rest of this turn; nothing re-probes.
+   */
+  let fair = true;
+  const match = async (ids: readonly string[], count: number, perDocument: number) => {
+    const args = {
+      match_count: count,
+      match_threshold: MATCH_THRESHOLD,
+      parsed_document_ids: [...ids],
+      query_embedding: embedding,
+    };
+    if (fair) {
+      const attempt = await rpc("match_canvas_chunks", { ...args, per_document: perDocument });
+      if (!attempt.error) return attempt;
+      fair = false;
+    }
+    return await rpc("match_canvas_chunks", args);
+  };
 
-  return (matched.data as Record<string, unknown>[]).map((row) => ({
+  const distinct = [...new Set(documentIds)];
+  const matched = await match(distinct, limit, perDocumentCap(limit, distinct.length));
+  if (matched.error || !Array.isArray(matched.data) || matched.data.length === 0) return null;
+  const first = chunksFromRows(matched.data);
+
+  /**
+   * 🔴🔴 THE SECOND PASS: A DOCUMENT THE FIRST PAGE HAD NO ROOM FOR GETS ITS ONE BEST PASSAGE.
+   * With fifty documents capped at two rows each there are a hundred candidates for twenty-four
+   * seats, so the global limit still turns some documents away, and those are exactly the ones the
+   * inventory will then list as "matched nothing". One more call, restricted to the documents that
+   * got nothing and asking for one row each, puts a passage under every document that has one
+   * above the threshold. It is additive on purpose: the owner's bar is that all fifty are heard,
+   * not that the packet stays at twenty-four.
+   *
+   * 🔴 AND IT IS SKIPPED WHEN IT COULD NOT FIND ANYTHING. A first page shorter than the limit was
+   * not cut by the limit: every document with a passage above the threshold is already on it (the
+   * per-document cap never removes a document's FIRST row), so a document missing from a short
+   * page has nothing above the threshold, and a second call would come back empty for it. At most
+   * one extra call, and only when the limit is what did the excluding.
+   */
+  const missing = documentsWithout(distinct, first);
+  if (missing.length === 0 || first.length < limit) return first;
+  // The flat shape cannot cap per document, so it is asked for more rows and thinned in code; the
+  // fair shape returns one row per document and the thinning changes nothing.
+  const second = await match(missing, fair ? missing.length : missing.length * 4, 1);
+  if (second.error || !Array.isArray(second.data)) return first;
+  return [...first, ...bestPerDocument(chunksFromRows(second.data))];
+}
+
+function chunksFromRows(rows: unknown[]): RetrievedChunk[] {
+  return (rows as Record<string, unknown>[]).map((row) => ({
     chunkIndex: Number(row.chunk_index ?? 0),
     content: String(row.content ?? ""),
     headingPath: Array.isArray(row.heading_path) ? (row.heading_path as string[]) : null,
@@ -142,6 +228,79 @@ export async function retrieveInDocuments(
     title: String(row.title ?? ""),
     unitLabel: typeof row.unit_label === "string" ? row.unit_label : null,
   }));
+}
+
+/** The document ids no chunk came from, in the order given. PURE. */
+export function documentsWithout(documentIds: readonly string[], chunks: readonly RetrievedChunk[]): string[] {
+  const represented = new Set(chunks.map((chunk) => chunk.parsedDocumentId));
+  return [...new Set(documentIds)].filter((id) => !represented.has(id));
+}
+
+/** One chunk per document: the most similar. Order of first appearance. PURE. */
+export function bestPerDocument(chunks: readonly RetrievedChunk[]): RetrievedChunk[] {
+  const best = new Map<string, RetrievedChunk>();
+  for (const chunk of chunks) {
+    const held = best.get(chunk.parsedDocumentId);
+    if (!held || chunk.similarity > held.similarity) best.set(chunk.parsedDocumentId, chunk);
+  }
+  return [...best.values()];
+}
+
+/**
+ * Whether a question names enough to be worth narrowing the material to.
+ *
+ * 🔴 STRUCTURAL, NOT A KEYWORD LIST. "Help me learn this", "summarise these", "what is in here"
+ * are asked of a PILE, and retrieval answers them with whichever document's opening happened to
+ * embed closest, which on a fresh seven-document drop was one document ("there's only one document
+ * I can read", the model said, with seven attached). A question with more than four distinctive
+ * words is about something in particular, and narrowing to the passages that match it is right
+ * even when they come from a minority of the pile.
+ *
+ * The words are counted by the SAME matcher course filing and focus use (`contentWords`, with the
+ * shorter floor names get, so "law" and "art" count), so a fourth rule cannot drift from the first
+ * three. PURE.
+ */
+export function questionIsSpecific(text: string): boolean {
+  return contentWords(text, NAME_MIN_WORD).size > 4;
+}
+
+/**
+ * Whether a retrieval covered enough of the pile to stand in for it.
+ *
+ * Half, because below that the packet is more "the documents this question happened to embed
+ * near" than "the learner's material", and a contentless question deserves the latter. PURE.
+ */
+export function retrievalIsBroad(attached: number, matched: number): boolean {
+  return attached > 0 && matched * 2 >= attached;
+}
+
+/**
+ * Every attached source, physically present: the retrieved excerpts of the ones that matched, and
+ * the opening excerpt of the ones that did not.
+ *
+ * 🔴🔴 NAMED IS NOT PRESENT. `inventoryNote` already lists every document, and the model still
+ * said "there's only one document I can read", because a name in a list is not text under a
+ * header. A source that matched nothing rides along with its first excerpt: enough to say what it
+ * is about, nowhere near enough to answer from, and the retrieval note says which is which. Ids
+ * are untouched, so a citation into an opening resolves like any other.
+ *
+ * Order is the canvas's own, so the packet reads in the same order as the inventory. A source with
+ * nothing readable in it has no opening to show and is left to the inventory's ATTACHED BUT NOT
+ * READ marking. PURE.
+ */
+export function everyDocumentPresent(all: readonly CanvasSource[], focused: readonly CanvasSource[]): CanvasSource[] {
+  const matched = new Map(focused.map((source) => [source.id, source] as const));
+  const present: CanvasSource[] = [];
+  for (const source of all) {
+    const hit = matched.get(source.id);
+    if (hit) {
+      present.push(hit);
+      continue;
+    }
+    const opening = source.excerpts.find((excerpt) => excerpt.text.trim().length > 0);
+    if (opening) present.push({ ...source, excerpts: [opening] });
+  }
+  return present;
 }
 
 /**
@@ -229,16 +388,54 @@ function flatten(text: string): string {
  * model set up to answer for the whole pile. `groundingBlock` has stated its own truncation since it
  * was written; this states a narrower and more useful version of the same fact, because here the
  * omission is deliberate rather than a budget running out.
+ *
+ * 🔴🔴 IT COUNTS DOCUMENTS AGAINST THE PILE, NOT AGAINST THEMSELVES. This used to be handed the
+ * number of documents the passages came from and called that "N attached documents", so five
+ * matches out of seven read as "selected from 5 attached documents": a false count of the pile,
+ * and with one match out of seven it said "the attached document", singular, about a canvas
+ * holding seven. The model believed it. Given the true total it now says "5 of the 7", names the
+ * others as attached, readable and listed above, and forbids calling them missing. A caller that
+ * cannot supply the total gets wording that claims nothing about it.
  */
-export function retrievalNote(documentCount: number, chunkCount: number): string {
-  const documents = documentCount === 1 ? "the attached document" : `${documentCount} attached documents`;
-  return (
-    `The passages below were selected from ${documents} because they bear on what you were asked. ` +
+export interface RetrievalNoteShape {
+  /** Every document attached to the canvas, matched or not. */
+  documents: number;
+  /** The unmatched documents' opening lines ride below the matched passages anyway. */
+  openings?: boolean;
+}
+
+export function retrievalNote(documentCount: number, chunkCount: number, attached?: RetrievalNoteShape): string {
+  const tail =
     `They are ${chunkCount} passage${chunkCount === 1 ? "" : "s"} of a larger body of material, not all of it. ` +
     `Answer from what is here. If what you were asked needs something that is not in these passages, say ` +
     `plainly that it is not in the material you were given rather than filling the gap from general knowledge, ` +
-    `and never claim to have covered a document end to end.`
-  );
+    `and never claim to have covered a document end to end.`;
+
+  let from: string;
+  let unmatched = "";
+  if (attached === undefined) {
+    from = `${documentCount} of the documents attached to this canvas`;
+    unmatched =
+      ` The complete list of what is attached is above. An attached document with no passage below matched ` +
+      `nothing for this question; it is still attached and readable, and must not be described as missing, ` +
+      `unavailable or not uploaded.`;
+  } else if (documentCount >= attached.documents) {
+    from = attached.documents === 1 ? "the attached document" : `all ${attached.documents} attached documents`;
+  } else {
+    const rest = attached.documents - documentCount;
+    const they = rest === 1 ? "it is" : "they are";
+    from = `${documentCount} of the ${attached.documents} attached documents`;
+    unmatched =
+      ` The other ${rest} matched nothing for this question. ${rest === 1 ? "It is" : "They are"} attached and ` +
+      `readable, ${they} listed in the inventory above` +
+      (attached.openings
+        ? `, and only ${rest === 1 ? "its" : "their"} opening lines appear below so you can tell what ` +
+          `${rest === 1 ? "it is" : "each is"} about`
+        : "") +
+      `. Never describe ${rest === 1 ? "it" : "them"} as missing, unavailable or not uploaded.`;
+  }
+
+  return `The passages below came from ${from} because they bear on what you were asked.${unmatched} ${tail}`;
 }
 
 /**

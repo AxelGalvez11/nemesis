@@ -41,7 +41,7 @@ import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { docBlocks } from "@/lib/export/doc-blocks";
 import { downloadDeck } from "@/lib/export/deck-download";
-import { downloadDocx, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
+import { downloadDocx, downloadMarkdown, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
 import { cn } from "@/lib/utils";
@@ -66,7 +66,11 @@ import { PdfPages } from "./pdf-pages";
 const DOWNLOAD_LABEL: Record<string, string> = {
   slides: "Download .pptx",
   document: "Download .docx",
-  note: "Download .docx",
+  // 🔴 `.md`, NOT `.docx`, SINCE 2026-09-03. A note is Markdown from the moment it is written, and
+  // this button promised a Word file for it. Owner: *"I like to make a markdown file of all the
+  // points that I should be able to recall from memory myself."* `report` keeps .docx: a cited
+  // research report is something a learner hands in, and Word is what it is handed in as.
+  note: "Download .md",
   pdf: "Download .pdf",
   report: "Download .docx",
   sheet: "Download .csv",
@@ -401,6 +405,11 @@ export function OutputPreview({
     if (output.kind === "slides" && output.deck) return void downloadDeck(output.deck, output.title);
     if (output.kind === "sheet" && output.sheet) return void downloadSheet(output.sheet as SheetData, output.title);
     if (!markdown) return;
+    // 🔴 A NOTE LEAVES AS THE MARKDOWN IT IS. Every Markdown output used to go through the Word
+    // writer, so the one artifact whose text was already the file the learner wanted was the one
+    // re-encoded on the way out. `document` and `report` still hand over .docx and `pdf` a PDF:
+    // those are the formats they were asked for as. See `markdownBlob` for the rest of the reason.
+    if (output.kind === "note") return void downloadMarkdown(markdown, output.title);
     void (output.kind === "pdf" ? downloadPdf(markdown, output.title) : downloadDocx(markdown, output.title));
   };
 

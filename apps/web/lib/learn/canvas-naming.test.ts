@@ -239,5 +239,7 @@ test("🔴🔴 a refusal retires the exchange, a failure leaves it eligible, and
 });
 
 test("🔴 the name starts at send, so the title usually beats the answer to the save", () => {
-  assert.match(SESSION, /if \(canvasNeedsName\(latest\.current\)\) void tryNameRef\.current\(`ask:\$\{said\}`, \{ asked: said, replied: "" \}\);/, "the send-time head start is gone; naming waits for the reply again");
+  // 🔴 `said &&` since 2026-09-03: a send with files and no words is a turn now, and an empty
+  // opener has nothing to name from; the with-reply try that follows still names it.
+  assert.match(SESSION, /if \(said && canvasNeedsName\(latest\.current\)\) void tryNameRef\.current\(`ask:\$\{said\}`, \{ asked: said, replied: "" \}\);/, "the send-time head start is gone; naming waits for the reply again");
 });

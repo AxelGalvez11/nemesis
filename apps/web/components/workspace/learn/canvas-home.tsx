@@ -30,6 +30,7 @@ import { usePoke } from "@/components/character/use-poke";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
+import { createReadPool } from "@/lib/learn/read-pool";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
 import { connectionStatus, NOT_CONFIGURED } from "@/lib/workspace/composio-client";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
@@ -52,6 +53,9 @@ import { pastedTextFile } from "@/lib/learn/composer-text";
 import { putPending, type PendingAttachment } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
 import { useCanvasDictation } from "./use-canvas-dictation";
+
+/** One pool for the front door's reads; module-level for the same reason as the canvas's. */
+const frontDoorReadPool = createReadPool();
 
 /**
  * How long the composer takes to reach the bottom, and therefore how long the send waits.
@@ -547,11 +551,15 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
     setReadState((current) => ({ ...current, [key]: "reading" }));
     setReadProgress((current) => ({ ...current, [key]: 0 }));
     // 🔴 EVERY STOP IS A STEP THAT FINISHED, never a timer — see `lib/workspace/read-progress.ts`.
-    const run = extractFile(file, userId, {
-      folderPath: CANVAS_FILING_FOLDER,
-      keep: true,
-      onPhase: (phase) => setReadProgress((current) => ({ ...current, [key]: advanceRead(current[key] ?? 0, phase) })),
-    });
+    // 🔴 THROUGH THE POOL, so a folder dropped on the front door reads a few files at a time
+    // rather than all at once. See lib/learn/read-pool.ts.
+    const run = frontDoorReadPool.run(() =>
+      extractFile(file, userId, {
+        folderPath: CANVAS_FILING_FOLDER,
+        keep: true,
+        onPhase: (phase) => setReadProgress((current) => ({ ...current, [key]: advanceRead(current[key] ?? 0, phase) })),
+      }),
+    );
     reads.current.set(key, run);
     // 🔴 THE STATE HANDLER IS ALSO WHAT MARKS THE PROMISE HANDLED. Without it a read that fails
     // while the learner never sends would surface as an unhandled rejection in their console. The

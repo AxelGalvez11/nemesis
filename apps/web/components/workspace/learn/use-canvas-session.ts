@@ -44,6 +44,8 @@ import { blocksForConcepts, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { fileMoment, lastThingSaid, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
 import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { attachOutcomeMessage } from "@/lib/learn/attach-outcome";
+import { supabase } from "@/lib/supabase";
 import { isMakerCapability } from "@/lib/learn/composer-capability";
 import { researchStepLabel } from "@/lib/research/research-progress";
 import { planResearch } from "@/lib/research/run-research";
@@ -242,6 +244,12 @@ export interface CanvasSession {
    */
   milestones: readonly string[];
   stage: TurnStage;
+  /** The answer's prose as it streams in, before the finished reply exists. */
+  draft: string;
+  /** Whether the last answer arrived through a draft. */
+  drafted: boolean;
+  /** The lines the last turn showed while it worked, and how long it took. */
+  lastTurn: { lines: readonly string[]; seconds: number } | null;
   /** A real step running inside the turn — the caption's fallback when no milestone covers it. */
   work: string | null;
   workApp: string | null;
@@ -385,7 +393,6 @@ export interface CanvasSession {
    * 2026-08-26: *"don't give the user both tests and flashcards at the same time unless they
    * specifically ask for it."*
    */
-  testOffer: "quiz" | "cards" | "both";
   /** The questions the TURN wrote, when it wrote usable ones.
    *
    *  🔴 CARRIED BESIDE `testRequested` RATHER THAN REPLACING IT, because the two answer different
@@ -573,6 +580,27 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * that trusts `busy` to mean "this is running now".
    */
   const [milestones, setMilestones] = useState<readonly string[]>([]);
+  /**
+   * The answer's prose as it streams in, before the turn has resolved.
+   *
+   * 🔴 A DRAFT, NEVER THE RECORD. `aside` is written once, from the finished reply, with every
+   * figure resolved and every expression typeset; this is the raw prose on its way there, drawn
+   * so the learner reads the answer as it is written (owner 2026-09-03: "like every model does
+   * nowadays"). Cleared the moment the finished reply lands.
+   */
+  const [draft, setDraft] = useState("");
+  /**
+   * What the last turn showed while it worked, kept for the row that replaces the caption.
+   *
+   * 🔴 LINES AND A DURATION, NOTHING ELSE. These are the model's own learner-facing milestones,
+   * already refused one by one by `turn-preview.ts`; raw reasoning has no path into this state.
+   */
+  const [lastTurn, setLastTurn] = useState<{ lines: readonly string[]; seconds: number } | null>(null);
+  const turnStartedAt = useRef(0);
+  const shownLines = useRef<readonly string[]>([]);
+  /** Whether the last answer arrived through a draft, so the canvas does not replay its arrival. */
+  const [drafted, setDrafted] = useState(false);
+  const draftedRef = useRef(false);
   const [stage, setStage] = useState<TurnStage>("decided");
   /**
    * A real step running inside the turn, named, for the caption slot.
@@ -661,7 +689,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * because it cannot become a state the learner is left sitting inside.
    */
   const [testRequested, setTestRequested] = useState(false);
-  const [testOffer, setTestOffer] = useState<"quiz" | "cards" | "both">("quiz");
   /**
    * How many things this turn just remembered, for the "Memory updated" line.
    *
@@ -907,6 +934,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     setStage("decided");
     setWork(null);
     setWorkApp(null);
+    setDraft("");
+    setDrafted(false);
+    setLastTurn(null);
     setError(null);
     setOpening(null);
     setAside(null);
@@ -916,7 +946,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     setResearchPlan(null);
     setMadeArtifact(null);
     setTestRequested(false);
-    setTestOffer("quiz");
     setMemoryNotice(0);
     setSearchedDomains([]);
     setTestQuestions(null);
@@ -1239,6 +1268,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * nothing made it wait.
    */
   const attaching = useRef<Set<Promise<void>>>(new Set());
+  /**
+   * How many documents have landed since the last turn consumed the count.
+   *
+   * 🔴 COUNTED AS THEY LAND, READ ONCE BY THE TURN. The packet says "N arrived with THIS message"
+   * and the router's arrival rule keys on it, so the count must belong to exactly one send: the
+   * turn that follows the attach takes it and zeroes it.
+   */
+  const arrivals = useRef(0);
   /** Resolves once every attach that has started (or starts while waiting) has SETTLED — settled,
    *  not succeeded: a failed upload already reported itself through the error strip, and holding
    *  every later turn hostage to one bad file would turn it into a dead canvas. */
@@ -1258,199 +1295,228 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // IS reading slides, not because a timer advanced a list.
       const firstName = Array.from(files)[0]?.name ?? "";
       setBusy({ kind: "source", label: thinkingCopy("reading_source", readingSubjectFor(firstName)) });
+      const failed: string[] = [];
+      let attached = 0;
+      let anyDurable = false;
       try {
         for (const [index, file] of Array.from(files).entries()) {
-          // The existing extraction chokepoint — same door chat attachments, Library import
-          // and syllabus import all use. No second pipeline.
-          //
-          // 🔴 `keep` IS WHAT MAKES CROSS-SESSION LEARNING POSSIBLE AT ALL. Without it a file
-          // under 4 MB took the inline lane, which has no stored row for a parse to attach to —
-          // so a canvas attachment produced no `library_sources` row, no `parsed_documents` row
-          // and no durable id. Everything the canvas then learned from that document was anchored
-          // to a string that means nothing outside this one canvas: a second canvas built on the
-          // same lecture could not tell it was the same lecture, and retrieval, which needs a
-          // filed row, returned nothing at all. Chat keeps the old default on purpose — a photo
-          // dropped into a conversation should not silently become a permanent document.
-          //
-          // 🔴🔴 A READ THE FRONT DOOR ALREADY STARTED IS CLAIMED, NOT REPEATED (owner 2026-08-31:
-          // *"read them on drop, like chatgpt"*). `started[index]` is the very same `extractFile`
-          // call, begun the moment the file landed on the landing page and handed over with it. If
-          // it has finished, this awaits a settled promise and costs nothing; if it is still
-          // running, this waits out the remainder rather than uploading the bytes a second time.
-          // A rejection propagates here exactly as a fresh failure would, into the catch below.
-          const alreadyReading = started?.[index] ?? null;
-          const extracted = alreadyReading
-            ? await alreadyReading
-            : await extractFile(file, id, { folderPath: CANVAS_FILING_FOLDER, keep: true });
-          // 🔴 A SLOT NUMBER, NOT A DOCUMENT IDENTITY — AND IT IS ONLY UNIQUE BECAUSE NOTHING
-          // REMOVES A SOURCE. This mints a fresh ordinal on every attach, which is why the
-          // duplicate guard in `mergeSourceIntoCanvas` used to compare `id` and could never
-          // fire: production canvas `186d0749` holds one document three times, as s2/s3/s4.
-          // Deduplication now happens there, on `librarySourceId`, which names the DOCUMENT.
-          //
-          // 🔴 CLAIMED, NOT COUNTED. See `claimSourceId` — deriving this from `sources.length`
-          // lost one file in every batch of ten, because ten concurrent uploads all read the same
-          // length before any of them had appended.
-          const sourceId = claimSourceId();
-
-          // 🔴 READ BACK WHAT SURVIVED, RATHER THAN TRUSTING WHAT WAS RETURNED. The upload
-          // response carries the model the parser produced in that request; the canvas has to
-          // work from the one that got STORED, because that is what every later reader sees —
-          // this canvas after a reload, a second canvas, retrieval, extraction. While the two are
-          // built from different inputs, a write that silently failed or a shape the envelope
-          // reader rejects looks perfect here and empty everywhere else.
-          const canonical = extracted.librarySourceId
-            ? await loadCanonicalSource(extracted.librarySourceId)
-            : { ok: false as const, reason: "not-found" as const };
-
-          // 🔴🔴 THE DISCLOSURE READS THE STORED PARSE, NOT THE UPLOAD'S OWN VIEW OF ITSELF, and the
-          // comment directly above is the reason — it was already true for the CONTENT and was
-          // quietly false for the SENTENCE beside it. Measured on the owner's account 2026-08-31:
-          // a lecture whose stored parse describes all 28 of its pictures was attached with
-          // "Incomplete source: 28 pictures were not read", because the request that filed it does
-          // not look at figures and reported its own blindness as the document's. The model was
-          // handed that sentence and dutifully repeated it to him.
-          //
-          // Same rule as `refreshedCoverageNotes`, which re-derives this on every canvas load for
-          // exactly this reason. Two readers of "what could this document not read" must not answer
-          // from two different records.
-          //
-          // 🔴 THE RESPONSE IS STILL THE FALLBACK, for a source with no filed row: nothing is stored
-          // to read back, and saying nothing there would be a silent upgrade from partial to whole.
-          //
-          // 🔴 BOTH SPELLINGS, ONE READ. The panel shows the learner's wording and the packet
-          // carries the model's; they come from the same coverage so they cannot disagree.
-          const disclosure = extracted.librarySourceId
-            ? await storedCoverage(extracted.librarySourceId)
-            : { label: coverageLabel(extracted.coverage), note: coverageNote(extracted.coverage) };
-          const note = disclosure.note ?? undefined;
-          const noteLabel = disclosure.label ?? undefined;
-
-          // 🔴🔴 A FILE THE LEARNER CHOSE KEEPS THE NAME THE LEARNER CHOSE, AS OF 2026-09-03 — the
-          // image rule below, generalised, rather than a second rule beside it. Owner: *"these are
-          // being renamed. Shouldn't they keep their original file names? Sources need to be the
-          // original file names."* He had dropped in `08-insulin.pdf`; the shelf, the pills and the
-          // citations all read `08 insulin`. Nothing had been lost — `library_sources.file_name`
-          // held the real name throughout — but `documentTitle` falls back to `nameFromFile`, which
-          // drops the extension and turns the separators into spaces because that is what makes a
-          // CANVAS readable. A source is not a canvas: it is a file he has a copy of on his own
-          // computer, and he scans the shelf for the string he saved.
-          //
-          // 🔴 A PROMOTED WEB PAGE IS THE ONE EXCEPTION, AND `sourceUrl` IS HOW IT IS KNOWN. Its
-          // "file" is one we invented a moment earlier (`prepareWebSourcePromotion` writes
-          // `<page title>.md`), so handing that name back verbatim would show the learner a file
-          // extension no page they visited ever had. There the old reading is exactly right.
-          //
-          // 🔴 THE OFFER IS STILL CHECKED FOR ITS SHAPE AND NEVER TAKEN WHOLE (owner 2026-08-26:
-          // *"the title of the canvas became really long after adding the docs"*).
-          // `extracted.title` is usually the first line of the parse, which is the title for most
-          // documents and a row of column names for one that opens on a table; both paths below
-          // still run it past `document-title.ts` rather than trusting it.
-          const attachedTitle = sourceUrl
-            ? documentTitle(extracted.title, file.name)
-            : attachedFileTitle(file.name, extracted.title);
-
-          const source: CanvasSource = {
-            id: sourceId,
-            // 🔴🔴 AN IMAGE IS TITLED BY ITS FILE, NOT BY WHAT A MODEL SAW IN IT. Reported
-            // 2026-08-20 as "nemesis does not accept any images" — and it accepts them perfectly.
-            // What the learner saw was a chip reading "[An illustration of three solid black
-            // horizontal bars of varying lengths stacked vertically against a light gray
-            // background." Their photo, described back at them in brackets, truncated. That reads
-            // as a failure, and it is the same shape as the drawing that was sent back to be
-            // proofread: the product answering a picture with prose about the picture.
+          // 🔴🔴 ONE TRY PER FILE, AND THAT IS WHAT A FIFTY-FILE DROP NEEDED MOST. One `try` used to
+          // wrap this whole loop, so the first file that could not be read aborted every file
+          // after it, and the only report was that one file's error. Owner, 2026-09-03: *"there
+          // should be no problem with any of them."* A bad file now costs exactly that file; the
+          // report at the end names it. See lib/learn/attach-outcome.ts.
+          try {
+            // The existing extraction chokepoint — same door chat attachments, Library import
+            // and syllabus import all use. No second pipeline.
             //
-            // 🔴 THE DESCRIPTION IS NOT DISCARDED — it is the source's CONTENT, which is exactly
-            // what a vision read produces and what the canvas learns from. Only the NAME changes,
-            // to the one the learner recognises. `attachedTitle` above now says the same thing
-            // about every other kind of file, which is why this branch is no longer the exception
-            // it was written as.
-            title: extracted.kind === "image" ? file.name : attachedTitle,
-            kind: extracted.kind ?? "text",
-            // Three inputs, in order of how much is known about them, and the fallbacks are
-            // fallbacks rather than dead code: an image has no structural pass at all, and a PDF
-            // the structural reader could not open falls back to `unpdf`.
+            // 🔴 `keep` IS WHAT MAKES CROSS-SESSION LEARNING POSSIBLE AT ALL. Without it a file
+            // under 4 MB took the inline lane, which has no stored row for a parse to attach to —
+            // so a canvas attachment produced no `library_sources` row, no `parsed_documents` row
+            // and no durable id. Everything the canvas then learned from that document was anchored
+            // to a string that means nothing outside this one canvas: a second canvas built on the
+            // same lecture could not tell it was the same lecture, and retrieval, which needs a
+            // filed row, returned nothing at all. Chat keeps the old default on purpose — a photo
+            // dropped into a conversation should not silently become a permanent document.
             //
-            //   1. the STORED canonical parse — the one everything else reads;
-            //   2. the model from this request — right, but only until the tab closes;
-            //   3. the flat text — a heading becomes a guess and a table becomes pipe soup.
+            // 🔴🔴 A READ THE FRONT DOOR ALREADY STARTED IS CLAIMED, NOT REPEATED (owner 2026-08-31:
+            // *"read them on drop, like chatgpt"*). `started[index]` is the very same `extractFile`
+            // call, begun the moment the file landed on the landing page and handed over with it. If
+            // it has finished, this awaits a settled promise and costs nothing; if it is still
+            // running, this waits out the remainder rather than uploading the bytes a second time.
+            // A rejection propagates here exactly as a fresh failure would, into the catch below.
+            const alreadyReading = started?.[index] ?? null;
+            const extracted = alreadyReading
+              ? await alreadyReading
+              : await extractFile(file, id, { folderPath: CANVAS_FILING_FOLDER, keep: true });
+            // 🔴 A SLOT NUMBER, NOT A DOCUMENT IDENTITY — AND IT IS ONLY UNIQUE BECAUSE NOTHING
+            // REMOVES A SOURCE. This mints a fresh ordinal on every attach, which is why the
+            // duplicate guard in `mergeSourceIntoCanvas` used to compare `id` and could never
+            // fire: production canvas `186d0749` holds one document three times, as s2/s3/s4.
+            // Deduplication now happens there, on `librarySourceId`, which names the DOCUMENT.
             //
-            // 🔴 AND A MISSING MODEL IS "UNKNOWN", NEVER "FLAT". Reading absence the second way
-            // is how a two-column paper gets filed as prose.
-            excerpts: canonical.ok
-              ? excerptsFromSourceContext(sourceId, canonical.context)
-              : extracted.model
-                ? buildExcerptsFromModel(sourceId, extracted.model)
-                : buildExcerpts(sourceId, extracted.text),
-            ...(note ? { coverageNote: note } : {}),
-            ...(noteLabel ? { coverageLabel: noteLabel } : {}),
-            // 🔴 STATED, NOT LEFT TO BE INFERRED. A reader must not have to work out durability
-            // from whether some other field happens to be set — an ephemeral source can teach this
-            // canvas perfectly well, and must not pretend to support anything that outlives it.
-            durability: extracted.librarySourceId ? "durable" : "ephemeral",
-            ...(extracted.librarySourceId ? { librarySourceId: extracted.librarySourceId } : {}),
-            ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
-            // A promoted web result remains traceable to the page it came from. This metadata is
-            // supplied only by `attachUrl`; ordinary uploads correctly leave it absent.
-            ...(sourceUrl ? { sourceUrl } : {}),
-          };
-          update((current) => mergeSourceIntoCanvas(current, source));
-          // 🔴 THE MOMENT, NOT A COPY OF THE SOURCE. It stores the id; the title is read back
-          // from `canvas.sources` when the rail draws, so renaming a source renames its history row
-          // and detaching one cannot leave a stale title on the rail. See lib/learn/canvas-moment.ts.
-          recordMoment({ kind: "source", sourceIds: [source.id] });
+            // 🔴 CLAIMED, NOT COUNTED. See `claimSourceId` — deriving this from `sources.length`
+            // lost one file in every batch of ten, because ten concurrent uploads all read the same
+            // length before any of them had appended.
+            const sourceId = claimSourceId();
 
-          // 🔴 THE FIRST TIME THE RUNNING APP CREATES DURABLE KNOWLEDGE. Until this landed,
-          // `extractKnowledgeObjects` existed and was called only by tests and scripts, so the
-          // production tables could only ever be filled by hand — which is why nothing could
-          // accumulate across sessions no matter how correct the extractor was.
-          //
-          // 🔴 THE SAME FUNCTION A SECOND CANVAS CALLS ON OPEN, AND THAT IS WHY IT CONVERGES.
-          // Attaching here and resolving there are the identical path over the identical source,
-          // so both land on the same identity keys and therefore the same rows. A bespoke
-          // extract-on-attach would be a second implementation of the step the cross-session claim
-          // rests on, free to drift from it by one edit.
-          //
-          // Deliberately BEST-EFFORT and after the canvas has already been updated: a learner
-          // whose material is attached and readable must not lose the attachment because the
-          // knowledge layer had a bad day. §13 — "semantic extraction failed" must never be
-          // reported as "file upload failed". What fails here costs adaptation, not the lesson.
-          if (canonical.ok && extracted.librarySourceId) {
-            void (async () => {
-              // No bypass here on purpose: attaching a file is not a request to run the policy on
-              // material it cannot teach, so the ordinary rule decides whether anything is stored.
-              const resolved = await ensureKnowledgeForCanvas(uid, latest.current);
-              canvasCapture("knowledge_extracted", latest.current, {
-                objectives: resolved.objectives.length,
-                outcome: resolved.outcome,
-                // 🔴 LOGGED, BECAUSE `objectives: 0` NO LONGER MEANS EXTRACTION FOUND NOTHING.
-                // Knowledge is stored only for a canvas the policy owns, so a mixed document now
-                // reports zero objectives having extracted plenty — and without these three fields
-                // that reads in production as a broken extractor rather than a deliberate refusal.
-                owned: resolved.ownership.owns,
-                refusal: resolved.ownership.refusal,
-                substantiveUnits: resolved.coverage.substantive,
-                unrepresentedUnits: resolved.coverage.unrepresented,
-              });
-            })();
+            // 🔴 READ BACK WHAT SURVIVED, RATHER THAN TRUSTING WHAT WAS RETURNED. The upload
+            // response carries the model the parser produced in that request; the canvas has to
+            // work from the one that got STORED, because that is what every later reader sees —
+            // this canvas after a reload, a second canvas, retrieval, extraction. While the two are
+            // built from different inputs, a write that silently failed or a shape the envelope
+            // reader rejects looks perfect here and empty everywhere else.
+            const canonical = extracted.librarySourceId
+              ? await loadCanonicalSource(extracted.librarySourceId)
+              : { ok: false as const, reason: "not-found" as const };
+
+            // 🔴🔴 THE DISCLOSURE READS THE STORED PARSE, NOT THE UPLOAD'S OWN VIEW OF ITSELF, and the
+            // comment directly above is the reason — it was already true for the CONTENT and was
+            // quietly false for the SENTENCE beside it. Measured on the owner's account 2026-08-31:
+            // a lecture whose stored parse describes all 28 of its pictures was attached with
+            // "Incomplete source: 28 pictures were not read", because the request that filed it does
+            // not look at figures and reported its own blindness as the document's. The model was
+            // handed that sentence and dutifully repeated it to him.
+            //
+            // Same rule as `refreshedCoverageNotes`, which re-derives this on every canvas load for
+            // exactly this reason. Two readers of "what could this document not read" must not answer
+            // from two different records.
+            //
+            // 🔴 THE RESPONSE IS STILL THE FALLBACK, for a source with no filed row: nothing is stored
+            // to read back, and saying nothing there would be a silent upgrade from partial to whole.
+            //
+            // 🔴 BOTH SPELLINGS, ONE READ. The panel shows the learner's wording and the packet
+            // carries the model's; they come from the same coverage so they cannot disagree.
+            const disclosure = extracted.librarySourceId
+              ? await storedCoverage(extracted.librarySourceId)
+              : { label: coverageLabel(extracted.coverage), note: coverageNote(extracted.coverage) };
+            const note = disclosure.note ?? undefined;
+            const noteLabel = disclosure.label ?? undefined;
+
+            // 🔴🔴 A FILE THE LEARNER CHOSE KEEPS THE NAME THE LEARNER CHOSE, AS OF 2026-09-03 — the
+            // image rule below, generalised, rather than a second rule beside it. Owner: *"these are
+            // being renamed. Shouldn't they keep their original file names? Sources need to be the
+            // original file names."* He had dropped in `08-insulin.pdf`; the shelf, the pills and the
+            // citations all read `08 insulin`. Nothing had been lost — `library_sources.file_name`
+            // held the real name throughout — but `documentTitle` falls back to `nameFromFile`, which
+            // drops the extension and turns the separators into spaces because that is what makes a
+            // CANVAS readable. A source is not a canvas: it is a file he has a copy of on his own
+            // computer, and he scans the shelf for the string he saved.
+            //
+            // 🔴 A PROMOTED WEB PAGE IS THE ONE EXCEPTION, AND `sourceUrl` IS HOW IT IS KNOWN. Its
+            // "file" is one we invented a moment earlier (`prepareWebSourcePromotion` writes
+            // `<page title>.md`), so handing that name back verbatim would show the learner a file
+            // extension no page they visited ever had. There the old reading is exactly right.
+            //
+            // 🔴 THE OFFER IS STILL CHECKED FOR ITS SHAPE AND NEVER TAKEN WHOLE (owner 2026-08-26:
+            // *"the title of the canvas became really long after adding the docs"*).
+            // `extracted.title` is usually the first line of the parse, which is the title for most
+            // documents and a row of column names for one that opens on a table; both paths below
+            // still run it past `document-title.ts` rather than trusting it.
+            const attachedTitle = sourceUrl
+              ? documentTitle(extracted.title, file.name)
+              : attachedFileTitle(file.name, extracted.title);
+
+            const source: CanvasSource = {
+              id: sourceId,
+              // 🔴🔴 AN IMAGE IS TITLED BY ITS FILE, NOT BY WHAT A MODEL SAW IN IT. Reported
+              // 2026-08-20 as "nemesis does not accept any images" — and it accepts them perfectly.
+              // What the learner saw was a chip reading "[An illustration of three solid black
+              // horizontal bars of varying lengths stacked vertically against a light gray
+              // background." Their photo, described back at them in brackets, truncated. That reads
+              // as a failure, and it is the same shape as the drawing that was sent back to be
+              // proofread: the product answering a picture with prose about the picture.
+              //
+              // 🔴 THE DESCRIPTION IS NOT DISCARDED — it is the source's CONTENT, which is exactly
+              // what a vision read produces and what the canvas learns from. Only the NAME changes,
+              // to the one the learner recognises. `attachedTitle` above now says the same thing
+              // about every other kind of file, which is why this branch is no longer the exception
+              // it was written as.
+              title: extracted.kind === "image" ? file.name : attachedTitle,
+              kind: extracted.kind ?? "text",
+              // Three inputs, in order of how much is known about them, and the fallbacks are
+              // fallbacks rather than dead code: an image has no structural pass at all, and a PDF
+              // the structural reader could not open falls back to `unpdf`.
+              //
+              //   1. the STORED canonical parse — the one everything else reads;
+              //   2. the model from this request — right, but only until the tab closes;
+              //   3. the flat text — a heading becomes a guess and a table becomes pipe soup.
+              //
+              // 🔴 AND A MISSING MODEL IS "UNKNOWN", NEVER "FLAT". Reading absence the second way
+              // is how a two-column paper gets filed as prose.
+              excerpts: canonical.ok
+                ? excerptsFromSourceContext(sourceId, canonical.context)
+                : extracted.model
+                  ? buildExcerptsFromModel(sourceId, extracted.model)
+                  : buildExcerpts(sourceId, extracted.text),
+              ...(note ? { coverageNote: note } : {}),
+              ...(noteLabel ? { coverageLabel: noteLabel } : {}),
+              // 🔴 STATED, NOT LEFT TO BE INFERRED. A reader must not have to work out durability
+              // from whether some other field happens to be set — an ephemeral source can teach this
+              // canvas perfectly well, and must not pretend to support anything that outlives it.
+              durability: extracted.librarySourceId ? "durable" : "ephemeral",
+              ...(extracted.librarySourceId ? { librarySourceId: extracted.librarySourceId } : {}),
+              ...(canonical.ok ? { parseQuality: canonical.context.quality } : {}),
+              // A promoted web result remains traceable to the page it came from. This metadata is
+              // supplied only by `attachUrl`; ordinary uploads correctly leave it absent.
+              ...(sourceUrl ? { sourceUrl } : {}),
+            };
+            update((current) => mergeSourceIntoCanvas(current, source));
+            // 🔴 THE MOMENT, NOT A COPY OF THE SOURCE. It stores the id; the title is read back
+            // from `canvas.sources` when the rail draws, so renaming a source renames its history row
+            // and detaching one cannot leave a stale title on the rail. See lib/learn/canvas-moment.ts.
+            recordMoment({ kind: "source", sourceIds: [source.id] });
+
+            // 🔴 THE FIRST TIME THE RUNNING APP CREATES DURABLE KNOWLEDGE. Until this landed,
+            // `extractKnowledgeObjects` existed and was called only by tests and scripts, so the
+            // production tables could only ever be filled by hand — which is why nothing could
+            // accumulate across sessions no matter how correct the extractor was.
+            //
+            // 🔴 THE SAME FUNCTION A SECOND CANVAS CALLS ON OPEN, AND THAT IS WHY IT CONVERGES.
+            // Attaching here and resolving there are the identical path over the identical source,
+            // so both land on the same identity keys and therefore the same rows. A bespoke
+            // extract-on-attach would be a second implementation of the step the cross-session claim
+            // rests on, free to drift from it by one edit.
+            //
+            // Deliberately BEST-EFFORT and after the canvas has already been updated: a learner
+            // whose material is attached and readable must not lose the attachment because the
+            // knowledge layer had a bad day. §13 — "semantic extraction failed" must never be
+            // reported as "file upload failed". What fails here costs adaptation, not the lesson.
+            canvasCapture("source_attached", latest.current, {
+              kind: source.kind,
+              excerpts: source.excerpts.length,
+              chars: extracted.text.length,
+              // Logged so the proportion of canvases running on a degraded parse is findable in
+              // production without a student having to report one.
+              durability: extracted.librarySourceId ? "durable" : "ephemeral",
+              grounding: canonical.ok ? "canonical" : extracted.model ? "response-model" : "text",
+              ...(canonical.ok ? { quality: canonical.context.quality } : {}),
+            });
+            attached += 1;
+            arrivals.current += 1;
+            if (canonical.ok && extracted.librarySourceId) anyDurable = true;
+          } catch (cause) {
+            failed.push(file.name);
+            canvasCapture("source_attach_failed", latest.current, {
+              name: file.name,
+              reason: cause instanceof Error ? cause.message.slice(0, 200) : "unknown",
+            });
           }
-
-          canvasCapture("source_attached", latest.current, {
-            kind: source.kind,
-            excerpts: source.excerpts.length,
-            chars: extracted.text.length,
-            // Logged so the proportion of canvases running on a degraded parse is findable in
-            // production without a student having to report one.
-            durability: extracted.librarySourceId ? "durable" : "ephemeral",
-            grounding: canonical.ok ? "canonical" : extracted.model ? "response-model" : "text",
-            ...(canonical.ok ? { quality: canonical.context.quality } : {}),
-          });
         }
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Nemesis couldn't read that file.");
       } finally {
         setBusy({ kind: null });
       }
+      // 🔴🔴 ONCE PER BATCH, AFTER THE LAST FILE, NOT ONCE PER FILE INSIDE THE LOOP. This used to
+      // fire for every attached file over the sources attached so far, and its key changes with
+      // every attach, so fifty files meant fifty extraction runs over 1 + 2 + ... + 50 documents:
+      // about 1,275 full parse loads and up to fifty racing model calls for one drop. One run over
+      // the finished pile lands on the same identity keys, which is the convergence the cross-
+      // session claim rests on (see `ensureKnowledgeForCanvas`). Still best-effort and still after
+      // the canvas is updated: what fails here costs adaptation, never the attachment.
+      if (anyDurable) {
+        void (async () => {
+          const resolved = await ensureKnowledgeForCanvas(uid, latest.current);
+          canvasCapture("knowledge_extracted", latest.current, {
+            objectives: resolved.objectives.length,
+            outcome: resolved.outcome,
+            owned: resolved.ownership.owns,
+            refusal: resolved.ownership.refusal,
+            substantiveUnits: resolved.coverage.substantive,
+            unrepresentedUnits: resolved.coverage.unrepresented,
+          });
+        })();
+        // 🔴🔴 THE INDEXER IS ASKED TO RUN NOW, NOT IN UP TO FIVE MINUTES. Chunking and embedding
+        // happen on a cron that ticks every five minutes and takes ten documents a tick, so a
+        // fifty-file drop was not searchable for twenty minutes and the first turns fell back to
+        // reading the pile in order. `run_source_indexing()` was written and granted for exactly
+        // this (migration 20260903T10) and nothing ever called it. Fire and forget: a refusal or
+        // an error here changes nothing the learner can see.
+        void supabase.rpc("run_source_indexing").then(
+          () => undefined,
+          () => undefined,
+        );
+      }
+      const outcome = attachOutcomeMessage(attached, failed);
+      if (outcome) setError(outcome);
     },
     [recordMoment, requireUid, update],
   );
@@ -1829,7 +1895,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       try {
         const result =
           kind === "flashcards"
-            ? await makeFlashcardsDeliverable(uid, latest.current)
+            ? await makeFlashcardsDeliverable(uid, latest.current, topic)
             : kind === "slides"
               ? await makeSlidesDeliverable(uid, latest.current, topic)
               : kind === "document" || kind === "pdf"
@@ -1855,7 +1921,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
                     (step) => narrate(researchStepLabel(step)),
                     plan,
                   )
-                : await makeNoteDeliverable(uid, latest.current);
+                : await makeNoteDeliverable(uid, latest.current, topic);
         if ("error" in result) {
           setError(result.error);
           return false;
@@ -1923,7 +1989,16 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const id = requireUid();
       if (!id) return null;
       const said = question.trim();
-      if (!said) return null;
+      // 🔴🔴 AN EMPTY SEND WITH MATERIAL IS A TURN. This returned on `!said`, so a learner who
+      // dropped seven lectures and pressed send without a word got the files filed and no reply at
+      // all. Owner, 2026-09-03: *"even if I don't drop in like a prompt or anything... it should be
+      // able to say like, okay, yes, I see what you dropped in."* With nothing in flight and nothing
+      // just landed, an empty send is still nothing.
+      // 🔴 A RESUMED TURN KEEPS ITS EMPTY WORDS: the learner answered the arrival's question on the
+      // card, and `answerClarification` re-runs the same (empty) utterance with the answer in the
+      // packet. Refusing it here would drop the one answer the whole arrival was waiting for.
+      const resumed = surroundings.clarified.length > 0;
+      if (!said && !resumed && attaching.current.size === 0 && arrivals.current === 0) return null;
 
       // 🔴🔴 THE TURN WAITS FOR MATERIAL ALREADY IN FLIGHT. A document dropped on the front door
       // (or attached seconds before typing) is uploading and parsing while this runs; the packet
@@ -1932,6 +2007,11 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // perfectly (production, 2026-08-31). The learner is not kept in the dark meanwhile:
       // `attachFiles` holds the busy caption ("Reading your slides") for as long as this waits.
       await settledAttachments();
+      // 🔴 THE ARRIVAL COUNT BELONGS TO THIS TURN. Read once and zeroed, so the packet can say "N
+      // arrived with THIS message" on this send and never again.
+      const arrived = arrivals.current;
+      arrivals.current = 0;
+      if (!said && !resumed && arrived === 0) return null;
 
       // 🔴 THE NAME STARTS AT SEND, NOT AT RESOLVE. The old namer could only run once the reply
       // had landed and been recorded, which put the whole answer's round trip plus its own
@@ -1942,7 +2022,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // the answer arrives. Keyed on the text, not a moment id: the moment does not exist yet,
       // and if this attempt is refused, the recorded moment still gets its own with-reply try -
       // a reply can settle a subject an opener alone could not.
-      if (canvasNeedsName(latest.current)) void tryNameRef.current(`ask:${said}`, { asked: said, replied: "" });
+      if (said && canvasNeedsName(latest.current)) void tryNameRef.current(`ask:${said}`, { asked: said, replied: "" });
 
       // 🔴🔴 A DECLARED DEEP RESEARCH SUBMISSION SKIPS THE ROUTER ENTIRELY, and that is the whole
       // difference between the chip and `TurnDecision.wantsReport`. `wantsReport` is the model
@@ -1954,7 +2034,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // shared with ordinary chat, so nothing is spent until the learner has seen what it intends
       // to look up and pressed Start. Planning is one model call and no searches, which is what
       // makes showing them affordable.
-      if (capability === "research") {
+      if (capability === "research" && said) {
         setBusy({ blockIds: [], kind: "command", label: "Planning the research" });
         try {
           const planned = await planResearch(id, said);
@@ -2004,6 +2084,12 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       }
       setError(null);
       setBusy({ kind: "command", blockIds: [], label: "Thinking" });
+      setDraft("");
+      setLastTurn(null);
+      shownLines.current = [];
+      turnStartedAt.current = performance.now();
+      draftedRef.current = false;
+      setDrafted(false);
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
       // `thinking-phases.ts`'s rule holds: a caption is emitted by a step that is genuinely running,
       // never by a timer walking through plausible-sounding stages.
@@ -2011,7 +2097,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // RATHER THAN REPLACING IT. Course rides in the packet, research stopped above, the makers
       // returned above; Web search alone continues into an ordinary turn with one thing decided.
       const forceWeb = capability === "search";
-      const result = await askCanvasChat(id, latest.current, said, surroundings, undefined, staged?.content ?? "", (found, domains) => {
+      const result = await askCanvasChat(id, latest.current, said, { ...surroundings, arrived }, undefined, staged?.content ?? "", (found, domains) => {
         // 🔴 THE HOSTS TRACK THE BEAT THEY ARRIVED ON. `[]` on the outgoing request clears the
         // previous round; the real list replaces it the moment the results land.
         setSearchedDomains(domains);
@@ -2038,7 +2124,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // 🔴 IT DOES NOT OVERWRITE A NAMED STEP THAT IS GENUINELY RUNNING. `onSearching` fires while
       // pages are being fetched and says how many; that is a fact about work in flight, and a plan
       // is a claim about work to come. The search caption wins for as long as it is true.
-      (next) => setMilestones(next),
+      (next) => {
+        setMilestones(next);
+        if (next.length > 0) shownLines.current = next;
+      },
       (next) => setStage(next),
       // 🔴 A REAL STEP, REPORTED WHILE IT RUNS, AND IT DOES NOT LOCK THE COMPOSER. The preview
       // prefers a milestone over it, so this shows only where the model had nothing to say about
@@ -2053,12 +2142,26 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // learner deciding, so it forces the first round rather than being argued for in the packet.
       forceWeb,
       // The voice head start, riding through untouched — the gate (spoken turns only) is inside.
-      onSpokenOpener);
+      onSpokenOpener,
+      // The answer as it is written, straight into the live region.
+      (prose) => {
+        setDraft(prose);
+        draftedRef.current = true;
+      });
       setBusy({ kind: null });
       setMilestones([]);
       setStage("decided");
       setWork(null);
       setWorkApp(null);
+      setDraft("");
+      setDrafted(draftedRef.current);
+      // 🔴 THE ROW THAT REPLACES THE CAPTION: only when the turn showed something. A turn that
+      // showed nothing (a greeting) leaves no row, which is the owner's first rule about the slot.
+      setLastTurn(
+        shownLines.current.length > 0
+          ? { lines: shownLines.current, seconds: (performance.now() - turnStartedAt.current) / 1000 }
+          : null,
+      );
       // 🔴🔴 GATED BEFORE ANYTHING READS IT — owner ruling, 2026-08-23: a course builds ONLY behind
       // the Course chip. The contract says so too, but "teach me" over a fat PDF read as a course
       // order once already, and the cost was a minutes-long research pass and a canvas renamed
@@ -2082,15 +2185,21 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // the rigid lane. A "quiz me" is an ordinary reply now, so gating on `study` made the chips
       // unreachable — a feature that shipped and could never fire again. What stops it becoming a
       // mode is the clearing above, not the turn's kind.
-      // 🔴 EITHER REQUEST OPENS THE CARD; `testOffer` is what it shows. Keying the card on
-      // `wantsTest` alone would leave "make me flashcards" with nowhere to land.
-      setTestRequested(decision.wantsTest || decision.wantsCards);
-      setTestOffer(
-        decision.wantsTest && decision.wantsCards ? "both" : decision.wantsCards ? "cards" : "quiz",
-      );
+      // 🔴 THE CHECK IS A QUIZ, AND ONLY `wantsTest` OPENS IT. "make me flashcards" lands in the
+      // deck maker below, so the card no longer needs to know what it is showing.
+      // 🔴🔴 "MAKE ME FLASHCARDS" MAKES A DECK NOW, IN EVERY PHRASING. Until 2026-09-03 the phrase
+      // door (`readDeliverableAsk`) made a real deck and any wording it missed fell through to
+      // `wantsCards`, which flipped the check's multiple-choice questions over and called them
+      // cards: a "back" that was one answer option, nothing kept, nothing atomic. Two products for
+      // one request, chosen by wording. Owner: *"the flashcards to be as atomic as possible... based
+      // on concepts... flashcards should also pop in the right side panel too."* The model reading
+      // the sentence still decides that cards were wanted; what it triggers is the card writer, in
+      // the background, exactly as a turn-decided report is made. The check stays a quiz.
+      setTestRequested(decision.wantsTest);
       // 🔴 CLEARED ON EVERY TURN, LIKE THE REQUEST ITSELF. Questions from two turns ago answering
       // under a third turn's ask is the "mode" shape §38 exists to prevent.
-      setTestQuestions(decision.wantsTest || decision.wantsCards ? decision.check : null);
+      setTestQuestions(decision.wantsTest ? decision.check : null);
+      if (decision.wantsCards) void makeDeliverable("flashcards", said, undefined, true);
       const thisTurn = (checkTurn.current += 1);
 
       // 🔴🔴 A REPORT IS A DECISION THE MODEL MAKES, NOT A PHRASE THE CODE MATCHES. This used to be
@@ -3115,6 +3224,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     busy,
     error,
     aside,
+    draft,
+    drafted,
+    lastTurn,
     milestones,
     stage,
     work,
@@ -3135,7 +3247,6 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     clarified,
     answerClarification,
     dismissClarification,
-    testOffer,
     testQuestions,
     testRequested,
     clearTest,

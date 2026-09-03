@@ -28,12 +28,20 @@ import { KIND_MARKS } from "@/lib/learn/kind-mark";
  * object, and they now say so.
  *
  * 🔴 THE EXTENSION STAYS HERE, because it is not a fact about a KIND of file. It is what THIS
- * surface hands the file over as, and it is meaningless for the three outputs that are not files.
+ * surface hands the file over as, and it is meaningless for the two outputs that are not files.
+ *
+ * 🔴🔴 A NOTE IS A `.md` SINCE 2026-09-03, AND THE CARD SAYS SO. It carried no extension, so the card
+ * showed a bare title while the download button one click further in produced a Word file: a note
+ * that was Markdown from the moment it was written, re-encoded on the way out. Owner: *"I like to
+ * make a markdown file of all the points that I should be able to recall from memory myself."* The
+ * name on the card is now the name of the file that lands in Downloads, built by the same function
+ * that names it, and the glyph is still `KIND_MARKS.text`: the mark an attached .md draws, because
+ * a note Nemesis wrote and a Markdown file the learner dropped in are the same object.
  */
 const KIND: Record<string, { extension: string; icon: string; label: string; tint: string }> = {
   document: { extension: "docx", ...KIND_MARKS.document },
   flashcards: { extension: "", icon: "layers", label: "Flashcards", tint: "--ui-kind-purple" },
-  note: { extension: "", ...KIND_MARKS.text },
+  note: { extension: "md", ...KIND_MARKS.text },
   pdf: { extension: "pdf", ...KIND_MARKS.pdf },
   report: { extension: "", icon: "book", label: "Research", tint: "--ui-kind-cyan" },
   sheet: { extension: "csv", ...KIND_MARKS.sheet },

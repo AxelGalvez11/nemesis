@@ -56,7 +56,7 @@ const SENTENCE_SEAM = /(?<=[.!?…])\s/;
  * now asks the model to omit everything false or empty, so on a voice turn absence is the norm,
  * not the exception.
  */
-function plainReply(decision: Record<string, unknown>): boolean {
+export function plainReply(decision: Record<string, unknown>): boolean {
   if (decision.then !== undefined && decision.then !== "reply") return false;
   if (decision.needsWeb === true || decision.needsPapers === true) return false;
   if (decision.wantsTest === true || decision.wantsCards === true) return false;

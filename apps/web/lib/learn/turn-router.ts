@@ -474,6 +474,25 @@ export interface TurnContext {
   canvasTitle: string;
   /** How many sources are attached. */
   sources: number;
+  /**
+   * How many documents were attached by THIS message, as opposed to the running total above.
+   *
+   * 🔴🔴 THE MODEL COULD NOT TELL AN ARRIVAL FROM A SESSION. "7 sources attached" reads the same on
+   * the turn the seven lectures landed and on the fortieth turn after, so the first reply over a
+   * fresh pile plunged into whichever lecture came first. Owner, 2026-09-03: *"it should be able to
+   * say like, okay, yes, I see what you dropped in. You dropped in all these lectures that are
+   * about this. What would you like to learn first."* Optional so every existing packet and test
+   * is unchanged: absent means nothing arrived.
+   */
+  arrived?: number;
+  /**
+   * The learner sent material and wrote nothing. Only meaningful beside `arrived`.
+   *
+   * 🔴 THE EMPTY SEND USED TO PRODUCE NO TURN AT ALL: files landed, the canvas opened, and nobody
+   * said a word. The utterance the packet carries in that case is `ARRIVAL_UTTERANCE`, and this
+   * flag is how the state block explains it.
+   */
+  saidNothing?: boolean;
   /** How many passages the study document holds. */
   passages: number;
   /**
@@ -1189,7 +1208,16 @@ const DECISION_CONTRACT = [
   + "beside the prose. Always use one when the learner asks for a flow chart, diagram, mind map "
   + "or similar. Keep a diagram under about fifteen nodes, write labels as short plain "
   + 'text in double quotes (no HTML, no LaTeX inside labels), and let the prose still carry the '
-  + "explanation. Never decorate: a plain fact, a definition, or a feeling needs no diagram. The "
+  + "explanation. "
+  // 🔴🔴 THE MIND MAP IS THE EXCEPTION TO THE SIZE CAP, BECAUSE IT IS NOT A PICTURE ANY MORE. Since
+  // 2026-09-03 a `mindmap` fence draws as an interactive tree the learner opens branch by branch
+  // (owner: *"a hierarchical mind map... a ladder of things you need to know from shallow to
+  // deeply detailed"*), so depth costs nothing on screen and is the whole point of asking for one.
+  + "A mindmap is the exception to that cap: it draws as an interactive tree the learner opens "
+  + "one branch at a time, so when they ask for a mind map go deep, three to five levels and up "
+  + "to about sixty nodes, the big ideas nearest the root and the specifics at the leaves, one "
+  + "idea per node in a few words, every branch drawn from their material. "
+  + "Never decorate: a plain fact, a definition, or a feeling needs no diagram. The "
   + 'typed "visuals" array is unchanged and still preferred for everything it '
   + "covers: plots and bar charts with real numbers, mechanisms, structures, anatomy, figures.",
   "",
@@ -1267,8 +1295,10 @@ const DECISION_CONTRACT = [
   + "latest treatment recommendations\". Four to twelve words each, conversational, no percentages, "
   + "no step numbers, no counts, no jargon, and never the word \"thinking\". The order is: what you "
   + "are doing first; what you do while searching (only if needsWeb is true); what you do with what "
-  + "you find; how you finish. Give an empty array for anything you can simply answer, which is "
-  + "most turns.",
+  + "you find; how you finish. Give an empty array for a greeting, small talk or a one-line answer. "
+  + "For an answer that draws on the learner's material or takes real composing, write two to four "
+  + "lines about THEIR material and THIS answer (which lecture you are reading, what you are "
+  + "comparing, what you are laying out), never generic ones.",
   "",
   '"topic" is the subject this turn is about, whenever the learner named one. On a "study" turn it '
   + "is what gets taught; on a \"reply\" it is what Nemesis would teach if the learner then asked to "
@@ -1784,6 +1814,34 @@ const DECISION_CONTRACT = [
   + "\"question\" on a \"study\" turn does neither: the turn is parked, the card is shown, and the "
   + "study you chose runs once they answer.",
   "",
+  // 🔴🔴 ARRIVAL: THE FIRST TURN OVER A FRESH PILE IS ORIENTATION, NOT A LESSON. Measured on the
+  // owner's own canvas 2026-09-03: seven lectures dropped in, "help me learn this", and the reply
+  // opened "Happy to help you learn this. Let me start by getting the big picture straight" and
+  // taught the first lecture's comparison table. It never said which seven documents it had, never
+  // asked what he wanted, and the six other lectures were invisible. Owner, same day: *"it should
+  // be able to say like, okay, yes, I see what you dropped in. You dropped in all these lectures
+  // that are about this. What would you like to learn first... it'd be nice if it could offer some
+  // suggestions, like creating a hierarchical mind map... that shouldn't be hard coded."*
+  //
+  // 🔴 THE STATE BLOCK IS WHAT MAKES THIS DETECTABLE: "N of them arrived with THIS message". Without
+  // it every turn over an attached pile looks the same, and the rule would fire on turn forty.
+  //
+  // 🔴 SUGGESTED, NEVER SCRIPTED. The mind map is named as an example of an approach because the
+  // canvas can draw one; it is one option among the learner's own material, not a plan.
+  "ARRIVAL. When the state says documents arrived with THIS message and the learner's words are "
+  + "open (\"help me learn this\", \"here are my lectures\", or nothing at all), this turn is "
+  + "orientation: not a lesson, and not a stub. First say what arrived, from what is actually in "
+  + "the material: name each document and what it covers in a few words (past eight documents, "
+  + "group them by theme instead), so they can see you have read all of it. Then ask what they "
+  + "want first, through \"question\" on a \"study\" turn: two to four real starting points drawn "
+  + "from their material (a document, a theme that runs through several, the order they come in), "
+  + "allowOther true. You may add ONE suggestion for how to take the whole pile, for example a "
+  + "mind map of the material from the big ideas down to the details, or working through the "
+  + "documents in their own order; offer it, never impose it, and never by rote. If their words "
+  + "already say where to start, or there is a single short document, skip the question and go. "
+  + "The text before the card is this account of what arrived, and on an arrival it may run to a "
+  + "short paragraph: the one-sentence cap on text above a card does not apply here.",
+  "",
   "\"teach me biology\" or \"create a course on biology\" is worth a question: general biology, "
   + "cell and molecular biology and human biology are different courses, and building the wrong one "
   + "wastes days. \"teach me Python\" is too, because programming fundamentals, data analysis and "
@@ -1806,7 +1864,8 @@ const DECISION_CONTRACT = [
   + "when the learner has just answered one, do not ask another: go and do the thing.",
   "",
   "Keep the text after the block to a sentence at most when you ask, and do not repeat the "
-  + "question inside it. The learner is about to read the question itself on a card underneath.",
+  + "question inside it. The learner is about to read the question itself on a card underneath. "
+  + "The ARRIVAL turn above is the one exception: there the account of what arrived comes first.",
   "",
   // 🔴🔴 AN ORDERED PROCEDURE, NOT A PILE OF MAXIMS, AND THE ORDER IS MEASURED. Three earlier
   // drafts each fixed one direction and broke the other, because the two rules genuinely conflict
@@ -1831,7 +1890,8 @@ const DECISION_CONTRACT = [
   + "through something, ask for help understanding something, or ask for the study document itself "
   + "to be written or changed? Then \"study\". Go ahead with what they said: do not ask which part "
   + "first and do not ask them to narrow it down, because the learning system asks better questions "
-  + "than you can from here. Keep \"say\" to a few words.",
+  + "than you can from here. Keep \"say\" to a few words. The one exception is an ARRIVAL with open "
+  + "words, described above: there the first move is to say what arrived and ask what to take first.",
   "",
   // 🔴🔴 MEASURED IN A BROWSER 2026-08-21, AND IT IS THE ONLY GAP LEFT IN STEP 1. Owner typed "can
   // you teach me a new language". Step 1 fired, correctly — that is a request to be taught — and
@@ -1898,6 +1958,15 @@ const DECISION_CONTRACT = [
   + "both.",
 ].join("\n");
 
+/**
+ * What the packet carries as the learner's words when they sent material and wrote nothing.
+ *
+ * 🔴 A SENTINEL, NOT A FORGED SENTENCE. The learner's bubble and the recorded moment keep the empty
+ * text they actually sent; only the model needs a user message that is not blank, and this one
+ * says exactly what happened. The state block carries the instruction that goes with it.
+ */
+export const ARRIVAL_UTTERANCE = "(Sent documents without writing anything.)";
+
 /** The canvas's own state, written as facts rather than as instructions. */
 export function stateBlock(context: TurnContext): string {
   const lines: string[] = [];
@@ -1908,6 +1977,16 @@ export function stateBlock(context: TurnContext): string {
       ? `${context.sources} source${context.sources === 1 ? "" : "s"} attached.`
       : "No material attached yet.",
   );
+  if ((context.arrived ?? 0) > 0) {
+    const arrived = context.arrived ?? 0;
+    lines.push(
+      `${arrived} of ${arrived === 1 ? "them" : "them"} arrived with THIS message, so the learner is looking at material they have `
+      + "just handed over."
+      + (context.saidNothing
+        ? " They sent it without writing anything: read that as an open ask to help them learn it."
+        : ""),
+    );
+  }
   lines.push(
     context.passages > 0
       ? `The study document holds ${context.passages} passage${context.passages === 1 ? "" : "s"}.`
@@ -2186,7 +2265,14 @@ const DECISION_BLOCK = /```json\s*\n?([\s\S]*?)```/;
  */
 function milestonesFrom(parsed: Record<string, unknown>, then: TurnAction): readonly string[] {
   const searching = parsed.needsWeb === true;
-  if (then === "reply" && !searching) return [];
+  // 🔴🔴 A PLAIN REPLY KEEPS ITS LINES NOW (2026-09-03). The rule above ("a plain reply gets none")
+  // was right while the typed turn did not stream: its milestones arrived with the answer and
+  // could narrate nothing. The typed turn streams, so the lines the model wrote at the head of
+  // its reply are on screen seconds before the prose, and they are the "reasoning summary" the
+  // owner asked for. What still keeps a greeting quiet is the model writing an empty array for
+  // it, which the contract asks for by name, and `readMilestones` refusing anything that is not
+  // a real line.
+  void then;
   return readMilestones(parsed.milestones, searching);
 }
 

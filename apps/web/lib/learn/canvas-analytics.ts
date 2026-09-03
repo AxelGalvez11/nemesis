@@ -27,6 +27,8 @@ export type CanvasEvent =
   // like a conversation.
   | "canvas_submission_not_an_attempt"
   | "source_attached"
+  /** One file in a batch could not be read; the batch carried on without it. */
+  | "source_attach_failed"
   // Durable knowledge minted from an attached source. Counts only — never the extracted content,
   // which is the learner's own material.
   | "knowledge_extracted"
