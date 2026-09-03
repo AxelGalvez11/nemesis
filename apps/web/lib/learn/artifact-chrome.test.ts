@@ -154,15 +154,27 @@ test("🔴🔴 the Library asks about a file; a canvas never does", () => {
   //
   // Measured in his Chrome the same day at 1470x836: a 604x52 pill at radius 28, centred in the
   // pane, 25px clear of the bottom, reading "Ask about this file".
+  //
+  // 🔴🔴 ONE COPY SINCE 2026-09-03, AND THE THIRD SURFACE IS WHY. This used to check that TWO files
+  // each contained the markup above — which is exactly the shape that let the flashcard panel ship
+  // with no bar at all, since it was in neither list. Owner: *"it should be the same, basically the
+  // one it has for the document."* The measurements live in `reader-ask.tsx` now and the three
+  // surfaces are checked for USING it, which a fourth surface cannot quietly opt out of.
+  const ASK = code("../../components/workspace/learn/reader-ask.tsx");
+  assert.match(ASK, /placeholder="Ask about this file"/, "the ask bar is gone");
+  assert.match(ASK, /h-\[52px\] w-full max-w-\[604px\][\s\S]{0,40}rounded-\[28px\]/, "the ask bar lost the measured pill");
+  assert.match(ASK, /bottom-\[25px\]/, "the ask bar lost its measured clearance");
   const view = code("../../components/workspace/deck/deck-view.tsx");
-  for (const [name, source] of [["output-preview", PREVIEW], ["deck-view", view]] as const) {
-    assert.match(source, /placeholder="Ask about this file"/, `${name}: the ask bar is gone`);
-    assert.match(source, /h-\[52px\] w-full max-w-\[604px\][\s\S]{0,40}rounded-\[28px\]/, `${name}: the ask bar lost the measured pill`);
-    assert.match(source, /bottom-\[25px\]/, `${name}: the ask bar lost its measured clearance`);
+  const study = code("../../components/workspace/learn/study-panel.tsx");
+  for (const [name, source] of [["output-preview", PREVIEW], ["deck-view", view], ["study-panel", study]] as const) {
+    assert.match(source, /<ReaderAsk\b/, `${name}: this artifact stopped drawing the shared ask bar`);
+    // 🔴 AND NOBODY MAY HAND-WRITE IT AGAIN. Two hand-typed copies is what this was.
+    assert.ok(!/placeholder="Ask about this file"/.test(source), `${name}: the ask bar was hand-written back into this file`);
   }
-  // 🔴 THE READER'S BAR IS FULL SCREEN ONLY. Docked, it sits beside a conversation that already has
-  // a composer, and the bar would be the second one on screen with the wrong one nearer.
-  assert.match(PREVIEW, /\{full && onAsk && \(/, "the ask bar shows while docked beside a conversation");
+  // 🔴 THE BAR IS FULL SCREEN ONLY, ON BOTH PANELS. Docked, either sits beside a conversation that
+  // already has a composer, and the bar would be the second one on screen with the wrong one nearer.
+  assert.match(PREVIEW, /\{full && onAsk && <ReaderAsk/, "the reader's ask bar shows while docked beside a conversation");
+  assert.match(study, /\{full && onAsk && <ReaderAsk/, "the deck panel's ask bar shows while docked beside a conversation");
   // 🔴 AND ONLY THE LIBRARY PASSES IT. Asserted as an absence on the canvas, because "the Library
   // has it" passes just as well in a build where everything does.
   const library = code("../../components/workspace/library/library-outputs.tsx");
@@ -270,10 +282,21 @@ test("🔴🔴 flashcards and the check open in the side panel, with full screen
   assert.match(deck, /<StudyPanel/, "a deck no longer opens beside the conversation");
   assert.match(deck, /surface="bare"/, "the docked deck mounts a dialog inside a panel");
   assert.match(deck, /initialMode=\{initialMode\}/, "DeckReview stopped passing the door's choice through");
-  assert.match(panel, /useState<"docked" \| "full">\(initialMode\)/, "the panel ignores where it was told to land");
+  //
+  // 🔴🔴 THIS GUARD PINNED THE BUG IT WAS NAMED AFTER. `useState<"docked" | "full">` was asserted as
+  // proof the panel respected the door, and it was also the whole defect: with only two sizes, the
+  // Library's own full screen had nowhere to step UP to, so the shared-looking button stepped it
+  // DOWN into a side sheet laid over a shelf. Owner, 2026-09-03: *"it opens full screen and when
+  // you undo the full screen it kind of does this, which is different than the documents one."*
+  // The panel reads the shared three-size model now; landing is still the door's call.
+  assert.match(panel, /useState<ReaderMode>\(initialMode\)/, "the panel ignores where it was told to land");
+  assert.match(panel, /setMode\(mode === initialMode \? biggerThan\(initialMode\) : initialMode\)/, "the deck's size toggle stopped keying on where it opened");
+  assert.match(panel, /maximized \? "left-0 z-\[60\]" : full \? "left-\[var\(--nav-column,0px\)\]"/, "the deck panel lost the third size, so exiting full screen docks it again");
   const library = code("../../components/workspace/library/library-outputs.tsx");
   assert.doesNotMatch(library, /<DeckReview[\s\S]{0,140}surface="full"/, "the Library took the chrome-less full-screen path instead of the panel's own");
-  assert.match(library, /<DeckReview deckId=\{reviewing\} initialMode="full"/, "the Library's deck is back to sliding in as a sidebar");
+  // 🔴 REPOINTED 2026-09-03: the mount carries the document's toolbar now, so the two props are no
+  // longer adjacent. `library-geometry.test.ts` checks the rest of what it passes.
+  assert.match(library, /<DeckReview[\s\S]{0,900}initialMode="full"/, "the Library's deck is back to sliding in as a sidebar");
   // 🔴 AND THE CANVAS IS STILL THE OTHER HALF OF THE RULE — asserted, not assumed, because "the
   // Library is full screen" passes just as well in a build where everything is.
   assert.doesNotMatch(canvas, /<DeckReview[\s\S]{0,160}initialMode="full"/, "a canvas now opens its deck full screen, over the conversation it came from");
@@ -358,8 +381,12 @@ test("🔴🔴 there are THREE sizes, and full screen stops at the rail while ma
   // whole screen except for the sidebar. And then if they want a full screen, then the sidebar will
   // disappear."* Two different bignesses, and the panel only had one.
   const reader = readFileSync(new URL("../../components/workspace/learn/output-preview.tsx", import.meta.url), "utf8");
-
-  assert.match(reader, /type Mode = "docked" \| "full" \| "maximized"/, "the third size is gone");
+  // 🔴 THE MODEL MOVED TO `reader-chrome.ts` ON 2026-09-03, beside the measurements, because the
+  // flashcard panel needed the same three sizes and a second copy would have drifted. Both readers
+  // import it; neither may define its own.
+  const chrome = readFileSync(new URL("../../components/workspace/learn/reader-chrome.ts", import.meta.url), "utf8");
+  assert.match(chrome, /export type ReaderMode = "docked" \| "full" \| "maximized"/, "the third size is gone");
+  assert.ok(!/type Mode = "docked"/.test(reader), "the reader defined its own copy of the size model again");
   assert.match(
     reader,
     /maximized \? "left-0 z-\[60\]" : full \? "left-\[var\(--nav-column,0px\)\]"/,
@@ -370,7 +397,7 @@ test("🔴🔴 there are THREE sizes, and full screen stops at the rail while ma
   // and its button has always meant "fill the window" — which is `full`, not `maximized`. A
   // three-way cycle would also make getting back a double press.
   assert.match(reader, /setMode\(mode === initialMode \? biggerThan\(initialMode\) : initialMode\)/, "the size toggle stopped keying on where it opened");
-  assert.match(reader, /return opened === "docked" \? "full" : "maximized"/, "the step up from each opening size changed");
+  assert.match(chrome, /return opened === "docked" \? "full" : "maximized"/, "the step up from each opening size changed");
 
   // 🔴 AND MAXIMIZED MUST NOT GROW A SECOND ✕. Every big size already carries one at the head of
   // the crumb (the reference's placement, pinned above); this is the calibration that caught it.

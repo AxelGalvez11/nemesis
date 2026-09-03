@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { deckFileName, deckToAnkiText, type ExportableCard } from "./deck-export";
+import { deckAsMarkdown, deckFileName, deckToAnkiText, type ExportableCard } from "./deck-export";
 
 const card = (over: Partial<ExportableCard> = {}): ExportableCard => ({
   front: "What does ATP synthase do?",
@@ -86,6 +86,36 @@ test("🔴 a hidden file, an empty name and a DOS device all fall back", () => {
 
 test("🔴 a very long deck name is cut to something a filesystem accepts", () => {
   assert.ok(deckFileName("x".repeat(400)).length <= 84, "the name outgrew the 255-byte limit");
+});
+
+test("🔴🔴 a deck handed to a conversation keeps its line breaks — the opposite of the Anki rule", () => {
+  // Owner, 2026-09-03: an artifact opened from the Library carries an ask bar, and the artifact has
+  // to travel with the question or the question is unanswerable. A deck is cards, not prose, so
+  // this is what "the deck" means in a conversation.
+  //
+  // 🔴 THE TWO EXPORTS PULL IN OPPOSITE DIRECTIONS AND THAT IS WHY THIS IS ASSERTED. `deckToAnkiText`
+  // turns every newline into `<br>` because Anki's importer splits on newlines first. Reusing it
+  // here would hand a model a wall of `<br>` tags, so the markdown path must NOT inherit that.
+  const made = deckAsMarkdown("Beams", [
+    card({ back: "It resists sliding.\nMeasured at a section.", front: "What is shear force?" }),
+    card({ back: "Bending moment.", front: "And the other one?" }),
+  ]);
+  assert.match(made, /^# Beams\n/, "the deck's name is not the heading");
+  assert.match(made, /## 1\. What is shear force\?/, "the cards are not numbered questions");
+  assert.match(made, /It resists sliding\.\nMeasured at a section\./, "a multi-line answer was flattened, the Anki way");
+  assert.ok(!made.includes("<br>"), "the Anki line rule leaked into the conversation format");
+  assert.ok(made.indexOf("## 1.") < made.indexOf("## 2."), "the cards left their order");
+});
+
+test("🔴 a cloze card keeps its markup, because the gap IS what the card teaches", () => {
+  const made = deckAsMarkdown("Law", [card({ front: "{{c1::Pike balancing}} weighs the burden." })]);
+  assert.match(made, /\{\{c1::Pike balancing\}\}/, "the cloze was stripped, leaving a sentence with no gap in it");
+});
+
+test("🔴 an empty deck is still a named document, not an empty string", () => {
+  // A deck that is still loading, or genuinely has no cards, must not send a blank attachment: the
+  // canvas would receive a file with nothing in it and answer about nothing.
+  assert.equal(deckAsMarkdown("Empty", []), "# Empty\n");
 });
 
 console.log("deck-export.test.ts OK");

@@ -43,9 +43,10 @@
 // The load then happens when a learner has already asked to review, which is the one
 // moment it is worth paying for.
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 
 import { StudyPanel } from "@/components/workspace/learn/study-panel";
+import { deckAsMarkdown } from "@/lib/workspace/deck-export";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 import { ReviewSession } from "./review-session";
@@ -57,13 +58,31 @@ import type { StudyReviewSettings } from "./study-chrome";
 export const REVIEW_DEFAULTS: StudyReviewSettings = { flashcardOutline: false, flipAnimation: false };
 
 export function DeckReview({
+  actions,
+  crumb = "Flashcards",
   deckId,
+  onAsk,
   onClose,
   initialMode = "docked",
   surface = "panel",
 }: {
+  /** Header controls the host supplies — the Library passes Download, so the deck's toolbar
+   *  matches the document's. See StudyPanel's own note on the slot. */
+  actions?: ReactNode;
+  /** The muted first half of the header path: the surface you came from. The Library says
+   *  "Library", exactly as it does over a document, so two artifacts opened from one shelf do not
+   *  disagree about where they came from. */
+  crumb?: string;
   /** The deck to review. The component is expected to be mounted only while this is set. */
   deckId: string;
+  /**
+   * Ask a question about this deck, in a new conversation. Absent draws no bar.
+   *
+   * 🔴 THE DECK TRAVELS WITH THE QUESTION. "What does this mean?" is nothing on its own, and the
+   * cards are the only thing here that could answer it — so this hands back the deck as markdown
+   * for the host to attach, the same shape the document reader and `/deck` use.
+   */
+  onAsk?: (question: string, material: { name: string; text: string }) => void;
   onClose: () => void;
   /** Where the panel LANDS — see StudyPanel's own note. The Library opens full screen; a canvas
    *  docks, so the conversation the deck came out of stays on screen beside it. */
@@ -111,7 +130,25 @@ export function DeckReview({
   }
 
   return (
-    <StudyPanel crumb="Flashcards" initialMode={initialMode} onClose={onClose} open title={deck?.name ?? "Flashcards"}>
+    <StudyPanel
+      actions={actions}
+      crumb={crumb}
+      initialMode={initialMode}
+      onAsk={
+        onAsk &&
+        ((question) =>
+          onAsk(question, {
+            name: `${deck?.name ?? "Flashcards"}.md`,
+            // 🔴 THE STORE KEYS CARDS GLOBALLY — every deck on the account is in `cards`, so an
+            // unfiltered hand-off would send somebody's whole library as the answer to a question
+            // about one deck.
+            text: deckAsMarkdown(deck?.name ?? "Flashcards", cards.filter((row) => row.deckId === deckId)),
+          }))
+      }
+      onClose={onClose}
+      open
+      title={deck?.name ?? "Flashcards"}
+    >
       {loading ? (
         <p className="p-6 text-sm text-(--ui-text-secondary)">Opening the deck…</p>
       ) : (

@@ -19,7 +19,9 @@
 
 import { useState } from "react";
 
+import { Codicon } from "@/components/desktop-ui/codicon";
 import { CanvasCheck, CheckCard } from "@/components/workspace/learn/canvas-check";
+import { CHROME } from "@/components/workspace/learn/reader-chrome";
 import { StudyPanel } from "@/components/workspace/learn/study-panel";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
 import { DeckReview } from "@/components/workspace/study/deck-review";
@@ -93,7 +95,8 @@ function Thread({ children }: { children: React.ReactNode }) {
 }
 
 export default function StudyPanelPreview() {
-  const [showing, setShowing] = useState<"check" | "deck">("check");
+  const [showing, setShowing] = useState<"check" | "deck" | "shelf">("check");
+  const [asked, setAsked] = useState<string | null>(null);
   const [open, setOpen] = useState(true);
   const [account, setAccount] = useState<string | null>(null);
 
@@ -102,7 +105,7 @@ export default function StudyPanelPreview() {
       <WorkspaceShell>
         <Thread>
           <div className="flex gap-2">
-            {(["check", "deck"] as const).map((which) => (
+            {(["check", "deck", "shelf"] as const).map((which) => (
               <button
                 className="rounded-full bg-transparent px-3 py-1 text-[length:var(--canvas-text-meta)] ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) aria-pressed:bg-(--ui-action) aria-pressed:text-(--ui-action-glyph)"
                 aria-pressed={showing === which}
@@ -113,11 +116,16 @@ export default function StudyPanelPreview() {
                 }}
                 type="button"
               >
-                {which === "check" ? "Check" : "Flashcards"}
+                {which === "check" ? "Check" : which === "deck" ? "Flashcards (canvas)" : "Flashcards (Library)"}
               </button>
             ))}
           </div>
           <CheckCard onOpen={() => setOpen(true)} open={open} run={RUN} />
+          {asked && (
+            <pre className="m-0 whitespace-pre-wrap rounded-xl p-3 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary)" data-testid="asked-about">
+              {asked}
+            </pre>
+          )}
           {account && (
             <pre className="m-0 whitespace-pre-wrap rounded-xl p-3 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary)">
               {account}
@@ -128,6 +136,27 @@ export default function StudyPanelPreview() {
         {/* 🔴 THE DECK GOES THROUGH ITS REAL DOOR. `DeckReview` owns the panel for flashcards, so
             wrapping a review in `StudyPanel` here would be checking a copy of the shipped path. */}
         {showing === "deck" && <DeckReview deckId={PREVIEW_DECK_ID} onClose={() => setShowing("check")} />}
+
+        {/* 🔴🔴 THE LIBRARY'S DOOR, WHICH IS A DIFFERENT ARRANGEMENT OF THE SAME PANEL and was
+            judged from source for two days because nothing here mounted it. It lands full screen,
+            says it came from the Library, carries the document reader's Download, and floats the
+            ask bar — owner, 2026-09-03: *"it doesn't have the same toolbar… it should be the same,
+            basically the one it has for the document."* Pressing its size button must go UP to
+            maximized and back, never down into a side sheet. */}
+        {showing === "shelf" && (
+          <DeckReview
+            actions={
+              <button aria-label="Download for Anki" className={CHROME.button} title="Download for Anki" type="button">
+                <Codicon name="download" size={CHROME.icon} />
+              </button>
+            }
+            crumb="Library"
+            deckId={PREVIEW_DECK_ID}
+            initialMode="full"
+            onAsk={(question, material) => setAsked(`${question}\n\n--- ${material.name} (${material.text.length} chars) ---\n${material.text.slice(0, 240)}`)}
+            onClose={() => setShowing("check")}
+          />
+        )}
         <StudyPanel
           crumb="Check"
           onClose={() => setOpen(false)}

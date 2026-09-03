@@ -235,7 +235,16 @@ test("🔴🔴 every behaviour the page had before the restyle still works", () 
   // them have different settings… the slides and the documents, they both have different top
   // header settings."* A document opened full screen, a deck slid in a sidebar, and a slide deck
   // LEFT THE PAGE for /deck. One press, one answer, one header band now.
-  assert.match(OUTPUTS, /<DeckReview deckId=\{reviewing\} initialMode="full"/, "a deck opens as a sidebar from the shelf again");
+  //
+  // 🔴🔴 REPOINTED AND WIDENED 2026-09-03. It pinned one line, `<DeckReview deckId={reviewing}
+  // initialMode="full"`, and passed for two days over a deck that still wore a DIFFERENT header
+  // from the document beside it. Owner: *"it doesn't have the same toolbar… it should be the same,
+  // basically the one it has for the document."* Landing full screen was never the whole rule.
+  assert.match(OUTPUTS, /<DeckReview[\s\S]{0,900}initialMode="full"/, "a deck opens as a sidebar from the shelf again");
+  const deckMount = OUTPUTS.slice(OUTPUTS.indexOf("<DeckReview"));
+  assert.match(deckMount, /crumb="Library"/, "a deck opened from this shelf says it came from somewhere else than the document beside it");
+  assert.match(deckMount, /onAsk=\{askAbout\}/, "the deck lost the ask bar the document has");
+  assert.match(deckMount, /aria-label="Download for Anki"/, "the deck's header lost the Download the document's header has");
   assert.match(OUTPUTS, /initialMode="full"[\s\S]{0,400}output=\{reading\.output\}/, "the document reader stopped opening full screen");
   // 🔴 A SLIDE DECK STILL OPENS AS ITS OWN PAGE, AND THE OWNER SAID SO: *"the slides … they open
   // like a new page pretty much. The ones that I have there open a new page. And the library is
@@ -247,7 +256,8 @@ test("🔴🔴 every behaviour the page had before the restyle still works", () 
   assert.match(OUTPUTS, /<DropdownMenuSubTrigger>Move to project<\/DropdownMenuSubTrigger>/, "filing is gone from the row menu");
   assert.match(OUTPUTS, /<DeckShare\b/, "the share sheet is gone");
   assert.match(OUTPUTS, /<OutputPreview\b/, "a document no longer opens in place");
-  assert.match(OUTPUTS, /\{reviewing && <DeckReview /, "pressing a deck no longer reviews it");
+  // 🔴 REPOINTED 2026-09-03: the mount carries props now, so it wraps in parentheses.
+  assert.match(OUTPUTS, /\{reviewing && \(?\s*<DeckReview\b/, "pressing a deck no longer reviews it");
   assert.match(OUTPUTS, /link\.download = deckFileName\(/, "a deck can no longer be downloaded");
   assert.match(OUTPUTS, /createFolder\(userId/, "a folder can no longer be made from the Library");
   // 🔴🔴 THE SLIDE DESIGN CHIP LEFT THIS PAGE, AND THE DOOR IT WAS IS STILL OPEN ELSEWHERE. It

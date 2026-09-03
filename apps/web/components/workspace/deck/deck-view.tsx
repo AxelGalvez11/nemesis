@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { ReaderAsk } from "@/components/workspace/learn/reader-ask";
 import { CHROME } from "@/components/workspace/learn/reader-chrome";
 import { cn } from "@/lib/utils";
 import { composeSlide, composeReferences } from "@/lib/export/deck-compose";
@@ -65,7 +66,6 @@ interface Props {
 }
 
 export function DeckView({ plan, designId, credit = "Made with Nemesis", actions, crumb = "Library", onAsk, onClose }: Props) {
-  const [question, setQuestion] = useState("");
   const [slides, setSlides] = useState<string[]>([]);
   const [at, setAt] = useState(0);
   const [presenting, setPresenting] = useState(false);
@@ -218,39 +218,14 @@ export function DeckView({ plan, designId, credit = "Made with Nemesis", actions
         </div>
       </div>
 
-      {/* 🔴 MEASURED ON THE REFERENCE, 2026-09-01: a 604x52 pill at radius 28, centred, 25px clear
-          of the bottom, reading "Ask about this file". Same numbers as the document reader's, from
-          the same measurement — see output-preview.tsx. */}
+      {/* 🔴 THE SAME BAR THE DOCUMENT READER AND THE FLASHCARD PANEL DRAW — see `reader-ask.tsx`.
+          It was hand-typed here and hand-typed there, which is two copies of a measured control. */}
       {onAsk && (
-        <form
-          className="dk-print-hide pointer-events-none absolute inset-x-0 bottom-[25px] z-10 flex justify-center px-[24px]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const asked = question.trim();
-            if (!asked) return;
-            onAsk(asked, { name: `${plan.title}.md`, text: deckAsText(plan) });
-          }}
-        >
-          <div className="pointer-events-auto flex h-[52px] w-full max-w-[604px] items-center gap-[8px] rounded-[28px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) pl-[20px] pr-[6px] shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
-            <input
-              aria-label={`Ask about ${plan.title}`}
-              // 🔴 §46.3-exempt: the reference's own 16px, which is also the iOS zoom threshold for
-              // an input — not a step on the canvas type scale.
-              className="min-w-0 flex-1 bg-transparent text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask about this file"
-              value={question}
-            />
-            <button
-              aria-label="Ask"
-              className="grid size-[40px] shrink-0 place-items-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity disabled:opacity-30"
-              disabled={question.trim() === ""}
-              type="submit"
-            >
-              <Codicon name="arrow-up" size="20px" />
-            </button>
-          </div>
-        </form>
+        <ReaderAsk
+          className="dk-print-hide z-10"
+          label={plan.title}
+          onAsk={(question) => onAsk(question, { name: `${plan.title}.md`, text: deckAsText(plan) })}
+        />
       )}
 
       <div className="dk-print-hide relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
