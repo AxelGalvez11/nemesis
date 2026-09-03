@@ -18,6 +18,7 @@
 // on a guess is not a feature that can be added later with an apology.
 
 import { runAction } from "./composio-client";
+import { saveCalendarEvent } from "./calendar-model";
 import type { DecodedCalendarEvent } from "./calendar-codec";
 import { findProviderDisagreements, type ProviderDisagreement } from "./calendar-conflicts";
 import {
@@ -85,7 +86,16 @@ export function planPull(
     remoteRows.push(event);
     const mine = byLink.get(linkKey(event.externalProvider, event.externalCalendar, event.externalId));
     if (!mine) {
-      plan.insert.push(event);
+      // 🔴🔴 A CANCELLED EVENT NEMESIS HAS NEVER SEEN IS NOT IMPORTED, AND THIS IS NOT A DETAIL.
+      // The pull asks for cancelled events on purpose, because a lecture the student called off in
+      // Google has to ARRIVE as a cancellation for the row here to stop claiming it is happening.
+      // But one we never held is a thing that is not happening and that we never said was: writing
+      // it down adds a struck-through row for an event the student may never have known about.
+      //
+      // Measured against the owner's real calendar 2026-09-02: 189 events came back for one term
+      // and 50 of them were cancelled. Without this line a first sync would import 50 struck-through
+      // rows, which is a quarter of the calendar, and it would look like the feature was broken.
+      if (event.status !== "cancelled") plan.insert.push(event);
       continue;
     }
     if (mine.externalEtag && event.externalEtag && mine.externalEtag === event.externalEtag) {
@@ -305,4 +315,128 @@ function readWrittenEvent(data: unknown): { id?: string; etag?: string } {
   const id = typeof nested.id === "string" ? nested.id : undefined;
   const etag = typeof nested.etag === "string" ? nested.etag : undefined;
   return { ...(id ? { id } : {}), ...(etag ? { etag } : {}) };
+}
+
+// ── Doing it ───────────────────────────────────────────────────────────────────────────────────
+
+export interface SyncOutcome {
+  ok: boolean;
+  error?: string;
+  added: number;
+  updated: number;
+  /** Held back because Nemesis has its own unsynced change. Needs the student. */
+  disagreements: ProviderDisagreement[];
+  /** The rows to fold into the calendar's state, already saved. */
+  events: DecodedCalendarEvent[];
+}
+
+/** A fresh row id. The database mints uuids and Google's ids are not uuids, so an imported event
+ *  gets a local identity of its own and keeps Google's in `externalId`. */
+function newId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `gcal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Read Google, work out what changed, and write it down.
+ *
+ * 🔴 ONE EVENT AT A TIME, AND ONE FAILURE DOES NOT LOSE THE REST. This is the same rule the
+ * syllabus importer already follows: a single row the database refuses (a title over 300
+ * characters, a colour id this build cannot paint) must not take the other ninety-nine with it.
+ *
+ * 🔴 NOTHING IS WRITTEN FOR A DISAGREEMENT. Those are returned for a student to settle, which is
+ * the difference between a sync that helps and one that quietly reverses a decision they made.
+ */
+export async function syncGoogleCalendar(
+  ctx: { userId: string | null; preview: boolean },
+  options: { window?: PullWindow; existing: readonly DecodedCalendarEvent[] },
+): Promise<SyncOutcome> {
+  const empty = { added: 0, disagreements: [], events: [], updated: 0 };
+  // 🔴 REFUSED HERE, NOT TRUSTED TO A DISABLED BUTTON. In preview, `saveCalendarEvent` writes to
+  // the UNSCOPED legacy localStorage key that the first account signing in on this browser claims
+  // and uploads — so a preview sync would hand one student's Google calendar to another. The
+  // syllabus importer states the same reason at its own guard.
+  if (ctx.preview || !ctx.userId) return { ...empty, error: "Sign in to sync your calendar.", ok: false };
+
+  const pulled = await pullGoogleEvents(options.window ?? defaultWindow());
+  if (!pulled.ok) return { ...empty, error: pulled.error, ok: false };
+
+  const plan = planPull(pulled.events, options.existing);
+  const syncedAt = new Date().toISOString();
+  const saved: DecodedCalendarEvent[] = [];
+  let added = 0;
+  let updated = 0;
+
+  for (const event of plan.insert) {
+    const row = { ...event, externalSyncedAt: syncedAt, id: newId() };
+    try {
+      saved.push((await saveCalendarEvent(row, ctx)) as DecodedCalendarEvent);
+      added += 1;
+    } catch {
+      // Skipped, not fatal. The next sync will try this row again: it is still unlinked locally,
+      // so it stays in `insert` rather than disappearing from future plans.
+    }
+  }
+  for (const { event } of plan.update) {
+    try {
+      saved.push((await saveCalendarEvent({ ...event, externalSyncedAt: syncedAt }, ctx)) as DecodedCalendarEvent);
+      updated += 1;
+    } catch {
+      // Same again: the etag is unchanged locally, so it is still an update next time.
+    }
+  }
+
+  return { added, disagreements: plan.disagreements, events: saved, ok: true, updated };
+}
+
+/**
+ * Settle one disagreement the way the student chose.
+ *
+ * 🔴 THERE IS NO "RESOLVE ALL" AND THERE SHOULD NOT BE. Each of these is a real decision about
+ * when a real thing is happening. A single button that silently applied a heuristic to all of
+ * them is how a student ends up sitting an exam on the wrong day.
+ */
+export async function resolveDisagreement(
+  event: DecodedCalendarEvent,
+  keep: "nemesis" | "provider",
+  ctx: { userId: string | null; preview: boolean },
+  options: { providerCopy?: DecodedCalendarEvent; timeZone?: string; confirmed?: boolean } = {},
+): Promise<{ ok: boolean; error?: string; event?: DecodedCalendarEvent }> {
+  if (ctx.preview || !ctx.userId) return { error: "Sign in to change your calendar.", ok: false };
+  const syncedAt = new Date().toISOString();
+
+  if (keep === "provider") {
+    if (!options.providerCopy) return { error: "Google's version is no longer loaded. Sync again.", ok: false };
+    try {
+      const stored = (await saveCalendarEvent(
+        { ...options.providerCopy, externalSyncedAt: syncedAt, id: event.id },
+        ctx,
+      )) as DecodedCalendarEvent;
+      return { event: stored, ok: true };
+    } catch {
+      return { error: "That did not save. Try again in a moment.", ok: false };
+    }
+  }
+
+  // Keeping the Nemesis version means telling Google about it, not just marking it settled —
+  // otherwise the next sync finds the same disagreement and asks again, forever.
+  const pushed = await pushEventToGoogle(event, {
+    confirmed: options.confirmed === true,
+    timeZone: options.timeZone,
+  });
+  if (!pushed.ok) return { error: pushed.error, ok: false };
+  try {
+    const stored = (await saveCalendarEvent(
+      {
+        ...event,
+        externalSyncedAt: syncedAt,
+        ...(pushed.externalEtag ? { externalEtag: pushed.externalEtag } : {}),
+      },
+      ctx,
+    )) as DecodedCalendarEvent;
+    return { event: stored, ok: true };
+  } catch {
+    return { error: "Google was updated but Nemesis did not save. Sync again.", ok: false };
+  }
 }
