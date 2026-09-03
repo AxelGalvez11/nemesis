@@ -15,16 +15,29 @@
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { docFilename } from "@/lib/export/doc-file";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
+import { KIND_MARKS } from "@/lib/learn/kind-mark";
 
-/** How each kind presents itself: the glyph, its tint, and the extension it hands over as. */
+/**
+ * How each kind presents itself: the glyph, its tint, and the extension it hands over as.
+ *
+ * 🔴🔴 THE GLYPHS AND TINTS MOVED TO `kind-mark.ts` ON 2026-09-03, AND NOTHING ABOUT THEM CHANGED.
+ * Owner, about the sources panel: *"the inputs need to have a unique icon depending on whether it's
+ * a docx, PowerPoint, Excel etc."* The marks for that were already chosen — here — for the files a
+ * canvas MAKES, so the shelf reads them from a shared record instead of a second table that would
+ * agree with this one for about a week. An attached .docx and a produced .docx are the same kind of
+ * object, and they now say so.
+ *
+ * 🔴 THE EXTENSION STAYS HERE, because it is not a fact about a KIND of file. It is what THIS
+ * surface hands the file over as, and it is meaningless for the three outputs that are not files.
+ */
 const KIND: Record<string, { extension: string; icon: string; label: string; tint: string }> = {
-  document: { extension: "docx", icon: "file", label: "Document", tint: "--ui-kind-blue" },
+  document: { extension: "docx", ...KIND_MARKS.document },
   flashcards: { extension: "", icon: "layers", label: "Flashcards", tint: "--ui-kind-purple" },
-  note: { extension: "", icon: "note", label: "Note", tint: "--ui-kind-blue" },
-  pdf: { extension: "pdf", icon: "file-pdf", label: "PDF", tint: "--ui-kind-red" },
+  note: { extension: "", ...KIND_MARKS.text },
+  pdf: { extension: "pdf", ...KIND_MARKS.pdf },
   report: { extension: "", icon: "book", label: "Research", tint: "--ui-kind-cyan" },
-  sheet: { extension: "csv", icon: "table", label: "Spreadsheet", tint: "--ui-kind-green" },
-  slides: { extension: "pptx", icon: "device-camera-video", label: "Presentation", tint: "--ui-kind-amber" },
+  sheet: { extension: "csv", ...KIND_MARKS.sheet },
+  slides: { extension: "pptx", ...KIND_MARKS.slides },
 };
 
 export function ArtifactCard({ onOpen, output }: { onOpen: () => void; output: CanvasOutput }) {

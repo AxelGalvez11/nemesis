@@ -40,6 +40,7 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { DocumentReader } from "@/components/workspace/reader/document-reader";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import type { CanvasSource } from "@/lib/learn/canvas-model";
+import { fileMark } from "@/lib/learn/kind-mark";
 import { readerSourceFromLibrary } from "@/lib/reader/reader-source";
 import type { ReaderSource } from "@/lib/reader/reader-source";
 import { cn } from "@/lib/utils";
@@ -247,6 +248,7 @@ export function SourcePreview({
         >
           {open.map((source) => {
             const current = source.id === activeId;
+            const mark = fileMark(source.title, source.kind);
             return (
               <div
                 className={cn(
@@ -265,11 +267,11 @@ export function SourcePreview({
                   title={source.title}
                   type="button"
                 >
-                  <Codicon
-                    className="shrink-0 text-(--ui-text-tertiary)"
-                    name="file"
-                    size="14px"
-                  />
+                  {/* 🔴 THE SAME MARK THE SHELF DRAWS. A tab strip of six documents was six
+                      identical page glyphs, and this is the surface where telling a deck from a
+                      spreadsheet at a glance matters most — the names truncate at 220px. See
+                      lib/learn/kind-mark.ts. */}
+                  <Codicon className="shrink-0" name={mark.icon} size="14px" style={{ color: `var(${mark.tint})` }} />
                   <span
                     className={cn(
                       CHROME.crumb,

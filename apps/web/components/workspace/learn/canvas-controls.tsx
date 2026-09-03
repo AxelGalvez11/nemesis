@@ -31,6 +31,7 @@ import { deckDesign } from "@/lib/export/deck-designs";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
+import { fileMark } from "@/lib/learn/kind-mark";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { OutputPreview } from "./output-preview";
@@ -606,20 +607,40 @@ function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) =>
   // which site a page came from, and an excerpt count is bookkeeping about how Nemesis read
   // something rather than an answer to "what is this". `title` still carries the full name for a
   // hover, which is what a truncated row needs.
+  // 🔴🔴 THE FILE SAYS WHAT KIND OF FILE IT IS. Owner, 2026-09-03: *"the inputs need to have a
+  // unique icon depending on whether it's a docx, PowerPoint, Excel etc."* Every row drew the same
+  // page glyph, so a shelf of thirty attachments was thirty identical rows and the only way to tell
+  // a deck from a spreadsheet was to read the name and know what the extension meant.
+  //
+  // 🔴 THE ARTIFACT CARD'S OWN VOCABULARY, NOT A SECOND ONE. `kind-mark.ts` holds the glyphs and
+  // tints `artifact-card.tsx` already chose for the files a canvas MAKES, so an attached .docx and
+  // a produced .docx look like the same kind of thing — which they are.
+  //
+  // 🔴 THE NAME FIRST, THE EXTRACTOR'S WORD SECOND. A source's title IS its file name since
+  // 2026-09-03, so the extension is normally right there. Canvases written before that had their
+  // titles prettified ("08 insulin") and lost it for good, and for those `source.kind` — what the
+  // extractor called the file — is the only thing left to read.
+  const mark = fileMark(source.title, source.kind);
   const body = (
     <span className="flex items-center gap-1.5">
       {host ? (
         // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
         <img alt="" className="shrink-0 rounded-full" height={14} src={faviconUrl(host)} width={14} />
       ) : (
-        <Codicon className="shrink-0 text-(--ui-text-quaternary)" name="file" size="0.75rem" />
+        <Codicon className="shrink-0" name={mark.icon} size="0.75rem" style={{ color: `var(${mark.tint})` }} />
       )}
       <span className="truncate text-[length:var(--canvas-text-small)] text-(--ui-text-primary)">{source.title}</span>
       {/* 🔴 THE ONE SECOND LINE THAT STAYS, AND IT IS NOT A DESCRIPTION. A source Nemesis could only
           half read has to say so where the source is named; dropping this with the rest would make
           the panel quietly claim a partial read was a whole one. It renders on almost nothing. */}
+      {/* 🔴🔴 IT TRUNCATES, AND IT USED TO BE `shrink-0` — WHICH DELETED THE FILE NAME. Measured on
+          the owner's own canvas 2026-09-03: three rows of thirty showed no name at all, just the
+          glyph and "Incomplete source: 14 pictures were not read. If the student…" running off the
+          edge. The note is written for the model (`coverageNoticeForModel`) and is a sentence, not
+          a word, so an unshrinkable one took the whole row and the truncating name next to it
+          collapsed to nothing. The name is what the row is FOR; the note is a caveat about it. */}
       {source.coverageNote && (
-        <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-amber-500">
+        <span className="min-w-0 max-w-[45%] truncate text-[length:var(--canvas-text-meta)] text-amber-500">
           {source.coverageNote.replace(/^\[|\]$/g, "")}
         </span>
       )}
