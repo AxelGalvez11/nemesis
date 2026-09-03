@@ -45,18 +45,26 @@ test("🔴 the memoised renderers depend on what they close over", () => {
   assert.match(deps![1]!, /onOpenFile/, "`onOpenFile` is closed over but not depended on");
 });
 
-test("the canvas carries the id the pane needs, and passes a stable opener", () => {
+test("the canvas carries the id the panel needs, and passes a stable opener", () => {
   const canvas = code("../../components/workspace/learn/learning-canvas.tsx");
   assert.match(canvas, /librarySourceId: source\.librarySourceId \?\? null/, "the pill cannot find the filed document");
   assert.match(canvas, /const openCitedFile = useCallback\(/, "the opener is not stable, so it restarts the fade-in every render");
-  assert.match(canvas, /sourceTabs\.open\(\{/, "the opener does not reach the reading pane");
+  // 🔴 IT OPENS THE SOURCES PANEL NOW, NOT A PANE OF ITS OWN (owner 2026-09-03). It used to build a
+  // synthetic pill and hand it to a second reader; the canvas has the source by id right here, so
+  // the guess was never needed on this path.
+  assert.match(canvas, /dock\.openDocument\(source\)/, "the opener does not reach the Sources panel");
   // Both places an answer is drawn: the thread and the turn being answered right now.
   assert.equal((canvas.match(/onOpenFile=\{openCitedFile\}/g) ?? []).length, 2, "one of the two answer renderers cannot open a pill");
 });
 
-test("the pane it opens into is the one that holds several at once", () => {
-  const tabs = code("../learn/source-tabs.ts");
-  assert.match(tabs, /export function openTab\(/, "the tab store lost its opener");
-  const viewer = code("../../components/workspace/learn/source-tab-viewer.tsx");
-  assert.match(viewer, /open: \(pill: DocumentPill\) => void;/, "the pane's open() changed shape under the pill");
+test("🔴 the panel it opens into is the header's own, which holds several at once", () => {
+  // 🔴 THE DESTINATION IS THE POINT OF THIS TEST, AND IT CHANGED. It used to assert the citation
+  // pane's `open()` shape; that pane is deleted, and asserting anything about it would now be
+  // asserting that it exists. What has to hold is that a chip and the header's Sources control
+  // reach the SAME list of open documents — which is what one shared dock buys.
+  const dock = code("../../components/workspace/learn/document-dock.tsx");
+  assert.match(dock, /openPill: \(pill: DocumentPill\) => boolean;/, "the pill's opener changed shape or stopped reporting a miss");
+  const controls = code("../../components/workspace/learn/canvas-controls.tsx");
+  assert.match(controls, /const dock = useDocumentDock\(\);/, "the Sources panel went back to owning its own list of open documents");
+  assert.doesNotMatch(controls, /useState<\{ open: CanvasSource\[\]; activeId/, "a second owner of the open documents is back");
 });

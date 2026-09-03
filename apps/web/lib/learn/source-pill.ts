@@ -151,3 +151,17 @@ export function sourcePills(
   return pills;
 }
 
+/**
+ * The only kind of source that opens in the docked reader.
+ *
+ * 🔴 A TYPE, NOT A CONVENTION. Owner, 2026-08-30: the reader is for documents; a web citation opens
+ * the page in the browser. Narrowing here means a web pill cannot reach `openPill` at all, so the
+ * rule cannot be undone by someone wiring up a call site without reading this file.
+ *
+ * 🔴 IT LIVED IN `source-tabs.ts` UNTIL 2026-09-03, and that file is gone. It held the tab state of
+ * a second reading pane that a citation chip used to open; the chip opens the header's Sources
+ * panel now (see `document-dock.tsx`), so the store, its six exported functions and its tests went
+ * with the pane. This one type was the only part still in use, and it belongs beside the union it
+ * narrows rather than in a file named for a surface that no longer exists.
+ */
+export type DocumentPill = Extract<SourcePill, { kind: "document" }>;

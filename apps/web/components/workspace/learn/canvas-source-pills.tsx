@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { faviconUrl } from "@/lib/favicon";
 import type { SourcePill } from "@/lib/learn/source-pill";
-import { useOpenSource } from "./source-tab-viewer";
+import { useOpenSource } from "./document-dock";
 
 /** 14px, matching the favicon dots the chat surface already uses for citations. Written in px
  *  because every rem in this app is 1.125x its number. */
@@ -26,8 +26,14 @@ const FAVICON_PX = 14;
 export function CanvasSourcePills({ pills }: { pills: readonly SourcePill[] }) {
   const [preview, setPreview] = useState<SourcePill | null>(null);
   // 🔴 DOCUMENTS ONLY, AND NULL OUTSIDE THE CANVAS. A page is a link and always was: it opens in
-  // the browser, which is a better read than a 360px column. This component also renders where
-  // there is no pane at all, and there a document falls back to the passage dialog below.
+  // the browser, which is a better read than a column beside the answer. This component also
+  // renders where there is no canvas at all, and there a document falls back to the passage dialog
+  // below.
+  //
+  // 🔴 IT OPENS THE SOURCES PANEL NOW, NOT A PANE OF ITS OWN (owner 2026-09-03: *"clicking on the
+  // inline source chip should open documents on the right sidebar, NOT this new sidebar"*). It also
+  // REPORTS whether it found the document: a pill can name a file this canvas never filed, and the
+  // passage dialog below is still the right destination for that.
   const openInPane = useOpenSource();
 
   if (pills.length === 0) return null;
@@ -59,7 +65,9 @@ export function CanvasSourcePills({ pills }: { pills: readonly SourcePill[] }) {
             <button
               className="inline-flex items-center gap-1.5 rounded-full bg-(--ui-bg-elevated) py-1 pl-1.5 pr-2.5 text-[length:var(--canvas-text-meta)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
               key={`doc:${pill.label}`}
-              onClick={() => (openInPane ? openInPane(pill) : setPreview(pill))}
+              onClick={() => {
+                if (!openInPane?.(pill)) setPreview(pill);
+              }}
               title={pill.title}
               type="button"
             >

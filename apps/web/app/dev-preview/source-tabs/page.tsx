@@ -1,23 +1,39 @@
 "use client";
 
-// DEV-ONLY PREVIEW — the Canvas reading pane, without the auth gate.
+// DEV-ONLY PREVIEW — pressing a citation, without the auth gate.
 //
-// Three pills, because the pane has three genuinely different behaviours and only one of them is
-// the obvious case:
-//   * a FILED document  -> the real `LibrarySourceReader`, the whole document
-//   * an EPHEMERAL one  -> the cited passage, and a line saying why there is no full copy
-//   * a WEB page        -> does NOT enter the pane at all; it opens in the browser
+// 🔴 IT USED TO PREVIEW A SECOND READING PANE, AND THAT PANE IS GONE (owner, 2026-09-03: *"clicking
+// on the inline source chip should open documents on the right sidebar, NOT this new sidebar"*).
+// What it shows now is the same Sources panel the canvas mounts, driven by the same dock — which is
+// the whole point of the change, so the harness would be lying if it kept its own viewer.
 //
-// Same components the canvas mounts. Nothing here is a mock except the pills themselves.
+// Three pills, because pressing one has three genuinely different outcomes and only one is obvious:
+//   * a FILED document  -> the real `LibrarySourceReader`, in the Sources panel
+//   * an EPHEMERAL one  -> the passage dialog, because there is no full copy to open
+//   * a WEB page        -> does NOT dock at all; it opens in the browser
 
 import { CanvasSourcePills } from "@/components/workspace/learn/canvas-source-pills";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
-import {
-  SourceTabPane,
-  SourceTabsProvider,
-  useSourceTabsState,
-} from "@/components/workspace/learn/source-tab-viewer";
+import { DocumentDockProvider, useDocumentDockState } from "@/components/workspace/learn/document-dock";
+import { SourcePreview } from "@/components/workspace/learn/source-preview";
+import type { CanvasSource } from "@/lib/learn/canvas-model";
 import type { SourcePill } from "@/lib/learn/source-pill";
+
+/** The canvas's own sources, which is what a pill is resolved against. */
+const SOURCES: CanvasSource[] = [
+  {
+    id: "src-conlaw",
+    title: "Con Law lecture 4",
+    kind: "pdf",
+    excerpts: [],
+    librarySourceId: "preview-src-conlaw-slides",
+    durable: true,
+  } as CanvasSource,
+  // 🔴 NO `librarySourceId`, WHICH IS THE POINT OF THE SECOND ROW. Every ephemeral attachment looks
+  // like this, and the panel has no document to fetch for it — so the pill falls back to its own
+  // passage dialog rather than docking an empty reader.
+  { id: "src-handout", title: "Seminar handout", kind: "pdf", excerpts: [], durable: false } as CanvasSource,
+];
 
 const PILLS: SourcePill[] = [
   {
@@ -48,42 +64,49 @@ const PILLS: SourcePill[] = [
 ];
 
 export default function SourceTabsPreviewPage() {
-  // Owns the tabs exactly as the canvas does. The provider only carries the value down.
-  const tabs = useSourceTabsState();
+  // Owns the dock exactly as the canvas does. The provider only carries the value down.
+  const dock = useDocumentDockState(SOURCES);
   return (
     <WorkspacePreviewProvider value={{ email: "student@preview.dev" }}>
-    <SourceTabsProvider value={tabs}>
-      {/* 🔴 `data-workspace` OR THE CHROME LAYER DOES NOT APPLY. The desktop token and chrome
-          rules are scoped to this attribute, which `WorkspaceShell` normally stamps. Without it a
-          preview renders with fallback colours and every pill comes out looking like a button from
-          a different app. */}
-      <div className="relative h-dvh overflow-hidden bg-(--ui-bg-editor)" data-workspace="">
-        <SourceTabPane />
-        <div className="relative h-full overflow-y-auto px-8 pt-16 xl:w-[calc(100%-360px)]">
-          <div className="mx-auto max-w-[640px]">
-            <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-              Why was the case dismissed if the statute is unconstitutional?
-            </p>
-            <p className="mt-6 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
-              Because the court never reached that question. Before a court will look at whether a
-              statute is constitutional, the person bringing the case has to show the statute has
-              actually hurt them. That is standing, and it is a gate: fail it and the merits are
-              never argued at all.
-            </p>
-            <p className="mt-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
-              Here the plaintiff objected to the statute as a taxpayer. That is a grievance shared
-              with everyone, which is exactly what the injury requirement excludes.
-            </p>
-            <CanvasSourcePills pills={PILLS} />
-            <p className="mt-10 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-              Press a citation. The first is a filed document and opens the full reader; the second
-              was never filed and shows its passage. The third is a page, so it opens in the
-              browser rather than in the pane.
-            </p>
+      <DocumentDockProvider value={dock}>
+        {/* 🔴 `data-workspace` OR THE CHROME LAYER DOES NOT APPLY. The desktop token and chrome
+            rules are scoped to this attribute, which `WorkspaceShell` normally stamps. Without it a
+            preview renders with fallback colours and every pill comes out looking like a button
+            from a different app. */}
+        <div className="relative h-dvh overflow-hidden bg-(--ui-bg-editor)" data-workspace="">
+          <SourcePreview
+            activeId={dock.activeId}
+            onClose={dock.closeAll}
+            onCloseTab={dock.closeDocument}
+            onSelect={dock.select}
+            open={dock.open}
+            uid={null}
+          />
+          <div className="relative h-full overflow-y-auto px-8 pt-16">
+            <div className="mx-auto max-w-[640px]">
+              <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                Why was the case dismissed if the statute is unconstitutional?
+              </p>
+              <p className="mt-6 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
+                Because the court never reached that question. Before a court will look at whether a
+                statute is constitutional, the person bringing the case has to show the statute has
+                actually hurt them. That is standing, and it is a gate: fail it and the merits are
+                never argued at all.
+              </p>
+              <p className="mt-4 text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
+                Here the plaintiff objected to the statute as a taxpayer. That is a grievance shared
+                with everyone, which is exactly what the injury requirement excludes.
+              </p>
+              <CanvasSourcePills pills={PILLS} />
+              <p className="mt-10 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
+                Press a citation. The first is a filed document and opens in the Sources panel; the
+                second was never filed, so it shows the quoted passage instead. The third is a page, so it
+                opens in the browser.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    </SourceTabsProvider>
+      </DocumentDockProvider>
     </WorkspacePreviewProvider>
   );
 }

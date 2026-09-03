@@ -8,21 +8,21 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8");
 const PANE = read("./source-preview.tsx");
 const BAR = readFileSync(new URL("../reader/reader-top-bar.tsx", import.meta.url), "utf8");
 const READER = readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8");
-const TABS = readFileSync(new URL("../../../lib/learn/source-tabs.ts", import.meta.url), "utf8");
-const TABPANE = read("./source-tab-viewer.tsx");
 const CONTROLS = read("./canvas-controls.tsx");
 
 test("🔴🔴 recently-read documents stay mounted, so switching back does not re-read the PDF", () => {
-  // 🔴 THIS IS THE HEADER'S SOURCES PANEL, WHICH IS THE VIEWER IN USE. The citation pane
-  // (`source-tab-viewer`) is a different surface reached only from a pill; the owner's report was
-  // about this one. Guarding the wrong viewer is how a fix ships and the complaint stays.
+  // 🔴 THIS IS THE HEADER'S SOURCES PANEL, AND IT IS NOW THE ONLY VIEWER. When this note was
+  // written there were two — a citation pane (`source-tab-viewer`) reached only from a pill, and
+  // this one — and the warning was to guard the right one, because guarding the wrong viewer is how
+  // a fix ships and the complaint stays. The owner resolved that on 2026-09-03 by having the pill
+  // open this panel and the other pane deleted, so the ambiguity is gone rather than navigated.
   //
   // It rendered the ACTIVE source alone, keyed by its id — a clean remount on every tab switch,
   // which is exactly the cost reported as "it has to load each pdf continually": fetched again,
@@ -74,13 +74,26 @@ test("🔴 the pane's toolbar keeps only what acts on the FILE", () => {
 });
 
 
-test("🔴 the door into a document is the header's Sources list, and there is only one", () => {
-  // 🔴 A `+` WAS ADDED TO THE CITATION PANE'S TAB STRIP AND THEN REMOVED. It rendered only once a
-  // tab was ALREADY open — `SourceTabPane` returns null with none — so it could add a second
-  // document and never the first, which is not the door it claimed to be. The header's Sources
-  // panel already lists every document and opens one, so the `+` was a second control for a job
-  // that had one, on a surface the owner had just asked to simplify.
-  assert.doesNotMatch(TABPANE, /source-tabs-open/, "the redundant opener is back in the citation pane");
+test("🔴🔴 there is ONE document reader, and the citation chip opens it", () => {
+  // 🔴 THERE WERE TWO, AND THE CHIP LED TO THE WORSE ONE. Owner, 2026-09-03: *"clicking on the
+  // inline source chip should open documents on the right sidebar, NOT this new sidebar"*, and of
+  // the panel he wanted: *"this is the good sidebar"*.
+  //
+  // `source-tab-viewer.tsx` was a second reader with its own tab strip, its own 360px width and its
+  // own passage view, opened only from a citation. Deleting it is the fix; this test is what keeps
+  // it deleted, because the tempting way to "improve the citation experience" is to build it again.
+  //
+  // An earlier version of this test guarded a `+` that had been added to that pane's tab strip and
+  // then removed — a second door for a job the Sources list already did. The pane went the same way
+  // and for the same reason.
+  assert.ok(
+    !existsSync(new URL("./source-tab-viewer.tsx", import.meta.url)),
+    "a second reading pane is back; a citation chip and the header must open the same one",
+  );
   assert.match(CONTROLS, /<SourceRow key=\{source\.id\} onPreview=\{openDocument\} source=\{source\} \/>/,
     "the Sources list stopped opening documents, which leaves no door at all");
+  // And the chip's route into it: one dock, shared, with no reader of its own.
+  const dock = read("./document-dock.tsx");
+  assert.match(dock, /export function useOpenSource\(\)/, "the pills lost their way into the dock");
+  assert.doesNotMatch(dock, /LibrarySourceReader/, "the dock grew a reader of its own — that is the second pane returning");
 });
