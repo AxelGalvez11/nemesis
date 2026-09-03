@@ -100,3 +100,16 @@ test("🔴🔴 a \"study\" that cannot run on a fresh canvas is re-asked once as
   assert.doesNotMatch(stateBlock(BASE), /Nothing can be built/);
   assert.match(ROUTER, /Once they "\s*\+\s*"have answered the card, the next turn is a \\"reply\\" that teaches what they picked/);
 });
+
+test("🔴🔴 a turn the door took is remembered as done, so the next ask is not re-answered", () => {
+  // Measured on production 2026-09-03: "make me flashcards on the transporters" made its deck through
+  // the phrase door, the window kept that line with an EMPTY reply, and the next ask (a mind map)
+  // came back "let me take the transporter request first", made a second deck, and claimed a map it
+  // never drew.
+  assert.match(CANVAS, /const made = withCapability && isMakerCapability\(withCapability\) \? withCapability : readDeliverableAsk\(trimmed\);/);
+  assert.match(CANVAS, /const doorReply = !decision && made \? `\(Nemesis made the \$\{MADE_NOUN\[made\]\} from the material; it is open beside the conversation\.\)` : "";/);
+  assert.match(CANVAS, /remember\(\{ replied: decision\?\.say \?\? doorReply, said: trimmed \}\);/, "a door-made turn is filed with an empty reply again");
+  for (const kind of ["document", "flashcards", "note", "pdf", "report", "sheet", "slides"]) {
+    assert.match(CANVAS, new RegExp(`\\b${kind}: "`), `${kind} has no learner-facing noun in MADE_NOUN`);
+  }
+});

@@ -118,3 +118,9 @@ test("🔴 no em dash in the map, its tree, or this file", () => {
     assert.doesNotMatch(source, /[\u2014\u2015]/, `${name} carries an em dash`);
   }
 });
+
+test("🔴 a citation mark inside a node label is dropped before the tree is drawn", () => {
+  const block = readFileSync(new URL("./mindmap-block.tsx", import.meta.url), "utf8");
+  assert.match(block, /const CITATION_MARK = \/\\s\*\\\[s\\d\+:e\\d\+/, "the citation pattern is gone");
+  assert.match(block, /return parsed \? withoutCitations\(parsed\) : null;/, "labels are drawn with their marks again");
+});
