@@ -221,8 +221,30 @@ async function indexOne(parse: UnchunkedParse) {
     // documents. Proven by round-tripping a real envelope through both readers.
     const model = storedDocumentModel(parse.structure)
     if (!model) {
-      // Now genuinely what it says: a v1 `text-only` envelope, written before the
-      // canonical model existed. Re-parsing it is Phase 1's job.
+      // 🔴🔴 TWO DIFFERENT FACTS WERE WEARING ONE NAME, AND THAT IS HOW A LIVE PARSER BUG
+      // HID FOR THREE WEEKS. `no-model` is documented as "this parse predates the canonical
+      // model" — an expected backlog, nothing to do. But this branch is also reached when a
+      // CURRENT v2 envelope fails validation, which is never expected and always a bug in
+      // whatever wrote it.
+      //
+      // Measured 2026-09-03: the PDF structure builder emitted `headingPath: [null, ...]`
+      // for any document whose first heading was an H2 (array holes from one-slot-per-level).
+      // `readDocumentModel` rejects one such block and therefore the whole model, so five of
+      // seven real lecture PDFs were skipped here — reported as old data, on a run whose log
+      // line read `{"no-model": 5}` and looked like the healthy answer.
+      //
+      // A v1 envelope has no `shape` of 'units-blocks'; a v2 one does. Splitting on that is
+      // enough to tell "nothing to do" from "someone broke the writer".
+      const shape = (parse.structure as { shape?: unknown } | null)?.shape
+      if (shape === 'units-blocks') {
+        console.error(
+          `source-index: ${id} carries a units-blocks envelope that failed validation. ` +
+            `This is a bug in whatever wrote the model, not old data.`,
+        )
+        return { ok: false, parsedDocumentId: id, reason: 'unreadable-model' }
+      }
+      // Genuinely what it says: a v1 `text-only` envelope, written before the canonical model
+      // existed. Re-parsing it is Phase 1's job.
       return { ok: false, parsedDocumentId: id, reason: 'no-model' }
     }
 

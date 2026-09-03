@@ -218,6 +218,50 @@ async function loadPdfjs() {
  * theoretical hazard: an image scan that ran after extraction once reported zero
  * images in 83 files that hold 2,949 of them, because the buffer had been zeroed.
  */
+/**
+ * The headings currently OPEN, innermost last — NOT one slot per level.
+ *
+ * 🔴🔴🔴 ONE SLOT PER LEVEL DELETED WHOLE DOCUMENTS, AND IT DELETED THEM SILENTLY. This was
+ * `headingPath.length = level - 1; headingPath[level - 1] = text` on a plain array. A PDF whose
+ * first heading is an H2, or that goes 1 → 3, leaves the skipped slots as array HOLES. A hole
+ * spreads as `undefined` and serialises to `null`, so the stored block carries
+ * `headingPath: [null, null, "Insulin"]`. `readDocumentModel` then rejects that block — correctly,
+ * a heading path entry must be a string — and rejecting ONE BLOCK REJECTS THE WHOLE MODEL. The
+ * document reads back as having no structure at all.
+ *
+ * Then it hides: a null model is indistinguishable from a parse that predates the canonical
+ * model, so `source-index` skips it with reason `no-model` and the log says "old data" instead of
+ * "bug". Measured on production 2026-09-03, dropping ten real lecture files into a canvas: FIVE
+ * OF SEVEN PDFs were poisoned this way — 62, 28, 22, 14 and 10 null entries — and every one of
+ * them was silently unsearchable. The document parsed perfectly and was thrown away on the far
+ * side of storage.
+ *
+ * 🔴 THIS IS THE SAME BUG `docx-structure.ts` FIXED, IN THE SAME REPOSITORY, AND THE FIX WAS
+ * NEVER CARRIED ACROSS. Its note records the identical damage on 205 Word files: 3 documents,
+ * 316 blocks, all parsed and all discarded. Skipping a heading level is ordinary — lecture decks,
+ * resumes and worksheets do it constantly. When a fix like that lands, grep for the pattern.
+ *
+ * An unopened level has no heading, so it contributes no ancestor. The trail gets shorter and
+ * every entry in it is a heading that actually exists.
+ */
+export function headingTrail() {
+  const open: { level: number; text: string }[] = [];
+  return {
+    /** The ancestors of a block appearing at this point. Dense by construction. */
+    path: (): string[] => open.map((heading) => heading.text),
+    /**
+     * Open a heading at `level`, returning the trail of its ANCESTORS — a heading is not its own
+     * ancestor, which is the whole reason this returns rather than only mutating.
+     */
+    open(level: number, text: string): string[] {
+      while (open.length > 0 && open[open.length - 1]!.level >= level) open.pop();
+      const ancestors = open.map((heading) => heading.text);
+      open.push({ level, text });
+      return ancestors;
+    },
+  };
+}
+
 export async function readPdfStructure(
   bytes: Uint8Array,
   options: {
@@ -705,7 +749,8 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
   );
 
   const blocks: Omit<DocBlock, "id">[] = [];
-  const headingPath: string[] = [];
+  const headings = headingTrail();
+  const trail = () => headings.path();
   let title: string | null = null;
 
   pages.forEach((page, unit) => {
@@ -728,13 +773,13 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
       const rect = toRelative(group, page.width, page.height);
       const level = levels[index] ?? null;
       if (level !== null) {
-        headingPath.length = Math.max(level - 1, 0);
-        headingPath[level - 1] = text;
         title ??= unit === 0 ? text : null;
-        blocks.push({ headingPath: headingPath.slice(0, level - 1), kind: "heading", level, rect, text, unit });
+        // `open` returns this heading's ANCESTORS and then opens it: a heading is not its own
+        // ancestor, which is why the trail is taken from the return value rather than after.
+        blocks.push({ headingPath: headings.open(level, text), kind: "heading", level, rect, text, unit });
         return;
       }
-      blocks.push({ headingPath: [...headingPath], kind: "paragraph", rect, text, unit });
+      blocks.push({ headingPath: trail(), kind: "paragraph", rect, text, unit });
     });
 
     // 🔴 AFTER THE PAGE'S PROSE, NOT INTERLEAVED WITH IT — A STATED LIMITATION.
@@ -747,7 +792,7 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
     // here alongside the change that makes tables exist at all.
     for (const { rect, table } of page.tables) {
       blocks.push({
-        headingPath: [...headingPath],
+        headingPath: trail(),
         kind: "table",
         rect,
         table,
@@ -770,7 +815,7 @@ function assemble(pages: readonly RawPage[]): DocumentModel {
         // `description` is filled in only when something has actually looked;
         // leaving it absent is what makes `figuresUnexamined` countable.
         figure: { ref: figure.ref, ...(skipped ? { skipped } : {}) },
-        headingPath: [...headingPath],
+        headingPath: trail(),
         kind: "figure",
         rect: toRelative(figure.box, page.width, page.height),
         text: "",
