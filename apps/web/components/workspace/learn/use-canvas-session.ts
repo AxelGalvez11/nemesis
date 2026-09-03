@@ -48,7 +48,7 @@ import { isMakerCapability } from "@/lib/learn/composer-capability";
 import { researchStepLabel } from "@/lib/research/research-progress";
 import { planResearch } from "@/lib/research/run-research";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
-import { CANVAS_FILING_FOLDER, coverageNote, loadCanonicalSource, refreshedCoverageNotes, restoredFileNames, storedCoverageNote } from "@/lib/learn/canvas-sources";
+import { CANVAS_FILING_FOLDER, coverageLabel, coverageNote, loadCanonicalSource, refreshedCoverageNotes, restoredFileNames, storedCoverage } from "@/lib/learn/canvas-sources";
 import { ensureKnowledgeForCanvas } from "@/lib/learn/canvas-knowledge";
 import { verdictIsPass } from "@/lib/learn/canvas-judge";
 import { actionMutatesCanvas, determineNextCognitiveAction } from "@/lib/learn/canvas-policy";
@@ -1301,9 +1301,14 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           //
           // 🔴 THE RESPONSE IS STILL THE FALLBACK, for a source with no filed row: nothing is stored
           // to read back, and saying nothing there would be a silent upgrade from partial to whole.
-          const note = extracted.librarySourceId
-            ? ((await storedCoverageNote(extracted.librarySourceId)) ?? undefined)
-            : (coverageNote(extracted.coverage) ?? undefined);
+          //
+          // 🔴 BOTH SPELLINGS, ONE READ. The panel shows the learner's wording and the packet
+          // carries the model's; they come from the same coverage so they cannot disagree.
+          const disclosure = extracted.librarySourceId
+            ? await storedCoverage(extracted.librarySourceId)
+            : { label: coverageLabel(extracted.coverage), note: coverageNote(extracted.coverage) };
+          const note = disclosure.note ?? undefined;
+          const noteLabel = disclosure.label ?? undefined;
 
           // 🔴🔴 A FILE THE LEARNER CHOSE KEEPS THE NAME THE LEARNER CHOSE, AS OF 2026-09-03 — the
           // image rule below, generalised, rather than a second rule beside it. Owner: *"these are
@@ -1362,6 +1367,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
                 ? buildExcerptsFromModel(sourceId, extracted.model)
                 : buildExcerpts(sourceId, extracted.text),
             ...(note ? { coverageNote: note } : {}),
+            ...(noteLabel ? { coverageLabel: noteLabel } : {}),
             // 🔴 STATED, NOT LEFT TO BE INFERRED. A reader must not have to work out durability
             // from whether some other field happens to be set — an ephemeral source can teach this
             // canvas perfectly well, and must not pretend to support anything that outlives it.

@@ -36,18 +36,30 @@ const attach = code(ATTACH);
 // ── 1. the disclosure reads the stored parse ────────────────────────────────
 
 test("🔴🔴 the coverage note is derived from the STORED parse, not the upload response", () => {
+  // 🔴 REPOINTED 2026-09-03. This pinned the exact ternary, and the read became `storedCoverage`
+  // when the panel needed the learner's spelling of the same fact alongside the model's. The
+  // INVARIANT is unchanged and is the only thing worth guarding: when a source has a filed row, the
+  // disclosure is read back from STORAGE, never taken from the upload response, because the
+  // response reports what THAT REQUEST could see and stating it as the document's coverage is how
+  // a fully-read document came to be described as blind.
   assert.match(
     session,
-    /const note = extracted\.librarySourceId\s*\?\s*\(\(await storedCoverageNote\(extracted\.librarySourceId\)\) \?\? undefined\)/,
+    /extracted\.librarySourceId\s*\n?\s*\?\s*await storedCoverage\(extracted\.librarySourceId\)/,
     "the note is back on the response, which reports the REQUEST's blindness as the document's",
   );
-  assert.match(sources, /export async function storedCoverageNote/);
+  assert.match(sources, /export async function storedCoverage\(/);
+  // 🔴 AND ONE READ, NOT TWO. The panel's wording and the packet's come from a single row: asking
+  // twice means two answers to "what did this document miss", which is the failure this pair of
+  // renderings exists to prevent.
+  assert.match(sources, /return \{ label: coverageLabel\(coverage\), note: coverageNote\(coverage\) \};/);
 });
 
 test("🔴 a source with no filed row still gets the response's note", () => {
   // Nothing is stored to read back there, and saying nothing would be a silent upgrade from
   // partial to whole — the exact direction of error this whole area keeps failing in.
-  assert.match(session, /: \(coverageNote\(extracted\.coverage\) \?\? undefined\)/);
+  // Repointed with the line above: the fallback still reads the response, it just now yields both
+  // spellings rather than one string.
+  assert.match(session, /: \{ label: coverageLabel\(extracted\.coverage\), note: coverageNote\(extracted\.coverage\) \}/);
 });
 
 test("🔴 the note is still refreshed on load, so it stops lying as the parse improves", () => {

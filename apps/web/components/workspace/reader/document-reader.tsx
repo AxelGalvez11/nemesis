@@ -140,7 +140,16 @@ export function DocumentReader({
   // ONE rail, on the RIGHT. The left edge of the screen belongs to the Library
   // sidebar (owner 2026-08-05), which the host page keeps rendering around this
   // component — so a document opens without losing the tree it was filed in.
-  const [railOpen, setRailOpen] = useState(!isDialog);
+  // 🔴🔴 AND CLOSED IN A NARROW PANE, WHICH IS THE DIFFERENCE BETWEEN A READER AND A SLIVER.
+  // Measured on production 2026-09-03: the canvas's reading pane is 360px at `xl`, this rail opens
+  // by default, and it is about 270px wide — so the document the learner asked to read got roughly
+  // NINETY PIXELS. The contents of a document cannot be worth three quarters of the space the
+  // document itself gets.
+  //
+  // 🔴 `dense` ALREADY MEANS "narrow pane beside a conversation" and was already threaded here for
+  // the toolbar; it just never reached the rail. The rail is not removed, only closed: the toggle
+  // is in the top bar and a learner who wants the outline in the pane can still have it.
+  const [railOpen, setRailOpen] = useState(!isDialog && !dense);
   /**
    * Viewport coordinates of a selection's bounding box — where a box about it should open.
    *

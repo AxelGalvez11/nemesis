@@ -16,7 +16,7 @@
 // say so, because "we could not read the table" and "the document had no table" are different
 // facts and only one of them is the document's.
 
-import { coverageNoticeForModel, readCoverage, UNSORTED_FOLDER } from "@nemesis/shared";
+import { coverageNoticeForLearner, coverageNoticeForModel, readCoverage, UNSORTED_FOLDER } from "@nemesis/shared";
 
 import { supabase } from "@/lib/supabase";
 import type { CanvasSource } from "./canvas-model";
@@ -180,6 +180,18 @@ export async function storedCoverageNote(librarySourceId: string): Promise<strin
   return coverageNote(await loadStoredCoverage(librarySourceId));
 }
 
+/**
+ * Both spellings of the stored disclosure, in ONE round trip.
+ *
+ * 🔴 ONE READ, BECAUSE TWO READS IS TWO ANSWERS. Asking for the note and the label separately means
+ * two queries against a row that can change between them, and the panel and the packet disagreeing
+ * about what was missed is exactly the failure this pair exists to prevent.
+ */
+export async function storedCoverage(librarySourceId: string): Promise<{ label: string | null; note: string | null }> {
+  const coverage = await loadStoredCoverage(librarySourceId);
+  return { label: coverageLabel(coverage), note: coverageNote(coverage) };
+}
+
 async function loadStoredCoverage(librarySourceId: string): Promise<unknown> {
   const { data, error } = await supabase
     .from("library_sources")
@@ -205,6 +217,19 @@ async function loadStoredCoverage(librarySourceId: string): Promise<unknown> {
 export function coverageNote(coverage: unknown): string | null {
   const parsed = readCoverage(coverage);
   return parsed ? coverageNoticeForModel(parsed) : null;
+}
+
+/**
+ * The same disclosure for the sources panel, in the learner's own vocabulary.
+ *
+ * 🔴 THE PANEL WAS PRINTING THE MODEL'S COPY. See `coverageNoticeForLearner` for the measurement:
+ * a learner reading their own sources shelf was shown an instruction addressed to the model, which
+ * referred to them in the third person as "the student". Same parsed coverage, two renderings, so
+ * the two can never disagree about what was missed.
+ */
+export function coverageLabel(coverage: unknown): string | null {
+  const parsed = readCoverage(coverage);
+  return parsed ? coverageNoticeForLearner(parsed) : null;
 }
 
 /**
@@ -237,23 +262,33 @@ export async function refreshedCoverageNotes(
   const withIds = sources.filter((source) => source.librarySourceId);
   if (withIds.length === 0) return sources;
 
-  const fresh = new Map<string, string | undefined>();
+  const fresh = new Map<string, { label: string | undefined; note: string | undefined }>();
   await Promise.all(
     withIds.map(async (source) => {
-      fresh.set(source.id, coverageNote(await load(source.librarySourceId!)) ?? undefined);
+      const coverage = await load(source.librarySourceId!);
+      fresh.set(source.id, {
+        label: coverageLabel(coverage) ?? undefined,
+        note: coverageNote(coverage) ?? undefined,
+      });
     }),
   );
 
   let changed = false;
   const next = sources.map((source) => {
-    if (!fresh.has(source.id)) return source;
-    const note = fresh.get(source.id);
-    if (note === source.coverageNote) return source;
+    const now = fresh.get(source.id);
+    if (!now) return source;
+    if (now.note === source.coverageNote && now.label === source.coverageLabel) return source;
     changed = true;
     // 🔴 AN ABSENT NOTE DELETES THE OLD ONE. A document that is now fully read must stop carrying
     // the sentence saying it is not — leaving the stale string because the new value is empty is
-    // the exact bug this function exists to fix, one layer in.
-    return note ? { ...source, coverageNote: note } : (({ coverageNote: _drop, ...rest }) => rest)(source);
+    // the exact bug this function exists to fix, one layer in. The learner's label goes with it:
+    // two spellings of one disclosure must appear and disappear together.
+    const { coverageLabel: _label, coverageNote: _note, ...rest } = source;
+    return {
+      ...rest,
+      ...(now.note ? { coverageNote: now.note } : {}),
+      ...(now.label ? { coverageLabel: now.label } : {}),
+    };
   });
   return changed ? next : sources;
 }

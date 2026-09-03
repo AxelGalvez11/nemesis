@@ -237,6 +237,16 @@ export interface CanvasSource {
    *  Carried so a lesson built on a half-read document can say so. */
   coverageNote?: string;
   /**
+   * The same disclosure in the LEARNER's vocabulary, for the sources panel.
+   *
+   * 🔴 TWO RENDERINGS OF ONE FACT, NOT TWO FACTS. `coverageNote` above is addressed to the model
+   * and says so ("If the student's question depends on what is missing..."); the panel was printing
+   * it verbatim, so a learner read an instruction about themselves in the third person. Both come
+   * from the same parsed coverage, so they cannot disagree about what was missed. Absent on
+   * canvases written before this existed, which `refreshedCoverageNotes` fills in on open.
+   */
+  coverageLabel?: string;
+  /**
    * Whether anything learned from this source can outlive the session.
    *
    * 🔴 STATED, NOT INFERRED FROM WHETHER ANOTHER FIELD HAPPENS TO BE SET. Filing is best-effort —

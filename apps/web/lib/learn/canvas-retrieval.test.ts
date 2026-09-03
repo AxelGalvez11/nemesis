@@ -236,3 +236,33 @@ test("the panel and the model apply the SAME test", () => {
   const retrieval = readFileSync(new URL("./canvas-retrieval.ts", import.meta.url), "utf8");
   assert.match(retrieval, /parseQuality === "degraded"/, "the model's inventory stopped reading parse quality");
 });
+
+test("🔴 the sources panel speaks to the learner, not to the model", () => {
+  // Measured on production 2026-09-03, on 22 sources. Beside their own file name, in a 10px amber
+  // label, a learner was shown: "Incomplete source: 8 pictures were not read. If the student's
+  // question depends on what is missing, say so plainly rather than answering as though you read
+  // the whole document." An instruction, written for the model, referring to the reader in the
+  // third person. The function that builds it is literally called `coverageNoticeForModel`.
+  const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
+  assert.match(controls, /source\.coverageLabel \?\? source\.coverageNote/, "the panel is back to printing the model's copy");
+  // 🔴 THE FALLBACK STAYS. A canvas written before the label existed has only the model's sentence,
+  // and a clumsy disclosure beats a silent upgrade from partial to whole.
+  assert.match(controls, /coverageNote!\.replace/, "an older canvas now shows no disclosure at all");
+});
+
+test("one parsed coverage, two spellings, read once", () => {
+  // 🔴 TWO READS WOULD BE TWO ANSWERS to "what did this document miss", against a row that changes
+  // in the background as the figure pass improves it.
+  const shared = readFileSync(new URL("../../../../packages/shared/src/extraction-coverage.ts", import.meta.url), "utf8");
+  assert.match(shared, /export function coverageNoticeForLearner/, "the learner rendering is gone");
+  assert.match(shared, /export function coverageNoticeForModel/, "the model rendering is gone");
+  const sources = readFileSync(new URL("./canvas-sources.ts", import.meta.url), "utf8");
+  assert.match(sources, /export async function storedCoverage\(/, "the two spellings are read separately again");
+});
+
+test("the reading pane does not spend three quarters of itself on a contents list", () => {
+  // Measured on production 2026-09-03: the canvas pane is 360px at `xl`, the reader's outline rail
+  // opened by default and is about 270px, so the document the learner asked to read got roughly 90.
+  const reader = readFileSync(new URL("../../components/workspace/reader/document-reader.tsx", import.meta.url), "utf8");
+  assert.match(reader, /useState\(!isDialog && !dense\)/, "the outline rail opens by default in the narrow pane again");
+});

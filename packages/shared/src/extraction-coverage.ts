@@ -559,6 +559,40 @@ export function coverageNoticeForModel(coverage: ExtractionCoverage): string | n
   return `[Incomplete source: ${facts.join("; ")}. If the student's question depends on what is missing, say so plainly rather than answering as though you read the whole document.]`;
 }
 
+/**
+ * The same disclosure, in the vocabulary of the person reading it.
+ *
+ * 🔴🔴🔴 `coverageNoticeForModel` IS PRINTED TO THE LEARNER TODAY, AND IT IS ADDRESSED TO SOMEBODY
+ * ELSE. The sources panel renders that string verbatim beside the file name, so what a learner
+ * actually sees is: *"Incomplete source: 8 pictures were not read. If the student's question
+ * depends on what is missing, say so plainly rather than answering as though you read the whole
+ * document."* An instruction, written for the model, calling the reader "the student" in the third
+ * person, in a 10px amber label. Measured on production 2026-09-03, on 22 sources.
+ *
+ * 🔴 ONE FACT, TWO RENDERINGS, AND THAT IS THE WHOLE POINT. Both read the SAME parsed coverage, so
+ * the panel and the packet can never disagree about what was missed; only the wording differs. The
+ * alternative that suggests itself — trimming the model's sentence for display — would make the
+ * learner's copy a parse of a prompt, and it would silently change wording the moment the prompt
+ * did.
+ *
+ * Short by design: this sits inline beside a file name, in a column with two other things in it.
+ */
+export function coverageNoticeForLearner(coverage: ExtractionCoverage): string | null {
+  if (coverage.state === "complete") return null;
+  if (coverage.state === "failed") return "could not be read";
+  const facts: string[] = [];
+  if (coverage.unitsUnread > 0) {
+    facts.push(`${coverage.unitsUnread.toLocaleString()} of ${coverage.units.toLocaleString()} ${unitWord(coverage.unitKind, coverage.units)} not read`);
+  }
+  const lost = lostFigures(coverage.figures);
+  if (lost > 0) facts.push(`${lost} ${lost === 1 ? "picture" : "pictures"} not read`);
+  const unreadable = coverage.unreadableRegions ?? 0;
+  if (unreadable > 0) facts.push(`${unreadable} ${unreadable === 1 ? "region" : "regions"} not read`);
+  const cut = coverage.truncation.find((entry) => entry.stage === "extract");
+  if (cut) facts.push("some text dropped");
+  return facts.length > 0 ? facts.join(", ") : null;
+}
+
 /** Parse a record that came back from storage or the wire, or null if it is not
  *  one. Storage rows predate this type and JSON is not a type system, so every
  *  field is checked rather than asserted. */

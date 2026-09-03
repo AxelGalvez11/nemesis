@@ -639,9 +639,19 @@ function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) =>
           edge. The note is written for the model (`coverageNoticeForModel`) and is a sentence, not
           a word, so an unshrinkable one took the whole row and the truncating name next to it
           collapsed to nothing. The name is what the row is FOR; the note is a caveat about it. */}
-      {source.coverageNote && (
+      {/* 🔴🔴🔴 THE LEARNER'S SPELLING, NOT THE MODEL'S. This rendered `coverageNote` verbatim, and
+          that string is written FOR the model and says so. What a learner actually read, beside
+          their own file name, in a 10px amber label: "Incomplete source: 8 pictures were not read.
+          If the student's question depends on what is missing, say so plainly rather than answering
+          as though you read the whole document." An instruction, about them, in the third person.
+          Measured on 22 sources in production, 2026-09-03.
+          `coverageLabel` is the same parsed coverage rendered short, so the panel and the packet
+          cannot disagree about what was missed. Older canvases have no label until
+          `refreshedCoverageNotes` fills one on open, and the note is the fallback until then: a
+          clumsy disclosure beats a silent upgrade from partial to whole. */}
+      {(source.coverageLabel ?? source.coverageNote) && (
         <span className="min-w-0 max-w-[45%] truncate text-[length:var(--canvas-text-meta)] text-amber-500">
-          {source.coverageNote.replace(/^\[|\]$/g, "")}
+          {source.coverageLabel ?? source.coverageNote!.replace(/^\[|\]$/g, "")}
         </span>
       )}
       {/* 🔴🔴 A FILE THAT DID NOT READ MUST NOT LOOK LIKE ONE THAT DID. `coverageNote` above only
@@ -649,7 +659,7 @@ function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) =>
           the worst case was the one that rendered as a perfectly ordinary row. Measured on
           production 2026-09-03: a source carrying `parseQuality: "degraded"`, one excerpt for the
           whole file and ZERO passages in the search index, shown with no marking whatsoever. */}
-      {!source.coverageNote && sourceReadWarning(source) && (
+      {!(source.coverageLabel ?? source.coverageNote) && sourceReadWarning(source) && (
         <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-amber-500">
           {sourceReadWarning(source)}
         </span>
