@@ -20,29 +20,20 @@ import { connectionStatus } from "@/lib/workspace/composio-client";
 const CACHE_KEY = "nemesis.nav.connectedApps.v1";
 
 /**
- * Concurrent callers share one request.
+ * 🔴🔴 THE SHARE MOVED INTO `connectionStatus` ITSELF, 2026-09-02, AND THE MOVE IS THE FIX.
  *
- * 🔴 THE SHELL MOUNTS TWO READERS NOW. Since 2026-09-01 the collapsed rail and the open sidebar
- * are BOTH in the document at once so they can cross-fade (workspace-shell.tsx), and each one
- * draws `visibleNav`, so each one calls this. Without the share that is two identical network
- * reads on every load and two more on every window focus — for one answer, to draw one gate, in
- * two places that must agree anyway.
+ * The reason it was built here still stands: since 2026-09-01 the collapsed rail and the open
+ * sidebar are BOTH in the document at once so they can cross-fade (workspace-shell.tsx), and each
+ * one draws `visibleNav`, so each one asks. But a deduplicator that lives in one caller cannot see
+ * the others — and `canvas-home.tsx` asks the same question for the connect row under the front
+ * door's composer. Measured on production the same day: two `POST /api/composio` calls on every
+ * `/learn` load, both starting at 342 ms, 589 ms and 713 ms long, each a round trip to Composio's
+ * own API behind our route.
  *
- * Cleared when it settles rather than cached: this only merges calls that overlap. A later mount,
- * and every `focus` re-read the hook exists to do, still reads fresh.
+ * `composio-client.ts` now merges overlapping reads for every caller, with the same "cleared when
+ * it settles, never cached" rule this copy had — so a `focus` re-read, and the Plugins page's
+ * re-read after a connect, are still fresh.
  */
-let inFlight: ReturnType<typeof connectionStatus> | null = null;
-function statusOnce(): ReturnType<typeof connectionStatus> {
-  if (!inFlight) {
-    const started = connectionStatus();
-    inFlight = started;
-    void started.then(
-      () => { if (inFlight === started) inFlight = null; },
-      () => { if (inFlight === started) inFlight = null; },
-    );
-  }
-  return inFlight;
-}
 
 function readCache(): readonly string[] {
   try {
@@ -59,7 +50,7 @@ export function useConnectedApps(): readonly string[] {
   useEffect(() => {
     let alive = true;
     const read = () =>
-      void statusOnce().then(
+      void connectionStatus().then(
         (status) => {
           if (!alive) return;
           // 🔴 UNIONED, NEVER REPLACED, BECAUSE THE RAIL'S RULE IS ARRIVE-AND-STAY. The owner's

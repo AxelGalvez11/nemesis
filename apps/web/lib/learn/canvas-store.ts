@@ -42,6 +42,14 @@ export interface CanvasRow {
   updated_at: string;
 }
 
+/** Exactly the columns `canvasFromRow` reads, spelled once so the read and the reader cannot drift.
+ *
+ *  🔴 A CONSTANT RATHER THAN A LITERAL AT THE CALL SITE, because the failure it prevents is silent:
+ *  a field added to `CanvasRow` and not to the select comes back `undefined`, and every normaliser
+ *  in this file is written to tolerate a missing field. `canvas-store.test.ts` walks the interface
+ *  and this string together so the two cannot disagree. */
+const CANVAS_COLUMNS = "id,title,state,level,document,active_ms,created_at,updated_at";
+
 // ------------------------------------------------------------- row <-> canvas
 
 function list<T>(value: unknown): T[] {
@@ -492,7 +500,13 @@ export async function createFolder(userId: string | null, name: string, parentId
 
 export async function loadCanvas(userId: string | null, id: string): Promise<LearningCanvas | null> {
   if (userId) {
-    const { data, error } = await supabase.from(TABLE).select("*").eq("id", id).maybeSingle();
+    // 🔴 THE COLUMNS `canvasFromRow` READS, NOT `*`. This was `select("*")`, which also fetched
+    // `territory` — the serialised knowledge territory, up to 24-48 objects — on every open of every
+    // canvas, and then threw it away: `CanvasRow` does not declare the column and `canvasFromRow`
+    // never touches it. `listCanvases` above already does the narrow thing (it extracts one string
+    // out of the same jsonb server-side rather than shipping it), and this is the same rule applied
+    // to the read every single session makes.
+    const { data, error } = await supabase.from(TABLE).select(CANVAS_COLUMNS).eq("id", id).maybeSingle();
     if (!error && data) return canvasFromRow(data as CanvasRow);
     if (error && !isMissingTableError(error)) return localRead(id);
   }
