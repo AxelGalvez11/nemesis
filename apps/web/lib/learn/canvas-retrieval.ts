@@ -243,18 +243,66 @@ export function retrievalNote(documentCount: number, chunkCount: number): string
  * their upload failed, which is a worse lie than a wrong fact because they will go and do something
  * about it.
  */
+/**
+ * Whether a document was actually read, as opposed to merely attached.
+ *
+ * 🔴🔴🔴 "ATTACHED" AND "READ" ARE DIFFERENT FACTS AND WE WERE ONLY EVER TELLING ANYONE THE FIRST.
+ * Measured on production 2026-09-03: `44 ippe exam prep` sits on a canvas carrying
+ * `parseQuality: "degraded"`, ONE excerpt for the whole document, and ZERO passages in the search
+ * index. Nemesis knew the read had failed, recorded it, showed the learner nothing, and told the
+ * model nothing. On screen it is indistinguishable from a lecture that parsed perfectly.
+ *
+ * Owner, 2026-09-03: *"It should not pretend that it read something it did not parse successfully.
+ * If parsing failed, content is missing, a document is too large, or only part of a file was
+ * processed, the UI and the model should say so clearly."*
+ *
+ * 🔴 A SCANNED PDF IS THE ORDINARY CASE, NOT AN EDGE ONE. A photocopied handout has no text layer;
+ * the parse comes back as a `text-only` envelope with no structure, which the chunker cannot index
+ * at all. That document is attached, looks normal, and is invisible to every question asked of it.
+ */
+function readState(source: CanvasSource): "read" | "degraded" | "unreadable" {
+  const usable = source.excerpts.filter((excerpt) => excerpt.text.trim().length > 0).length;
+  if (usable === 0) return "unreadable";
+  // 🔴 RECORDED FACTS ONLY, NEVER A PROXY FOR ONE. The first version also treated "one excerpt for
+  // the whole document" as degraded, reasoning that a single undifferentiated blob retrieves badly.
+  // My own existing guard disproved it immediately: a short note legitimately has one excerpt, and
+  // the rule marked perfectly clean sources as broken. Warning about a good file is not a safer
+  // error than staying quiet about a bad one, it just teaches the learner to ignore the warning.
+  // `parseQuality` is what the reader actually concluded, and it caught the real case on its own.
+  if (source.parseQuality === "degraded") return "degraded";
+  return "read";
+}
+
 export function inventoryNote(all: readonly CanvasSource[], shown: readonly CanvasSource[]): string {
   if (all.length === 0) return "";
   const shownIds = new Set(shown.map((source) => source.id));
   const lines = all.map((source) => {
     const title = source.title.trim() || source.id;
+    const state = readState(source);
+    if (state === "unreadable") {
+      return `- ${title} (ATTACHED BUT NOT READ: nothing usable came out of this file, so you have none of its content)`;
+    }
+    if (state === "degraded") {
+      const why = (source.coverageNote ?? "").trim();
+      return `- ${title} (ATTACHED BUT ONLY PARTLY READ${why ? `: ${why}` : ", so some of it is missing"})`;
+    }
     return shownIds.has(source.id) ? `- ${title}` : `- ${title} (attached and readable; no passage from it matched this question)`;
   });
+
+  const broken = all.filter((source) => readState(source) !== "read").length;
   return (
     `The learner has ${all.length} document${all.length === 1 ? "" : "s"} attached to this canvas. This is the ` +
     `complete list:\n${lines.join("\n")}\n\n` +
-    `Every document above is attached and readable. Some of them have no passage below simply because nothing in ` +
-    `them matched what was asked. Never tell the learner a listed document is missing, unavailable to you, or was ` +
-    `not uploaded: say that its text was not retrieved for this particular question, and offer to look at it.`
+    `A document with no marking beside it is attached and readable; if it has no passage below, that is only ` +
+    `because nothing in it matched what was asked. Never tell the learner such a document is missing, unavailable ` +
+    `to you, or was not uploaded: say its text was not retrieved for this particular question, and offer to look ` +
+    `at it.` +
+    (broken > 0
+      ? `\n\nA document marked ATTACHED BUT NOT READ or ONLY PARTLY READ is different and you must not paper over ` +
+        `it. You do not have that content and cannot answer from it. If the learner asks about one, say plainly ` +
+        `that the file did not read properly and that they should re-upload it or send a text version, rather than ` +
+        `answering from general knowledge as though you had read it. Never include such a document in a claim to ` +
+        `have covered their material.`
+      : "")
   );
 }

@@ -583,6 +583,21 @@ const OUTPUT_ICONS: Record<string, string> = {
  * page, so its presence IS the question "can this be opened, and where?". One idea, spelled once,
  * in three places.
  */
+/**
+ * The short warning a source row shows when the file did not read properly, or null when it did.
+ *
+ * 🔴 THE SAME TEST THE MODEL IS GIVEN, so the panel and the answer cannot disagree about whether a
+ * document was read. See `readState` in lib/learn/canvas-retrieval.ts. Owner, 2026-09-03: *"It
+ * should not pretend that it read something it did not parse successfully."*
+ */
+function sourceReadWarning(source: CanvasSource): string | null {
+  const usable = source.excerpts.filter((excerpt) => excerpt.text.trim().length > 0).length;
+  if (usable === 0) return "not read";
+  // Recorded facts only: see the note on `readState` for why "one excerpt" was dropped.
+  if (source.parseQuality === "degraded") return "partly read";
+  return null;
+}
+
 function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) => void; source: CanvasSource }) {
   const host = hostnameOf(source.sourceUrl);
   // 🔴 ONE LINE, AND THE SECOND ONE IS GONE ON PURPOSE — owner, 2026-08-25: *"remove description
@@ -606,6 +621,16 @@ function SourceRow({ onPreview, source }: { onPreview: (source: CanvasSource) =>
       {source.coverageNote && (
         <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-amber-500">
           {source.coverageNote.replace(/^\[|\]$/g, "")}
+        </span>
+      )}
+      {/* 🔴🔴 A FILE THAT DID NOT READ MUST NOT LOOK LIKE ONE THAT DID. `coverageNote` above only
+          exists when the reader had something to say; a scanned handout produces no note at all, so
+          the worst case was the one that rendered as a perfectly ordinary row. Measured on
+          production 2026-09-03: a source carrying `parseQuality: "degraded"`, one excerpt for the
+          whole file and ZERO passages in the search index, shown with no marking whatsoever. */}
+      {!source.coverageNote && sourceReadWarning(source) && (
+        <span className="shrink-0 text-[length:var(--canvas-text-meta)] text-amber-500">
+          {sourceReadWarning(source)}
         </span>
       )}
     </span>

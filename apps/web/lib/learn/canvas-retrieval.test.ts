@@ -160,10 +160,12 @@ test("🔴 every attached document is named, even the ones this question did not
 test("a document with no matching passage is marked as attached, not as missing", () => {
   const note = inventoryNote(TEN, TEN.slice(0, 4));
   assert.ok(/attached and readable/.test(note), "an unmatched document is not marked as still attached");
-  assert.ok(
-    /[Nn]ever tell the learner a listed document is missing/.test(note),
-    "nothing stops the model reporting an attached file as missing",
-  );
+  // 🔴 THE INVARIANT, NOT THE SENTENCE. This quoted the wording verbatim and went red when the note
+  // grew a second case (a file that genuinely did not read, which the model MUST say is unusable).
+  // What must stay true is that a readable document with no matching passage is never reported as
+  // missing.
+  assert.ok(/[Nn]ever tell the learner/.test(note), "nothing stops the model reporting an attached file as missing");
+  assert.ok(/is missing, unavailable/.test(note), "the three words the model must not use are no longer named");
   assert.ok(!note.includes("Lecture 1 (attached and readable"), "a document that WAS shown is marked as unmatched");
   assert.ok(note.includes("Lecture 9 (attached and readable"), "a document that was NOT shown is unmarked");
 });
@@ -179,4 +181,58 @@ test("both lanes carry the inventory, not just one", () => {
   const deliverables = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
   assert.match(chat, /inventoryNote\(canvas\.sources, focused\.sources\)/, "the chat turn lost the inventory");
   assert.match(deliverables, /inventoryNote\(canvas\.sources, shown\)/, "the deliverable brief lost the inventory");
+});
+
+// ---------------------------------------------------------------- what was not read
+
+/** A source shaped the way a scanned handout arrives: attached, one blob, nothing indexable. */
+function source(over: Partial<CanvasSource> & { id: string; title: string }): CanvasSource {
+  return {
+    excerpts: [{ id: `${over.id}:e1`, label: null, text: "Some readable paragraph of the lecture." }],
+    kind: "pdf",
+    ...over,
+  } as unknown as CanvasSource;
+}
+
+test("🔴 a document that did not read is not listed as though it did", () => {
+  // Measured on production 2026-09-03: `44 ippe exam prep` carried parseQuality "degraded", ONE
+  // excerpt for the whole document and ZERO passages in the search index. Nemesis knew, recorded
+  // it, and said nothing to anyone. On screen it was indistinguishable from a clean parse.
+  const all = [
+    source({ excerpts: [{ id: "s1:e1", label: null, text: "Real content." }, { id: "s1:e2", label: null, text: "More." }], id: "s1", title: "Good lecture" }),
+    source({ excerpts: [], id: "s2", title: "Scanned handout" }),
+    source({ id: "s3", parseQuality: "degraded", title: "Half-read deck" } as never),
+  ];
+  const note = inventoryNote(all, [all[0]!]);
+  assert.match(note, /Scanned handout \(ATTACHED BUT NOT READ/, "a file with nothing in it reads as ordinary");
+  assert.match(note, /Half-read deck \(ATTACHED BUT ONLY PARTLY READ/, "a degraded parse reads as ordinary");
+  assert.ok(!/Good lecture \(ATTACHED BUT/.test(note), "a clean parse was marked as broken");
+});
+
+test("the model is told it cannot answer from a file that did not read", () => {
+  // 🔴 THE MARKING ALONE IS NOT ENOUGH. Without this the model sees "ATTACHED BUT NOT READ" and
+  // still answers about the document from general knowledge, which is the exact pretence the owner
+  // asked us to stop: "It should not pretend that it read something it did not parse successfully."
+  const note = inventoryNote([source({ excerpts: [], id: "s1", title: "Scanned handout" })], []);
+  assert.match(note, /You do not have that content and cannot answer from it/, "nothing stops the model answering anyway");
+  assert.match(note, /did not read properly/, "the model is not told what to say to the learner");
+  assert.match(note, /Never include such a document in a claim to have covered their material/, "a coverage claim can still include it");
+});
+
+test("a canvas where everything read cleanly carries no warning paragraph", () => {
+  // 🔴 A WARNING THAT IS ALWAYS THERE IS A WARNING NOBODY READS.
+  const clean = [source({ excerpts: [{ id: "s1:e1", label: null, text: "One." }, { id: "s1:e2", label: null, text: "Two." }], id: "s1", title: "Lecture" })];
+  const note = inventoryNote(clean, clean);
+  assert.ok(!/ATTACHED BUT/.test(note), "a clean canvas is being warned about");
+  assert.ok(!/cannot answer from it/.test(note), "the unread paragraph appears with nothing unread");
+});
+
+test("the panel and the model apply the SAME test", () => {
+  // Two owners of one judgement is how a panel comes to say "partly read" beside an answer that
+  // claims full coverage. Both read parseQuality and count usable excerpts, the same way.
+  const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
+  assert.match(controls, /function sourceReadWarning/, "the source row no longer says when a file did not read");
+  assert.match(controls, /parseQuality === "degraded"/, "the panel stopped reading the recorded parse quality");
+  const retrieval = readFileSync(new URL("./canvas-retrieval.ts", import.meta.url), "utf8");
+  assert.match(retrieval, /parseQuality === "degraded"/, "the model's inventory stopped reading parse quality");
 });
