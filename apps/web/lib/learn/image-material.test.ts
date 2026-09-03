@@ -47,8 +47,14 @@ test("🔴🔴 an image is named by its FILE, never by what a model saw in it", 
   const code = session.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   assert.match(code, /title: extracted\.kind === "image" \? file\.name :/, "an image is named by something other than its file again");
   assert.ok(!/extracted\.title \?\? file\.name/.test(code), "the extractor's title is being taken unchecked again");
-  // The other half: a document IS named from the extractor's offer, once that offer has passed the
-  // shape tests in `document-title.ts` (a table header row is not a title).
+  // The other half: the extractor's offer is never taken whole. It has to pass the shape tests in
+  // `document-title.ts` first (a table header row is not a title).
+  //
+  // 🔴 THIS HALF NARROWED ON 2026-09-03 AND THE CLAIM DID NOT. Every uploaded file now keeps its
+  // own name (`attachedFileTitle`) — the image rule above, generalised — so the only source still
+  // named from the extractor's offer is a PROMOTED WEB PAGE, whose "file name" we invented
+  // ourselves a moment earlier. That is the call this line is now watching, and it is still the
+  // one place a parse gets to suggest a name.
   assert.match(code, /documentTitle\(extracted\.title, file\.name\)/, "a document no longer gets its name checked");
 });
 
