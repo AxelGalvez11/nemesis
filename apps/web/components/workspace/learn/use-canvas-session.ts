@@ -485,7 +485,10 @@ export interface CanvasSession {
   recordEvent: (event: NewLearningEvent) => void;
   /** Records a learner-visible moment for the History Rail. 🔴 Never evidence — see the
    *  implementation's own note, and lib/learn/canvas-moment.ts. */
-  recordMoment: (moment: NewCanvasMoment) => void;
+  /** Records a learner-visible moment and returns the id it was filed under, so the caller can
+   *  tie what is on screen to the History Rail row that points at it. Null when nothing was
+   *  recorded and no previous moment exists. */
+  recordMoment: (moment: NewCanvasMoment) => string | null;
   selectionBusy: boolean;
   selectionError: string | null;
   clearSelectionAnswer: () => void;
@@ -834,18 +837,30 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    */
   const recordMoment = useCallback(
     (moment: NewCanvasMoment) => {
-      update((current) => {
-        if (sameMoment(current.moments.at(-1), moment)) return current;
-        return {
-          ...current,
-          moments: appendMoment(
-            current.moments,
-            moment,
-            new Date().toISOString(),
-            `m${current.moments.length}-${Date.now()}`,
-          ),
-        };
-      });
+      // 🔴🔴 THE ID IS MINTED HERE AND HANDED BACK, AND THAT RETURN IS WHAT STOPS THE HISTORY RAIL
+      // BLANKING THE CONVERSATION. The rail's rows are moments; the page's turns are turns; the
+      // only thing that ties a row to something on screen is this id. Until it was returned, a turn
+      // taken in this sitting was filed into the thread under a made-up `turn-N-…` id, so its rail
+      // row matched no anchor on the page and pressing it fell through to the rewind — which
+      // replaces the whole conversation with a reconstruction of one moment. Owner, 2026-09-03:
+      // *"the right side rail ticker doesnt scroll to the previous chats and instead just isolates
+      // them away from the chat history, i need scrolling not disappearing conversation."*
+      //
+      // 🔴 MINTED BEFORE `update`, NOT INSIDE IT, BECAUSE A REACT UPDATER IS NOT A PLACE TO READ A
+      // VALUE OUT OF. `setCanvas`'s function form runs during the next render — assigning to a
+      // closed-over variable in there and returning it below hands back `null` every time — and
+      // StrictMode runs it twice besides. `latest.current` is the authoritative canvas at every
+      // point between renders (it is written on render and inside `update`), so both the duplicate
+      // check and the id can be decided from it synchronously.
+      const current = latest.current;
+      if (sameMoment(current.moments.at(-1), moment)) return current.moments.at(-1)?.id ?? null;
+      const id = `m${current.moments.length}-${Date.now()}`;
+      update((live) =>
+        sameMoment(live.moments.at(-1), moment)
+          ? live
+          : { ...live, moments: appendMoment(live.moments, moment, new Date().toISOString(), id) },
+      );
+      return id;
     },
     [update],
   );
