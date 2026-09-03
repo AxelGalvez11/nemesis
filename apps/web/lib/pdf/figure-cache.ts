@@ -42,11 +42,39 @@ export interface FigureDescription {
 }
 
 export interface FigureDescriptionStore {
-  /** Descriptions already held for these content keys. Missing keys are simply absent. */
-  get(contentKeys: readonly string[]): Promise<Map<string, FigureDescription>>;
-  /** Remember these. Never throws — a cache write that fails must not fail a parse. */
-  put(entries: readonly ({ contentKey: string } & FigureDescription)[]): Promise<void>;
+  /**
+   * Descriptions already held for these content keys, produced by THIS question. Missing keys are
+   * simply absent.
+   *
+   * 🔴🔴 `promptVersion` IS PART OF THE KEY, AND LEAVING IT OUT WAS A REAL DEFECT WAITING TO
+   * HAPPEN. The content key is a hash of the pixels, so a cached row answers "what did a model say
+   * about this picture" — a question whose answer changes the moment the prompt does. When
+   * `FIGURE_PROMPT` gained its table clause on 2026-09-03, every table already cached as a
+   * one-sentence caption would have been served back forever, and the reparse meant to PROVE the
+   * new clause works would have been answered by the old one. A row with a different version, or
+   * with none recorded, is a MISS: unknown provenance is not this prompt's answer.
+   */
+  get(contentKeys: readonly string[], promptVersion: string): Promise<Map<string, FigureDescription>>;
+  /** Remember these, against the question that produced them. Never throws — a cache write that
+   *  fails must not fail a parse. */
+  put(
+    entries: readonly ({ contentKey: string } & FigureDescription)[],
+    promptVersion: string,
+  ): Promise<void>;
 }
+
+/**
+ * Longest description this cache will remember.
+ *
+ * 🔴 OVER THIS IT REMEMBERS NOTHING, RATHER THAN REMEMBERING A PIECE. The row used to be written
+ * with `description.slice(0, 4_000)`, which is harmless for a caption and corrupting for a
+ * transcribed table: a grid cut mid-row is a grid that has quietly lost its last rows, and every
+ * later parse of that picture would be served the truncated version as if it were the whole
+ * reading. A picture too big to remember is re-read and re-billed, which costs money; a truncated
+ * table costs a student the values. The column is unbounded `text`, so this is a size policy
+ * rather than a limit the database imposes.
+ */
+export const MAX_CACHED_DESCRIPTION_CHARS = 16_000;
 
 /**
  * The default, and it is a real object rather than a null check at every call site.
@@ -110,7 +138,7 @@ export function splitByCache<T extends { readonly name: string }>(
  */
 export function supabaseFigureCache(admin: SupabaseClient, userId: string): FigureDescriptionStore {
   return {
-    async get(contentKeys) {
+    async get(contentKeys, promptVersion) {
       const found = new Map<string, FigureDescription>();
       const keys = [...new Set(contentKeys)].filter(Boolean);
       if (keys.length === 0) return found;
@@ -121,6 +149,11 @@ export function supabaseFigureCache(admin: SupabaseClient, userId: string): Figu
           // 🔴 SCOPED TO THE OWNER. The service role bypasses row-level security, so this predicate
           // is the whole of the privacy argument — see the migration.
           .eq("user_id", userId)
+          // 🔴 AND SCOPED TO THE QUESTION. A row written under a different prompt — or under none,
+          // which is every row that existed before 2026-09-03 — does not answer this one. Those
+          // rows are left in place and simply never match; the next read overwrites them in
+          // `(user_id, content_key)`.
+          .eq("prompt_version", promptVersion)
           .in("content_key", keys);
         if (error || !data) return found;
         for (const row of data) {
@@ -143,17 +176,20 @@ export function supabaseFigureCache(admin: SupabaseClient, userId: string): Figu
       return found;
     },
 
-    async put(entries) {
-      if (entries.length === 0) return;
+    async put(entries, promptVersion) {
+      // 🔴 AN OVER-LONG READ IS DROPPED, NOT CLIPPED. See `MAX_CACHED_DESCRIPTION_CHARS`: this
+      // used to write `description.slice(0, 4_000)`, which would store a transcribed table with
+      // its last rows silently gone and then serve that as the whole reading forever. The figure
+      // beside it keeps its own entry — one unusual picture must not cost the batch its cache.
+      const storable = entries.filter((entry) => entry.description.length <= MAX_CACHED_DESCRIPTION_CHARS);
+      if (storable.length === 0) return;
       try {
         await admin.from("figure_descriptions").upsert(
-          entries.map((entry) => ({
+          storable.map((entry) => ({
             content_key: entry.contentKey,
-            // 🔴 CLIPPED TO THE COLUMN'S OWN BOUND RATHER THAN LET THE INSERT FAIL. A single
-            // over-long description would otherwise reject the whole batch, so one unusual figure
-            // would cost every figure beside it its cache entry.
-            description: entry.description.slice(0, 4_000),
+            description: entry.description,
             labels: entry.labels as unknown as Record<string, unknown>[],
+            prompt_version: promptVersion,
             user_id: userId,
             ...(entry.model ? { model: entry.model } : {}),
           })),

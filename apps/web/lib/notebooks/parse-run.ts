@@ -294,8 +294,11 @@ export async function runParseOnThread(
       threw?: string;
       peakRssMb?: number;
       visionSpend?: ParseRunSpend;
-      cacheGet?: { id: number; keys: string[] };
-      cachePut?: { entries: { contentKey: string; description: string; labels: unknown[] }[] };
+      cacheGet?: { id: number; keys: string[]; promptVersion?: string };
+      cachePut?: {
+        entries: { contentKey: string; description: string; labels: unknown[] }[];
+        promptVersion?: string;
+      };
     }) => {
       // The handshake, not a result. Everything after it may have cost money.
       if (message.ready) {
@@ -312,9 +315,12 @@ export async function runParseOnThread(
       // 🔴 AND NEITHER BRANCH CAN FAIL A PARSE. A rejected lookup answers with nothing; a rejected
       // write is a figure we will pay to describe again. Both are cheaper than a thrown parse.
       if (message.cacheGet) {
-        const { id, keys } = message.cacheGet;
+        const { id, keys, promptVersion } = message.cacheGet;
         void (options.figureCache ?? NO_THREAD_CACHE)
-          .get(keys)
+          // 🔴 A REQUEST THAT NAMES NO PROMPT IS ANSWERED WITH NOTHING, NOT WITH EVERYTHING. An
+          // older thread build, or a message that lost the field crossing the port, must not be
+          // served rows written under some other question — an unknown version is a miss.
+          .get(keys, promptVersion ?? "")
           .then((found) => {
             if (settled) return;
             worker.postMessage({ cacheResult: { found: [...found.entries()], id } });
@@ -332,6 +338,7 @@ export async function runParseOnThread(
               description: entry.description,
               labels: (entry.labels ?? []) as never[],
             })),
+            message.cachePut.promptVersion ?? "",
           )
           .catch(() => {});
         return;

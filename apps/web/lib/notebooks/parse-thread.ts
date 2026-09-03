@@ -52,8 +52,19 @@ import {
  * the deployment has no cache — must not be able to stall a parse the learner is waiting for.
  */
 export type ParseThreadRequest =
-  | { cacheGet: { id: number; keys: string[] } }
-  | { cachePut: { entries: { contentKey: string; description: string; labels: unknown[] }[] } };
+  // 🔴 `promptVersion` RIDES BOTH MESSAGES, AND IT HAS TO. The thread holds no database client, so
+  // the cache decision is made on the parent's side of this boundary — and a parent that answered
+  // without it would hand back an answer produced by a DIFFERENT question, which is the exact
+  // failure `FIGURE_PROMPT_VERSION` exists to prevent. This is a structural field crossing a
+  // boundary, which is the shape `document-boundary.test.ts` exists to catch; `parse-cache-boundary.test.ts`
+  // asserts it survives in both directions.
+  | { cacheGet: { id: number; keys: string[]; promptVersion: string } }
+  | {
+      cachePut: {
+        entries: { contentKey: string; description: string; labels: unknown[] }[];
+        promptVersion: string;
+      };
+    };
 
 /** What the parent sends back for a `cacheGet`. */
 export interface ParseThreadCacheReply {
@@ -175,7 +186,7 @@ export function portFigureCache(
   });
 
   return {
-    async get(keys) {
+    async get(keys, promptVersion) {
       if (keys.length === 0) return new Map();
       const id = nextId++;
       return await new Promise<Map<string, FigureDescription>>((resolve) => {
@@ -188,11 +199,11 @@ export function portFigureCache(
           clearTimeout(timer);
           resolve(found);
         });
-        ask({ cacheGet: { id, keys: [...keys] } });
+        ask({ cacheGet: { id, keys: [...keys], promptVersion } });
       });
     },
 
-    async put(entries) {
+    async put(entries, promptVersion) {
       if (entries.length === 0) return;
       // 🔴 FIRE AND FORGET, DELIBERATELY. A write the parent never performs costs money next time
       // and nothing now; waiting for its acknowledgement would put a database round trip between
@@ -204,6 +215,7 @@ export function portFigureCache(
             description: entry.description,
             labels: [...entry.labels],
           })),
+          promptVersion,
         },
       });
     },
