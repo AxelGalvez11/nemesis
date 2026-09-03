@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { canvasFromRow, canvasToRow, isMissingTableError, mergeSourceIntoCanvas } from "./canvas-store";
@@ -486,4 +487,31 @@ test("evidence written before we captured time is honestly undated, not backfill
   });
   assert.equal(back.responses[0]?.at, undefined);
   assert.equal(back.responses[0]?.objectiveIds, undefined);
+});
+
+// ── the open reads what it uses, and nothing else, 2026-09-02 ───────────────────────────────────
+
+test("🔴 loading a canvas selects exactly the columns `canvasFromRow` reads", () => {
+  // `loadCanvas` used `select("*")`, so every open of every canvas also fetched `territory` — the
+  // serialised knowledge territory — and discarded it, because `CanvasRow` does not declare that
+  // column and `canvasFromRow` never touches it. Measured on production 2026-09-02 against the
+  // largest saved canvas: `select=*` returned 1391 KB of JSON in a median 685 ms; the same read
+  // without the territory returned 1375 KB in 528 ms.
+  //
+  // 🔴 THE ASSERTION IS "THE TWO LISTS AGREE", NOT "THE STRING IS THIS". A column added to
+  // `CanvasRow` and forgotten in the select comes back `undefined`, and every normaliser in this
+  // file tolerates a missing field — so the failure is silent data loss, exactly the shape the
+  // `events` and `moments` comments in `canvasFromRow` already record. Comparing the two by name
+  // is what makes forgetting one a red test rather than a quiet bug.
+  const source = readFileSync(new URL("./canvas-store.ts", import.meta.url), "utf8");
+  const columns = /const CANVAS_COLUMNS = "([^"]+)";/.exec(source)?.[1];
+  assert.ok(columns, "CANVAS_COLUMNS is gone — the open is selecting something this test cannot see");
+
+  const declared = /export interface CanvasRow \{([\s\S]*?)\n\}/.exec(source)?.[1];
+  assert.ok(declared, "CanvasRow is gone or reshaped");
+  const fields = [...declared.matchAll(/^\s{2}([a-z_]+)[?]?:/gm)].map((m) => m[1]).sort();
+
+  assert.deepEqual(columns.split(",").sort(), fields, "the select and CanvasRow disagree about the columns a canvas is made of");
+  assert.match(source, /\.select\(CANVAS_COLUMNS\)/, "loadCanvas is not using the narrow column list");
+  assert.ok(!/\.select\("\*"\)/.test(source), "a select(\"*\") is back: it ships the territory jsonb on every canvas open");
 });

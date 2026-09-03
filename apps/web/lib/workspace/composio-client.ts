@@ -50,7 +50,39 @@ async function call(payload: Record<string, unknown>): Promise<Record<string, un
   }
 }
 
-export async function connectionStatus(): Promise<ConnectionStatus> {
+/**
+ * Concurrent readers share ONE request, and that is a measured fix rather than tidiness.
+ *
+ * 🔴🔴 THE FRONT DOOR ASKED TWICE, EVERY TIME. Measured on production 2026-09-02, loading
+ * `/learn` signed in: two `POST /api/composio` calls, both starting at 342 ms, taking 589 ms and
+ * 713 ms — the same question, asked twice, each one a round trip to Composio's own API behind our
+ * route. `use-connected-apps.ts` had built exactly this share for itself when the shell began
+ * mounting two navs, and `canvas-home.tsx` called straight past it: a deduplicator one caller
+ * cannot see is a deduplicator that does not work.
+ *
+ * 🔴 SO THE SHARE LIVES WITH THE CALL, NOT WITH ONE CALLER. Every reader of this status — the two
+ * navs, the front door's connect row, the Plugins page, the settings screen — now merges into one
+ * request whenever their calls overlap, and none of them has to know the others exist.
+ *
+ * 🔴 CLEARED WHEN IT SETTLES, NOT CACHED, WHICH IS THE OTHER HALF. This merges calls that overlap
+ * and nothing more: the Plugins page and the settings screen re-read this immediately after a
+ * connect or a disconnect, and a cache would hand them the answer from before the thing they just
+ * did. A read that starts after the previous one finished is always fresh.
+ */
+let statusInFlight: Promise<ConnectionStatus> | null = null;
+
+export function connectionStatus(): Promise<ConnectionStatus> {
+  if (statusInFlight) return statusInFlight;
+  const started = readConnectionStatus();
+  statusInFlight = started;
+  void started.then(
+    () => { if (statusInFlight === started) statusInFlight = null; },
+    () => { if (statusInFlight === started) statusInFlight = null; },
+  );
+  return started;
+}
+
+async function readConnectionStatus(): Promise<ConnectionStatus> {
   const body = await call({ op: "status" });
   if (!body) return NOT_CONFIGURED;
   return {

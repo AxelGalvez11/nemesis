@@ -237,3 +237,24 @@ test("🔴 the section is called Apps, the word the owner asked for", () => {
   assert.match(surface, /id: "connections", label: "Apps"/, "the Apps section was renamed");
   assert.ok(!/label: "Connected apps"|label: "Integrations"/.test(surface), "the old engineer-facing label came back");
 });
+
+// ── one question, one request, 2026-09-02 ───────────────────────────────────────────────────────
+
+test("🔴 overlapping reads of the connection status share one round trip", () => {
+  // MEASURED, production, 2026-09-02, loading `/learn` signed in: two `POST /api/composio` calls,
+  // both starting at 342 ms, 589 ms and 713 ms long — the same question asked twice, each one a
+  // round trip to Composio's own API behind our route. `use-connected-apps.ts` had built this share
+  // for itself when the shell began mounting two navs; `canvas-home.tsx` called `connectionStatus`
+  // directly and went straight past it. A deduplicator one caller cannot see does not deduplicate.
+  //
+  // 🔴 AND IT MUST NOT BECOME A CACHE. The Plugins page and the settings screen re-read this
+  // immediately after a connect or a disconnect; a remembered answer would show them the state from
+  // before the thing they just did. The share is cleared when the request settles, so a read that
+  // starts after the previous one finished is always fresh — that is what the clearing asserts.
+  assert.match(CLIENT, /let statusInFlight: Promise<ConnectionStatus> \| null = null;/, "the shared read is gone");
+  assert.match(CLIENT, /if \(statusInFlight\) return statusInFlight;/, "concurrent callers no longer share the request");
+  assert.match(CLIENT, /if \(statusInFlight === started\) statusInFlight = null;/, "the share is never released, so it became a cache");
+
+  const hook = strip(readFileSync(new URL("../../components/workspace/shell/use-connected-apps.ts", import.meta.url), "utf8"));
+  assert.ok(!/function statusOnce/.test(hook), "the nav kept a second, private deduplicator that other callers cannot reach");
+});

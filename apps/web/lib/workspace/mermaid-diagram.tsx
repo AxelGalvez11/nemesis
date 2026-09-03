@@ -51,13 +51,33 @@ function darkPage(): boolean {
   }
 }
 
-function loadEngine(): Promise<MermaidModule> {
+/**
+ * The one mermaid engine in the product, loaded on first use.
+ *
+ * 🔴🔴 EXPORTED, AND THAT IS THE WHOLE OF PR "mermaid is not in the bundle". The header above says
+ * "THE LIBRARY LOADS ON FIRST USE, NOT IN THE BUNDLE" — and it was not true, because a SECOND door
+ * existed. `components/ai-elements/message.tsx` imported `@streamdown/mermaid`, whose first line is
+ * a plain `import n from "mermaid"`, so every page that could render a message pulled the whole
+ * library in eagerly. Measured on production 2026-09-02: the `/learn` route shipped 8.86 MB of
+ * JavaScript in 69 files, and its largest chunk was 4.12 MB — mermaid. Bundling the same import
+ * graph with esbuild puts the marginal cost of that one line at 3.12 MB minified, 854 KB gzipped.
+ *
+ * So the plugin in `mermaid-plugin.ts` reaches the library through THIS function instead, and there
+ * is exactly one place that decides mermaid's configuration.
+ *
+ * 🔴 `suppressErrorRendering` IS NEW HERE AND IT IS THE STREAMDOWN DEFAULT ARRIVING, NOT A CHANGE
+ * OF MIND. Without it a `render` that throws makes mermaid append its own "Syntax error" graphic to
+ * the document. This component never hits that (it parses first), but the plugin has no such gate —
+ * it hands failures to Streamdown's own error component — and one engine must be safe for both.
+ */
+export function loadEngine(): Promise<MermaidModule> {
   engine ??= import("mermaid").then((mod) => {
     const mermaid = mod.default;
     mermaid.initialize({
       fontFamily: "inherit",
       securityLevel: "strict",
       startOnLoad: false,
+      suppressErrorRendering: true,
       theme: darkPage() ? "dark" : "neutral",
     });
     return mermaid;
