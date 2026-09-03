@@ -11,6 +11,9 @@
 // actions, the notes made from this file, where it is filed — lives in the "…"
 // menu instead. One rail, one menu, and the Library tree still reachable.
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+
 import { IconChevronLeft } from "@tabler/icons-react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -79,6 +82,15 @@ export interface ReaderTopBarProps {
    * another way on this surface or is a slower version of typing into the conversation beside it.
    */
   dense?: boolean;
+  /**
+   * A host-provided row to draw into, instead of this bar's own `<header>`.
+   *
+   * 🔴 IT REPLACES THE BAR, IT DOES NOT ADD TO IT. When the docked panel lends its header row, this
+   * component paints the same controls through a portal and renders no bar of its own — otherwise
+   * the controls would appear twice, once in each row, which is worse than the second row it is
+   * there to remove.
+   */
+  toolbarSlot?: React.RefObject<HTMLElement | null>;
   /** The reader's own contents rail, on the right. Omitted for file types that
    *  have nothing to list (a single image). */
   railOpen: boolean;
@@ -136,15 +148,22 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     linkedNotes,
     onOpenNote,
     folderPath,
+    toolbarSlot,
   } = props;
 
   const trail = folderTrail(folderPath);
 
-  return (
-    // One row, never two: a toolbar that reflows as the window narrows moves the
-    // control you were reaching for. The title is the only thing allowed to
-    // shrink, and the least-used controls hide first.
-    <header className="nemesis-reader-bar flex h-11 shrink-0 items-center gap-2 overflow-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-chrome) px-3">
+  /**
+   * 🔴 THE SLOT IS A REF, SO THE FIRST RENDER HAS NOTHING TO PORTAL INTO. `ref.current` is null
+   * until the host's own element is committed, and reading it during render would silently draw
+   * nothing on the pass that matters. One state flip after mount is what makes the target
+   * available, and it is why this is not simply `createPortal(bar, slot.current)`.
+   */
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => setSlot(toolbarSlot?.current ?? null), [toolbarSlot]);
+
+  const bar = (
+    <>
       {onBack && !dense && (
         <button
           aria-label="Back to Library"
@@ -395,6 +414,20 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           </DropdownMenuLabel>
         </DropdownMenuContent>
       </DropdownMenu>
+    </>
+  );
+
+  // 🔴 NO `<header>` WHEN THE HOST LENT ITS OWN ROW. The bar's chrome — the 47px band, the bottom
+  // border, the `--ui-bg-chrome` fill — is what makes it a second row; inside the panel's header
+  // the controls need none of it.
+  if (toolbarSlot) return slot ? createPortal(bar, slot) : null;
+
+  return (
+    // One row, never two: a toolbar that reflows as the window narrows moves the
+    // control you were reaching for. The title is the only thing allowed to
+    // shrink, and the least-used controls hide first.
+    <header className="nemesis-reader-bar flex h-11 shrink-0 items-center gap-2 overflow-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-chrome) px-3">
+      {bar}
     </header>
   );
 }

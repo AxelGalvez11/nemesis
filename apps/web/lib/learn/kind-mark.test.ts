@@ -98,17 +98,18 @@ test("🔴 both source surfaces draw the mark, or one of them is still a wall of
   // The shelf the owner reported, and the reading pane's tab strip, where six documents truncate
   // to 220px each and the glyph is most of what distinguishes them.
   const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
-  // 🔴 THE STRIP MOVED TO `dock-tabs.tsx` when documents and artifacts became one sidebar (owner,
-  // 2026-09-03), and the mark moved with it. Reading `source-preview.tsx` for it now would pass on
-  // an empty search and say nothing about the tabs a learner sees.
-  const tabs = readFileSync(new URL("../../components/workspace/learn/dock-tabs.tsx", import.meta.url), "utf8");
+  // 🔴 THE STRIP MOVED TO `dock-switcher.tsx` when documents and artifacts became one sidebar
+  // (owner, 2026-09-03), and became a dropdown a few hours later when the owner asked for the tabs
+  // and the icons on one row. The mark moved with it both times. Reading `source-preview.tsx` for
+  // it now would pass on an empty search and say nothing about what a learner sees.
+  const tabs = readFileSync(new URL("../../components/workspace/learn/dock-switcher.tsx", import.meta.url), "utf8");
   assert.match(controls, /fileMark\(source\.title, source\.kind\)/, "the sources shelf is back to one glyph for everything");
-  assert.match(tabs, /fileMark\(item\.source\.title, item\.source\.kind\)/, "the sidebar's document tabs are back to one glyph for everything");
+  assert.match(tabs, /fileMark\(item\.source\.title, item\.source\.kind\)/, "the sidebar's document rows are back to one glyph for everything");
   // 🔴 AN ARTIFACT TAB WEARS ITS KIND TOO. A study guide, a deck and a spreadsheet sit in the same
   // strip as the lectures now, and giving only the documents a mark would make the artifacts the
   // wall of identical rows this test exists to prevent.
-  assert.match(tabs, /fileMark\(item\.output\.title, item\.output\.kind\)/, "artifact tabs draw one glyph for everything");
-  assert.ok(!/name="file"\s+size="14px"/.test(tabs), "the tab strip still hard-codes the generic page glyph");
+  assert.match(tabs, /fileMark\(item\.output\.title, item\.output\.kind\)/, "artifact rows draw one glyph for everything");
+  assert.ok(!/name="file"\s+size="14px"/.test(tabs), "the switcher still hard-codes the generic page glyph");
 });
 
 test("🔴🔴 a coverage note may not evict the file name from its own row", () => {

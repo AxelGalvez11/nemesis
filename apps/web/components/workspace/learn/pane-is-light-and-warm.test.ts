@@ -95,10 +95,10 @@ test("🔴🔴 one sidebar: a document and an artifact are tabs in it, never two
   assert.match(controls, /dock\.active\?\.kind === "output"/u, "the artifact in front no longer comes from the sidebar's own list");
   assert.match(dock, /openOutput: \(output: CanvasOutput\) => void;/u, "the sidebar cannot hold an artifact");
 
-  // 🔴 AND ONE STRIP. Both bodies draw the same tabs from the same list, which is what makes it
-  // read as one sidebar rather than two that happen to be the same width.
+  // 🔴 AND ONE SWITCHER. Both bodies draw the same control over the same list, which is what makes
+  // it read as one sidebar rather than two that happen to be the same width.
   for (const [name, source] of [["the document panel", read("./source-preview.tsx")], ["the artifact panel", read("./output-preview.tsx")]] as const) {
-    assert.match(code(source), /<DockTabs\b/u, `${name} draws a strip of its own again`);
+    assert.match(code(source), /<DockSwitcher\b/u, `${name} names what is open its own way again`);
   }
 
   // 🔴 ONLY ONE BODY IS EVER IN FRONT, and this is the clause that does it: the document panel
@@ -106,6 +106,58 @@ test("🔴🔴 one sidebar: a document and an artifact are tabs in it, never two
   // while its documents stay mounted behind.
   assert.match(code(read("./document-dock.tsx")), /active\?\.kind === "document" \? active\.source\.id : null/u,
     "the document panel no longer stands down when an artifact is in front");
+});
+
+test("🔴🔴 ONE ROW: the reader draws its controls in the panel's header, not a bar of its own", () => {
+  // Owner, 2026-09-03, with a picture of the header: *"the comments icon is still like below, it
+  // needs to be like ... all the tabs and icons should be on the same row"*.
+  //
+  // The docked panel had its header, and directly under it the reader painted a second 47px bar
+  // carrying the comment toggle and the actions menu. Two rows of chrome above a document that has
+  // little enough height, and the controls the owner had just asked to gather were split across
+  // both of them.
+  const panel = code(read("./source-preview.tsx"));
+  const bar = code(read("../reader/reader-top-bar.tsx"));
+
+  // 🔴 A SLOT, NOT A HOIST. Commenting is a mode of the DOCUMENT and the actions menu is built from
+  // the reader's own state — its folder trail, its linked notes, its rotate handler. Lifting them
+  // into the panel would move a dozen values up two components; lending a place to draw moves
+  // nothing but the pixels.
+  assert.match(panel, /ref=\{toolbarSlot\}/u, "the panel stopped lending the reader a row");
+  assert.match(bar, /if \(toolbarSlot\) return slot \? createPortal\(bar, slot\) : null;/u,
+    "the reader draws its own bar again, which puts the controls back on a second row");
+
+  // 🔴 AND ONLY THE FRONT READER GETS IT. Every open document stays mounted, so handing the slot to
+  // all of them stacks one set of controls per open document in a single row.
+  assert.match(panel, /toolbarSlot=\{front \? toolbarSlot : undefined\}/u,
+    "every mounted reader is drawing into the header at once");
+
+  // 🔴 THE REF IS READ AFTER MOUNT, NOT DURING RENDER. `ref.current` is null on the first pass, and
+  // portalling into it there draws nothing — silently, on the render that matters.
+  assert.match(bar, /useEffect\(\(\) => setSlot\(toolbarSlot\?\.current \?\? null\), \[toolbarSlot\]\)/u,
+    "the portal target is read during render, so the first paint is empty");
+});
+
+test("🔴 what is open is a dropdown, not a row of tabs", () => {
+  // Owner, 2026-09-03: *"instead of tabs you have like a drop down menu of all the things you have
+  // open, with a downwards arrow ... that way we can have all the icons on the top row and more
+  // space for the thing."*
+  //
+  // Six open documents were six chips competing with the controls for one row, each truncated to
+  // 220px, in a strip that scrolled — so the one you wanted was often off screen. One button costs
+  // one slot however many are open.
+  const switcher = code(read("./dock-switcher.tsx"));
+  assert.match(switcher, /<ChevronDown\b/u, "the downwards arrow is gone, so the label reads as a title rather than a control");
+  assert.match(switcher, /DropdownMenuContent/u, "there is no menu of the other open things");
+
+  // 🔴 ONE OPEN THING IS A LABEL, NOT A MENU WITH ONE ROW IN IT — a chevron that opens a list of
+  // the thing you are already looking at is a control that does nothing, and this is the sidebar's
+  // most common state.
+  assert.match(switcher, /if \(items\.length === 1\)/u, "a single open document grew a menu of itself");
+
+  // 🔴 THE ✕ MUST NOT ALSO SWITCH. A button inside a `DropdownMenuItem` fires the item's select as
+  // well as its own, so closing a document would first open it.
+  assert.match(switcher, /event\.stopPropagation\(\);/u, "closing a row from the menu also selects it");
 });
 
 test("🔴 the sidebar carries the same controls whatever kind of thing is in it", () => {

@@ -32,7 +32,7 @@
 // `button:where(:not([data-workspace] *)) { background: var(--acid) }`, so a subtree moved to
 // `document.body` leaves the workspace scope and every button in it goes acid green.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -46,7 +46,7 @@ import type { ReaderSource } from "@/lib/reader/reader-source";
 import { cn } from "@/lib/utils";
 import { loadLibrarySource } from "@/lib/workspace/library-sources";
 
-import { DockTabs } from "./dock-tabs";
+import { DockSwitcher } from "./dock-switcher";
 import type { DockItem } from "./document-dock";
 import { CHROME } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
@@ -227,6 +227,8 @@ export function SourcePreview({
    * that made it feel like two products.
    */
   const [full, setFull] = useState(false);
+  /** Where the front reader draws its own controls. See the header below. */
+  const toolbarSlot = useRef<HTMLDivElement | null>(null);
 
   /**
    * The original file, downloaded.
@@ -306,10 +308,25 @@ export function SourcePreview({
           so they pushed the one control that closes the panel off the right edge and out of reach.
           The strip scrolls inside its own box; the button is its sibling and never moves. */}
       <div className={CHROME.header}>
-        {/* 🔴 THE STRIP IS SHARED WITH THE ARTIFACT PANEL — see dock-tabs.tsx. It used to be
-            written out here over `open`, which is documents only, so an artifact could not appear
-            in it and got a panel of its own instead. */}
-        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+        {/* 🔴 ONE BUTTON, NOT A STRIP — see dock-switcher.tsx. Six open documents used to be six
+            chips competing with the controls for this row; one button costs one slot however many
+            are open, which is what leaves room for everything to its right. */}
+        <DockSwitcher activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+
+        {/* 🔴🔴 THE READER'S OWN CONTROLS DRAW HERE, IN THIS ROW (owner, 2026-09-03: *"all the tabs
+            and icons should be on the same row"*). In dense mode the reader used to render its own
+            47px bar directly under this one, carrying the comment toggle and the actions menu — a
+            second row of chrome above a document that has little enough height already.
+
+            🔴 A SLOT, NOT A HOIST, AND THE DIFFERENCE IS OWNERSHIP. Comment is a mode of the
+            DOCUMENT and the actions menu is built from the reader's own state — the file's folder
+            trail, its linked notes, its rotate handler. Lifting them here would move a dozen
+            values up two components and leave the reader unable to say what it is doing. Lending
+            it a place to draw keeps every decision where it was and costs one ref.
+
+            🔴 ONLY THE FRONT READER IS GIVEN THE SLOT. Every open document stays mounted, so
+            handing the slot to all of them would stack five sets of controls in one row. */}
+        <div className="flex shrink-0 items-center gap-[4px]" ref={toolbarSlot} />
 
         {/* 🔴 THE SAME CONTROLS THE ARTIFACT PANEL CARRIES, IN THE SAME ORDER (owner, 2026-09-03:
             they *"should be in the sidebar always"*). One sidebar showing two kinds of thing with
@@ -414,6 +431,9 @@ export function SourcePreview({
                   onSendToChat={onSendToChat}
                   onUnitChange={(unit) => rememberUnit(source.id, unit)}
                   source={state.source}
+                  // 🔴 ONLY THE FRONT ONE. Every open document stays mounted, so handing the slot
+                  // to all of them would stack a set of controls per document in one row.
+                  toolbarSlot={front ? toolbarSlot : undefined}
                   variant="dialog"
                 />
               )}
