@@ -496,26 +496,6 @@ export interface CanvasSession {
   reset: () => void;
 }
 
-/** What the learner is told once a thing exists, and where to find it. 🔴 A `Record` over the whole
- *  union, so a new deliverable is a compile error here rather than a sentence about the wrong kind
- *  of artifact in the wrong place.
- *
- *  🔴🔴 `null` MEANS THE CONVERSATION ALREADY SAID IT. Owner, 2026-08-31, watching a deck get made:
- *  *"remove the 'flashcards saved' chip, that's not needed."* The turn had already printed
- *  **Flashcards ready: <name>** with the deck row under it, one click from opening — so the strip
- *  floated a second announcement over the first. A notice earns its place only by saying something
- *  the transcript does not, which is why the file kinds keep theirs: they name the outputs panel,
- *  and nothing else on screen does. `null` is not "no message", it is "the message is already
- *  there" — and it stays in the Record so a new kind still has to make this choice deliberately. */
-const MADE_NOTICE: Record<DeliverableKind, string | null> = {
-  document: "Document ready. Open it from the outputs panel to read it or download the Word file.",
-  flashcards: null,
-  note: "Note saved to your Library.",
-  pdf: "PDF ready. Open it from the outputs panel to read it or download the file.",
-  report: "Research saved to your Library, with its sources.",
-  sheet: "Spreadsheet ready. Open it from the outputs panel to see the table or download the CSV.",
-  slides: "Slides saved to your Library. Download them from the outputs panel, in any of twenty looks.",
-};
 
 /**
  * What the busy line says while each maker runs.
@@ -1838,23 +1818,22 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
         // 🔴 IN THE FLOW AS WELL AS IN THE PANEL. Both, not either: the panel is the canvas's
         // record and this is the hand-over.
         setMadeArtifact(result.output);
-        // The notice strip, deliberately — see showNotice's own comment above.
-        setError(
-          // 🔴 THE MAKER'S OWN LINE WINS WHERE IT HAS ONE. A research run costs a minute and real
-          // money, and "saved to your Library" tells the learner nothing about what it did. The
-          // report carries the same sentence in its footer, so the two cannot disagree.
-          // 🔴🔴 A `Record` OVER THE KINDS, AND THE TERNARY CHAIN IT REPLACES WAS ALREADY WRONG. It
-          // ended `: "Note saved to your Library."`, which is the branch every kind it did not name
-          // fell into — so making a spreadsheet said a note had been saved to a place it was not
-          // in. Two lies in one sentence, and nothing could catch it because a chain of ternaries
-          // has no missing case. A Record over `DeliverableKind` is a compile error instead.
-          //
-          // 🔴 AND IT SAYS WHERE THE THING ACTUALLY IS. Notes, flashcards and reports are filed in
-          // the Library. A document, a PDF and a spreadsheet are NOT — they live on the canvas as
-          // artifacts you open from the outputs panel, and telling somebody to look in the Library
-          // for one would send them somewhere it has never been.
-          result.note ? `${result.note}. Saved to your Library.` : MADE_NOTICE[kind],
-        );
+        // 🔴🔴🔴 THE CARD IS THE ONLY ANNOUNCEMENT NOW, AND THE STRIP THAT USED TO SIT BESIDE IT
+        // IS GONE. `setMadeArtifact` above paints the artifact in the conversation — its name, its
+        // icon, its real filename, one click from opening. This line then floated a SECOND notice
+        // over the top of it saying the same thing in worse words: "Document ready. Open it from
+        // the outputs panel to read it or download the Word file."
+        //
+        // Owner, 2026-09-03: *"I don't want it like the one that's showing in the Nemesis that says
+        // document ready, open it from output panel... the artifact chip should be the only one
+        // that shows in line."* That is the same ruling he already made on 2026-08-31 about the
+        // flashcards chip, which is why `flashcards` was the one kind set to `null` here; the file
+        // kinds kept theirs on the argument that they alone named the outputs panel. Naming the
+        // outputs panel is exactly what he is asking us to stop doing. The card IS the door.
+        //
+        // 🔴 THE MAKER'S OWN `note` GOES WITH IT, and that costs nothing: research is the only
+        // maker that sets one, and `report-markdown.ts` prints the same sentence in the report's
+        // own footer — which is where somebody reading the report will actually be.
         return true;
       } finally {
         makingRef.current = false;
