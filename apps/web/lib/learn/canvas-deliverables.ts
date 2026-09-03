@@ -38,6 +38,7 @@ import { runResearch } from "@/lib/research/run-research";
 
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { materialText } from "./canvas-grounding";
+import { chunksAsMaterial, retrievalNote, retrieveChunks, DELIVERABLE_CHUNKS } from "./canvas-retrieval";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
 import { deckName } from "./deck-name";
 import { findLabelledFigure } from "./figure-occlusion-api";
@@ -134,6 +135,20 @@ const MATERIAL_LEAD =
  * deliverable is built from what the learner actually saw.
  */
 export function canvasBrief(canvas: LearningCanvas): string {
+  const context = canvasContext(canvas);
+
+  // 🔴 THE ATTACHED FILES GO IN LAST AND ARE BUDGETED SEPARATELY, because they are the largest
+  // thing here and `BRIEF_LIMIT` is sized for a conversation. Slicing them together at 7,000
+  // characters would put a lecture's opening pleasantries in and the lecture itself out.
+  const material = materialText(canvas.sources);
+  return material ? `${context}\n\n${MATERIAL_LEAD}\n\n${material}` : context;
+}
+
+/**
+ * The canvas without its attached material: the title, the concepts, the taught blocks and the
+ * conversation. Split out so retrieval can put its own selection where the whole pile used to go.
+ */
+export function canvasContext(canvas: LearningCanvas): string {
   const concepts = canvas.concepts.map((concept) => concept.label).filter(Boolean);
   const blocks = canvas.blocks
     .filter((block) => !block.collapsed)
@@ -146,7 +161,7 @@ export function canvasBrief(canvas: LearningCanvas): string {
       return [asked ? `Q: ${asked}` : "", answered].filter(Boolean).join("\n");
     })
     .filter(Boolean);
-  const context = [
+  return [
     `Topic: ${canvas.title || "(untitled)"}`,
     concepts.length ? `Concepts: ${concepts.join("; ")}` : "",
     "",
@@ -156,12 +171,49 @@ export function canvasBrief(canvas: LearningCanvas): string {
     .filter(Boolean)
     .join("\n")
     .slice(0, BRIEF_LIMIT);
+}
 
-  // 🔴 THE ATTACHED FILES GO IN LAST AND ARE BUDGETED SEPARATELY, because they are the largest
-  // thing here and `BRIEF_LIMIT` is sized for a conversation. Slicing them together at 7,000
-  // characters would put a lecture's opening pleasantries in and the lecture itself out.
-  const material = materialText(canvas.sources);
-  return material ? `${context}\n\n${MATERIAL_LEAD}\n\n${material}` : context;
+/**
+ * What this deliverable is about, in the learner's own words, for the embedding.
+ *
+ * 🔴 THE TOPIC, THE LAST THING ASKED, AND THE TITLE — ALL THREE. A retrieval query is only as good
+ * as the words in it, and each of these is thin alone: "make it a document" carries no subject, a
+ * title can be one caption line off the front of a transcript, and the ask often refines a subject
+ * established two turns earlier. Concatenated they embed as what the learner is actually working on.
+ */
+function askOf(canvas: LearningCanvas, topic?: string): string {
+  const asked = [...canvas.moments].reverse().find((moment) => (moment.userText ?? "").trim());
+  return [(topic ?? "").trim(), (asked?.userText ?? "").trim(), canvas.title.trim()]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 500);
+}
+
+/**
+ * The brief a deliverable is built from, with the material CHOSEN rather than merely truncated.
+ *
+ * 🔴🔴🔴 THIS IS THE TWENTY-DOCUMENT FIX. `canvasBrief` reads every attached source in order until
+ * a character budget runs out, which is fine for one document and silently wrong for ten: the
+ * tenth is never seen, and nothing in the output says so. This asks the retrieval index which
+ * passages bear on what the learner asked for, across every attached document at once, and sends
+ * those.
+ *
+ * 🔴 FALLING BACK IS NOT A FAILURE MODE, IT IS THE NORMAL PATH FOR A FRESH ATTACHMENT. Chunking and
+ * embedding happen after a parse, so a file dropped in ten seconds ago has no rows yet.
+ * `retrieveChunks` returns null for that and for every other problem, and the deliverable is built
+ * the old way — which is exactly as good as it was yesterday, never worse.
+ */
+export async function canvasBriefFor(
+  canvas: LearningCanvas,
+  topic?: string,
+  limit: number = DELIVERABLE_CHUNKS,
+): Promise<string> {
+  const retrieved = await retrieveChunks(canvas.sources, askOf(canvas, topic), limit);
+  if (!retrieved) return canvasBrief(canvas);
+  const material = chunksAsMaterial(retrieved);
+  if (!material) return canvasBrief(canvas);
+  const documents = new Set(retrieved.map((chunk) => chunk.parsedDocumentId)).size;
+  return `${canvasContext(canvas)}\n\n${MATERIAL_LEAD}\n\n${retrievalNote(documents, retrieved.length)}\n\n${material}`;
 }
 
 /**
@@ -339,7 +391,7 @@ export async function makeFlashcardsDeliverable(
     uid,
     [
       { content: CARDS_SYSTEM, role: "system" },
-      { content: canvasBrief(canvas), role: "user" },
+      { content: await canvasBriefFor(canvas), role: "user" },
     ],
     { maxTokens: CARDS_MAX_TOKENS },
   );
@@ -466,7 +518,7 @@ export async function makeNoteDeliverable(
   if (!canvasHasMaterial(canvas)) return { error: "There's nothing on the canvas to summarise yet." };
   const reply = await postChatCompletion(uid, [
     { content: NOTE_SYSTEM, role: "system" },
-    { content: canvasBrief(canvas), role: "user" },
+    { content: await canvasBriefFor(canvas), role: "user" },
   ]);
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const content = reply.text.trim();
@@ -558,7 +610,7 @@ export async function makeDocumentDeliverable(
     return { error: "Tell me what the document should be about, and I'll write it." };
   }
   const brief = canvasHasMaterial(canvas)
-    ? canvasBrief(canvas)
+    ? await canvasBriefFor(canvas, topic)
     : [`Write this document about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
   const reply = await postChatCompletion(uid, [
     { content: DOC_SYSTEM, role: "system" },
@@ -621,7 +673,7 @@ export async function makeSheetDeliverable(
     return { error: "Tell me what the spreadsheet should cover, and I'll build it." };
   }
   const brief = canvasHasMaterial(canvas)
-    ? canvasBrief(canvas)
+    ? await canvasBriefFor(canvas, topic)
     : [`Build this table about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
   const reply = await postChatCompletion(
     uid,
@@ -703,7 +755,7 @@ export async function makeSlidesDeliverable(
   const menu = figureMenu(figures);
   const brief = [
     grounded
-      ? canvasBrief(canvas)
+      ? await canvasBriefFor(canvas, topic)
       : `Topic: ${subject}\n\nThere is no attached material. Build the deck from your own knowledge of the topic, accurately and at student level.`,
     grounded ? "" : await webContextForTopic(uid, subject),
     menu,
