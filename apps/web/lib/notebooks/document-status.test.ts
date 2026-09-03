@@ -135,19 +135,22 @@ test("🔴 a gap smaller than a page is NAMED, not called 'some parts missing'",
     }),
     NOW,
   );
-  assert.equal(s.kind, "partially_parsed");
+  // 🔴🔴🔴 THIS RECORD REPORTS AS READ NOW, AND THE TEST'S NAME IS THE HISTORY OF ONE SENTENCE
+  // BEING WALKED BACK TWICE. It began as "Read, with some parts missing", which the owner reported
+  // as frightening and uninformative; it became "Read. 2 pictures couldn't be read." on
+  // 2026-09-03; and hours later, on the same day, he ruled that out too: *"I don't want users
+  // seeing 'x pictures not read' at ALL, especially if they aren't worth looking at… what matters
+  // most is that it understands content."*
+  //
+  // 🔴 SO THE FIX IS THE CLASSIFICATION, NOT THE WORDING. All 67 pages of this document were read.
+  // Deleting the picture clause alone would have emptied `detail` and dropped this record through
+  // to the vague fallback — the very line the previous pass had just removed. `textIsWhole` says
+  // the words and tables are complete, so the document is `parsed`.
+  assert.equal(s.kind, "parsed", "a document whose every page was read is still called partial");
   const line = documentStatusLine(s);
-  // What is actually missing, and how much of it.
-  assert.match(line, /2 pictures/, `the two unreadable pictures must be named: ${line}`);
-  // 🔴 THE CALIBRATION. This is the exact sentence the owner reported, and it
-  // must not be what this record produces.
+  assert.doesNotMatch(line, /picture/, `a picture count reached the learner again: ${line}`);
   assert.doesNotMatch(line, /some parts missing/, `the vague line must not be reachable here: ${line}`);
-  // Every page WAS read, so the line must not imply otherwise.
-  assert.match(line, /^Read\./u, `a document whose every page read leads with that: ${line}`);
-  // 🔴 AND THE SIX `examined-empty` FIGURES MUST NOT BE COUNTED. A model looked
-  // at them and said they carry nothing, which is the decorative verdict reached
-  // by looking. If they were still counted the sentence would say 8, not 2.
-  assert.doesNotMatch(line, /8 pictures/, `examined-empty must not be counted as lost: ${line}`);
+  assert.match(line, /^Read/u, `a document whose every page read leads with that: ${line}`);
 });
 
 test("a record too old to describe itself still says something true", () => {

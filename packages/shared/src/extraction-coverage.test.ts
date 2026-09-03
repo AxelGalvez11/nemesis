@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   buildCoverage,
+  coverageNoticeForLearner,
   coverageNoticeForModel,
   describeCoverage,
   deriveState,
@@ -80,7 +81,12 @@ test("a decorative skip is not a gap, but a lost figure is", () => {
   });
   assert.equal(real.state, "partial");
   assert.equal(lostFigures(real.figures), 57);
-  assert.match(describeCoverage(real) ?? "", /57 pictures couldn't be read/);
+  // 🔴 THE RECORD KNOWS, THE MODEL IS TOLD, THE LEARNER IS NOT (owner ruling 2026-09-03 — see
+  // "a picture gap says NOTHING to the learner"). This distinction — decoration versus a picture
+  // nothing could open — is what `lostFigures` is FOR, and it still holds; it simply stops being
+  // rendered as a count in front of a student.
+  assert.equal(describeCoverage(real), null, "a picture-only gap said something to the learner");
+  assert.match(coverageNoticeForModel(real), /57 pictures/, "the model stopped being told");
 });
 
 test("figure counts must reconcile", () => {
@@ -151,11 +157,28 @@ test("an empty document is not 'failed' — there is nothing to have failed at",
 test("singular and plural read correctly", () => {
   const one = built({ unitKind: "page", units: 2, unitsNative: 1, unitsUnread: 1 });
   assert.match(describeCoverage(one) ?? "", /1 of 2 pages/);
+});
+
+test("🔴🔴🔴 a picture gap says NOTHING to the learner", () => {
+  // Owner ruling, 2026-09-03: *"I don't want users seeing 'x pictures not read' at ALL, especially
+  // if they aren't worth looking at… what matters most is that it understands content."*
+  //
+  // 🔴 THE COUNT WAS NEVER TRUSTWORTHY. A "figure" is any embedded image object, and a lecture deck
+  // exported to PDF explodes each diagram into hundreds of vector fragments — measured on his own
+  // 83-page lecture: 846 "pictures" found, 534 of them furniture a model looked at and dismissed.
+  // A number two orders of magnitude out does not become useful by being displayed politely.
+  //
+  // 🔴 THE MODEL IS STILL TOLD. `coverageNoticeForModel` is unchanged and still names the pictures,
+  // which is what stops an answer describing a figure nobody read. What changed is who is shown a
+  // raw tally. Calibration: put the picture clause back in `describeCoverage` and this reddens.
   const figure = built({
     unitKind: "slide", units: 1, unitsNative: 1,
     figures: { found: 1, described: 0, skipped: 1, reasons: { "over-cap": 1 } },
   });
-  assert.match(describeCoverage(figure) ?? "", /1 picture couldn't be read/);
+  assert.equal(describeCoverage(figure), null, "a picture-only gap said something to the learner");
+  assert.equal(coverageNoticeForLearner(figure), null, "the short badge still names pictures");
+  // 🔴 AND THE MODEL'S COPY STILL DOES, in the same breath as what WAS read.
+  assert.match(coverageNoticeForModel(figure), /picture/, "the model stopped being told about the pictures");
 });
 
 // --- Survives the wire and the database -------------------------------------
@@ -227,7 +250,11 @@ test("🔴 a picture a model looked at and found empty is not a gap", () => {
   };
   assert.equal(lostFigures(withUnreadable.figures), 1);
   assert.equal(deriveState(withUnreadable), "partial");
-  assert.match(String(describeCoverage({ ...withUnreadable, state: "partial" })), /1 picture couldn't be read/);
+  // 🔴 THE RECORD STILL SAYS SO; THE LEARNER'S SENTENCE NO LONGER DOES (owner ruling 2026-09-03 —
+  // see "a picture gap says NOTHING to the learner"). `lostFigures` and `deriveState` are what the
+  // pipeline and the model read, and both are untouched.
+  assert.equal(describeCoverage({ ...withUnreadable, state: "partial" }), null);
+  assert.match(coverageNoticeForModel({ ...withUnreadable, state: "partial" }), /1 picture/);
 });
 
 test("deriveState is a pure function of the numbers", () => {

@@ -525,8 +525,25 @@ export function describeCoverage(coverage: ExtractionCoverage): string | null {
       `${read.toLocaleString()} of ${coverage.units.toLocaleString()} ${unitWord(coverage.unitKind, coverage.units)} could be read`,
     );
   }
-  const lost = lostFigures(coverage.figures);
-  if (lost > 0) parts.push(`${lost} ${lost === 1 ? "picture" : "pictures"} couldn't be read`);
+  // 🔴🔴🔴 NO PICTURE CLAUSE. OWNER RULING, 2026-09-03: *"I don't want users seeing 'x pictures not
+  // read' at ALL, especially if they aren't worth looking at… what matters most is that it
+  // understands content."*
+  //
+  // 🔴 THIS IS NOT HIDING A GAP, IT IS DECLINING TO REPORT A NUMBER THAT WAS NEVER TRUE. A "figure"
+  // here is any embedded image object, and a lecture deck exported to PDF explodes its diagrams
+  // into hundreds of vector fragments: measured on his own 83-page lecture, 846 "pictures" found,
+  // of which 534 were furniture a model looked at and dismissed. The 255 that remained were
+  // fragments and over-cap leftovers, not 255 missing illustrations — and the pages carrying them
+  // had all been read, 43 natively and 40 through vision. A count that is off by two orders of
+  // magnitude does not become useful by being displayed politely.
+  //
+  // 🔴 THE TEXT CLAUSES STAY, AND THAT IS THE LINE. Unread pages, unreadable regions and clipped
+  // text all mean Nemesis is answering from a document it genuinely cannot see, and a learner has
+  // to know that. Pictures are the one gap where the words of the document are still whole.
+  //
+  // 🔴 THE MODEL IS STILL TOLD — `coverageNoticeForModel` below is unchanged and still names the
+  // pictures. It is what stops an answer claiming to describe a figure nobody read. What changed
+  // is who is shown a raw count, not what the system knows.
   const unreadable = coverage.unreadableRegions ?? 0;
   // Its own clause, never merged into the picture count: the fix is different
   // (a better formula/region reader, not a vision pass) and so is the sentence.
@@ -678,8 +695,9 @@ export function coverageNoticeForLearner(coverage: ExtractionCoverage): string |
   if (coverage.unitsUnread > 0) {
     facts.push(`${coverage.unitsUnread.toLocaleString()} of ${coverage.units.toLocaleString()} ${unitWord(coverage.unitKind, coverage.units)} not read`);
   }
-  const lost = lostFigures(coverage.figures);
-  if (lost > 0) facts.push(`${lost} ${lost === 1 ? "picture" : "pictures"} not read`);
+  // 🔴🔴🔴 NO PICTURE COUNT — see the note in `describeCoverage`. This badge was the one the owner
+  // was actually looking at ("255 pictures not read", in amber, beside a lecture whose 83 pages had
+  // all been read).
   const unreadable = coverage.unreadableRegions ?? 0;
   if (unreadable > 0) facts.push(`${unreadable} ${unreadable === 1 ? "region" : "regions"} not read`);
   const cut = coverage.truncation.find((entry) => entry.stage === "extract");

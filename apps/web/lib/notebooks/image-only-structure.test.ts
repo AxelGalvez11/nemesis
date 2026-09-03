@@ -86,10 +86,17 @@ test("coverage records a picture found and nobody having looked at it", async ()
 
   // 🔴 THE SENTENCE A STUDENT SEES MUST NOT COLLAPSE TO A SHRUG. `describeCoverage`
   // falls back to "Nothing in this file could be read." only when it has no parts
-  // to report; here it has both a page count and a picture count.
+  // to report; here it has a page count, and that is the part a learner can act on.
+  //
+  // 🔴🔴 IT NO LONGER NAMES THE PICTURE, AND THAT IS AN OWNER RULING, NOT A REGRESSION.
+  // 2026-09-03: *"I don't want users seeing 'x pictures not read' at ALL."* The count was never
+  // trustworthy anyway — a vector diagram exported to PDF arrives as hundreds of "figures", so the
+  // number can be two orders of magnitude out. `coverage.figures` is unchanged and the MODEL is
+  // still told (see `coverageNoticeForModel`); what changed is who is shown a raw tally.
   const sentence = describeCoverage(coverage);
   assert.ok(sentence, "a partial/failed record always has something to say");
-  assert.match(sentence, /picture/, "including what was found, not only what was missed");
+  assert.match(sentence, /could be read/, "the page that could not be read must still be named");
+  assert.doesNotMatch(sentence, /picture/, "a picture count reached the learner again");
 });
 
 // ── the boundary: JSON, storage, and the validator production reads with ───

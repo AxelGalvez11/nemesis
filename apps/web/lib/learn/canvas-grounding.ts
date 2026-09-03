@@ -262,26 +262,60 @@ function splitOnWords(text: string): string[] {
 export function groundingBlock(sources: readonly CanvasSource[]): string {
   if (sources.length === 0) return "";
 
-  const parts: string[] = [];
-  let budget = MAX_GROUNDING_CHARS;
+  const headers = sources.map(
+    (source) => `### SOURCE ${source.id} — ${source.title}${source.coverageNote ? `\n${source.coverageNote}` : ""}`,
+  );
+  const lineFor = (excerpt: SourceExcerpt) =>
+    `[${excerpt.id}]${excerpt.label ? ` (${excerpt.label})` : ""} ${excerpt.text}`;
+
+  let budget = MAX_GROUNDING_CHARS - headers.reduce((total, header) => total + header.length, 0);
   let dropped = 0;
 
-  for (const source of sources) {
-    const header = `### SOURCE ${source.id} — ${source.title}${
-      source.coverageNote ? `\n${source.coverageNote}` : ""
-    }`;
-    parts.push(header);
-    budget -= header.length;
-
-    for (const excerpt of source.excerpts) {
-      const line = `[${excerpt.id}]${excerpt.label ? ` (${excerpt.label})` : ""} ${excerpt.text}`;
-      if (line.length > budget) {
+  /**
+   * 🔴🔴🔴 THE BUDGET IS SPENT ROUND-ROBIN, NOT IN READING ORDER, AND THAT IS THE DIFFERENCE
+   * BETWEEN "SOME OF EVERY DOCUMENT" AND "ALL OF THE FIRST THREE".
+   *
+   * This loop used to walk the sources in order and spend one 120,000-character budget as it went,
+   * so with a large pile the first documents arrived whole and every later one contributed its
+   * TITLE AND NOTHING ELSE — a header saying a lecture is attached, above no sentence from it. The
+   * model is then told "412 further excerpts were not included", which it cannot act on, and it
+   * answers about the pile from the part of the pile it happens to have.
+   *
+   * Owner, 2026-09-03: *"even if I drop in 50 documents it should be able to understand all of
+   * them… what matters most is that it understands content."* Retrieval is the real answer to that
+   * and already ships (see `canvas-chat.ts`), but it only answers once the material is INDEXED —
+   * and the first question after a drop routinely arrives before that, which is exactly when the
+   * pile is largest and this fallback is what runs.
+   *
+   * 🔴 SELECTED ROUND-ROBIN, RENDERED GROUPED. Taking excerpt 0 from every source, then excerpt 1
+   * from every source, spends the budget evenly; grouping the survivors back under their headers
+   * keeps each document readable and keeps the `[s4:e12]` ids exactly where they were. Reading
+   * order INSIDE a document is preserved, which is the order that carries meaning.
+   *
+   * 🔴 AND IT DEGRADES WHERE A LECTURE CAN AFFORD IT. What is lost is the tail of every document
+   * rather than the whole of most of them — and a deck's opening slides are what say what it is
+   * about, so a truncated packet still knows that all fifty lectures exist and what each covers.
+   */
+  const kept: string[][] = sources.map(() => []);
+  const deepest = sources.reduce((most, source) => Math.max(most, source.excerpts.length), 0);
+  for (let rank = 0; rank < deepest; rank += 1) {
+    for (const [at, source] of sources.entries()) {
+      const excerpt = source.excerpts[rank];
+      if (!excerpt) continue;
+      const line = lineFor(excerpt);
+      if (line.length + 2 > budget) {
         dropped += 1;
         continue;
       }
-      parts.push(line);
+      kept[at]!.push(line);
       budget -= line.length + 2;
     }
+  }
+
+  const parts: string[] = [];
+  for (const [at, header] of headers.entries()) {
+    parts.push(header);
+    parts.push(...kept[at]!);
   }
 
   // 🔴 Silence about a truncation is the defect the coverage record exists to prevent. If we
