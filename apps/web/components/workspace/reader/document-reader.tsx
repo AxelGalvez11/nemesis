@@ -49,6 +49,7 @@ import { courseOf, describeSource, type ReaderSource } from "@/lib/reader/reader
 import { FIT_WIDTH, zoomIn, zoomOut, type ZoomMode } from "@/lib/reader/reader-zoom";
 
 import { CommentLayer, type CommentDraftSpot } from "./comment-layer";
+import type { AnnotationNote } from "@/lib/learn/annotation-note";
 import { cropFrom } from "./use-region-drag";
 import { DocxDocumentView } from "./docx-document-view";
 import { ImageDocumentView, type ImageRegion } from "./image-document-view";
@@ -83,7 +84,16 @@ export interface DocumentReaderProps {
    * live and does nothing, which is this codebase's most-repeated defect — so the toolbar is not
    * mounted at all when there is nowhere for it to send.
    */
-  onSendToChat?: (prompt: string, files: File[]) => void;
+  /**
+   * Hand a question to the conversation.
+   *
+   * 🔴 THE THIRD ARGUMENT IS WHAT MAKES AN ANNOTATION READ AS ONE. The crop has always travelled in
+   * `files`, but a file is just a file: the conversation drew it as an ordinary attachment, so
+   * "I circled this and asked" looked exactly like "I dropped a picture in". `notes` carries the
+   * same crop as something the turn can SHOW above the sentence. Optional, so every other caller of
+   * this reader is unchanged. See lib/learn/annotation-note.ts.
+   */
+  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[]) => void;
   /** "dialog" trims the chrome for the chat popup: no back button, no rails. */
   variant?: "page" | "dialog";
   /**
@@ -656,7 +666,12 @@ export function DocumentReader({
         unit: draft.unit,
         unitLabel,
       });
-      onSendToChat?.(prompt, [...documentAttachment(), ...(cropped ? [cropped] : [])]);
+      // 🔴 THE THUMBNAIL IS THE SAME DATA URL THE FILE WAS MADE FROM, not a second crop. Cropping
+      // twice would be two pictures of one region that could disagree the moment either path
+      // changes, and the canvas element this came from is thrown away right after.
+      onSendToChat?.(prompt, [...documentAttachment(), ...(cropped ? [cropped] : [])], [
+        { thumbnail: crop, where: unitLabel ? `${unitLabel} ${draft.unit}` : null },
+      ]);
     },
     [cropForComment, documentAttachment, keepComment, onSendToChat, source.fileName, unitLabel],
   );
