@@ -38,21 +38,21 @@ import { type CalendarEvent, isAllDay } from "@/lib/workspace/calendar-model";
  * like-for-like figure is 30px". Both numbers are false, and they compounded:
  *
  *   - Google's hour row is 48px, not 24. It is `--cal-timed-grid-cell-height`,
- *     re-measured on the live app 2026-09-01 and confirmed against the whole
- *     day's scroll height (24 x 48 = 1152px). The 24px figure came from a
- *     hidden duplicate of the hour labels that Google renders offscreen.
- *   - This app's root is 18px, not 20 (`globals.css:530`, `font-size: 112.5%`).
+ *     the one density knob on the whole grid.
  *
- * The like-for-like figure is therefore 48 x (18/16) = 54px, not 30. Google's
- * own density ladder runs 40 / 48 / 60 / 72 / 80 / 96 / 116, so 36 was BELOW
- * even its compact setting once the root difference is taken out — which is
- * why blocks could not show their own titles.
+ * 🔴🔴 48, AND IT WAS 54 UNTIL 2026-09-03. The rule used to be "copy the rem, not the pixel":
+ * Google's root is 16px and this app's is 18, so 48px became 3rem became 54px. That is defensible
+ * in the abstract and wrong on screen — it draws the whole calendar a ninth larger than the thing
+ * it is meant to match. Owner, 2026-09-03: *"I want the calendar to be smaller… it feels like I'm
+ * a bit too zoomed into it."*
  *
- * Everything measured, both sides, is in `docs/google-calendar-reference.md`,
- * and `measure-calendar.mjs` re-checks it against our grid. Change this number
- * there and here together, or the file rots.
+ * 🔴 THE GRID DRAWS GOOGLE'S PIXELS NOW; ONLY THE GRID. Text elsewhere in the app still scales
+ * with the root, and so does the calendar's own chrome — the header, the dialogs, the rail. What
+ * is pinned is the ruled surface a week is read on, because that surface exists to be the same
+ * shape as the reference. Section 13 of `docs/google-calendar-reference.md` records the reversal;
+ * the harness expectations moved with it.
  */
-export const HOUR_HEIGHT = 54;
+export const HOUR_HEIGHT = 48;
 /** Drawn length of an event, until the data can say how long it really is. */
 export const DEFAULT_EVENT_MINUTES = 45;
 /** Never draw a block too short to read its title. */

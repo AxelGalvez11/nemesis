@@ -8,23 +8,49 @@ import { HOUR_HEIGHT } from "./time-grid";
 // Guards the one-to-one match with Google Calendar (owner 2026-09-01: "it all
 // needs to match one to one so we have a good calendar base to work from").
 //
-// Every number here is Google's own, measured off the live signed-in app and
-// written down in `docs/google-calendar-reference.md`, converted to this app's
-// 18px root by 18/16. `measure-calendar.mjs` re-checks the same values in a
-// real browser; this file is the cheap half that runs on every commit.
+// Every number here is Google's own, measured off the live signed-in app and written down in
+// `docs/google-calendar-reference.md`. `measure-calendar.mjs` re-checks the same values in a real
+// browser; this file is the cheap half that runs on every commit.
+//
+// 🔴🔴 THEY ARE GOOGLE'S PIXELS NOW, AND THEY USED TO BE GOOGLE'S REMS CONVERTED BY 18/16. The old
+// rule kept the grid's proportions at this app's larger root, and drew a calendar a ninth bigger
+// than the thing it is meant to match. It had already been reversed once, for the week's day
+// heading alone (below), when the owner said that row was too big; on 2026-09-03 he said it of the
+// whole surface — *"I want the calendar to be smaller… it feels like I'm a bit too zoomed into
+// it"* — so the exception became the rule and `ratio` is gone. Section 13 of the reference.
 //
 // 🔴 THESE ARE NOT PREFERENCES. Two of them replaced figures that had been
 // recorded in comments as measurements and were wrong: Google's hour row read
 // as 24px when it is 48, and this app's root read as 20px when it is 18.
 
-/** Google's px -> ours. Their root is 16px, `globals.css:530` puts ours at 18. */
-const ratio = 18 / 16;
 const view = readFileSync(new URL("./time-grid-view.tsx", import.meta.url), "utf8");
+const month = readFileSync(new URL("./month-grid.tsx", import.meta.url), "utf8");
 const form = readFileSync(new URL("./event-dialogs.tsx", import.meta.url), "utf8");
 
-test("the hour row is Google's, converted", () => {
-  assert.equal(HOUR_HEIGHT, 48 * ratio, "Google's --cal-timed-grid-cell-height is 48px");
-  assert.equal(HOUR_HEIGHT, 54);
+test("🔴 the hour row is Google's 48px, not 48 converted", () => {
+  // `--cal-timed-grid-cell-height` is 48px and the one density knob on Google's whole grid, so
+  // this single number sets how zoomed in a week reads. It was 54.
+  assert.equal(HOUR_HEIGHT, 48);
+  assert.notEqual(HOUR_HEIGHT, 54, "the ratio conversion is back on the one number that scales the grid");
+});
+
+test("🔴🔴 the month cell spends its height on events, not on its own chrome", () => {
+  // Owner, 2026-09-03: *"I want the calendar to be smaller… especially when you have a lot of
+  // events. It feels like I'm a bit too zoomed into it."*
+  //
+  // 🔴 THE CHIPS WERE NEVER THE PROBLEM — measured, ours are 20px against Google's 24. What ate
+  // the cell was everything around them: 9px of padding on all four sides, a 9px gap, and a
+  // 15.75px numeral in a 31.5px disc against Google's 12px in ~24. A cell gave its events 87px
+  // where Google gives ~116, which is why a day with four events showed "+2 more".
+  //
+  // Measured after, at 1470x835 on /dev-preview/calendar-app: the stack went 87px -> 106px, and
+  // the 16th drew all four.
+  assert.match(month, /flex flex-col gap-0\.5 border-b border-r [^"]*p-1 /, "the month cell went back to 9px padding");
+  assert.match(month, /grid size-\[24px\][^"]*text-\[12px\] font-medium tabular-nums/, "the day numeral left Google's 12px in a 24px box");
+  assert.match(month, /text-\[11px\] font-medium uppercase leading-\[20px\]/, "the weekday band left Google's 11px on a 20px line");
+  // 🔴 CALIBRATION, AS ABSENCES: each of these is what it was, and any one coming back undoes it.
+  assert.doesNotMatch(month, /size-7 cursor-pointer/, "the 31.5px date disc is back");
+  assert.doesNotMatch(month, /gap-1 border-b border-r/, "the 9px cell gap is back");
 });
 
 test("midday is a number, the way Google writes it", () => {
@@ -57,7 +83,7 @@ test("the day heading is Google's SIZE, not its proportion", () => {
 test("the now indicator is thick enough to find", () => {
   // 2px line, 12px dot. It was 1px with a 6px dot and read as a stray hairline.
   assert.match(view, /border-t-2 border-\(--theme-primary\)/);
-  assert.match(view, /size-\[0\.75rem\] rounded-full bg-\(--theme-primary\)/);
+  assert.match(view, /size-\[12px\] rounded-full bg-\(--theme-primary\)/);
 });
 
 test("the grid is ruled at Google's weight, in one colour", () => {
@@ -80,7 +106,7 @@ test("a block's text does not shrink with its box", () => {
   // exactly when it had least room to explain itself.
   const tiers = view.match(/detail === "(stacked|inline|title)" && "[^"]*"/g) ?? [];
   assert.equal(tiers.length, 3, "all three tiers are still declared here");
-  for (const tier of tiers) assert.match(tier, /text-\[0\.75rem\]/, `${tier} sets Google's 12px converted`);
+  for (const tier of tiers) assert.match(tier, /text-\[12px\]/, `${tier} sets Google's 12px`);
 });
 
 test("the midnight label is not drawn", () => {

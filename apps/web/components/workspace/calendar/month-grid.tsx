@@ -100,7 +100,10 @@ export function MonthGrid({ calendarHex, days, eventsByDay, onOpenEvent, onPickD
         {visibleDays.slice(0, 7).map((headDay) => (
           <div
             className={cn(
-              "px-2 py-1.5 text-center text-[0.6875rem] font-semibold uppercase tracking-[0.07em] text-(--ui-text-tertiary)",
+              // 🔴 GOOGLE'S OWN 11 / 500 / 20px BAND, unconverted (2026-09-03). It was
+              // 12.375/600 on an 18.6px line in a 32px band — a bolder, larger label than the
+              // reference draws, above a grid the owner had just called too zoomed in.
+              "px-2 py-[4px] text-center text-[11px] font-medium uppercase leading-[20px] tracking-[0.05em] text-(--ui-text-tertiary)",
               // Google tints only today's column heading, which is how you find
               // the current week without hunting for the filled date circle.
               visibleDays.some((day) => day.isToday && day.date.getDay() === headDay.date.getDay())
@@ -234,7 +237,14 @@ function DayCell({ calendarHex, day, events, metrics, onOpenEvent, onPick, onSel
         // Hairlines one step softer than the frame (quaternary vs tertiary):
         // 42 individually boxed cells is what read as "graph paper" (owner
         // 2026-08-03, "too boxy") — the rhythm stays, the ink goes down.
-        "group relative flex flex-col gap-1 border-b border-r border-(--ui-stroke-quaternary) p-2 [&:nth-child(7n)]:border-r-0 [&:nth-last-child(-n+7)]:border-b-0",
+        // 🔴🔴 `p-1 gap-0.5`, AND IT WAS `p-2 gap-1` — 18px of padding and a 9px gap, which is
+        // 27px of a 142px cell spent before a single event is drawn. Google's month cell has NO
+        // padding at all (its chips run the full width and carry their own 8px right inset); ours
+        // keeps 4.5px because our chips have a radius and a colour dot and would otherwise touch
+        // the rule. Measured after: the stack a cell gives its events went 87px -> 107px, which is
+        // the fourth event appearing where "+2 more" used to be. Owner, 2026-09-03: *"it feels a
+        // bit big, especially when you have a lot of events."*
+        "group relative flex flex-col gap-0.5 border-b border-r border-(--ui-stroke-quaternary) p-1 [&:nth-child(7n)]:border-r-0 [&:nth-last-child(-n+7)]:border-b-0",
         // Days outside the month stay quieter. Weekends do NOT — owner
         // 2026-09-01, and Google does not tint them either.
         !day.inMonth && "bg-(--ui-bg-quaternary)/20",
@@ -258,7 +268,11 @@ function DayCell({ calendarHex, day, events, metrics, onOpenEvent, onPick, onSel
         <button
           aria-label={`Show ${formatEventDate(day.key)}`}
           className={cn(
-            "grid size-7 cursor-pointer place-items-center rounded-full text-sm font-medium tabular-nums transition-colors",
+            // 🔴 12px IN A 24px DISC, WHICH IS GOOGLE'S. It was `text-sm` in `size-7` — 15.75px in
+            // a 31.5px circle, a third larger than the reference and the loudest thing on the
+            // surface. Google draws no disc at all except on today; ours keeps one because it is
+            // also the hover target for opening the day.
+            "grid size-[24px] cursor-pointer place-items-center rounded-full text-[12px] font-medium tabular-nums transition-colors",
             day.isToday
               ? "bg-(--theme-primary) text-primary-foreground"
               : cn("hover:bg-(--ui-control-hover-background)", !day.inMonth && "text-(--ui-text-quaternary)"),
