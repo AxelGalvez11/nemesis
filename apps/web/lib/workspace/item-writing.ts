@@ -42,10 +42,26 @@ export const EXAM_ITEM_RULES = [
   "Build wrong options from mistakes students actually make: what this is routinely confused with, a step out of order, a quantity off by a factor or a unit, the answer to a neighbouring question. Never permutations of the correct answer, never an option nobody would pick.",
   "Never use 'all of the above', 'none of the above', a negative stem ('which is NOT', 'all EXCEPT'), absolutes ('always', 'never'), vague quantifiers ('usually', 'often') in options, or options that overlap.",
   "Vary which position holds the correct answer, never in a cycle. Refer to options by their TEXT, never by letter — the app re-seats them, so 'option B' would become wrong.",
+  // 🔴 THE ONE CRITERION THE OWNER ASKED FOR THAT WAS GENUINELY ABSENT (2026-09-03: questions must
+  // "vary in difficulty"). Everything above makes each item sound; nothing said the SET has to
+  // spread. A paper of nine equally pitched items measures one point on the scale and tells the
+  // student nothing about where they actually stand.
+  //
+  // 🔴 STATED AS THE SHAPE OF AN ITEM, NEVER AS A LABEL ON IT. "Write three easy, four medium and
+  // two hard" invites a model to write nine identical items and sort them into three piles. What
+  // actually moves difficulty is structural: how many steps sit between the stem and the answer,
+  // and how close the nearest wrong option sits to the right one. Both hold for a statute, a
+  // loaded beam and an irregular verb alike.
+  //
+  // 🔴 AND THE LAST SENTENCE IS THE GUARD RAIL, because the easiest way to obey this rule is to
+  // cheat it. Vagueness, length and a buried question all make an item harder to ANSWER without
+  // making it harder to KNOW, which is precisely the flaw the rules above exist to prevent — it
+  // penalises the student who read carefully and rewards the one who guesses.
+  "Spread the difficulty across the paper, and make an item hard by its STRUCTURE rather than by its wording: more steps between the stem and the answer, or a nearest wrong option that is a near miss rather than an obvious error. Some items should be answerable by anyone who has read the material once, some should separate a student who can apply it from one who only recognises it, and at least one should make a strong student stop and think. Mix them through the paper rather than climbing from easiest to hardest. Never make an item harder by making it vaguer, longer, or by burying what is being asked.",
   "Give the correct answer and name the specific misunderstanding each wrong option represents, so a miss teaches something.",
   "Never invent a specific to make a situation work — a measurement, a quantity, a date, a named authority. Take every specific from the student's own material, or write the stem so it needs none: an invented specific is indistinguishable from a real one to the student revising from it.",
 ].join("\n");
 
 /** One-line version for prompts that only have room for a pointer. */
 export const EXAM_ITEM_RULES_SHORT =
-  "One-best-answer only; a short scenario stem answerable before the options are read; options homogeneous and of similar length with the correct one never the longest; distractors drawn from real student confusions; no 'all/none of the above', no negative stems, no absolutes; refer to options by text, never by letter.";
+  "One-best-answer only; a short scenario stem answerable before the options are read; options homogeneous and of similar length with the correct one never the longest; distractors drawn from real student confusions; difficulty spread across the paper and earned by structure, never by vaguer wording; no 'all/none of the above', no negative stems, no absolutes; refer to options by text, never by letter.";
