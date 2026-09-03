@@ -70,7 +70,7 @@ test("🔴🔴 an empty send with committed files is a turn, not a bare begin", 
   assert.match(CANVAS, /const trimmed = asked\.trim\(\);\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(!trimmed && committedTitles\.current\.length === 0\) return null;/, "the canvas-side converse refuses empty words with files again");
   assert.match(SESSION, /if \(!said && !resumed && attaching\.current\.size === 0 && arrivals\.current === 0\) return null;/, "the session refuses an empty send with material in flight");
   assert.match(SESSION, /const arrived = arrivals\.current;\s*arrivals\.current = 0;\s*if \(!said && !resumed && arrived === 0\) return null;/, "the arrival count is not consumed by the turn");
-  assert.match(SESSION, /askCanvasChat\(id, latest\.current, said, \{ \.\.\.surroundings, arrived \}/, "the packet does not learn how many documents arrived");
+  assert.match(SESSION, /askCanvasChat\(id, latest\.current, said, \{ \.\.\.surroundings, arrived, \.\.\.extra \}/, "the packet does not learn how many documents arrived");
 });
 
 test("🔴 the model gets a sentinel for the empty words, and the learner's own text stays empty", () => {
@@ -86,4 +86,17 @@ test("🔴 the model gets a sentinel for the empty words, and the learner's own 
 
 test("🔴 a resumed arrival (the learner answered the card) is not refused for its empty words", () => {
   assert.match(SESSION, /const resumed = surroundings\.clarified\.length > 0;/);
+});
+
+test("🔴🔴 a \"study\" that cannot run on a fresh canvas is re-asked once as a reply, never left as a stub", () => {
+  // Measured on production 2026-09-03: the learner picked "COPD and asthma" on the arrival card and
+  // the whole answer was "The files are on the screen. Pick where you want to begin."
+  assert.match(SESSION, /const runTurn = \(extra: Partial<TurnSurroundings> = \{\}\) => askCanvasChat\(/, "the turn cannot be re-asked");
+  assert.match(SESSION, /if \(result\.decision\?\.then === "study" && !result\.decision\.question && isPreContent\(latest\.current\.state\)\) \{\s*result = await runTurn\(\{ studyUnavailable: true \}\);/, "a study on a pre-content canvas is not re-asked");
+  assert.match(CHAT, /\.\.\.\(surroundings\.studyUnavailable \? \{ studyUnavailable: true \} : \{\}\)/, "the re-ask's fact does not reach the packet");
+  const line = stateBlock({ ...BASE, studyUnavailable: true });
+  assert.match(line, /Nothing can be built on this canvas this turn/);
+  assert.match(line, /Answer as a full "reply" and teach what they asked for right here/);
+  assert.doesNotMatch(stateBlock(BASE), /Nothing can be built/);
+  assert.match(ROUTER, /Once they "\s*\+\s*"have answered the card, the next turn is a \\"reply\\" that teaches what they picked/);
 });
