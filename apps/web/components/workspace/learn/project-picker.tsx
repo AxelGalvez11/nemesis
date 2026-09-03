@@ -290,7 +290,6 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const wrap = useRef<HTMLDivElement>(null);
-  const chosen = folders.find((f) => f.id === value) ?? null;
   const q = search.trim().toLowerCase();
   const listed = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : folders;
 
@@ -326,40 +325,29 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
       <div className={TRAY}>
       <div className={TRAY_ROW}>
       <div className="relative">
+        {/* 🔴🔴 THE BUTTON IS THE DOOR; WHAT YOU CHOSE SHOWS UP ON THE COMPOSER'S OWN LINE (owner,
+            2026-09-03: *"compare with ChatGPT because it looks different when you add it"*).
+            Measured on chatgpt.com the same day: choosing a project puts an inline token at the
+            head of the paragraph you are typing into — a folder glyph and the name, 16px, no
+            background, no radius, no ✕, removed with Backspace. This control used to BECOME that
+            state: it filled in, took the project's name and grew a ✕, which is a different object
+            in a different place from the one the reference draws.
+            🔴 SO THE ✕ IS GONE TOO, AND ITS JOB WITH IT. Backspace at the head of the line takes
+            the token off, exactly as it takes a capability off — one gesture for the two things
+            that can sit there. See `capability-chip.tsx` for the measurement and the order. */}
         <button
           aria-expanded={open}
           aria-haspopup="menu"
           className={cn(
             CONTROL,
-            chosen
-              ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
-              : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
+            "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
+            open && "bg-(--ui-bg-tertiary) text-(--ui-text-primary)",
           )}
           onClick={() => { setOpen((was) => !was); setNaming(false); setSearch(""); }}
           type="button"
         >
-          {/* The chosen project's OWN mark rides the chip, exactly as it rides its picker row. */}
-          <Codicon
-            className="shrink-0"
-            name={chosen ? (chosen.icon ?? "folder-opened") : "folder"}
-            size="1rem"
-            style={chosen?.color ? { color: chosen.color } : undefined}
-          />
-          <span className="max-w-[220px] truncate">{chosen ? chosen.name : "Choose project"}</span>
-          {chosen && (
-            // 🔴 A REAL BUTTON WOULD NEST INSIDE THIS ONE, WHICH IS INVALID AND UNCLICKABLE IN
-            // SAFARI. A span with a role does the same job and stays in the accessibility tree.
-            <span
-              aria-label="Clear project"
-              className="ml-[2px] grid size-[18px] shrink-0 place-items-center rounded-full text-(--ui-text-quaternary) hover:bg-(--ui-bg-secondary) hover:text-(--ui-text-primary)"
-              onClick={(event) => { event.stopPropagation(); onChange(null); }}
-              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onChange(null); } }}
-              role="button"
-              tabIndex={0}
-            >
-              <Codicon name="close" size="0.75rem" />
-            </span>
-          )}
+          <Codicon className="shrink-0" name="folder" size="1rem" />
+          <span className="max-w-[220px] truncate">Choose project</span>
         </button>
 
         {open && (
@@ -398,20 +386,22 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
                 role="menuitem"
                 type="button"
               >
-                {/* 🔴 THE PROJECT'S OWN ICON AND COLOUR, the reference's defining detail here:
-                    its picker paints "school" as a blue mortar-board, not a generic folder. The
-                    colour tints only the glyph (an identity mark, never a second theme), and a
-                    project that never chose keeps the plain folder. 20px, the reference's size —
-                    "1rem" here is 18 because the root font is 18, the rem trap this file already
-                    knows. */}
+                {/* 🔴 THE PROJECT'S OWN ICON, AND NO LONGER ITS COLOUR. A project's glyph is still
+                    its own; the colour half of that feature was removed on 2026-09-03 with the rest
+                    of the accents, and `folders.color` reaching the screen here was the last place
+                    it did. 20px, the reference's size — "1rem" here is 18 because the root font is
+                    18, the rem trap this file already knows. */}
                 <Codicon
-                  className={cn("shrink-0", !folder.color && "text-(--ui-text-tertiary)")}
+                  className="shrink-0 text-(--ui-text-tertiary)"
                   name={folder.icon ?? "folder"}
                   size="20px"
-                  style={folder.color ? { color: folder.color } : undefined}
                 />
                 <span className="min-w-0 truncate">{folder.name}</span>
-                {folder.id === value && <Codicon className="ml-auto shrink-0 text-(--ui-action)" name="check" size="0.875rem" />}
+                {/* 🔴 `--ui-text-primary`, NOT `--ui-action`. The accent reaches the mascot, the send
+                    button and the chat bubble and nothing else; a tick in a menu is not one of them,
+                    and `course-map.test.ts` separately records `--ui-action` reading near-invisible
+                    as a text colour in dark mode. */}
+                {folder.id === value && <Codicon className="ml-auto shrink-0 text-(--ui-text-primary)" name="check" size="0.875rem" />}
               </button>
             ))}
             <div className="mx-[10px] my-[6px] h-px bg-(--ui-stroke-tertiary)" />

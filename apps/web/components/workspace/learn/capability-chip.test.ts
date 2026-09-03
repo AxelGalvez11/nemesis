@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { menuSide } from "./add-menu-row";
-import { backspaceClearsCapability } from "./capability-chip";
+import { backspaceClearsCapability, backspaceClearsToken } from "./capability-chip";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES } from "@/lib/learn/composer-capability";
 
 const read = (name: string) => readFileSync(new URL(`./${name}`, import.meta.url), "utf8");
@@ -40,7 +40,12 @@ test("🔴🔴 a staged capability keeps the colour it had in the menu", () => {
   // 🔴 IT MUST BE AN INLINE `color`, NOT A TAILWIND CLASS. `text-(--var)` needs the token name at
   // build time; one arriving through a record lookup is invisible to Tailwind, the class is never
   // generated, and the chip paints in the inherited colour with nothing to show for it.
-  assert.match(CHIP, /style=\{\{ color: `var\(\$\{copy\.tint\}\)` \}\}/, "the chip no longer wears the capability's own tint");
+  // 🔴 THE INLINE STYLE MOVED INTO `ComposerToken`, WHICH THE CHIP NOW COMPOSES. A project can sit
+  // on this line too since 2026-09-03, and the two were about to be hand-written twice — the drift
+  // this file's own header exists to prevent. What has to hold is unchanged: the capability's tint
+  // reaches the line, and it does so as an inline `color`.
+  assert.match(CHIP, /style=\{\{ color: `var\(\$\{tint\}\)` \}\}/, "the token no longer applies its tint inline");
+  assert.match(CHIP, /tint=\{copy\.tint\}/, "the chip no longer hands the capability's own tint to the token");
   assert.ok(!/text-\(--ui-action\)/.test(CHIP), "the chip is back on the accent instead of the capability's tint");
 
   // 🔴 AND `--ui-action` AS A TEXT COLOUR IS A KNOWN TRAP HERE, not only a lost signal:
@@ -65,6 +70,25 @@ test("🔴🔴 there is no ✕ on the chip, on either composer", () => {
   assert.ok(!/<button/.test(CHIP), "the chip is not a control — removing it belongs to the field beside it");
 });
 
+test("🔴 with a project AND a capability staged, one Backspace takes off the nearer one", () => {
+  // 🔴 THE NEAREST IS THE LAST ONE BEFORE THE CARET. They are drawn project first, capability
+  // second, so the capability is what the caret is standing next to. Removing both would be one
+  // keypress doing two deletions; removing the far one would be a keypress the learner cannot
+  // account for.
+  const press = (staged: { capability: unknown; project: unknown }) =>
+    backspaceClearsToken({ key: "Backspace", currentTarget: { selectionStart: 0, selectionEnd: 0 } }, staged);
+  assert.equal(press({ capability: "spreadsheet", project: "p1" }), "capability");
+  assert.equal(press({ capability: null, project: "p1" }), "project");
+  assert.equal(press({ capability: "spreadsheet", project: null }), "capability");
+  assert.equal(press({ capability: null, project: null }), null, "a Backspace with nothing staged must fall through to the text");
+  // The caret rule is the same one, borrowed rather than restated.
+  assert.equal(
+    backspaceClearsToken({ key: "Backspace", currentTarget: { selectionStart: 4, selectionEnd: 4 } }, { capability: "x", project: "p" }),
+    null,
+    "Backspace mid-sentence would eat a token instead of a character",
+  );
+});
+
 test("🔴 Backspace at the head of the line takes the capability off it", () => {
   const at = (start: number, end: number) => backspaceClearsCapability({ key: "Backspace", currentTarget: { selectionStart: start, selectionEnd: end } });
   assert.ok(at(0, 0), "Backspace with the caret at the start does not clear the capability");
@@ -77,8 +101,29 @@ test("🔴 Backspace at the head of the line takes the capability off it", () =>
 
   // Both composers ask the same question, through the same function.
   for (const [name, source] of [["the front door", HOME], ["the session composer", COMPOSER]] as const) {
-    assert.match(source, /if \(capability && backspaceClearsCapability\(event\)\) \{/, `${name} cannot clear the capability with Backspace`);
-    assert.match(source, /backspaceClearsCapability\(event\)\) \{\s*\n\s*event\.preventDefault\(\);/, `${name} lets the same keypress also delete a character`);
+    // 🔴 TWO SHAPES, ONE RULE, AND THE DIFFERENCE IS WHAT ELSE CAN SIT ON THE LINE. The front door
+    // can hold a project as well as a capability since 2026-09-03, so it asks which of the two a
+    // Backspace takes off; the session composer holds only a capability and asks the plain
+    // question. Both go through this file — neither hand-writes the caret rule.
+    assert.match(
+      source,
+      /backspaceClears(Capability|Token)\(event/,
+      `${name} cannot clear what is staged with Backspace`,
+    );
+    // 🔴 AND THE SAME KEYPRESS MUST NOT ALSO EAT A CHARACTER. Asserted as "preventDefault is the
+    // first thing the clearing branch does", rather than by pinning one exact spelling of the
+    // condition: the front door's is now a three-way answer and the session composer's is a
+    // boolean, and a guard that matched only one of them would have said nothing about the other.
+    // Anchored on the CALL, not the import — `source.indexOf("backspaceClears")` finds the import
+    // line first and every assertion after it then reads the wrong 400 characters.
+    const call = /backspaceClears(?:Capability|Token)\(event/.exec(source);
+    assert.ok(call, `${name} never calls the caret rule`);
+    const branch = source.slice(call!.index);
+    assert.match(
+      branch.slice(0, 400),
+      /\{\s*\n?\s*event\.preventDefault\(\);/,
+      `${name} lets the same keypress also delete a character`,
+    );
   }
 });
 

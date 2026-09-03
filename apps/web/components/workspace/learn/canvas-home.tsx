@@ -37,7 +37,7 @@ import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
 import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU, useMenuSide } from "./add-menu-row";
-import { backspaceClearsCapability, CapabilityChip } from "./capability-chip";
+import { backspaceClearsToken, CapabilityChip, ProjectToken } from "./capability-chip";
 import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 import { ProjectPicker } from "./project-picker";
@@ -256,6 +256,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   /** The project this chat will be filed into, chosen before the canvas exists. Rides as `&folder=`. */
   const [project, setProject] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
+  /**
+   * The chosen project as a row, for the token on the composer's line.
+   *
+   * 🔴 RESOLVED HERE RATHER THAN CARRIED, so a project renamed in the sidebar while the front door
+   * is open shows its new name on the line. `project` is an id for exactly that reason.
+   */
+  const chosenProject = folders.find((folder) => folder.id === project) ?? null;
   // 🔴 READ ONCE, NOT SUBSCRIBED. The front door is a surface a learner passes through in seconds;
   // the sidebar owns the live list. A stale name here costs nothing — the id is what travels.
   useEffect(() => {
@@ -1052,6 +1059,14 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   departing ? "" : "mx-[10px] self-start [grid-area:text]",
                 )}
               >
+              {/* 🔴 THE PROJECT SITS ON THE LINE, AHEAD OF THE CAPABILITY AND AHEAD OF THE WORDS
+                  (owner, 2026-09-03: *"compare with ChatGPT because it looks different when you add
+                  it"*). Measured on chatgpt.com the same day: choosing a project puts an inline
+                  token at the head of the paragraph you are typing into, not a chip on a strip
+                  below. It is the same component the capability already uses, because it is the
+                  same object — see capability-chip.tsx for the measurement.
+                  🔴 PROJECT FIRST, THEN CAPABILITY, and the Backspace order below depends on it. */}
+              {chosenProject && <ProjectToken icon={chosenProject.icon} name={chosenProject.name} />}
               {capability && <CapabilityChip capability={capability} />}
               <input
                 // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
@@ -1088,9 +1103,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   // *"user should be able to backspace to delete the mode"*). `preventDefault` so
                   // the same keypress cannot also eat a character of a sentence the learner walked
                   // the caret back through.
-                  if (capability && backspaceClearsCapability(event)) {
+                  const clears = backspaceClearsToken(event, { capability, project: chosenProject });
+                  if (clears) {
                     event.preventDefault();
-                    setCapability(null);
+                    if (clears === "capability") setCapability(null);
+                    else setProject(null);
                   }
                 }}
                 // 🔴 THE SAME PASTE RULE THE CANVAS COMPOSER CARRIES, FROM THE SAME FUNCTION. This

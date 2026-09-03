@@ -347,6 +347,17 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
         </button>
       )}
 
+      {/* 🔴 NO "…" IN THE SIDEBAR (owner, 2026-09-03: *"remove the three dots icon from the sidebar
+          because that's redundant and it's not needed"*) — the second time he has cut this menu,
+          after 2026-08-26's *"contains outdated actions that arent necessary"*, which is what moved
+          the AI actions onto a highlight in the first place.
+          🔴 THE GATE IS `toolbarSlot`, WHICH MEANS "I AM DRAWING INSIDE SOMEONE ELSE'S HEADER", not
+          `dense`. The full Library reader keeps the menu: there the file's folder trail, its linked
+          notes and "open in a new tab" have nowhere else to live. In the panel they do — Download
+          and Full screen are buttons in that header now, which is what made this redundant.
+          What genuinely goes with it there: rotate, on an image. Named rather than left to be
+          discovered as missing. */}
+      {!toolbarSlot && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -414,6 +425,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           </DropdownMenuLabel>
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
     </>
   );
 
