@@ -21,10 +21,12 @@ import {
   isAllDay,
 } from "@/lib/workspace/calendar-model";
 import type { Calendar } from "@/lib/workspace/calendars";
-import { EVENT_COLORS } from "@/lib/workspace/event-colors";
+import { EVENT_COLORS, eventColorOf } from "@/lib/workspace/event-colors";
+import { noteToText } from "@/lib/workspace/calendar-note";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/desktop-ui/popover";
 import { formatRecurrenceLines, parseRecurrenceLines, specFromLegacy, specToLegacy } from "@/lib/workspace/rrule";
-import { Clock, FileText, Layers3, LinkIcon, Palette, RefreshCw, Trash2 } from "@/lib/workspace/icons";
-import { CHEVRON_STYLE, CONTROL_HEIGHT, DATE_FIELD, FIELD } from "./field-chrome";
+import { Clock, FileText, Layers3, LinkIcon, RefreshCw, Trash2 } from "@/lib/workspace/icons";
+import { CHEVRON_STYLE, CONTROL_HEIGHT, FIELD, SOFT_FIELD } from "./field-chrome";
 import { cn } from "@/lib/utils";
 
 import { clockOf, minutesOf, SNAP_MINUTES } from "./time-grid";
@@ -88,17 +90,120 @@ function Row({
   return (
     // Google's icon sits 20px clear of its field; ours sat 13.5. Both the column
     // gap and the row padding are its measurements converted.
-    <div className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-[1.25rem]">
+    //
+    // 🔴 THE PADDING CAME OFF THE ROW AND WENT BETWEEN THE ROWS (2026-09-03).
+    // `py-[0.25rem]` inside every row plus a flat stack outside meant the air was
+    // spent where nobody sees it — around each control — instead of between the
+    // things a reader is telling apart. The parent now sets a 20px gap and this
+    // draws nothing of its own.
+    // 🔴 `items-start`, AND `items-center` BROKE IT. Centring looks identical
+    // while every row holds one control, and lands the icon halfway down the
+    // repeat row the moment its panel opens — beside the day chips instead of
+    // beside the line it belongs to. The icon cell is a full control tall and
+    // centres within itself, so start-aligned it meets a 45px control exactly.
+    <div className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-x-[18px]">
       <div className={cn("grid place-items-center text-(--ui-text-tertiary)", CONTROL_HEIGHT)}>
-        {Icon ? <Icon size={16} /> : null}
+        {Icon ? <Icon size={17} /> : null}
       </div>
-      <div className="flex min-w-0 flex-col gap-2 py-[0.25rem]">
+      <div className="flex min-w-0 flex-col gap-2">
         {label ? (
           <span className="-mb-0.5 text-[0.6875rem] font-medium uppercase tracking-[0.05em] text-(--ui-text-tertiary)">{label}</span>
         ) : null}
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * The pill IS the picker button.
+ *
+ * 🔴 THE PLATFORM'S OWN GLYPH IS HIDDEN NOW (see `SOFT_FIELD`), so something has
+ * to open the calendar and clock overlays. `showPicker()` is that something, and
+ * it THROWS rather than returning false — on a browser that lacks it, and on a
+ * call the browser does not consider user-driven. Swallowing that is correct: the
+ * field is still a real date input, so typing into it works either way, and a
+ * thrown error must never stop a click.
+ */
+function openPicker(event: { currentTarget: HTMLInputElement }) {
+  try {
+    event.currentTarget.showPicker?.();
+  } catch {
+    /* not supported here; the field still accepts typing */
+  }
+}
+
+/**
+ * The event's colour, as the dot beside its name.
+ *
+ * 🔴🔴 IT WAS A LABELLED ROW OF TWELVE CIRCLES, and that row cost a heading, a
+ * line of swatches and the air around both — for a decision most events never
+ * make. Owner, 2026-09-03: the editor is *"a bit too close together"* and *"a bit
+ * big"*. The palette is unchanged and still one press away; what went is a
+ * permanent row spent on an occasional choice.
+ *
+ * 🔴 THE DOT SHOWS THE ANSWER, so the control is not a door onto a mystery: the
+ * colour you picked is the thing you press to change it. Unset draws a dashed
+ * ring rather than a grey fill, because "no override" is not a colour — the event
+ * takes its calendar's, and a filled grey dot would claim otherwise.
+ */
+function ColourDot({ colorId, onPick }: { colorId: string; onPick: (id: string) => void }) {
+  const chosen = eventColorOf(colorId);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          aria-label={`Colour: ${chosen?.name ?? "the calendar's own"}`}
+          className="grid size-[1.375rem] shrink-0 place-items-center rounded-full transition-transform hover:scale-110"
+          title={`Colour: ${chosen?.name ?? "the calendar's own"}`}
+          type="button"
+        >
+          <span
+            // 🔴 UNSET NEEDS ITS OWN GROUND OR IT IS INVISIBLE. A dashed hairline
+            // ring alone measured as almost nothing against the dialog: it is the
+            // only door to the palette, so it has to read as a target even while
+            // it is deliberately not claiming a colour.
+            className={cn(
+              "block size-[0.8125rem] rounded-full",
+              !chosen && "border border-dashed border-(--ui-stroke-primary) bg-[color-mix(in_srgb,var(--ui-base)_6%,transparent)]",
+            )}
+            style={chosen ? { backgroundColor: chosen.hex, boxShadow: `0 0 0 3px color-mix(in srgb, ${chosen.hex} 18%, transparent)` } : undefined}
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-2.5">
+        <div aria-label="Event colour" className="grid grid-cols-6 gap-2" role="group">
+          <button
+            aria-label="The calendar's own colour"
+            aria-pressed={colorId === ""}
+            className={cn(
+              "grid size-[1.375rem] place-items-center rounded-full border border-dashed border-(--ui-stroke-primary) text-[0.625rem] text-(--ui-text-tertiary) transition-transform hover:scale-110",
+              colorId === "" && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
+            )}
+            onClick={() => onPick("")}
+            title="The calendar's own colour"
+            type="button"
+          >
+            ×
+          </button>
+          {EVENT_COLORS.map((color) => (
+            <button
+              aria-label={color.name}
+              aria-pressed={colorId === color.id}
+              className={cn(
+                "size-[1.375rem] rounded-full transition-transform hover:scale-110",
+                colorId === color.id && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
+              )}
+              key={color.id}
+              onClick={() => onPick(color.id)}
+              style={{ backgroundColor: color.hex }}
+              title={color.name}
+              type="button"
+            />
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -177,7 +282,22 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
   const [rrule, setRrule] = useState<string[] | undefined>(
     event?.rrule ?? (event?.recurrence ? formatRecurrenceLines(specFromLegacy(event.recurrence)) : undefined),
   );
-  const [note, setNote] = useState(event?.note ?? "");
+  /**
+   * The description, as text a plain box can show.
+   *
+   * 🔴🔴 IT WAS PRINTING ITS OWN TAGS. Google Calendar's `description` is an HTML
+   * field, and this is a `<textarea>` — so an event that came from Google read
+   * `<p>Bench 4×6–8; …</p>`, literally, in the owner's own screenshot on
+   * 2026-09-03.
+   *
+   * 🔴 THE ORIGINAL IS KEPT, AND THAT IS THE HALF THAT IS EASY TO MISS. Showing
+   * the text and then saving the text would mean opening a Google event and
+   * pressing Save without touching anything quietly stripped its links and line
+   * breaks. So: the box shows text, and the save below writes plain text only
+   * once the visible text has actually changed.
+   */
+  const noteSource = event?.note ?? "";
+  const [note, setNote] = useState(() => noteToText(noteSource));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -253,7 +373,9 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
     if (event?.status && event.status !== "confirmed") built.status = event.status;
     if (event?.transparency === "transparent") built.transparency = "transparent";
     if (event?.visibility && event.visibility !== "default") built.visibility = event.visibility;
-    if (note.trim()) built.note = note.trim();
+    // Untouched keeps whatever arrived — markup included; edited becomes what
+    // the learner actually typed. See `noteSource` above.
+    if (note.trim()) built.note = note.trim() === noteToText(noteSource).trim() ? noteSource : note.trim();
 
     try {
       await onSave(built);
@@ -278,63 +400,116 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
 
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open>
-      <DialogContent banner={error || undefined} bannerTone="error" className="sm:max-w-md">
-        <DialogHeader>
+      {/* 🔴🔴 480 WIDE AND 26 IN, AGAINST 504 AND 18 (2026-09-03). The owner asked
+          for two things that fight each other — *"not so bunched up, something
+          that is easier on the eyes"* and *"a bit smaller"* — and the only
+          resolution is to show LESS at once rather than to space more out. The
+          repeat rule collapsed to a line and the colour row became the dot beside
+          the title; what those two gave back paid for the padding, the 20px
+          between rows and 15px controls, and the box still measures about 390px
+          tall against 624.
+
+          🔴 `bodyClassName`, NOT `className`. With an error banner the children
+          live in an inner scroller that carries its own `p-4`, which `className`
+          never reaches — so the dialog used to tighten by 8px the moment a save
+          failed. */}
+      <DialogContent
+        banner={error || undefined}
+        bannerTone="error"
+        bodyClassName="gap-0 p-[26px]"
+        className="sm:max-w-[480px]"
+      >
+        {/* 🔴 THE HEADING IS SPOKEN, NOT DRAWN. "Edit event" over a field holding
+            the event's name said the same thing twice, and the sentence under it
+            ("Change anything here, or delete the event") explained a dialog whose
+            two buttons already say so. Radix still needs both for the accessible
+            name and description, and a screen reader still hears them. */}
+        <DialogHeader className="sr-only">
           <DialogTitle>{mode === "edit" ? "Edit event" : "Add event"}</DialogTitle>
-          {/* Radix wants a description for `aria-describedby`, so this says what
-              the dialog IS. It used to list "assignment, exam, rotation, class",
-              which is now a labelled Type row two inches below it. */}
           <DialogDescription>
             {mode === "edit" ? "Change anything here, or delete the event." : "Everything but a title is optional."}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col">
-          {/* 🔴 SIX FIELDS. Owner 2026-09-01: "basically, I just need a way to map
-              events onto a calendar ... Google Calendar has all these extra
-              things, I need ours to have just the basics — maybe changing events
-              calendars, repeating maybe, and the title ... maybe a description
-              for it, that's about it."
 
-              Gone with that: the type picker (assignment/exam/rotation — "too
-              specific to school", and this product is field-agnostic), guests
-              ("too Google Calendar-like, and I don't think we even have a
-              function for that" — correct, Nemesis has never emailed anyone),
-              reminders, location, course, status, free/busy, visibility and the
-              timezone picker.
-
-              Every one of those fields is still CARRIED on save (see `built`
-              above). Removing a control is not the same as deleting the column,
-              and an editor that silently erased a location on Save would be a
-              worse bug than the clutter it replaced. */}
+        {/* 🔴 `pr-[26px]` KEEPS THE NAME OFF THE CLOSE BUTTON. `DialogContent`
+            draws its ✕ absolutely at `right-2.5`, so a title that filled the row
+            ran underneath it. */}
+        <div className="flex items-center gap-[11px] pr-[26px]">
+          <ColourDot colorId={colorId} onPick={setColorId} />
           <input
             aria-label="Title"
             autoFocus
-            className="mb-2 w-full rounded-lg border border-transparent bg-transparent px-2 py-2 text-[1.0625rem] font-medium text-foreground outline-none placeholder:text-(--ui-text-quaternary) hover:border-(--ui-stroke-tertiary) focus:border-(--ui-stroke-secondary)"
+            className="min-w-0 flex-1 bg-transparent text-[25px] font-medium leading-[34px] tracking-[-0.01em] text-foreground outline-none placeholder:text-(--ui-text-quaternary)"
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Add a title"
             value={title}
           />
+        </div>
 
+        <div className="my-[22px] h-px shrink-0 bg-(--ui-stroke-tertiary)" />
+
+        {/* 🔴 FOUR FIELDS. Owner 2026-09-01: *"I just need a way to map events
+            onto a calendar… maybe changing events calendars, repeating maybe, and
+            the title… maybe a description for it, that's about it."*
+
+            Gone with that: the type picker (assignment/exam/rotation — "too
+            specific to school", and this product is field-agnostic), guests,
+            reminders, location, course, status, free/busy, visibility and the
+            timezone picker. Every one is still CARRIED on save (see `built`
+            above) — removing a control is not the same as deleting the column,
+            and an editor that silently erased a location would be a worse bug
+            than the clutter it replaced. */}
+        <div className="flex flex-col gap-[20px]">
           <Row icon={Clock}>
-            <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_6.5rem] gap-1.5">
-              <Input aria-label="Date" className={DATE_FIELD} onChange={(e) => setDate(e.target.value)} type="date" value={date} />
+            {/* 🔴 A GRID, NOT A WRAPPING FLEX, AND THREE REAL PILLS WILL NOT FIT
+                WITHOUT ONE. Measured at 480 wide: the content column is 428px and
+                a `<input type="date">` needs ~175 at 15px, so date + start + end
+                overflowed and the "All day" toggle wrapped to a ragged second
+                line at the right. The tracks are the original's, kept. */}
+            <div className="grid grid-cols-[minmax(0,1fr)_6.75rem_6.75rem] gap-[9px]">
+              <input
+                aria-label="Date"
+                className={SOFT_FIELD}
+                onChange={(e) => setDate(e.target.value)}
+                onClick={openPicker}
+                type="date"
+                value={date}
+              />
               {allDay ? (
-                <Input
+                <input
                   aria-label="Last day"
-                  className={cn(DATE_FIELD, "col-span-2")}
+                  className={cn(SOFT_FIELD, "col-span-2")}
                   min={date}
                   onChange={(e) => setEndDate(e.target.value)}
+                  onClick={openPicker}
                   placeholder="Last day"
                   type="date"
                   value={endDate}
                 />
               ) : (
                 <>
-                  <Input aria-label="Start time" className={DATE_FIELD} onChange={(e) => moveStart(e.target.value)} type="time" value={time} />
-                  <Input aria-label="End time" className={DATE_FIELD} onChange={(e) => moveEnd(e.target.value)} type="time" value={endTime} />
+                  <input
+                    aria-label="Start time"
+                    className={SOFT_FIELD}
+                    onChange={(e) => moveStart(e.target.value)}
+                    onClick={openPicker}
+                    type="time"
+                    value={time}
+                  />
+                  <input
+                    aria-label="End time"
+                    className={SOFT_FIELD}
+                    onChange={(e) => moveEnd(e.target.value)}
+                    onClick={openPicker}
+                    type="time"
+                    value={endTime}
+                  />
                 </>
               )}
             </div>
+            {/* 🔴 ITS OWN LINE, LEFT-ALIGNED, which is where it was before and
+                where it belongs: pushed to the right of a full row it read as a
+                stray control belonging to the end time. */}
             <label className="flex w-fit cursor-pointer items-center gap-1.5 text-xs text-(--ui-text-secondary)">
               <input checked={allDay} className="accent-(--ui-text-primary)" onChange={(e) => setAllDay(e.target.checked)} type="checkbox" />
               All day
@@ -345,44 +520,8 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
             <RepeatEditor onChange={setRrule} startDate={date} value={rrule} />
           </Row>
 
-          {/* One row of colours, and it is the only thing that tells two events
-              apart at a glance now — which is exactly what the owner asked for:
-              "the only differentiating thing should be filtering by color". */}
-          <Row icon={Palette} label="Colour">
-            <div className="flex flex-wrap items-center gap-2" role="group">
-              <button
-                aria-label="Default colour"
-                aria-pressed={colorId === ""}
-                className={cn(
-                  "grid size-[1.375rem] place-items-center rounded-full border border-dashed border-(--ui-stroke-primary) text-[0.625rem] text-(--ui-text-tertiary) transition-transform hover:scale-110",
-                  colorId === "" && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
-                )}
-                onClick={() => setColorId("")}
-                title="Default colour"
-                type="button"
-              >
-                ×
-              </button>
-              {EVENT_COLORS.map((color) => (
-                <button
-                  aria-label={color.name}
-                  aria-pressed={colorId === color.id}
-                  className={cn(
-                    "size-[1.375rem] rounded-full transition-transform hover:scale-110",
-                    colorId === color.id && "ring-2 ring-(--ui-text-secondary) ring-offset-2 ring-offset-(--ui-bg-elevated)",
-                  )}
-                  key={color.id}
-                  onClick={() => setColorId(color.id)}
-                  style={{ backgroundColor: color.hex }}
-                  title={color.name}
-                  type="button"
-                />
-              ))}
-            </div>
-          </Row>
-
           {calendars.length > 1 && (
-            <Row icon={Layers3} label="Calendar">
+            <Row icon={Layers3}>
               <select
                 aria-label="Calendar"
                 className={FIELD}
@@ -402,7 +541,7 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
               one exists, so an ordinary event never sees it. */}
           {(event?.conference?.url || event?.attachments?.length || event?.sourceUrl) && (
             <Row icon={LinkIcon}>
-              <div className="flex flex-col gap-1 rounded-lg border border-(--ui-stroke-tertiary) p-2.5 text-xs">
+              <div className="flex flex-col gap-1 rounded-[0.75rem] bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] p-2.5 text-xs">
                 {event?.conference?.url && (
                   <a className="truncate text-(--ui-learner) hover:underline" href={event.conference.url} rel="noopener noreferrer" target="_blank">
                     {event.conference.label || "Join the video call"}
@@ -423,15 +562,21 @@ export function EventFormDialog({ mode, draft, event, calendars = [], onClose, o
           )}
 
           <Row icon={FileText}>
-            <Textarea
-              className="min-h-16"
+            {/* 🔴 BORDERLESS, AND IT GROWS. A bordered 72px box drawn under every
+                event announced an empty field as loudly as a full one. */}
+            <textarea
+              aria-label="Description"
+              className="min-h-[1.5rem] w-full resize-y bg-transparent py-[0.5rem] text-[15px] leading-[22px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
               onChange={(e) => setNote(e.target.value)}
               placeholder="Add a description"
+              rows={note ? 3 : 1}
               value={note}
             />
           </Row>
         </div>
-        <DialogFooter className="flex-wrap gap-2 sm:justify-between">
+
+        <div className="mt-[22px] h-px shrink-0 bg-(--ui-stroke-tertiary)" />
+        <DialogFooter className="mt-[18px] flex-wrap gap-2 sm:justify-between">
           {mode === "edit" ? (
             <Button
               onClick={() => void handleDelete()}

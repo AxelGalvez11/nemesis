@@ -50,3 +50,38 @@ export const DATE_FIELD = cn(
   CONTROL_HEIGHT,
   "[&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-35 [&::-webkit-calendar-picker-indicator]:hover:opacity-70",
 );
+
+/**
+ * The same control, with its outline taken off.
+ *
+ * 🔴🔴 THIS IS WHAT "NOT SO BUNCHED UP" ACTUALLY NEEDED. Owner, 2026-09-03, of
+ * the event editor: *"it looks a bit too close together… I need something that
+ * is not so bunched up, something that is easier on the eyes"* and, of the same
+ * box, *"a bit smaller"*. Those two pull against each other, and the way out is
+ * not more padding: it is fewer edges. Six outlined boxes stacked eight pixels
+ * apart read as a wall whatever the gap between them, because every one of them
+ * draws its own rectangle. On a faint ground the row reads as writing, and the
+ * air between rows is then free to do its job.
+ *
+ * 🔴 SAME HEIGHT AND SAME RADIUS AS `FIELD`, deliberately. A select inside the
+ * repeat panel still wears the outlined chrome (it has a dropdown arrow to
+ * carry), and the two sit in the same dialog — they must agree about their box
+ * even when they disagree about their edge.
+ *
+ * 🔴 15px, NOT 13.5. The other half of "easier on the eyes" is the type, and a
+ * control the size of a caption is what made this form feel like settings rather
+ * than like an event.
+ */
+export const SOFT_FIELD = cn(
+  CONTROL_HEIGHT,
+  "flex w-full min-w-0 items-center gap-2 rounded-[0.75rem] border-0 px-[14px] text-left",
+  "bg-[color-mix(in_srgb,var(--ui-base)_4.5%,transparent)] text-[15px] leading-5 text-(--ui-text-primary)",
+  "outline-none transition-colors hover:bg-[color-mix(in_srgb,var(--ui-base)_8%,transparent)]",
+  "focus-visible:ring-2 focus-visible:ring-(--ui-stroke-primary)",
+  // 🔴 THE PLATFORM GLYPH GOES, AND THE PILL BECOMES THE BUTTON. Dimming it was
+  // right while these were outlined boxes; on a borderless pill it is the only
+  // edge left in the row. `showPicker()` on the field itself is the replacement
+  // — see `openPicker` in event-dialogs.tsx, which falls back to the glyph's own
+  // behaviour where the browser has no such method.
+  "[&::-webkit-calendar-picker-indicator]:hidden",
+);

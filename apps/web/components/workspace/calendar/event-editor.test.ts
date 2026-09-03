@@ -32,7 +32,19 @@ test("there is exactly one row of colour swatches, and no type row at all", () =
   // want anything like type, you know, like assignment exam rotation. That's too
   // specific to school. This should be generalist as possible."
   assert.equal((FORM_CODE.match(/EVENT_COLORS\.map/g) ?? []).length, 1, "a second colour palette appeared");
-  assert.match(FORM_CODE, /<Row icon=\{Palette\} label="Colour">/, "the colour row lost its label");
+  // 🔴 REPOINTED 2026-09-03: THE COLOUR IS NO LONGER A ROW. It pinned
+  // `<Row icon={Palette} label="Colour">`, which was right while the palette was
+  // a labelled line of twelve circles — a heading, a row of swatches and the air
+  // around both, spent permanently on a decision most events never make. Owner
+  // the same day, of this dialog: *"a bit too close together"* and *"a bit
+  // big"*. The palette is unchanged and one press away; the dot beside the title
+  // is now both the answer and the control, so what is asserted is that the
+  // control still SHOWS the chosen colour rather than being a door onto a
+  // mystery.
+  assert.match(FORM_CODE, /function ColourDot\(/, "the colour control is gone");
+  assert.match(FORM_CODE, /<ColourDot colorId=\{colorId\} onPick=\{setColorId\} \/>/, "the dialog stopped drawing the colour control");
+  assert.match(FORM_CODE, /const chosen = eventColorOf\(colorId\);/, "the dot no longer shows which colour is set");
+  assert.doesNotMatch(FORM_CODE, /label="Colour"/, "the colour went back to owning a labelled row");
   assert.doesNotMatch(FORM_CODE, /label="Type"/, "the type picker came back");
   assert.doesNotMatch(FORM_CODE, /KIND_ORDER/, "the editor can set a kind again");
 });
@@ -101,6 +113,82 @@ test("control height and row rhythm are Google's, converted", () => {
   // controls 4.5px apart.
   assert.match(CHROME_CODE, /CONTROL_HEIGHT = "h-\[2\.5rem\]"/, "the controls left Google's height");
   assert.doesNotMatch(CHROME_CODE, /"h-8/, "a control is back at the old, shorter height");
+});
+
+test("🔴🔴 the repeat rule is ONE LINE until somebody presses it", () => {
+  // Owner, 2026-09-03: the editor *"looks a bit too close together… I need
+  // something that is not so bunched up"* and, of the same box, *"a bit
+  // smaller"*. Those pull against each other, so the answer is showing less at
+  // once, not spacing more out. This row alone was ~250px of a 624px dialog: a
+  // preset select, seven day circles, an "Ends" label, a second select and a
+  // date, inside a border — a form within the form.
+  assert.match(REPEAT_CODE, /const \[open, setOpen\] = useState\(false\);/, "the repeat rule is expanded again by default");
+  assert.match(REPEAT_CODE, /\{spec \? describeSpec\(spec\) : "Does not repeat"\}/, "the collapsed line stopped saying what the rule is");
+  // 🔴 THE SENTENCE IS A HELPER THAT ALREADY EXISTED AND HAD NO CALLER.
+  // `describeSpec` shipped with the parser, tested, and never reached a screen.
+  // Writing a second way to say a rule would have been two answers to one
+  // question, drifting apart the first time either was corrected.
+  assert.match(REPEAT_CODE, /describeSpec,/, "the summary stopped using the tested description");
+  // 🔴 AND THE LINE MUST NOT VANISH WHEN IT OPENS. An earlier draft swapped it
+  // for the select, so the summary you were editing towards disappeared the
+  // moment you started.
+  assert.match(REPEAT_CODE, /aria-expanded=\{open\}/, "the summary is no longer the toggle");
+  assert.match(REPEAT_CODE, /\{open && \(/, "the panel is not gated on the toggle");
+  assert.doesNotMatch(REPEAT_CODE, /rounded-lg border border-\(--ui-stroke-tertiary\) p-2\.5/, "the panel is a bordered card again");
+});
+
+test("🔴🔴 hiding the picker glyph without a replacement would be a dead control", () => {
+  // `SOFT_FIELD` takes the platform's calendar and clock buttons off, because on
+  // a borderless pill they are the only edge left in the row. That is only safe
+  // because the pill itself opens the overlay — and `showPicker()` THROWS where
+  // it is unsupported, so the call has to be guarded or a click can break.
+  assert.match(CHROME_CODE, /\[&::-webkit-calendar-picker-indicator\]:hidden/, "the platform glyph is back on the soft field");
+  assert.match(FORM_CODE, /event\.currentTarget\.showPicker\?\.\(\);/, "nothing opens the date and time overlays any more");
+  assert.match(FORM_CODE, /\} catch \{/, "an unsupported showPicker will now throw out of a click handler");
+  for (const field of ["Date", "Start time", "End time", "Last day"]) {
+    assert.match(FORM_CODE, new RegExp(`aria-label="${field}"[\\s\\S]{0,320}onClick=\\{openPicker\\}`), `the ${field} pill does not open its picker`);
+  }
+});
+
+test("🔴🔴 an untouched description keeps its markup; an edited one becomes text", () => {
+  // Google Calendar's `description` is an HTML field and this is a `<textarea>`,
+  // so an imported event printed `<p>…</p>` in the box — the owner's own
+  // screenshot, 2026-09-03. Converting it is only half the fix: converting AND
+  // saving the conversion would mean opening a Google event and pressing Save
+  // without touching anything stripped its links.
+  assert.match(FORM_CODE, /useState\(\(\) => noteToText\(noteSource\)\)/, "the box shows raw HTML again");
+  assert.match(
+    FORM_CODE,
+    /built\.note = note\.trim\(\) === noteToText\(noteSource\)\.trim\(\) \? noteSource : note\.trim\(\)/,
+    "saving an untouched event now rewrites its description",
+  );
+});
+
+test("🔴🔴 an overlay opened from inside a dialog must sit ABOVE it", () => {
+  // The colour palette is a popover opened from inside the event editor, and
+  // `PopoverContent` shipped at `z-50` against `DialogContent`'s `z-[130]`. It
+  // rendered behind the dialog that opened it: invisible, and every click on it
+  // landing on the dialog instead. Found by driving it, not by reading it.
+  const POPOVER = code(readFileSync(new URL("../../desktop-ui/popover.tsx", import.meta.url), "utf8"));
+  const DIALOG_Z = Number(code(readFileSync(new URL("../../desktop-ui/dialog.tsx", import.meta.url), "utf8")).match(/z-\[(\d+)\][^"]*fixed left-1\/2/)?.[1] ?? /* the grid path */ 130);
+  const popoverZ = Number(POPOVER.match(/"z-\[(\d+)\] w-72/)?.[1] ?? 0);
+  assert.ok(popoverZ > DIALOG_Z, `the popover (${popoverZ}) sits under the dialog (${DIALOG_Z}) again`);
+  // 🔴 AND IT IS THE SAME NUMBER ITS SIBLINGS USE, so the next overlay added to
+  // a dialog does not have to rediscover this.
+  for (const sibling of ["dropdown-menu", "context-menu", "select"]) {
+    const source = code(readFileSync(new URL(`../../desktop-ui/${sibling}.tsx`, import.meta.url), "utf8"));
+    assert.match(source, new RegExp(`z-\\[${popoverZ}\\]`), `${sibling} no longer agrees with the popover about the overlay layer`);
+  }
+});
+
+test("🔴 a failed save must not change the dialog's spacing", () => {
+  // With a banner, `DialogContent` wraps the children in an inner scroller that
+  // carries its own `p-4`; `className` lands on the outer shell and reaches
+  // nothing. Passing the padding through `className` meant the dialog tightened
+  // by 8px the moment a save failed, which is the worst possible moment to move.
+  assert.match(FORM_CODE, /bodyClassName="gap-0 p-\[26px\]"/, "the roomier padding went back to a class the banner state ignores");
+  const DIALOG = code(readFileSync(new URL("../../desktop-ui/dialog.tsx", import.meta.url), "utf8"));
+  assert.match(DIALOG, /overflow-y-auto p-4", bodyClassName\)/, "the banner path stopped taking the body class");
 });
 
 test("the drawn chevron is positioned inline, never by a bg-[…] class", () => {

@@ -49,6 +49,7 @@ const DIALOG_BANNER_TONES: Record<DialogBannerTone, string> = {
 
 function DialogContent({
   className,
+  bodyClassName,
   children,
   showCloseButton = true,
   fitContent = false,
@@ -57,6 +58,15 @@ function DialogContent({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  // Padding and gap for the box the children sit in.
+  //
+  // 🔴 IT EXISTS BECAUSE THERE ARE TWO OF THAT BOX. With a banner the children
+  // are wrapped in an inner scroller that carries its own `p-4 gap-3`, and
+  // `className` lands on the OUTER shell where it reaches nothing; without one
+  // the padding is on the shell itself. A dialog that wants roomier insides had
+  // no way to say so that held in both states, so it tightened by 8px the moment
+  // a save failed. This lands on whichever element is actually the body.
+  bodyClassName?: string;
   // Size the dialog to its content (capped at the viewport) instead of the
   // default fixed `max-w-lg`.
   fitContent?: boolean;
@@ -103,7 +113,7 @@ function DialogContent({
         >
           {/* Scroll lives on an inner box so this shell keeps a painted bottom radius. */}
           <div className="relative z-10 overflow-hidden rounded-xl border border-b-0 border-(--stroke-nous) bg-(--ui-chat-bubble-background)">
-            <div className="grid max-h-[calc(85vh-5rem)] min-h-0 gap-3 overflow-y-auto p-4">{children}</div>
+            <div className={cn("grid max-h-[calc(85vh-5rem)] min-h-0 gap-3 overflow-y-auto p-4", bodyClassName)}>{children}</div>
           </div>
           <div
             className={cn(
@@ -133,6 +143,7 @@ function DialogContent({
           "fixed left-1/2 top-1/2 z-[130] pointer-events-auto grid max-h-[85vh] -translate-x-1/2 -translate-y-1/2 gap-3 overflow-y-auto rounded-xl border border-(--stroke-nous) bg-(--ui-chat-bubble-background) p-4 text-[length:var(--conversation-text-font-size)] text-foreground shadow-nous duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           widthClass,
           className,
+          bodyClassName,
         )}
         data-slot="dialog-content"
         data-workspace=""
