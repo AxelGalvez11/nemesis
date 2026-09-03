@@ -69,13 +69,33 @@ export const MIN_TABLE_COLUMNS = 2;
  */
 export const MAX_TABLE_ROWS = 200;
 
-/** Is this line a markdown table row? A leading pipe and at least one interior boundary. */
+/**
+ * Is this line a row of pipe-separated cells?
+ *
+ * 🔴🔴 THE OUTER PIPES ARE OPTIONAL, AND ASSUMING THEY WERE NOT COST THE FIRST PRODUCTION READ ITS
+ * STRUCTURE. Measured 2026-09-03, on the reparse that proved the table clause works: every value
+ * came back, and every row came back as
+ *
+ *     Insulin aspart (NovoLog) | 10-20 min | 30-90 min | 3-5
+ *
+ * with no leading or trailing pipe. The instruction said "cells separated by |", and the model did
+ * exactly that — it separated the cells. This detector required a leading `|`, so it saw no table
+ * at all, and the grid survived only as loose lines. The instruction has been made explicit since,
+ * but a model will drift back, so the reader has to accept the shape it actually gets.
+ */
 function isRow(line: string): boolean {
+  return cellCount(line) >= MIN_TABLE_COLUMNS;
+}
+
+/** How many cells this line holds, counting an escaped pipe as a character. PURE. */
+function cellCount(line: string): number {
+  return cellsOf(line).length;
+}
+
+/** Does this line use the fully-delimited markdown form? Evidence a table was intended. */
+function fullyDelimited(line: string): boolean {
   const text = line.trim();
-  if (!text.startsWith("|")) return false;
-  // "| a |" has two pipes and one cell; "| a | b |" has three and two. Two boundaries is the floor
-  // for anything, and the column count is checked properly further down.
-  return (text.match(/(?<!\\)\|/g) ?? []).length >= 2;
+  return text.startsWith("|") && text.endsWith("|") && text.length > 1;
 }
 
 /** Split one row into its cells. A pipe the model escaped is a pipe, not a boundary. */
@@ -155,6 +175,15 @@ export function readFigureTable(entry: string): FigureRead {
 
   const width = rows.reduce((widest, row) => Math.max(widest, row.length), 0);
   if (rows.length < MIN_TABLE_ROWS || rows.length > MAX_TABLE_ROWS || width < MIN_TABLE_COLUMNS) {
+    return { description: entry.trim() };
+  }
+
+  // 🔴 TWO NARROW LINES THAT HAPPEN TO CARRY A PIPE ARE NOT A TABLE. Dropping the leading-pipe
+  // requirement above is what lets a real transcription through, and it also lets two consecutive
+  // sentences containing one pipe each look like a two-column grid. So a run this thin has to show
+  // some other evidence that a table was meant: the delimited markdown form, or a drawn header
+  // rule. Three columns or more is evidence in itself — prose does not line up that way twice.
+  if (width < 3 && !hasHeaderRule && !body.some(fullyDelimited)) {
     return { description: entry.trim() };
   }
 

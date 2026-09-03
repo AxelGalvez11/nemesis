@@ -109,10 +109,17 @@ export const FIGURE_PROMPT =
   // Values are provided, and not one of them came back. The document then reported `complete`.
   // A cap that is a cost ceiling for a diagram is a data-loss guarantee for a grid, so a grid gets
   // its own instruction. See `figure-table.ts` for the full measurement.
+  // 🔴 THE SHAPE IS SPELT OUT BECAUSE "cells separated by |" WAS OBEYED TOO LITERALLY. On the
+  // reparse that proved this clause works, every value came back and every row came back as
+  // `Insulin aspart (NovoLog) | 10-20 min | 30-90 min | 3-5` — cells duly separated, and no outer
+  // pipes and no header rule, so the grid could only be read back as loose lines. The reader in
+  // `figure-table.ts` accepts that shape now too; this asks for the unambiguous one.
   "If an image is a TABLE — values laid out in rows and columns — do NOT describe it and do NOT " +
   "summarise it. Transcribe it. On the lines after the identifier write one markdown row per " +
-  "printed row, cells separated by |, the header row first and then every data row in printed " +
-  "order. Copy each cell exactly as printed, including units, ranges, symbols and footnote marks. " +
+  "printed row: begin and end every row with |, separate the cells with |, put the header row " +
+  "first, then a rule row of | --- | --- | with one --- per column, then every data row in " +
+  "printed order. Give every row the same number of cells. " +
+  "Copy each cell exactly as printed, including units, ranges, symbols and footnote marks. " +
   "Never round a value, never merge two rows, never leave a row out, and never invent a cell — " +
   "write an empty cell where the table prints nothing. " +
   "For any OTHER image, in one to three sentences, " +
@@ -154,7 +161,7 @@ export const FIGURE_PROMPT =
  * 🔴 CHANGE IT ONLY WHEN THE ANSWER'S SHAPE CHANGES. Every bump re-bills every cached figure once,
  * so a wording tidy-up is not a version and a new instruction is.
  */
-export const FIGURE_PROMPT_VERSION = "figures-2026-09-03-tables";
+export const FIGURE_PROMPT_VERSION = "figures-2026-09-03-tables-2";
 
 /**
  * Reading PAGES whose content is a picture — a slide exported as an image, a

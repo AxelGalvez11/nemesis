@@ -100,3 +100,40 @@ test("🔴 the caption the old prompt produced is left exactly as it was", () =>
     "For each preparation, values are provided for Onset, Peak time, and Duration in hours.";
   assert.equal(figureDescriptionText(caption), caption);
 });
+
+// ── the shape production actually returned ──────────────────────────────────
+//
+// 🔴🔴 THE FIRST FIX WORKED AND ITS READER STILL MISSED. On the 2026-09-03 reparse that proved the
+// table clause, every value came back — and every row came back WITHOUT outer pipes, because the
+// instruction said "cells separated by |" and the model separated the cells. The detector required
+// a leading `|`, so it found no table and the grid survived only as loose lines. The instruction is
+// explicit now; a model will drift back, so the reader accepts what it actually gets.
+
+/** Verbatim from `figure_descriptions` after the production reparse of 08-insulin.pdf. */
+const AS_RETURNED = [
+  "Preparations (U-100 Unless Otherwise Noted) | Onset | Peak^a | Duration (Hours)^a",
+  "Ultra-rapid Acting | | |",
+  "Insulin aspart (Fiasp) | 15-20 min^b | 90-120 min | 5-7",
+  "Insulin aspart (NovoLog) | 10-20 min | 30-90 min | 3-5",
+].join("\n");
+
+test("🔴 a row without outer pipes is still a row", () => {
+  const read = readFigureTable(AS_RETURNED);
+  assert.ok(read.table, "this exact text came back from production and read as prose");
+  assert.equal(read.table!.rows.length, 4);
+  assert.deepEqual(read.table!.rows[3], ["Insulin aspart (NovoLog)", "10-20 min", "30-90 min", "3-5"]);
+  // A section heading row inside the grid keeps its empty cells rather than being dropped.
+  assert.deepEqual(read.table!.rows[1], ["Ultra-rapid Acting", "", "", ""]);
+});
+
+test("🔴 two sentences that happen to carry a pipe are not a two-column table", () => {
+  // Dropping the leading-pipe requirement is what lets a real transcription through, and it also
+  // makes this ambiguous. A run this thin has to show some other evidence a table was meant.
+  const prose = "The x axis | shows time\nThe y axis | shows concentration";
+  assert.equal(readFigureTable(prose).table, undefined);
+  // Three columns is evidence in itself — prose does not line up that way twice.
+  assert.ok(readFigureTable("a | b | c\nd | e | f").table);
+  // So is the delimited form, and so is a drawn rule.
+  assert.ok(readFigureTable("| a | b |\n| c | d |").table);
+  assert.ok(readFigureTable("a | b\n--- | ---\nc | d").table);
+});
