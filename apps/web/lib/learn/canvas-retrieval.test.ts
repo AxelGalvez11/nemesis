@@ -244,10 +244,17 @@ test("🔴 the sources panel speaks to the learner, not to the model", () => {
   // the whole document." An instruction, written for the model, referring to the reader in the
   // third person. The function that builds it is literally called `coverageNoticeForModel`.
   const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
-  assert.match(controls, /source\.coverageLabel \?\? source\.coverageNote/, "the panel is back to printing the model's copy");
-  // 🔴 THE FALLBACK STAYS. A canvas written before the label existed has only the model's sentence,
-  // and a clumsy disclosure beats a silent upgrade from partial to whole.
-  assert.match(controls, /coverageNote!\.replace/, "an older canvas now shows no disclosure at all");
+  assert.match(controls, /\{source\.coverageLabel && \(/, "the panel's disclosure left the learner's copy");
+  // 🔴🔴 AND THE FALLBACK IS GONE, WHICH IS A REVERSAL OF THE LINE THAT STOOD HERE. It read: *"THE
+  // FALLBACK STAYS. A canvas written before the label existed has only the model's sentence, and a
+  // clumsy disclosure beats a silent upgrade from partial to whole."* That was defensible while the
+  // learner's copy was empty only for an OLD row. Hours later the owner ruled picture counts out of
+  // it entirely — so empty became the normal state for a picture-only gap, and the fallback put
+  // "Source read in full: the te…" in amber on three of his lecture rows. Caught on production.
+  //
+  // The case it was protecting is answered by `refreshedCoverageNotes`, which recomputes the label
+  // on open. Calibration: restore the `??` and `model-copy-stays-with-the-model.test.ts` reddens.
+  assert.ok(!/coverageNote!\.replace/.test(controls), "the model's sentence is back on the learner's row");
 });
 
 test("one parsed coverage, two spellings, read once", () => {
