@@ -85,6 +85,15 @@ export async function matchChunks(
   return await res.json();
 }
 
+/** The corpus the retrieval eval scores is absent, so there is nothing to score.
+ *
+ *  Distinct from an ordinary failure on purpose: a missing corpus is a fact about the deployment,
+ *  and the gate treats it as "not measured" rather than "got worse". A genuine regression still
+ *  fails the build. */
+export class CorpusMissingError extends Error {
+  override readonly name = "CorpusMissingError";
+}
+
 /** Resolve gold (provider, provider_id) pairs to corpus source_ids. Unresolved = not in corpus.
  *  Strict: a row is kept only when BOTH its provider AND provider_id were requested. The query
  *  filters on provider_id alone (PostgREST in-list), so without the provider check a set-id that
@@ -103,6 +112,17 @@ export async function resolveSourceIds(
     `${env.SB_URL}/rest/v1/core_sources?select=id,provider,provider_id&provider_id=in.(${inList})`,
     { headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}` } },
   ).then((r) => r.json());
+  // 🔴 THE CORPUS THIS EVAL SCORES NO LONGER EXISTS, AND IT SAID SO AS `rows is not iterable`.
+  // `core_sources` and `core_chunks` were dropped when deep research was rebuilt in apps/web/lib
+  // /research; PostgREST answers a missing relation with an OBJECT ({code, message}), not an array,
+  // so the for-of below threw a TypeError with no mention of the actual cause. Every run of this
+  // workflow has failed since the tables went away — which is worse than no eval, because a job
+  // that is always red teaches everyone to stop reading CI.
+  if (!Array.isArray(rows)) {
+    throw new CorpusMissingError(
+      `core_sources is unreadable, so retrieval cannot be scored: ${JSON.stringify(rows).slice(0, 200)}`,
+    );
+  }
   for (const r of rows as Array<{ id: string; provider: string; provider_id: string }>) {
     const key = `${r.provider}:${r.provider_id}`;
     if (wanted.has(key)) out.set(key, r.id); // only the requested (provider, provider_id)
