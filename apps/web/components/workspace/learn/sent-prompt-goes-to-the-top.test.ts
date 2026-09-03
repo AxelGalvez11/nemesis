@@ -79,8 +79,15 @@ test("🔴🔴 the wrapper stays a plain box and the runway is its SIBLING", () 
   // Inside, the runway would count toward the height being measured and the reserve would eat
   // itself. And `#canvas-answer-end` must stay the wrapper's own last child, because the character
   // hangs off it (#874) and block children stack from the top.
-  assert.match(code, /<div data-canvas-current="" ref=\{currentTurnRef\}>/, "the measured wrapper grew attributes or lost its ref");
+  // 🔴 WHAT "PLAIN" MEANS IS NO LAYOUT OF ITS OWN, NOT NO ATTRIBUTES. This pinned the tag character
+  // for character and reddened when the wrapper gained `data-thread-turn` — the anchor that lets
+  // the History Rail scroll to the live turn instead of blanking the page (2026-09-03). A data
+  // attribute changes no box. What must never appear here is a class, a style or a ref that is not
+  // `currentTurnRef`, because those are what would change the height this box exists to measure.
   const wrapper = code.indexOf('<div data-canvas-current=""');
+  const tag = code.slice(wrapper, code.indexOf(">", wrapper) + 1);
+  assert.match(tag, /ref=\{currentTurnRef\}/, "the measured wrapper lost its ref");
+  assert.ok(!/className|style=/.test(tag), `the measured wrapper grew layout of its own: ${tag}`);
   const anchor = code.indexOf('id="canvas-answer-end"');
   const runway = code.indexOf("ref={runwayRef}");
   assert.ok(wrapper > 0 && anchor > wrapper, "the answer anchor left the measured wrapper");

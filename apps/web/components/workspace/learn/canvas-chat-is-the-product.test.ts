@@ -87,8 +87,11 @@ test("🔴🔴🔴 the COURSE reaches the chat — nothing but the thread is gat
   assert.equal(uses, 4, `the canvas now reads \`view\` ${uses} times, not 4 — say what the new one gates`);
   assert.match(CANVAS, /const \{ view \} = useCanvasView\(\)/, "1 of 4: the view is no longer read from the hook");
   assert.match(CANVAS, /const threadOpen = view === "conversation" && !viewing;/, "2 of 4: the thread's gate changed");
-  assert.match(CANVAS, /if \(view === "conversation" && scroller && turn\)/, "3 of 4: going back stopped asking the view");
-  assert.match(CANVAS, /\[view\],/, "4 of 4: goToMoment dropped its dependency on the view");
+  assert.match(CANVAS, /if \(view === "conversation" && scroller\)/, "3 of 4: going back stopped asking the view");
+  // 🔴 THE DEPENDENCY, NOT THE WHOLE LIST. This pinned `[view],` and reddened the day `goToMoment`
+  // gained a second dependency — a guard about what the view GATES failing on a change to what the
+  // handler READS. `view` being in the list is the fact; what sits beside it is not this test's.
+  assert.match(CANVAS, /\[history, view\],|\[view\],/, "4 of 4: goToMoment dropped its dependency on the view");
 
   // And the two course surfaces, gated on the course existing.
   const HEADER = strip(read("./canvas-header.tsx"));

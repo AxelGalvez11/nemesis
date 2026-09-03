@@ -24,6 +24,29 @@ const RAIL = read("canvas-history-rail.tsx");
 const RAIL_CODE = strip(RAIL);
 const VIEW_CODE = strip(read("canvas-history-view.tsx"));
 
+/**
+ * The body of a named `useCallback`, taken by matching braces rather than by looking for whatever
+ * happens to follow it.
+ *
+ * 🔴🔴 THIS EXISTS BECAUSE THIS FILE HAS NOW OVER-PINNED `goToMoment` FOUR TIMES. The slice used
+ * to end at the literal `"[view],"` — the callback's dependency list — so the day the handler
+ * needed a second dependency, a guard about REACHING THE SESSION failed with "selecting a moment
+ * reaches the session" while nothing of the sort had happened: the slice simply ran off the end of
+ * the function and swallowed the rest of the component. Braces cannot drift with a dependency, a
+ * comment, or an inline arrow.
+ */
+const callbackBody = (code: string, declaration: string) => {
+  const at = code.indexOf(declaration);
+  assert.ok(at > 0, `${declaration} is gone or was renamed`);
+  const open = code.indexOf("{", code.indexOf("=> {", at));
+  let depth = 0;
+  for (let cursor = open; cursor < code.length; cursor++) {
+    if (code[cursor] === "{") depth++;
+    else if (code[cursor] === "}" && --depth === 0) return code.slice(open, cursor + 1);
+  }
+  throw new Error(`${declaration} never closes`);
+};
+
 // ── one rail for the whole Canvas ───────────────────────────────────────────────────────────
 
 test("🔴🔴 the rail is mounted exactly once, and not inside anything that repeats", () => {
@@ -218,8 +241,8 @@ test("🔴 rewinding never calls the session's writer", () => {
   // arrow's exact text made a guard about the WRITER fail on a change of NAVIGATION, which is the
   // third over-pinning this file has been caught by. It now asserts the thing it is named for.
   assert.match(CANVAS_CODE, /onSelect=\{goToMoment\}/, "the rail's selection is no longer routed through one handler");
-  const body = CANVAS_CODE.slice(CANVAS_CODE.indexOf("const goToMoment"), CANVAS_CODE.indexOf("[view],"));
-  assert.ok(body.length > 200, "goToMoment is gone or was renamed");
+  const body = callbackBody(CANVAS_CODE, "const goToMoment");
+  assert.ok(body.length > 200, "goToMoment lost its body");
   assert.ok(!/session\./.test(body), "selecting a moment reaches the session");
   assert.ok(!/converse\(|remember\(|save/.test(body), "selecting a moment writes something");
   // It is still a toggle: pressing the marker you are already on is the way out of a rewind.
@@ -230,14 +253,65 @@ test("🔴🔴 going back scrolls the conversation; only the answer view rewinds
   // Owner, 2026-09-01. Every earlier turn is already on the page in the conversation — that is what
   // the thread IS — so replacing the surface with a reconstruction of one of them throws away what
   // the learner is looking at to show a copy of part of it.
-  const body = CANVAS_CODE.slice(CANVAS_CODE.indexOf("const goToMoment"), CANVAS_CODE.indexOf("[view],"));
-  assert.match(body, /view === "conversation" && scroller && turn/, "the scroll is no longer gated on the conversation view");
+  const body = callbackBody(CANVAS_CODE, "const goToMoment");
+  assert.match(body, /view === "conversation" && scroller/, "the scroll is no longer gated on the conversation view");
   assert.match(body, /behavior: window\.matchMedia\("\(prefers-reduced-motion: reduce\)"\)\.matches \? "auto" : "smooth"/, "going back stopped gliding, or stopped honouring reduced motion");
   assert.match(body, /PIN_INSET_PX/, "an old turn lands somewhere other than where a new one does");
-  // 🔴 AND IT FALLS BACK RATHER THAN FAILING. A turn taken this sitting is filed under a live id,
-  // not the moment id the rail carries, until the canvas is saved and re-seeded; with no anchor on
-  // the page the rewind still runs, so a marker is never a dead control.
-  assert.match(body, /data-thread-turn="\$\{CSS\.escape\(id\)\}"/, "the scroll target is no longer looked up by moment id");
+  assert.match(body, /data-thread-turn="\$\{CSS\.escape\(/, "the scroll target is no longer looked up by moment id");
+});
+
+test("🔴🔴🔴 in the conversation the rail can only ever scroll — there is no path back to the rewind", () => {
+  // Owner, 2026-09-03, on his own canvas: *"the right side rail ticker doesnt scroll to the
+  // previous chats and instead just isolates them away from the chat history, i need scrolling not
+  // disappearing conversation."*
+  //
+  // 🔴 THE REWIND WAS REACHABLE AS A FALLBACK AND THE FALLBACK WAS THE COMMON CASE. A row whose
+  // anchor was not on the page fell through to `setRewound`, which replaces the conversation with a
+  // reconstruction of one moment — and rows had no anchor as a matter of routine, because the
+  // newest exchange is held out of the thread on purpose (`liveShowsLast`) and turns taken in this
+  // sitting were filed under invented ids. Measured on production: five markers, four anchors.
+  //
+  // Calibration: put `setRewound` back inside the conversation branch and this reddens.
+  const body = callbackBody(CANVAS_CODE, "const goToMoment");
+  const conversation = body.slice(body.indexOf('view === "conversation"'), body.lastIndexOf("setRewound"));
+  assert.ok(conversation.length > 200, "the conversation branch is gone");
+  assert.ok(
+    !/setRewound/.test(conversation),
+    "the conversation branch can still blank the thread by rewinding",
+  );
+  // 🔴 AND IT ALWAYS HAS SOMEWHERE TO LAND. `[data-canvas-current]` is rendered unconditionally, so
+  // naming it as the floor is what makes "this never fails silently" true rather than hoped for.
+  assert.match(conversation, /\[data-canvas-current\]/, "a row with no anchor of its own has nowhere to land");
+  // The walk is forward through the history: the first anchored row AT OR AFTER the one asked for.
+  assert.match(conversation, /history\.findIndex/, "the fallback no longer resolves through the history");
+});
+
+test("🔴🔴 every row on the rail has something on the page to point at", () => {
+  // Two gaps used to make a rail row unreachable, and both are closed at the source rather than
+  // papered over in the handler.
+  //
+  // 1. The newest exchange is held back from the thread because the live region is already drawing
+  //    it, so it carried no `[data-thread-turn]`. It does now.
+  assert.match(
+    CANVAS_CODE,
+    /data-canvas-current="" data-thread-turn=\{currentMomentId \?\? undefined\}/,
+    "the live turn is not reachable from the history rail",
+  );
+  assert.match(CANVAS_CODE, /setCurrentMomentId\(held\?\.id \?\? null\)/, "a reopened canvas does not anchor its newest turn");
+  // 2. A turn taken in this sitting was filed under an invented `turn-N-…` id while its rail row
+  //    carried the moment id, so the two could never match. `recordMoment` hands the id back now.
+  assert.match(CANVAS_CODE, /id: outgoing\.momentId \?\?/, "a filed turn no longer keeps its moment id");
+  assert.match(CANVAS_CODE, /onScreen\.current\.momentId = momentId/, "the recorded moment id is not carried to the next turn");
+  const session = strip(read("use-canvas-session.ts"));
+  assert.match(session, /recordMoment: \(moment: NewCanvasMoment\) => string \| null/, "recordMoment stopped returning the id it minted");
+  // 🔴 MINTED OUTSIDE THE UPDATER. Reading a value out of a React state updater returns null every
+  // time (it runs on the next render, and twice under StrictMode) — the id has to be decided from
+  // `latest.current` before `update` is called, or the caller gets nothing back.
+  const record = callbackBody(session, "const recordMoment");
+  assert.ok(
+    record.indexOf("const id = ") < record.indexOf("update("),
+    "the moment id is minted inside the updater, where the caller cannot read it",
+  );
 });
 
 // ── the rail's stated behaviours ────────────────────────────────────────────────────────────
