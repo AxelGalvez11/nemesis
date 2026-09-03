@@ -37,19 +37,45 @@ import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { cn } from "@/lib/utils";
 
 import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
+import { DockTabs } from "./dock-tabs";
+import type { DockItem } from "./document-dock";
 import { biggerThan, CHROME, type ReaderMode } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
 export function StudyPanel({
   actions,
+  activeKey = null,
   children,
   crumb = "Study",
   initialMode = "docked",
+  items,
   onAsk,
   onClose,
+  onCloseKey,
+  onSelectKey,
   open,
   title,
+  widthSlot = "study",
 }: {
+  /**
+   * The one pane's tabs, when this panel is a body of it.
+   *
+   * 🔴🔴 THE SAME STRIP THE READER DRAWS, from the same component, so a deck, a check or a map is
+   * a tab beside the lectures rather than a second rectangle over them (owner 2026-09-03: *"one
+   * side panel that's supposed to render anything... multiple tab views"*). Absent on the Library,
+   * which mounts this panel on its own with nothing to tab between.
+   */
+  items?: readonly DockItem[];
+  activeKey?: string | null;
+  onSelectKey?: (key: string) => void;
+  onCloseKey?: (key: string) => void;
+  /**
+   * Which remembered width to open at: the study card's own, or the reader's.
+   *
+   * 🔴 A TAB OF THE ONE PANE USES THE READER'S WIDTH, or switching from a lecture to a deck would
+   * jump the pane between two widths. The Library's standalone deck keeps the study width.
+   */
+  widthSlot?: "study" | "reader";
   /**
    * Header controls this panel's contents supply, drawn left of the size toggle.
    *
@@ -106,7 +132,7 @@ export function StudyPanel({
   const [mode, setMode] = useState<ReaderMode>(initialMode);
   // 🔴 THE `study` SLOT, NOT THE READER'S. Same hook and same drag; a different remembered width,
   // because a card is not a document. See the note on DOCK_SLOTS — this was measured on screen.
-  const { dragging, onDragStart, width: dock } = useDockWidth("study");
+  const { dragging, onDragStart, width: dock } = useDockWidth(widthSlot);
   /** Anything that is not the side sheet. */
   const full = mode === "full" || mode === "maximized";
   /** 🔴 THE RAIL IS COVERED ONLY HERE. `full` deliberately stops at `--nav-column` so Library,
@@ -166,6 +192,9 @@ export function StudyPanel({
           onPointerDown={onDragStart}
           role="separator"
         />
+      )}
+      {items && items.length > 0 && onSelectKey && onCloseKey && !full && (
+        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
       )}
       <div className={CHROME.header}>
         {/* Full screen puts the close on the left beside the crumb, docked puts it on the right —

@@ -29,6 +29,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
+import type { MindmapNode } from "@/lib/learn/mindmap-tree";
 import type { DocumentPill } from "@/lib/learn/source-pill";
 
 /**
@@ -47,10 +48,24 @@ import type { DocumentPill } from "@/lib/learn/source-pill";
  */
 export type DockItem =
   | { readonly key: string; readonly kind: "document"; readonly source: CanvasSource }
-  | { readonly key: string; readonly kind: "output"; readonly output: CanvasOutput };
+  | { readonly key: string; readonly kind: "output"; readonly output: CanvasOutput }
+  /**
+   * 🔴🔴 THE STUDY THINGS ARE TABS OF THE SAME PANE, AS OF 2026-09-03. Owner: *"I thought we're
+   * supposed to have one side panel that's supposed to render anything, it's supposed to have
+   * multiple tab views."* A deck, a check and a mind map each had a `StudyPanel` of their own, a
+   * fourth fixed rectangle at its own width beside the reader's, so opening a deck over a lecture
+   * stacked two panels. They are items in this list now: same strip, same width, one pane.
+   */
+  | { readonly key: string; readonly kind: "mindmap"; readonly root: MindmapNode; readonly title: string }
+  | { readonly key: string; readonly kind: "deck"; readonly deckId: string; readonly title: string }
+  | { readonly key: string; readonly kind: "check"; readonly title: string };
 
 export const documentKey = (id: string) => `document:${id}`;
 export const outputKey = (id: string) => `output:${id}`;
+export const mindmapKey = (label: string) => `mindmap:${label.trim().toLowerCase()}`;
+export const deckKey = (id: string) => `deck:${id}`;
+/** One check at a time: the run in `session.testRequested` is the only one there is. */
+export const CHECK_KEY = "check";
 
 export interface DocumentDock {
   /** Everything open in the sidebar, oldest first. Empty closes it. */
@@ -71,6 +86,12 @@ export interface DocumentDock {
   readonly activeId: string | null;
   openDocument: (source: CanvasSource) => void;
   openOutput: (output: CanvasOutput) => void;
+  /** Open a mind map as a tab. The same map (by its root label) replaces itself rather than doubling. */
+  openMindmap: (root: MindmapNode, title: string) => void;
+  /** Open a deck as a tab. */
+  openDeck: (deckId: string, title: string) => void;
+  /** Bring the check to the front as a tab (there is only ever one). */
+  openCheck: (title: string) => void;
   /**
    * Open the document a citation chip names.
    *
@@ -161,6 +182,12 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
     (output: CanvasOutput) => put({ key: outputKey(output.id), kind: "output", output }),
     [put],
   );
+  const openMindmap = useCallback(
+    (root: MindmapNode, title: string) => put({ key: mindmapKey(root.label), kind: "mindmap", root, title }),
+    [put],
+  );
+  const openDeck = useCallback((deckId: string, title: string) => put({ deckId, key: deckKey(deckId), kind: "deck", title }), [put]);
+  const openCheck = useCallback((title: string) => put({ key: CHECK_KEY, kind: "check", title }), [put]);
 
   const close = useCallback((key: string) => {
     setDocs((current) => {
@@ -224,13 +251,16 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
       closeAll,
       items: docs.open,
       open: documents,
+      openCheck,
+      openDeck,
       openDocument,
+      openMindmap,
       openOutput,
       openPill,
       reopen,
       select,
     }),
-    [active, close, closeAll, docs.activeId, docs.open, docs.shut, documents, openDocument, openOutput, openPill, reopen, select],
+    [active, close, closeAll, docs.activeId, docs.open, docs.shut, documents, openCheck, openDeck, openDocument, openMindmap, openOutput, openPill, reopen, select],
   );
 }
 
