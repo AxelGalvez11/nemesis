@@ -38,7 +38,7 @@ import { runResearch } from "@/lib/research/run-research";
 
 import type { CanvasOutput, LearningCanvas } from "./canvas-model";
 import { materialText } from "./canvas-grounding";
-import { chunksAsMaterial, retrievalNote, retrieveChunks, DELIVERABLE_CHUNKS } from "./canvas-retrieval";
+import { chunksAsMaterial, excerptsInChunks, inventoryNote, retrievalNote, retrieveChunks, DELIVERABLE_CHUNKS } from "./canvas-retrieval";
 import { CANVAS_DECK_TAG } from "./canvas-study-bridge";
 import { deckName } from "./deck-name";
 import { findLabelledFigure } from "./figure-occlusion-api";
@@ -213,7 +213,18 @@ export async function canvasBriefFor(
   const material = chunksAsMaterial(retrieved);
   if (!material) return canvasBrief(canvas);
   const documents = new Set(retrieved.map((chunk) => chunk.parsedDocumentId)).size;
-  return `${canvasContext(canvas)}\n\n${MATERIAL_LEAD}\n\n${retrievalNote(documents, retrieved.length)}\n\n${material}`;
+  // 🔴 THE FULL LIST TRAVELS EVEN WHEN THE PASSAGES DO NOT. A writer that only knows about the four
+  // documents this question matched will write a study guide that silently covers four of ten.
+  const shown = excerptsInChunks(canvas.sources, retrieved).sources;
+  return [
+    canvasContext(canvas),
+    MATERIAL_LEAD,
+    inventoryNote(canvas.sources, shown),
+    retrievalNote(documents, retrieved.length),
+    material,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /**

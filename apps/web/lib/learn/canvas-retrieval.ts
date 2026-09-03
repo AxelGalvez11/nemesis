@@ -220,3 +220,41 @@ export function retrievalNote(documentCount: number, chunkCount: number): string
     `and never claim to have covered a document end to end.`
   );
 }
+
+/**
+ * Everything attached to this canvas, named — regardless of what the question retrieved.
+ *
+ * 🔴🔴🔴 RETRIEVAL NARROWS THE PASSAGES; IT MUST NEVER NARROW THE INVENTORY. Before retrieval,
+ * `groundingBlock` opened a `### SOURCE s1 — <title>` section for EVERY attached source, so the
+ * model always knew the whole list even when a source contributed nothing. `excerptsInChunks` drops
+ * a source with no matching passage, which is right for the material and catastrophic for the
+ * inventory: the model's picture of what the learner owns shrank to whatever this one question
+ * happened to match.
+ *
+ * Measured on production 2026-09-03, ten lecture files attached and every one of them indexed
+ * (479 passages). Asked to list all ten, Nemesis answered: *"I do not have access to ten distinct
+ * file contents: only four syllabi and one readme are present in what you gave me."* It was being
+ * scrupulously honest about what it had been SHOWN — the question was about grade weighting, so
+ * retrieval returned syllabus passages — and it was wrong about what EXISTS.
+ *
+ * 🔴 THE DISTINCTION IS THE WHOLE POINT, AND IT HAS TO BE SPELLED OUT. "I wasn't shown its text for
+ * this question" and "you don't have that file" are different sentences, and only one of them is
+ * true. A learner who drops in twenty lectures and is told six of them are missing has been told
+ * their upload failed, which is a worse lie than a wrong fact because they will go and do something
+ * about it.
+ */
+export function inventoryNote(all: readonly CanvasSource[], shown: readonly CanvasSource[]): string {
+  if (all.length === 0) return "";
+  const shownIds = new Set(shown.map((source) => source.id));
+  const lines = all.map((source) => {
+    const title = source.title.trim() || source.id;
+    return shownIds.has(source.id) ? `- ${title}` : `- ${title} (attached and readable; no passage from it matched this question)`;
+  });
+  return (
+    `The learner has ${all.length} document${all.length === 1 ? "" : "s"} attached to this canvas. This is the ` +
+    `complete list:\n${lines.join("\n")}\n\n` +
+    `Every document above is attached and readable. Some of them have no passage below simply because nothing in ` +
+    `them matched what was asked. Never tell the learner a listed document is missing, unavailable to you, or was ` +
+    `not uploaded: say that its text was not retrieved for this particular question, and offer to look at it.`
+  );
+}
