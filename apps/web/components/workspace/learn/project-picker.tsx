@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import type { Folder } from "@/lib/learn/canvas-store";
 import { APP_LOGO } from "@/lib/workspace/app-logos";
 import { beginConnect, type ConnectableApp } from "@/lib/workspace/composio-client";
+import { ProjectCreateDialog } from "@/components/workspace/shell/project-create-dialog";
 
 /**
  * How the reference draws it, measured at 1176px on 2026-08-29.
@@ -96,7 +97,7 @@ export interface ProjectPickerProps {
   value: string | null;
   onChange: (folderId: string | null) => void;
   /** Make a new project and file into it. Resolves to its id, or null if it could not be made. */
-  onCreate: (name: string) => Promise<string | null>;
+  onCreate: (name: string, icon: string | null) => Promise<string | null>;
   /** Every app the server offers, and which of them this learner has connected. */
   apps: readonly ConnectableApp[];
   connected: readonly string[];
@@ -287,7 +288,6 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
 export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps, connected, onOpenApps }: ProjectPickerProps) {
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
-  const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const wrap = useRef<HTMLDivElement>(null);
   const q = search.trim().toLowerCase();
@@ -297,11 +297,14 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
   // click into the text field is a menu covering the thing the learner just went back to.
   useEffect(() => {
     if (!open) return;
+    // 🔴 THESE CLOSE THE MENU, NOT THE DIALOG. The dialog is a portal — it is NOT inside `wrap`, so
+    // a click in it reads as "away" and would close itself the moment anyone touched the name
+    // field. Radix already owns the dialog's own dismissal (scrim click, Escape, ✕).
     const away = (event: PointerEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) { setOpen(false); setNaming(false); }
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setOpen(false); setNaming(false); }
+      if (event.key === "Escape") setOpen(false);
     };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", escape);
@@ -312,12 +315,13 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
   // clearing the composer while the list is open would otherwise leave it floating over nothing.
   if (!shown) return null;
 
-  const create = async () => {
-    const name = draft.trim();
-    if (!name) return;
-    setNaming(false); setDraft(""); setOpen(false);
-    const id = await onCreate(name);
+  const create = async (name: string, icon: string | null) => {
+    const id = await onCreate(name, icon);
+    // 🔴 THE NEW PROJECT IS THE CHOSEN ONE. Making one from this control and then having to open
+    // the menu again to pick it is the shape nobody wants; the reference files the chat into it
+    // the moment it exists.
     if (id) onChange(id);
+    return id;
   };
 
   return (
@@ -405,35 +409,22 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
               </button>
             ))}
             <div className="mx-[10px] my-[6px] h-px bg-(--ui-stroke-tertiary)" />
-            {naming ? (
-              <div className="mx-[10px] flex items-center gap-2 py-[4px]">
-                <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="new-folder" size="1rem" />
-                <input
-                  autoFocus
-                  // §46.3-exempt: 16px is the iOS-zoom threshold, but only on small screens now — desktop
-                // drops to the small canvas step, the reference's measured 14 (owner's Chrome,
-                // 2026-08-30). iOS zoom only bites where iOS is.
-                  className="min-w-0 flex-1 bg-transparent text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary) md:text-[length:var(--canvas-text-small)]"
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") { event.preventDefault(); void create(); }
-                    if (event.key === "Escape") { setNaming(false); setDraft(""); }
-                  }}
-                  placeholder="Project name"
-                  value={draft}
-                />
-              </div>
-            ) : (
-              <button
-                className={cn(PANEL_ITEM, "mx-[10px] w-auto whitespace-nowrap")}
-                onClick={() => setNaming(true)}
-                role="menuitem"
-                type="button"
-              >
-                <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="new-folder" size="1rem" />
-                <span>New project</span>
-              </button>
-            )}
+            {/* 🪦 THIS ROW USED TO BECOME A TEXT INPUT IN PLACE, and the owner caught that it is not
+                what the reference does (2026-09-03: *"I thought after you click choose a project or
+                create a new project, the pop-up was different, could you check with ChatGPT?"*).
+                Measured in his own Chrome the same day: pressing "New project" CLOSES this menu and
+                opens a centred 512x264 modal with a label, an example name, an icon and a sentence
+                saying what a project is. A 36px slot inside a dropdown carries none of that. See
+                `project-create-dialog.tsx`. */}
+            <button
+              className={cn(PANEL_ITEM, "mx-[10px] w-auto whitespace-nowrap")}
+              onClick={() => { setOpen(false); setNaming(true); }}
+              role="menuitem"
+              type="button"
+            >
+              <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="new-folder" size="1rem" />
+              <span>New project</span>
+            </button>
           </div>
         )}
       </div>
@@ -443,6 +434,7 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
       <ConnectedApps apps={apps} connected={connected} onOpen={onOpenApps} />
       </div>
       </div>
+      <ProjectCreateDialog onCreate={create} onOpenChange={setNaming} open={naming} />
     </div>
   );
 }

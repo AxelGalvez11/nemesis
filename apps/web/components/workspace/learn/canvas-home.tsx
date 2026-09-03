@@ -1230,8 +1230,8 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
           <ProjectPicker
             folders={folders}
             onChange={setProject}
-            onCreate={async (name) => {
-              const made = await createFolder(userId, name);
+            onCreate={async (name, icon) => {
+              const made = await createFolder(userId, name, null, icon);
               if (made) setFolders((rows) => [...rows, made]);
               return made?.id ?? null;
             }}

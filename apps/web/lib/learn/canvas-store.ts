@@ -489,12 +489,22 @@ export async function loadProjectInstructions(
   }
 }
 
-export async function createFolder(userId: string | null, name: string, parentId?: string | null): Promise<Folder | null> {
+export async function createFolder(
+  userId: string | null,
+  name: string,
+  parentId?: string | null,
+  /** The glyph chosen while the project was being made. Null is the default folder — see
+   *  `project-customize-dialog.tsx` for why "no choice" and "chose the default" are one state. */
+  icon?: string | null,
+): Promise<Folder | null> {
   if (!userId) return null;
+  // 🔴 THE ICON IS PART OF THE INSERT, NOT A SECOND WRITE AFTER IT. Creating and then customizing
+  // is two round trips and two chances to half-succeed: a project that exists with the wrong glyph
+  // and no way for the caller to tell whether that is what the learner picked.
   const { data, error } = await supabase
     .from("folders")
-    .insert({ name: name.slice(0, 120), ...(parentId ? { parent_id: parentId } : {}) })
-    .select("id,name,parent_id")
+    .insert({ name: name.slice(0, 120), ...(parentId ? { parent_id: parentId } : {}), ...(icon ? { icon } : {}) })
+    .select("id,name,parent_id,icon")
     .single();
   if (error || !data) {
     // The two-level trigger raises here rather than silently nesting deeper. Worth surfacing
@@ -502,9 +512,9 @@ export async function createFolder(userId: string | null, name: string, parentId
     console.warn("[learn] folder create failed", error?.message);
     return null;
   }
-  const row = data as { id: string; name: string; parent_id: string | null };
+  const row = data as { id: string; name: string; parent_id: string | null; icon?: string | null };
   emitCanvasesChanged();
-  return { id: row.id, name: row.name, parentId: row.parent_id };
+  return { icon: row.icon ?? null, id: row.id, name: row.name, parentId: row.parent_id };
 }
 
 export async function loadCanvas(userId: string | null, id: string): Promise<LearningCanvas | null> {

@@ -56,6 +56,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { ProjectCreateDialog } from "./project-create-dialog";
 import { ProjectCustomizeDialog } from "./project-customize-dialog";
 import { useAuth } from "@/components/AuthProvider";
 import {
@@ -306,12 +307,22 @@ export function SidebarCanvases({
   // need that." Nesting is not ripped out of the model — the database still
   // caps it at two levels and any folder that already has a parent still draws
   // under it — there is simply no longer a door that makes a new one.
-  const newFolder = async () => {
-    const folder = await createFolder(userId, "New project", null);
-    if (!folder) return;
+  // 🔴🔴 NOTHING IS WRITTEN UNTIL THE LEARNER PRESSES THE BUTTON, AND THAT IS THE FIX. This used to
+  // INSERT a folder literally named "New project" and then open an inline rename on the row. Press
+  // Escape, click elsewhere, or change your mind, and a project called "New project" is in the
+  // sidebar for good — a real row in a real table nobody asked for. The dialog holds the name until
+  // it is confirmed, so a cancelled creation leaves nothing behind.
+  //
+  // 🔴 THE SAME DIALOG THE COMPOSER'S PICKER OPENS. Two doors to "make a project" that looked
+  // nothing alike was the shape the owner flagged on 2026-09-03; one component is what stops them
+  // drifting again.
+  const [creatingProject, setCreatingProject] = useState(false);
+  const newFolder = async (name: string, icon: string | null) => {
+    const folder = await createFolder(userId, name, null, icon);
+    if (!folder) return null;
     setOpenFolders((was) => new Set(was).add(folder.id));
-    setEditing({ kind: "folder", id: folder.id, value: folder.name });
     void refresh();
+    return folder.id;
   };
 
   const pinned = useMemo(() => canvases.filter((c) => c.pinnedAt), [canvases]);
@@ -473,7 +484,7 @@ export function SidebarCanvases({
                       </div>
                     ))}
                     {menuRootFolders.length > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuItem onClick={() => void newFolder()}>New project…</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setCreatingProject(true)}>New project…</DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 {canvas.folderId ? (
@@ -640,7 +651,7 @@ export function SidebarCanvases({
     <button
       aria-label="New project"
       className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100"
-      onClick={() => void newFolder()}
+      onClick={() => setCreatingProject(true)}
       title="New project"
       type="button"
     >
@@ -717,6 +728,7 @@ export function SidebarCanvases({
           </>
         )}
       </div>
+      <ProjectCreateDialog onCreate={newFolder} onOpenChange={setCreatingProject} open={creatingProject} />
       <ProjectCustomizeDialog
         folder={customizing}
         onClose={() => setCustomizing(null)}
