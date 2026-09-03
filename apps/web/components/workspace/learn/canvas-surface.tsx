@@ -303,8 +303,24 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
 
           🔴 AND IT IS BEHIND `prefers-reduced-motion`, because the front door's own travel already
           is — someone who asked the system to stop moving must not get half of it anyway. */}
+      {/* 🔴🔴 `z-40` — THE CHROME OUTRANKS THE HISTORY RAIL, AND `z-30` MEANT IT DID NOT. Owner,
+          2026-09-03, with the Sources panel open: *"when you open the source you can still see the
+          right rail ticker; the source panel shall open in front of that."* Reproduced on
+          production: the rail's marks printed straight across the open panel.
+
+          The panel's own `z-40` could not save it, because the panel is INSIDE this header and this
+          header is a stacking context. A z-index only competes with its siblings, so the panel was
+          pinned to whatever level its ancestor holds — and this header and the rail's column
+          (`canvas-history-rail.tsx`) both held `z-30`. Equal levels fall back to document order,
+          and the rail is a sibling of `{children}` below, so it painted last and therefore on top.
+          Raising the PANEL is the fix that looks obvious and does nothing at all.
+
+          🔴 NOTHING ABOVE THIS MOVES. The reading pane (`source-tab-viewer.tsx`) also holds `z-40`
+          and is mounted after `{children}`, so it still covers this header exactly as it did at
+          `z-30` — a document opened beside the canvas is meant to own that corner. What changes is
+          only the rail, which is a fixture of the page and must never sit over a control. */}
       <header
-        className="canvas-chrome-in pointer-events-none absolute right-[12px] top-[12px] z-30 flex h-[36px] items-center gap-1"
+        className="canvas-chrome-in pointer-events-none absolute right-[12px] top-[12px] z-40 flex h-[36px] items-center gap-1"
         style={{ left: "calc(12px + var(--nav-toggle-inset, 0px))" }}
       >
         {/* 🔴🔴 NO `×` ON A CHAT (owner, 2026-08-31: *"since chat is default, the '×' should be gone
