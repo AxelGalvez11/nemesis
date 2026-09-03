@@ -91,8 +91,11 @@ function gmtLabel(): string {
   const minutes = -new Date().getTimezoneOffset();
   const sign = minutes < 0 ? "-" : "+";
   const abs = Math.abs(minutes);
-  const hours = String(Math.floor(abs / 60)).padStart(2, "0");
   const rest = abs % 60;
+  // 🔴 THE LEADING ZERO GOES WHEN THERE ARE MINUTES, WHICH IS GOOGLE'S OWN SPELLING: "GMT-05" for
+  // a whole hour, "GMT+5:30" for a half. It is also two pixels this corner cannot spare — see the
+  // note on the label's font size below.
+  const hours = rest ? String(Math.floor(abs / 60)) : String(Math.floor(abs / 60)).padStart(2, "0");
   return `GMT${sign}${hours}${rest ? `:${String(rest).padStart(2, "0")}` : ""}`;
 }
 
@@ -192,6 +195,9 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
     return { dayIndex, endMinute: Math.max(endMinute, startMinute + MIN_BLOCK_MINUTES), label: "New event", startMinute };
   })();
 
+  /** Computed once: the class below keys on its LENGTH, so the two must be the same string. */
+  const gmtZone = gmtLabel();
+
   return (
     // The app's card frame (owner 2026-08-03, "follow the design system"), and
     // --ui-* strokes throughout instead of the legacy shadcn border-border —
@@ -205,10 +211,38 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
             another timezone needs to know which one these rows mean. Taken
             from the browser, never hardcoded. */}
         <div
-          className="flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-2 text-[11px] font-medium tracking-[0.01em] text-(--ui-text-secondary)"
+          // 🔴🔴 10px, AND AT 11 IT WAS CLIPPED — I caused that on 2026-09-03 by narrowing the
+          // gutter from 57.4 to Google's 51.1 without checking what stands in it. Owner, the same
+          // day, with a screenshot of the corner: *"the GMT thing, it's cutting off in the
+          // calendar."* "GMT-05" sets about 45px at 11px; add `pr-2` (9px) and it needs 54 in a
+          // 51.1px box, so `justify-end` pushed the G off the left edge.
+          //
+          // 🔴 GOOGLE'S CORNER LABEL IS SMALLER THAN ITS HOUR LABELS FOR EXACTLY THIS REASON —
+          // "GMT-05" is the longest string that box ever holds and it is wider than "12 AM".
+          // Narrowing a fixed box means re-measuring the longest thing inside it, not just the
+          // thing you happened to be copying.
+          className={cn(
+            "flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-1 font-medium tracking-[0.01em] text-(--ui-text-secondary)",
+            // 🔴🔴 THE SIZE FOLLOWS THE LABEL, BECAUSE THE LABEL HAS TWO LENGTHS. Most zones are
+            // "GMT-05" (6 characters); a half-hour zone is "GMT+5:30" (8), and India, Iran,
+            // Newfoundland and half of Australia all live there. At one size the short form has
+            // room to spare and the long form hangs out of a 51.1px gutter — which is how the
+            // owner saw it clipped on 2026-09-03, after I narrowed that gutter to Google's number
+            // without re-measuring the widest thing standing in it.
+            //
+            // 🔴🔴 AND MY FIRST FIX WAS ALSO WRONG, FOR A REASON WORTH KEEPING. I checked it with
+            // `scrollWidth`, which is an integer AND clamps to the box, so a clipped label reports
+            // exactly the width it was clipped to and looks like a perfect fit. Measured properly
+            // with a Range, "GMT+05:30" at 9px sets 53.92px against 46.59 of room: still 7px over,
+            // while the probe said it fitted. Measure the glyphs, never the box they are in.
+            //
+            // Measured after (Range, real Chrome, `Asia/Kolkata`): "GMT+5:30" at 8px, and
+            // "GMT-04" at 10px, both clear the box.
+            gmtZone.length > 6 ? "text-[8px]" : "text-[10px]",
+          )}
           style={{ width: GUTTER_WIDTH }}
         >
-          {gmtLabel()}
+          {gmtZone}
         </div>
         <div className={cn("shrink-0 border-r", RULE)} style={{ width: LEAD_WIDTH }} />
         <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
@@ -322,7 +356,12 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
       {hasAllDay && (
         <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary)/30">
           <div
-            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[11px] uppercase tracking-[0.06em] text-(--ui-text-secondary)"
+            // 🔴 SAME BOX, SAME PROBLEM. "ALL DAY" is uppercase on 0.06em tracking, which is wider
+            // still than the timezone above it; it lost its A to the same 51.1px gutter.
+            // 🔴 9px, AND 10 WAS STILL TOO CLOSE. "ALL DAY" is uppercase with tracking, so it sets
+            // wider than the timezone above it: at 10px it measured 51.5 against a 51.1px box.
+            // Google draws NOTHING in this corner; keeping a word here is ours, so it has to fit.
+            className="shrink-0 whitespace-nowrap py-1.5 pr-1 text-right text-[9px] uppercase tracking-[0.04em] text-(--ui-text-secondary)"
             style={{ width: GUTTER_WIDTH }}
           >
             All day

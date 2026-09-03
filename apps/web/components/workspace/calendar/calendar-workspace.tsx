@@ -47,7 +47,7 @@ import {
 } from "@/lib/workspace/google-calendar-sync";
 import {
   CALENDAR_FILTER_STORAGE_KEY,
-  coloursInUse,
+  paletteColours,
   LEGACY_KIND_FILTER_STORAGE_KEY,
   parseHiddenColors,
   serializeHiddenColors,
@@ -215,9 +215,11 @@ export function CalendarWorkspace() {
   );
 
   const shownEvents = useMemo(() => visibleEvents(events, hiddenColors), [events, hiddenColors]);
-  /** Read from ALL events, not the filtered ones — a colour must stay in the
-   *  control after it is switched off, or there is no way to switch it back. */
-  const colours = useMemo(() => coloursInUse(events), [events]);
+  /** 🔴 THE WHOLE PALETTE, NOT WHAT IS IN USE (owner 2026-09-03) — see
+   *  `paletteColours`. Constant, so it is computed once rather than on every
+   *  event change; a colour switched off stays in the control by construction,
+   *  which is what the old note here had to arrange by reading unfiltered events. */
+  const colours = useMemo(() => paletteColours(), []);
   const byDate = useMemo(() => eventsByDate(shownEvents), [shownEvents]);
 
   function changeHiddenColors(next: Set<string>) {
@@ -583,7 +585,7 @@ export function CalendarWorkspace() {
             </div>
           )}
           {view === "year" && (
-            <YearGrid eventsByDay={byDate} onSelectMonth={openMonth} today={today} weekStart={weekStart} year={cursor.getFullYear()} />
+            <YearGrid calendarHex={calendarHex} eventsByDay={byDate} onSelectMonth={openMonth} today={today} weekStart={weekStart} year={cursor.getFullYear()} />
           )}
         </div>
       </div>

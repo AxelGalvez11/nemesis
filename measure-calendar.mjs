@@ -29,7 +29,10 @@ const R = 1;
 const px = (googlePx) => Math.round(googlePx * R * 10) / 10;
 
 const EXPECT = {
-  "hour row height": px(48),
+  // 🔴 GOOGLE'S COMPACT RUNG (40), NOT ITS DEFAULT (48) — owner 2026-09-03, "still a bit big".
+  // Section 6 of the reference is the ladder this comes off; `body.Defj0e` is the class that
+  // selects it on Google's own surface.
+  "hour row height": px(40),
   "hour gutter width": px(51.1),
   "hour label font-size": px(11),
   "hour label font-weight": "500",

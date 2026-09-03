@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { hourLabel } from "./format";
 import { calendarColorOf } from "@/lib/workspace/calendar-colors";
 import { PRIMARY_CALENDAR } from "@/lib/workspace/calendars";
-import { paintForEvent } from "@/lib/workspace/event-colors";
+import { colourOfDay, paintForEvent } from "@/lib/workspace/event-colors";
 import { HOUR_HEIGHT } from "./time-grid";
 
 // Guards the one-to-one match with Google Calendar (owner 2026-09-01: "it all
@@ -26,15 +26,68 @@ import { HOUR_HEIGHT } from "./time-grid";
 // recorded in comments as measurements and were wrong: Google's hour row read
 // as 24px when it is 48, and this app's root read as 20px when it is 18.
 
+/**
+ * Source with its comments taken out.
+ *
+ * 🔴 GUARDS MUST READ CODE, NOT PROSE, and this file learned it the hard way on 2026-09-03: the
+ * year-view guard below asserts `kind === "exam"` is gone, and it reddened on the COMMENT that
+ * says the check used to be `kind === "exam"`. Every note in these files names the thing it
+ * replaced — that is the point of them — so an absence asserted against raw text fails on the
+ * explanation of the fix rather than on the fix coming undone.
+ */
+const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
 const view = readFileSync(new URL("./time-grid-view.tsx", import.meta.url), "utf8");
 const month = readFileSync(new URL("./month-grid.tsx", import.meta.url), "utf8");
 const form = readFileSync(new URL("./event-dialogs.tsx", import.meta.url), "utf8");
 
-test("🔴 the hour row is Google's 48px, not 48 converted", () => {
-  // `--cal-timed-grid-cell-height` is 48px and the one density knob on Google's whole grid, so
-  // this single number sets how zoomed in a week reads. It was 54.
-  assert.equal(HOUR_HEIGHT, 48);
+test("🔴 the hour row is Google's COMPACT rung, and every rung it could be is Google's", () => {
+  // `--cal-timed-grid-cell-height` is the one density knob on Google's whole grid, so this single
+  // number sets how zoomed in a week reads. It was 54 (Google's 48 converted by 18/16), then 48
+  // (Google's default), and is now 40 — the rung BELOW default on Google's own ladder, selected
+  // there by `body.Defj0e`. Owner, 2026-09-03: *"especially with the week, the day view, it's
+  // still a bit big."*
+  const LADDER = [40, 48, 60, 72, 80, 96, 116]; // section 6 of the reference
+  assert.ok(LADDER.includes(HOUR_HEIGHT), `${HOUR_HEIGHT} is not a rung on Google's density ladder`);
+  assert.equal(HOUR_HEIGHT, 40);
   assert.notEqual(HOUR_HEIGHT, 54, "the ratio conversion is back on the one number that scales the grid");
+});
+
+test("🔴🔴 the corner labels FIT the gutter, which is what narrowing it broke", () => {
+  // Owner, 2026-09-03, with a screenshot of the top-left corner: *"the GMT thing, it's cutting off
+  // in the calendar."* I caused it the day before, narrowing `GUTTER_WIDTH` from 57.4 to Google's
+  // 51.1 without re-measuring the widest thing standing in it. "GMT-05" is wider than "12 AM".
+  //
+  // 🔴🔴 AND MY FIRST FIX WAS ALSO WRONG, WHICH IS THE PART WORTH KEEPING. I verified it with
+  // `scrollWidth` — an integer that CLAMPS to the box, so a clipped label reports exactly the
+  // width it was clipped to and reads as a perfect fit. Measured properly with a Range in real
+  // Chrome, "GMT+05:30" at 9px sets 53.92px against 46.59 of room: still 7px over, while the probe
+  // said it fitted. Measure the glyphs, never the box they are in.
+  //
+  // Measured after (Range, Chrome, both zones): GMT-04 @10px 41.25 in 46.59; GMT+5:30 @8px 42.98;
+  // "All day" @9px 40.05. All three clear.
+  assert.match(view, /gmtZone\.length > 6 \? "text-\[8px\]" : "text-\[10px\]"/, "the long timezone label lost its smaller size");
+  assert.match(view, /const gmtZone = gmtLabel\(\);/, "the class and the text can now disagree about the label");
+  // 🔴 THE LABEL ITSELF LOST ITS LEADING ZERO, which is Google's spelling AND two pixels this box
+  // cannot spare: "GMT+5:30", not "GMT+05:30".
+  assert.match(view, /const hours = rest \? String\(Math\.floor\(abs \/ 60\)\) : String\(Math\.floor\(abs \/ 60\)\)\.padStart\(2, "0"\);/, "the half-hour label went back to a leading zero");
+  assert.doesNotMatch(view, /pr-2 text-\[11px\] font-medium tracking-\[0\.01em\]/, "the timezone label is back at the size that clipped");
+});
+
+test("🔴🔴 the year view paints by COLOUR, not by a retired kind", () => {
+  // Owner, 2026-09-03: *"make sure all of it… also has the colouring too."* Every other view had
+  // been moved off kinds on 2026-09-01; the year view still ran
+  // `events.some((event) => event.kind === "exam")` and painted `--ui-exam`. A warm orange for a
+  // field nothing on screen shows is a colour nobody can change and nobody can filter on — the
+  // exact thing that ruling removed.
+  const year = code(readFileSync(new URL("./year-grid.tsx", import.meta.url), "utf8"));
+  assert.match(year, /const dayHex = colourOfDay\(events, calendarHex\);/, "the year view stopped colouring days");
+  assert.doesNotMatch(year, /kind === "exam"/, "the year view paints by kind again");
+  assert.doesNotMatch(year, /--ui-exam/, "the retired exam colour is back on the year view");
+  // 🔴 ONE COLOUR ONLY WHEN THE DAY'S EVENTS AGREE. A 16px disc cannot show three, and picking the
+  // first would make the year disagree with the month about what a Tuesday looks like.
+  assert.equal(colourOfDay([{ calendarId: "", colorId: "11" }, { calendarId: "" }], () => "#4986e7"), null);
+  assert.equal(colourOfDay([], () => "#4986e7"), null, "an empty day claimed a colour, so an empty year is solid blue");
 });
 
 test("🔴🔴 the month cell spends its height on events, not on its own chrome", () => {

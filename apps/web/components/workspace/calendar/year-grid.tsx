@@ -27,6 +27,9 @@ import type { CalendarEvent } from "@/lib/workspace/calendar-model";
 import { monthGrid, type WeekStart } from "@/lib/workspace/calendar-model";
 import { cn } from "@/lib/utils";
 
+import { colourOfDay } from "@/lib/workspace/event-colors";
+import { inkOn } from "@/lib/workspace/calendar-colors";
+
 import { WEEKDAY_LABELS } from "./format";
 
 /**
@@ -43,6 +46,8 @@ const BUSY_FULL = 5;
 const BUSY_SOME = 3;
 
 interface YearGridProps {
+  /** The colour a calendar paints its events, for the days whose events agree on one. */
+  calendarHex: (calendarId: string | undefined) => string | null;
   eventsByDay: Map<string, CalendarEvent[]>;
   /** Sunday or Monday — the mini months must agree with the month view. */
   weekStart: WeekStart;
@@ -51,11 +56,12 @@ interface YearGridProps {
   year: number;
 }
 
-export function YearGrid({ eventsByDay, onSelectMonth, today, weekStart, year }: YearGridProps) {
+export function YearGrid({ calendarHex, eventsByDay, onSelectMonth, today, weekStart, year }: YearGridProps) {
   return (
     <div className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto rounded-xl border border-(--ui-stroke-tertiary) bg-background p-3 shadow-[0_3px_12px_rgba(0,0,0,0.04)] sm:grid-cols-3 xl:grid-cols-4">
       {Array.from({ length: 12 }, (_, month) => (
         <MiniMonth
+          calendarHex={calendarHex}
           days={monthGrid(year, month, today, weekStart)}
           eventsByDay={eventsByDay}
           key={month}
@@ -69,6 +75,7 @@ export function YearGrid({ eventsByDay, onSelectMonth, today, weekStart, year }:
 }
 
 interface MiniMonthProps {
+  calendarHex: (calendarId: string | undefined) => string | null;
   days: ReturnType<typeof monthGrid>;
   eventsByDay: Map<string, CalendarEvent[]>;
   month: number;
@@ -76,7 +83,7 @@ interface MiniMonthProps {
   year: number;
 }
 
-function MiniMonth({ days, eventsByDay, month, onSelectMonth, year }: MiniMonthProps) {
+function MiniMonth({ calendarHex, days, eventsByDay, month, onSelectMonth, year }: MiniMonthProps) {
   const monthName = new Date(year, month, 1).toLocaleDateString(undefined, { month: "long" });
 
   return (
@@ -106,7 +113,21 @@ function MiniMonth({ days, eventsByDay, month, onSelectMonth, year }: MiniMonthP
       <div className="grid grid-cols-7 gap-y-0.5">
         {days.map((day) => {
           const events = eventsByDay.get(day.key) ?? [];
-          const hasExam = events.some((event) => event.kind === "exam");
+          /**
+           * The one colour a day is drawn in, when its events agree on one.
+           *
+           * 🔴🔴 IT WAS `events.some((event) => event.kind === "exam")` PAINTING `--ui-exam`, and
+           * that is the axis the owner retired on 2026-09-01: *"I don't want anything like type,
+           * assignment exam rotation… the only differentiating thing should be filtering by
+           * colour."* Every other view had been moved off kinds; this one kept a warm orange for a
+           * field nothing on screen shows, which is a colour nobody can change and nobody can
+           * filter on. Owner, 2026-09-03: *"make sure all of it… also has the colouring too."*
+           *
+           * 🔴 ONE COLOUR ONLY WHEN THEY AGREE. A 16px disc cannot show three colours, and picking
+           * the first would make the year view disagree with the month about what a day looks
+           * like. Mixed days fall back to the busy shading, which is what this view is for.
+           */
+          const dayHex = colourOfDay(events, calendarHex);
           return (
             <div className={cn("flex justify-center", !day.inMonth && "opacity-30")} key={day.key}>
               <span
@@ -116,12 +137,14 @@ function MiniMonth({ days, eventsByDay, month, onSelectMonth, year }: MiniMonthP
                   // A student looking at the year wants "where am I" answered
                   // before "what is that day", and an exam is never just a
                   // busy day.
+                  // Order matters: today wins over the day's colour wins over a count.
                   day.isToday
                     ? "bg-(--theme-primary) font-semibold text-primary-foreground"
-                    : hasExam
-                      ? "bg-(--ui-exam) font-bold text-white"
+                    : dayHex
+                      ? "font-semibold"
                       : busyClass(events.length),
                 )}
+                style={!day.isToday && dayHex ? { backgroundColor: dayHex, color: inkOn(dayHex) } : undefined}
               >
                 {day.date.getDate()}
               </span>

@@ -58,17 +58,30 @@ export function toggleColor(hidden: ReadonlySet<string>, colorId: string): Set<s
 }
 
 /**
- * Every colour actually in use, in palette order, with the no-colour bucket
- * first when anything is in it.
+ * Every colour the filter offers: the whole palette, in Google's order, with the
+ * no-colour bucket first.
  *
- * 🔴 IN USE, NOT THE WHOLE PALETTE. Listing all twelve would make the control a
- * wall of swatches that mostly hide nothing — and a filter is read to answer
- * "what is on this calendar", which an unused colour cannot help with.
+ * 🔴🔴 THE WHOLE PALETTE, AND IT USED TO BE ONLY WHAT WAS IN USE. The old note
+ * argued that listing all twelve "would make the control a wall of swatches that
+ * mostly hide nothing", and that a filter answers "what is on this calendar".
+ * Owner, 2026-09-03, pointing at the control: *"the show or hide colour icon
+ * doesn't show all the colours that are available… I want all the Google colours
+ * to be in Nemesis as well, like blue, red, etc."*
+ *
+ * He is right, and the old argument had it backwards. A control called "Show or
+ * hide colours" that lists four swatches reads as *these are the colours this
+ * product has* — which is what he saw, and it is false: there are eleven, one
+ * press away in the event editor. Showing them all makes the palette legible
+ * from the calendar itself, and an unticked colour nobody has used yet simply
+ * hides nothing until they use it.
+ *
+ * 🔴 IT TAKES NOTHING. The old signature took the events, and keeping a parameter
+ * nothing reads would be a lie in the type: a caller would pass its events and
+ * reasonably expect them to matter. `describeFilter` still counts against what
+ * is hidden, which is the only place the events were ever needed.
  */
-export function coloursInUse(events: readonly CalendarEvent[]): string[] {
-  const seen = new Set(events.map(colorKeyOf));
-  const order = EVENT_COLORS.filter((color) => seen.has(color.id)).map((color) => color.id);
-  return seen.has(NO_COLOR) ? [NO_COLOR, ...order] : order;
+export function paletteColours(): string[] {
+  return [NO_COLOR, ...EVENT_COLORS.map((color) => color.id)];
 }
 
 /**
@@ -76,8 +89,9 @@ export function coloursInUse(events: readonly CalendarEvent[]): string[] {
  *
  * Anything unrecognised is dropped rather than trusted: this comes from
  * localStorage, which another tab, an older build, or the person themselves can
- * have written. A junk entry would hide events with no way to get them back,
- * because the control only lists colours that exist.
+ * have written. A junk entry would hide events with no way to get them back —
+ * less dangerous now the control lists the whole palette, but a stored id that
+ * is not a colour still corresponds to no swatch at all.
  */
 export function parseHiddenColors(raw: string | null): Set<string> {
   if (!raw) return new Set();
