@@ -110,7 +110,11 @@ test("🔴🔴 a coverage note may not evict the file name from its own row", ()
   // The note is written for the MODEL (`coverageNoticeForModel`) and is a sentence, so an
   // unshrinkable one took the whole row and the truncating name beside it collapsed to zero.
   const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
-  const note = /coverageNote && \(\s*<span\s+className="([^"]+)"/.exec(controls);
+  // 🔴 REPOINTED 2026-09-03: the condition gained the learner's spelling of the same disclosure
+  // (`coverageLabel ?? coverageNote`), so a regex anchored on `coverageNote &&` stopped matching.
+  // The property is unchanged: whatever renders the disclosure must shrink and truncate, or it
+  // evicts the name the row exists to show.
+  const note = /coverage(?:Label \?\? source\.coverageNote|Note)\) && \(\s*<span\s+className="([^"]+)"/.exec(controls);
   const classes = note?.[1] ?? "";
   assert.ok(note, "the coverage note's row treatment could not be found");
   assert.ok(!classes.includes("shrink-0"), "the coverage note is unshrinkable again, so it deletes the file name");
