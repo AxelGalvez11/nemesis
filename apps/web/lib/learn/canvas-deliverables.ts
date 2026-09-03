@@ -884,8 +884,15 @@ async function recordSlidesLedger(canvasId: string, title: string): Promise<stri
 export function readDeliverableAsk(text: string): DeliverableKind | null {
   const said = text.trim();
   if (/^(?:how|why|what|when|where|whether)\b/i.test(said)) return null;
+  // 🔴 A COLON AND A DASH COUNT AS "TURNING TO WHAT THE DOCUMENT IS ABOUT". The lookahead admitted
+  // `.,;!?` and not `:` or a dash, so "make me a document: a study guide on insulin therapy" fell
+  // through to an ordinary turn — measured on production 2026-09-03 with thirty lectures attached.
+  // A colon is one of the most natural ways to say this, and #1061 already learned the lesson that
+  // this door is a list of phrasings and every phrasing it lacks is a feature the learner cannot
+  // reach. It stays a lookahead rather than becoming `.*`, because "build a document parser" must
+  // still be an ordinary computer-science question.
   const match =
-    /\b(?:make|create|build|generate|give|write)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note)|(documents?)(?=\s*(?:$|[.,;!?]|\b(?:on|about|for|from|of|with|covering|summari[sz]ing)\b)))\b/i.exec(
+    /\b(?:make|create|build|generate|give|write)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note)|(documents?)(?=\s*(?:$|[.,;:!?—-]|\b(?:on|about|for|from|of|with|covering|summari[sz]ing)\b)))\b/i.exec(
       said,
     );
   if (!match) return null;
