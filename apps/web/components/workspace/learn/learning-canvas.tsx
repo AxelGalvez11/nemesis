@@ -185,7 +185,7 @@ const ARRIVING_MS = 1_200;
 /**
  * How far below the top of the thread a freshly sent prompt lands.
  *
- * 🔴 IT IS THE SCROLLER'S OWN `pt-[64px]`, WHICH IS CLEARANCE FOR THE FLOATING HEADER CONTROLS.
+ * 🔴 IT IS THE SCROLLER'S OWN `pt-[48px]`, WHICH IS CLEARANCE FOR THE FLOATING HEADER CONTROLS.
  * Pinning to the true top tucks the learner's own sentence under Sources and the ⋯.
  */
 const PIN_INSET_PX = 64;
@@ -2970,7 +2970,7 @@ export function LearningCanvas({
           chip, the thinking caption and the thread all used to land on the same frame as the route
           swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
           the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
-      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]`} ref={threadRef}>
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[48px]`} ref={threadRef}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
