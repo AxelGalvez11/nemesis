@@ -1229,3 +1229,59 @@ test("🔴 the prompt names the list form the parser accepts", () => {
   assert.match(prompt, /\[s1:e26, s1:e29\]/, "the model is not told it may group ids in one bracket");
   assert.match(prompt, /in one bracket separated by commas/, "the grouping rule lost its instruction");
 });
+
+/** The prompt with its own comments stripped, so a guard reads the INSTRUCTION and never the
+ *  reasoning written beside it. Prompt strings are concatenated across lines, so only quote text
+ *  that is contiguous inside one string literal. */
+function promptText(): string {
+  return readFileSync(new URL("./turn-router.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+test("🔴 a comparison across shared properties is answered with a table", () => {
+  // Measured side by side against ChatGPT on 2026-09-03, same two lectures attached to both, same
+  // question: compare four insulin classes by onset, peak and duration. ChatGPT returned a table,
+  // one row per drug. Nemesis returned prose bullets carrying the same facts, which is a worse
+  // answer to that question: the reason somebody asks in that shape is to read DOWN a column.
+  const prompt = promptText();
+  assert.match(prompt, /compare several things across the same properties/, "the comparison rule is gone");
+  assert.match(prompt, /one row per thing, one column per property/, "the table's shape is unspecified");
+  // 🔴 AND THE EMPTY CELL IS THE HALF THAT PROTECTS THE LEARNER. A table creates pressure to fill
+  // every cell, which is exactly where a model reaches past the material.
+  assert.match(prompt, /never fill it from general knowledge/, "a table can be completed from general knowledge again");
+});
+
+test("🔴🔴 two of the learner's own documents disagreeing is said, never merged", () => {
+  // Same comparison. Both lectures give figures for detemir and they differ: 1 to 2 hours onset and
+  // 12 hours duration in one, 1.5 to 4 and 16 to 20 in the other. ChatGPT stopped and said the two
+  // lectures should not be silently combined. Nemesis presented one set as settled.
+  //
+  // 🔴 CITING BOTH DOES NOT FIX THIS, which is why it is its own rule and not a citation rule. An
+  // answer that quietly picks one of two conflicting figures is confidently wrong half the time and
+  // the learner cannot see that a choice was made at all.
+  const prompt = promptText();
+  assert.match(prompt, /give different answers to the same question/, "the disagreement rule is gone");
+  assert.match(prompt, /Never average them/, "nothing stops the model averaging two sources");
+  assert.match(prompt, /naming which document said which/, "a disagreement can be reported without saying whose it is");
+});
+
+test("both rules are stated by SHAPE, never by subject matter", () => {
+  // CLAUDE.md: a rule that only makes sense for one field is wrong. "Several things measured on the
+  // same axes" and "two documents that disagree" are the same request for statutes, alloys, verb
+  // paradigms and sorting algorithms. A keyword list would not generalise and must never appear.
+  const prompt = promptText();
+  const rules = prompt.slice(prompt.indexOf("compare several things across the same properties"));
+  const window = rules.slice(0, 1_600);
+  for (const leak of ["insulin", "drug", "dose", "mg", "patient", "diagnos"]) {
+    assert.ok(!new RegExp(leak, "i").test(window), `the rule names "${leak}", which scopes it to one field`);
+  }
+});
+
+test("the chat surface can actually render the table it is now told to write", () => {
+  // 🔴 A RULE THAT EMITS MARKUP NOTHING RENDERS IS WORSE THAN NO RULE: the learner gets raw pipes.
+  const markdown = readFileSync(new URL("../workspace/chat-markdown.tsx", import.meta.url), "utf8");
+  assert.match(markdown, /remarkGfm/, "GFM is gone, so a markdown table renders as literal pipe characters");
+  assert.match(markdown, /table: \(\{ children \}\) =>/, "the table renderer is gone");
+  assert.match(markdown, /overflow-x-auto/, "a wide comparison table will push the whole page sideways");
+});
