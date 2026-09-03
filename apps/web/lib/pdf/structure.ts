@@ -600,8 +600,46 @@ async function readPage(
  */
 const IMAGE_WAIT_MS = 3_000;
 
-function readImageObject(
-  page: { objs: { get: (name: string, callback: (value: unknown) => void) => void } },
+/**
+ * pdf.js keeps an object in ONE of two stores, and the name says which.
+ *
+ * 🔴🔴 ASKING THE WRONG STORE LOOKS EXACTLY LIKE A FIGURE WITH NO PIXELS, AND IT COST 89 OF THEM.
+ * Measured on production 2026-09-03: 89 figures across 5 lectures are recorded `unsupported` —
+ * "routed, but its pixels were never captured" — and every one of them has a ref beginning `g_`,
+ * e.g. `g_d0_img_p12_3`. One immunology lecture loses 72 of its 132 that way, and they are not
+ * decoration: they average a quarter to a half of their page.
+ *
+ * pdf.js 6.2.108 routes on exactly this prefix, in its own source, twice:
+ *
+ *     return data.startsWith("g_") ? this.commonObjs.get(data) : this.objs.get(data);
+ *     const objsPool = depObjId.startsWith("g_") ? commonObjs : objs;
+ *
+ * `g_` means the object is document-scoped — cached once and drawn on several pages — so it lives
+ * in `commonObjs`, which `PDFPageProxy` exposes beside `objs`. This reader only ever asked
+ * `page.objs`, so the callback could never fire, the 3-second timer expired, and the figure was
+ * filed under a reason that reads like a verdict about the picture ("a colour space this build
+ * cannot convert") when nothing had ever looked in the right place. The guard reproduces that
+ * exact 3,000 ms wait when the routing is removed.
+ *
+ * 🔴 THE PREFIX IS THE ROUTER, NOT A FALLBACK CHAIN. Asking both stores and taking whichever
+ * answers would mean waiting the full timeout on every ordinary page-scoped figure — paying three
+ * seconds each to learn what the name already says.
+ */
+export function objectStore(
+  page: {
+    objs: { get: (name: string, callback: (value: unknown) => void) => void };
+    commonObjs?: { get: (name: string, callback: (value: unknown) => void) => void };
+  },
+  ref: string,
+): { get: (name: string, callback: (value: unknown) => void) => void } {
+  return ref.startsWith("g_") && page.commonObjs ? page.commonObjs : page.objs;
+}
+
+export function readImageObject(
+  page: {
+    objs: { get: (name: string, callback: (value: unknown) => void) => void };
+    commonObjs?: { get: (name: string, callback: (value: unknown) => void) => void };
+  },
   ref: string,
 ): Promise<Parameters<typeof figureToPng>[0]> {
   return new Promise((resolve) => {
@@ -617,7 +655,7 @@ function readImageObject(
     // mid-document with no error. Observed exactly once, on the real corpus.
     const timer = setTimeout(() => done(null), IMAGE_WAIT_MS);
     try {
-      page.objs.get(ref, (value) => {
+      objectStore(page, ref).get(ref, (value) => {
         clearTimeout(timer);
         done(value as Parameters<typeof figureToPng>[0]);
       });
