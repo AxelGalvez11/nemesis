@@ -347,3 +347,54 @@ belongs in `EXPECT`, not in the report-only list.
 menu order (Day · Week · Month · Year · Schedule · 4 days) and its wording. The
 4-day grid starts on the day you are looking at rather than a week boundary,
 which is Google's rule and the only thing that makes it different from Week.
+
+## 13. THE GRID DRAWS GOOGLE'S PIXELS — reversing section 8, 2026-09-03
+
+Owner, looking at a busy month: *"I want the calendar to be like smaller, or scale it down a bit,
+because it still feels a bit big, especially when you have a lot of events. It feels like I'm a bit
+too zoomed into it."*
+
+**Section 8's rule — copy the rem, not the pixel — is reversed for the ruled grid.** Google's root
+is 16px and this app's is 18, so every converted number arrived 12.5% larger than the reference it
+was copied from. That is a defensible rule that produces a calendar a ninth bigger than the thing it
+is meant to match, and "match one to one" was the owner's own acceptance condition.
+
+🔴 **It had already been reversed once, for one row.** The week's day heading (section 12) was pinned
+to Google's raw 11 / 26 / 46 in August, because at the converted 12.4 / 29.3 / 51.8 the owner said
+the row was too big. The argument written there is the argument here: *a faithful proportion is a
+12.5% bigger object, and an object is what the eye compares.* This makes the whole surface agree
+with that row instead of half of it.
+
+🔴 **Scope: the ruled surface only.** The header, the dialogs, the day rail and every other piece of
+calendar chrome still scale with the root, as does all text elsewhere in the app. What is pinned is
+the grid a week or a month is read on.
+
+🔴 **A pinned box and pinned text must move together.** `GUTTER_WIDTH` was a rem because "12 AM"
+wrapped once the app's text-size setting pushed the root to 20px. Pinning the gutter alone would
+bring that back; pinning the gutter AND its label keeps them in proportion at any root. Widen both
+or neither.
+
+### Where the month view stood, and where it is now
+
+Measured at 1470x835 against Google at the same size, both in real Chrome.
+
+| part | Google | before | after |
+|---|---|---|---|
+| day cell padding | 0 | 9px | 4.5px |
+| day cell gap | — | 9px | 4.5px |
+| day numeral | 12 / 500 / 16 | 15.75 / 500 / 22.5 | 12 / 500 / 18 |
+| date disc | none but today | 31.5px | 24px |
+| weekday label | 11 / 500 / 20 | 12.375 / **600** / 18.6 | 11 / 500 / 20 |
+| weekday band | 28px | 32px | 28px |
+| **room a cell gives its events** | **~116px** | **87px** | **106px** |
+| event chip | 24px tall, pitch 24 | 20px, pitch 22.2 | unchanged |
+
+🔴 **THE CHIPS WERE NEVER THE PROBLEM.** Ours are *smaller* than Google's — 20px against 24. The
+crowding was entirely the chrome around them: a cell gave its events 87px where Google gives ~116,
+so a day with four events drew two and "+2 more". After: four.
+
+### Week view
+
+`node measure-calendar.mjs "http://localhost:<port>/dev-preview/calendar-week"` — **0 mismatches**
+against Google's unconverted pixels. Hour row 54 -> **48**, gutter 57.4 -> **51.1**, hour label
+12.4 -> **11**, event title 13.5 -> **12**, event radius 6.8 -> **6**, now dot 13.5 -> **12**.

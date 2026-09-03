@@ -56,9 +56,14 @@ const NOW_TICK_MS = 60_000;
 /** Wide enough for the longest hour label ("12 AM") and for "All day" to stay
  *  on one line. Both were wrapping at 3.25rem once the app's default text size
  *  put the root at 20px. */
-/** Google's hour gutter is 51px on a 16px root — 3.1875rem — and ours was
- *  3.75rem, wide enough that "11 AM" floated away from the grid it labels. */
-const GUTTER_WIDTH = "3.1875rem";
+/** Google's hour gutter is 51.1px, and this draws that number rather than its rem (2026-09-03,
+ *  section 13 of the reference).
+ *
+ *  🔴 THE BOX AND ITS LABEL ARE PINNED AS A PAIR, which is what makes pinning safe here. The note
+ *  above records "12 AM" wrapping once the app's text-size setting pushed the root to 20px — a real
+ *  failure, and the reason this was a rem. It cannot recur while the label is pinned too: a fixed
+ *  gutter holding fixed 11px text stays in proportion at any root. Widen both or neither. */
+const GUTTER_WIDTH = "51.1px";
 
 /** Google puts an 8px lane with a rule on its right between the hour gutter and
  *  the first day column (`.EDDeke`), which is what makes the leftmost column
@@ -200,7 +205,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
             another timezone needs to know which one these rows mean. Taken
             from the browser, never hardcoded. */}
         <div
-          className="flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-2 text-[0.6875rem] font-medium tracking-[0.01em] text-(--ui-text-secondary)"
+          className="flex shrink-0 items-end justify-end whitespace-nowrap pb-1 pr-2 text-[11px] font-medium tracking-[0.01em] text-(--ui-text-secondary)"
           style={{ width: GUTTER_WIDTH }}
         >
           {gmtLabel()}
@@ -317,7 +322,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
       {hasAllDay && (
         <div className="flex shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary)/30">
           <div
-            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[0.6875rem] uppercase tracking-[0.06em] text-(--ui-text-secondary)"
+            className="shrink-0 whitespace-nowrap py-1.5 pr-2 text-right text-[11px] uppercase tracking-[0.06em] text-(--ui-text-secondary)"
             style={{ width: GUTTER_WIDTH }}
           >
             All day
@@ -330,7 +335,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
                   <button
                     className={cn(
                       // Google's stacked chip: 22px tall, 12px/15px text.
-                      "truncate rounded-[0.375rem] px-1.5 py-0.5 text-left text-[0.75rem] font-medium leading-[0.9375rem]",
+                      "truncate rounded-[6px] px-1.5 py-0.5 text-left text-[12px] font-medium leading-[15px]",
                       !paintForEvent(event, calendarHex) && DEFAULT_PAINT.chip,
                       event.status === "cancelled" && "line-through opacity-55",
                       event.status === "tentative" && "border border-dashed border-current",
@@ -379,7 +384,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
                   // in dark (owner 2026-09-01: "darkmode calendar has faint gray
                   // labels and makes it hard to see"). `--ui-text-secondary` is
                   // 66%, the closest rung to what was measured.
-                  className="absolute right-2 flex items-baseline gap-1 whitespace-nowrap text-[0.6875rem] font-medium leading-[1rem] tabular-nums text-(--ui-text-secondary)"
+                  className="absolute right-2 flex items-baseline gap-1 whitespace-nowrap text-[11px] font-medium leading-[16px] tabular-nums text-(--ui-text-secondary)"
                   key={hour}
                   // Google offsets the label -6px against a 16px line, so its
                   // middle lands just under the rule it names. -6 x 18/16.
@@ -473,7 +478,7 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
                   width: `${(1 / days.length) * 100}%`,
                 }}
               >
-                <span className="absolute -left-[0.375rem] -top-[0.4375rem] size-[0.75rem] rounded-full bg-(--theme-primary)" />
+                <span className="absolute -left-[6.5px] -top-[5px] size-[12px] rounded-full bg-(--theme-primary)" />
               </div>
             )}
           </div>
@@ -524,10 +529,10 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
           // blocks stayed 15% translucent. Staggered blocks sit ON TOP of each
           // other, so a see-through one reads as a muddy colour, not a stack.
           <div
-            // 🔴 rounded-[0.375rem], NOT rounded-md. This app's `md` is 0.625rem,
+            // 🔴 rounded-[6px], NOT rounded-md. This app's `md` is 0.625rem,
             // which on a block this short reads as a pill rather than a card.
             // Google's block corner is 6px; 6 x 18/16 = 6.75px.
-            className="absolute overflow-hidden rounded-[0.375rem] bg-background shadow-sm"
+            className="absolute overflow-hidden rounded-[6px] bg-background shadow-sm"
             key={item.event.id}
             style={{
               height: boxHeight,
@@ -544,16 +549,16 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
                 the student just finished moving. */}
             <button
               className={cn(
-                "flex size-full cursor-grab overflow-hidden rounded-[0.375rem] border border-(--ui-stroke-tertiary) px-1.5 text-left font-medium leading-[1.0625rem] transition-shadow hover:shadow-md active:cursor-grabbing",
+                "flex size-full cursor-grab overflow-hidden rounded-[6px] border border-(--ui-stroke-tertiary) px-1.5 text-left font-medium leading-[1.0625rem] transition-shadow hover:shadow-md active:cursor-grabbing",
                 // Each tier pays for its extra line by giving up padding, so the
                 // content always fits the box rather than being sliced by it.
                 // One size for all three tiers: Google sets every block's text
                 // at 12px/15px whatever its height, and only the LAYOUT changes.
                 // Ours shrank the type as the box shrank, so a short block was
                 // hard to read exactly when it had least room to explain itself.
-                detail === "stacked" && "flex-col py-1 text-[0.75rem]",
-                detail === "inline" && "items-baseline gap-1 py-0.5 text-[0.75rem]",
-                detail === "title" && "items-center py-0 text-[0.75rem] leading-none",
+                detail === "stacked" && "flex-col py-1 text-[12px]",
+                detail === "inline" && "items-baseline gap-1 py-0.5 text-[12px]",
+                detail === "title" && "items-center py-0 text-[12px] leading-none",
                 !paintForEvent(item.event, calendarHex) && DEFAULT_PAINT.chip,
                 item.event.status === "cancelled" && "line-through opacity-55",
                 item.event.status === "tentative" && "border-dashed",
@@ -585,7 +590,7 @@ function DayColumn({ calendarHex, day, layout, window, onMoveStart, onOpenEvent,
                   className={cn(
                     // Google sets the time at the title's size and a lighter
                     // weight (`.cpCWFd .EWOIrf { font-weight: 400 }`).
-                    "truncate text-[0.75rem] font-normal tabular-nums opacity-70",
+                    "truncate text-[12px] font-normal tabular-nums opacity-70",
                     detail === "inline" ? "shrink-0" : "block w-full",
                   )}
                 >

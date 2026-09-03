@@ -14,28 +14,35 @@ import { chromium } from "playwright";
 
 const url = process.argv[2] ?? "http://localhost:3000/dev-preview/calendar-week";
 
-// 🔴 THESE ARE GOOGLE'S NUMBERS CONVERTED TO THIS APP'S ROOT, NOT GOOGLE'S PIXELS.
-// Google's root is 16px and this app's is 18px (`html { font-size: 112.5% }`), so the like-for-like
-// figure is the *rem* value, scaled by 1.125. Copying Google's raw px would draw a grid a ninth too
-// tight against text a ninth too large. Source column is section 8 of the reference.
-const R = 18 / 16;
+// 🔴🔴 THESE ARE GOOGLE'S PIXELS, AND THEY USED TO BE GOOGLE'S REMS CONVERTED. The old rule read
+// "copy the rem, not the pixel": Google's root is 16 and this app's is 18, so every number arrived
+// 1.125x larger. It is a defensible rule that produced a calendar a ninth bigger than the thing it
+// is meant to match, which is what the owner was looking at on 2026-09-03: *"I want the calendar to
+// be smaller… it feels like I'm a bit too zoomed into it."*
+//
+// 🔴 THE REVERSAL IS SCOPED TO THE RULED GRID. Everything else in the app still scales with the
+// root. Three values were ALREADY pinned to Google's raw px before this (the weekday label, the
+// date numeral, the today disc — the "(see below)" rows in section 8) because the converted ones
+// looked wrong; this makes the whole surface agree with them instead of half of it. Section 13 of
+// the reference records it.
+const R = 1;
 const px = (googlePx) => Math.round(googlePx * R * 10) / 10;
 
 const EXPECT = {
-  "hour row height": px(48), //            48px  -> 54
-  "hour gutter width": px(51.1), //      51.1px  -> 57.5
-  "hour label font-size": px(11), //       11px  -> 12.4
+  "hour row height": px(48),
+  "hour gutter width": px(51.1),
+  "hour label font-size": px(11),
   "hour label font-weight": "500",
-  "weekday font-size": px(11), //          11px  -> 12.4
+  "weekday font-size": px(11),
   "weekday font-weight": "500",
   "weekday text-transform": "uppercase",
-  "date numeral font-size": px(26), //     26px  -> 29.2
-  "today disc size": px(46), //            46px  -> 51.8
-  "event radius": px(6), //                 6px  -> 6.8
-  "event title font-size": px(12), //      12px  -> 13.5
+  "date numeral font-size": px(26),
+  "today disc size": px(46),
+  "event radius": px(6),
+  "event title font-size": px(12),
   "grid rule width": "1px",
   "now line width": "2px",
-  "now dot size": px(12), //               12px  -> 13.5
+  "now dot size": px(12),
   "half-hour rules": 0, // Google draws the hour only.
 };
 
@@ -149,7 +156,7 @@ const got = await tab.evaluate(() => {
 
 let bad = 0;
 console.log(`\n  calendar week grid  ${url}`);
-console.log(`  expectations are Google's px x ${Math.round(R * 1000) / 1000} (root 16px -> 18px)\n`);
+console.log("  expectations are Google's pixels, unconverted — see section 13 of the reference\n");
 console.log(`  ${"property".padEnd(26)}${"expected".padEnd(14)}got`);
 console.log("  " + "-".repeat(64));
 for (const [k, exp] of Object.entries(EXPECT)) {
