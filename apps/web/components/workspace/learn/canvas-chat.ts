@@ -47,6 +47,7 @@ import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { commentsContextBlock, openCommentsForDocs } from "@/lib/workspace/document-comments";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
+import { excerptsInChunks, retrievalNote, retrieveChunks, TURN_CHUNKS } from "@/lib/learn/canvas-retrieval";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { prepareAnswer } from "@/lib/learn/answer-prepare";
 import { fillMissingFigures } from "@/lib/learn/figure-fallback";
@@ -340,9 +341,7 @@ export async function askCanvasChat(
    */
   onSpokenOpener?: (opener: string) => void,
 ): Promise<CanvasTurnReply> {
-  const materialContext = groundingBlock(canvas.sources);
-
-  // 🔴 FOUR READS, ONE WAIT. These are four independent tables (and one provider catalogue), and
+  // 🔴 FIVE READS, ONE WAIT. These are four independent tables (and one provider catalogue), and
   // they used to run one after another — a quarter to a full second of queue time before the
   // model was even asked, on EVERY turn. Each still owns its own failure (all four return their
   // empty shape rather than throwing), so the gather cannot lose a turn that the sequence
@@ -358,16 +357,46 @@ export async function askCanvasChat(
   // · tool catalogue — one lookup for the whole turn, and it cannot fail the turn:
   //   `composioTools()` returns an empty catalogue for every problem, and an empty catalogue
   //   means the packet is exactly what it was before connected apps existed.
-  const [pinnedComments, memoryRows, project, catalogue] = await Promise.all([
+  // · retrieval — which passages of the learner's own attached documents bear on THIS question.
+  //   Returns null for every problem, including the ordinary one of a file attached seconds ago
+  //   whose chunks are not written yet, and the turn falls back to reading the material in order.
+  const [pinnedComments, memoryRows, project, catalogue, retrieved] = await Promise.all([
     pinnedCommentsBlock(uid, canvas),
     loadMemory(uid),
     loadProjectInstructions(uid, canvas.id),
     loadToolCatalogue(),
+    retrieveChunks(canvas.sources, question, TURN_CHUNKS),
   ]);
+
   const memory = memoryBlock(memoryRows);
   const projectInstructions = project
     ? `The project is called "${project.name}".\n${project.instructions}`
     : "";
+
+  /**
+   * The learner's material, narrowed to what this question is about.
+   *
+   * 🔴🔴🔴 THIS IS WHY TWENTY DOCUMENTS WORK. `groundingBlock(canvas.sources)` sends every attached
+   * source in reading order up to 120,000 characters and drops the rest, so a second lecture pushed
+   * the first one's ending out of the packet and a tenth document was never in it. Owner,
+   * 2026-09-02: *"you can drop in like 50 to 100 documents, like it doesn't matter what it is."*
+   * Every source is already chunked and embedded the moment it is parsed; this asks that index
+   * which passages answer the question, and sends those.
+   *
+   * 🔴 THE CITATION CONTRACT IS UNTOUCHED, AND THAT IS THE WHOLE REASON `excerptsInChunks` EXISTS.
+   * Retrieval returns chunks, which have no `[s1:e4]` ids; the answer's pills resolve against
+   * EXCERPT ids. So retrieval selects, the excerpts keep their names, and `groundingBlock` renders
+   * exactly the shape it always has — a model still cannot cite an id it was not shown.
+   *
+   * 🔴 AND A NARROWED PACKET SAYS IT IS NARROWED. A model handed a subset and not told so answers
+   * for the whole pile. Owner, same day: *"It shouldn't hallucinate or say that it has it when it
+   * really doesn't have it."*
+   */
+  const focused = retrieved ? excerptsInChunks(canvas.sources, retrieved) : null;
+  const materialContext =
+    focused && focused.sources.length > 0
+      ? `${retrievalNote(new Set(retrieved!.map((chunk) => chunk.parsedDocumentId)).size, retrieved!.length)}\n\n${groundingBlock(focused.sources)}`
+      : groundingBlock(canvas.sources);
 
   const ask = (webContext: string, searchesLeft: number, toolContext: string, toolRoundsLeft: number) => {
     // 🔴 ONE WATCHER PER ROUND, AND ONLY THE ANSWERING ROUND CAN FIRE. A round that decides to

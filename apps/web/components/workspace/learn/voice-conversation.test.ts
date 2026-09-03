@@ -215,7 +215,14 @@ test("🔴 the voice speaks while the model is still writing — the head start 
   // plan opens with that exact text. Break any link and voice is slow again while every test
   // beside this one stays green.
   const chat = strip(read("./canvas-chat.ts"));
-  assert.match(chat, /await Promise\.all\(\[\s*pinnedCommentsBlock\(uid, canvas\),\s*loadMemory\(uid\),\s*loadProjectInstructions\(uid, canvas\.id\),\s*loadToolCatalogue\(\),\s*\]\)/, "the four context reads run one after another again — a quarter to a full second of queue time is back on every turn");
+  // 🔴 ONE GATHER IS THE INVARIANT; THE NUMBER OF READS IN IT IS NOT. This pinned exactly four
+  // entries and tripped when retrieval added a fifth — which is the same fix as the original, not a
+  // regression of it. What must stay true is that these reads share one wait instead of queueing.
+  const gather = chat.slice(chat.indexOf("await Promise.all(["), chat.indexOf("const memory ="));
+  for (const read of ["pinnedCommentsBlock(uid, canvas)", "loadMemory(uid)", "loadProjectInstructions(uid, canvas.id)", "loadToolCatalogue()"]) {
+    assert.ok(gather.includes(read), `${read} left the single context gather — a quarter to a full second of queue time is back on every turn`);
+  }
+  assert.equal(gather.match(/await Promise\.all\(/g)?.length, 1, "the context reads were split across more than one wait");
   assert.match(chat, /surroundings\.spokenConversation && onSpokenOpener \? spokenOpenerWatch\(\) : null/, "the stream watcher lost its gate — either typed turns stream for nothing, or spoken turns never stream at all");
   assert.match(chat, /const opener = watch\.feed\(accumulated\);\s*if \(opener\) onSpokenOpener\?\.\(opener\);/, "the watcher's opener no longer reaches the caller");
 

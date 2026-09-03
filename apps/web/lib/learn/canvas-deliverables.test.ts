@@ -88,7 +88,9 @@ test("an unmistakable ask is read; anything ambiguous falls through to the ordin
 test("slides are the generalist deliverable: grounded when material exists, model knowledge when not", () => {
   const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
   assert.ok(source.includes("makeSlidesDeliverable"), "the slides maker is gone");
-  assert.match(source, /grounded\s*\?\s*canvasBrief/, "a grounded canvas no longer feeds the deck its material");
+  // Named for the invariant, not the helper: retrieval renamed the grounded arm to `canvasBriefFor`
+  // and this guard tripped on the rename rather than on a behaviour change.
+  assert.match(source, /grounded\s*\?\s*await canvasBriefFor/, "a grounded canvas no longer feeds the deck its material");
   assert.ok(source.includes("no attached material"), "the ungrounded path lost its honest framing");
   assert.match(source, /plan\.references = grounded/, "references no longer come from the canvas's own sources");
   assert.match(source, /kind: "generated_slides"/, "slides left the assets ledger");

@@ -310,8 +310,12 @@ test("🔴 a maker with nothing attached can go and look it up", () => {
   // to build from; searching anyway spends a metered unit to add pages nobody asked for, and lets
   // the web argue with the source the learner uploaded.
   assert.match(deliverables, /grounded \? "" : await webContextForTopic/, "the deck searches even when grounded");
+  // 🔴 THE BRANCH IS THE INVARIANT, NOT THE FUNCTION'S NAME. This pinned `canvasBrief` by name and
+  // tripped when retrieval landed and the grounded arm became `canvasBriefFor`, which reads the
+  // same material through the index instead of in reading order. What must stay true is that a
+  // canvas WITH material builds from that material, and only an empty one goes to the web.
   assert.ok(
-    /canvasHasMaterial\(canvas\)\s*\?\s*canvasBrief\(canvas\)\s*:\s*\[/.test(deliverables),
+    /canvasHasMaterial\(canvas\)\s*\?\s*await canvasBriefFor\(canvas[^)]*\)\s*:\s*\[/.test(deliverables),
     "a prose maker searches even when the canvas has material",
   );
 });
