@@ -116,15 +116,26 @@ test("🔴 the choice rides the URL, because there is no canvas yet to write it 
   assert.match(ROUTE, /openingFolder=\{entry\.folder\}/, "the route drops the chosen project");
 });
 
-test("🔴 the picker wears each project's own icon and colour, at the reference's measured sizes", () => {
+test("🔴 the picker wears each project's own icon, at the reference's measured sizes", () => {
   // Re-measured in the owner's own Chrome, 2026-08-30 evening: rows 36px (py-8 on a 20px line),
-  // icons 20px tinted per project, panel bottom 12px above the chip (bottom-48 against the 36px
-  // chip in the 44px row). The first pass shipped 32px rows and plain folders for every project.
+  // icons 20px, panel bottom 12px above the control (bottom-48 against the 36px control in the 44px
+  // row). The first pass shipped 32px rows and plain folders for every project.
   assert.match(PICKER, /name=\{folder\.icon \?\? "folder"\}/, "the rows ignore the project's own icon");
-  assert.match(PICKER, /folder\.color \? \{ color: folder\.color \}/, "the rows ignore the project's own colour");
-  assert.match(PICKER, /name=\{chosen \? \(chosen\.icon \?\? "folder-opened"\) : "folder"\}/, "the chip ignores the chosen project's icon");
   assert.match(PICKER, /bottom-\[48px\]/, "the panel gap drifted from the measured 12px");
   assert.match(PICKER, /py-\[8px\]/, "the rows drifted from the measured 36px");
+
+  // 🔴 AND NO COLOUR ANYWHERE (owner 2026-09-03, the accent sweep). `folders.color` still holds
+  // whatever anyone picked before the feature was removed; this file was the last place it reached
+  // the screen, so a row here is the one way it comes back.
+  const code = PICKER.replace(/\/\*[\s\S]*?\*\//gu, " ").replace(/^\s*\/\/.*$/gmu, " ");
+  assert.doesNotMatch(code, /folder\.color/u, "a project's stored colour is painting the picker again");
+
+  // 🔴 THE CONTROL IS A DOOR, NOT THE STATE (owner 2026-09-03: *"compare with ChatGPT because it
+  // looks different when you add it"*). It used to fill in, take the chosen project's name and grow
+  // a ✕. What the reference does — and what the composer does now — is put an inline token at the
+  // head of the line you are typing into; see `capability-chip.tsx`.
+  assert.doesNotMatch(code, /aria-label="Clear project"/u, "the control grew its ✕ back, so the state is in two places");
+  assert.match(code, />Choose project</u, "the control stopped reading as the door it is");
 });
 
 test("🔴🔴 the + menu opens clear of the character instead of hiding it", () => {

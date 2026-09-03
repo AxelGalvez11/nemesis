@@ -191,6 +191,21 @@ test("🔴 the sidebar carries the same controls whatever kind of thing is in it
     "the reader lost the comment control the panel is deliberately not duplicating");
 });
 
+test("🔴 no '…' menu in the sidebar", () => {
+  // Owner, 2026-09-03: *"remove the three dots icon from the sidebar because that's redundant and
+  // it's not needed"* — the second time he has cut this menu, after 2026-08-26's *"contains
+  // outdated actions that arent necessary"*, which is what moved the AI actions onto a highlight.
+  //
+  // 🔴 THE GATE IS `toolbarSlot`, NOT `dense`, AND THE DIFFERENCE IS WHICH SURFACE KEEPS IT. A slot
+  // means "I am drawing inside someone else's header", which is only ever the docked panel — and
+  // that header carries Download and Full screen as buttons, which is what made the menu redundant
+  // there. The full Library reader keeps it: its folder trail, linked notes and "open in a new tab"
+  // have nowhere else to live.
+  const bar = code(read("../reader/reader-top-bar.tsx"));
+  assert.match(bar, /\{!toolbarSlot && \(/u, "the actions menu is back in the panel's header");
+  assert.match(bar, /aria-label="Actions and details"/u, "the full reader lost its menu too, which was not the ask");
+});
+
 test("🔴🔴 there is ONE document reader, and the citation chip opens it", () => {
   // 🔴 THERE WERE TWO, AND THE CHIP LED TO THE WORSE ONE. Owner, 2026-09-03: *"clicking on the
   // inline source chip should open documents on the right sidebar, NOT this new sidebar"*, and of
