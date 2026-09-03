@@ -13,14 +13,15 @@
 // is built is exactly what Google would send, and what Google sends can be
 // loaded back into these controls.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { CHEVRON_STYLE, FIELD as SHARED_FIELD } from "./field-chrome";
+import { CHEVRON_STYLE, FIELD as SHARED_FIELD, SOFT_FIELD } from "./field-chrome";
 import {
   type ByDay,
   dateOf,
+  describeSpec,
   formatRecurrenceLines,
   type Frequency,
   parseRecurrenceLines,
@@ -107,6 +108,22 @@ function specForPreset(preset: Preset, start: Date, previous: RecurrenceSpec | n
 // field above it. Two constants that must agree are one constant.
 const FIELD = SHARED_FIELD;
 
+/**
+ * The one line the rule collapses to, and the panel it opens.
+ *
+ * 🔴🔴 THIS ROW WAS 250px OF A 624px DIALOG. Owner, 2026-09-03: the editor
+ * "looks a bit too close together … I need something that is not so bunched up"
+ * and, of the same box, "a bit smaller". Those pull against each other, and the
+ * only way to satisfy both is to show LESS at once rather than to space more
+ * out. A repeat rule is read far more often than it is changed, so it reads as a
+ * sentence and only becomes five controls when somebody presses it.
+ *
+ * 🔴 THE SENTENCE IS `describeSpec`, WHICH ALREADY EXISTED AND HAD NO CALLER.
+ * It was written with the parser, tested, and never reached a screen — so this
+ * is a stranded helper finding its surface, not a second way to say a rule.
+ */
+const SUMMARY = cn(SOFT_FIELD, "justify-between");
+
 export function RepeatEditor({ value, onChange, startDate }: RepeatEditorProps) {
   const spec = useMemo(() => specOf(value), [value]);
   const start = useMemo(() => (/^\d{4}-\d{2}-\d{2}$/.test(startDate) ? dateOf(startDate) : new Date()), [startDate]);
@@ -122,16 +139,37 @@ export function RepeatEditor({ value, onChange, startDate }: RepeatEditorProps) 
 
   const ordinal = Math.floor((start.getDate() - 1) / 7) + 1;
   const weekdays = (spec?.rule.byDay ?? []).filter((entry) => entry.ordinal === undefined).map((entry) => entry.day);
+  const [open, setOpen] = useState(false);
 
   return (
-    // 🔴 THE BOX ONLY EXISTS WHEN THERE IS SOMETHING TO GROUP. With no repeat
-    // set this is one dropdown, and a bordered card around one dropdown was the
-    // heaviest thing in a form the owner had just asked to lighten (2026-09-01,
-    // "it's too bunched in together"). The extras below — the weekday chips and
-    // the Ends row — only appear once `spec` exists, and THEY are what a box is
-    // for. The word "Repeats" went with it: the row already carries the repeat
-    // icon, and the first option says "Does not repeat" in full.
-    <div className={cn("flex flex-col gap-2", spec && "rounded-lg border border-(--ui-stroke-tertiary) p-2.5")}>
+    <div className="flex flex-col gap-2">
+      {/* 🔴 THE LINE NEVER MOVES. Opening adds a panel BELOW the sentence rather
+          than replacing it, so the thing you pressed is still there saying what
+          the rule is while you change it — and pressing it again closes. An
+          earlier draft swapped the line out for the select, which meant the
+          summary you were editing towards disappeared the moment you started. */}
+      <button aria-expanded={open} className={SUMMARY} onClick={() => setOpen((was) => !was)} type="button">
+        <span className="truncate">{spec ? describeSpec(spec) : "Does not repeat"}</span>
+        <svg
+          aria-hidden
+          className={cn("shrink-0 transition-transform", open && "rotate-180")}
+          fill="none"
+          height="15"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="1.6"
+          viewBox="0 0 24 24"
+          width="15"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {/* 🔴 THE PANEL IS A SOFT FILL, NOT A BORDERED CARD. A border here drew a
+          form inside a form, which is what made this row the heaviest thing in
+          the dialog. It groups by ground instead. */}
+      {open && (
+      <div className="flex flex-col gap-2 rounded-[0.75rem] bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] p-[14px]">
       <div className="flex items-center gap-2">
         <select
           aria-label="Repeats"
@@ -165,10 +203,14 @@ export function RepeatEditor({ value, onChange, startDate }: RepeatEditorProps) 
                 aria-label={DAY_NAMES[day]}
                 aria-pressed={on}
                 className={cn(
-                  "size-6 rounded-full text-[0.625rem] font-semibold transition-colors",
+                  // 🔴 32px, NOT 27, AND FILLED RATHER THAN OUTLINED. Seven
+                  // hairline circles in a row read as a strip of noise at the old
+                  // size; on a soft ground the chosen day is the only edge in the
+                  // row, which is the one thing this control has to say.
+                  "size-[32px] rounded-full text-[0.6875rem] font-semibold transition-colors",
                   on
                     ? "bg-(--theme-primary) text-primary-foreground"
-                    : "border border-(--ui-stroke-secondary) text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background)",
+                    : "bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] text-(--ui-text-tertiary) hover:bg-[color-mix(in_srgb,var(--ui-base)_10%,transparent)]",
                 )}
                 key={`${label}-${day}`}
                 onClick={() =>
@@ -243,6 +285,8 @@ export function RepeatEditor({ value, onChange, startDate }: RepeatEditorProps) 
         <p className="text-[0.6875rem] text-(--ui-text-quaternary)">
           {spec.exceptDates.length} {spec.exceptDates.length === 1 ? "date is" : "dates are"} skipped.
         </p>
+      )}
+      </div>
       )}
     </div>
   );

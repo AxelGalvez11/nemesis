@@ -34,8 +34,20 @@ function PopoverContent({
         align={align}
         arrowPadding={arrowPadding}
         // Themed glass surface, viewport-aware, standard open/close motion.
+        //
+        // 🔴🔴 z-[140], AND z-50 MEANT A POPOVER INSIDE A DIALOG WAS UNCLICKABLE.
+        // `DialogContent` is z-[130] and its overlay z-[120], so a popover opened
+        // from inside one rendered BEHIND the dialog that opened it — visible as
+        // nothing at all, and every click on it landing on the dialog. Found on
+        // screen 2026-09-03 driving the event editor's new colour picker; a diff
+        // shows two numbers in two files and nothing wrong.
+        //
+        // 🔴 140 IS THE NUMBER ITS SIBLINGS ALREADY USE. `dropdown-menu`,
+        // `context-menu` and `select` are all z-[140] for exactly this reason;
+        // the popover was written before anything put one inside a dialog and
+        // was the only one left below the line.
         className={cn(
-          "z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-lg border border-(--ui-stroke-secondary) bg-[var(--popover-surface)] p-2 text-popover-foreground backdrop-blur-md outline-hidden data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 [--popover-surface:color-mix(in_srgb,var(--ui-bg-elevated)_92%,transparent)]",
+          "z-[140] w-72 origin-(--radix-popover-content-transform-origin) rounded-lg border border-(--ui-stroke-secondary) bg-[var(--popover-surface)] p-2 text-popover-foreground backdrop-blur-md outline-hidden data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 [--popover-surface:color-mix(in_srgb,var(--ui-bg-elevated)_92%,transparent)]",
           className,
         )}
         collisionPadding={collisionPadding}
