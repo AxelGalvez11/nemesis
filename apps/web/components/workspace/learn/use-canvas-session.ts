@@ -935,6 +935,26 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     setCoursePlan(null);
   }, []);
 
+  /**
+   * Work done while the sign-in session was away still has to reach the cloud.
+   *
+   * 🔴🔴 THE GRACE PERIOD IN `lib/workspace-gate.ts` IS WHAT MAKES THIS NECESSARY, AND WITHOUT IT
+   * THE FIX WOULD BE HALF A FIX. The workspace now keeps running through a token refresh instead of
+   * unmounting the learner's turn — but `saveCanvas` takes `uid`, and during those seconds `uid` is
+   * null, so every write lands in the browser only. Nothing re-pushed it when the session came back:
+   * the answer stayed on screen, survived nothing, and was gone on the next reload.
+   *
+   * 🔴 ONLY ON THE WAY BACK, NEVER ON THE WAY IN. `savedUnder` starts holding whatever `uid` is at
+   * mount, so a canvas that opens signed in does not buy an extra write for nothing; this fires on
+   * the null-to-real transition alone, which only happens after a session came back.
+   */
+  const savedUnder = useRef(uid);
+  useEffect(() => {
+    const before = savedUnder.current;
+    savedUnder.current = uid;
+    if (uid && !before) void saveCanvas(uid, latest.current);
+  }, [uid]);
+
   // Load, or start fresh.
   useEffect(() => {
     let alive = true;
