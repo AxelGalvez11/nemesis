@@ -97,7 +97,10 @@ test("🔴 the whole-account study load waits for a real intent to review", () =
   // useCloudStudy() pulls every deck, card and review the account owns. Mounting DeckReview is
   // what starts that, so both callers must keep it behind a truthy deck id rather than rendering
   // it always with an `open` flag — the pattern that would put the load on page arrival.
-  assert.match(OUTPUTS, /\{reviewing && <DeckReview /, "the Library mounts the review unconditionally");
+  // 🔴 REPOINTED 2026-09-03: the mount grew props (crumb, Download, the ask bar) and JSX with props
+  // wraps in parentheses, so a pattern demanding `&& <DeckReview ` on one line reddened on correct
+  // code. The RULE — conditional, never `open={…}` — is unchanged and still asserted.
+  assert.match(OUTPUTS, /\{reviewing && \(?\s*<DeckReview\b/, "the Library mounts the review unconditionally");
   assert.match(CANVAS_CONTROLS, /\{reviewingDeck && <DeckReview /, "the canvas mounts the review unconditionally");
   assert.ok(!/<DeckReview[^>]*\sopen=/.test(OUTPUTS + CANVAS_CONTROLS), "DeckReview grew an `open` prop and is now always mounted");
   // And it must not hand ReviewSession an empty deck mid-fetch: that renders "You're caught up",

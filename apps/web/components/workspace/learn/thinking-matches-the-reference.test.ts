@@ -85,9 +85,15 @@ test("🔴🔴 chat view puts it in the thread; canvas view puts it under the ch
   // character at the centre and beside it in the corner; the station line sends the character to
   // the centre exactly when the thread is closed and something is running. So "below the mascot"
   // is what the existing dock draws — all that was missing was being handed the words.
+  // 🔴 REPOINTED 2026-09-02: `handedOver` moved INSIDE the `!threadOpen` group. It was outside it
+  // deliberately — the handover is the front door's character arriving, which used to be arriving
+  // at a centre — but chat is the default now and the character's home there is the composer's
+  // corner, so holding the centre for the handover moved it somewhere it never stays. Owner: *"why
+  // is the mascot still moving to the middle? That's from the canvas that we removed."* Canvas view
+  // is unchanged: with `threadOpen` false every term reads exactly as it did.
   assert.match(
     CANVAS,
-    /station=\{handedOver \|\| \(!threadOpen && \(turnInFlight \|\| presence === "preparing"\)\) \? "centre" : "corner"\}/,
+    /station=\{!threadOpen && \(handedOver \|\| turnInFlight \|\| presence === "preparing"\) \? "centre" : "corner"\}/,
     "the character no longer stands at the centre while canvas view is working, so its caption would sit beside it",
   );
   assert.match(

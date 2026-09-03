@@ -96,32 +96,43 @@ export function clearArrival(): void {
 /**
  * How long the walk from the front door to the canvas takes.
  *
- * Owner, 2026-09-01, choosing direction A off the motion study and then: *"make it all slower like
- * 1.5 seconds slower"*. The direction was drawn at 460ms; this is that plus 1,500.
+ * 🔴🔴 BACK TO 460ms, AND THE HISTORY IS THE POINT. Owner, 2026-09-01, choosing direction A off the
+ * motion study: *"make it all slower like 1.5 seconds slower"*, so this was 460 + 1,500 = 1,960.
+ * Owner, 2026-09-02, having lived with it: *"the transition ... is super slow ... the mascot kind
+ * of took forever to move ... everything should immediately move into place."* Reverted to the
+ * duration direction A was actually drawn at, which is the one he picked before asking for slower.
  *
- * 🔴 IT IS LONG, AND NOTHING WAITS FOR IT. The canvas is live from its first frame: the composer
- * takes typing, the opening ask has already been sent, and the answer streams in underneath while
- * the furniture is still settling. If this ever becomes a gate on anything, it stops being an
- * animation and becomes a loading screen with a two-second budget.
+ * 🔴 A SLOW TRANSITION READS AS A SLOW APP EVEN WHEN NOTHING IS WAITING ON IT. Nothing here gates
+ * anything: the canvas is live from its first frame, the composer takes typing, the ask is already
+ * sent and the answer streams underneath. That was the argument for affording two seconds, and it
+ * was wrong about people rather than about code. The eye reads furniture still moving as work still
+ * happening, so the honest length is the shortest one that still reads as a movement rather than a
+ * cut.
  */
-export const ARRIVAL_MS = 1_960;
+export const ARRIVAL_MS = 460;
 
 /**
- * The curve, and it is NOT the one the short version used.
+ * The curve, and it moves back with the duration.
  *
- * 🔴 A HARD DECELERATE IS A SHORT-MOVE CURVE. `cubic-bezier(.32,.72,0,1)` — what the 320ms travel
- * ran on, and what direction A was drawn with at 460ms — puts roughly 80% of the distance in the
- * first third. That is what makes a quick move feel like it lands rather than stops. Run the same
- * curve for two seconds and the element lunges, then crawls for a second and a half, which reads as
- * a stall rather than as weight. A long move wants its fastest moment in the MIDDLE: a gentle
- * lead-in, a long glide, a soft stop.
+ * 🔴 A HARD DECELERATE IS A SHORT-MOVE CURVE, and this is a short move again. `cubic-bezier(.32,.72,0,1)`
+ * puts roughly 80% of the distance in the first third, which is what makes a quick move feel like it
+ * LANDS rather than stops. The gentle S-curve that replaced it (`cubic-bezier(.42,.02,.18,1)`) was
+ * chosen for the two-second version, where a hard decelerate lunged and then crawled; at 460ms that
+ * same S-curve is the one that reads as sluggish, because it spends its opening frames doing almost
+ * nothing. The curve and the duration are one decision and have to move together.
  */
-export const ARRIVAL_EASE = "cubic-bezier(.42,.02,.18,1)";
+export const ARRIVAL_EASE = "cubic-bezier(.32,.72,0,1)";
 
 /** How long the greeting and the hint take to go. They are the only things on the front door with
- *  nothing to do in a canvas, so they are the only things that fade rather than travel. */
-export const ARRIVAL_LABEL_MS = 770;
+ *  nothing to do in a canvas, so they are the only things that fade rather than travel.
+ *  🔴 SHORTER THAN THE WALK, DELIBERATELY. Text that is leaving should be gone before the furniture
+ *  stops, or the last thing the eye sees settling is a word that no longer belongs to the screen. */
+export const ARRIVAL_LABEL_MS = 220;
 
-/** When the canvas's own chrome — its title, the thinking caption — fades up. Late, so it arrives
- *  behind furniture that has almost finished moving rather than competing with it. */
-export const ARRIVAL_CHROME_DELAY_MS = 1_280;
+/** When the canvas's own chrome — its title, the thinking caption — fades up. Just behind the
+ *  furniture rather than long after it.
+ *  🔴 IT WAS 1,280ms, WHICH IS MOST OF WHY THE ARRIVAL FELT EMPTY. Scaled with the walk: the rule
+ *  was always "arrive behind furniture that has nearly stopped", and at 460ms that is 300ms, not a
+ *  second and a quarter. Held as a fraction of the walk in the test rather than as a loose number,
+ *  so the two cannot drift apart again. */
+export const ARRIVAL_CHROME_DELAY_MS = 300;

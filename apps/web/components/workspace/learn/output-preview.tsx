@@ -21,7 +21,8 @@ import { createPortal } from "react-dom";
 
 import { DockSwitcher } from "./dock-switcher";
 import type { DockItem } from "./document-dock";
-import { CHROME } from "./reader-chrome";
+import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
+import { biggerThan, CHROME, type ReaderMode } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -71,13 +72,9 @@ const DOWNLOAD_LABEL: Record<string, string> = {
   sheet: "Download .csv",
 };
 
-/** The three sizes a reader can take. See `mode`. */
-type Mode = "docked" | "full" | "maximized";
-
-/** One step bigger than the size a panel opened at. PURE. */
-function biggerThan(opened: Mode): Mode {
-  return opened === "docked" ? "full" : "maximized";
-}
+/* 🔴 THE THREE SIZES AND THE STEP BETWEEN THEM MOVED TO `reader-chrome.ts` on 2026-09-03, when
+   the flashcard panel needed them too. Written here they were this reader's private idea of how
+   big an artifact gets, and the deck's own two-size version was the visible result. */
 
 export function OutputPreview({
   activeKey = null,
@@ -173,7 +170,7 @@ export function OutputPreview({
    * has always meant "fill the window", which is `full` and not `maximized`. So the pair is
    * (initial, bigger), and `biggerThan` names the one step up from wherever this opened.
    */
-  const [mode, setMode] = useState<Mode>(initialMode);
+  const [mode, setMode] = useState<ReaderMode>(initialMode);
   /**
    * The docked width, and the drag that changes it.
    *
@@ -226,8 +223,6 @@ export function OutputPreview({
 
   const markdown = output.markdown ?? fetched ?? "";
   const deck = output.kind === "slides" ? output.deck : undefined;
-  /** What is typed in the ask bar. Empty except in the Library — see `onAsk`. */
-  const [question, setQuestion] = useState("");
   /**
    * The document, as text a canvas can be given.
    *
@@ -594,7 +589,7 @@ export function OutputPreview({
           against the scrolled content and the marks would slide away up the page with the text.
           Out here it pins to the panel, which is what a position indicator has to do. */}
       {full && !deck && !output.sheet && <DocumentRail headings={headings} scroller={scroller} />}
-      <div className={cn("min-h-0 flex-1 overflow-auto px-[24px] pt-[25px]", full && onAsk ? "pb-[101px]" : "pb-[24px]")} ref={setScroller}>
+      <div className={cn("min-h-0 flex-1 overflow-auto px-[24px] pt-[25px]", full && onAsk ? ASK_CLEARANCE : "pb-[24px]")} ref={setScroller}>
         {/* 🔴🔴🔴 `--ui-bg-editor`, NOT `--ui-bg-primary`, AND THE DIFFERENCE IS WHETHER PAPER WEARS
             THE LEARNER'S ACCENT. Owner, 2026-09-01, with a document and a deck open side by side in
             the Library: *"the dark mode's not consistent… for the documents and reports, for some
@@ -654,37 +649,13 @@ export function OutputPreview({
 
           🔴 FULL SCREEN ONLY. Docked, this panel is beside a conversation that already has a
           composer, and the bar would be the second one on screen. */}
-      {full && onAsk && (
-        <form
-          className="pointer-events-none absolute inset-x-0 bottom-[25px] flex justify-center px-[24px]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const asked = question.trim();
-            if (!asked) return;
-            onAsk(asked, askMaterial());
-          }}
-        >
-          <div className="pointer-events-auto flex h-[52px] w-full max-w-[604px] items-center gap-[8px] rounded-[28px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) pl-[20px] pr-[6px] shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
-            <input
-              aria-label={`Ask about ${output.title}`}
-              // 🔴 §46.3-exempt: this shares the reference's own 16px, which is also the iOS
-              // zoom threshold for an input — not a step on the canvas type scale.
-              className="min-w-0 flex-1 bg-transparent text-[16px] leading-[26px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask about this file"
-              value={question}
-            />
-            <button
-              aria-label="Ask"
-              className="grid size-[40px] shrink-0 place-items-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity disabled:opacity-30"
-              disabled={question.trim() === ""}
-              type="submit"
-            >
-              <Codicon name="arrow-up" size="20px" />
-            </button>
-          </div>
-        </form>
-      )}
+      {/* 🔴 THE BAR IS SHARED NOW — see `reader-ask.tsx` for the measurements and why there is one
+          copy. This file and `deck-view.tsx` each carried their own, and the flashcard panel had
+          none, which is the difference the owner was pointing at on 2026-09-03.
+
+          🔴 FULL SCREEN ONLY. Docked, this panel is beside a conversation that already has a
+          composer, and the bar would be the second one on screen. */}
+      {full && onAsk && <ReaderAsk label={output.title} onAsk={(question) => onAsk(question, askMaterial())} />}
 
       {canComment && (
         <CommentLayer
