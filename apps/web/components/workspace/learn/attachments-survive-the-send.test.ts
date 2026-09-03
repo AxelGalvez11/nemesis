@@ -99,6 +99,18 @@ test("🔴🔴🔴 the first message of a new chat is not seeded over while it i
   // Calibration: move the latch back to the top of the effect and the first message of every new
   // chat disappears again until the page is reloaded.
   assert.match(seed, /if \(restored\.length > 0\) seededFor\.current = canvas\.id;/, "the seed latches on a canvas it had nothing to seed from");
+
+  // 🔴🔴 AND A FIRST SEED ONLY EVER ADDS. Even deferred and unlatched, this effect runs repeatedly
+  // against a moment log being written underneath it: on the front door there is an instant after
+  // the source moment and before the answer's when `held` is the attachment row, its `said` is
+  // undefined, and assigning it wipes the sentence `converse` has already put up. Replacing is
+  // right only when there is a previous conversation to replace — which is what `switching` is.
+  //
+  // Calibration: drop the `switching ||` guards and the question bubble vanishes from every new
+  // chat again until it is reloaded.
+  assert.match(seed, /const switching = seededFor\.current !== null && seededFor\.current !== canvas\.id;/, "the seed stopped telling a switch from a first seed");
+  assert.match(seed, /if \(switching \|\| held\?\.said\) setCurrentSaid/, "a first seed can erase the live question again");
+  assert.match(seed, /if \(switching \|\| held\?\.attached\?\.length\) setCurrentAttached/, "a first seed can erase the live attachments again");
   assert.ok(
     seed.indexOf("if (restored.length > 0) seededFor.current") > seed.indexOf("const restored = history"),
     "the latch runs before the seeding it is meant to record",

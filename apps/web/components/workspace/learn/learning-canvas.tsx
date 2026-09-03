@@ -2030,18 +2030,35 @@ export function LearningCanvas({
     // rendered above the new one's answer. Reproduced on production by clicking between two real
     // chats; the bubble never changed.
     const held = liveShowsLast ? restored.at(-1) : null;
-    setCurrentSaid(held?.said ?? null);
-    setCurrentSaidVia(held?.saidVia ?? null);
+    // 🔴🔴🔴 A SWITCH REPLACES; A FIRST SEED ONLY EVER ADDS. Third and final shape of this, after
+    // two production runs that each fixed less than they looked like they did.
+    //
+    // The unconditional assignment below is the fix its own note records: switching chats does not
+    // remount this component, so an unassigned `currentSaid` is the PREVIOUS conversation's
+    // question standing over the new one's answer. That reasoning is sound and applies exactly
+    // when there IS a previous conversation — which is what `switching` says.
+    //
+    // 🔴 ON THE FIRST SEED OF A CANVAS THERE IS NOTHING TO REPLACE, AND ERASING IS ALL IT CAN DO.
+    // The front door mints the canvas and fires the opening ask from a later effect, so this
+    // effect runs repeatedly against a moment log that is being written underneath it — after the
+    // source moment but before the answer's. At that instant `held` is the attachment row, its
+    // `said` is undefined, and assigning it wiped the sentence `converse` had put up. Measured on
+    // production: the file names appeared and the question bubble did not, until a reload.
+    const switching = seededFor.current !== null && seededFor.current !== canvas.id;
+    if (switching || held?.said) setCurrentSaid(held?.said ?? null);
+    if (switching || held?.saidVia) setCurrentSaidVia(held?.saidVia ?? null);
     // 🔴 AND WHAT IT WAS SENT WITH. A restored turn carries its own `attached`; the held-back one
     // is drawn by the live region instead of the thread, so it has to be handed them here or the
     // newest exchange is the one exchange whose documents are invisible.
-    setCurrentAttached(held?.attached ?? []);
+    if (switching || held?.attached?.length) setCurrentAttached(held?.attached ?? []);
     // 🔴🔴 AND ITS MOMENT ID COMES WITH IT, WHICH IS THE HALF THAT WAS MISSING. Held back from the
     // thread, this exchange has no `[data-thread-turn]` of its own — so its marker, the newest one
     // on the rail and the one a learner is most likely to press, resolved to nothing and rewound.
     // A restored turn is filed under its moment id, so `held.id` IS the rail row's id.
-    onScreen.current.momentId = held?.id ?? null;
-    setCurrentMomentId(held?.id ?? null);
+    if (switching || held?.id) {
+      onScreen.current.momentId = held?.id ?? null;
+      setCurrentMomentId(held?.id ?? null);
+    }
     // 🔴🔴🔴 THE LATCH GOES LAST, AND ONLY WHEN THERE WAS SOMETHING TO SEED. It used to be the
     // first line of this effect, which is why deferring on `turnInFlight` alone did not fix the
     // front door: on that path the canvas is MINTED FIRST and the opening ask is fired by a later
