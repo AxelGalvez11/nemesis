@@ -14,7 +14,7 @@
 
 import { CanvasSourcePills } from "@/components/workspace/learn/canvas-source-pills";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
-import { DocumentDockProvider, useDocumentDockState } from "@/components/workspace/learn/document-dock";
+import { DocumentDockProvider, documentKey, useDocumentDockState } from "@/components/workspace/learn/document-dock";
 import { SourcePreview } from "@/components/workspace/learn/source-preview";
 import type { CanvasSource } from "@/lib/learn/canvas-model";
 import type { SourcePill } from "@/lib/learn/source-pill";
@@ -76,9 +76,13 @@ export default function SourceTabsPreviewPage() {
         <div className="relative h-dvh overflow-hidden bg-(--ui-bg-editor)" data-workspace="">
           <SourcePreview
             activeId={dock.activeId}
+            activeKey={dock.activeKey}
+            items={dock.items}
             onClose={dock.closeAll}
-            onCloseTab={dock.closeDocument}
-            onSelect={dock.select}
+            onCloseKey={dock.close}
+            onCloseTab={(id) => dock.close(documentKey(id))}
+            onSelect={(id) => dock.select(documentKey(id))}
+            onSelectKey={dock.select}
             open={dock.open}
             uid={null}
           />

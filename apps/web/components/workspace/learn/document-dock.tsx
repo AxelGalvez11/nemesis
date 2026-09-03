@@ -28,15 +28,49 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
-import type { CanvasSource } from "@/lib/learn/canvas-model";
+import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
 import type { DocumentPill } from "@/lib/learn/source-pill";
 
+/**
+ * One thing open in the sidebar.
+ *
+ * 🔴🔴 DOCUMENTS AND OUTPUTS ARE ONE LIST, WHICH IS THE WHOLE POINT (owner, 2026-09-03: *"i dont
+ * want this, documents, lectures, and everything should open in one sidebar"*). They used to be two
+ * pieces of state in two components — `docs` here and `openedOutput` in `SourcesControl` — with no
+ * knowledge of each other, so opening a study guide while a lecture was open STACKED a second panel
+ * over the first. Two rectangles, two tab strips, two headers, on top of each other.
+ *
+ * 🔴 THE `key` IS PREFIXED BY KIND, NOT BORROWED FROM THE ROW. A `CanvasSource.id` and a
+ * `CanvasOutput.id` are both uuids from different tables and nothing stops them colliding; one list
+ * keyed on the bare id would let a study guide close a lecture. The prefix makes the two spaces
+ * disjoint by construction rather than by luck.
+ */
+export type DockItem =
+  | { readonly key: string; readonly kind: "document"; readonly source: CanvasSource }
+  | { readonly key: string; readonly kind: "output"; readonly output: CanvasOutput };
+
+export const documentKey = (id: string) => `document:${id}`;
+export const outputKey = (id: string) => `output:${id}`;
+
 export interface DocumentDock {
-  /** Every document open in the reader, oldest first. Empty closes the panel. */
+  /** Everything open in the sidebar, oldest first. Empty closes it. */
+  readonly items: readonly DockItem[];
+  /** Which one is in front, by `DockItem.key`. Null closes the sidebar. */
+  readonly activeKey: string | null;
+  /** The item in front, resolved. Null when nothing is open. */
+  readonly active: DockItem | null;
+  /**
+   * The open DOCUMENTS, and which is in front.
+   *
+   * 🔴 `activeId` IS NULL WHILE AN OUTPUT IS IN FRONT, AND THAT IS HOW ONE PANEL SHOWS AT A TIME.
+   * `SourcePreview` renders nothing without an active document, so an output taking the front
+   * silently stands the document panel down — no second rectangle, and the documents stay open
+   * and mounted behind it, ready to come back when their tab is pressed.
+   */
   readonly open: readonly CanvasSource[];
-  /** Which one is in front. Null closes the panel. */
   readonly activeId: string | null;
   openDocument: (source: CanvasSource) => void;
+  openOutput: (output: CanvasOutput) => void;
   /**
    * Open the document a citation chip names.
    *
@@ -47,8 +81,10 @@ export interface DocumentDock {
    * returning `false` sends it there rather than opening an empty reader.
    */
   openPill: (pill: DocumentPill) => boolean;
-  closeDocument: (id: string) => void;
-  select: (id: string) => void;
+  /** Close one tab, by `DockItem.key`. */
+  close: (key: string) => void;
+  /** Bring one tab to the front, by `DockItem.key`. */
+  select: (key: string) => void;
   closeAll: () => void;
 }
 
@@ -70,26 +106,40 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
    * once (see `dictation-doubled-every-sentence`), invisible in a diff and impossible to reason
    * about because the updater runs twice under StrictMode.
    */
-  const [docs, setDocs] = useState<{ open: CanvasSource[]; activeId: string | null }>({ activeId: null, open: [] });
+  const [docs, setDocs] = useState<{ open: DockItem[]; activeId: string | null }>({ activeId: null, open: [] });
 
-  const openDocument = useCallback((source: CanvasSource) => {
+  const put = useCallback((item: DockItem) => {
     setDocs((current) => ({
-      activeId: source.id,
+      activeId: item.key,
       // Opening something already open brings it forward rather than listing it twice.
-      open: current.open.some((entry) => entry.id === source.id) ? current.open : [...current.open, source],
+      // 🔴 THE STORED ROW IS REPLACED, NOT KEPT. A revision lands in `canvas.outputs` and the object
+      // captured when the tab was first opened predates it, so re-opening has to adopt the fresh
+      // one — the same rule the output panel already applied when it looked its row up by id.
+      open: current.open.some((entry) => entry.key === item.key)
+        ? current.open.map((entry) => (entry.key === item.key ? item : entry))
+        : [...current.open, item],
     }));
   }, []);
 
-  const closeDocument = useCallback((id: string) => {
+  const openDocument = useCallback(
+    (source: CanvasSource) => put({ key: documentKey(source.id), kind: "document", source }),
+    [put],
+  );
+  const openOutput = useCallback(
+    (output: CanvasOutput) => put({ key: outputKey(output.id), kind: "output", output }),
+    [put],
+  );
+
+  const close = useCallback((key: string) => {
     setDocs((current) => {
-      const open = current.open.filter((entry) => entry.id !== id);
+      const open = current.open.filter((entry) => entry.key !== key);
       // Closing the front tab falls back to the most recently opened one still there, not to the
       // first: the learner's attention was at the end of the strip, which is where they put it.
-      return { activeId: current.activeId === id ? (open[open.length - 1]?.id ?? null) : current.activeId, open };
+      return { activeId: current.activeId === key ? (open[open.length - 1]?.key ?? null) : current.activeId, open };
     });
   }, []);
 
-  const select = useCallback((id: string) => setDocs((current) => ({ ...current, activeId: id })), []);
+  const select = useCallback((key: string) => setDocs((current) => ({ ...current, activeId: key })), []);
   const closeAll = useCallback(() => setDocs({ activeId: null, open: [] }), []);
 
   const openPill = useCallback(
@@ -102,9 +152,42 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
     [openDocument, sources],
   );
 
+  const active = useMemo(
+    () => docs.open.find((entry) => entry.key === docs.activeId) ?? null,
+    [docs.activeId, docs.open],
+  );
+
+  /**
+   * The documents, for the reader that only knows about those.
+   *
+   * 🔴 EVERY OPEN DOCUMENT, WHATEVER IS IN FRONT. `SourcePreview` keeps each one mounted so that
+   * coming back to a PDF does not re-parse it, and that has to survive an output taking the front
+   * — otherwise opening a study guide would quietly throw away every lecture's scroll position and
+   * rendered pages, which is the cost the owner reported as *"it has to load each pdf
+   * continually"*.
+   */
+  const documents = useMemo(
+    () => docs.open.flatMap((entry) => (entry.kind === "document" ? [entry.source] : [])),
+    [docs.open],
+  );
+
   return useMemo(
-    () => ({ activeId: docs.activeId, closeAll, closeDocument, open: docs.open, openDocument, openPill, select }),
-    [closeAll, closeDocument, docs.activeId, docs.open, openDocument, openPill, select],
+    () => ({
+      active,
+      // Null while an output is in front: that is what stands the document panel down. See the
+      // field's own comment on `DocumentDock`.
+      activeId: active?.kind === "document" ? active.source.id : null,
+      activeKey: docs.activeId,
+      close,
+      closeAll,
+      items: docs.open,
+      open: documents,
+      openDocument,
+      openOutput,
+      openPill,
+      select,
+    }),
+    [active, close, closeAll, docs.activeId, docs.open, documents, openDocument, openOutput, openPill, select],
   );
 }
 

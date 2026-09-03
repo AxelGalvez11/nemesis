@@ -12,6 +12,10 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8");
+
+/** Source with comments stripped: the guards below assert ABSENCES, and the notes explaining each
+ *  removal necessarily quote the very shape being searched for. */
+const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//gu, " ").replace(/^\s*\/\/.*$/gmu, " ");
 const PANE = read("./source-preview.tsx");
 const BAR = readFileSync(new URL("../reader/reader-top-bar.tsx", import.meta.url), "utf8");
 const READER = readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8");
@@ -73,6 +77,36 @@ test("🔴 the pane's toolbar keeps only what acts on the FILE", () => {
   assert.match(BAR, /dense = false,/, "dense stopped defaulting off, which strips the full reader too");
 });
 
+
+test("🔴🔴 one sidebar: a document and an artifact are tabs in it, never two stacked panels", () => {
+  // Owner, 2026-09-03, with a screenshot of three panels overlapping on one edge: *"i dont want
+  // this, documents, lectures, and everything should open in one sidebar."*
+  //
+  // The cause was two pieces of state that knew nothing about each other — the open documents in
+  // `document-dock`, and `openedOutput` as a private `useState` in `SourcesControl`. Both panels
+  // docked at the same width through the same hook, so opening a study guide while a lecture was
+  // open put the second rectangle exactly on top of the first: two tab strips, two headers, two
+  // close buttons, one behind the other.
+  const controls = code(read("./canvas-controls.tsx"));
+  const dock = code(read("./document-dock.tsx"));
+
+  // 🔴 ONE LIST. If this state comes back, so does the second panel.
+  assert.doesNotMatch(controls, /useState<CanvasOutput \| null>/u, "the artifact is a private state again, so it cannot know a document is open");
+  assert.match(controls, /dock\.active\?\.kind === "output"/u, "the artifact in front no longer comes from the sidebar's own list");
+  assert.match(dock, /openOutput: \(output: CanvasOutput\) => void;/u, "the sidebar cannot hold an artifact");
+
+  // 🔴 AND ONE STRIP. Both bodies draw the same tabs from the same list, which is what makes it
+  // read as one sidebar rather than two that happen to be the same width.
+  for (const [name, source] of [["the document panel", read("./source-preview.tsx")], ["the artifact panel", read("./output-preview.tsx")]] as const) {
+    assert.match(code(source), /<DockTabs\b/u, `${name} draws a strip of its own again`);
+  }
+
+  // 🔴 ONLY ONE BODY IS EVER IN FRONT, and this is the clause that does it: the document panel
+  // renders nothing without an active DOCUMENT, so an artifact taking the front stands it down
+  // while its documents stay mounted behind.
+  assert.match(code(read("./document-dock.tsx")), /active\?\.kind === "document" \? active\.source\.id : null/u,
+    "the document panel no longer stands down when an artifact is in front");
+});
 
 test("🔴🔴 there is ONE document reader, and the citation chip opens it", () => {
   // 🔴 THERE WERE TWO, AND THE CHIP LED TO THE WORSE ONE. Owner, 2026-09-03: *"clicking on the

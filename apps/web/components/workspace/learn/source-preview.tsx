@@ -46,6 +46,8 @@ import type { ReaderSource } from "@/lib/reader/reader-source";
 import { cn } from "@/lib/utils";
 import { loadLibrarySource } from "@/lib/workspace/library-sources";
 
+import { DockTabs } from "./dock-tabs";
+import type { DockItem } from "./document-dock";
 import { CHROME } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
@@ -56,18 +58,36 @@ type PreviewState =
 
 export function SourcePreview({
   activeId,
+  activeKey,
+  items,
   onClose,
+  onCloseKey,
   onCloseTab,
   onSelect,
+  onSelectKey,
   onSendToChat,
   open,
   uid,
 }: {
-  /** Which open document is in front. Null closes the panel. */
+  /**
+   * Which open DOCUMENT is in front, or null.
+   *
+   * 🔴 NULL ALSO MEANS "AN ARTIFACT IS IN FRONT", AND THAT IS HOW ONE PANEL SHOWS AT A TIME. This
+   * component renders nothing without an active document, so the artifact panel taking the front
+   * stands it down while every open document stays mounted behind — see `DocumentDock.activeId`.
+   */
   activeId: string | null;
+  /** The whole sidebar's front tab, documents and artifacts alike. For the strip. */
+  activeKey: string | null;
+  /** Everything open in the sidebar, for the strip. A superset of `open`. */
+  items: readonly DockItem[];
   onClose: () => void;
+  /** Close any tab, by dock key. The strip's per-tab ✕. */
+  onCloseKey: (key: string) => void;
   onCloseTab: (id: string) => void;
   onSelect: (id: string) => void;
+  /** Bring any tab to the front, by dock key. The strip's press. */
+  onSelectKey: (key: string) => void;
   /**
    * Fires when the learner runs one of the reader's actions on a highlighted passage or a marked
    * area: the message it produced, and any material that exists nowhere else (the cut-out picture).
@@ -242,57 +262,10 @@ export function SourcePreview({
           so they pushed the one control that closes the panel off the right edge and out of reach.
           The strip scrolls inside its own box; the button is its sibling and never moves. */}
       <div className={CHROME.header}>
-        <div
-          className="flex min-w-0 flex-1 items-center gap-[2px] overflow-x-auto"
-          role="tablist"
-        >
-          {open.map((source) => {
-            const current = source.id === activeId;
-            const mark = fileMark(source.title, source.kind);
-            return (
-              <div
-                className={cn(
-                  "flex min-w-0 max-w-[220px] shrink-0 items-center gap-[6px] rounded-[8px] pl-[8px] pr-[4px] transition-colors",
-                  current
-                    ? "bg-(--ui-bg-tertiary)"
-                    : "hover:bg-(--ui-bg-tertiary)/60",
-                )}
-                key={source.id}
-              >
-                <button
-                  aria-selected={current}
-                  className="flex min-w-0 items-center gap-[6px] py-[7px]"
-                  onClick={() => onSelect(source.id)}
-                  role="tab"
-                  title={source.title}
-                  type="button"
-                >
-                  {/* 🔴 THE SAME MARK THE SHELF DRAWS. A tab strip of six documents was six
-                      identical page glyphs, and this is the surface where telling a deck from a
-                      spreadsheet at a glance matters most — the names truncate at 220px. See
-                      lib/learn/kind-mark.ts. */}
-                  <Codicon className="shrink-0" name={mark.icon} size="14px" style={{ color: `var(${mark.tint})` }} />
-                  <span
-                    className={cn(
-                      CHROME.crumb,
-                      current ? undefined : "text-(--ui-text-tertiary)",
-                    )}
-                  >
-                    {source.title}
-                  </span>
-                </button>
-                <button
-                  aria-label={`Close ${source.title}`}
-                  className="grid size-[20px] shrink-0 place-items-center rounded-[5px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary)"
-                  onClick={() => onCloseTab(source.id)}
-                  type="button"
-                >
-                  <Codicon name="close" size="12px" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        {/* 🔴 THE STRIP IS SHARED WITH THE ARTIFACT PANEL — see dock-tabs.tsx. It used to be
+            written out here over `open`, which is documents only, so an artifact could not appear
+            in it and got a panel of its own instead. */}
+        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
 
         <button
           aria-label="Close preview"

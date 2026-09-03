@@ -19,6 +19,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { DockTabs } from "./dock-tabs";
+import type { DockItem } from "./document-dock";
 import { CHROME } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
@@ -78,15 +80,36 @@ function biggerThan(opened: Mode): Mode {
 }
 
 export function OutputPreview({
+  activeKey = null,
   canvasId = "",
   initialMode = "docked",
+  items,
   onAsk,
   onClose,
+  onCloseKey,
+  onSelectKey,
   output,
   comments,
   onRevise,
   onUndo,
 }: {
+  /**
+   * The sidebar's tabs, when this panel is docked in one.
+   *
+   * 🔴🔴 IT DRAWS THE SAME STRIP THE DOCUMENT PANEL DRAWS (owner, 2026-09-03: *"documents,
+   * lectures, and everything should open in one sidebar"*). This header used to carry a breadcrumb
+   * of ONE title, so an artifact opened beside an open lecture appeared as a second panel stacked
+   * over the first, each certain it owned that edge of the screen. With the strip they are one
+   * sidebar with one row of tabs, whichever body is in front.
+   *
+   * 🔴 ABSENT IN FULL SCREEN AND FROM THE LIBRARY, WHICH IS NOT AN OVERSIGHT. Full screen has no
+   * sidebar to be a tab of, and the Library opens an artifact on its own; both keep the breadcrumb,
+   * which is the right title for a surface that is showing exactly one thing.
+   */
+  items?: readonly DockItem[];
+  activeKey?: string | null;
+  onCloseKey?: (key: string) => void;
+  onSelectKey?: (key: string) => void;
   /** Needed only by a deck, whose full-page view is addressed by canvas. */
   canvasId?: string;
   /**
@@ -462,11 +485,15 @@ export function OutputPreview({
             <Codicon name="close" size={CHROME.icon} />
           </button>
         )}
-        <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={output.title}>
-          {/* "Library / name" — the same two-part crumb, with the prefix muted. */}
-          <span className="text-(--ui-text-quaternary)">Library&nbsp;/&nbsp;</span>
-          {output.title}
-        </span>
+        {items && items.length > 0 && onSelectKey && onCloseKey && !full ? (
+          <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+        ) : (
+          <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={output.title}>
+            {/* "Library / name" — the same two-part crumb, with the prefix muted. */}
+            <span className="text-(--ui-text-quaternary)">Library&nbsp;/&nbsp;</span>
+            {output.title}
+          </span>
+        )}
         {canComment && (
           <button
             aria-label={commenting ? "Stop commenting" : "Comment on this document"}
