@@ -40,8 +40,19 @@ export const THIN_PAGE_CHARS = 120;
  * Most pages of one document sent to be read. A bound on spend and on how long an
  * import can take, NOT a judgement that the rest do not matter — whatever it
  * excludes is counted and reported, never dropped in silence.
+ *
+ * 🔴🔴 IT WAS 40, AND IT WAS THE LAST UNPRICED CEILING. `MAX_FIGURES_PER_DOC` was raised from 40
+ * to 120 on 2026-09-01 for a reason recorded in `vision-budget.ts` and true word for word of this
+ * constant: a second, tighter, UNPRICED ceiling below the priced one "does not save money the
+ * ledger was not already going to save; it only decides, silently and on one lane, which content
+ * is lost first." `DEFAULT_DOCUMENT_UNIT_CAP` (120 units, every lane, every attempt) still bounds
+ * the spend, and it is the one that should.
+ *
+ * The forcing case, measured 2026-09-03: the owner's 83-slide asthma lecture has 30 thin slides
+ * AND 22 more whose diagrams are shattered into fragments — 52 slides worth reading against a
+ * ceiling of 40. At 40 the fragmented ones lose, every time, because thin pages sort first.
  */
-export const MAX_VISION_PAGES = 40;
+export const MAX_VISION_PAGES = 120;
 
 /** Pages per request. Small enough that one failure costs a few pages, not a
  *  lecture. */
@@ -62,10 +73,20 @@ export function pageTextLength(text: string): number {
  * a page dropped to the cap is not "read from its text layer", and counting it as
  * one would turn the cap into exactly the silent loss it exists to bound. PURE.
  */
-export function thinPages(perPageText: readonly string[], threshold = THIN_PAGE_CHARS): number[] {
+export function thinPages(
+  perPageText: readonly string[],
+  threshold = THIN_PAGE_CHARS,
+  alsoRead: readonly number[] = [],
+): number[] {
+  // 🔴 THIN TEXT IS NO LONGER THE ONLY REASON TO LOOK AT A PAGE, and this file's own header said
+  // so years before the router did: "Describing strips is worthless. The page is the only unit
+  // that is always the thing a human would look at." A slide whose diagram is shattered into
+  // fragments needs exactly that treatment, and it does not stop needing it because the slide also
+  // has a title and four bullets. `fragmentedUnits` in figure-routing.ts names them.
+  const extra = new Set(alsoRead.filter((index) => index >= 0 && index < perPageText.length));
   return perPageText
     .map((text, index) => ({ index, length: pageTextLength(text) }))
-    .filter((page) => page.length < threshold)
+    .filter((page) => page.length < threshold || extra.has(page.index))
     .map((page) => page.index);
 }
 
@@ -78,11 +99,18 @@ export function unreadPages(
   perPageText: readonly string[],
   max = MAX_VISION_PAGES,
   threshold = THIN_PAGE_CHARS,
+  alsoRead: readonly number[] = [],
 ): number[] {
-  const thin = thinPages(perPageText, threshold);
-  if (thin.length <= max) return thin;
-  return thin
-    .map((index) => ({ index, length: pageTextLength(perPageText[index] ?? "") }))
+  const wanted = thinPages(perPageText, threshold, alsoRead);
+  if (wanted.length <= max) return wanted;
+  // 🔴 A FRAGMENTED PAGE SORTS WITH THE THINNEST, NOT WITH ITS OWN CHARACTER COUNT. The tiebreak
+  // above is "least text first", and a shattered diagram sits on a slide with a title and bullets
+  // — so on raw length it sorts LAST and is the first thing dropped, which is precisely the
+  // outcome this change exists to end. Its readable content is in the picture; by the measure that
+  // matters it has none.
+  const forced = new Set(alsoRead);
+  return wanted
+    .map((index) => ({ index, length: forced.has(index) ? 0 : pageTextLength(perPageText[index] ?? "") }))
     .sort((a, b) => a.length - b.length || a.index - b.index)
     .slice(0, max)
     .map((page) => page.index)
@@ -112,11 +140,12 @@ export function planPdfRead(
   perPageText: readonly string[],
   max = MAX_VISION_PAGES,
   threshold = THIN_PAGE_CHARS,
+  alsoRead: readonly number[] = [],
 ): PdfPlan {
-  const thin = thinPages(perPageText, threshold);
-  if (thin.length === 0) return { kind: "text" };
-  if (thin.length === perPageText.length) return { kind: "whole" };
-  return { kind: "pages", needed: unreadPages(perPageText, max, threshold) };
+  const wanted = thinPages(perPageText, threshold, alsoRead);
+  if (wanted.length === 0) return { kind: "text" };
+  if (wanted.length === perPageText.length) return { kind: "whole" };
+  return { kind: "pages", needed: unreadPages(perPageText, max, threshold, alsoRead) };
 }
 
 /** The marker the model is asked to put before each page's transcript. */

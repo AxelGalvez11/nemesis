@@ -81,6 +81,64 @@ export const THIN_UNIT_CHARS = 120;
  */
 export const MAX_FIGURES_PER_DOC = 120;
 
+/**
+ * Fewest figure blocks on one unit before it is read as a SHATTERED DRAWING rather than as a
+ * gallery of pictures.
+ *
+ * A real slide holds one diagram, sometimes two, and a photo. Six discrete "figures" on one unit
+ * is not six pictures; it is one picture the exporter took apart.
+ */
+export const FRAGMENTED_UNIT_FIGURES = 6;
+
+/**
+ * Units whose figures are FRAGMENTS OF ONE DRAWING, and which therefore have to be read whole.
+ *
+ * 🔴🔴🔴 THE ANSWER IS ALREADY WRITTEN AT THE TOP OF `pages.ts` AND THE ROUTER NEVER APPLIED IT:
+ * *"most of these decks hold their diagrams as vector operators, and where there are bitmaps they
+ * are often one figure sliced into strips… Describing strips is worthless. The page is the only
+ * unit that is always the thing a human would look at."* That file then sends a page to vision on
+ * ONE condition — its text is thin — so the moment a slide has a title and some bullets, its
+ * shattered diagram goes to the figure lane instead, where every shard is individually too small
+ * to be worth a call.
+ *
+ * 🔴 MEASURED ON THE OWNER'S OWN LECTURE, 2026-09-03 (`9a6523fa`, 83 slides). The parse recorded
+ * **846 "figures"** — 10.2 a slide, which no lecture has. Slide 36 alone has **57**, beside 1,159
+ * characters of text. Not one of them was described. Neither were slides 33, 34 or 55. The
+ * diagrams on the slides a student most needs reached the model as the slide's bullet points and
+ * nothing else, while the product reported "255 pictures were not read" as though the loss were
+ * decorative.
+ *
+ * Across 30 days of production: 41 of 1,626 units match this predicate (2.5%), **31 of them are
+ * text-rich** so today's rule never sends them, and **27 had nothing read at all**.
+ *
+ * 🔴 WHY BOTH CLAUSES. The count alone would catch a genuine photo gallery — six real pictures on
+ * a contact sheet, each worth its own call. Requiring most of them to be BELOW the worth-looking
+ * line is what distinguishes shards from pictures: a drawing broken into pieces is many small
+ * boxes, and a gallery is a few large ones.
+ *
+ * PURE. Returns 0-based unit indices, ascending.
+ */
+export function fragmentedUnits(
+  model: DocumentModel,
+  options: { minFigures?: number; smallArea?: number } = {},
+): number[] {
+  const minFigures = options.minFigures ?? FRAGMENTED_UNIT_FIGURES;
+  const smallArea = options.smallArea ?? WORTH_LOOKING_AREA;
+  const total = new Map<number, number>();
+  const small = new Map<number, number>();
+  for (const block of model.blocks) {
+    if (block.kind !== "figure") continue;
+    total.set(block.unit, (total.get(block.unit) ?? 0) + 1);
+    const area = block.rect ? block.rect.width * block.rect.height : 0;
+    if (area < smallArea) small.set(block.unit, (small.get(block.unit) ?? 0) + 1);
+  }
+  const out: number[] = [];
+  for (const [unit, count] of total) {
+    if (count >= minFigures && (small.get(unit) ?? 0) > count / 2) out.push(unit);
+  }
+  return out.sort((a, b) => a - b);
+}
+
 export interface FigureCandidate {
   /** Index into `model.blocks`, so a description can be written back exactly. */
   blockIndex: number;

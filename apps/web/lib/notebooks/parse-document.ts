@@ -66,7 +66,8 @@ import { lookAtFigures, type FigureLookResult } from "@/lib/pdf/figure-look";
 import { matchFigureImages, withFigureRefs } from "@/lib/pdf/figure-match";
 
 import { vendorFigurePixels, withVendorPixels } from "./vendor-figure-pixels";
-import { finishPdfPages, planPdfRead, thinPages, unreadPages } from "@/lib/pdf/pages";
+import { finishPdfPages, MAX_VISION_PAGES, planPdfRead, THIN_PAGE_CHARS, thinPages, unreadPages } from "@/lib/pdf/pages";
+import { fragmentedUnits } from "@/lib/pdf/figure-routing";
 import type { FigureLabel } from "@/lib/learn/figure-labels";
 import { describeFiguresWithVision, readFiguresWithVision, readPdfPagesWithVision, readPdfWithVision } from "@/lib/pdf/vision";
 import { PHOTO_PROMPT, readWithVision, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/gemini";
@@ -1319,7 +1320,14 @@ async function parsePdf(
   let title = r.meta.title;
   let readBy: string | undefined;
 
-  const plan = planPdfRead(r.pageTexts);
+  // 🔴 A SLIDE WHOSE DIAGRAM IS IN PIECES IS READ WHOLE, EVEN THOUGH IT HAS WORDS ON IT. Thin text
+  // was the only reason a page was ever looked at, so a lecture slide with a title, four bullets
+  // and a pathway diagram shattered into 57 vector fragments went to the figure lane instead —
+  // where every shard is individually too small to be worth a call, and nothing was read at all.
+  // Measured on the owner's own lecture: 22 of 83 slides in exactly that state. See
+  // `fragmentedUnits`.
+  const shattered = model ? fragmentedUnits(model) : [];
+  const plan = planPdfRead(r.pageTexts, MAX_VISION_PAGES, THIN_PAGE_CHARS, shattered);
   // The uncapped length, so a cut is reported as an amount rather than a
   // boolean. `pageTexts` keeps every page, so this is the only place the
   // original size is still knowable.
@@ -1342,8 +1350,11 @@ async function parsePdf(
     }
   }
   if (plan.kind !== "text" && !readBy) {
-    const thin = thinPages(r.pageTexts);
-    const needed = plan.kind === "pages" ? plan.needed : unreadPages(r.pageTexts);
+    // Both calls carry `shattered` too, or `finishPdfPages` would fold a transcript back onto a
+    // page it does not believe was ever sent, and the fallback would re-select without it.
+    const thin = thinPages(r.pageTexts, THIN_PAGE_CHARS, shattered);
+    const needed =
+      plan.kind === "pages" ? plan.needed : unreadPages(r.pageTexts, MAX_VISION_PAGES, THIN_PAGE_CHARS, shattered);
     const seen = await readPdfPagesWithVision(bytes, needed);
     const read = finishPdfPages(r.pageTexts, seen, thin, TEXT_CAP);
     if (seen.size > 0) {
