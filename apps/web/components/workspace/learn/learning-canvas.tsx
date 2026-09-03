@@ -1066,9 +1066,6 @@ export function LearningCanvas({
    * owner's own canvas: five markers, four anchors, and the fifth one blanked the page.
    */
   const [currentMomentId, setCurrentMomentId] = useState<string | null>(null);
-  /** The files sent with the turn the live region is showing, drawn above the learner's own words
-   *  exactly as a filed turn draws them. See `committedTitles`. */
-  const [currentAttached, setCurrentAttached] = useState<readonly string[]>([]);
   /**
    * What is on screen right now, mirrored where `converse` can read it without going stale.
    *
@@ -1154,7 +1151,6 @@ export function LearningCanvas({
       onScreen.current = { aside: null, attached: attachedNow, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
       setCurrentSaid(trimmed);
       setCurrentSaidVia(spokenNow);
-      setCurrentAttached(attachedNow);
       setCurrentMomentId(null);
       // Owner picked option A from the mockup: the prompt goes to the top and stays there.
       setSendSeq((n) => n + 1);
@@ -2014,10 +2010,6 @@ export function LearningCanvas({
     const held = liveShowsLast ? restored.at(-1) : null;
     setCurrentSaid(held?.said ?? null);
     setCurrentSaidVia(held?.saidVia ?? null);
-    // 🔴 AND WHAT IT WAS SENT WITH. A restored turn carries its own `attached`; the held-back one
-    // is drawn by the live region instead of the thread, so it has to be handed them here or the
-    // newest exchange is the one exchange whose documents are invisible.
-    setCurrentAttached(held?.attached ?? []);
     // 🔴🔴 AND ITS MOMENT ID COMES WITH IT, WHICH IS THE HALF THAT WAS MISSING. Held back from the
     // thread, this exchange has no `[data-thread-turn]` of its own — so its marker, the newest one
     // on the rail and the one a learner is most likely to press, resolved to nothing and rewound.
@@ -2887,21 +2879,10 @@ export function LearningCanvas({
             marking only that one was a bug I shipped and caught on film: the selector matched
             nothing on the way in and the sentence appeared at its destination instead of
             travelling to it. Same warning as `#canvas-composer` carries in canvas-composer.tsx. */}
-        {/* 🔴🔴 THE FILES THIS TURN WAS SENT WITH, NAMED WHERE A CHAT NAMES THEM. `canvas-thread-turn.tsx`
-            has always drawn these for a filed turn; the live region drew nothing, so pressing send
-            made seven lectures disappear and left only the sentence. Owner, 2026-09-03: *"it only
-            saved like the chat prompt… I need it to behave like a regular chat."* Same list, same
-            type scale and same colour as the filed turn's, so the newest exchange does not look
-            like a different kind of thing from the one above it. */}
-        {threadOpen && currentAttached.length > 0 && (
-          <ul className="mx-auto mb-2 w-full max-w-(--canvas-column) space-y-1 px-6 text-right">
-            {currentAttached.map((title) => (
-              <li className="text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)" key={title}>
-                {title}
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* 🪦 THE LIVE TURN NAMED ITS FILES HERE FOR ABOUT AN HOUR (see the tombstone in
+            canvas-thread-turn.tsx). Owner cut both lists the same afternoon. `attachedNow` still
+            rides the filed turn, because THAT was the defect; printing it was the part he never
+            asked for. */}
         {threadOpen && currentSaid?.trim() && (
           <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
             {/* 🔴 EDITING RE-ASKS, IT DOES NOT REWRITE HISTORY. `retryTurn` is `converse`, the one

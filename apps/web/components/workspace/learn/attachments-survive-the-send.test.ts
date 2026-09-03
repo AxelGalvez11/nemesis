@@ -42,12 +42,19 @@ test("🔴🔴 pressing send does not erase what was attached to it", () => {
   assert.match(CANVAS, /const attachedNow = committedTitles\.current;\s*committedTitles\.current = \[\];/, "the committed titles are no longer taken single-use");
 });
 
-test("🔴 the live turn NAMES its files, the way a filed turn already did", () => {
-  // `canvas-thread-turn.tsx` has drawn `turn.attached` as a list since the thread existed. The
-  // live region drew nothing, so the newest exchange — the one on screen — was the only one whose
-  // documents were invisible.
-  assert.match(CANVAS, /threadOpen && currentAttached\.length > 0 && \(/, "the live turn stopped naming its files");
-  assert.match(CANVAS, /setCurrentAttached\(held\?\.attached \?\? \[\]\)/, "a reopened canvas does not name the newest turn's files");
+test("🪦 no turn PRINTS its file names — the owner cut that the same afternoon", () => {
+  // 🔴 THIS TEST IS THE REVERSAL, NOT A RELAXATION. The two assertions it replaces required the
+  // live region to draw `currentAttached`, and the owner asked for the opposite within the hour:
+  // *"it shows the names of the PowerPoints or the documents that were dropped in. I don't need
+  // that there … it's always showing that."* On his canvases that list is seven lines above every
+  // question, which is most of the screen.
+  //
+  // What must NOT come back is the printing. What must survive is everything below: the turn is
+  // still FILED with its attachments, and they are still in the sources panel and the reading
+  // pane. Deleting the whole feature would have taken the fix out with the list.
+  const THREAD = strip(read("./canvas-thread-turn.tsx"));
+  assert.ok(!/turn\.attached\.map/.test(THREAD), "a filed turn is printing its file names again");
+  assert.ok(!/currentAttached/.test(CANVAS), "the live turn is printing its file names again");
 });
 
 test("🔴🔴🔴 two different files are not 'the same moment recorded twice'", () => {

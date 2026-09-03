@@ -23,6 +23,7 @@ import type { LearningCanvas } from "@/lib/learn/canvas-model";
 
 import { CanvasAudioBar } from "./canvas-audio-bar";
 import { SourcesControl } from "./canvas-controls";
+import { useDocumentDock } from "./document-dock";
 import { CourseMapControl } from "./course-map";
 import type { TranscriptEntry } from "@/lib/learn/session-transcript";
 import type { PolicyRuntime } from "./use-policy-runtime";
@@ -95,23 +96,23 @@ export function CanvasHeader({
 }: CanvasHeaderProps) {
   return (
     <>
-      {/* Navigational context, not the page's heading — the lesson supplies its own hierarchy
-          and a second large title on the same screen competes with it.
-          🔴 Stays `pointer-events-none` (inherited). It is `flex-1`, so making it clickable
-          turned a full-width strip of dead label into a click trap: the document scrolls
-          underneath it, and selecting the top line of text hit the title instead. */}
-      {/* 🔴🔴 ALWAYS SHOWN NOW — owner call, 2026-08-19: "why do the icons on the right disappear?".
-          This whole row used to be withheld while a question was on screen (`minimal`), on the
-          reasoning that a fast recall is answered in about a second, so every glyph visible is read
-          BEFORE the answer forms and the canvas's own name teaches nothing. That reasoning is sound
-          and the effect was not: chrome that comes and goes reads as the page breaking, and the
-          reference the canvas is being matched to keeps its chrome constant through everything.
-          🔴 THE TITLE CAME BACK WITH THE ICONS, deliberately and not as a side effect — `minimal`
-          gated both, and a row that keeps its controls but loses its name is a third state nobody
-          asked for. */}
-      <span className="min-w-0 flex-1 truncate text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
-        {canvas.title || "New canvas"}
-      </span>
+      {/* 🪦 THE CANVAS'S NAME WAS HERE, AND IT IS GONE — owner, 2026-09-03: *"remove the name of the
+          chat, the title of the chat, that's up there on the top left … so that we can mostly just
+          have more space for the chats … remove that top block header because that's taken away
+          from the reading of the chat."*
+
+          It had been argued for twice (2026-08-19, "chrome that comes and goes reads as the page
+          breaking") and both arguments were about CONSISTENCY, not about the label earning its
+          pixels. It never did: the name is already on the row in the sidebar the learner clicked to
+          get here, and repeating it above the conversation is the one line on this screen that
+          teaches nothing. The row keeps its constancy — what stands in the corner now is a door,
+          not a caption.
+
+          🔴 THE SLOT ITSELF STAYS `flex-1`. Without it the controls on the right stop being on the
+          right. */}
+      <div className="flex min-w-0 flex-1 items-center">
+        <ReaderToggle sources={canvas.sources} />
+      </div>
 
       {/* §1: compact controls, floating. Not a toolbar — see the note at the top of
           canvas-controls.tsx for what that costs when it slips.
@@ -186,5 +187,46 @@ export function CanvasHeader({
               canvas-controls.tsx says exactly what to restore. */}
       </div>
     </>
+  );
+}
+
+/**
+ * The door to the reading pane, in the corner the canvas's name used to occupy.
+ *
+ * 🔴🔴 IT ONLY EXISTS WHEN THERE IS SOMETHING BEHIND IT. Owner, 2026-09-03: *"when the sidebar
+ * panel is able to be viewed the chat should also show a sidebar icon on the top left if there is
+ * a sidebar that can be opened."* A canvas with no documents has no pane to open, so it shows a
+ * bare corner — the same rule every other glyph on this row already follows.
+ *
+ * 🔴 CLOSING PUTS THE TABS ASIDE RATHER THAN DISCARDING THEM (`canReopen` / `reopen` in
+ * document-dock.tsx), so glancing the pane away and back returns to the same document at the same
+ * place. Reopening the FIRST source every time would silently punish anyone reading lecture nine.
+ */
+function ReaderToggle({ sources }: { sources: LearningCanvas["sources"] }) {
+  const dock = useDocumentDock();
+  const open = dock.items.length > 0;
+  const first = sources[0] ?? null;
+  // Nothing open, nothing set aside, and no documents at all: there is no pane to talk about.
+  if (!open && !dock.canReopen && !first) return null;
+
+  return (
+    <button
+      aria-label={open ? "Close the reading pane" : "Open the reading pane"}
+      aria-pressed={open}
+      className="pointer-events-auto grid size-[36px] shrink-0 place-items-center rounded-lg text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-hover) hover:text-(--ui-text-primary)"
+      data-testid="canvas-reader-toggle"
+      onClick={() => {
+        if (open) dock.closeAll();
+        else if (dock.canReopen) dock.reopen();
+        // 🔴 THE FIRST TIME, THERE IS NOTHING TO PUT BACK. The door still has to open something,
+        // and the first attached document is the only defensible choice before the learner has
+        // expressed one.
+        else if (first) dock.openDocument(first);
+      }}
+      title={open ? "Close the reading pane" : "Open the reading pane"}
+      type="button"
+    >
+      <Codicon name="layout-sidebar-right" size="1.25rem" />
+    </button>
   );
 }
