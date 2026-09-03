@@ -45,11 +45,20 @@ const FROZEN: Record<string, { blocks: number; hash: string; order: string; unit
     units: 4,
   },
   pptx: {
-    blocks: 14,
-    hash: "722af0d403092535",
+    // 🔴 REGENERATED 2026-09-03, ON PURPOSE, BECAUSE THE SAMPLE DECK ITSELF CHANGED. These numbers
+    // are frozen against `public/reader-sample.pptx`, which was rebuilt by
+    // `scripts/make-deck-fixture.mts` so that it carries the geometry a real deck carries — the
+    // hand-written version had none, so the reader preview could only ever show the fallback
+    // layout. Different slides, therefore different text: 14 blocks became 16 and the hash moved.
+    // 🔴 WHAT DID NOT MOVE IS THE PROPERTY THIS FILE GUARDS. Still three units, still one heading
+    // per slide followed by that slide's own lines, still contiguous and in presentation order. A
+    // reordering regression would show up here exactly as before.
+    blocks: 16,
+    hash: "09cf65501824230e",
     order:
-      "0:heading 0:paragraph 0:paragraph 0:paragraph 0:paragraph 1:heading 1:paragraph 1:paragraph 1:paragraph " +
-      "2:heading 2:paragraph 2:paragraph 2:paragraph 2:paragraph",
+      "0:heading 0:paragraph 0:paragraph 0:paragraph 0:paragraph 0:paragraph " +
+      "1:heading 1:paragraph 1:paragraph 1:paragraph 1:paragraph 1:paragraph " +
+      "2:heading 2:paragraph 2:paragraph 2:paragraph",
     units: 3,
   },
 };
