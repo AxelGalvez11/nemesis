@@ -2250,8 +2250,24 @@ export function LearningCanvas({
           {/* 🔴 EXCEPT WHEN THE ONE READ FAILED — then the sentence is the whole point. The loader
               sets `session.error` instead of leaving this screen to stand for ever (owner report,
               2026-08-23), and a failure with no words here would be exactly that stand. */}
+          {/* 🔴🔴 POSITIONED LIKE THE CAPTION BESIDE IT, BECAUSE CENTRED IT WAS UNREADABLE. This was
+              an ordinary flex child, so it landed dead centre — the same place `CharacterDock
+              station="centre"` stands — and the character was drawn straight over the words. Seen
+              on screen 2026-09-02, the first time this branch became reachable in the ordinary way
+              (a chat that will not open now stops here instead of minting a blank canvas): the
+              sentence ran THROUGH the mascot's face. `CanvasThinking` is the only other thing that
+              ever renders in this slot and it solved this by sitting at the foot of the page; this
+              takes the same offset so the two are one treatment rather than two. */}
           {session.error
-            ? <p className="max-w-sm px-6 text-center text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">{session.error}</p>
+            ? (
+              <p
+                aria-live="polite"
+                className="pointer-events-none absolute inset-x-0 bottom-[104px] z-20 mx-auto max-w-sm px-6 text-center text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)"
+                role="status"
+              >
+                {session.error}
+              </p>
+            )
             : policy.thinking && policy.phase && <CanvasThinking phase={policy.phase} />}
         </div>
       </CanvasSurface>
