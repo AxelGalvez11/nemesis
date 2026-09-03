@@ -78,3 +78,40 @@ test("semantic results outrank a lexical-only match", () => {
   );
   assert.deepEqual(merged.map((h) => h.path), ["a.md", "z.md"]);
 });
+
+// 🔴🔴🔴 THE BIGGEST GAP THIS TOOL HAD, AND IT WAS INVISIBLE FROM THE OUTSIDE. `make_practice_test`
+// resolved its material out of `study_decks`, `readable_library_documents` and previously missed
+// questions — three tables that hold what NEMESIS wrote. It never once read `library_sources` or
+// `library_chunks`, which is where the learner's own uploaded lectures live and where they have
+// been chunked and embedded since the day they were parsed. So "test me on the lecture I just
+// uploaded" answered `Nothing is named "..."`, and the only route to a paper on your own material
+// was to make flashcards from it first and then ask for a test on the deck.
+//
+// Read from the source because `materialForTestSource` is not exported and every arm of it is a
+// Supabase call: there is no behaviour to observe here, only a table that is either read or not.
+test("🔴 a practice test is built from the student's own uploaded documents", () => {
+  const source = readFileSync(new URL("./agent-tools.ts", import.meta.url), "utf8");
+  assert.match(source, /from\("library_chunks"\)/, "the paper no longer reads the uploaded documents' passages");
+  assert.match(source, /from\("library_sources"\)[\s\S]{0,400}parsed_document_id/, "the uploaded documents are no longer resolved by name");
+  // A row with no parsed document has no passages. Building from it would be building from a
+  // file name, which is the fabrication this whole change exists to prevent.
+  assert.match(source, /if \(!parsedDocumentId \|\| seen\.has\(parsedDocumentId\)\) continue;/, "an unparsed upload can reach the examiner again");
+  // "everything" spans the uploads too, or a learner whose whole account is lectures is told
+  // there is nothing to build from while holding thousands of indexed passages.
+  assert.match(source, /for \(const document of \(await uploadedDocuments\(\)\)\.slice\(0, MAX_MIXED_DOCUMENTS\)\)/, "the mixed review stopped spanning the uploads");
+});
+
+// The schema description rides EVERY turn, so it outranks anything the reply-side prompt asks
+// for. A model that is not told uploads are a source will not pass one, however well the
+// executor resolves it.
+test("🔴 the tool's own schema says an uploaded document is a source", () => {
+  const tool = AGENT_TOOLS.find((entry) => entry.function.name === "make_practice_test");
+  assert.ok(tool, "make_practice_test is missing from AGENT_TOOLS");
+  const properties = tool.function.parameters.properties as Record<string, { description?: string }>;
+  assert.match(String(properties.source?.description), /uploaded document/i, "the source parameter no longer offers an upload");
+  assert.match(tool.function.description, /uploaded documents/i, "the tool description no longer offers an upload");
+  // Narrowing is OFFERED, never assumed: an exam covers the whole source, and a topic silently
+  // applied to every paper would quietly turn every test into a test of one section.
+  assert.ok(properties.topic, "the narrowing parameter is gone");
+  assert.match(String(properties.topic?.description), /narrower/i, "topic no longer says it is the narrowing case");
+});

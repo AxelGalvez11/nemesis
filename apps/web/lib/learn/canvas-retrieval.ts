@@ -93,9 +93,29 @@ export async function retrieveChunks(
   query: string,
   limit: number = TURN_CHUNKS,
 ): Promise<RetrievedChunk[] | null> {
+  const documentIds = await canvasDocumentIds(sources);
+  return await retrieveInDocuments(documentIds, query, limit);
+}
+
+/**
+ * The same retrieval, addressed by PARSED DOCUMENT ID instead of by canvas.
+ *
+ * 🔴🔴 THE INDEX BELONGS TO THE LEARNER, NOT TO THE CANVAS. Every surface that wants the
+ * passages of a learner's own material bearing on a question needs exactly this, and only one
+ * of them happens to hold `CanvasSource[]`: the practice-test writer resolves a document by
+ * name straight out of the Library and never sees a canvas at all. Splitting the id lookup off
+ * is what lets it reuse the retrieval rather than grow a second, drifting copy of the embed
+ * call and the match RPC.
+ *
+ * Same contract as `retrieveChunks`: null for every problem, never a throw.
+ */
+export async function retrieveInDocuments(
+  documentIds: readonly string[],
+  query: string,
+  limit: number = TURN_CHUNKS,
+): Promise<RetrievedChunk[] | null> {
   const asked = query.trim();
   if (!asked) return null;
-  const documentIds = await canvasDocumentIds(sources);
   if (documentIds.length === 0) return null;
 
   // 🔴 THE SAME EMBEDDER THAT PRODUCED THE STORED VECTORS, reached the same way. Two clients drift,
@@ -108,7 +128,7 @@ export async function retrieveChunks(
   const matched = await supabase.rpc("match_canvas_chunks", {
     match_count: limit,
     match_threshold: MATCH_THRESHOLD,
-    parsed_document_ids: documentIds,
+    parsed_document_ids: [...documentIds],
     query_embedding: embedding,
   });
   if (matched.error || !Array.isArray(matched.data) || matched.data.length === 0) return null;

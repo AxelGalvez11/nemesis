@@ -10,6 +10,7 @@ import {
   hardenedMaterial,
   missedFacts,
   missedQuestionCards,
+  lectureMaterial,
   mixedReviewMaterial,
   normalisedAnswer,
   outlineToMermaidMindmap,
@@ -169,6 +170,59 @@ test("🔴 under the material cap, the sources get truncated — never the re-as
   const material = mixedReviewMaterial([huge, huge], [{ answer: "A", q: "Q?" }]);
   assert.ok(material.text.includes("Previously missed:"));
   assert.ok(material.text.includes("Q? — correct answer: A"));
+});
+
+// 🔴🔴 THE LABEL PROMISED A MIXED REVIEW AND THE TEXT DELIVERED ONE SOURCE. Each part used to be
+// sliced against whatever the earlier parts had left, so the first one was free to spend the whole
+// budget and every later one arrived empty — no error, no warning, a paper titled "mixed review
+// across 9 sources" written from one of them. One long uploaded lecture starved every deck behind
+// it, which is exactly the shape that appears the moment uploads join this list.
+test("🔴 no single source can eat the whole mixed-review budget", () => {
+  const parts = ["first", "second", "third"].map((name) => ({ label: `note "${name}"`, text: "x".repeat(1_000_000) }));
+  const material = mixedReviewMaterial(parts, []);
+  for (const part of parts) {
+    assert.ok(material.text.includes(part.label), `${part.label} was starved out of the material`);
+  }
+  assert.ok(material.text.length <= 9_000, "the fair share stopped honouring the cap");
+});
+
+// 🔴🔴 A LECTURE IS LONGER THAN THE BUDGET, SO THE ONLY QUESTION IS WHICH PART SURVIVES. Truncating
+// at the head hands the examiner a title page and a list of learning objectives and calls it the
+// lecture: every question then comes from the opening slides, and a learner revising the whole deck
+// is tested on its first third. Sampling at an even stride is the fix, and it must reach the END.
+test("🔴 an uploaded document past the cap is sampled end to end, never cut at its head", () => {
+  const passages = Array.from({ length: 300 }, (_, index) => ({
+    chunkIndex: index,
+    content: `Passage ${index}. ${"y".repeat(90)}`,
+  }));
+  const material = lectureMaterial("Whole lecture", passages);
+  const seen = [...material.text.matchAll(/Passage (\d+)\./g)].map((hit) => Number(hit[1]));
+  assert.ok(seen.length > 1, "nothing was selected at all");
+  assert.equal(Math.min(...seen), 0, "the document's opening was dropped");
+  assert.ok(Math.max(...seen) >= 250, `the sample stopped at passage ${Math.max(...seen)} of 299 — that is head truncation`);
+  assert.ok(material.text.length <= 9_000, "the sample ran past the material budget");
+  // The label is the sentence the examiner reads. A model told it holds a whole lecture will
+  // write "this lecture covers" questions about a lecture it has seen a fraction of.
+  assert.match(material.label, /sampled evenly across the whole document/, "the material lies about being complete");
+});
+
+test("a document that fits is handed over whole, and says so", () => {
+  const passages = [0, 1, 2].map((index) => ({ chunkIndex: index, content: `Passage ${index}. ${"y".repeat(90)}` }));
+  const material = lectureMaterial("Short handout", passages);
+  assert.equal(material.label, 'uploaded document "Short handout"');
+  for (const passage of passages) assert.ok(material.text.includes(passage.content), "a passage was dropped from a document that fits");
+});
+
+// A slide title on its own, a caption stub, the parser's placeholder for a picture it could not
+// read: each is a row in the index and none is a fact worth a question. Stated as a LENGTH so it
+// holds for a statute, a lab manual and a grammar chapter alike.
+test("passages too short to carry a fact are left out", () => {
+  const material = lectureMaterial("Slides", [
+    { chunkIndex: 0, content: "[Figure — not examined]" },
+    { chunkIndex: 1, content: `A real passage with something to ask about. ${"y".repeat(60)}` },
+  ]);
+  assert.ok(!material.text.includes("not examined"), "a placeholder row became material");
+  assert.ok(material.text.includes("A real passage"), "the real passage went with it");
 });
 
 test("an aced paper's facts become material for a harder one, typed answers included", () => {

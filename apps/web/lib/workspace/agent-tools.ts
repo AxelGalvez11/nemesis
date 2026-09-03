@@ -21,6 +21,7 @@ import {
   type PendingDelete,
 } from "@nemesis/shared";
 import { EXAM_ITEM_RULES_SHORT } from "./item-writing";
+import { retrieveInDocuments } from "@/lib/learn/canvas-retrieval";
 import { figureAssetUrl } from "@/lib/learn/figure-asset-url";
 import { supabase } from "@/lib/supabase";
 import { refreshStudyAfterExternalWrite, type CreateArtifactInput, type StudyArtifact } from "@/lib/workspace/study-cloud-store";
@@ -43,6 +44,7 @@ import { writeLibraryNote } from "./library-write";
 import {
   bestAttempt,
   deckMaterial,
+  lectureMaterial,
   missedFacts,
   mixedReviewMaterial,
   MISS_KIND_LABEL,
@@ -50,6 +52,7 @@ import {
   parseGeneratedMindmap,
   parseMindmapContent,
   parseTestContent,
+  type LecturePassage,
   type StudyMaterial,
 } from "./study-artifact-content";
 import { generateStudyArtifact } from "./study-generate";
@@ -199,7 +202,17 @@ export const AGENT_TOOLS = [
             type: "string",
           },
           source: {
-            description: 'A deck name, a note title, or "everything" for all decks and notes plus previously missed questions',
+            description:
+              "What the paper is written FROM: part of an uploaded document's file name (a lecture, a "
+              + 'chapter, a set of slides), a deck name, a note title, or "everything" for all of them '
+              + "plus previously missed questions",
+            type: "string",
+          },
+          topic: {
+            description:
+              "Only when the student asked for something NARROWER than the whole source — the part of it "
+              + "the paper should cover, in their own words. Leave it out to be tested across the whole "
+              + "source, which is what an exam does.",
             type: "string",
           },
         },
@@ -1197,9 +1210,92 @@ async function getStudyRecord(): Promise<unknown> {
   return { decks, tests };
 }
 
-/** Resolve what a paper is written FROM. A deck name, a note title, or the
- *  whole workspace with earlier misses brought back — never an invented one. */
-async function materialForTestSource(source: string): Promise<{ material: StudyMaterial; title: string } | { error: string }> {
+/** How many uploaded documents a "everything" paper spans. Past this the review is a
+ *  syllabus, not a paper: each source's share of the material budget is already small. */
+const MAX_MIXED_DOCUMENTS = 6;
+
+/** How many passages one document contributes when a topic narrows it. Sized like
+ *  `DELIVERABLE_CHUNKS`: a paper reads wider than a single question does. */
+const TEST_CHUNKS = 60;
+
+/** One uploaded document the learner owns, and where its passages live. */
+interface UploadedDocument {
+  parsedDocumentId: string;
+  title: string;
+}
+
+/**
+ * The learner's own uploaded documents, newest first.
+ *
+ * 🔴 A ROW WITHOUT `parsed_document_id` HAS NO PASSAGES AND IS NOT MATERIAL. That is a file
+ * still in the parse queue, or one whose parse failed — it exists in the Library and cannot be
+ * read from, and skipping it here is the difference between a thin test and a fabricated one.
+ */
+async function uploadedDocuments(): Promise<UploadedDocument[]> {
+  const { data, error } = await supabase
+    .from("library_sources")
+    .select("file_name,parsed_document_id")
+    .eq("deleted", false)
+    .order("created_at", { ascending: false })
+    .limit(MAX_LIST);
+  if (error) throw new Error(error.message);
+  const seen = new Set<string>();
+  const documents: UploadedDocument[] = [];
+  for (const row of data ?? []) {
+    const parsedDocumentId = str(row.parsed_document_id);
+    if (!parsedDocumentId || seen.has(parsedDocumentId)) continue;
+    seen.add(parsedDocumentId);
+    documents.push({ parsedDocumentId, title: str(row.file_name) });
+  }
+  return documents;
+}
+
+/** Every indexed passage of one uploaded document, in reading order. */
+async function documentPassages(parsedDocumentId: string): Promise<LecturePassage[]> {
+  const rows = await fetchAllRows((from, to) =>
+    supabase
+      .from("library_chunks")
+      .select("chunk_index,content")
+      .eq("parsed_document_id", parsedDocumentId)
+      .order("chunk_index")
+      .order("id")
+      .range(from, to),
+  );
+  return rows.map((row) => ({ chunkIndex: Number(row.chunk_index ?? 0), content: str(row.content) }));
+}
+
+/**
+ * The passages of one uploaded document that a paper should be written from.
+ *
+ * 🔴 A TOPIC NARROWS IT; NOTHING NARROWS IT BY DEFAULT. "Test me on the antigen lecture" wants
+ * the whole lecture, sampled end to end. "Test me on class I presentation from it" wants the
+ * part about that, and that is what the retrieval index is for. Retrieval failing is never a
+ * failure of the paper: `retrieveInDocuments` returns null for a document indexed seconds ago
+ * or a database without the function, and the whole document is read instead.
+ */
+async function passagesForPaper(document: UploadedDocument, topic?: string): Promise<LecturePassage[]> {
+  if (topic?.trim()) {
+    const retrieved = await retrieveInDocuments([document.parsedDocumentId], topic, TEST_CHUNKS);
+    if (retrieved?.length) return retrieved.map((chunk) => ({ chunkIndex: chunk.chunkIndex, content: chunk.content }));
+  }
+  return await documentPassages(document.parsedDocumentId);
+}
+
+/**
+ * Resolve what a paper is written FROM. A deck name, a note title, an uploaded document, or the
+ * whole workspace with earlier misses brought back — never an invented one.
+ *
+ * 🔴🔴🔴 THE UPLOADED DOCUMENTS WERE MISSING UNTIL 2026-09-03, AND THAT IS THE WHOLE POINT OF
+ * THE TOOL. A learner drops ten lectures in, asks for a practice test on one of them, and this
+ * function looked in `study_decks` and `readable_library_documents` — two tables that hold what
+ * NEMESIS wrote, not what the learner uploaded. The answer was always "nothing is named that",
+ * so the only way to be tested on your own lecture was to first make flashcards from it and
+ * then ask for a test on the deck. The material was indexed the whole time.
+ */
+async function materialForTestSource(
+  source: string,
+  topic?: string,
+): Promise<{ material: StudyMaterial; title: string } | { error: string }> {
   const wanted = source.trim().toLowerCase();
   const [deckRows, cardRows] = await Promise.all([
     fetchAllRows((a, b) => supabase.from("study_decks").select("id,name").order("name").order("id").range(a, b)),
@@ -1225,8 +1321,16 @@ async function materialForTestSource(source: string): Promise<{ material: StudyM
       const content = str(row.content);
       if (content.trim()) parts.push(noteMaterial(str(row.title), content));
     }
+    // 🔴 THE UPLOADED DOCUMENTS BELONG IN "EVERYTHING" TOO. A learner whose whole account is
+    // twenty lectures and no decks was told "there is nothing to build from yet" while holding
+    // thousands of indexed passages.
+    for (const document of (await uploadedDocuments()).slice(0, MAX_MIXED_DOCUMENTS)) {
+      const passages = await documentPassages(document.parsedDocumentId);
+      const material = lectureMaterial(document.title, passages);
+      if (material.text.trim()) parts.push(material);
+    }
     if (parts.length === 0) {
-      return { error: "There is nothing to build from yet — no deck has cards and no notes exist." };
+      return { error: "There is nothing to build from yet — no deck has cards, and no notes or readable uploads exist." };
     }
     const { data: testRows, error: testError } = await supabase
       .from("study_artifacts")
@@ -1259,7 +1363,31 @@ async function materialForTestSource(source: string): Promise<{ material: StudyM
   if (note && str(note.content).trim()) {
     return { material: noteMaterial(str(note.title), str(note.content)), title: `${str(note.title)} — practice test` };
   }
-  return { error: `Nothing is named "${source}". get_study_record lists the decks; or pass "everything".` };
+
+  // 🔴 NAMED THE WAY A PERSON NAMES A FILE. "the steroids lecture", "49-hypoglycemic-agents",
+  // "Chapter 4" — nobody types a full file name with its extension, so an exact match alone
+  // would leave this branch almost as unreachable as not having it. Exact first, then a
+  // substring, then longest-title-wins so "immune" does not silently pick the shortest of four.
+  const documents = await uploadedDocuments();
+  const matched =
+    documents.find((document) => document.title.trim().toLowerCase() === wanted) ??
+    documents
+      .filter((document) => document.title.toLowerCase().includes(wanted))
+      .sort((left, right) => left.title.length - right.title.length)[0];
+  if (matched) {
+    const passages = await passagesForPaper(matched, topic);
+    const material = lectureMaterial(matched.title, passages);
+    if (!material.text.trim()) {
+      return { error: `"${matched.title}" is still being read. Try again in a moment, or pick another source.` };
+    }
+    return { material, title: `${matched.title} — practice test` };
+  }
+
+  return {
+    error:
+      `Nothing is named "${source}". A source is a deck name, a note title, part of an uploaded ` +
+      `document's file name, or "everything". get_study_record lists the decks.`,
+  };
 }
 
 /**
@@ -1277,16 +1405,19 @@ async function materialForTestSource(source: string): Promise<{ material: StudyM
  */
 async function makePracticeTest(args: Record<string, unknown>): Promise<unknown> {
   const source = str(args.source).trim();
-  if (!source) return { error: 'Pass source: a deck name, a note title, or "everything".' };
+  if (!source) {
+    return { error: 'Pass source: a deck name, a note title, part of an uploaded document\'s file name, or "everything".' };
+  }
   const requested = Number(args.question_count);
   const questionCount = Number.isFinite(requested) ? Math.min(Math.max(Math.round(requested), 3), 25) : 10;
   const record = typeof args.record === "string" && args.record.trim() ? args.record.trim() : undefined;
+  const topic = typeof args.topic === "string" && args.topic.trim() ? args.topic.trim() : undefined;
 
   const { data: session } = await supabase.auth.getSession();
   const uid = session.session?.user.id;
   if (!uid) return { error: "The student is not signed in." };
 
-  const resolved = await materialForTestSource(source);
+  const resolved = await materialForTestSource(source, topic);
   if ("error" in resolved) return resolved;
 
   const createArtifact = async (input: CreateArtifactInput): Promise<StudyArtifact> => {
