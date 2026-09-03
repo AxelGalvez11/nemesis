@@ -69,7 +69,15 @@ test("🔴🔴 the workspace's waiting screen is the product's, and it admits wh
   // test that banned the string outright would be asking the file to forget its history, which is
   // the rule `gaze.test.ts`'s facing guard already follows. Unrendered is unseen.
   assert.ok(!/className="nemesis-account-loading"/.test(LAYOUT), "the workspace is rendering the account portal's black screen again");
-  assert.match(LAYOUT, /if \(loading \|\| !session\) return <WorkspaceWaiting \/>;/, "the gate no longer renders the waiting screen");
+  // 🔴 REPOINTED 2026-09-03, NOT WEAKENED. This asserted the literal `if (loading || !session)
+  // return <WorkspaceWaiting />;`, which is the exact line that had to go: a session that blinks
+  // during a token refresh is not a sign-out, and unmounting the whole workspace for one destroyed
+  // a turn the owner was in the middle of (see lib/workspace-gate.ts). The invariant this test was
+  // written to protect is that the workspace has ITS OWN waiting screen rather than the account
+  // portal's black one — not which condition reaches it — so it now names the screen and the states
+  // that render it, and `workspace-session-survives-a-blip.test.ts` owns the condition.
+  assert.match(LAYOUT, /return <WorkspaceWaiting \/>;/, "the gate no longer renders the waiting screen");
+  assert.match(LAYOUT, /gate === "waiting" \|\| gate === "sign-in"/, "the waiting screen stopped being tied to the states that have no workspace");
   assert.match(WAITING, /bg-\(--ui-bg-editor\)/, "the waiting screen stopped using the product's own ground");
   // 🔴 SILENT FIRST. Measured on production, the workspace is past this gate 285ms after the
   // document loads, so a message with no delay would flash on every single load.
