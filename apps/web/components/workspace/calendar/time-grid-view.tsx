@@ -18,6 +18,7 @@ import type { CalendarEvent, MonthDay } from "@/lib/workspace/calendar-model";
 import { paintForEvent } from "@/lib/workspace/event-colors";
 import { cn } from "@/lib/utils";
 
+import { HEADER_DATE, WEEKDAY_LABEL } from "./day-numeral";
 import { formatEventDate, formatEventTime, hourLabel } from "./format";
 import { DEFAULT_PAINT } from "./kind-meta";
 import {
@@ -264,49 +265,33 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
                 // Google rules its columns on the RIGHT and paints the last
                 // one's rule in the page colour, so the week does not close
                 // with a line down its edge. Ours closed on both sides.
-                // 2px above, 4px below at this root — Google's own gaps, which
-                // with its 32px label box and 46px numeral box make the band
-                // exactly 84px. See the note on the label below.
-                "group relative flex flex-col items-center justify-center border-r pb-[0.2222rem] pt-[0.1111rem] last:border-transparent",
+                // 🔴 2px above, 4px below. With the shared ramp's 20px label
+                // line and 30px disc the band is 2 + 20 + 30 + 4 = 56px, against
+                // the 84 that matched Google — the height that came down with
+                // the numeral rather than being trimmed to compensate for it,
+                // which is what an earlier pass did (see the label's note).
+                "group relative flex flex-col items-center justify-center border-r pb-[4px] pt-[2px] last:border-transparent",
                 RULE,
               )}
               key={day.key}
             >
               <span
                 className={cn(
-                  // 🔴🔴 THIS WHOLE BLOCK IS NOW GOOGLE'S ABSOLUTE PIXELS, NOT ITS
-                  // PROPORTIONS, AND THAT IS THE THIRD REVISION OF ONE ROW.
-                  // Owner, 2026-09-03: *"the weekday row still feels a bit too
-                  // big, it needs to be smaller, better fitted — just compare
-                  // with Google Calendar please."*
+                  // 🔴🔴 THE SHARED LABEL, AND THIS ROW HAS NOW BEEN REVISED FOUR TIMES.
+                  // It was 0.6111rem on a 1.7778rem line — Google's 11px on its
+                  // 32px box, divided by our root so the drawn size matched
+                  // theirs exactly. Owner, 2026-09-03: *"on the weekday, I was
+                  // mainly talking about the day headers… could you also make
+                  // sure the sizing is consistent throughout all the different
+                  // views?"*
                   //
-                  // 🔴 THE BAND WAS ALREADY THE RIGHT HEIGHT AND THAT IS WHY
-                  // TRIMMING IT AGAIN WOULD NOT HAVE FIXED THIS. Measured, both
-                  // sides, 2026-09-03: Google's day-header band is 84px and ours
-                  // was 85.5. What was wrong was everything INSIDE it — 12.375px
-                  // label against Google's 11, a 29.25px numeral against its 26,
-                  // a 51.75px disc against its 46.58 — because every number here
-                  // was converted by RATIO from Google's 16px root to this app's
-                  // 18px one, which reproduces the proportion and inflates the
-                  // object by 12.5%. The band only matched because the previous
-                  // pass had cut the label's line box 9px BELOW Google's to
-                  // compensate, so a too-big numeral sat in a too-short row.
-                  //
-                  // 🔴 SO THE CONVERSION IS INVERTED FOR THIS BLOCK: Google's
-                  // pixels divided by our 18px root, which lands the drawn size
-                  // on Google's exactly and still scales with the root. 11/18 =
-                  // 0.6111rem in a 32/18 = 1.7778rem line box; 0.8px of tracking
-                  // is 0.0727em of an 11px font, so the em value was right all
-                  // along and only looked wrong at 12.375px (it computed to
-                  // 0.9px). Band: 2 + 32 + 46 + 4 = 84.
-                  //
-                  // 🔴 THE REST OF THE CALENDAR STAYS RATIO-CONVERTED, on purpose.
-                  // The owner said the grid and the events look right; only this
-                  // row was reported. Do not "finish the job" by shrinking the
-                  // hour rows to match — that is a different change he has not
-                  // asked for, and `docs/google-calendar-reference.md` records
-                  // both conversions and which surface uses which.
-                  "text-[0.6111rem] font-medium uppercase leading-[1.7778rem] tracking-[0.0727em]",
+                  // 🔴 THE QUANTITY BEING MATCHED CHANGED AGAIN, AND THIS TIME IT
+                  // IS NOT GOOGLE. Every earlier pass moved this row closer to
+                  // the reference and he came back; what he is comparing it
+                  // against is the MONTH view he was looking at a minute
+                  // earlier. So the label is the same one the month grid draws —
+                  // see `day-numeral.ts`, which owns the whole ramp.
+                  WEEKDAY_LABEL,
                   day.isToday ? "text-foreground" : "text-(--ui-text-secondary)",
                 )}
               >
@@ -322,11 +307,26 @@ export function TimeGridView({ calendarHex, days, eventsByDay, onAddOnDate, onMo
                   //     -> Google's PROPORTION, 1.625rem in 2.875rem.
                   //   - 2026-09-03, owner: "smaller, better fitted, compare with
                   //     Google" -> Google's SIZE, 26px in a 46px disc, written
-                  //     as 26/18 and 46/18 rem. See the label's note above for
-                  //     why the proportion was the wrong quantity to copy.
+                  //     as 26/18 and 46/18 rem.
+                  //   - 2026-09-03 again, owner: "the day headers, I think those
+                  //     are the biggest problem — make sure the sizing is
+                  //     consistent throughout all the different views" -> 18px
+                  //     in a 30px disc, which is NEMESIS'S ramp, not Google's.
+                  //
+                  // 🔴🔴 FOUR REVERSALS, AND THE FOURTH IS THE ONE THAT BREAKS
+                  // THE PATTERN: every earlier pass moved this row CLOSER to the
+                  // reference and he came back. Google draws 26 here and 12 in a
+                  // month cell — more than double, by their design — so matching
+                  // them faithfully is what kept producing the object he keeps
+                  // asking to shrink. The thing being compared against is the
+                  // month view, not Google. `day-numeral.ts` owns the ramp and
+                  // says so at length; do not "restore" this to 26/46.
+                  //
                   // Past days drop to the secondary text colour; today and
                   // everything after it stay at full strength.
-                  "grid size-[2.5556rem] place-items-center rounded-full text-[1.4444rem] font-normal leading-none tabular-nums",
+                  "grid place-items-center rounded-full font-medium leading-none tabular-nums",
+                  HEADER_DATE.disc,
+                  HEADER_DATE.text,
                   day.isToday && "bg-foreground text-background",
                   !day.isToday && (isPast(day) ? "text-(--ui-text-tertiary)" : "text-foreground"),
                 )}

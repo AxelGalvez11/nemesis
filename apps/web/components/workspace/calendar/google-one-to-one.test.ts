@@ -102,8 +102,12 @@ test("🔴🔴 the month cell spends its height on events, not on its own chrome
   // Measured after, at 1470x835 on /dev-preview/calendar-app: the stack went 87px -> 106px, and
   // the 16th drew all four.
   assert.match(month, /flex flex-col gap-0\.5 border-b border-r [^"]*p-1 /, "the month cell went back to 9px padding");
-  assert.match(month, /grid size-\[24px\][^"]*text-\[12px\] font-medium tabular-nums/, "the day numeral left Google's 12px in a 24px box");
-  assert.match(month, /text-\[11px\] font-medium uppercase leading-\[20px\]/, "the weekday band left Google's 11px on a 20px line");
+  // 🔴 REPOINTED: the size moved into the shared ramp on 2026-09-03 (see the date-ramp test).
+  // What this still owns is that the cell DRAWS one, and that its padding stayed off.
+  assert.match(month, /MONTH_DATE\.disc/, "the month cell stopped drawing the shared date size");
+  // 🔴 REPOINTED: the label moved into the shared ramp on 2026-09-03, so this checks the month
+  // USES it — the date-ramp test owns the string itself.
+  assert.match(month, /WEEKDAY_LABEL,/, "the weekday band left the shared 11px on a 20px line");
   // 🔴 CALIBRATION, AS ABSENCES: each of these is what it was, and any one coming back undoes it.
   assert.doesNotMatch(month, /size-7 cursor-pointer/, "the 31.5px date disc is back");
   assert.doesNotMatch(month, /gap-1 border-b border-r/, "the 9px cell gap is back");
@@ -158,24 +162,53 @@ test("midday is a number, the way Google writes it", () => {
   assert.notEqual(hourLabel(12).value, "Noon");
 });
 
-test("the day heading is Google's SIZE, not its proportion", () => {
-  // 🔴🔴 THE QUANTITY BEING COPIED CHANGED ON 2026-09-03 AND THIS GUARD CHANGED WITH IT. Owner:
-  // *"the weekday row still feels a bit too big… just compare with Google Calendar please."*
+test("🔴🔴🔴 the date ramp is ONE ramp, and this is the row that left Google", () => {
+  // 🔴 FOURTH REVERSAL OF ONE ROW, AND THE FIRST THAT DOES NOT MOVE TOWARD THE REFERENCE:
+  //   - 2026-08-02  "these numbers are too big"                   -> 1.125rem in 2.125rem, unmeasured
+  //   - 2026-09-01  "it all needs to match one to one"            -> Google's PROPORTION, 1.625/2.875
+  //   - 2026-09-03  "smaller, better fitted, compare with Google" -> Google's SIZE, 26px in 46
+  //   - 2026-09-03  "the day headers, I think those are the biggest problem… make sure the sizing
+  //                  is consistent throughout all the different views" -> 18px in 30
   //
-  // Everywhere else in this file, Google's pixels are converted by RATIO (x 18/16) so the grid
-  // keeps its proportions at this app's larger root. That is right for the grid and wrong for
-  // this row: measured on both sides, the band was 84px on Google and 85.5 here, but the label
-  // was 12.375px against 11, the numeral 29.25 against 26, and the disc 51.75 against 46.58 —
-  // a faithful proportion is a 12.5% bigger object, and an object is what the eye compares.
-  //
-  // So this block alone divides Google's pixels by OUR root: 11/18, 32/18, 26/18, 46/18. Band
-  // measured after the change: 83.98 against Google's 84.
-  assert.match(view, /size-\[2\.5556rem\]/, "today's disc left Google's 46px");
-  assert.match(view, /text-\[1\.4444rem\]/, "the numeral left Google's 26px");
-  assert.match(view, /text-\[0\.6111rem\][^"]*leading-\[1\.7778rem\]/, "the weekday label left Google's 11px/32px");
-  // 🔴 AND THE RATIO CONVERSION MUST NOT COME BACK HERE. Calibration: put `2.875rem` back and
-  // this reddens twice — once above, once here.
-  assert.doesNotMatch(view, /size-\[2\.875rem\]|text-\[1\.625rem\]/, "the ratio-converted header is back");
+  // 🔴🔴 THE PATTERN ACROSS THOSE FOUR IS THE FINDING. Every earlier pass moved this row CLOSER to
+  // Google and he came back. Google draws 26px in its week header and 12px in a month cell — more
+  // than double, by their design, because their header is one numeral per column with a band to
+  // itself. Matching that faithfully is what kept producing the object he keeps asking to shrink.
+  // What he is comparing it against is not Google; it is the month view he was looking at a minute
+  // before. So this one quantity is OURS, and `day-numeral.ts` says so at length.
+  const ramp = code(readFileSync(new URL("./day-numeral.ts", import.meta.url), "utf8"));
+  assert.match(ramp, /YEAR_DATE: DateSize = \{ disc: "size-\[18px\]", text: "text-\[10px\]" \}/, "the year rung moved");
+  assert.match(ramp, /MONTH_DATE: DateSize = \{ disc: "size-\[24px\]", text: "text-\[12px\]" \}/, "the month rung moved");
+  assert.match(ramp, /HEADER_DATE: DateSize = \{ disc: "size-\[30px\]", text: "text-\[18px\]" \}/, "the header rung moved");
+  // 🔴🔴 THE RING IS A RULE, AND THIS ASSERTION CAUGHT ME GETTING IT WRONG. I wrote the module
+  // claiming "a constant 12px of ring" and this failed on the year rung, which rings at 8 — seven
+  // mini-months to a ~130px card, where a 22px disc makes the numerals touch. The claim was wrong,
+  // not the number; both now say "12 where it fits, tighter in the thumbnail".
+  const rungs = [...ramp.matchAll(/disc: "size-\[(\d+)px\]", text: "text-\[(\d+)px\]"/g)].map(([, d, t]) => Number(d) - Number(t));
+  assert.equal(rungs.length, 3, "a rung was added or removed without this guard noticing");
+  assert.deepEqual(rungs, [8, 12, 12], "a rung stopped ringing its numeral by the stated amount");
+
+  // 🔴🔴 AND ALL THREE VIEWS READ IT. "The sizes match today" passes just as well in a build where
+  // each view writes its own, which is the state this replaced — 26 / 12 / 10 with nothing tying
+  // them together.
+  const monthSrc = code(readFileSync(new URL("./month-grid.tsx", import.meta.url), "utf8"));
+  const yearSrc = code(readFileSync(new URL("./year-grid.tsx", import.meta.url), "utf8"));
+  const viewSrc = code(view);
+  for (const [name, source, rung] of [["time-grid-view", viewSrc, "HEADER_DATE"], ["month-grid", monthSrc, "MONTH_DATE"], ["year-grid", yearSrc, "YEAR_DATE"]] as const) {
+    assert.match(source, /from "\.\/day-numeral"/, `${name}: stopped importing the shared date ramp`);
+    assert.match(source, new RegExp(`${rung}\\.disc`), `${name}: writes its own disc size again`);
+    assert.match(source, new RegExp(`${rung}\\.text`), `${name}: writes its own numeral size again`);
+  }
+  // 🔴 THE RATIO-CONVERTED HEADER MUST NOT COME BACK. Calibration: restore `2.5556rem` and this
+  // reddens.
+  assert.doesNotMatch(viewSrc, /size-\[2\.5556rem\]|text-\[1\.4444rem\]|size-\[2\.875rem\]|text-\[1\.625rem\]/, "the week header went back to Google's numeral");
+
+  // 🔴 THE WEEKDAY LABEL IS ONE STRING TOO. The month and the week had converged on 11/500/20 by
+  // different routes, which is exactly how two rows part again.
+  assert.match(ramp, /WEEKDAY_LABEL = "text-\[11px\] font-medium uppercase leading-\[20px\] tracking-\[0\.05em\]"/, "the shared weekday label moved");
+  for (const [name, source] of [["time-grid-view", viewSrc], ["month-grid", monthSrc]] as const) {
+    assert.match(source, /WEEKDAY_LABEL,/, `${name}: writes its own weekday label again`);
+  }
 });
 
 test("the now indicator is thick enough to find", () => {

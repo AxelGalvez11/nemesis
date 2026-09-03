@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { colourOfDay } from "@/lib/workspace/event-colors";
 import { inkOn } from "@/lib/workspace/calendar-colors";
 
+import { YEAR_DATE } from "./day-numeral";
 import { WEEKDAY_LABELS } from "./format";
 
 /**
@@ -132,7 +133,12 @@ function MiniMonth({ calendarHex, days, eventsByDay, month, onSelectMonth, year 
             <div className={cn("flex justify-center", !day.inMonth && "opacity-30")} key={day.key}>
               <span
                 className={cn(
-                  "grid size-4 place-items-center rounded-full text-[0.5625rem] tabular-nums text-(--ui-text-tertiary)",
+                  // 🔴 THE BOTTOM RUNG OF THE SHARED RAMP (`day-numeral.ts`). It was `size-4`
+                  // and `0.5625rem` — 18px and 10.125px, which happened to land almost exactly
+                  // here, so naming it costs nothing and stops the three views parting again.
+                  "grid place-items-center rounded-full tabular-nums text-(--ui-text-tertiary)",
+                  YEAR_DATE.disc,
+                  YEAR_DATE.text,
                   // Order matters: today wins over an exam wins over a count.
                   // A student looking at the year wants "where am I" answered
                   // before "what is that day", and an exam is never just a
