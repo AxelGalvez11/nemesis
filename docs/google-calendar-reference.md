@@ -204,9 +204,9 @@ changes their text size, and it is what Google itself does (`.lhydbb { font-size
 | hour row | 48 | 3rem | **54px** |
 | hour gutter | 51.1 | 3.1875rem | 57.5px |
 | hour label | 11 | 0.6875rem | 12.4px |
-| weekday label | 11 | 0.6875rem | 12.4px |
-| date numeral | 26 | 1.625rem | 29.25px |
-| today disc | 46 | 2.875rem | 51.75px |
+| weekday label | 11 | **0.6111rem** | **11px** (see below) |
+| date numeral | 26 | **1.4444rem** | **26px** (see below) |
+| today disc | 46 | **2.5556rem** | **46px** (see below) |
 | event title | 12 | 0.75rem | 13.5px |
 | event radius | 6 | 0.375rem | 6.75px |
 | column padding-right | 12 | 0.75rem | 13.5px |
@@ -297,6 +297,40 @@ Their SIZE, WEIGHT and PLACEMENT are Google's exactly.
 a tad bit too big."* The numeral and its 46px disc below are still Google's
 exactly; the row simply loses 9px above them. This is the only place the header
 knowingly leaves the reference.
+
+> **Superseded 2026-09-03** — see below. The row is Google's absolute size now,
+> and the 1.5rem line box is gone with the rest of the ratio conversion.
+
+### Added 2026-09-03 — the day header copies Google's SIZE, not its proportion
+
+Owner, third report on this one row: *"the weekday row still feels a bit too big,
+it needs to be smaller, better fitted — just compare with Google Calendar please."*
+
+**Trimming the band again would not have fixed it, because the band was already
+right.** Measured on both sides that day, at a 1470px window:
+
+| | Google | ours (before) | ours (after) |
+|---|---|---|---|
+| day-header band | **84px** | 85.5px | **83.98px** |
+| weekday label | 11px / 32px / 0.8px | 12.375px / 27px / 0.9px | **11px / 32px / 0.8px** |
+| date numeral | 26px | 29.25px | **26px** |
+| today's disc | 46.58px | 51.75px | **46px** |
+
+Everything INSIDE the band was 12.5% too big, and the band matched only because
+the 2026-09-01 pass had cut the label's line box 9px BELOW Google's to compensate.
+A too-large numeral in a too-short row is not the reference; it is two errors
+cancelling in one dimension.
+
+🔴 **So this one block inverts the conversion: Google's pixels ÷ OUR root (18),
+not × the ratio.** 11/18, 32/18, 26/18, 46/18. The drawn object then lands on
+Google's exactly and still scales with the student's text size, which was the
+whole reason for using rem in the first place.
+
+🔴 **The grid keeps the ratio conversion, on purpose.** The owner said the grid
+and the events look right and reported only this row. Do not "finish the job" by
+putting the hour rows on Google's 48px — that is a different change, and the
+table above now says which surface uses which conversion so the two cannot be
+confused for a mistake.
 
 **Label colour was a MISS, not a deviation, and is now fixed.** Google's hour and
 weekday labels are `#444746` — about 72% dark on white. Ours were drawing at

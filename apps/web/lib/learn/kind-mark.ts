@@ -52,12 +52,21 @@ export interface KindMark {
  */
 export const KIND_MARKS: Record<FileKind, KindMark> = {
   audio: { icon: "unmute", label: "Audio", tint: "--ui-kind-cyan" },
-  document: { icon: "file", label: "Document", tint: "--ui-kind-blue" },
+  // 🔴 A PAGE WITH WRITING ON IT, NOT A BLANK ONE. `document` and `file` both drew `file`, so a
+  // Word document and a file nobody could identify were the same shape and differed only by
+  // colour — which is the failure this whole table exists to fix, sitting inside the table itself.
+  // Owner named DOCX by name (2026-09-03) while asking for per-format icons.
+  document: { icon: "file-text", label: "Document", tint: "--ui-kind-blue" },
   file: { icon: "file", label: "File", tint: "--ui-text-quaternary" },
   image: { icon: "file-media", label: "Image", tint: "--ui-kind-purple" },
   pdf: { icon: "file-pdf", label: "PDF", tint: "--ui-kind-red" },
   sheet: { icon: "table", label: "Spreadsheet", tint: "--ui-kind-green" },
-  slides: { icon: "device-camera-video", label: "Presentation", tint: "--ui-kind-amber" },
+  // 🔴🔴 A SLIDE, NOT A VIDEO CAMERA. This was `device-camera-video` — the glyph of a camcorder —
+  // for a .pptx, which is what the owner was looking at when he asked for *"the icon for like
+  // PowerPoint slide"*. Compared on screen against every plausible codicon (device-desktop,
+  // window, multiple-windows, layout-centered, screen-normal): `preview` is a frame with a block
+  // of content inside it, which is how every slide app in the world draws a slide.
+  slides: { icon: "preview", label: "Presentation", tint: "--ui-kind-amber" },
   text: { icon: "note", label: "Note", tint: "--ui-kind-blue" },
 };
 

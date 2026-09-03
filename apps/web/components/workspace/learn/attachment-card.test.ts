@@ -19,7 +19,12 @@ test("🔴🔴 the card is the reference's geometry, to the pixel", () => {
   assert.match(CARD, /rounded-\[16px\]/, "the card stopped being a 16px card");
   assert.match(CARD, /gap-\[12px\]/);
   assert.match(CARD, /py-\[12px\] pl-\[16px\]/);
-  assert.match(CARD, /height=\{24\}/, "the file glyph is no longer 24px");
+  // 🔴 THE GLYPH IS A CODICON NOW, SO ITS SIZE IS A FONT SIZE IN A 24px BOX. It was a hand-drawn
+  // 24px `<svg>`; since 2026-09-03 the mark comes from `kind-mark.ts` so an attached .pptx and a
+  // produced .pptx are the same object. A font glyph carries its own bearing, so 22px of type
+  // draws on the reference's 24px square — the box is what the 12px gap is measured from.
+  assert.match(CARD, /size-\[24px\]/, "the file mark left the reference's 24px box");
+  assert.match(CARD, /size="22px"/, "the file mark is no longer drawn at 22px inside it");
   // 🔴 THE 62 IS A CONSEQUENCE, NOT A CONSTANT: 12 + 20 + 16 + 12 plus two hairlines. So the type
   // sizes are what this pins, and a hard-coded height would let them drift apart silently.
   // 🔴 THE SCALE TOKENS, WHICH ARE THE REFERENCE'S NUMBERS. `--canvas-text-small` is 14px and
@@ -68,12 +73,21 @@ test("the type line says what the file is, from the name alone", () => {
   assert.match(CARD, /return "File";/, "a file with no extension lost its fallback");
 });
 
-test("🔴 the glyph is coloured by type, which is half of what makes it read as a file", () => {
-  // The reference's PDF glyph measured rgb(255, 59, 48) — not its text colour, not its accent.
-  assert.match(CARD, /PDF: "#ff3b30"/);
-  assert.match(CARD, /DOCX: "#2b7cd3"/);
-  // An unlisted type still draws, in the neutral ink.
-  assert.match(CARD, /INK\[kind\] \?\? "var\(--ui-text-tertiary\)"/);
+test("🔴 the mark is the SHARED one — one glyph and one colour per kind, app-wide", () => {
+  // The reference's PDF glyph measured rgb(255, 59, 48) — not its text colour, not its accent —
+  // and this file used to answer that with its own eight-row hex table and one page outline, so a
+  // deck, a spreadsheet and a PDF were the same shape in three colours.
+  //
+  // 🔴🔴 THREE TABLES FOR ONE QUESTION IS HOW THEY STOP AGREEING, and they had: the `+` menu drew
+  // a CAMCORDER beside "Presentation" for weeks after the artifact card had been given a slide.
+  // Owner, 2026-09-03: *"when I attach documents it should also have the icon for like PowerPoint
+  // slide or DOCX, PDF etc."* `kind-mark.ts` is the one table now; this file reads it.
+  //
+  // Calibration: reintroduce a local hex map here and the first assertion reddens.
+  assert.match(CARD, /import \{ fileMark \} from "@\/lib\/learn\/kind-mark"/, "the card invented its own marks again");
+  assert.match(CARD, /const mark = fileMark\(name\)/, "the card stopped reading the shared mark");
+  assert.match(CARD, /color: `var\(\$\{mark\.tint\}\)`/, "the mark's tint is no longer applied");
+  assert.ok(!/#[0-9a-f]{6}/i.test(CARD), "a colour literal came back into the card");
 });
 
 // ── a document being read says so ──────────────────────────────────────────────────────────────
@@ -87,7 +101,9 @@ test("🔴🔴 a file being read wears a FILLING arc, and nothing on it spins", 
   // each finish. Owner: *"remove the attachment icon and replace with a circular progress bar that
   // doesnt spin but just does the progress indicator."*
   const card = read("./attachment-card.tsx");
-  assert.match(card, /state === "reading" \? <ReadingArc progress=\{progress\} \/>/, "a file being read is not drawing an arc");
+  // 🔴 THE TERNARY WRAPPED ONTO ITS OWN LINES when the glyph became a codicon, so this matches the
+  // BRANCH rather than one line of source: reading draws the arc, and the other branch draws a mark.
+  assert.match(card, /state === "reading" \? \(\s*<ReadingArc progress=\{progress\} \/>/, "a file being read is not drawing an arc");
   assert.match(card, /strokeDashoffset: dashOffsetFor\(progress\)/, "the arc is not driven by the progress it was given");
   assert.match(card, /strokeDasharray=\{ARC_CIRCUMFERENCE\}/, "the arc lost the full-circle dasharray that makes the offset mean anything");
 
@@ -102,7 +118,10 @@ test("🔴🔴 a file being read wears a FILLING arc, and nothing on it spins", 
   // 🔴 THE GLYPH IS REPLACED, NOT WRAPPED — a deliberate reversal of what #1027 shipped, and the
   // cost is written down beside `ReadingArc`: several files at once become identical circles.
   assert.ok(!/<ReadingRing>|ReadingRing/.test(code), "the wrapping ring is back");
-  assert.match(code, /state === "reading" \? <ReadingArc[\s\S]*?: <DocGlyph/, "the glyph does not come back once the read lands");
+  // 🔴 `DocGlyph` WAS THIS FILE'S OWN HAND-DRAWN PAGE and it is gone (2026-09-03): the mark is a
+  // codicon from `kind-mark.ts` now, so an attached .pptx and a produced .pptx look alike. What
+  // this line is about is unchanged — the arc REPLACES the mark and the mark comes back.
+  assert.match(code, /state === "reading" \? \([\s\S]*?\) : \([\s\S]*?<Codicon name=\{mark\.icon\}/, "the mark does not come back once the read lands");
 
   // 🔴 AND NO SECOND LINE WHILE IT READS. Owner: *"remove the 'reading text'"*.
   assert.match(code, /const line = state === "reading" \? ""/, "the card still captions itself while reading");

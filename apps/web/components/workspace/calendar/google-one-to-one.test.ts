@@ -34,11 +34,24 @@ test("midday is a number, the way Google writes it", () => {
   assert.notEqual(hourLabel(12).value, "Noon");
 });
 
-test("the day heading keeps Google's numeral and disc", () => {
-  // 26px in a 46px disc -> 1.625rem in 2.875rem. Reversed twice; see the note
-  // at the call site before changing either.
-  assert.match(view, /size-\[2\.875rem\]/, "today's disc is 46px converted");
-  assert.match(view, /text-\[1\.625rem\]/, "the numeral is 26px converted");
+test("the day heading is Google's SIZE, not its proportion", () => {
+  // 🔴🔴 THE QUANTITY BEING COPIED CHANGED ON 2026-09-03 AND THIS GUARD CHANGED WITH IT. Owner:
+  // *"the weekday row still feels a bit too big… just compare with Google Calendar please."*
+  //
+  // Everywhere else in this file, Google's pixels are converted by RATIO (x 18/16) so the grid
+  // keeps its proportions at this app's larger root. That is right for the grid and wrong for
+  // this row: measured on both sides, the band was 84px on Google and 85.5 here, but the label
+  // was 12.375px against 11, the numeral 29.25 against 26, and the disc 51.75 against 46.58 —
+  // a faithful proportion is a 12.5% bigger object, and an object is what the eye compares.
+  //
+  // So this block alone divides Google's pixels by OUR root: 11/18, 32/18, 26/18, 46/18. Band
+  // measured after the change: 83.98 against Google's 84.
+  assert.match(view, /size-\[2\.5556rem\]/, "today's disc left Google's 46px");
+  assert.match(view, /text-\[1\.4444rem\]/, "the numeral left Google's 26px");
+  assert.match(view, /text-\[0\.6111rem\][^"]*leading-\[1\.7778rem\]/, "the weekday label left Google's 11px/32px");
+  // 🔴 AND THE RATIO CONVERSION MUST NOT COME BACK HERE. Calibration: put `2.875rem` back and
+  // this reddens twice — once above, once here.
+  assert.doesNotMatch(view, /size-\[2\.875rem\]|text-\[1\.625rem\]/, "the ratio-converted header is back");
 });
 
 test("the now indicator is thick enough to find", () => {
