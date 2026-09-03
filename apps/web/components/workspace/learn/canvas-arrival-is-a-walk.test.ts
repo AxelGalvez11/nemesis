@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { ARRIVAL_LABEL_MS, ARRIVAL_MS, clearArrival, stageArrival, takeArrival } from "@/lib/learn/arrival";
+import { ARRIVAL_CHROME_DELAY_MS, ARRIVAL_LABEL_MS, ARRIVAL_MS, clearArrival, stageArrival, takeArrival } from "@/lib/learn/arrival";
 
 const CANVAS = readFileSync("components/workspace/learn/learning-canvas.tsx", "utf8");
 const HOME = readFileSync("components/workspace/learn/canvas-home.tsx", "utf8");
@@ -126,20 +126,34 @@ test("🔴🔴 the handoff is one-shot and expires, so it cannot replay onto an 
   clearArrival();
 });
 
-test("🔴🔴 the length is the owner's, and the curve is not the short one", () => {
-  // Direction A was drawn at 460ms; the owner asked for 1.5 seconds more.
-  assert.equal(ARRIVAL_MS, 1_960, "the walk is no longer the length the owner chose");
+test("🔴🔴 the walk is short again, and the curve moved back with it", () => {
+  // 🔴🔴 REVERSED 2026-09-02, AND BOTH HALVES OF THE OLD TEST ARE WORTH KEEPING IN VIEW. It read
+  // "the length is the owner's, and the curve is not the short one", and pinned 1,960ms with a
+  // gentle S-curve, because on 2026-09-01 the owner picked direction A at 460ms and then said
+  // *"make it all slower like 1.5 seconds slower"*. Having used it: *"the transition ... is super
+  // slow ... everything should immediately move into place."* So it is back to the length direction
+  // A was drawn at.
+  assert.equal(ARRIVAL_MS, 460, "the walk is no longer the length the owner chose");
+
   const ARRIVAL = readFileSync("lib/learn/arrival.ts", "utf8");
-  // 🔴 A HARD DECELERATE IS A SHORT-MOVE CURVE. `cubic-bezier(.32,.72,0,1)` puts ~80% of the
-  // distance in the first third, which is right at 320ms and reads as a lunge-then-stall at two
-  // seconds. Anything with a near-zero first control point is that family.
   const ease = /export const ARRIVAL_EASE = "cubic-bezier\(([^)]+)\)";/.exec(ARRIVAL);
   assert.ok(ease, "the arrival curve is gone");
   const [x1 = 0, y1 = 0] = (ease[1] ?? "").split(",").map(Number);
-  assert.ok(x1 >= 0.3, `${x1} is a hard-decelerate lead-in; over ${ARRIVAL_MS}ms that lunges and then crawls`);
-  // 🔴 y1 IS THE ONE THAT SEPARATES THEM, AND x1 ALONE DOES NOT. The short-move curve this replaced
-  // is `.32,.72,0,1` — its x1 is 0.32, which passes the check above. What makes it a lunge is that
-  // it is already 72% of the way up at 32% of the way along. A curve that spreads a two-second move
-  // across its whole length leaves y1 near zero.
-  assert.ok(y1 <= 0.2, `${y1} puts most of the distance in the first third; over ${ARRIVAL_MS}ms that is a lunge, then a stall`);
+  // 🔴 THE CURVE AND THE DURATION ARE ONE DECISION. A short move wants its distance spent early, so
+  // it reads as landing rather than stopping; the S-curve that suited two seconds spends its
+  // opening frames doing almost nothing, which at 460ms is exactly the sluggishness being fixed.
+  // This is the OPPOSITE assertion to the one it replaces, deliberately.
+  assert.ok(y1 >= 0.5, `${y1} spreads the distance evenly; over ${ARRIVAL_MS}ms that reads as sluggish`);
+  assert.ok(x1 <= 0.4, `${x1} is a slow lead-in, which is what makes a short move feel late`);
+});
+
+test("🔴 nothing in the arrival outlasts the walk it belongs to", () => {
+  // 🔴 THE CHROME DELAY WAS 1,280ms AGAINST A 1,960ms WALK AND WAS MOST OF WHY THE SCREEN FELT
+  // EMPTY. Held as a FRACTION rather than a number so the two cannot drift apart again: the rule
+  // was always "arrive behind furniture that has nearly stopped", which is a ratio, not a constant.
+  assert.ok(ARRIVAL_CHROME_DELAY_MS < ARRIVAL_MS, "the canvas chrome now arrives after the walk has finished");
+  assert.ok(ARRIVAL_CHROME_DELAY_MS <= ARRIVAL_MS * 0.75, "the chrome waits for most of the walk, which reads as an empty screen");
+  // The labels are leaving; they must be gone before the furniture stops, or the last thing
+  // settling is a word that no longer belongs to the screen.
+  assert.ok(ARRIVAL_LABEL_MS < ARRIVAL_MS, "the departing labels outlast the walk");
 });

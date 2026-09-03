@@ -56,10 +56,15 @@ test("🔴🔴 the character never stands in the corner during the handover", ()
   //    `stations.ts` says in its own header that the derived station broke on purpose the day the
   //    working poses stopped being unique to working. `thinking` resolves to `curious`, which is
   //    not in `CENTRE`, so that dock scored `corner`.
+  // 🔴 REPOINTED 2026-09-02. It pinned `station="centre"` outright, which was right while the
+  // canvas was the product. Chat is the default now and the character's home there is the
+  // composer's corner, so the loading dock reads the same view term the real dock does. The
+  // guarantee this test actually protects is unchanged and is the one below: the station is PASSED,
+  // never derived from the pose.
   assert.match(
     CANVAS,
-    /<CharacterDock bottom=\{0\} contain left=\{0\} station="centre"/,
-    "the pre-ready dock is deriving its station again, which puts it in the bottom-left corner",
+    /<CharacterDock bottom=\{0\} contain left=\{0\} station=\{threadOpen \? "corner" : "centre"\}/,
+    "the pre-ready dock is deriving its station again, or has stopped agreeing with the surface it precedes",
   );
   // 2. Between `session.ready` and the turn actually starting, both terms of the main dock's
   //    station are false. Measured: the character appeared at (493, 648) and walked to (728, 378).
@@ -70,11 +75,20 @@ test("🔴🔴 the character never stands in the corner during the handover", ()
   // the previous screen. Gating it would reproduce the measured walk above, mirrored, for every
   // learner in the chat. Calibration: move `handedOver` inside the `!threadOpen` group and this
   // reddens.
+  // 🔴🔴 REVERSED 2026-09-02, AND THE OLD RULE IS QUOTED ABOVE BECAUSE IT WAS RIGHT AT THE TIME.
+  // This asserted `handedOver` sat OUTSIDE the `!threadOpen` group, so the handover held the centre
+  // even in chat. Owner, having watched it: *"why is the mascot still moving to the middle? That's
+  // from the canvas that we removed."* In a chat the character's home is the composer's corner, so
+  // holding the centre for the handover put it somewhere it never stays and then moved it.
+  // Calibration: pull `handedOver` back out of the group and this reddens.
   assert.match(
     CANVAS,
-    /station=\{handedOver \|\| \(!threadOpen && \(turnInFlight \|\| presence === "preparing"\)\) \? "centre" : "corner"\}/,
-    "the handover window stopped holding the centre",
+    /station=\{!threadOpen && \(handedOver \|\| turnInFlight \|\| presence === "preparing"\) \? "centre" : "corner"\}/,
+    "the handover is claiming the centre in chat again",
   );
+  // 🔴 AND CANVAS VIEW MUST STILL GET ITS CHARACTER AT THE CENTRE. The whole change is which home
+  // the handover aims at, not the removal of the centre; a canvas still has one.
+  assert.ok(/\?\s*"centre"\s*:\s*"corner"/.test(CANVAS), "the centre station has gone entirely");
   assert.match(CANVAS, /const \[handedOver, setHandedOver\] = useState\(Boolean\(openingAsk\)\)/);
 });
 
