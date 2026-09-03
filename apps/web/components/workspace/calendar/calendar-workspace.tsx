@@ -35,6 +35,16 @@ import {
   calendarList,
   loadCalendars,
 } from "@/lib/workspace/calendars";
+import { connectionStatus } from "@/lib/workspace/composio-client";
+import { hasCalendar } from "@/lib/workspace/composio-apps";
+import type { ProviderDisagreement } from "@/lib/workspace/calendar-conflicts";
+import type { DecodedCalendarEvent } from "@/lib/workspace/calendar-codec";
+import {
+  defaultWindow,
+  pullGoogleEvents,
+  resolveDisagreement,
+  syncGoogleCalendar,
+} from "@/lib/workspace/google-calendar-sync";
 import {
   CALENDAR_FILTER_STORAGE_KEY,
   coloursInUse,
@@ -45,6 +55,7 @@ import {
 } from "@/lib/workspace/calendar-filter";
 
 import { CalendarHeader } from "./calendar-header";
+import { SyncDisagreements } from "./sync-disagreements";
 import { calendarColorOf } from "@/lib/workspace/calendar-colors";
 
 import { DayRail } from "./day-rail";
@@ -334,6 +345,92 @@ export function CalendarWorkspace() {
     setDialog(null);
   }
 
+  // ── Google Calendar ───────────────────────────────────────────────────────
+  //
+  // 🔴 THE CONTROL APPEARS ONLY IF THERE IS SOMETHING TO SYNC WITH. `hasCalendar` asks the app
+  // catalogue rather than sniffing the slug for "calendar", which is the fix #933 made when
+  // Outlook — mail and calendar in one toolkit — kept answering "no calendar" for every Microsoft
+  // student. A failed read is "nothing connected", so the button simply stays away.
+  const [canSync, setCanSync] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [disagreements, setDisagreements] = useState<ProviderDisagreement[]>([]);
+  const [resolving, setResolving] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (preview || !userId) return;
+    let cancelled = false;
+    connectionStatus().then((status) => {
+      if (!cancelled) setCanSync(status.configured && hasCalendar(status.connected));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, userId]);
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      // 🔴 THE CAST IS HONEST, NOT A SHORTCUT. `events` is declared as CalendarEvent[] but every
+      // row in it came out of `decodeCalendarEvent`, which populates the link fields when the row
+      // has them. Widening the state's own type would ripple through every view for no gain; what
+      // matters is that the values are really there, and the decoder is the only way in.
+      const outcome = await syncGoogleCalendar(
+        { preview, userId },
+        { existing: events as DecodedCalendarEvent[] },
+      );
+      if (outcome.events.length > 0) {
+        // Replace by id rather than appending: an update carries the id of the row it replaces, so
+        // appending would leave the old copy sitting beside the new one on the same day.
+        setEvents((prev) => [
+          ...prev.filter((row) => !outcome.events.some((saved) => saved.id === row.id)),
+          ...outcome.events,
+        ]);
+      }
+      setDisagreements(outcome.disagreements);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  /**
+   * Settle one difference the way the student chose.
+   *
+   * 🔴 KEEPING GOOGLE'S VERSION NEEDS GOOGLE'S VERSION, WHICH IS NOT IN `disagreements`. That
+   * carries the two readings for the student to compare, not a saveable row — so the calendar is
+   * re-read to fetch the actual event before it is written. Reconstructing one from the compared
+   * fields would silently drop everything not being compared.
+   */
+  async function handleResolve(row: ProviderDisagreement, keep: "nemesis" | "provider") {
+    const mine = events.find((event) => event.id === row.local.id) as DecodedCalendarEvent | undefined;
+    if (!mine) return;
+    setResolving(row.externalId);
+    try {
+      let providerCopy: DecodedCalendarEvent | undefined;
+      if (keep === "provider") {
+        const pulled = await pullGoogleEvents(defaultWindow());
+        providerCopy = pulled.events.find((entry) => entry.event.externalId === row.externalId)?.event;
+      }
+      // 🔴🔴 THE CLICK IS THE CONFIRMATION, AND WITHOUT SAYING SO THIS BUTTON DID NOTHING AT ALL.
+      // Keeping the Nemesis version means writing to Google; `riskOf` classes every Google write as
+      // needing approval, and `runAction` refuses an unconfirmed write before the network is
+      // touched. So this came back "needs your confirmation" and the row simply sat there: a
+      // control that looks live and is not, which is the defect the gating rule above exists to
+      // prevent. The gate is there so a MODEL cannot write to somebody's calendar unseen; here a
+      // person has read both versions side by side and pressed a button that names the change,
+      // which is exactly the approval it is asking for.
+      //
+      // 🔴 AND IT TRAVELS FROM THE CLICK RATHER THAN BEING HARDCODED IN `pushEventToGoogle`, which
+      // would drop the gate for every caller of that function, the model included.
+      const settled = await resolveDisagreement(mine, keep, { preview, userId }, { confirmed: true, providerCopy });
+      if (!settled.ok || !settled.event) return;
+      const saved = settled.event;
+      setEvents((prev) => prev.map((event) => (event.id === saved.id ? saved : event)));
+      setDisagreements((prev) => prev.filter((entry) => entry.externalId !== row.externalId));
+    } finally {
+      setResolving(undefined);
+    }
+  }
+
   // Syllabus import goes through the SAME per-event save path as a hand-made
   // event, so imported rows get identical validation and land as source:
   // 'manual'. Every event is editable and deletable now, whatever wrote it.
@@ -379,9 +476,17 @@ export function CalendarWorkspace() {
           onChangeHiddenColors={changeHiddenColors}
           onChangeView={setView}
           onStep={goStep}
+          onSync={canSync ? handleSync : undefined}
           onToday={() => setCursor(new Date())}
+          syncing={syncing}
           today={today}
           view={view}
+        />
+        <SyncDisagreements
+          busy={resolving}
+          found={disagreements}
+          onDismiss={() => setDisagreements([])}
+          onKeep={handleResolve}
         />
         <div
           className={cn(

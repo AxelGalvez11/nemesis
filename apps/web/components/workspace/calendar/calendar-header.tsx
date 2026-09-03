@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
-import { ChevronDown, ChevronLeft, ChevronRight, Plus } from "@/lib/workspace/icons";
+import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus, RefreshCw } from "@/lib/workspace/icons";
 import { dateKey } from "@/lib/workspace/calendar-model";
 
 
@@ -35,6 +35,16 @@ interface CalendarHeaderProps {
   onStep: (delta: 1 | -1) => void;
   onToday: () => void;
   onAddEvent: (dateKeyStr: string) => void;
+  /**
+   * Absent when this learner has no calendar connected, and that is the gate.
+   *
+   * 🔴 THE CONTROL IS NOT SHOWN AT ALL RATHER THAN SHOWN AND DISABLED. A greyed-out Sync button on
+   * a calendar with nothing to sync to is a dead control, and this codebase has a standing rule
+   * against those (`capabilities-are-live.test.ts`). Somebody who has not connected Google has no
+   * question this button could answer.
+   */
+  onSync?: () => void;
+  syncing?: boolean;
 }
 
 export function CalendarHeader({
@@ -48,6 +58,8 @@ export function CalendarHeader({
   onStep,
   onToday,
   onAddEvent,
+  onSync,
+  syncing,
 }: CalendarHeaderProps) {
   return (
     // GOOGLE'S TOOLBAR ORDER, one row (owner 2026-07-31: "literally copy it").
@@ -93,6 +105,21 @@ export function CalendarHeader({
         {viewLabel(view, cursor)}
       </h1>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {/* Left of the view picker, so the two controls that CHANGE the calendar (sync, add) sit
+            at either end of the group rather than crowding one corner. */}
+        {onSync ? (
+          <Button
+            aria-label="Sync with Google Calendar"
+            className="gap-1.5 rounded-full px-3"
+            disabled={syncing}
+            onClick={onSync}
+            size="sm"
+            variant="outline"
+          >
+            {syncing ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+            <span className="max-sm:sr-only">{syncing ? "Syncing" : "Sync"}</span>
+          </Button>
+        ) : null}
         <ColorFilter colours={colours} hidden={hiddenColors} onChange={onChangeHiddenColors} />
         {/* A dropdown on the right, where Google keeps it — the four-way
             segmented control sat in the middle of the bar and took the space
