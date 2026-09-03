@@ -32,10 +32,26 @@ import { eventColorOf } from "./event-colors";
  *
  *  🔴 An exam has a date because the world says so. A review block exists because Nemesis
  *  suggested it. Rendering them as peers is what makes a calendar untrustworthy, so the
- *  distinction is stored rather than inferred. */
-export type CalendarOrigin = "user" | "source_extraction" | "nemesis_plan";
+ *  distinction is stored rather than inferred.
+ *
+ *  🔴 `google_calendar` IS NOT A FOURTH FLAVOUR OF THE SAME IDEA — it is the answer none of the
+ *  other three could give. An event on somebody's Google Calendar exists because they put it
+ *  there, which is not `user` (that means typed into Nemesis), not `source_extraction` (nothing
+ *  was read off a document), and certainly not `nemesis_plan`. Without it an imported event has to
+ *  claim to be one of those, and the calendar can no longer tell a student which of their events
+ *  Nemesis is merely mirroring. */
+export type CalendarOrigin = "user" | "source_extraction" | "nemesis_plan" | "google_calendar";
 
-const ORIGINS: ReadonlySet<string> = new Set<CalendarOrigin>(["user", "source_extraction", "nemesis_plan"]);
+const ORIGINS: ReadonlySet<string> = new Set<CalendarOrigin>([
+  "user",
+  "source_extraction",
+  "nemesis_plan",
+  // 🔴 LISTED HERE OR THE DATABASE COLUMN IS POINTLESS. The decoder below drops an origin this set
+  // does not contain, so widening the CHECK constraint alone would let the value be WRITTEN and
+  // then silently lose it on the very next read — this file's own headline failure mode, and the
+  // reason the migration that widened the constraint says to come and look here.
+  "google_calendar",
+]);
 const KINDS: ReadonlySet<string> = new Set<CalendarEventKind>([
   "assignment",
   "exam",
@@ -61,8 +77,53 @@ export interface CalendarProvenance {
   resolvedAgainst?: string;
 }
 
+/** A calendar Nemesis mirrors rather than owns. Outlook is offered alongside Google and carries
+ *  one too, so this names the provider rather than assuming there is only ever one. */
+export type ExternalProvider = "google" | "outlook";
+
+const PROVIDERS: ReadonlySet<string> = new Set<ExternalProvider>(["google", "outlook"]);
+
+/**
+ * What makes a Nemesis row and an event in somebody else's calendar THE SAME EVENT.
+ *
+ * 🔴🔴 THE FIELD THAT DID NOT EXIST, AND EVERYTHING GOOGLE-SHAPED IN THIS TABLE WAS WAITING ON IT.
+ * `calendar_events` already carried attendees, reminders, conference links, RRULEs, transparency
+ * and visibility — the whole Google vocabulary — and not one way to say WHICH Google event any of
+ * it described. Without that: a second import duplicates the entire calendar, an edit made in
+ * Google can never find the row it belongs to, and "these two disagree about when the exam is" is
+ * a question with nowhere to ask it. All three of the things the owner asked for hang off this.
+ *
+ * 🔴 ALL-OR-NOTHING, AND THE DATABASE AGREES. An id with no provider cannot be looked up and a
+ * provider with no id names nothing, so `calendar_events_external_pair` refuses the half-filled
+ * pair outright and the decoder below drops it rather than keeping a link that leads nowhere.
+ */
+export interface ExternalLink {
+  externalProvider?: ExternalProvider;
+  /** The provider's own event id. */
+  externalId?: string;
+  /** The provider's calendar: "primary", or a calendar address.
+   *  🔴 NOT `calendarId`, which is a row in the Nemesis `calendars` table. Two different ids with
+   *  almost the same name, and putting one in the other's column links an event to nothing. */
+  externalCalendar?: string;
+  /** The provider's version marker, so an unchanged event costs nothing to re-read. */
+  externalEtag?: string;
+  /** When the provider last changed it, ISO. Decides who moved most recently. */
+  externalUpdated?: string;
+  /** When Nemesis last reconciled this row against the provider, ISO. */
+  externalSyncedAt?: string;
+  /**
+   * When the database last changed this row. Server clock, read-only.
+   *
+   * 🔴 IT WAS A LIE UNTIL 2026-09-02. The column defaulted to now() and had no trigger, so all 172
+   * rows carried `updated_at` exactly equal to `created_at` — a change log that had never recorded
+   * a change, while looking to any reader like one that had.
+   */
+  updatedAt?: string;
+}
+
 export type DecodedCalendarEvent = CalendarEvent &
-  CalendarProvenance & {
+  CalendarProvenance &
+  ExternalLink & {
     /** Keys this build does not recognise, carried through untouched. */
     extra?: Record<string, unknown>;
   };
@@ -127,6 +188,20 @@ const KNOWN = new Set([
   "original_expression",
   "resolvedAgainst",
   "resolved_against",
+  // The link to an outside calendar. Both spellings, like every pair above: the database sends
+  // snake_case and the browser's own cache round-trips camelCase.
+  "externalProvider",
+  "external_provider",
+  "externalId",
+  "external_id",
+  "externalCalendar",
+  "external_calendar",
+  "externalEtag",
+  "external_etag",
+  "externalUpdated",
+  "external_updated",
+  "externalSyncedAt",
+  "external_synced_at",
   "created_at",
   "updated_at",
   "extra",
@@ -400,6 +475,32 @@ export function decodeCalendarEvent(raw: unknown): DecodedCalendarEvent | null {
   const against = str(row.resolvedAgainst) ?? str(row.resolved_against);
   if (against) event.resolvedAgainst = against;
 
+  // 🔴 READ, NEVER WRITTEN. The database sets this from its own clock on every update (see the
+  // `calendar_events_touch_updated_at` trigger), which is what makes it trustworthy enough to
+  // decide who moved an event last. `encodeCalendarEvent` deliberately does not send it: a client
+  // that could set its own `updated_at` could win any sync argument by having a fast clock.
+  const updatedAt = str(row.updatedAt) ?? str(row.updated_at);
+  if (updatedAt) event.updatedAt = updatedAt;
+
+  // 🔴 THE PAIR IS KEPT OR NEITHER IS. A provider with no id names nothing and an id with no
+  // provider cannot be looked up, so a half-filled link is dropped rather than stored — a row
+  // claiming to be linked but unable to say to what is worse than one that admits it is local.
+  const provider = str(row.externalProvider) ?? str(row.external_provider);
+  const externalId = str(row.externalId) ?? str(row.external_id);
+  if (provider && PROVIDERS.has(provider) && externalId) {
+    event.externalProvider = provider as ExternalProvider;
+    event.externalId = externalId;
+    // Google's default calendar is addressed as "primary" and comes back unnamed on some paths.
+    // Written down rather than left absent, so the unique index has one string to compare.
+    event.externalCalendar = str(row.externalCalendar) ?? str(row.external_calendar) ?? "primary";
+    const etag = str(row.externalEtag) ?? str(row.external_etag);
+    if (etag) event.externalEtag = etag;
+    const updated = str(row.externalUpdated) ?? str(row.external_updated);
+    if (updated) event.externalUpdated = updated;
+    const syncedAt = str(row.externalSyncedAt) ?? str(row.external_synced_at);
+    if (syncedAt) event.externalSyncedAt = syncedAt;
+  }
+
   // 🔴 Everything this build does not know, kept rather than dropped.
   const carried = (row.extra && typeof row.extra === "object" ? { ...(row.extra as object) } : {}) as Record<
     string,
@@ -462,6 +563,16 @@ export function encodeCalendarEvent(
     confidence: event.confidence ?? null,
     original_expression: event.originalExpression ?? null,
     resolved_against: event.resolvedAgainst ?? null,
+    // 🔴 THE PAIR AGAIN, ON THE WAY OUT. `calendar_events_external_pair` rejects the whole row if
+    // one of these is set without the other, so an event carrying a stray id would fail to save at
+    // all — and it would fail on every subsequent save too, which reads as "the calendar stopped
+    // working" rather than as one malformed field.
+    external_provider: event.externalId ? (event.externalProvider ?? null) : null,
+    external_id: event.externalProvider ? (event.externalId ?? null) : null,
+    external_calendar: event.externalCalendar ?? null,
+    external_etag: event.externalEtag ?? null,
+    external_updated: event.externalUpdated ?? null,
+    external_synced_at: event.externalSyncedAt ?? null,
     // Unknown keys ride back out so a newer field survives an older client's re-save.
     extra: event.extra && Object.keys(event.extra).length > 0 ? event.extra : null,
   };

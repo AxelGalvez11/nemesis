@@ -238,8 +238,13 @@ import {
   specFromLegacy,
 } from "./rrule";
 
+// 🔴 A COLUMN MISSING FROM THIS STRING IS A FIELD THAT DOES NOT EXIST, as far as every screen in
+// the product is concerned. The decoder handles the whole event shape, but it can only decode what
+// the query asked for, so the link to an outside calendar has to be named here or an imported
+// event loads back looking exactly like one somebody typed — and the next save, reading it as
+// unlinked, would cut it loose from Google for good.
 const CALENDAR_EVENT_COLUMNS =
-  "id,title,date,time,end_time,end_date,all_day,time_zone,rrule,override_of,original_date,location,color_id,status,transparency,visibility,kind,course,note,source,recurrence";
+  "id,title,date,time,end_time,end_date,all_day,time_zone,rrule,override_of,original_date,location,color_id,status,transparency,visibility,kind,course,note,source,recurrence,origin,external_provider,external_id,external_calendar,external_etag,external_updated,external_synced_at,updated_at";
 
 /** The ONGOING per-account warm-cache key — every signed-in user's cache
  *  lives at its own key, so switching accounts on the same browser can never
