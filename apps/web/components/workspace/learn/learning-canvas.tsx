@@ -1041,14 +1041,35 @@ export function LearningCanvas({
   const [currentSaid, setCurrentSaid] = useState<string | null>(null);
   const [currentSaidVia, setCurrentSaidVia] = useState<"spoken" | null>(null);
   /**
+   * The moment id of the exchange the live region is showing, or null while a turn is still in
+   * flight and no moment has been recorded for it yet.
+   *
+   * 🔴🔴 THIS IS THE NEWEST ROW ON THE HISTORY RAIL, AND WITHOUT IT THAT ROW HAD NOWHERE TO GO.
+   * The thread deliberately holds the newest exchange back (`liveShowsLast`) because the live
+   * region is already drawing it — so on every reopened canvas the bottom marker on the rail
+   * pointed at a moment with no anchor on the page, fell through to the rewind, and replaced the
+   * whole conversation with a lone bubble on an empty sheet. Reproduced on production on the
+   * owner's own canvas: five markers, four anchors, and the fifth one blanked the page.
+   */
+  const [currentMomentId, setCurrentMomentId] = useState<string | null>(null);
+  /**
    * What is on screen right now, mirrored where `converse` can read it without going stale.
    *
    * 🔴 A REF BECAUSE `converse` IS A `useCallback` AND MUST NOT RE-CREATE ON EVERY ANSWER. Listing
    * `session.aside` in its dependencies would rebuild the callback on every streamed token, and
    * every consumer holding it would re-render with it.
    */
-  const onScreen = useRef<{ said: string | null; saidVia: "spoken" | null; aside: typeof session.aside; output: CanvasOutput | null }>({
+  const onScreen = useRef<{
+    said: string | null;
+    saidVia: "spoken" | null;
+    aside: typeof session.aside;
+    output: CanvasOutput | null;
+    /** 🔴 THE MOMENT THIS EXCHANGE WAS RECORDED AS, carried so that when the next turn files it
+     *  into the thread it keeps the id the History Rail points at. See `currentMomentId`. */
+    momentId: string | null;
+  }>({
     aside: null,
+    momentId: null,
     saidVia: null,
     output: null,
     said: null,
@@ -1081,7 +1102,12 @@ export function LearningCanvas({
           fileTurn({
             at: new Date().toISOString(),
             attached: [],
-            id: `turn-${past.length}-${outgoing.said?.slice(0, 24) ?? ""}`,
+            // 🔴🔴 THE MOMENT ID WHEN THERE IS ONE, because that id is what the History Rail's
+            // row carries and `goToMoment` looks the anchor up by. The made-up `turn-N-…` form
+            // below is now only the fallback for an exchange that was never recorded (a turn that
+            // threw before `recordMoment`), and it is deliberately still here: a turn with no id
+            // at all cannot be a React key.
+            id: outgoing.momentId ?? `turn-${past.length}-${outgoing.said?.slice(0, 24) ?? ""}`,
             output: outgoing.output,
             reply: outgoingReply,
             said: outgoing.said,
@@ -1094,9 +1120,13 @@ export function LearningCanvas({
       // 🔴 READ ONCE, BEFORE THE AWAIT. The session can end while the model answers; the words
       // were spoken when they were said, not when the reply lands.
       const spokenNow = voiceConversingRef.current ? ("spoken" as const) : null;
-      onScreen.current = { aside: null, output: null, said: trimmed, saidVia: spokenNow };
+      // 🔴 `momentId: null` — THIS TURN HAS NOT BEEN RECORDED YET. A moment is written when the
+      // turn resolves, so between here and there the live region genuinely has no rail row, and
+      // saying so is what keeps the previous turn's id from being read as this one's.
+      onScreen.current = { aside: null, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
       setCurrentSaid(trimmed);
       setCurrentSaidVia(spokenNow);
+      setCurrentMomentId(null);
       // Owner picked option A from the mockup: the prompt goes to the top and stays there.
       setSendSeq((n) => n + 1);
       setEditingPrompt(false);
@@ -1127,12 +1157,18 @@ export function LearningCanvas({
         // 🔴 `assistant` ONLY WHEN NEMESIS ACTUALLY SAID SOMETHING. A `study` turn answers by
         // starting a lesson rather than by speaking, and marking that as an answer would put a
         // marker on the rail that opens to an empty reconstruction.
-        session.recordMoment({
+        const momentId = session.recordMoment({
           kind: decision?.say ? "assistant" : "user",
           userText: trimmed,
           ...(spokenNow ? { spoken: true } : {}),
           ...(decision?.say ? { assistantText: decision.say } : {}),
         });
+        // 🔴 THE ROW THAT JUST APPEARED ON THE RAIL NOW HAS SOMETHING ON THE PAGE TO POINT AT.
+        // Both halves matter: the ref so the NEXT turn files this exchange into the thread under
+        // the same id, and the state so the live region carries it as an anchor while it is still
+        // the exchange on screen.
+        onScreen.current.momentId = momentId;
+        setCurrentMomentId(momentId);
         return decision;
       } finally {
         // 🔴 NOTHING TO CLEAR. The learner's words stay above the answer they produced, which is
@@ -1949,6 +1985,12 @@ export function LearningCanvas({
     const held = liveShowsLast ? restored.at(-1) : null;
     setCurrentSaid(held?.said ?? null);
     setCurrentSaidVia(held?.saidVia ?? null);
+    // 🔴🔴 AND ITS MOMENT ID COMES WITH IT, WHICH IS THE HALF THAT WAS MISSING. Held back from the
+    // thread, this exchange has no `[data-thread-turn]` of its own — so its marker, the newest one
+    // on the rail and the one a learner is most likely to press, resolved to nothing and rewound.
+    // A restored turn is filed under its moment id, so `held.id` IS the rail row's id.
+    onScreen.current.momentId = held?.id ?? null;
+    setCurrentMomentId(held?.id ?? null);
   }, [canvas.blocks.length, canvas.createdAt, canvas.id, canvas.moments, canvas.questions, canvas.responses, canvas.sources, history]);
 
   /**
@@ -1986,13 +2028,27 @@ export function LearningCanvas({
    * Scrolling is both gentler and more honest: they end up at the real turn, with everything
    * around it intact, and there is no state to get out of afterwards.
    *
-   * 🔴 THE ANSWER VIEW STILL REWINDS, because there is nothing to scroll to there: that view draws
-   * one exchange alone. The rewind machinery is untouched and is still the only behaviour on that
-   * surface.
+   * 🔴🔴🔴 AND IN THE CONVERSATION IT NOW HAS NO WAY OF NOT SCROLLING, WHICH IS THE 2026-09-03
+   * REPORT. Owner: *"the right side rail ticker doesnt scroll to the previous chats and instead
+   * just isolates them away from the chat history, i need scrolling not disappearing
+   * conversation."* The rewind was still reachable from here as a fallback for a row whose anchor
+   * was missing, and rows were missing anchors as a matter of course rather than as an edge case:
+   * the newest exchange is deliberately held out of the thread (`liveShowsLast`) and turns taken
+   * in this sitting were filed under invented ids. Measured on his own canvas on production: five
+   * markers, four anchors, and the fifth one replaced the conversation with a single bubble on an
+   * empty sheet.
    *
-   * 🔴 AND IT FALLS BACK RATHER THAN FAILING. A turn taken in this sitting is filed under a live
-   * id (`turn-3-…`), not the moment id the rail carries, until the canvas is saved and re-seeded.
-   * When the anchor is not on the page the old rewind runs, so a marker is never a dead control.
+   * Both gaps are closed at the source — the live region carries `data-thread-turn` and a filed
+   * turn keeps its moment id — so the exact anchor is now found for every row. What is left here
+   * is the guarantee: in the conversation this scrolls SOMEWHERE and never blanks the page. A row
+   * whose moment has no turn of its own (a source attached mid-session records a moment, and
+   * nothing is drawn for it until the canvas is re-seeded) lands on the next turn that does, and
+   * failing that on the live one at the end — which is where the conversation went next, and is
+   * the honest answer to "take me to this".
+   *
+   * 🔴 THE ANSWER VIEW STILL REWINDS, because there is nothing to scroll to there: that view draws
+   * one exchange alone, by design. The rewind machinery is untouched and is still the only
+   * behaviour on that surface.
    */
   const goToMoment = useCallback(
     (id: string | null) => {
@@ -2001,22 +2057,38 @@ export function LearningCanvas({
         return;
       }
       const scroller = threadRef.current;
-      const turn = scroller?.querySelector<HTMLElement>(`[data-thread-turn="${CSS.escape(id)}"]`);
-      if (view === "conversation" && scroller && turn) {
-        // 🔴 THE SAME INSET THE SENT PROMPT LANDS ON, so arriving at an old turn and arriving at a
-        // new one put the thing you are reading in the same place.
-        const delta = turn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-        scroller.scrollTo({
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-          top: scroller.scrollTop + delta - PIN_INSET_PX,
-        });
-        // 🔴 AND IT LEAVES `rewound` ALONE. Setting it would blank the thread this just scrolled
-        // (`threadOpen` is `!viewing`), which is the exact surface swap being replaced.
+      if (view === "conversation" && scroller) {
+        const anchor = (momentId: string) =>
+          scroller.querySelector<HTMLElement>(`[data-thread-turn="${CSS.escape(momentId)}"]`);
+        // 🔴 FORWARD THROUGH THE HISTORY, NEVER BACKWARD. The rows are oldest-first, so the first
+        // anchored row at or after this one is where the conversation carried on from the moment
+        // being asked for. Walking backward would answer "take me to this" with something that
+        // happened before it, which reads as the wrong marker having been pressed.
+        const from = history.findIndex((entry) => entry.momentId === id);
+        let turn: HTMLElement | null = null;
+        for (let at = from < 0 ? history.length : from; at < history.length && !turn; at++) {
+          turn = anchor(history[at]!.momentId);
+        }
+        // 🔴 AND THE LIVE TURN IS THE FLOOR. `[data-canvas-current]` is always rendered, so this
+        // cannot come back empty — which is the whole point: there is no path out of this branch
+        // that leaves the conversation off the screen.
+        const target = turn ?? scroller.querySelector<HTMLElement>("[data-canvas-current]");
+        if (target) {
+          // 🔴 THE SAME INSET THE SENT PROMPT LANDS ON, so arriving at an old turn and arriving at
+          // a new one put the thing you are reading in the same place.
+          const delta = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+          scroller.scrollTo({
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+            top: scroller.scrollTop + delta - PIN_INSET_PX,
+          });
+        }
+        // 🔴 AND IT LEAVES `rewound` ALONE — even when nothing was found. Setting it would blank
+        // the thread (`threadOpen` is `!viewing`), which is the exact surface swap being replaced.
         return;
       }
       setRewound((was) => (was === id ? null : id));
     },
-    [view],
+    [history, view],
   );
 
   /**
@@ -2761,7 +2833,11 @@ export function LearningCanvas({
             🔴 `#canvas-answer-end` STAYS THE LAST THING INSIDE IT, so the character still sits
             under the answer rather than under the runway (#874). Block children stack from the
             top, so the runway below cannot push that anchor down. */}
-        <div data-canvas-current="" ref={currentTurnRef}>
+        {/* 🔴 `data-thread-turn` MAKES THE LIVE TURN REACHABLE FROM THE HISTORY RAIL, on exactly
+            the same attribute a filed turn carries — one selector, one meaning, so the rail cannot
+            find three of five turns and blank the page on the rest. It is absent while a turn is
+            still in flight, because nothing has been recorded for it to point at yet. */}
+        <div data-canvas-current="" data-thread-turn={currentMomentId ?? undefined} ref={currentTurnRef}>
         {/* 🔴🔴 THE LEARNER'S OWN MESSAGE FOR THE TURN ON SCREEN, AND ONLY IN THE THREAD. Owner,
             2026-08-26: *"just make the canvas the one where it doesn't show the user's prompt. It
             just shows the output."* That is the one difference between the two views, and it is
