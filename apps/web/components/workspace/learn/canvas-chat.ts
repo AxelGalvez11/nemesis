@@ -47,7 +47,7 @@ import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { commentsContextBlock, openCommentsForDocs } from "@/lib/workspace/document-comments";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
-import { excerptsInChunks, retrievalNote, retrieveChunks, TURN_CHUNKS } from "@/lib/learn/canvas-retrieval";
+import { excerptsInChunks, inventoryNote, retrievalNote, retrieveChunks, TURN_CHUNKS } from "@/lib/learn/canvas-retrieval";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { prepareAnswer } from "@/lib/learn/answer-prepare";
 import { fillMissingFigures } from "@/lib/learn/figure-fallback";
@@ -395,7 +395,7 @@ export async function askCanvasChat(
   const focused = retrieved ? excerptsInChunks(canvas.sources, retrieved) : null;
   const materialContext =
     focused && focused.sources.length > 0
-      ? `${retrievalNote(new Set(retrieved!.map((chunk) => chunk.parsedDocumentId)).size, retrieved!.length)}\n\n${groundingBlock(focused.sources)}`
+      ? `${inventoryNote(canvas.sources, focused.sources)}\n\n${retrievalNote(new Set(retrieved!.map((chunk) => chunk.parsedDocumentId)).size, retrieved!.length)}\n\n${groundingBlock(focused.sources)}`
       : groundingBlock(canvas.sources);
 
   const ask = (webContext: string, searchesLeft: number, toolContext: string, toolRoundsLeft: number) => {

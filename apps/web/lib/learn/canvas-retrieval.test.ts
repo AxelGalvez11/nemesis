@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { chunksAsMaterial, excerptsInChunks, retrievalNote, type RetrievedChunk } from "./canvas-retrieval";
+import { chunksAsMaterial, excerptsInChunks, inventoryNote, retrievalNote, type RetrievedChunk } from "./canvas-retrieval";
 import type { CanvasSource } from "./canvas-model";
 
 // Retrieval is the twenty-document fix: ask the index which passages bear on the question rather
@@ -136,4 +136,47 @@ test("🔴 the migration ships with the code that needs it", () => {
   assert.match(sql, /parsed_document_ids uuid\[\]/, "the canvas scoping argument is gone — this would search the whole library");
   assert.match(sql, /c\.parsed_document_id = any\(parsed_document_ids\)/, "the scoping argument is accepted and never applied");
   assert.ok(!/security definer/i.test(sql), "the function became SECURITY DEFINER — RLS no longer scopes rows to the caller");
+});
+
+// ---------------------------------------------------------------- the inventory
+
+const TEN = Array.from({ length: 10 }, (_, index) => ({
+  excerpts: [{ id: `s${index + 1}:e1`, label: null, text: `Contents of lecture ${index + 1}.` }],
+  id: `s${index + 1}`,
+  kind: "pdf",
+  title: `Lecture ${index + 1}`,
+})) as unknown as CanvasSource[];
+
+test("🔴 every attached document is named, even the ones this question did not match", () => {
+  // Owner, 2026-09-03, ten lecture files attached and ALL TEN indexed (479 passages). Asked to list
+  // them, Nemesis said: "I do not have access to ten distinct file contents: only four syllabi and
+  // one readme are present in what you gave me." Scrupulously honest about what it had been SHOWN,
+  // and wrong about what EXISTS — because retrieval had been allowed to narrow the inventory too.
+  const note = inventoryNote(TEN, TEN.slice(0, 4));
+  for (const source of TEN) assert.ok(note.includes(source.title), `${source.title} is missing from the inventory`);
+  assert.ok(note.includes("10 documents"), "the count is not stated");
+});
+
+test("a document with no matching passage is marked as attached, not as missing", () => {
+  const note = inventoryNote(TEN, TEN.slice(0, 4));
+  assert.ok(/attached and readable/.test(note), "an unmatched document is not marked as still attached");
+  assert.ok(
+    /[Nn]ever tell the learner a listed document is missing/.test(note),
+    "nothing stops the model reporting an attached file as missing",
+  );
+  assert.ok(!note.includes("Lecture 1 (attached and readable"), "a document that WAS shown is marked as unmatched");
+  assert.ok(note.includes("Lecture 9 (attached and readable"), "a document that was NOT shown is unmarked");
+});
+
+test("no attachments means no inventory block at all", () => {
+  assert.equal(inventoryNote([], []), "", "an empty canvas emits an inventory heading with nothing under it");
+});
+
+test("both lanes carry the inventory, not just one", () => {
+  // The bug was one narrowing applied in two places. The fix has to reach both or the next report is
+  // "the study guide only covered four of my ten lectures".
+  const chat = readFileSync(new URL("../../components/workspace/learn/canvas-chat.ts", import.meta.url), "utf8");
+  const deliverables = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  assert.match(chat, /inventoryNote\(canvas\.sources, focused\.sources\)/, "the chat turn lost the inventory");
+  assert.match(deliverables, /inventoryNote\(canvas\.sources, shown\)/, "the deliverable brief lost the inventory");
 });
