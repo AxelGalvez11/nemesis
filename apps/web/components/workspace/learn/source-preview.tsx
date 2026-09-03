@@ -46,7 +46,7 @@ import type { ReaderSource } from "@/lib/reader/reader-source";
 import { cn } from "@/lib/utils";
 import { loadLibrarySource } from "@/lib/workspace/library-sources";
 
-import { DockSwitcher } from "./dock-switcher";
+import { DockTabs } from "./dock-tabs";
 import type { DockItem } from "./document-dock";
 import { CHROME } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
@@ -307,11 +307,19 @@ export function SourcePreview({
           on screen with two tabs on a narrowed panel: the tabs are `shrink-0` inside the scroller,
           so they pushed the one control that closes the panel off the right edge and out of reach.
           The strip scrolls inside its own box; the button is its sibling and never moves. */}
+      {/* 🔴🔴 TABS GET THEIR OWN ROW, WHICH REVERSES THIS MORNING'S INSTRUCTION AND THE REVERSAL IS
+          THE OWNER'S. On 2026-09-03 he asked for *"all the tabs and icons should be on the same
+          row"* and for a dropdown instead of a strip, both to buy space. Later the same day he sent
+          screenshots of ChatGPT's desktop pane and said *"i want it exactly like this"* — and that
+          pane puts tabs alone on top with the name and controls underneath. The earlier instruction
+          was about a strip that had to share a row; this is the arrangement that makes a strip work
+          at all. It costs 36px, which is the trade he made knowingly. See dock-tabs.tsx. */}
+      {items.length > 0 && (
+        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+      )}
       <div className={CHROME.header}>
-        {/* 🔴 ONE BUTTON, NOT A STRIP — see dock-switcher.tsx. Six open documents used to be six
-            chips competing with the controls for this row; one button costs one slot however many
-            are open, which is what leaves room for everything to its right. */}
-        <DockSwitcher activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+        {/* The front document's name. Row one already says what is open; this must not repeat it. */}
+        <span className={cn(CHROME.crumb, "min-w-0 flex-1 px-[6px]")} title={active?.title ?? ""}>{active?.title ?? ""}</span>
 
         {/* 🔴🔴 THE READER'S OWN CONTROLS DRAW HERE, IN THIS ROW (owner, 2026-09-03: *"all the tabs
             and icons should be on the same row"*). In dense mode the reader used to render its own

@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { DockSwitcher } from "./dock-switcher";
+import { DockTabs } from "./dock-tabs";
 import type { DockItem } from "./document-dock";
 import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
 import { biggerThan, CHROME, type ReaderMode } from "./reader-chrome";
@@ -470,6 +470,13 @@ export function OutputPreview({
           role="separator"
         />
       )}
+      {/* 🔴🔴 ROW ONE IS NOTHING BUT TABS, AND THAT SEPARATION IS THE WHOLE FIX. The strip and the
+          controls shared a row until 2026-09-03, which is what made six open documents unusable and
+          what the dropdown was asked for. Measured in ChatGPT's desktop app: tabs alone on top, the
+          document's name and its controls underneath. See dock-tabs.tsx. */}
+      {items && items.length > 0 && onSelectKey && onCloseKey && !full && (
+        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+      )}
       <div className={CHROME.header} ref={card}>
         {/* 🔴 FULL SCREEN PUTS THE CLOSE ON THE LEFT, DOCKED PUTS IT ON THE RIGHT, and that is the
             reference's own arrangement rather than a preference: measured at x=193 beside the
@@ -480,15 +487,13 @@ export function OutputPreview({
             <Codicon name="close" size={CHROME.icon} />
           </button>
         )}
-        {items && items.length > 0 && onSelectKey && onCloseKey && !full ? (
-          <DockSwitcher activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
-        ) : (
-          <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={output.title}>
-            {/* "Library / name" — the same two-part crumb, with the prefix muted. */}
-            <span className="text-(--ui-text-quaternary)">Library&nbsp;/&nbsp;</span>
-            {output.title}
-          </span>
-        )}
+        {/* 🔴 THE NAME, NEVER A SECOND SWITCHER. Row one already says what is open and what is in
+            front; repeating that here would be two controls answering one question, which is the
+            defect `dock-switcher.tsx` was written to remove and this must not reintroduce. */}
+        <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={output.title}>
+          <span className="text-(--ui-text-quaternary)">Library&nbsp;/&nbsp;</span>
+          {output.title}
+        </span>
         {canComment && (
           <button
             aria-label={commenting ? "Stop commenting" : "Comment on this document"}
