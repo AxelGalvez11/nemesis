@@ -198,11 +198,20 @@ export function CalendarWorkspace() {
 
   const allCalendars = useMemo(() => calendarList(calendars), [calendars]);
 
-  /** Event colour, then calendar colour, then the kind's own — see event-colors.ts. */
+  /**
+   * Event colour, then calendar colour, then the fallback — see event-colors.ts.
+   *
+   * 🔴🔴 IT SEARCHES `allCalendars`, AND SEARCHING `calendars` WAS WHY EVERYTHING WAS GREY. The
+   * stored list holds only calendars a student has MADE; the primary one is never stored and is
+   * prepended by `calendarList` (see calendars.ts). An event with no `calendarId` — which is every
+   * event, because nothing creates a second calendar — looked itself up in a list it was never in,
+   * found nothing, and fell through to the grey fallback. Giving `PRIMARY_CALENDAR` a colour does
+   * nothing at all until this line can see it.
+   */
   const calendarHex = useCallback(
     (calendarId: string | undefined) =>
-      calendarColorOf(calendars.find((entry) => entry.id === calendarId)?.colorId)?.hex ?? null,
-    [calendars],
+      calendarColorOf(allCalendars.find((entry) => entry.id === (calendarId ?? ""))?.colorId)?.hex ?? null,
+    [allCalendars],
   );
 
   const shownEvents = useMemo(() => visibleEvents(events, hiddenColors), [events, hiddenColors]);

@@ -101,7 +101,11 @@ export function CalendarHeader({
       </div>
       {/* Regular weight, not semibold: Google's date range is 22px/400. A bold
           heading here reads as a page title; this is a position indicator. */}
-      <h1 className="min-w-0 truncate text-[1.375rem] font-normal tracking-[-0.01em] text-foreground">
+      {/* 🔴 GOOGLE'S 22px, NOT 22 CONVERTED. Measured on the live app 2026-09-03: 22px / 400 /
+          "Google Sans". `1.375rem` is 24.75 here, the same ninth over that section 13 of the
+          reference removed from the grid below it — and a title is the one piece of chrome big
+          enough for that ninth to read. */}
+      <h1 className="min-w-0 truncate text-[22px] font-normal tracking-[-0.01em] text-foreground">
         {viewLabel(view, cursor)}
       </h1>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">

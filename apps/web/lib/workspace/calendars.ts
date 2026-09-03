@@ -38,7 +38,25 @@ export interface Calendar {
  * a data migration that can half-fail in order to record something the reader
  * can work out for itself. Null means primary, here and in the database.
  */
-export const PRIMARY_CALENDAR: Calendar = { id: "", name: "My calendar" };
+/**
+ * The calendar every event belongs to until a student makes another one.
+ *
+ * 🔴🔴 IT CARRIES A COLOUR NOW, AND WITHOUT ONE THE WHOLE CALENDAR WAS GREY. Owner, 2026-09-03:
+ * *"can you make sure that Google Calendar's colours actually map onto the colours in Nemesis…
+ * so that it looks more colourful, looks nicer."*
+ *
+ * The chain in `paintForEvent` is Google's own — the event's colour, then its CALENDAR's, then a
+ * fallback — and it was already built and already correct. What was missing was the second step
+ * having anything to say: no calendar had ever been given a colour, because nothing creates one
+ * and this constant did not carry one. So the chain fell through to `DEFAULT_PAINT`, which is
+ * `--ui-text-tertiary` grey by ruling (kinds were retired 2026-09-01), and every event a student
+ * had not individually coloured came out the same grey.
+ *
+ * 🔴 BLUEBERRY, AND IT IS GOOGLE'S OWN. `#4986e7` is id 16 of Google's twenty-four CALENDAR
+ * colours, read off `colors.get` — the blue Google itself gives a new primary calendar. Picking a
+ * Nemesis blue would have meant a calendar that syncs with Google changing colour on the way in.
+ */
+export const PRIMARY_CALENDAR: Calendar = { colorId: "16", id: "", name: "My calendar" };
 
 export const CALENDARS_STORAGE_KEY = "nemesis.web.calendars.v1";
 
