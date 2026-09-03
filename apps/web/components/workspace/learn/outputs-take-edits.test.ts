@@ -26,7 +26,11 @@ test("🔴🔴 a revision keeps the old state, and both mounts render the FRESH 
   // Both open-output mounts derive from canvas.outputs at render time. The state copy captured at
   // open predates any revision, and a panel rendering it shows the old document under a "revised"
   // answer — that is the staleness this line exists to prevent.
-  assert.match(CANVAS, /canvas\.outputs\.find\(\(row\) => row\.id === openArtifact\.id\) \?\? openArtifact/, "the canvas mount renders the stale open-time copy");
+  // 🔴 ONE MOUNT SINCE 2026-09-03. The canvas-level `OutputPreview` (opened from the artifact card
+  // and the thread, bypassing the dock) is gone: every made file opens through `dock.openOutput`
+  // and is drawn by the sources control's mount, so there is exactly one place to render the row.
+  assert.ok(!/<OutputPreview/.test(CANVAS), "the canvas grew a second output mount beside the dock's");
+  assert.match(CANVAS, /onOpenOutput=\{dock\.openOutput\}/, "a thread's artifact card no longer opens through the dock");
   assert.match(CONTROLS, /\(canvas\.outputs \?\? \[\]\)\.find\(\(row\) => row\.id === openedOutput\.id\) \?\? openedOutput/, "the panel mount renders the stale open-time copy");
 });
 

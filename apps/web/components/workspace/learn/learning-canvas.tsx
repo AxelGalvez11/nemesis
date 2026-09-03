@@ -18,7 +18,7 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
 import { createReadPool } from "@/lib/learn/read-pool";
 import { readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
-import type { MindmapNode } from "@/lib/learn/mindmap-tree";
+import { type MindmapNode, parseMermaidMindmap } from "@/lib/learn/mindmap-tree";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
@@ -118,7 +118,7 @@ import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
-import { DocumentDockProvider, useDocumentDockState } from "./document-dock";
+import { DocumentDockProvider, useDocumentDockState, CHECK_KEY } from "./document-dock";
 
 /**
  * The staged reads share one pool, page-wide.
@@ -584,9 +584,7 @@ export function LearningCanvas({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   /** The artifact open in the side panel, or null. Canvas-level rather than inside the card, so the
    *  panel survives the card being replaced by the next make mid-read. */
-  const [openArtifact, setOpenArtifact] = useState<CanvasOutput | null>(null);
   /** A deck of cards being reviewed, docked beside the conversation. */
-  const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
   /**
    * The mind map open in the right panel, when one is.
    *
@@ -595,8 +593,7 @@ export function LearningCanvas({
    * and it hosts it in the same `StudyPanel` the check and the deck use. Owner, 2026-09-03: *"if I
    * want a mind map... one that I can click on and then reveals more nodes."*
    */
-  const [openMindmap, setOpenMindmap] = useState<MindmapNode | null>(null);
-  const mindmapDoor = useMemo(() => ({ open: (root: MindmapNode) => setOpenMindmap(root) }), []);
+  const mindmapDoor = useMemo(() => ({ open: (root: MindmapNode) => dock.openMindmap(root, root.label) }), [dock]);
   /**
    * Whether the check is showing in the side panel.
    *
@@ -605,7 +602,11 @@ export function LearningCanvas({
    * to re-read something must find those four answers waiting when they reopen it, and answers
    * that quietly reset are worse than a panel that cannot be closed.
    */
-  const [checkOpen, setCheckOpen] = useState(false);
+  /**
+   * Whether the check is the tab in front. Derived from the dock: the check is an item of the one
+   * pane now (2026-09-03), so "open" means "its tab is selected", never a flag of its own.
+   */
+  const checkOpen = dock.active?.kind === "check";
 
   /**
    * A finished artifact opens itself.
@@ -643,11 +644,11 @@ export function LearningCanvas({
     // owner asked for the opposite outright: *"flashcards should also pop in the right side panel
     // too."* Same latch, same one-open-per-artifact rule.
     if (made.kind === "flashcards") {
-      if (made.deckId) setReviewingDeck(made.deckId);
+      if (made.deckId) dock.openDeck(made.deckId, made.title);
       return;
     }
-    setOpenArtifact(made);
-  }, [session.madeArtifact]);
+    dock.openOutput(made);
+  }, [dock, session.madeArtifact]);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
    *  that is not recording must carry no trace of it. */
   const [recording, setRecording] = useState(false);
@@ -1079,14 +1080,16 @@ export function LearningCanvas({
   const openedCheck = useRef<string | null>(null);
   useEffect(() => {
     if (!session.testRequested || isTestRefusal(testRun)) {
+      // 🔴 THE TAB GOES WITH THE RUN. A closed run must not leave an empty "Check" tab in the strip.
+      if (openedCheck.current !== null) dock.close(CHECK_KEY);
       openedCheck.current = null;
       return;
     }
     const identity = testRun.questions.map((question) => question.prompt).join("\u0000");
     if (openedCheck.current === identity) return;
     openedCheck.current = identity;
-    setCheckOpen(true);
-  }, [session.testRequested, testRun]);
+    dock.openCheck("Check");
+  }, [dock, session.testRequested, testRun]);
 
   /**
    * THE THREAD: every finished turn EXCEPT the one the live region is showing.
@@ -1249,6 +1252,12 @@ export function LearningCanvas({
         // happened, in words the model can read as finished.
         const made = withCapability && isMakerCapability(withCapability) ? withCapability : readDeliverableAsk(trimmed);
         const doorReply = !decision && made ? `(Nemesis made the ${MADE_NOUN[made]} from the material; it is open beside the conversation.)` : "";
+        // 🔴🔴 AND THE PREVIOUS ANSWER LEAVES THE SCREEN. A door turn writes no reply, so nothing
+        // replaced `session.aside`, and the last answer stayed drawn under the new ask as if it
+        // were the answer to it. Seen on production 2026-09-03: "make me a markdown file of the
+        // points I should recall" sat above the previous turn's whole mind map. The card is the
+        // door turn's answer; the old prose is not.
+        if (!decision && made) session.dismissAside();
         remember({ replied: decision?.say ?? doorReply, said: trimmed });
         // 🔴🔴 THE ONE THING ON THIS CANVAS THAT EXISTED NOWHERE DURABLE. `conversation` above is a
         // ref, capped at six turns, and its own comment says it is deliberately not persisted — so
@@ -1948,6 +1957,28 @@ export function LearningCanvas({
    * the finished text to do so. The finished reply still owns the record; see `session.draft`.
    */
   const liveText = replyText || (turnInFlight ? session.draft : "");
+  /**
+   * A map the answer drew opens itself in the pane, once per answer.
+   *
+   * 🔴 OWNER, 2026-09-03: *"I want my maps to open in the side panel also."* The inline tree stays
+   * in the conversation (that is where the sentence introducing it lives); the pane gets the same
+   * tree, big, the moment the reply lands. Latched on the reply text so a re-render never re-opens
+   * a map the learner closed, and the FIRST map only: a reply that drew two is one map plus an
+   * aside, and the second is a click away on its inline door.
+   */
+  const openedMapFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!replyText.trim() || openedMapFor.current === replyText) return;
+    const fence = /```mermaid\s*\n([\s\S]*?)```/g;
+    for (const match of replyText.matchAll(fence)) {
+      const root = parseMermaidMindmap(match[1] ?? "");
+      if (!root) continue;
+      openedMapFor.current = replyText;
+      dock.openMindmap(root, root.label);
+      return;
+    }
+    openedMapFor.current = replyText;
+  }, [dock, replyText]);
   useEffect(() => {
     // 🔴 CLEARED ON THE TURN, NOT ON A TIMER. Once `turnInFlight` is true the station's own first
     // term holds the centre, so dropping this changes nothing visible — it just stops this flag
@@ -3008,7 +3039,7 @@ export function LearningCanvas({
         {threadOpen && thread.length > 0 && (
           <div className="flex flex-col gap-10 pb-10" data-canvas-thread="">
             {thread.map((turn) => (
-              <CanvasThreadTurnView files={citableFiles} key={turn.id} onOpenFile={openCitedFile} onOpenOutput={setOpenArtifact} onRetry={retryTurn} turn={turn} />
+              <CanvasThreadTurnView files={citableFiles} key={turn.id} onOpenFile={openCitedFile} onOpenOutput={dock.openOutput} onRetry={retryTurn} turn={turn} />
             ))}
           </div>
         )}
@@ -3512,40 +3543,43 @@ export function LearningCanvas({
               onOpen={() => {
                 const made = session.madeArtifact;
                 if (!made) return;
-                if (made.kind === "flashcards" && made.deckId) setReviewingDeck(made.deckId);
-                else setOpenArtifact(made);
+                if (made.kind === "flashcards" && made.deckId) dock.openDeck(made.deckId, made.title);
+                else dock.openOutput(made);
               }}
               output={session.madeArtifact}
             />
           </div>
         )}
-{/* The reader, docked to the right. Mounted at canvas level so it outlives the card. */}
-        {openArtifact && (
-          <OutputPreview
-            canvasId={canvas.id}
-            comments={{ preview: false, uid }}
-            onClose={() => setOpenArtifact(null)}
-            onRevise={reviseOutput}
-            onUndo={undoOutput}
-            // 🔴 THE FRESH ROW, NOT THE STATE COPY. A revision lands in `canvas.outputs`; the
-            // object captured at open time predates it, and a panel rendering that copy would
-            // show the old document under a "revised" answer.
-            output={canvas.outputs.find((row) => row.id === openArtifact.id) ?? openArtifact}
+{/* 🔴🔴 THE STUDY BODIES OF THE ONE PANE. A document is drawn by `SourcePreview` and a made
+            file by `OutputPreview` (both mounted by `SourcesControl`, driven by this same dock);
+            a deck, a mind map and the check are drawn here, by the item in front, wearing the same
+            tab strip and the reader's width. Owner, 2026-09-03: *"one side panel that's supposed to
+            render anything... multiple tab views."* Nothing here opens a second rectangle. */}
+        {dock.active?.kind === "deck" && (
+          <DeckReview
+            activeKey={dock.activeKey}
+            deckId={dock.active.deckId}
+            items={dock.items}
+            onClose={() => dock.close(dock.activeKey ?? "")}
+            onCloseKey={dock.close}
+            onSelectKey={dock.select}
+            widthSlot="reader"
           />
         )}
-        {/* 🔴 THE ONE ARTIFACT THAT IS NOT A READER. Mounting `DeckReview` here rather than teaching
-            the reader a third mode keeps "a deck is something you do" and "a document is something
-            you read" as two different objects. It opens in the study panel like everything else —
-            this comment used to say full screen was "what the owner asked flashcards to be", which
-            he reversed on 2026-08-30 and again on 2026-08-31 when the Library still did it. */}
-        {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
-        {/* 🔴 THE MIND MAP, DOCKED LIKE THE DECK AND THE CHECK. Same shell, same sizes, same close;
-            the tree keeps its own opened set while the panel is hidden, because StudyPanel hides
-            rather than unmounts. */}
-        {openMindmap && (
-          <StudyPanel crumb="Mind map" onClose={() => setOpenMindmap(null)} open title={canvas.title || "This canvas"}>
+        {dock.active?.kind === "mindmap" && (
+          <StudyPanel
+            activeKey={dock.activeKey}
+            crumb="Mind map"
+            items={dock.items}
+            onClose={() => dock.close(dock.activeKey ?? "")}
+            onCloseKey={dock.close}
+            onSelectKey={dock.select}
+            open
+            title={dock.active.title}
+            widthSlot="reader"
+          >
             <div className="p-4">
-              <MindmapView root={openMindmap} variant="panel" />
+              <MindmapView key={dock.active.key} root={dock.active.root} variant="panel" />
             </div>
           </StudyPanel>
         )}
@@ -3560,21 +3594,26 @@ export function LearningCanvas({
             hide-don't-unmount rule exists to prevent. */}
         {session.testRequested && !policy.awaitingAnswer && !isTestRefusal(testRun) && (
           <StudyPanel
+            activeKey={dock.activeKey}
             crumb="Check"
-            onClose={() => setCheckOpen(false)}
+            items={dock.items}
+            onClose={() => dock.close(CHECK_KEY)}
+            onCloseKey={dock.close}
+            onSelectKey={dock.select}
             open={checkOpen}
             title={canvas.title || "This canvas"}
+            widthSlot="reader"
           >
             <div className="px-4 py-3">
               <CanvasCheck
                 onDismiss={() => {
-                  setCheckOpen(false);
+                  dock.close(CHECK_KEY);
                   session.clearTest();
                 }}
                 onFinished={(account) => {
                   // 🔴 THE PANEL CLOSES ITSELF ON THE LAST ANSWER, because what happens next is a
                   // reply in the conversation and the conversation is what the learner needs to see.
-                  setCheckOpen(false);
+                  dock.close(CHECK_KEY);
                   void finishCheck(account);
                 }}
                 run={testRun}
@@ -3636,7 +3675,7 @@ export function LearningCanvas({
             ) : (
               // 🔴 THE RECEIPT, NOT THE QUESTIONS. The run itself lives in the panel below; this is
               // the object the turn handed back, in the same shape a made document arrives in.
-              <CheckCard onOpen={() => setCheckOpen(true)} open={checkOpen} run={testRun} />
+              <CheckCard onOpen={() => dock.openCheck("Check")} open={checkOpen} run={testRun} />
             )}
           </div>
         )}

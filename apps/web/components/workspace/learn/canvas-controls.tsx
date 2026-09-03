@@ -34,7 +34,6 @@ import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource, LearningCanvas } from "@/lib/learn/canvas-model";
 import { fileMark } from "@/lib/learn/kind-mark";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
-import { DeckReview } from "@/components/workspace/study/deck-review";
 import { OutputPreview } from "./output-preview";
 import { documentKey, outputKey, useDocumentDock } from "./document-dock";
 import { SourcePreview } from "./source-preview";
@@ -229,7 +228,6 @@ export function SourcesControl({
   // deck a canvas had just made meant leaving the canvas. Now the same `DeckReview` the
   // Library mounts opens over the canvas; the Library link still works for anyone who
   // wants the shelf. Null until pressed — mounting it is what triggers the study load.
-  const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
   /** The made artifact open on screen, or null. Mounted beside the panel rather than inside it, so
    *  closing the panel does not tear the document down mid-read — the same arrangement
    *  `SourcePreview` has. */
@@ -331,7 +329,7 @@ export function SourcesControl({
                   setOpen(false);
                   dock.openOutput(chosen);
                 }}
-                onReviewDeck={setReviewingDeck}
+                onReviewDeck={dock.openDeck}
                 output={output}
               />
             ))}
@@ -414,7 +412,6 @@ export function SourcesControl({
         open={openDocs}
         uid={session?.user.id ?? null}
       />
-      {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
       {openedOutput && (
         <OutputPreview
           activeKey={dock.activeKey}
@@ -737,7 +734,8 @@ function OutputRow({
 }: {
   canvasId: string;
   onOpen: (output: CanvasOutput) => void;
-  onReviewDeck: (deckId: string) => void;
+  /** Open the deck as a tab of the one pane; see document-dock.tsx `openDeck`. */
+  onReviewDeck: (deckId: string, title: string) => void;
   output: CanvasOutput;
 }) {
   // 🔴 ONE LINE, SAME OWNER CUT (2026-08-25). The second line said "Flashcard deck · click to
@@ -770,7 +768,7 @@ function OutputRow({
   if (output.kind === "flashcards" && output.deckId) {
     const deckId = output.deckId;
     return (
-      <button className={row} onClick={() => onReviewDeck(deckId)} type="button">
+      <button className={row} onClick={() => onReviewDeck(deckId, output.title)} type="button">
         {body}
       </button>
     );

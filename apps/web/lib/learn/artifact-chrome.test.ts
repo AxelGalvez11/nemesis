@@ -135,13 +135,17 @@ test("🔴 the two surfaces differ by where they are opened from", () => {
   assert.match(library, /initialMode="full"/, "the Library opens a docked panel with nothing beside it");
 });
 
-test("🔴🔴 an artifact opens itself, and a deck is opened by pressing its card", () => {
+test("🔴🔴 an artifact opens itself, and so does a deck, both as tabs of the one pane", () => {
   // The owner's own condition for this being done: *"user can click in the Canvas to create a
-  // PowerPoint or any artifact, and it should open a sidebar for it inside the Canvas."*
+  // PowerPoint or any artifact, and it should open a sidebar for it inside the Canvas."* And on
+  // 2026-09-03, of the deck that used to wait for a press: *"flashcards should also pop in the
+  // right side panel too"*, then *"one side panel that's supposed to render anything... multiple
+  // tab views"*: the deck is an item of the document dock now, not a panel of its own.
   const canvas = code("../../components/workspace/learn/learning-canvas.tsx");
   assert.match(canvas, /openedArtifactId\.current = made\.id/, "a finished artifact does not open itself");
-  assert.match(canvas, /made\.kind === "flashcards" && made\.deckId\) setReviewingDeck/, "a deck is squeezed into the document reader");
-  assert.match(canvas, /<DeckReview deckId=\{reviewingDeck\}/, "the review is never mounted");
+  assert.match(canvas, /if \(made\.deckId\) dock\.openDeck\(made\.deckId, made\.title\);/, "a made deck no longer opens itself as a tab");
+  assert.match(canvas, /dock\.active\?\.kind === "deck" && \(\s*<DeckReview/, "the review is not mounted from the dock");
+  assert.ok(!/setReviewingDeck|reviewingDeck &&/.test(canvas), "a deck has a panel of its own again");
   // 🔴 LATCHED ON THE ID. Without it, closing the reader on an artifact still held in state
   // re-opens it on the next render — a panel that cannot be dismissed.
   assert.match(canvas, /openedArtifactId\.current === made\.id\) return;/, "the reader re-opens itself after being closed");

@@ -35,9 +35,18 @@ function face(item: DockItem): { title: string; icon: string } {
   // 🔴 THE SAME MARK THE SHELF DRAWS. A menu of six documents was six identical page glyphs, and
   // this is the surface where telling a deck from a spreadsheet at a glance matters most. An
   // artifact wears its kind for the same reason. See lib/learn/kind-mark.ts.
-  return item.kind === "document"
-    ? { icon: fileMark(item.source.title, item.source.kind).icon, title: item.source.title }
-    : { icon: fileMark(item.output.title, item.output.kind).icon, title: item.output.title };
+  switch (item.kind) {
+    case "document":
+      return { icon: fileMark(item.source.title, item.source.kind).icon, title: item.source.title };
+    case "output":
+      return { icon: fileMark(item.output.title, item.output.kind).icon, title: item.output.title };
+    case "deck":
+      return { icon: "layers", title: item.title };
+    case "check":
+      return { icon: "checklist", title: item.title };
+    case "mindmap":
+      return { icon: "type-hierarchy", title: item.title };
+  }
 }
 
 export function DockSwitcher({

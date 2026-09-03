@@ -33,6 +33,7 @@ const REVIEW = strip(readFileSync(new URL("./review-session.tsx", import.meta.ur
 const DECK_REVIEW = strip(readFileSync(new URL("./deck-review.tsx", import.meta.url), "utf8"));
 const OUTPUTS = strip(readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8"));
 const CANVAS_CONTROLS = strip(readFileSync(new URL("../learn/canvas-controls.tsx", import.meta.url), "utf8"));
+const CANVAS = strip(readFileSync(new URL("../learn/learning-canvas.tsx", import.meta.url), "utf8"));
 
 test("🔴🔴 the card editor is gone from the review screen", () => {
   // Calibration: restore the inline form and every line below reddens.
@@ -101,8 +102,12 @@ test("🔴 the whole-account study load waits for a real intent to review", () =
   // wraps in parentheses, so a pattern demanding `&& <DeckReview ` on one line reddened on correct
   // code. The RULE — conditional, never `open={…}` — is unchanged and still asserted.
   assert.match(OUTPUTS, /\{reviewing && \(?\s*<DeckReview\b/, "the Library mounts the review unconditionally");
-  assert.match(CANVAS_CONTROLS, /\{reviewingDeck && <DeckReview /, "the canvas mounts the review unconditionally");
-  assert.ok(!/<DeckReview[^>]*\sopen=/.test(OUTPUTS + CANVAS_CONTROLS), "DeckReview grew an `open` prop and is now always mounted");
+  // 🔴 REPOINTED AGAIN 2026-09-03: the canvas mounts the review from the document dock, as the
+  // tab in front, so the condition is "the deck tab is selected" rather than a flag of its own.
+  // Still conditional, still never `open={…}`, and the sources control no longer mounts one at all.
+  assert.match(CANVAS, /\{dock\.active\?\.kind === "deck" && \(\s*<DeckReview/, "the canvas mounts the review unconditionally");
+  assert.ok(!/<DeckReview/.test(CANVAS_CONTROLS), "the sources control mounts a second review");
+  assert.ok(!/<DeckReview[^>]*\sopen=/.test(OUTPUTS + CANVAS), "DeckReview grew an `open` prop and is now always mounted");
   // And it must not hand ReviewSession an empty deck mid-fetch: that renders "You're caught up",
   // which reads as a finished deck.
   assert.match(DECK_REVIEW, /status !== "loaded"/, "DeckReview stopped waiting for the store to load");
@@ -134,7 +139,8 @@ test("🔴 a canvas linking to a deck means 'go study this'", () => {
   // The row moved into an `OutputRow` component when the panel became three stacked shelves, so
   // the press calls the prop and the panel supplies the setter. Both halves are asserted: a prop
   // that nothing passes is a row that opens nothing, and that is the failure this guards.
-  assert.match(CANVAS_CONTROLS, /onClick=\{\(\) => onReviewDeck\(deckId\)\}/, "the canvas output row stopped opening the review");
-  assert.match(CANVAS_CONTROLS, /onReviewDeck=\{setReviewingDeck\}/, "the output row is never given a way to open the review");
+  // The row opens the deck as a tab of the one pane now (2026-09-03), naming it for the strip.
+  assert.match(CANVAS_CONTROLS, /onClick=\{\(\) => onReviewDeck\(deckId, output\.title\)\}/, "the canvas output row stopped opening the review");
+  assert.match(CANVAS_CONTROLS, /onReviewDeck=\{dock\.openDeck\}/, "the output row is never given a way to open the review");
   assert.ok(!CANVAS_CONTROLS.includes("/library?deck="), "the canvas navigates away to review a deck it just made");
 });

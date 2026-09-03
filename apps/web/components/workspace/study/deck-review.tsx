@@ -45,6 +45,7 @@
 
 import { useEffect, useMemo, type ReactNode } from "react";
 
+import type { DockItem } from "@/components/workspace/learn/document-dock";
 import { StudyPanel } from "@/components/workspace/learn/study-panel";
 import { deckAsMarkdown } from "@/lib/workspace/deck-export";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
@@ -59,6 +60,11 @@ export const REVIEW_DEFAULTS: StudyReviewSettings = { flashcardOutline: false, f
 
 export function DeckReview({
   actions,
+  activeKey,
+  items,
+  onCloseKey,
+  onSelectKey,
+  widthSlot,
   crumb = "Flashcards",
   deckId,
   onAsk,
@@ -69,6 +75,12 @@ export function DeckReview({
   /** Header controls the host supplies — the Library passes Download, so the deck's toolbar
    *  matches the document's. See StudyPanel's own note on the slot. */
   actions?: ReactNode;
+  /** The one pane's tabs, threaded straight to `StudyPanel`; see its own note. */
+  items?: readonly DockItem[];
+  activeKey?: string | null;
+  onSelectKey?: (key: string) => void;
+  onCloseKey?: (key: string) => void;
+  widthSlot?: "study" | "reader";
   /** The muted first half of the header path: the surface you came from. The Library says
    *  "Library", exactly as it does over a document, so two artifacts opened from one shelf do not
    *  disagree about where they came from. */
@@ -132,6 +144,11 @@ export function DeckReview({
   return (
     <StudyPanel
       actions={actions}
+      activeKey={activeKey}
+      items={items}
+      onCloseKey={onCloseKey}
+      onSelectKey={onSelectKey}
+      widthSlot={widthSlot}
       crumb={crumb}
       initialMode={initialMode}
       onAsk={

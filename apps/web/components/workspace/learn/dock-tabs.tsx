@@ -33,9 +33,20 @@ import type { DockItem } from "./document-dock";
 
 /** What an open thing is called and which glyph it wears. Shared shape with `dock-switcher`. */
 function face(item: DockItem): { title: string; icon: string } {
-  return item.kind === "document"
-    ? { icon: fileMark(item.source.title, item.source.kind).icon, title: item.source.title }
-    : { icon: fileMark(item.output.title, item.output.kind).icon, title: item.output.title };
+  switch (item.kind) {
+    case "document":
+      return { icon: fileMark(item.source.title, item.source.kind).icon, title: item.source.title };
+    case "output":
+      return { icon: fileMark(item.output.title, item.output.kind).icon, title: item.output.title };
+    // 🔴 THE SAME GLYPHS THE CARDS IN THE CONVERSATION WEAR: a deck is `layers` on its artifact
+    // card, a check is `checklist` on its receipt, and a map is the hierarchy glyph.
+    case "deck":
+      return { icon: "layers", title: item.title };
+    case "check":
+      return { icon: "checklist", title: item.title };
+    case "mindmap":
+      return { icon: "type-hierarchy", title: item.title };
+  }
 }
 
 /**
