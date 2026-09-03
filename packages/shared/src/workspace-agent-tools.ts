@@ -118,9 +118,13 @@ export const WORKSPACE_TOOL_DESCRIPTIONS: Record<WebWorkspaceAgentToolName, stri
     + "YOU decide that a test is the right move and what it should be aimed at; pass `record` as plain sentences "
     + "carrying what you know of this student — from the conversation and from get_study_record: scores, their "
     + "own miss diagnoses, what they just struggled with or asked for — and the paper's composition is decided "
-    + "from that record. `source` is a deck name, a note title, or \"everything\" (all decks and notes, with "
-    + "previously missed questions brought back for re-asking — the spaced-review move). After it is made, say "
-    + "one sentence pointing at the card; never read the questions out.",
+    + "from that record. `source` says what the paper is written FROM, and the student's OWN UPLOADED "
+    + "DOCUMENTS are the first thing to reach for: pass part of a file name to be tested on that lecture, "
+    + "chapter or set of slides, and the questions come from its own passages. It also takes a deck name, a "
+    + "note title, or \"everything\" (uploads, decks and notes together, with previously missed questions "
+    + "brought back for re-asking — the spaced-review move). Add `topic` only when they asked for a narrower "
+    + "part of that source than the whole of it. After it is made, say one sentence pointing at the card; "
+    + "never read the questions out.",
 };
 
 /**

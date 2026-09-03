@@ -297,6 +297,101 @@ export function noteMaterial(noteTitle: string, content: string): StudyMaterial 
   return { label: `note "${noteTitle}"`, text: content.trim().slice(0, MATERIAL_CHAR_LIMIT) };
 }
 
+/** One indexed passage of a document the learner uploaded. Mirrors a `library_chunks`
+ *  row, and deliberately nothing more: this file stays pure and knows no table. */
+export interface LecturePassage {
+  /** Reading order within the document. */
+  chunkIndex: number;
+  content: string;
+}
+
+/** Below this a passage carries no fact worth asking about — a slide title on its
+ *  own, a caption stub, a parser's placeholder for a picture it did not read.
+ *  Stated as a LENGTH, not as a list of markers, so it holds for every document
+ *  shape and every subject. */
+const MIN_PASSAGE_CHARS = 40;
+
+/**
+ * Passages spread across the WHOLE document, under a character budget.
+ *
+ * 🔴🔴 TRUNCATION AT THE HEAD IS THE SAME BUG AS NO MATERIAL AT ALL. A lecture in this
+ * account runs to 30,570 characters and the material budget is 9,000, so `slice(0, cap)`
+ * would hand the examiner the first thirty per cent of one lecture and call it the lecture.
+ * Every question would come from the opening slides, and a learner revising for an exam on
+ * the whole deck would be tested on its title page and its learning objectives.
+ *
+ * 🔴 SO SELECTION, NOT TRUNCATION, AND SELECTION BY POSITION RATHER THAN BY SUBJECT. Taking
+ * passages at an even stride across the document gives the beginning, the middle and the end
+ * equal standing, needs nothing to be understood about the material, and reads the same for a
+ * statute, a lab manual or a grammar chapter.
+ *
+ * PURE. No I/O.
+ */
+export function spreadPassages(passages: readonly LecturePassage[], budget: number): LecturePassage[] {
+  const ordered = [...passages]
+    .filter((passage) => passage.content.trim().length >= MIN_PASSAGE_CHARS)
+    .sort((left, right) => left.chunkIndex - right.chunkIndex);
+  if (ordered.length === 0) return [];
+
+  const cost = (passage: LecturePassage) => passage.content.trim().length + 2;
+  const total = ordered.reduce((sum, passage) => sum + cost(passage), 0);
+  if (total <= budget) return ordered;
+
+  // How many average-sized passages fit, and then one every `stride` of them so the
+  // sample runs end to end instead of stopping where the budget did.
+  const wanted = Math.max(1, Math.floor(budget / (total / ordered.length)));
+  const stride = ordered.length / wanted;
+  const picked: LecturePassage[] = [];
+  const seen = new Set<number>();
+  let used = 0;
+  for (let step = 0; step < wanted; step += 1) {
+    const at = Math.min(ordered.length - 1, Math.floor(step * stride));
+    if (seen.has(at)) continue;
+    const passage = ordered[at];
+    if (!passage) continue;
+    // Skipped rather than stopped: one long passage in the middle must not end the sample
+    // and take the whole back half of the document with it.
+    if (used + cost(passage) > budget) continue;
+    seen.add(at);
+    picked.push(passage);
+    used += cost(passage);
+  }
+  // Nothing fit whole, which means one passage is longer than the entire budget. Half a
+  // passage is still material; an empty test is not.
+  if (picked.length === 0) {
+    const first = ordered[0];
+    return first ? [{ chunkIndex: first.chunkIndex, content: first.content.trim().slice(0, budget) }] : [];
+  }
+  return picked;
+}
+
+/**
+ * A document the learner uploaded, flattened into generation material.
+ *
+ * 🔴 THE LABEL SAYS WHEN IT IS A SAMPLE, because the label is the sentence the examiner reads
+ * ("write a test from the student's ..."). A model told it holds a whole lecture will write
+ * "this lecture covers" questions about a lecture it has seen a third of.
+ */
+export function lectureMaterial(
+  title: string,
+  passages: readonly LecturePassage[],
+  budget: number = MATERIAL_CHAR_LIMIT,
+): StudyMaterial {
+  const usable = passages.filter((passage) => passage.content.trim().length >= MIN_PASSAGE_CHARS);
+  const chosen = spreadPassages(passages, budget);
+  const text = chosen
+    .map((passage) => passage.content.trim())
+    .join("\n\n")
+    .slice(0, budget);
+  const whole = chosen.length >= usable.length;
+  return {
+    label: whole
+      ? `uploaded document "${title}"`
+      : `uploaded document "${title}" (${chosen.length} passages sampled evenly across the whole document, of ${usable.length})`,
+    text,
+  };
+}
+
 /**
  * An aced paper's facts, as material for a harder paper on the SAME facts.
  *
@@ -351,6 +446,13 @@ const MAX_REASKS = 15;
  * sources that get truncated, never the re-asks — a mixed review that silently
  * dropped exactly the questions the student failed would be the old failure
  * wearing a new name.
+ *
+ * 🔴🔴 AND EVERY SOURCE GETS A SHARE, WHICH IT DID NOT UNTIL 2026-09-03. The loop used to
+ * slice each part against `budget - used`, so the FIRST part was free to eat the entire
+ * budget and every later one arrived empty — silently, with the label still promising a
+ * "mixed review across 9 sources". One long lecture starved eight decks. Now each part is
+ * held to an equal share, and whatever a short part leaves unspent is handed on to the rest,
+ * so the cap costs every source a little instead of costing most of them everything.
  */
 export function mixedReviewMaterial(parts: StudyMaterial[], missed: MissedFact[]): StudyMaterial {
   const missedSection = missed.length
@@ -366,9 +468,15 @@ export function mixedReviewMaterial(parts: StudyMaterial[], missed: MissedFact[]
   const budget = MATERIAL_CHAR_LIMIT - (missedSection ? missedSection.length + 2 : 0);
   const sources: string[] = [];
   let used = 0;
+  let remaining = parts.length;
   for (const part of parts) {
-    if (used >= budget) break;
-    const block = `== ${part.label} ==\n${part.text}`.slice(0, budget - used);
+    // The share is recomputed each time so a part that came in under its own share leaves
+    // the surplus to the parts behind it rather than to nobody.
+    const share = remaining > 0 ? Math.floor(Math.max(budget - used, 0) / remaining) : 0;
+    remaining -= 1;
+    if (share <= 0) continue;
+    const block = `== ${part.label} ==\n${part.text}`.slice(0, share);
+    if (!block) continue;
     sources.push(block);
     used += block.length + 2;
   }
