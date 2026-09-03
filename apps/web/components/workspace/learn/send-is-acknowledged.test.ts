@@ -526,7 +526,9 @@ test("🔴🔴 the canvas scrolls past the composer, which floats over it", () =
   // There was nothing below to scroll to.
   //
   // Calibration: drop the pb and this reddens.
-  assert.match(canvasCode, /overflow-y-auto pb-\[160px\] pt-\[64px\]/, "the scroller does not clear the floating composer");
+  // 🔴 THE TOP NUMBER MOVED TO 48 ON 2026-09-03 (space for the text); the BOTTOM one is what this
+  // test is about and is untouched. Kept in one match so the pair cannot drift apart.
+  assert.match(canvasCode, /overflow-y-auto pb-\[160px\] pt-\[48px\]/, "the scroller does not clear the floating composer");
 });
 
 // ── Arriving at the canvas ───────────────────────────────────────────────────────────────────
