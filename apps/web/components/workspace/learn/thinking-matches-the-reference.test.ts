@@ -78,7 +78,9 @@ test("🔴🔴 chat view puts it in the thread; canvas view puts it under the ch
   // to chat view, so the two views cannot both draw a caption.
   assert.match(
     CANVAS,
-    /\{threadOpen && \(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !replyText\.trim\(\) && \(/,
+    // `liveText` since 2026-09-03: the typed turn streams, and the draft of the answer counts as
+    // the answer having started, so the line makes way for it just as it did for the finished text.
+    /\{threadOpen && \(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !liveText\.trim\(\) && \(/,
     "the thread's line is no longer scoped to chat view — canvas view would draw two captions",
   );
   // 🔴 UNDER, NOT BESIDE, AND THE STATION IS WHAT DECIDES IT. The dock places its caption under the

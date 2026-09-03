@@ -16,7 +16,10 @@ test("🔴🔴 a note that is no longer true is REMOVED, not left standing", () 
   // keeps telling the learner "8 pictures were not read" about a document whose pictures now have
   // descriptions — the data got better and the words on screen did not, which is this project's
   // definition of degraded-not-complete.
-  return refreshedCoverageNotes([src({ coverageNote: "8 pictures were not read." })], async () => null).then((next) => {
+  // 🔴 RE-ARGUED 2026-09-03: the loader answers for the whole canvas at once now (one `.in()`
+  // query, the shape `restoredFileNames` has). A row whose coverage is null is a document that
+  // withheld nothing, which is what `async () => null` used to stand for.
+  return refreshedCoverageNotes([src({ coverageNote: "8 pictures were not read." })], async () => new Map([["lib-1", null]])).then((next) => {
     assert.equal(next[0]?.coverageNote, undefined, "the stale sentence survived a clean re-read");
   });
 });
@@ -24,7 +27,7 @@ test("🔴🔴 a note that is no longer true is REMOVED, not left standing", () 
 test("🔴 an unchanged note returns the SAME array, so the common case writes nothing", () => {
   // A canvas save on every load would be write amplification on the one path every session takes.
   const sources = [src()];
-  return refreshedCoverageNotes(sources, async () => null).then((next) => {
+  return refreshedCoverageNotes(sources, async () => new Map([["lib-1", null]])).then((next) => {
     assert.equal(next, sources, "a no-op refresh is still producing a new array, and a write with it");
   });
 });
@@ -37,6 +40,41 @@ test("🔴 a source with no library row is left exactly as it is", () => {
     assert.equal(next, sources);
     assert.equal(next[0]?.coverageNote, "kept");
   });
+});
+
+test("🔴🔴 fifty attached documents are one query, not fifty", () => {
+  // This was one query per source under an unbounded `Promise.all`, on every canvas load. A browser
+  // runs six requests at a time to one host, so the other forty-four queued, and so did everything
+  // the session needed after them.
+  const sources = Array.from({ length: 50 }, (_, at) => src({ id: `s${at}`, librarySourceId: `lib-${at}` }));
+  const asked: (readonly string[])[] = [];
+  return refreshedCoverageNotes(sources, async (ids) => {
+    asked.push(ids);
+    return new Map(ids.map((id) => [id, null]));
+  }).then(() => {
+    assert.equal(asked.length, 1, `${asked.length} round trips for one canvas`);
+    assert.equal(asked[0]?.length, 50, "a source was left out of the one query");
+  });
+});
+
+test("🔴 a row the Library did not return leaves the disclosure standing", () => {
+  // "The Library did not answer" is not "this document is now fully read". Blanking a disclosure on
+  // a failed lookup is the silent upgrade from partial to whole this whole area keeps failing
+  // towards, so an absent row changes nothing, and the same array comes back.
+  const sources = [src({ coverageNote: "8 pictures were not read." })];
+  return refreshedCoverageNotes(sources, async () => new Map()).then((next) => {
+    assert.equal(next, sources);
+    assert.equal(next[0]?.coverageNote, "8 pictures were not read.");
+  });
+});
+
+test("the batched reader is the ONLY reader of the embed's shape", () => {
+  // The one-source reader used to parse `parsed_documents(coverage)` itself; two readers of one
+  // embed shape is how a panel and a packet come to disagree about what a document missed.
+  const sources = readFileSync(new URL("./canvas-sources.ts", import.meta.url), "utf8");
+  assert.match(sources, /return \(await loadStoredCoverages\(\[librarySourceId\]\)\)\.get\(librarySourceId\) \?\? null;/, "the one-source reader grew its own query again");
+  assert.match(sources, /\.select\("id,parsed_documents\(coverage\)"\)\s*\.in\("id", \[\.\.\.ids\]\)/, "the coverage read is no longer one `.in()` query");
+  assert.ok(!/withIds\.map\(async \(source\) => \{/.test(sources), "the per-source fan-out is back");
 });
 
 // ── A source gets its own file name back ──────────────────────────────────────────────────────

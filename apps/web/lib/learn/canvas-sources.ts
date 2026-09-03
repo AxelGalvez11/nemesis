@@ -193,18 +193,33 @@ export async function storedCoverage(librarySourceId: string): Promise<{ label: 
 }
 
 async function loadStoredCoverage(librarySourceId: string): Promise<unknown> {
+  return (await loadStoredCoverages([librarySourceId])).get(librarySourceId) ?? null;
+}
+
+/**
+ * The stored coverage of many filed sources, keyed by Library id, in one round trip.
+ *
+ * A row that did not come back is absent from the map and the caller decides what that means; a
+ * row with no parsed document reads as `null`, which is "nothing was withheld". The one-source
+ * reader above goes through here too, so there is exactly one reader of the embed's shape.
+ */
+async function loadStoredCoverages(ids: readonly string[]): Promise<ReadonlyMap<string, unknown>> {
   const { data, error } = await supabase
     .from("library_sources")
-    .select("parsed_documents(coverage)")
-    .eq("id", librarySourceId)
-    .maybeSingle();
-  if (error || !data) return null;
-  const embed = (data as { parsed_documents?: unknown }).parsed_documents;
-  // 🔴 BOTH SHAPES, for the reason `ParsedEmbed` above already documents: supabase-js TYPES a
-  // to-one embed as a list and this one comes back as a bare object in production. Assuming either
-  // alone yields `undefined` silently, and every source then looks fully read.
-  const row = Array.isArray(embed) ? embed[0] : embed;
-  return (row as { coverage?: unknown } | null | undefined)?.coverage ?? null;
+    .select("id,parsed_documents(coverage)")
+    .in("id", [...ids]);
+  if (error || !data) return new Map();
+  const coverages = new Map<string, unknown>();
+  for (const row of data as { id?: unknown; parsed_documents?: unknown }[]) {
+    if (typeof row.id !== "string") continue;
+    // 🔴 BOTH SHAPES, for the reason `ParsedEmbed` above already documents: supabase-js TYPES a
+    // to-one embed as a list and this one comes back as a bare object in production. Assuming either
+    // alone yields `undefined` silently, and every source then looks fully read.
+    const embed = row.parsed_documents;
+    const parsed = Array.isArray(embed) ? embed[0] : embed;
+    coverages.set(row.id, (parsed as { coverage?: unknown } | null | undefined)?.coverage ?? null);
+  }
+  return coverages;
 }
 
 /** The extractor's own account of what it could not read, in the words the shared module already
@@ -257,26 +272,29 @@ export function coverageLabel(coverage: unknown): string | null {
  */
 export async function refreshedCoverageNotes(
   sources: readonly CanvasSource[],
-  load: (id: string) => Promise<unknown> = loadStoredCoverage,
+  load: (ids: readonly string[]) => Promise<ReadonlyMap<string, unknown>> = loadStoredCoverages,
 ): Promise<readonly CanvasSource[]> {
   const withIds = sources.filter((source) => source.librarySourceId);
   if (withIds.length === 0) return sources;
 
-  const fresh = new Map<string, { label: string | undefined; note: string | undefined }>();
-  await Promise.all(
-    withIds.map(async (source) => {
-      const coverage = await load(source.librarySourceId!);
-      fresh.set(source.id, {
-        label: coverageLabel(coverage) ?? undefined,
-        note: coverageNote(coverage) ?? undefined,
-      });
-    }),
-  );
+  /**
+   * 🔴 ONE QUERY FOR THE WHOLE CANVAS, the shape `restoredFileNames` below already has. This was
+   * one query per source under an unbounded `Promise.all`: fifty attached documents opened fifty
+   * simultaneous requests on every canvas load, against a browser that runs six at a time to one
+   * host, so the other forty-four queued behind them and every real request of the session queued
+   * behind those. The result is keyed by the Library id, and a source whose row did not come back
+   * is left exactly as it was: "the Library did not answer" is not "this document is now fully
+   * read", and blanking a disclosure on a failed lookup is the silent upgrade from partial to whole
+   * that this whole area keeps failing towards.
+   */
+  const coverages = await load(withIds.map((source) => source.librarySourceId!));
+  if (coverages.size === 0) return sources;
 
   let changed = false;
   const next = sources.map((source) => {
-    const now = fresh.get(source.id);
-    if (!now) return source;
+    if (!source.librarySourceId || !coverages.has(source.librarySourceId)) return source;
+    const coverage = coverages.get(source.librarySourceId);
+    const now = { label: coverageLabel(coverage) ?? undefined, note: coverageNote(coverage) ?? undefined };
     if (now.note === source.coverageNote && now.label === source.coverageLabel) return source;
     changed = true;
     // 🔴 AN ABSENT NOTE DELETES THE OLD ONE. A document that is now fully read must stop carrying

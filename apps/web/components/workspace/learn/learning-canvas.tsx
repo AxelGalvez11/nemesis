@@ -16,6 +16,8 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { canvasCapture } from "@/lib/learn/canvas-analytics";
+import { createReadPool } from "@/lib/learn/read-pool";
+import type { MindmapNode } from "@/lib/learn/mindmap-tree";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
 import { CanvasClarification } from "./canvas-clarification";
@@ -27,6 +29,9 @@ import { ResearchPlanCard } from "./research-plan-card";
 import { useAuth } from "@/components/AuthProvider";
 import { setCanvasFolder } from "@/lib/learn/canvas-store";
 import { CanvasCheck, CheckCard } from "./canvas-check";
+import { CanvasThinkingSummary } from "./canvas-thinking-summary";
+import { MindmapDoorProvider } from "./mindmap-block";
+import { MindmapView } from "./mindmap-view";
 import { StudyPanel } from "./study-panel";
 // 🔴 `ensureCanvasDeck` / `writeRecallCards` / `cardsFromMisses` LEFT WITH THE RESULTS SCREEN
 // (owner, 2026-08-24). They existed for one caller: the "Make cards from what I missed" button on
@@ -46,7 +51,7 @@ import type { MarkedTerm } from "@/lib/learn/canvas-vocabulary";
 
 
 import { projectAll } from "@/lib/learn/learner-evidence";
-import { HISTORY_TURNS, type TurnExchange } from "@/lib/learn/turn-router";
+import { HISTORY_TURNS, type TurnExchange, ARRIVAL_UTTERANCE } from "@/lib/learn/turn-router";
 import { buildCanvasHistory, reconstructMoment } from "@/lib/learn/canvas-history";
 import type { TurnSurroundings } from "./canvas-chat";
 import { buildTranscript } from "@/lib/learn/session-transcript";
@@ -113,6 +118,14 @@ import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
 import { DocumentDockProvider, useDocumentDockState } from "./document-dock";
+
+/**
+ * The staged reads share one pool, page-wide.
+ *
+ * 🔴 MODULE-LEVEL ON PURPOSE. A pool inside the component would be rebuilt on every render and
+ * bound nothing; one per page is what bounds a fifty-file drop to a handful of uploads in flight.
+ */
+const stagedReadPool = createReadPool();
 
 /**
  * Where the `×` puts the learner down.
@@ -563,6 +576,16 @@ export function LearningCanvas({
   /** A deck of cards being reviewed, docked beside the conversation. */
   const [reviewingDeck, setReviewingDeck] = useState<string | null>(null);
   /**
+   * The mind map open in the right panel, when one is.
+   *
+   * 🔴 THE TREE ITSELF, NOT A FENCE STRING. A ```mermaid mindmap fence in any answer draws inline as
+   * the interactive tree (see mindmap-block.tsx); "Open the map" hands this canvas the parsed tree
+   * and it hosts it in the same `StudyPanel` the check and the deck use. Owner, 2026-09-03: *"if I
+   * want a mind map... one that I can click on and then reveals more nodes."*
+   */
+  const [openMindmap, setOpenMindmap] = useState<MindmapNode | null>(null);
+  const mindmapDoor = useMemo(() => ({ open: (root: MindmapNode) => setOpenMindmap(root) }), []);
+  /**
    * Whether the check is showing in the side panel.
    *
    * 🔴🔴 THE CHECK ITSELF NEVER UNMOUNTS WHILE A RUN IS LIVE — see the `StudyPanel` mount below.
@@ -601,7 +624,16 @@ export function LearningCanvas({
     const made = session.madeArtifact;
     if (!made || openedArtifactId.current === made.id) return;
     openedArtifactId.current = made.id;
-    if (made.kind === "flashcards") return;
+    // 🔴🔴 A DECK OPENS ITSELF TOO, DOCKED, AS OF 2026-09-03. The exception above ("the learner
+    // presses it") predates the docked review: on 2026-08-26 a deck could only open FULL SCREEN, and
+    // seizing the screen the moment a deck was made was the thing being avoided. `DeckReview` has
+    // docked beside the conversation since #1101, so the reason for the exception is gone, and the
+    // owner asked for the opposite outright: *"flashcards should also pop in the right side panel
+    // too."* Same latch, same one-open-per-artifact rule.
+    if (made.kind === "flashcards") {
+      if (made.deckId) setReviewingDeck(made.deckId);
+      return;
+    }
     setOpenArtifact(made);
   }, [session.madeArtifact]);
   /** Record mode. Local to this surface: the recorder owns its own capture state, and a canvas
@@ -845,8 +877,13 @@ export function LearningCanvas({
    * the canvas and its evidence; the small talk that got there does not need to.
    */
   const conversation = useRef<TurnExchange[]>([]);
-  const remember = useCallback((exchange: TurnExchange) => {
-    if (!exchange.said.trim()) return;
+  const remember = useCallback((given: TurnExchange) => {
+    // 🔴 AN ARRIVAL IS AN EXCHANGE TOO. Files sent without a word are a turn since 2026-09-03, and
+    // the reply to them ("you dropped in seven lectures... what first?") is exactly what the next
+    // turn needs in its window. The learner's empty line is carried as the same sentinel the packet
+    // used, so the history reads as what happened; nothing is put in the learner's mouth on screen.
+    if (!given.said.trim() && !given.replied.trim()) return;
+    const exchange: TurnExchange = given.said.trim() ? given : { ...given, said: ARRIVAL_UTTERANCE };
     conversation.current = [...conversation.current, exchange].slice(-HISTORY_TURNS);
   }, []);
 
@@ -932,14 +969,18 @@ export function LearningCanvas({
       if (!uid) return;
       // 🔴 THE ARC MOVES ON `extractFile`'S OWN STEPS, and `advanceRead` is what stops a late or
       // repeated report rewinding it on screen. See `lib/workspace/read-progress.ts`.
-      const run = extractFile(file, uid, {
-        folderPath: CANVAS_FILING_FOLDER,
-        keep: true,
-        onPhase: (phase) =>
-          setStaged((current) =>
-            current.map((entry) => (entry.id === id ? { ...entry, progress: advanceRead(entry.progress, phase) } : entry)),
-          ),
-      });
+      // 🔴 THROUGH THE POOL, NOT STRAIGHT AT THE ROUTE. Fifty cards staged at once used to mean
+      // fifty uploads in flight at once; see lib/learn/read-pool.ts for what that did.
+      const run = stagedReadPool.run(() =>
+        extractFile(file, uid, {
+          folderPath: CANVAS_FILING_FOLDER,
+          keep: true,
+          onPhase: (phase) =>
+            setStaged((current) =>
+              current.map((entry) => (entry.id === id ? { ...entry, progress: advanceRead(entry.progress, phase) } : entry)),
+            ),
+        }),
+      );
       stagedReads.current.set(id, run);
       // Marking the promise handled here is also what keeps a failure the learner never sends from
       // surfacing as an unhandled rejection. A send still sees the rejection, because it awaits the
@@ -989,11 +1030,16 @@ export function LearningCanvas({
    */
   const committedTitles = useRef<string[]>([]);
   const commitStaged = useCallback(() => {
-    const entries = staged;
+    // 🔴🔴 A FILE THAT COULD NOT BE READ STAYS IN THE COMPOSER. It used to ride the send with the
+    // rest, fail again inside the attach loop, and take every file after it down (one try around
+    // the whole batch). Now the send carries what was read; the red card stays where the learner
+    // can retry it or remove it, and the composer's gate no longer waits on it. See
+    // canvas-composer.tsx `materialNotReady`.
+    const entries = staged.filter((entry) => entry.state !== "failed");
     if (entries.length === 0) return;
     const reads = entries.map((entry) => stagedReads.current.get(entry.id) ?? null);
     for (const entry of entries) stagedReads.current.delete(entry.id);
-    setStaged([]);
+    setStaged((current) => current.filter((entry) => entry.state === "failed"));
     committedTitles.current = entries.map((entry) => entry.file.name);
     void session.attachFiles(entries.map((entry) => entry.file), undefined, reads);
   }, [session, staged]);
@@ -1104,7 +1150,10 @@ export function LearningCanvas({
   const converse = useCallback(
     async (asked: string, staged: CanvasBlock | null = null, withCapability: ComposerCapability | null = null) => {
       const trimmed = asked.trim();
-      if (!trimmed) return null;
+      // 🔴 EMPTY WORDS WITH COMMITTED FILES ARE STILL A TURN (the arrival case); see `beginOrAnswer`.
+      // The bubble draws the cards and no sentence, the moment records an empty ask, and the
+      // session hands the model a sentinel in place of the words. Nothing is forged in the learner's name.
+      if (!trimmed && committedTitles.current.length === 0) return null;
       // 🔴🔴 HELD ONLY FOR THE CONVERSATION VIEW, AND ONLY WHILE THE REQUEST IS IN FLIGHT. A moment
       // is recorded when the turn RESOLVES, so a learner reading the conversation would send a
       // message and watch nothing happen to the list they are looking at. On the answer view this
@@ -1275,7 +1324,12 @@ export function LearningCanvas({
       // the empty send while one is staged (`canStartFromAttachment`), because a declaration with
       // no words attached would have to be silently dropped — the exact argument-drop this
       // signature exists to end.
-      if (!trimmed) {
+      // 🔴🔴 AN EMPTY SEND WITH MATERIAL IS A TURN NOW, not a bare `begin`. `begin(undefined)`
+      // opened the canvas and asked nothing, so files sent without a sentence got no reply at all.
+      // Owner, 2026-09-03: *"even if I don't drop in like a prompt or anything... it should be able
+      // to say like, okay, yes, I see what you dropped in."* `commitStaged` has just run, so the
+      // committed titles say whether this send carried anything; a truly empty send still begins.
+      if (!trimmed && committedTitles.current.length === 0) {
         session.begin(undefined);
         return;
       }
@@ -1865,6 +1919,14 @@ export function LearningCanvas({
    * a narrowing across it — and the honest fix is a value, not a `!`. A non-null assertion here
    * would be asserting exactly the thing that has gone wrong on this surface before. */
   const replyText = session.aside?.blockId === null ? session.aside.text : "";
+  /**
+   * What the assistant column is showing right now: the finished reply, or the draft of one.
+   *
+   * 🔴 THE DRAFT COUNTS AS "THE ANSWER HAS STARTED" for every rule that used to read `replyText`
+   * alone: the thinking line makes way, the caption leaves the character, and nothing waits for
+   * the finished text to do so. The finished reply still owns the record; see `session.draft`.
+   */
+  const liveText = replyText || (turnInFlight ? session.draft : "");
   useEffect(() => {
     // 🔴 CLEARED ON THE TURN, NOT ON A TIMER. Once `turnInFlight` is true the station's own first
     // term holds the centre, so dropping this changes nothing visible — it just stops this flag
@@ -2763,6 +2825,7 @@ export function LearningCanvas({
          the two-viewers bug this whole change removes. One `dock`, two providers, because the
          subtree is in two pieces. */
       <DocumentDockProvider value={dock}>
+      <MindmapDoorProvider value={mindmapDoor}>
       <CanvasHeader
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
@@ -2827,6 +2890,7 @@ export function LearningCanvas({
         onFiles={attachWithChips}
         onRename={session.rename}
       />
+      </MindmapDoorProvider>
       </DocumentDockProvider>
       }
     >
@@ -2839,6 +2903,7 @@ export function LearningCanvas({
           The children are deliberately NOT re-indented: nine hundred untouched lines moving one
           level right would bury the actual change in the diff. */}
       <DocumentDockProvider value={dock}>
+      <MindmapDoorProvider value={mindmapDoor}>
       {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (12px inset + 28px control + 8px breathing room).
@@ -3038,8 +3103,14 @@ export function LearningCanvas({
 
             🔴 IT STILL COVERS WHAT IT WAS WRITTEN FOR: a brand-new canvas waiting on its first
             answer has an empty thread, so `preparing` still speaks there. */}
-        {threadOpen && (turnInFlight || (presence === "preparing" && thread.length === 0)) && !replyText.trim() && (
+        {threadOpen && (turnInFlight || (presence === "preparing" && thread.length === 0)) && !liveText.trim() && (
           <CanvasThinkingPreview app={session.workApp} domains={session.searchedDomains} label={preparingLabel} web={session.searchedDomains.length > 0} />
+        )}
+        {/* 🔴 THE SLOT THE CAPTION HELD, ONCE THE ANSWER IS IN: how long the turn worked and the
+            lines it showed, one row above the answer, opening on a press. Only for a turn that
+            showed something; see canvas-thinking-summary.tsx. */}
+        {threadOpen && !turnInFlight && replyText.trim() && session.lastTurn && (
+          <CanvasThinkingSummary lines={session.lastTurn.lines} seconds={session.lastTurn.seconds} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should
             fade away and fade in". `.canvas-swap` only ever faded content IN, at 140ms, which is
@@ -3095,6 +3166,23 @@ export function LearningCanvas({
             `replyOnScreen` computes — that is the point: `composeSurface` decides the RELATIONSHIP
             between this and the policy's screen (which of them yields, and to which), and reading
             the raw state here would be a second opinion free to disagree with the first. */}
+        {/* 🔴🔴 THE ANSWER AS IT IS WRITTEN. Until 2026-09-03 a typed turn landed all at once after
+            a single shimmering word; the reply now streams (see lib/learn/stream-draft.ts), and this
+            is where the draft is read, in the same column, at the same type, before `session.aside`
+            exists. It is deliberately plainer than the finished region: no selection marker, no
+            citation pills, no action row, because the text is still moving and every one of those
+            keys on text that has stopped. The finished reply replaces it in the same render. */}
+        {turnInFlight && !session.aside && session.draft.trim() && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8" data-canvas-draft="">
+            <div className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
+              <AssistantMarkdown
+                className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
+                singleDollarMath
+                text={session.draft}
+              />
+            </div>
+          </div>
+        )}
         {regions.reply && session.aside && (
           <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8" ref={replyRegionRef}>
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
@@ -3204,7 +3292,10 @@ export function LearningCanvas({
                      list, so the long key costs nothing. */
                   <div key={`p${index}:${replyText}`} {...selectableRegion(index === 0 ? "reply" : `reply-${index}`)}>
                     <AssistantMarkdown
-                      className="canvas-answer-in text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
+                      // 🔴 NO ARRIVAL ANIMATION OVER TEXT THE LEARNER HAS ALREADY BEEN READING. When
+                      // the answer streamed in as a draft, replaying `canvas-answer-in` would blank
+                      // and re-reveal the same paragraphs the moment they finished.
+                      className={`${session.drafted ? "" : "canvas-answer-in "}text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)`}
                       namedCitations
                       // 🔴 INLINE `$x$` IS MATHS ON THIS SURFACE, WHICH IS THE OPPOSITE OF THE
                       // CHAT DEFAULT AND DELIBERATE. The flag is off globally because of an owner
@@ -3427,6 +3518,16 @@ export function LearningCanvas({
             this comment used to say full screen was "what the owner asked flashcards to be", which
             he reversed on 2026-08-30 and again on 2026-08-31 when the Library still did it. */}
         {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
+        {/* 🔴 THE MIND MAP, DOCKED LIKE THE DECK AND THE CHECK. Same shell, same sizes, same close;
+            the tree keeps its own opened set while the panel is hidden, because StudyPanel hides
+            rather than unmounts. */}
+        {openMindmap && (
+          <StudyPanel crumb="Mind map" onClose={() => setOpenMindmap(null)} open title={canvas.title || "This canvas"}>
+            <div className="p-4">
+              <MindmapView root={openMindmap} variant="panel" />
+            </div>
+          </StudyPanel>
+        )}
         {/* 🔴🔴 THE CHECK, DOCKED BESIDE THE CONVERSATION (owner 2026-08-30: *"the tests and the
             flashcards could appear in the sidebar… that way, users could ask questions as well,
             have the chat on the side"*). Mounted at canvas level and kept mounted for the whole run,
@@ -3438,14 +3539,13 @@ export function LearningCanvas({
             hide-don't-unmount rule exists to prevent. */}
         {session.testRequested && !policy.awaitingAnswer && !isTestRefusal(testRun) && (
           <StudyPanel
-            crumb={session.testOffer === "cards" ? "Flashcards" : "Check"}
+            crumb="Check"
             onClose={() => setCheckOpen(false)}
             open={checkOpen}
             title={canvas.title || "This canvas"}
           >
             <div className="px-4 py-3">
               <CanvasCheck
-                offer={session.testOffer}
                 onDismiss={() => {
                   setCheckOpen(false);
                   session.clearTest();
@@ -3515,7 +3615,7 @@ export function LearningCanvas({
             ) : (
               // 🔴 THE RECEIPT, NOT THE QUESTIONS. The run itself lives in the panel below; this is
               // the object the turn handed back, in the same shape a made document arrives in.
-              <CheckCard offer={session.testOffer} onOpen={() => setCheckOpen(true)} open={checkOpen} run={testRun} />
+              <CheckCard onOpen={() => setCheckOpen(true)} open={checkOpen} run={testRun} />
             )}
           </div>
         )}
@@ -3807,7 +3907,7 @@ export function LearningCanvas({
         // 🔴 THE ANSWER HAS STARTED ARRIVING, SO THE CAPTION MAKES WAY. `replyText` is the text as
         // it streams, and its first character is the honest end of the wait — not a timer, and not
         // the turn formally finishing.
-        captionLeaving={Boolean(replyText.trim())}
+        captionLeaving={Boolean(liveText.trim())}
         // 🔴🔴 GATED ON THE TURN, NOT ON THE LIST BEING NON-EMPTY, and that is what makes a stale
         // chip unrepresentable. The session clears the hosts when a fresh request goes out, but
         // computing the gate HERE means no cleanup path has to be remembered: between turns there
@@ -4063,6 +4163,7 @@ export function LearningCanvas({
           onCapability={setCapability}
         />
       )}
+      </MindmapDoorProvider>
       </DocumentDockProvider>
     </CanvasSurface>
   );

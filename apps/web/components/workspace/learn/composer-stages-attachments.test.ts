@@ -45,7 +45,12 @@ test("🔴🔴 picking a file mid-session stages it instead of ingesting it", ()
 test("🔴🔴 SEND is what commits staged material to the canvas", () => {
   const commit = canvas.slice(canvas.indexOf("const commitStaged = useCallback"), canvas.indexOf("const stagedCards"));
   assert.match(commit, /session\.attachFiles\(entries\.map\(\(entry\) => entry\.file\), undefined, reads\)/);
-  assert.match(commit, /setStaged\(\[\]\)/);
+  // 🔴 REPOINTED 2026-09-03: the commit clears what it SENT and keeps a card that failed to read,
+  // so the learner can retry or remove it and the send no longer waits on it (owner: "there
+  // should be no problem with any of them", of fifty). The shape that matters is unchanged: the
+  // cards leave the composer in the same call that hands the files to the canvas.
+  assert.match(commit, /const entries = staged\.filter\(\(entry\) => entry\.state !== "failed"\)/, "a failed card rides the send again");
+  assert.match(commit, /setStaged\(\(current\) => current\.filter\(\(entry\) => entry\.state === "failed"\)\)/, "the send no longer clears the committed cards");
   // Every submitting route already calls `acknowledgeAttachments`, which is why the commit lives
   // there rather than in four handlers that would each have to remember.
   assert.match(canvas, /const acknowledgeAttachments = useCallback\(\(\) => commitStaged\(\), \[commitStaged\]\)/);
@@ -96,7 +101,11 @@ test("🔴 removing and retrying both forget the previous read", () => {
 // ── the same quality gate as the front door ─────────────────────────────────
 
 test("🔴🔴 send refuses while a staged file is unread, here too", () => {
-  assert.match(composer, /const materialNotReady = recentAttachments\.some\(\s*\(file\) => file\.state === "reading" \|\| file\.state === "failed",\s*\);/);
+  // 🔴 REPOINTED 2026-09-03: a FAILED file no longer holds the send. It used to ("reading OR
+  // failed"), so one unreadable file in a batch of fifty made Send dead for good. Unread material
+  // still waits, which is the half of this rule that protects the packet.
+  assert.match(composer, /const materialNotReady = recentAttachments\.some\(\(file\) => file\.state === "reading"\);/);
+  assert.ok(!/file\.state === "reading" \|\| file\.state === "failed"/.test(composer), "a failed file blocks the send again");
   assert.match(composer, /disabled=\{!showSend \|\| materialNotReady\}/);
 });
 

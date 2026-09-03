@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { canvasBrief, canvasHasMaterial, readCardsJson, readDeliverableAsk } from "./canvas-deliverables";
+import { canvasBrief, canvasHasMaterial, readCardsJson, readDeliverableAsk, cardsAskNote } from "./canvas-deliverables";
 import { newCanvas } from "./canvas-store";
 
 // The deliverables seam: a chatty model on one side, three real stores on the other. The
@@ -109,52 +109,70 @@ const CARDS_PROMPT = (() => {
   return [...code.matchAll(/"([^"]*)"|'([^']*)'/g)].map((hit) => hit[1] ?? hit[2] ?? "").join(" ").replace(/\s+/g, " ");
 })();
 
-test("🔴🔴 the card writer is told ONE FACT PER CARD, and to split a list", () => {
-  // Owner, 2026-08-30: *"does it try to make flashcards as atomic as possible?"* It did not. The
-  // prompt asked for "10 to 16 cards that cover the material's core ideas" and said nothing about
-  // shape, so the model wrote "name the three types of X" with a three-item answer. That is the
-  // card spaced repetition handles worst: recall two of three and NO grade is honest, so the
-  // schedule learns nothing from the press. Splitting is free at write time and impossible later.
-  assert.match(CARDS_PROMPT, /ONE FACT PER CARD/, "the card writer is not asked for atomic cards");
-  assert.match(CARDS_PROMPT, /write one card for each item instead/, "a list answer is still allowed to stay one card");
-  assert.match(CARDS_PROMPT, /never put a paragraph on the back/, "the back may be a paragraph again");
-
-  // 🔴🔴 THE SPLIT RULE HAS A FLOOR, AND ONLY A LIVE RUN FOUND IT. Asked for atomic cards on a
-  // four-stroke engine, the model split the parts list into seven of these: "The {{c1::piston}} is
-  // a labelled part of the cylinder assembly." Atomic, well-formed, and worth nothing — and they
-  // duplicated the very parts the occlusion figure was about to cover properly.
-  assert.match(CARDS_PROMPT, /Split a list only when each item carries its OWN fact/, "a bare enumeration can become cards again");
-  assert.match(CARDS_PROMPT, /NO cards about those parts at all, in any form/, "a diagram's parts can be written as text cards again");
-
-  // 🔴 ONE FORM PER FACT, also from a live run: given both forms the model used BOTH, and half the
-  // engine deck was cloze restatements of its own questions. Two schedules for one memory.
-  assert.match(CARDS_PROMPT, /Each fact appears ONCE, in one form/, "a fact may be written twice again");
+test("🔴🔴 the card writer follows the owner's rule sheet: one recall target, vertical lists, both forms", () => {
+  // Owner, 2026-08-30: *"does it try to make flashcards as atomic as possible?"* The first answer
+  // to that was "ONE FACT PER CARD, split every list", and it produced four cards with the same
+  // answer for the four names one thing goes by. Owner, 2026-09-03, with a full rule sheet: *"one
+  // distinct knowledge unit per card... compress redundancy, not concepts... lists must be
+  // vertical, not inline... show the number of expected items... use bolding for key anchors...
+  // keep answers short."* Every assertion here is one of those rules, stated by shape.
+  assert.match(CARDS_PROMPT, /ONE RECALL TARGET PER CARD/, "the card writer is not asked for one target per card");
+  assert.match(CARDS_PROMPT, /Never combine unrelated things on a card/, "unrelated terms may share a card again");
+  assert.match(CARDS_PROMPT, /is a different card from explaining it/, "recognition and explanation may be one card again");
+  assert.match(CARDS_PROMPT, /Compress redundancy, not concepts/, "the redundancy rule is gone");
+  assert.match(CARDS_PROMPT, /write ONE card whose back lists them, never one card per item and never several cards that share one answer/, "a set may be split into one card per item again");
+  assert.match(CARDS_PROMPT, /Use a list only when the items naturally belong together/, "lists are unconditional again");
+  assert.match(CARDS_PROMPT, /A list on the back is VERTICAL, one item per line as a numbered list/, "inline lists are allowed again");
+  assert.match(CARDS_PROMPT, /never an inline comma list/, "the inline ban is gone");
+  assert.match(CARDS_PROMPT, /say how many to expect/, "the expected count is not asked for");
+  assert.match(CARDS_PROMPT, /Use Front\/Back when the prompt itself makes the retrieval target clear/, "the Front/Back rule is gone");
+  assert.match(CARDS_PROMPT, /Use cloze when the card is better as sentence completion/, "the cloze rule is gone");
+  assert.match(CARDS_PROMPT, /definitions, terminology, abbreviations and short associations/, "what cloze is for is unstated");
+  assert.match(CARDS_PROMPT, /Use exactly ONE \{\{c1::\.\.\.\}\} per card and never c2 or c3/, "several blanks on one card are allowed again");
+  assert.match(CARDS_PROMPT, /Each unit of knowledge appears ONCE, in one form/, "a fact may be written twice again");
+  assert.match(CARDS_PROMPT, /Keep answers short: the bare fact first/, "the short-answer rule is gone");
+  assert.match(CARDS_PROMPT, /Never put a paragraph on the back/, "the back may be a paragraph again");
+  assert.match(CARDS_PROMPT, /Bold the key anchors with markdown/, "bold anchors are not asked for");
 
   // 🔴🔴 THE DECK IS BUILT FROM WHAT IS IN FRONT OF IT (owner 2026-09-03: cards must be "generated
-  // from the actual source material rather than generic background knowledge"). Nothing said so. A
-  // model asked for cards on a subject supplies that subject's textbook consensus quite happily,
-  // and the learner is revising for an assessment on THIS material: a card whose source they have
-  // never seen reads to them as an error in the deck, and they are right.
+  // from the actual source material rather than generic background knowledge").
   assert.match(CARDS_PROMPT, /Every card comes from THIS material/, "the card writer may draw on background knowledge again");
   assert.match(CARDS_PROMPT, /cannot point to in the text does not belong/, "an unsourced fact may land on a card again");
-  // "Write 10 to 16 cards" is a target, and a target with no floor under it is an instruction to
-  // invent the difference when the material is thin.
   assert.match(CARDS_PROMPT, /If the material only supports six good cards, write six/, "the count outranks the material again");
 
-  // 🔴🔴 A CARD THAT LOSES THE SPECIFIC TESTS A VAGUE MEMORY OF A FACT INSTEAD OF THE FACT (owner
-  // 2026-09-03: preserve exact values, names, definitions, mechanisms, timings and formulas "when
-  // those details matter"). Softening reads better, which is why a writer does it, and it is
-  // exactly wrong here: the specific is usually the entire reason the fact is worth knowing.
+  // 🔴🔴 A CARD THAT LOSES THE SPECIFIC TESTS A VAGUE MEMORY OF A FACT INSTEAD OF THE FACT.
   assert.match(CARDS_PROMPT, /carry it across exactly as the material wrote it/, "an exact specific may be paraphrased away again");
   assert.match(CARDS_PROMPT, /Never round it, never generalise it into a vague word/, "a value may be rounded or softened again");
-  // 🔴 STATED BY SHAPE. A list naming any field would tell the model to write that field's cards
-  // for everybody, which is the same mistake the item-writing rules were neutralised for.
-  assert.doesNotMatch(CARDS_PROMPT, /\b(dose|drug|patient|clinical|contraindicat|statute|plaintiff)/i, "a subject crept into the card writer's prompt");
 
-  // 🔴 THE PARSER'S CAP IS A SAFETY LIMIT, NOT THE RULE. Lowering it to enforce atomicity would
-  // cut answers off mid-sentence, which is worse than a long one. The instruction does this job.
+  // 🔴 THE LABELLED-PARTS EXCEPTION survives the list rule: the parts of a diagram are the
+  // picture's to ask, in any form.
+  assert.match(CARDS_PROMPT, /write NO cards about those parts at all, in any form/, "a diagram's parts can be written as text cards again");
+
+  // 🔴 STATED BY SHAPE. A list naming any field would tell the model to write that field's cards
+  // for everybody, which is the same mistake the item-writing rules were neutralised for. The
+  // owner's rule sheet used his own subject's words; none of them may reach the prompt.
+  assert.doesNotMatch(CARDS_PROMPT, /\b(dose|drug|patient|clinical|contraindicat|statute|plaintiff|brand)/i, "a subject crept into the card writer's prompt");
+  assert.doesNotMatch(CARDS_PROMPT, /\u2014/, "an em dash reached the card writer");
+
+  // 🔴 THE PARSER'S CAP IS A SAFETY LIMIT, NOT THE RULE. Lowering it to enforce brevity would cut
+  // a list off mid-item, which is worse than a long one. The instruction does this job.
   const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
-  assert.match(source, /back\.slice\(0, 1000\)/, "the safety cap moved — check it is not doing the prompt's job");
+  assert.match(source, /back\.slice\(0, 1000\)/, "the safety cap moved, check it is not doing the prompt's job");
+});
+
+test("🔴🔴 the card writer is told what the learner asked for, and only that", () => {
+  // Owner, 2026-09-03: *"throughout the chat, I may ask for like flashcards on certain topics."*
+  // `makeDeliverable(kind, said)` carried the sentence to slides, documents and sheets and never
+  // to cards, so "flashcards on X" over seven lectures made a deck about lecture one.
+  assert.equal(cardsAskNote(undefined), "");
+  assert.equal(cardsAskNote("   "), "");
+  const note = cardsAskNote("make me flashcards on the second chapter's definitions");
+  assert.match(note, /The learner asked: "make me flashcards on the second chapter's definitions"/);
+  assert.match(note, /only that/);
+  assert.match(note, /rather than filling in from memory/);
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  assert.match(source, /makeFlashcardsDeliverable\([\s\S]*?topic\?: string/, "the maker no longer takes the ask");
+  assert.match(source, /canvasBriefFor\(canvas, topic\), cardsAskNote\(topic\)/, "the ask is not handed to the writer");
 });
 
 test("🔴🔴 a labelled diagram TRIGGERS image occlusion rather than merely permitting it", () => {
@@ -336,4 +354,144 @@ test("🔴 the reply may never claim a file it cannot create", () => {
   for (const kind of ["study document", "slide deck", "spreadsheet", "flashcards"]) {
     assert.ok(router.includes(kind), `the ban does not name ${kind}, so it reads as being about reports only`);
   }
+});
+
+// ---------------------------------------------------------------- the note: a recall list, reachable
+
+// Owner, 2026-09-03: *"for me personally, when I study, I like to make a markdown file of all the
+// points that I should be able to recall from memory myself."* Three things stood between him and
+// that file: the door only opened for "summary note" and "study note", the writer only knew how to
+// write a summary, and the ask never reached the writer at all.
+
+/** The note writer's system prompt, comments stripped, read the same way `CARDS_PROMPT` is. */
+const NOTE_PROMPT = (() => {
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  const block = source
+    .slice(source.indexOf("const NOTE_SYSTEM"), source.indexOf("export const CANVAS_NOTE_FOLDER"))
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const code = block.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+  return [...code.matchAll(/"([^"]*)"|'([^']*)'/g)].map((hit) => hit[1] ?? hit[2] ?? "").join(" ").replace(/\s+/g, " ");
+})();
+
+/** The note maker, comments stripped, so the guards read the code and never the reasoning beside it. */
+const NOTE_MAKER = (() => {
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  return source
+    .slice(source.indexOf("export async function makeNoteDeliverable"), source.indexOf("async function webContextForTopic"))
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+})();
+
+test("🔴🔴 the owner's own sentence opens the note door, and so do the ways other learners say it", () => {
+  // The arm read `(summary note|study note)` and nothing else, so this exact sentence fell through
+  // to an ordinary turn and was talked about instead of made.
+  assert.equal(readDeliverableAsk("make me a markdown file of the points I should recall from memory"), "note");
+  assert.equal(readDeliverableAsk("write my revision notes on this"), "note");
+  assert.equal(readDeliverableAsk("give me a cheat sheet"), "note");
+  assert.equal(readDeliverableAsk("create a study guide from these"), "note");
+  assert.equal(readDeliverableAsk("make notes on chapter four"), "note", "the plural is a door");
+  assert.equal(readDeliverableAsk("give me the key points"), "note");
+  assert.equal(readDeliverableAsk("write a recall list for the beam deflection exam"), "note");
+  assert.equal(readDeliverableAsk("make an md file of the points to memorise"), "note");
+  assert.equal(readDeliverableAsk("build a recall sheet of the points to remember"), "note");
+  assert.equal(readDeliverableAsk("create a summary note of what we covered"), "note", "the old door still opens");
+
+  // 🔴 THE REFUSALS ARE THE HALF THAT MATTERS, here as for documents: a stolen turn reads as the
+  // system not listening, and a wider noun list is exactly how turns get stolen.
+  assert.equal(readDeliverableAsk("how do I write good notes"), null, "advice about notes, not an order for some");
+  assert.equal(readDeliverableAsk("make a note of that"), null, "the singular is a figure of speech, not a door");
+  assert.equal(readDeliverableAsk("what are the key points of the ruling?"), null, "a question stays a question");
+  assert.equal(readDeliverableAsk("Tell me the key points"), null, "no make-verb, no file");
+  // 🔴 "MAKE SURE" IS NOT A MAKE. Found while widening: with `notes` in the arm, this sentence about
+  // the learner's OWN notes became a file. The idiom is excluded at the verb, and only the idiom.
+  assert.equal(readDeliverableAsk("make sure your notes cover the appeal"), null, "\"make sure\" stole the turn");
+  assert.equal(readDeliverableAsk("make sure to create flashcards on this"), "flashcards", "excluding the idiom must not exclude the sentence");
+
+  // The other arms, unchanged and pinned so widening this one cannot quietly widen them.
+  assert.equal(readDeliverableAsk("make flashcards from this chapter"), "flashcards");
+  assert.equal(readDeliverableAsk("create flashcards for this"), "flashcards");
+  assert.equal(readDeliverableAsk("make me a powerpoint on this"), "slides");
+  assert.equal(readDeliverableAsk("can you create a slide deck on mitosis?"), "slides");
+  assert.equal(readDeliverableAsk("make a document on it"), "document");
+  assert.equal(readDeliverableAsk("Make me a document: a study guide on insulin therapy"), "document", "the first noun wins, and it is the document");
+  assert.equal(readDeliverableAsk("build a document parser"), null);
+  assert.equal(readDeliverableAsk("turn that into a report"), null);
+});
+
+test("🔴🔴 the note writer knows a RECALL LIST from a summary, and the ask decides which", () => {
+  // The prompt asked for a "summary note" whatever the learner said, so "the points I should recall"
+  // came back as prose about the material rather than the list of things to close the file and say.
+  assert.match(NOTE_PROMPT, /RECALL LIST/, "the recall shape is gone from the note writer");
+  assert.match(NOTE_PROMPT, /one line per point/, "a recall list may be paragraphs again");
+  assert.match(NOTE_PROMPT, /say from memory without looking/, "a line is no longer defined by what the learner can say unaided");
+  assert.match(NOTE_PROMPT, /exactly as the material gave it/, "an exact specific may be softened again");
+  assert.match(NOTE_PROMPT, /No paragraphs anywhere in a recall list/, "paragraphs are allowed back into a recall list");
+  assert.match(NOTE_PROMPT, /Otherwise write a summary note/, "the summary shape is gone, so every note is a list now");
+  // The triggers are the learner's words, all five, so the ask paragraph can be read against them.
+  for (const trigger of ["points to recall", "things to memorise", "a checklist", "a cheat sheet", "revision notes"]) {
+    assert.ok(NOTE_PROMPT.includes(trigger), `the writer is no longer told that "${trigger}" means a recall list`);
+  }
+  // 🔴 THE SPECIFICS ARE NAMED BY SHAPE: a value, a name, a date, an order of steps, a formula, a
+  // condition. A list naming any field would tell the writer what every learner studies.
+  for (const shape of ["a value", "a name", "a date", "an order of steps", "a formula", "a condition"]) {
+    assert.ok(NOTE_PROMPT.includes(shape), `the recall rule stopped naming ${shape}`);
+  }
+  assert.doesNotMatch(NOTE_PROMPT, /\b(dose|drug|patient|clinical|contraindicat|statute|plaintiff)/i, "a subject crept into the note writer's prompt");
+
+  // The Markdown-note rules that were always there, kept.
+  assert.match(NOTE_PROMPT, /single # title line/, "the note lost its title rule");
+  assert.match(NOTE_PROMPT, /## headings/, "the note lost its section rule");
+  assert.match(NOTE_PROMPT, /Bold the key terms/, "defined terms are no longer bold");
+  assert.match(NOTE_PROMPT, /No preamble, no closing remarks/, "the note may chatter again");
+  assert.match(NOTE_PROMPT, /nothing is invented/, "the note may draw on background knowledge again");
+});
+
+test("🔴 no em dash reaches the note writer either, by owner rule", () => {
+  // Written as an escape so this file does not carry the character it bans.
+  assert.equal(NOTE_PROMPT.includes("\u2014"), false, "an em dash is back in the note prompt");
+  assert.equal(NOTE_MAKER.includes("\u2014"), false, "an em dash is in the note maker's own strings");
+});
+
+test("🔴🔴 the learner's ask reaches the writer, quoted and capped, and an empty ask sends nothing", async () => {
+  // 🔴 A DYNAMIC IMPORT, so this block is self-contained at the foot of the file: the header import
+  // is shared with the flashcard guards above, which are edited on their own.
+  const { noteAskParagraph } = await import("./canvas-deliverables");
+  // The writer had never seen the sentence that says which shape to write.
+  assert.equal(noteAskParagraph(undefined), "");
+  assert.equal(noteAskParagraph("   "), "");
+  const shaped = noteAskParagraph("make me a markdown file of the points I should recall");
+  assert.match(shaped, /^The learner asked: "make me a markdown file of the points I should recall"\. Shape the note the way they asked for it/);
+  assert.match(shaped, /a recall list if they asked for the points to recall/, "the ask paragraph no longer says what a recall ask becomes");
+  assert.match(shaped, /a summary note otherwise/, "the ask paragraph no longer says what any other ask becomes");
+  assert.equal(shaped.includes("\u2014"), false, "the ask paragraph models the banned dash");
+  // 🔴 CAPPED AT 300, so a pasted page cannot push the material out of the writer's attention.
+  const long = noteAskParagraph("x".repeat(500));
+  assert.match(long, /^The learner asked: "x{300}"\. /, "the ask is not capped at 300 characters");
+  // Whitespace collapsed: a sentence typed across three lines is one sentence.
+  assert.match(noteAskParagraph("write   my\n\nrevision notes"), /"write my revision notes"/);
+});
+
+test("🔴🔴 the topic reaches the note's retrieval and the session hands it over; an empty canvas with a subject writes anyway", () => {
+  // `makeNoteDeliverable(uid, canvas)` took no topic, so the retrieval query was the canvas title
+  // and the last thing said, and "the points to recall about chapter four" pulled passages for
+  // whatever the canvas was about in general.
+  assert.match(NOTE_MAKER, /canvasBriefFor\(canvas, topic\)/, "the note's retrieval no longer knows what the learner asked for");
+  assert.match(NOTE_MAKER, /noteAskParagraph\(topic\)/, "the learner's ask no longer reaches the writer");
+  assert.match(NOTE_MAKER, /\{ content: NOTE_SYSTEM, role: "system" \}/, "the note writer lost its instructions");
+  // 🔴 GENERALIST, LIKE THE DOCUMENT. With a subject and no material it writes from knowledge plus
+  // one search; with neither it asks. The refusal survives; only its scope changed.
+  assert.match(
+    NOTE_MAKER,
+    /canvasHasMaterial\(canvas\)\s*\?\s*await canvasBriefFor\(canvas, topic\)\s*:\s*\[`Write this note about: \$\{subject\}`, await webContextForTopic\(uid, subject\)\]/,
+    "an empty canvas with a topic no longer writes from knowledge and the web",
+  );
+  assert.match(NOTE_MAKER, /if \(!canvasHasMaterial\(canvas\) && !subject\)/, "the refusal for neither material nor subject is gone");
+  assert.match(NOTE_MAKER, /Tell me what the note should be about/, "the refusal no longer asks for a subject");
+  // The note is still filed where it always was, under the canvas's own name first.
+  assert.match(NOTE_MAKER, /folder: CANVAS_NOTE_FOLDER/, "the note left its Library folder");
+  assert.match(NOTE_MAKER, /canvas\.title\.trim\(\) \|\| heading \|\| subject \|\| "Note"/, "the note's name ladder changed");
+
+  // And the session hands the topic over, which is the one change made to that file.
+  const hook = readFileSync(new URL("../../components/workspace/learn/use-canvas-session.ts", import.meta.url), "utf8");
+  assert.match(hook, /makeNoteDeliverable\(uid, latest\.current, topic\)/, "the session drops the topic on the floor before the note maker sees it");
 });

@@ -290,49 +290,9 @@ export function groundingBlock(sources: readonly CanvasSource[]): string {
     return `[${excerpt.id}]${where ? ` (${where})` : ""} ${excerpt.text}`;
   };
 
-  let budget = MAX_GROUNDING_CHARS - headers.reduce((total, header) => total + header.length, 0);
-  let dropped = 0;
-
-  /**
-   * 🔴🔴🔴 THE BUDGET IS SPENT ROUND-ROBIN, NOT IN READING ORDER, AND THAT IS THE DIFFERENCE
-   * BETWEEN "SOME OF EVERY DOCUMENT" AND "ALL OF THE FIRST THREE".
-   *
-   * This loop used to walk the sources in order and spend one 120,000-character budget as it went,
-   * so with a large pile the first documents arrived whole and every later one contributed its
-   * TITLE AND NOTHING ELSE — a header saying a lecture is attached, above no sentence from it. The
-   * model is then told "412 further excerpts were not included", which it cannot act on, and it
-   * answers about the pile from the part of the pile it happens to have.
-   *
-   * Owner, 2026-09-03: *"even if I drop in 50 documents it should be able to understand all of
-   * them… what matters most is that it understands content."* Retrieval is the real answer to that
-   * and already ships (see `canvas-chat.ts`), but it only answers once the material is INDEXED —
-   * and the first question after a drop routinely arrives before that, which is exactly when the
-   * pile is largest and this fallback is what runs.
-   *
-   * 🔴 SELECTED ROUND-ROBIN, RENDERED GROUPED. Taking excerpt 0 from every source, then excerpt 1
-   * from every source, spends the budget evenly; grouping the survivors back under their headers
-   * keeps each document readable and keeps the `[s4:e12]` ids exactly where they were. Reading
-   * order INSIDE a document is preserved, which is the order that carries meaning.
-   *
-   * 🔴 AND IT DEGRADES WHERE A LECTURE CAN AFFORD IT. What is lost is the tail of every document
-   * rather than the whole of most of them — and a deck's opening slides are what say what it is
-   * about, so a truncated packet still knows that all fifty lectures exist and what each covers.
-   */
-  const kept: string[][] = sources.map(() => []);
-  const deepest = sources.reduce((most, source) => Math.max(most, source.excerpts.length), 0);
-  for (let rank = 0; rank < deepest; rank += 1) {
-    for (const [at, source] of sources.entries()) {
-      const excerpt = source.excerpts[rank];
-      if (!excerpt) continue;
-      const line = lineFor(excerpt);
-      if (line.length + 2 > budget) {
-        dropped += 1;
-        continue;
-      }
-      kept[at]!.push(line);
-      budget -= line.length + 2;
-    }
-  }
+  const budget = MAX_GROUNDING_CHARS - headers.reduce((total, header) => total + header.length, 0);
+  // Lines are joined by a blank line, so each costs two characters more than its own length.
+  const { dropped, kept } = spendRoundRobin(sources, lineFor, budget, 2);
 
   const parts: string[] = [];
   for (const [at, header] of headers.entries()) {
@@ -349,6 +309,70 @@ export function groundingBlock(sources: readonly CanvasSource[]): string {
   }
 
   return parts.join("\n\n");
+}
+
+/**
+ * Spend one character budget across every source so each gets its first excerpt before any gets
+ * its second. Returns the surviving lines grouped by source, in reading order, and the count left out.
+ *
+ * 🔴🔴🔴 THE BUDGET IS SPENT ROUND-ROBIN, NOT IN READING ORDER, AND THAT IS THE DIFFERENCE
+ * BETWEEN "SOME OF EVERY DOCUMENT" AND "ALL OF THE FIRST THREE".
+ *
+ * Both packets built in this file used to walk the sources in order and spend one
+ * 120,000-character budget as they went, so with a large pile the first documents arrived whole
+ * and every later one contributed its TITLE AND NOTHING ELSE: a header saying a lecture is
+ * attached, above no sentence from it. The model is then told "412 further excerpts were not
+ * included", which it cannot act on, and it answers about the pile from the part of the pile it
+ * happens to have.
+ *
+ * Owner, 2026-09-03: *"even if I drop in 50 documents it should be able to understand all of
+ * them… what matters most is that it understands content."* Retrieval is the real answer to that
+ * and already ships (see `canvas-chat.ts`), but it only answers once the material is INDEXED,
+ * and the first question after a drop routinely arrives before that, which is exactly when the
+ * pile is largest and this fallback is what runs.
+ *
+ * 🔴 SELECTED ROUND-ROBIN, RENDERED GROUPED. Taking excerpt 0 from every source, then excerpt 1
+ * from every source, spends the budget evenly; grouping the survivors back under their headers
+ * keeps each document readable and keeps the `[s4:e12]` ids exactly where they were. Reading
+ * order INSIDE a document is preserved, which is the order that carries meaning.
+ *
+ * 🔴 AND IT DEGRADES WHERE A LECTURE CAN AFFORD IT. What is lost is the tail of every document
+ * rather than the whole of most of them, and a deck's opening slides are what say what it is
+ * about, so a truncated packet still knows that all fifty lectures exist and what each covers.
+ *
+ * 🔴 ONE HELPER FOR BOTH PACKETS. `groundingBlock` got this on 2026-09-03 and `materialText` did
+ * not, so a chat turn on fifty lectures heard all fifty while a study guide asked of the same
+ * canvas was written from two of them. Two copies of a selection rule are two rules the moment one
+ * is edited; the joiner's cost per line is the only thing the two callers differ on, and it is a
+ * parameter.
+ *
+ * PURE.
+ */
+function spendRoundRobin(
+  sources: readonly CanvasSource[],
+  lineFor: (excerpt: SourceExcerpt) => string,
+  budget: number,
+  /** Characters the caller's joiner adds after each line, so the budget counts what is sent. */
+  gap: number,
+): { kept: string[][]; dropped: number } {
+  const kept: string[][] = sources.map(() => []);
+  let left = budget;
+  let dropped = 0;
+  const deepest = sources.reduce((most, source) => Math.max(most, source.excerpts.length), 0);
+  for (let rank = 0; rank < deepest; rank += 1) {
+    for (const [at, source] of sources.entries()) {
+      const excerpt = source.excerpts[rank];
+      if (!excerpt) continue;
+      const line = lineFor(excerpt);
+      if (line.length + gap > left) {
+        dropped += 1;
+        continue;
+      }
+      kept[at]!.push(line);
+      left -= line.length + gap;
+    }
+  }
+  return { dropped, kept };
 }
 
 /** Resolve a citation to the actual source and text behind it, or null. */
@@ -382,29 +406,27 @@ export function quotedExcerpt(
 export function materialText(sources: readonly CanvasSource[]): string {
   if (sources.length === 0) return "";
 
+  const headers = sources.map(
+    (source) => `### ${source.title}${source.coverageNote ? `\n${source.coverageNote}` : ""}`,
+  );
+  const lineFor = (excerpt: SourceExcerpt) => {
+    const head = [excerpt.locator, excerpt.label].filter(Boolean).join(" · ");
+    return head ? `${head}: ${excerpt.text}` : excerpt.text;
+  };
+
+  // 🔴🔴 THE SAME ROUND-ROBIN `groundingBlock` GOT, FOR THE SAME FIFTY DOCUMENTS. This walked the
+  // sources in order and spent the whole budget as it went, so a deliverable asked of a large pile
+  // was written from the first two lectures and forty-eight titles: on the calibrated fixture in
+  // `every-document-is-heard.test.ts`, 48 of 50 lectures contributed no text at all. See
+  // `spendRoundRobin` for why the selection is shared rather than copied.
+  const budget = MAX_GROUNDING_CHARS - headers.reduce((total, header) => total + header.length, 0);
+  // Lines are joined by a newline, so each costs one character more than its own length.
+  const { dropped, kept } = spendRoundRobin(sources, lineFor, budget, 1);
+
   const parts: string[] = [];
-  let budget = MAX_GROUNDING_CHARS;
-  let dropped = 0;
-
-  for (const source of sources) {
-    const header = `### ${source.title}${
-      source.coverageNote ? `\n${source.coverageNote}` : ""
-    }`;
+  for (const [at, header] of headers.entries()) {
     parts.push(header);
-    budget -= header.length;
-
-    const lines: string[] = [];
-    for (const excerpt of source.excerpts) {
-      const head = [excerpt.locator, excerpt.label].filter(Boolean).join(" · ");
-      const line = head ? `${head}: ${excerpt.text}` : excerpt.text;
-      if (line.length > budget) {
-        dropped += 1;
-        continue;
-      }
-      lines.push(line);
-      budget -= line.length + 1;
-    }
-    if (lines.length > 0) parts.push(lines.join("\n"));
+    if (kept[at]!.length > 0) parts.push(kept[at]!.join("\n"));
   }
 
   // 🔴 The same honesty `groundingBlock` keeps: silence about a truncation is how a model comes to

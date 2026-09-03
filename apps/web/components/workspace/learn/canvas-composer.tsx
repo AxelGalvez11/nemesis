@@ -530,13 +530,19 @@ export function CanvasComposer({
    * canvas carries on, and the only thing that waits is the one control whose press would send an
    * unread document.
    */
-  const materialNotReady = recentAttachments.some(
-    (file) => file.state === "reading" || file.state === "failed",
-  );
-  const sendLabel = recentAttachments.some((file) => file.state === "reading")
+  // 🔴🔴 A FAILED FILE NO LONGER HOLDS THE SEND HOSTAGE. This gate used to be "any card reading OR
+  // failed", so one unreadable file in a batch of fifty made Send dead for good, with the card to
+  // remove hidden somewhere along a scroller. Owner, 2026-09-03: *"there should be no problem with
+  // any of them."* A file still being read is a real wait, and the only one: the send would
+  // otherwise go out without material the learner can see on the cards. A file that failed is
+  // reported in red on its own card, is left OUT of the send by `commitStaged`, and stays in the
+  // composer so it can be retried or removed. Nothing unread ever rides a turn.
+  const materialNotReady = recentAttachments.some((file) => file.state === "reading");
+  const someFailed = recentAttachments.some((file) => file.state === "failed");
+  const sendLabel = materialNotReady
     ? "Reading your document…"
-    : materialNotReady
-      ? "One document couldn't be read. Try again or remove it."
+    : someFailed
+      ? "Send (a document that couldn't be read stays behind)"
       : "Send";
 
   const submit = () => {

@@ -203,7 +203,8 @@ test("🔴🔴 there is no skeleton loader on either wait, and the caption is a 
   // empty and re-ran the thinking line every time it was opened (owner: *"it's almost as if the
   // conversation was not saved, and it's trying to think about it again"*). Both waits are still
   // covered; the second one now checks the condition it names.
-    /\{threadOpen && \(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !replyText\.trim\(\) && \(/,
+    // `liveText` since 2026-09-03: a streamed draft counts as the answer having started.
+    /\{threadOpen && \(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !liveText\.trim\(\) && \(/,
     "the thread's caption is no longer scoped to chat view — canvas view draws two of them",
   );
   // 🔴 AND THE PREVIEW STILL DOES NOT DRAW ITS OWN MASCOT. Two mounts of one renderer put two sets

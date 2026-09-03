@@ -241,7 +241,8 @@ test("🔴 an answer arrives block by block, and the drill is untouched", () => 
   // The drill boundary keeps its opacity-only 140ms — someone doing fifty facts crosses it fifty
   // times, which is the reasoning written above `.canvas-swap` and the reason this is a new class.
   assert.match(CSS, /\.canvas-swap \{ animation: canvas-swap-in 140ms ease-out both; \}/);
-  assert.match(CANVAS, /className="canvas-answer-in text-\[length:var\(--canvas-text-body\)\]/);
+  // A template since 2026-09-03: an answer that streamed in as a draft skips the arrival animation.
+  assert.match(CANVAS, /className=\{`\$\{session\.drafted \? "" : "canvas-answer-in "\}text-\[length:var\(--canvas-text-body\)\]/);
   // Keyed on the answer, or the reveal plays exactly once per session and never again.
   assert.match(CANVAS, /key=\{`p\$\{index\}:\$\{replyText\}`\}/);
   // Reduced motion turns it off with everything else.

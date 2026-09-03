@@ -55,7 +55,9 @@ test("🔴 a declared run PLANS and stops, spending nothing until Start", () => 
   // metered searches out of a monthly budget shared with ordinary chat search. Planning is one
   // model call and no searches, so the preview is affordable and everything expensive waits.
   const session = code("../../components/workspace/learn/use-canvas-session.ts");
-  assert.match(session, /if \(capability === "research"\)/, "the declaration is not acted on");
+  // `&& said` since 2026-09-03: a research chip with no words has nothing to plan, and the empty
+  // send with files is a turn of its own now.
+  assert.match(session, /if \(capability === "research" && said\)/, "the declaration is not acted on");
   assert.match(session, /await planResearch\(/, "it does not plan");
   assert.ok(
     !/capability === "research"[\s\S]{0,400}makeDeliverable\("report"/.test(session),

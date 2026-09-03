@@ -47,18 +47,27 @@ import type { ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { sourceDisagreementInstruction } from "@/lib/workspace/source-authority";
 import { commentsContextBlock, openCommentsForDocs } from "@/lib/workspace/document-comments";
 import { groundingBlock } from "@/lib/learn/canvas-grounding";
-import { excerptsInChunks, inventoryNote, retrievalNote, retrieveChunks, TURN_CHUNKS } from "@/lib/learn/canvas-retrieval";
+import {
+  everyDocumentPresent,
+  excerptsInChunks,
+  inventoryNote,
+  questionIsSpecific,
+  retrievalIsBroad,
+  retrievalNote,
+  retrieveChunks,
+  TURN_CHUNKS,
+} from "@/lib/learn/canvas-retrieval";
 import type { LearningCanvas } from "@/lib/learn/canvas-model";
 import { prepareAnswer } from "@/lib/learn/answer-prepare";
 import { fillMissingFigures } from "@/lib/learn/figure-fallback";
 import { spokenOpenerWatch } from "@/lib/learn/spoken-opener";
+import { draftWatch } from "@/lib/learn/stream-draft";
 import type { TurnStage } from "@/lib/learn/turn-preview";
 import {
   decisionOrReply,
   turnRouterMessages,
   type TurnDecision,
-  type TurnExchange,
-} from "@/lib/learn/turn-router";
+  type TurnExchange, ARRIVAL_UTTERANCE } from "@/lib/learn/turn-router";
 import { hostnameOf } from "@/lib/favicon";
 import {
   loadToolCatalogue,
@@ -88,6 +97,13 @@ export const MAX_SEARCH_ROUNDS = 4;
 
 /** What only the canvas's runtime knows, which the session cannot read for itself. */
 export interface TurnSurroundings {
+  /**
+   * How many documents this send attached, counted by the session as they land.
+   *
+   * 🔴 THE PACKET SAYS "arrived with THIS message" ONLY WHEN IT IS TRUE. Zero or absent on every
+   * turn that carried no files, so the arrival rule in the router cannot fire on turn forty.
+   */
+  arrived?: number;
   /** Whether the teaching policy is contributing anything right now. */
   lessonInProgress: boolean;
   /** This turn was spoken inside a live voice conversation; the reply will be read aloud.
@@ -340,6 +356,15 @@ export async function askCanvasChat(
    * it leaves every request byte-identical to before this parameter existed.
    */
   onSpokenOpener?: (opener: string) => void,
+  /**
+   * The answer's prose as it streams in, for a plain reply, so the learner reads it as it is written.
+   *
+   * 🔴🔴 THE TYPED TURN STREAMS NOW (2026-09-03). It never did: `stream: true` was bought only for
+   * the spoken lane, so every typed answer landed all at once after one shimmering word, and the
+   * milestones the model wrote at the head of its reply could not be shown until the reply was
+   * complete. See lib/learn/stream-draft.ts for what is drafted and what is withheld.
+   */
+  onDraft?: (prose: string) => void,
 ): Promise<CanvasTurnReply> {
   // 🔴 FIVE READS, ONE WAIT. These are four independent tables (and one provider catalogue), and
   // they used to run one after another — a quarter to a full second of queue time before the
@@ -393,10 +418,35 @@ export async function askCanvasChat(
    * really doesn't have it."*
    */
   const focused = retrieved ? excerptsInChunks(canvas.sources, retrieved) : null;
-  const materialContext =
-    focused && focused.sources.length > 0
-      ? `${inventoryNote(canvas.sources, focused.sources)}\n\n${retrievalNote(new Set(retrieved!.map((chunk) => chunk.parsedDocumentId)).size, retrieved!.length)}\n\n${groundingBlock(focused.sources)}`
-      : groundingBlock(canvas.sources);
+  /**
+   * 🔴🔴🔴 NARROWING IS ONLY RIGHT WHEN THE QUESTION IS NARROW, OR THE NARROWING IS NOT. Measured
+   * 2026-09-03 on a fresh seven-document drop asked "help me learn this": retrieval matched ONE
+   * document (the question has no content to match, so whichever opening embedded closest won),
+   * the packet narrowed to that document's passages, and the model answered "there's only one
+   * document I can read", with seven attached and all seven named in the inventory above it. Named
+   * is not present. So the retrieved set stands in for the pile only when it covers at least half
+   * of it, or when the question is specific enough that a minority of the pile is the honest
+   * answer (`questionIsSpecific`); otherwise the turn reads the material round-robin, which puts
+   * the opening of every document in front of the model.
+   *
+   * 🔴 AND WHEN IT DOES NARROW, EVERY DOCUMENT IS STILL IN THE PACKET. The sources retrieval did
+   * not match ride along with their opening excerpt (`everyDocumentPresent`), so "what is in the
+   * other two?" is answered from text rather than from a title, and the retrieval note says which
+   * documents contributed passages and which only their opening. The fallback carries the
+   * inventory too, so the instruction never to call an attached document missing rides the largest
+   * packets as well as the narrowed ones.
+   */
+  const narrowed =
+    focused !== null &&
+    focused.sources.length > 0 &&
+    (retrievalIsBroad(canvas.sources.length, focused.sources.length) || questionIsSpecific(question));
+  const materialContext = narrowed
+    ? [
+        inventoryNote(canvas.sources, focused.sources),
+        retrievalNote(focused.sources.length, retrieved?.length ?? 0, { documents: canvas.sources.length, openings: true }),
+        groundingBlock(everyDocumentPresent(canvas.sources, focused.sources)),
+      ].join("\n\n")
+    : [inventoryNote(canvas.sources, canvas.sources), groundingBlock(canvas.sources)].filter(Boolean).join("\n\n");
 
   const ask = (webContext: string, searchesLeft: number, toolContext: string, toolRoundsLeft: number) => {
     // 🔴 ONE WATCHER PER ROUND, AND ONLY THE ANSWERING ROUND CAN FIRE. A round that decides to
@@ -404,15 +454,18 @@ export async function askCanvasChat(
     // prose), and the next round starts a fresh one — so the sentence handed to `onSpokenOpener`
     // always comes from the round whose prose IS the final answer.
     //
-    // 🔴 STREAMING RIDES ONLY THE SPOKEN LANE. Without the callback the request is byte-identical
-    // to what every typed turn has always sent — the valve meters a streamed completion exactly
-    // (it asks the provider for the final usage chunk), but there is no reason to change the wire
-    // shape of turns that gain nothing from it.
+    // 🔴 STREAMING USED TO RIDE ONLY THE SPOKEN LANE, and the typed turn paid for it with a wait
+    // that showed nothing. The valve meters a streamed completion exactly (it asks the provider
+    // for the final usage chunk), so streaming every round costs nothing on the bill.
     const watch = surroundings.spokenConversation && onSpokenOpener ? spokenOpenerWatch() : null;
+    // 🔴 ONE DRAFT WATCHER PER ROUND, like the spoken one: a round that decides to search drafts
+    // nothing (its prose is not the answer), and the answering round starts clean.
+    const draft = draftWatch();
     return postChatCompletion(
       uid,
       turnRouterMessages({
         context: {
+          ...(surroundings.arrived ? { arrived: surroundings.arrived, saidNothing: question.trim().length === 0 } : {}),
           canvasTitle: canvas.title,
           clarified: surroundings.clarified,
           demonstrated: surroundings.demonstrated,
@@ -441,19 +494,26 @@ export async function askCanvasChat(
           hasAttachedMaterial: materialContext.trim().length > 0,
           hasExternalEvidence: webContext.trim().length > 0,
         }),
-        utterance: question,
+        // 🔴 AN EMPTY SEND STILL NEEDS A USER MESSAGE ON THE WIRE. The learner's own text stays empty
+        // in the bubble and the moment; the model gets the sentinel and the state block explains it.
+        utterance: question.trim() || ARRIVAL_UTTERANCE,
       }),
       {
         decision: CHAT_DECISION,
         signal,
-        ...(watch
-          ? {
-              onDelta: (_delta: string, accumulated: string) => {
-                const opener = watch.feed(accumulated);
-                if (opener) onSpokenOpener?.(opener);
-              },
-            }
-          : {}),
+        // 🔴🔴 EVERY ROUND STREAMS. The draft watcher reports the model's milestone lines the
+        // moment their array closes (seconds before the prose on a long answer) and the answer's
+        // prose as it arrives; the spoken watcher rides the same stream on a voice turn. Both are
+        // pure readers of the accumulated text: nothing here advances on a clock.
+        onDelta: (_delta: string, accumulated: string) => {
+          if (watch) {
+            const opener = watch.feed(accumulated);
+            if (opener) onSpokenOpener?.(opener);
+          }
+          const seen = draft.feed(accumulated);
+          if (seen.milestones) onMilestones?.(seen.milestones);
+          if (seen.prose) onDraft?.(seen.prose);
+        },
       },
     );
   };

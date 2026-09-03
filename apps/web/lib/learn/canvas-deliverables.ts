@@ -309,87 +309,91 @@ const newId = (): string =>
 export const CARDS_SYSTEM =
   "You write flashcards from study material. Reply with ONLY a JSON array of objects, each " +
   'with exactly two string fields: "front" (a question or prompt) and "back" (the answer). ' +
-  "Write 10 to 16 cards that cover the material's core ideas. No markdown fences, no commentary. " +
-  // 🔴🔴 ONE IDEA PER CARD, AND NOTHING ASKED FOR THAT UNTIL 2026-08-30. Without it the model
-  // writes "name the three types of X" and puts a three-item list on the back, which is the card
-  // spaced repetition handles worst: recall two of three and no grade is honest, so the schedule
-  // learns nothing from the press. Splitting is free at write time and impossible afterwards.
+  "Write one card for every unit of knowledge in the material worth recalling: a full lecture " +
+  "usually yields 15 to 30 cards, a short passage fewer, and a narrow ask only the cards it " +
+  "supports. Never pad. No markdown fences, no commentary. " +
+  // 🔴🔴 THE OWNER'S OWN RULES, 2026-09-03, WRITTEN BY SHAPE. He sent a full rule sheet that day:
+  // *"clear prompt, one recall target, minimum redundancy, vertical lists when grouping is
+  // necessary."* Every rule below is one of his, with his subject examples turned into shape
+  // ("a named thing" rather than a named field's noun), because the product is field-agnostic and
+  // `canvas-deliverables.test.ts` fails on a subject word in this prompt.
   //
-  // 🔴 STATED AS A RULE ABOUT SHAPE, NEVER ABOUT LENGTH. "Keep it short" invites a truncated
-  // answer; "one fact, and split a list into one card per item" gets a short answer as a
-  // consequence of being right. The 1000-character cap in `readCardsJson` is a safety limit, not
-  // a target, and must not be lowered to enforce this: it would cut sentences in half.
-  "ONE FACT PER CARD. If an answer would be a list, write one card for each item instead. Never " +
-  'ask for several things at once ("name the three ..."), and never put a paragraph on the back: ' +
-  "a phrase or a sentence. A card the learner can only half-remember cannot be graded honestly. " +
-  // 🔴🔴 THE CARD IS BUILT FROM WHAT IS IN FRONT OF IT, AND NOTHING SAID SO (owner 2026-09-03:
-  // cards must be "generated from the actual source material rather than generic background
-  // knowledge"). A model asked for cards on a subject will happily supply the subject's textbook
-  // consensus, and the learner is revising for an assessment on THIS material — a card whose
-  // source they have never seen reads to them as an error in the deck, and they are right.
+  // 🔴🔴 ONE RECALL TARGET PER CARD, AND THAT REPLACED "ONE FACT PER CARD, SPLIT EVERY LIST". The
+  // 2026-08-30 rule split the names one thing goes by into one card each: four cards with the
+  // same answer, four schedules for one memory, a deck that felt padded. Owner: *"it should not
+  // make four separate cards. It should make just one card... compress redundancy, not concepts."*
   //
-  // 🔴 IT IS ALSO THE HONEST ANSWER TO THIN MATERIAL. "Write 10 to 16 cards" above is a target,
-  // and a target with no floor under it is an instruction to invent the difference.
+  // 🔴 STATED AS A RULE ABOUT SHAPE, NEVER ABOUT LENGTH. The 1000-character cap in `readCardsJson`
+  // is a safety limit, not a target, and must not be lowered to enforce brevity: it would cut a
+  // list off mid-item.
+  "ONE RECALL TARGET PER CARD. A card asks for exactly one unit of knowledge: one definition, " +
+  "one category, one mechanism, one use, one risk, one number, or one named set. Never combine " +
+  "unrelated things on a card: two separate effects are two cards, and recognising a thing " +
+  '("what category is X?") is a different card from explaining it ("what does X do?"). ' +
+  "Compress redundancy, not concepts: when several items are really one unit (the names one " +
+  "thing goes by, the members of one set, the steps of one procedure, the parts of one whole, " +
+  "the conditions under which one rule holds), write ONE card whose back lists them, never one " +
+  "card per item and never several cards that share one answer. Use a list only when the items " +
+  "naturally belong together. " +
+  // 🔴 VERTICAL, NUMBERED, COUNTED. His words: *"Lists must be vertical, not inline"* and *"Show
+  // the number of expected items when helpful. This gives you a retrieval target."* The review
+  // screen renders markdown, so a numbered list and bold both draw as such.
+  'A list on the back is VERTICAL, one item per line as a numbered list ("1. ...", then a new ' +
+  'line, "2. ..."), never an inline comma list. When the front asks for a set, say how many to ' +
+  'expect ("X: 3 serious risks?", "What are the 4 names given for X?"), so the learner has a ' +
+  "target to retrieve against. " +
+  // 🔴 TWO FORMS, EACH FOR WHAT IT DOES BEST. Front/Back when the prompt itself names the target;
+  // cloze for definitions, terminology, abbreviations and short associations. Cloze was
+  // renderable and unreachable until 2026-08-30 because the writer was never told the syntax.
+  // 🔴 QUOTING CONVENTION, LOAD-BEARING FOR THE GUARD: `canvas-deliverables.test.ts` reads this
+  // prompt back out of the source with a plain quote matcher, so a fragment that contains a double
+  // quote is written as a single-quoted string with no apostrophe inside, and never with `\"`.
+  'Use Front/Back when the prompt itself makes the retrieval target clear: "What category is X?" ' +
+  'with the back "Y". Facts ABOUT a named thing (its category, how it works, what it is ' +
+  "used for, its risks, what to watch for, what to tell someone, the names it goes by) are " +
+  "usually Front/Back. Use cloze when the card is better as sentence completion: write the " +
+  'sentence as the "front" with the hidden part wrapped as {{c1::the phrase}} and the complete ' +
+  'sentence in "back". Cloze is best for definitions, terminology, abbreviations and short ' +
+  'associations ("Torque means {{c1::a turning force}}.", "GDP stands for {{c1::gross domestic ' +
+  'product}}."), and a technical term the material defines generally gets its own cloze card. ' +
+  // 🔴 ONE CLOZE PER CARD, ALWAYS c1. `activeClozeNumber` rotates the hidden blank by repetition
+  // count, so c1/c2/c3 on one card is three facts wearing one schedule. Anki splits those; so do we.
+  "Use exactly ONE {{c1::...}} per card and never c2 or c3: a card that hides several things is " +
+  "several cards. Each unit of knowledge appears ONCE, in one form: never the same fact as both a " +
+  "question and a cloze. " +
+  // 🔴 SHORT, BOLD ANCHORS. *"Keep answers short. Bare fact first. Use bolding for key anchors."*
+  "Keep answers short: the bare fact first, and extra explanation only when it separates the " +
+  "answer from something it is easily confused with. Never put a paragraph on the back. Bold " +
+  "the key anchors with markdown: the named thing, its category, a warning, or the main answer " +
+  '("**Y**"). ' +
+  // 🔴🔴 THE CARD IS BUILT FROM WHAT IS IN FRONT OF IT (owner 2026-09-03: cards must be "generated
+  // from the actual source material rather than generic background knowledge"). The target above
+  // is a target, and a target with no floor under it is an instruction to invent the difference.
   "Every card comes from THIS material. Write what the material says, never what you happen to " +
   "know about the subject: a fact you are sure of but cannot point to in the text does not belong " +
   "in this deck, however true it is. If the material only supports six good cards, write six. " +
   // 🔴🔴 A CARD THAT LOSES THE SPECIFIC TESTS A VAGUE MEMORY OF A FACT INSTEAD OF THE FACT (owner
-  // 2026-09-03: preserve exact values, names, definitions, mechanisms, timings and formulas "when
-  // those details matter"). Softening is the natural thing for a writer to do — it reads better —
-  // and it is exactly wrong here, because the specific is usually the entire reason the fact is
-  // worth knowing. "A high value" is not a fact; the value is.
-  //
-  // 🔴 STATED BY SHAPE, NOT BY SUBJECT. "A quantity, a threshold, a name, a date, an order of
-  // steps, a written form" covers a titration, a filing deadline, a load limit and a conjugation
-  // without naming any of them, and needs no list kept current.
-  // 🔴 NO EM DASH IN ANY OF THIS, on purpose. The card writer's instructions are the only examples
-  // of prose it has in front of it, and a prompt that models the punctuation the product bans is
-  // how forty-nine of them got into the turn packet (see no-em-dashes.test.ts).
+  // 2026-09-03: preserve exact values, names, definitions, mechanisms, timings and formulas). Stated
+  // by shape so it covers a titration, a filing deadline and a load limit without naming any.
+  // 🔴 NO EM DASH IN ANY OF THIS, on purpose: the writer's instructions are the only prose it has
+  // in front of it, and a prompt that models the banned punctuation is how forty-nine of them got
+  // into the turn packet (see no-em-dashes.test.ts).
   "Where the material gives an exact specific and the specific is what makes the fact worth " +
   "knowing (a quantity, a threshold, a proper name, a date or duration, the order of a sequence, " +
   "a formula, a condition under which something does not hold), carry it across exactly as the " +
   "material wrote it. Never round it, never generalise it into a vague word, and never paraphrase " +
-  "a wording that is itself the thing being learned. One specific per card, as ever. " +
-  // 🔴🔴 THE SPLIT RULE NEEDS A FLOOR, AND A LIVE RUN IS THE ONLY THING THAT SHOWED IT. Asked for
-  // atomic cards on a four-stroke engine, the model split the material's parts list into seven of
-  // these: "The {{c1::piston}} is a labelled part of the cylinder assembly." Each one is atomic,
-  // correctly formatted, and worth nothing: it tests membership of a list, not what a piston does.
-  //
-  // 🔴 AND THEY COLLIDE WITH THE FIGURE. Those seven parts are exactly what the occlusion cards
-  // cover, so the deck was about to carry seven dead text cards beside seven good image ones. The
-  // rule therefore ends by pointing the parts at the picture instead of at more prose.
-  "Split a list only when each item carries its OWN fact, something the learner could be asked " +
-  "about on its own. A bare enumeration is not a set of cards: never write a card whose answer is " +
-  "merely that something belongs to a list, appears in a diagram, or is one of the parts of a " +
-  "thing. If the material's list is the labelled parts of a diagram, write NO cards about those " +
-  "parts at all, in any form, including a cloze that hides one of them or the thing they belong " +
-  "to. Name the figure instead and let the picture ask. " +
-  // 🔴🔴 CLOZE WAS RENDERABLE AND UNREACHABLE. `study-cloze.ts` has parsed `{{c1::...}}` since the
-  // Study tab shipped and `review-session.tsx` auto-detects it even on a card typed basic, but the
-  // writer was never told the syntax existed, so no generated deck has ever contained one. Owner
-  // asked for it directly, 2026-08-30.
-  //
-  // 🔴 ONE CLOZE PER CARD, ALWAYS c1, AND THAT IS THE ATOMICITY RULE AGAIN RATHER THAN A SEPARATE
-  // ONE. `activeClozeNumber` rotates which blank is hidden by the card's repetition count, so a
-  // card carrying c1/c2/c3 is three facts wearing one schedule: its interval reflects whichever
-  // blank happened to come up. Anki splits those into separate cards, and so do we.
-  "A card may hide a phrase inside a sentence instead of asking a question. Write the sentence as " +
-  'the "front" with the hidden part wrapped as {{c1::the phrase}}, and put the complete sentence ' +
-  'in "back". Use exactly ONE {{c1::...}} per card and never c2 or c3: a card that hides several ' +
-  "things is several cards. Reach for this when a fact only means anything in its sentence and a " +
-  "bare question would strip the context out of it. " +
-  // 🔴 ONE FORM PER FACT, AND THIS ONE ALSO CAME FROM A LIVE RUN. Given both a question form and a
-  // cloze form, the model used BOTH: a twelve-card engine deck where cards 7 to 12 were cloze
-  // restatements of cards 1 to 6. Every duplicate is a second schedule for one memory, so the
-  // learner is asked the same thing twice at drifting intervals and the deck feels padded.
-  "Each fact appears ONCE, in one form. Never write the same fact as both a question and a cloze. " +
-  // 🔴 THE OPTIONAL OBJECT FORM IS BACKWARDS COMPATIBLE BY CONSTRUCTION. `readCardsJson` slices
-  // from the first "[" to the last "]", so it reads the cards array out of either shape without
-  // knowing this field exists, which is why adding it cannot break a deck.
-  //
-  // 🔴 "WHEN ... REPLY", NOT "YOU MAY". It read as permission and was therefore usually declined;
-  // a labelled diagram is exactly the material a written card serves badly, so the trigger is the
-  // material having one, not the model feeling like it.
+  "a wording that is itself the thing being learned. " +
+  // 🔴🔴 THE LABELLED-PARTS EXCEPTION, FOUND ON A LIVE RUN. Asked for cards on a four-stroke
+  // engine the model once wrote seven of "The {{c1::piston}} is a labelled part of the cylinder
+  // assembly": each tested membership of a list, and the same seven parts were exactly what the
+  // occlusion cards cover. Under the list rule the parts of one whole are ONE card; when the
+  // whole is a labelled diagram even that card yields to the picture.
+  "Never write a card whose whole answer is merely that something belongs to a list or appears " +
+  "in a diagram. If the material's list is the labelled parts of a diagram, write NO cards about " +
+  "those parts at all, in any form, not a list card and not a cloze that hides one of them or the " +
+  "thing they belong to. Name the figure instead and let the picture ask. " +
+  // 🔴 THE OPTIONAL OBJECT FORM IS BACKWARDS COMPATIBLE BY CONSTRUCTION: `readCardsJson` unwraps
+  // either shape. "WHEN ... REPLY", NOT "YOU MAY": read as permission it was usually declined.
   "When the material has a LABELLED DIAGRAM worth knowing the parts of (anatomy, a circuit, a " +
   "cell, a map, an engine, a piece of apparatus), reply with an object instead: " +
   '{"cards": [...], "figure": "nephron"}. "figure" is the SHORTEST NAME for the thing, the way ' +
@@ -421,16 +425,43 @@ export function readCardsFigure(text: string): string | null {
   return typeof figure === "string" && figure.trim() ? figure.trim() : null;
 }
 
+/**
+ * The learner's ask, handed to the card writer as the scope of the deck.
+ *
+ * 🔴🔴 THE WRITER NEVER SAW THE SENTENCE. `makeDeliverable(kind, said)` has carried the learner's
+ * words since it was written and forwarded them to slides, documents and sheets, and not to cards.
+ * So "make me flashcards on the brand names" on a seven-lecture canvas made a deck about lecture
+ * one's first pages: `canvasBriefFor` picked passages by the last thing asked, which helped when
+ * the index existed and did nothing on a fresh drop, and the writer was told to "cover the
+ * material's core ideas" either way. Owner, 2026-09-03: *"throughout the chat, I may ask for like
+ * flashcards on certain topics."* The topic is the deck.
+ *
+ * 🔴 NEVER A REASON TO INVENT. A narrow ask the material does not cover yields the cards it does
+ * cover and no more; the floor in `CARDS_SYSTEM` ("write six") already says so, and the note
+ * repeats it here because it is the sentence most likely to be read last.
+ */
+export function cardsAskNote(topic?: string): string {
+  const said = (topic ?? "").trim().replace(/\s+/g, " ");
+  if (!said) return "";
+  return (
+    `The learner asked: "${said.slice(0, 300)}". Write cards about what they asked for, and only that, ` +
+    "from the material above. If they named a part of the material, every card comes from that part; " +
+    "if the material barely covers it, write the few cards it supports rather than filling in from memory."
+  );
+}
+
 export async function makeFlashcardsDeliverable(
   uid: string,
   canvas: LearningCanvas,
+  /** The learner's own sentence, when they asked for cards on something in particular. */
+  topic?: string,
 ): Promise<DeliverableResult | DeliverableFailure> {
   if (!canvasHasMaterial(canvas)) return { error: "There's nothing on the canvas to make cards from yet." };
   const reply = await postChatCompletion(
     uid,
     [
       { content: CARDS_SYSTEM, role: "system" },
-      { content: await canvasBriefFor(canvas), role: "user" },
+      { content: [await canvasBriefFor(canvas, topic), cardsAskNote(topic)].filter(Boolean).join("\n\n"), role: "user" },
     ],
     { maxTokens: CARDS_MAX_TOKENS },
   );
@@ -542,28 +573,109 @@ export async function makeFlashcardsDeliverable(
 
 // ---------------------------------------------------------------- summary note
 
+/**
+ * The note writer's instructions.
+ *
+ * 🔴🔴 THE NOTE WAS A SUMMARY, AND THE OWNER DOES NOT STUDY FROM SUMMARIES. Owner, 2026-09-03:
+ * *"for me personally, when I study, I like to make a markdown file of all the points that I
+ * should be able to recall from memory myself."* This prompt asked for one thing, a "summary
+ * note", whatever the learner said, so "the points I should recall" came back as prose about the
+ * material rather than the list of things to close the file and say.
+ *
+ * 🔴 THE SHAPE IS CHOSEN BY THE ASK, AND THE ASK TRAVELS. `makeNoteDeliverable` appends the
+ * learner's own sentence after the material (`noteAskParagraph`), and this rule reads it: points to
+ * recall, things to memorise, a checklist, a cheat sheet or revision notes get a RECALL LIST, one
+ * line per point; everything else gets the summary note it always got. Two shapes behind one door,
+ * because a second deliverable kind would be a second row in every table that lists them, for a
+ * difference the model can hear in one sentence.
+ *
+ * 🔴 STATED BY SHAPE, NEVER BY SUBJECT. "A value, a name, a date, an order of steps, a formula, a
+ * condition" is a titration, a filing deadline, a load limit and a conjugation without naming any
+ * of them (CLAUDE.md), and it is the same rule the card writer follows two sections up.
+ *
+ * 🔴 NO EM DASH IN ANY OF THIS, on purpose. The writer's instructions are the only prose it has in
+ * front of it, and a prompt that models the punctuation the product bans teaches it (see
+ * no-em-dashes.test.ts).
+ */
 const NOTE_SYSTEM =
-  "You write a clean, self-contained summary note in Markdown for a learner's library. Start " +
-  "with a single # title line, then short sections under ## headings. Bold the key terms where " +
-  "they are defined. Cover the material faithfully and compactly. No preamble, no closing remarks.";
+  "You write a clean, self-contained note in Markdown for a learner's library. Start with a " +
+  "single # title line, then sections under ## headings. Bold the key terms where they are " +
+  "defined. Everything in the note comes from the material you are given and nothing is " +
+  "invented: a point you cannot find in the material does not belong in the note, however true " +
+  "it is. No preamble, no closing remarks. " +
+  "THE SHAPE FOLLOWS THE LEARNER'S ASK. When the learner asks for the points to recall, the " +
+  "things to memorise, a checklist, a cheat sheet or revision notes, write a RECALL LIST: under " +
+  "each ## heading, one line per point, and each line is a single thing the learner should be " +
+  "able to say from memory without looking. Carry every exact specific across exactly as the " +
+  "material gave it (a value, a name, a date, an order of steps, a formula, a condition under " +
+  "which something holds or does not). No paragraphs anywhere in a recall list. " +
+  "Otherwise write a summary note: short sections that cover the material faithfully and compactly.";
 
 /** Where canvas-made notes are filed in the library's tree. */
 export const CANVAS_NOTE_FOLDER = "Canvas outputs";
 
+/**
+ * How much of the learner's own sentence the note writer is shown. A sentence is what decides the
+ * shape; a pasted page would push the material out of the writer's attention for no gain.
+ */
+const NOTE_ASK_LIMIT = 300;
+
+/**
+ * The learner's ask, as a paragraph for the writer, or nothing when there was none.
+ *
+ * 🔴 IN THE USER MESSAGE, AFTER THE MATERIAL, AND QUOTED. The system prompt says what a recall list
+ * is; this is what tells the writer that THIS learner asked for one. It goes last because the shape
+ * is the thing the writer acts on while writing, and it is quoted so a sentence that happens to
+ * contain an instruction reads as something the learner said rather than as a rule.
+ *
+ * Exported for its test: the cap and the quoting are the two things a regex on the source cannot
+ * prove.
+ */
+export function noteAskParagraph(topic?: string): string {
+  const ask = (topic ?? "").trim().replace(/\s+/g, " ").slice(0, NOTE_ASK_LIMIT);
+  if (!ask) return "";
+  return (
+    `The learner asked: "${ask}". Shape the note the way they asked for it: a recall list if they ` +
+    "asked for the points to recall, memorise or check off, a summary note otherwise. Cover what " +
+    "they named, and the whole material when they named nothing narrower."
+  );
+}
+
 export async function makeNoteDeliverable(
   uid: string,
   canvas: LearningCanvas,
+  topic?: string,
 ): Promise<DeliverableResult | DeliverableFailure> {
-  if (!canvasHasMaterial(canvas)) return { error: "There's nothing on the canvas to summarise yet." };
+  // 🔴 GENERALIST, LIKE THE DOCUMENT AND FOR THE OWNER'S OWN REASON (2026-08-25: these "are just
+  // general things that a general chat AI should be able to do"). Until 2026-09-03 this refused any
+  // canvas with no material, topic or no topic, while the document maker one section down wrote
+  // from what the model knows plus one web search. "Make me a cheat sheet on X" on a fresh canvas
+  // is the same ask as "make me a document on X" and gets the same answer: with material it is
+  // grounded in that, with a subject alone it writes from knowledge, and with neither it asks.
+  const subject = (topic ?? "").trim() || canvas.title.trim();
+  if (!canvasHasMaterial(canvas) && !subject) {
+    return { error: "Tell me what the note should be about, and I'll write it." };
+  }
+  // 🔴 THE TOPIC REACHES RETRIEVAL. `canvasBriefFor(canvas)` embedded the canvas title and the last
+  // thing said and nothing else, so "the points to recall about chapter four" pulled passages for
+  // whatever the canvas was about in general. Same call the document maker makes.
+  const brief = canvasHasMaterial(canvas)
+    ? await canvasBriefFor(canvas, topic)
+    : [`Write this note about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
   const reply = await postChatCompletion(uid, [
     { content: NOTE_SYSTEM, role: "system" },
-    { content: await canvasBriefFor(canvas), role: "user" },
+    { content: [brief, noteAskParagraph(topic)].filter(Boolean).join("\n\n"), role: "user" },
   ]);
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const content = reply.text.trim();
   if (content.length < 80) return { error: "The note came back empty, so nothing was saved. Try again." };
 
-  const title = (canvas.title || "Canvas summary").slice(0, 120);
+  // The canvas's own title first, as before: it is the name the learner knows this work by, and the
+  // .md lands in Downloads under it. The model's # title is the fallback for an untitled canvas,
+  // because it read the material; then the subject; then a plain word rather than the old "Canvas
+  // summary", which a recall list is not.
+  const heading = /^#\s+(.+)$/m.exec(content)?.[1]?.trim();
+  const title = (canvas.title.trim() || heading || subject || "Note").slice(0, 120);
   let saved: { path: string; title: string };
   try {
     saved = await writeLibraryNote({ content, folder: CANVAS_NOTE_FOLDER, madeBy: "nemesis", title, userId: uid });
@@ -908,6 +1020,22 @@ async function recordSlidesLedger(canvasId: string, title: string): Promise<stri
  * turns to what the document is about — "make a document on it", "create a document about X" — and
  * never when another noun follows. Same rule the leading question-word guard serves: when it is
  * ambiguous, teach.
+ *
+ * 🔴🔴 THE NOTE ARM WAS TWO PHRASES, AND THE OWNER'S OWN SENTENCE WAS NOT ONE OF THEM. It read
+ * `(summary note|study note)`, so "make me a markdown file of the points I should recall from
+ * memory" (owner, 2026-09-03, describing how he actually studies) fell through to an ordinary turn
+ * and was talked about. The arm now carries the ways a learner names this thing: notes, a markdown
+ * or md file, a cheat sheet, a study guide, revision notes, a recall list, key points, points to
+ * recall. Every phrasing this list lacks is a feature the learner cannot reach (#1061's lesson).
+ *
+ * 🔴 PLURAL "notes", NEVER BARE "note". "Make a note of that" is a figure of speech and the most
+ * common way the singular reaches a tutor; matching it would steal that turn for a file nobody
+ * asked for.
+ *
+ * 🔴 "MAKE SURE" IS NOT A MAKE. A wider noun list widens the verb list's false matches with it:
+ * "make sure your notes cover the appeal" is a request about the learner's own notes and would
+ * have become a file. The one idiom is excluded at the verb; any other verb in the sentence still
+ * counts, so "make sure to create flashcards" still makes flashcards.
  */
 export function readDeliverableAsk(text: string): DeliverableKind | null {
   const said = text.trim();
@@ -920,7 +1048,7 @@ export function readDeliverableAsk(text: string): DeliverableKind | null {
   // reach. It stays a lookahead rather than becoming `.*`, because "build a document parser" must
   // still be an ordinary computer-science question.
   const match =
-    /\b(?:make|create|build|generate|give|write)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note)|(documents?)(?=\s*(?:$|[.,;:!?—-]|\b(?:on|about|for|from|of|with|covering|summari[sz]ing)\b)))\b/i.exec(
+    /\b(?:make(?!\s+sure\b)|create|build|generate|give|write)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note|notes|markdown(?: file)?|md file|cheat sheet|study guide|revision notes|recall (?:points|list|sheet)|key points|points to (?:recall|remember|memori[sz]e))|(documents?)(?=\s*(?:$|[.,;:!?—-]|\b(?:on|about|for|from|of|with|covering|summari[sz]ing)\b)))\b/i.exec(
       said,
     );
   if (!match) return null;

@@ -43,7 +43,11 @@ test("🔴🔴 dropping material starts reading it immediately", () => {
   // wrapped across four lines — a formatting change reddened a test about where reads happen.
   // Matching the pieces keeps the guarantee (shared chokepoint, `keep`, so the row and parse are
   // the real ones) without pinning the prettier output.
-  const call = home.slice(home.indexOf("const run = extractFile(file, userId"), home.indexOf("reads.current.set(key, run)"));
+  // 🔴 REPOINTED 2026-09-03: the read goes through a pool (lib/learn/read-pool.ts), because fifty
+  // files dropped at once used to be fifty uploads at once. Same chokepoint, same options; only
+  // WHEN it starts is bounded.
+  const call = home.slice(home.indexOf("const run = frontDoorReadPool.run(() =>"), home.indexOf("reads.current.set(key, run)"));
+  assert.match(call, /extractFile\(file, userId/, "the front door must read through the shared chokepoint");
   assert.ok(call.length > 0, "the front door must read through the shared chokepoint");
   assert.match(call, /folderPath: CANVAS_FILING_FOLDER/, "the read must file into the canvas folder");
   assert.match(call, /keep: true/, "without keep the row and parse are not the real ones");

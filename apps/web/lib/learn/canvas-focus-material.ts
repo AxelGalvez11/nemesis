@@ -186,6 +186,32 @@ export function focusMaterial(sources: readonly CanvasSource[], query: FocusQuer
 
   ranked.sort((a, b) => a.rank - b.rank || a.sourceIndex - b.sourceIndex || a.position - b.position);
 
+  /**
+   * 🔴🔴 EACH SOURCE'S BEST BEFORE ANY SOURCE'S SECOND. Ranked by rung alone, ties fell to
+   * `sourceIndex`, so on a canvas of many sources the first one's ten vocabulary hits all came
+   * before the second one's best and the budget ran out inside source three: on the calibrated
+   * fixture in `every-document-is-heard.test.ts`, 3 of 20 sources were represented. The order now
+   * takes the best excerpt of every source before any source's second, then the rest by rank,
+   * still within the budget. "Best" is the source's own top-ranked excerpt, so a source with a
+   * citation leads with it and a source without leads with its strongest vocabulary hit.
+   *
+   * 🔴 WITH ONE EXCEPTION, AND IT IS THIS MODULE'S OLDEST RULE. A citation is the page saying
+   * where an idea came from; dropping one for another source's vocabulary hit is the first
+   * failure named at the top of the test file. So everything cited keeps its precedence over
+   * everything uncited, and the fairness runs inside the cited set and then across the rest.
+   */
+  const standing = new Map<Ranked, number>();
+  const seen = new Map<number, number>();
+  for (const entry of ranked) {
+    const nth = seen.get(entry.sourceIndex) ?? 0;
+    standing.set(entry, nth);
+    seen.set(entry.sourceIndex, nth + 1);
+  }
+  const tier = (entry: Ranked) => (entry.reason === "cited" ? 0 : 2) + (standing.get(entry) === 0 ? 0 : 1);
+  ranked.sort(
+    (a, b) => tier(a) - tier(b) || a.rank - b.rank || a.sourceIndex - b.sourceIndex || a.position - b.position,
+  );
+
   const chosen = new Set<string>();
   const byReason: Record<FocusReason, number> = { cited: 0, neighbour: 0, opening: 0, vocabulary: 0 };
   let spent = 0;

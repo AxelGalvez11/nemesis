@@ -77,7 +77,8 @@ test("🔴 the line and the answer cannot both claim the surface", () => {
   // covered; the second one now checks the condition it names.
   assert.match(
     CANVAS,
-    /\(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !replyText\.trim\(\)/,
+    // `liveText` since 2026-09-03: a streamed draft is the answer starting; see the wiring test.
+    /\(turnInFlight \|\| \(presence === "preparing" && thread\.length === 0\)\) && !liveText\.trim\(\)/,
     "the line can outlive the answer",
   );
 });

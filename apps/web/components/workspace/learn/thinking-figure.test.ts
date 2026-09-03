@@ -113,7 +113,8 @@ test("🔴 the caption is words, not a pill", () => {
 
 test("🔴 the caption makes way when the answer starts", () => {
   assert.match(DOCK, /captionLeaving/, "the caption cannot be told the wait is over");
-  assert.match(CANVAS, /captionLeaving=\{Boolean\(replyText\.trim\(\)\)\}/);
+  // `liveText` since 2026-09-03: the caption leaves when the draft starts, not only when the reply lands.
+  assert.match(CANVAS, /captionLeaving=\{Boolean\(liveText\.trim\(\)\)\}/);
   assert.match(CSS, /\.canvas-preview-out \{\s*animation: canvas-preview-out 220ms ease-out forwards;/);
   // 🔴 REDUCED MOTION SHORTENS IT RATHER THAN REMOVING IT. `forwards` holds the end state, so
   // `animation: none` would leave the caption sitting over the answer for ever — the one case where
