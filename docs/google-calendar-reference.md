@@ -438,3 +438,55 @@ Google's eleven, in Google's order.
 and painted `--ui-exam`; every other view moved off kinds on 2026-09-01. A day now takes its events'
 colour when they agree on one, and falls back to the busy shading when they do not — a 16px disc
 cannot show three colours, and picking the first would make the year disagree with the month.
+
+## 14. THE DATE RAMP IS OURS, NOT GOOGLE'S — 2026-09-03, fourth revision of one row
+
+Owner: *"On the weekday, I was mainly talking about the day headers — I think those are the biggest
+problem. And could you also make sure that the sizing is consistent throughout all the different
+views?"*
+
+**This row has now been reversed four times, and the fourth is the first that moves AWAY from the
+reference.**
+
+| when | what he said | what it became |
+|---|---|---|
+| 2026-08-02 | "these numbers are too big" | 1.125rem in 2.125rem — a size nothing was measured for |
+| 2026-09-01 | "it all needs to match one to one" | Google's PROPORTION: 1.625rem in 2.875rem |
+| 2026-09-03 | "smaller, better fitted, compare with Google" | Google's SIZE: 26px in a 46px disc |
+| 2026-09-03 | "the day headers are the biggest problem… consistent across all the views" | **18px in a 30px disc — ours** |
+
+🔴🔴 **The pattern across those four is the finding.** Every earlier pass moved this row closer to
+Google and he came back. Google draws **26px in its week header and 12px in a month cell** — more
+than double, by their own design, because their header is one numeral per column with a whole band
+to itself. Matching that faithfully is what kept producing the object he keeps asking to shrink.
+**What he is comparing it against is not Google; it is the month view he was looking at a minute
+earlier.**
+
+### The ramp
+
+`apps/web/components/workspace/calendar/day-numeral.ts` owns it, and all three views import it.
+
+| surface | numeral | disc | ring |
+|---|---|---|---|
+| year mini-month | 10px | 18px | 8 |
+| month cell | 12px | 24px | 12 |
+| week / day / four-day header | **18px** | **30px** | 12 |
+
+The disc is its numeral plus **12px of ring where there is room**, and 8 in the year's thumbnail —
+seven mini-months to a ~130px card, where a 22px disc makes the numerals touch.
+
+🔴 **The "constant 12" claim was mine and it was wrong**; the guard caught it on the year rung. The
+rule is stated as it actually is in both places now. An unexplained 8 is exactly what a later pass
+rounds up to 12 and breaks the year view with.
+
+The header band came down with the numeral rather than being trimmed to compensate for it (which is
+what the 2026-09-01 pass did): 2 + 20 + 30 + 4 = **56px**, against the 84 that matched Google.
+
+The weekday label — 11px / 500 on a 20px line — is one string in the same module. The month grid and
+the week header had converged on it by different routes, which is exactly how two rows part again.
+
+### What is still Google's
+
+Everything else on the surface: the hour row (40, Google's compact rung), the gutter, the hour and
+event labels, the rules, the now indicator, the chips. Section 13 is unchanged. This is one
+quantity, named and argued, not a licence to re-guess the rest.

@@ -32,6 +32,7 @@ import { type ColorPaint, paintForEvent } from "@/lib/workspace/event-colors";
 import { type CellMetrics, fitEvents, orderForCell } from "@/lib/workspace/month-cell";
 import { cn } from "@/lib/utils";
 
+import { MONTH_DATE, WEEKDAY_LABEL } from "./day-numeral";
 import { formatEventDate, formatEventTime, WEEKDAY_LABELS } from "./format";
 import { DEFAULT_PAINT, drawsAsBar } from "./kind-meta";
 
@@ -100,10 +101,12 @@ export function MonthGrid({ calendarHex, days, eventsByDay, onOpenEvent, onPickD
         {visibleDays.slice(0, 7).map((headDay) => (
           <div
             className={cn(
-              // 🔴 GOOGLE'S OWN 11 / 500 / 20px BAND, unconverted (2026-09-03). It was
-              // 12.375/600 on an 18.6px line in a 32px band — a bolder, larger label than the
-              // reference draws, above a grid the owner had just called too zoomed in.
-              "px-2 py-[4px] text-center text-[11px] font-medium uppercase leading-[20px] tracking-[0.05em] text-(--ui-text-tertiary)",
+              // 🔴 GOOGLE'S OWN 11 / 500 / 20px BAND, unconverted (2026-09-03), and the SAME
+              // label the week header draws — see `day-numeral.ts`. It was 12.375/600 on an 18.6px
+              // line in a 32px band: bolder and larger than the reference, above a grid the owner
+              // had just called too zoomed in.
+              "px-2 py-[4px] text-center text-(--ui-text-tertiary)",
+              WEEKDAY_LABEL,
               // Google tints only today's column heading, which is how you find
               // the current week without hunting for the filled date circle.
               visibleDays.some((day) => day.isToday && day.date.getDay() === headDay.date.getDay())
@@ -268,11 +271,14 @@ function DayCell({ calendarHex, day, events, metrics, onOpenEvent, onPick, onSel
         <button
           aria-label={`Show ${formatEventDate(day.key)}`}
           className={cn(
-            // 🔴 12px IN A 24px DISC, WHICH IS GOOGLE'S. It was `text-sm` in `size-7` — 15.75px in
-            // a 31.5px circle, a third larger than the reference and the loudest thing on the
-            // surface. Google draws no disc at all except on today; ours keeps one because it is
-            // also the hover target for opening the day.
-            "grid size-[24px] cursor-pointer place-items-center rounded-full text-[12px] font-medium tabular-nums transition-colors",
+            // 🔴 12px IN A 24px DISC, WHICH IS GOOGLE'S AND ALSO THE MIDDLE RUNG OF THE RAMP IN
+            // `day-numeral.ts`. It was `text-sm` in `size-7` — 15.75px in a 31.5px circle, a third
+            // larger than the reference and the loudest thing on the surface. Google draws no disc
+            // at all except on today; ours keeps one because it is also the hover target for
+            // opening the day.
+            "grid cursor-pointer place-items-center rounded-full font-medium tabular-nums transition-colors",
+            MONTH_DATE.disc,
+            MONTH_DATE.text,
             day.isToday
               ? "bg-(--theme-primary) text-primary-foreground"
               : cn("hover:bg-(--ui-control-hover-background)", !day.inMonth && "text-(--ui-text-quaternary)"),
