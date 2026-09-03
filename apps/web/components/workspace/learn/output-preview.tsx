@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { DockTabs } from "./dock-tabs";
+import { DockSwitcher } from "./dock-switcher";
 import type { DockItem } from "./document-dock";
 import { CHROME } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
@@ -486,7 +486,7 @@ export function OutputPreview({
           </button>
         )}
         {items && items.length > 0 && onSelectKey && onCloseKey && !full ? (
-          <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+          <DockSwitcher activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
         ) : (
           <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={output.title}>
             {/* "Library / name" — the same two-part crumb, with the prefix muted. */}

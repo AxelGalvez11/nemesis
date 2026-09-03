@@ -107,11 +107,21 @@ export interface DocumentReaderProps {
   commentsDoc?: { ref: CommentDocRef; uid: string | null; preview: boolean };
   /** Trim the toolbar for a narrow pane beside a conversation. See `ReaderTopBar`'s `dense`. */
   dense?: boolean;
+  /**
+   * Somewhere else to draw the toolbar's controls, instead of a bar of this reader's own.
+   *
+   * 🔴 THE HOST LENDS A ROW; IT DOES NOT TAKE THE CONTROLS (owner, 2026-09-03: *"all the tabs and
+   * icons should be on the same row"*). The docked panel already has a header, and a dense reader
+   * drawing a second 47px bar directly under it was a row of chrome above a document with little
+   * enough height. Passing the slot moves WHERE they are painted and nothing else — commenting is
+   * still this reader's state and the actions menu is still built from what only it knows.
+   */
+  toolbarSlot?: React.RefObject<HTMLElement | null>;
 }
 
 export function DocumentReader({
   source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page", grounded = false,
-  onUnitChange, commentsDoc, dense = false,
+  onUnitChange, commentsDoc, dense = false, toolbarSlot,
 }: DocumentReaderProps) {
   const isDialog = variant === "dialog";
   const unitLabel = UNIT_LABELS[source.kind] ?? "part";
@@ -704,6 +714,7 @@ export function DocumentReader({
         onToggleRail={hasContents ? () => setRailOpen((open) => !open) : undefined}
         commenting={commenting}
         dense={dense}
+        toolbarSlot={toolbarSlot}
         onToggleCommenting={canComment && loadState === "ready" ? () => setCommenting((current) => !current) : undefined}
         onUnitChange={goToUnit}
         onZoomIn={() => setZoom({ kind: "fixed", scale: zoomIn(scale) })}
