@@ -247,23 +247,66 @@ export function makeMoment(input: NewCanvasMoment, occurredAt: string, id: strin
   };
 }
 
+/** What filing a moment did: the list afterwards, and the id the moment ended up under. */
+export interface FiledMoment {
+  /** The list after filing. The same list, unchanged, when the moment was a duplicate. */
+  readonly moments: CanvasMoment[];
+  /**
+   * The id this moment is filed under — the one offered, or the id of the row it folded into.
+   * Null only when nothing was recorded and there was no row to point at.
+   *
+   * 🔴 ONE FUNCTION ANSWERS BOTH QUESTIONS ON PURPOSE. The caller needs the id to tie what is on
+   * screen to the History Rail row that points at it, and a second function computing "the id this
+   * WOULD get" is a second owner of a decision that has to agree with this one forever. It would
+   * have been wrong the day folding was added, which is the day it was written.
+   */
+  readonly id: string | null;
+}
+
 /**
- * Append one moment to a moment list, dropping the oldest when full.
+ * File one moment into a moment list, dropping the oldest when full.
  *
  * 🔴 TAKES AND RETURNS THE LIST, NOT THE CANVAS. `appendEvent` next door takes the whole canvas and
  * that made it impossible to use from anywhere that holds moments without holding a canvas — which
  * is every one of this feature's tests. The canvas-shaped wrapper is one line at the call site.
  *
+ * 🔴🔴 CONSECUTIVE ATTACHMENTS FOLD INTO ONE ROW, WHICH IS WHAT A CHAT DOES. Dropping a folder in
+ * calls this once per file, so without folding, seven lectures are seven rows in the conversation
+ * and seven marks on the History Rail — and thirty are thirty, which is the case the owner
+ * actually works in (*"I really just want to drop in my documents"*). Every chat product draws one
+ * message carrying N attachments, and `canvas-thread-turn.tsx` has always rendered `attached` as a
+ * list, so the surface was already built for this.
+ *
+ * 🔴 FOLDING IS NOT DEDUPING, AND BOTH ARE HERE. `sameMoment` still drops the same file recorded
+ * twice in a row (StrictMode); folding merges DIFFERENT files that arrived with nothing in between.
+ * Anything at all in between — a question, an answer — ends the run, because at that point the
+ * attachment genuinely belongs to a later part of the conversation.
+ *
  * PURE: nothing here touches evidence, `weakConceptIds`, scheduling, or any verdict. `canvas-
  * history.test.ts` asserts that structurally.
  */
-export function appendMoment(
+export function fileMoment(
   moments: readonly CanvasMoment[],
   input: NewCanvasMoment,
   occurredAt: string,
   id: string,
-): CanvasMoment[] {
-  return withinBudget([...moments, makeMoment(input, occurredAt, id)].slice(-MAX_MOMENTS));
+): FiledMoment {
+  const last = moments.at(-1);
+  if (sameMoment(last, input)) return { id: last?.id ?? null, moments: [...moments] };
+
+  const arriving = input.sourceIds ?? [];
+  if (input.kind === "source" && arriving.length > 0 && last?.kind === "source") {
+    // 🔴 THE ROW KEEPS ITS OWN ID AND ITS OWN TIME. It is the moment the learner started
+    // attaching; a fold must not make an older row look newer, or the rail's order stops being
+    // the order things happened in.
+    const merged: CanvasMoment = {
+      ...last,
+      sourceIds: [...(last.sourceIds ?? []), ...arriving.filter((one) => !(last.sourceIds ?? []).includes(one))],
+    };
+    return { id: last.id, moments: withinBudget([...moments.slice(0, -1), merged]) };
+  }
+
+  return { id, moments: withinBudget([...moments, makeMoment(input, occurredAt, id)].slice(-MAX_MOMENTS)) };
 }
 
 /**
@@ -323,7 +366,31 @@ export function sameMoment(a: CanvasMoment | undefined, b: NewCanvasMoment): boo
     && a.assistantText === replied
     && a.questionId === b.questionId
     && a.responseId === b.responseId
+    // 🔴🔴🔴 AND THE SOURCE IDS, WHICH WERE MISSING AND SILENTLY DELETED SIX FILES OUT OF SEVEN.
+    // A `source` moment carries no text, no question and no response — every field this function
+    // compared was `undefined` on both sides — so any two consecutive source moments were "the
+    // same moment recorded twice" and every one after the first was dropped. Attaching seven
+    // lectures recorded ONE moment holding ONE file id.
+    //
+    // Owner, 2026-09-03, on a canvas of his own: *"I dropped in these folders… when I refreshed
+    // the page… it pretty much didn't show the sources that I dropped in."* Read out of his row:
+    // `sources` held all seven files and `moments` held a single source moment with
+    // `sourceIds: ["s1"]`, so the conversation named one document and the other six had no place
+    // on the page at all. `mergeSourceIntoCanvas` and `recordMoment` are different paths and only
+    // one of them was losing them, which is why the shelf looked right and the chat did not.
+    //
+    // 🔴 THE DEDUPE IS STILL WORTH HAVING AND IS UNCHANGED IN INTENT: StrictMode runs effects
+    // twice, and one file attached twice in a row is still one moment. Two DIFFERENT files never
+    // were, and now cannot be.
+    && sameIds(a.sourceIds, b.sourceIds)
   );
+}
+
+/** Whether two moments point at the same material, order-insensitively. */
+function sameIds(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  const left = [...(a ?? [])].sort();
+  const right = [...(b ?? [])].sort();
+  return left.length === right.length && left.every((id, at) => id === right[at]);
 }
 
 /**
