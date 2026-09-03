@@ -95,10 +95,15 @@ test("🔴🔴 one sidebar: a document and an artifact are tabs in it, never two
   assert.match(controls, /dock\.active\?\.kind === "output"/u, "the artifact in front no longer comes from the sidebar's own list");
   assert.match(dock, /openOutput: \(output: CanvasOutput\) => void;/u, "the sidebar cannot hold an artifact");
 
-  // 🔴 AND ONE SWITCHER. Both bodies draw the same control over the same list, which is what makes
+  // 🔴 AND ONE TAB STRIP. Both bodies draw the same control over the same list, which is what makes
   // it read as one sidebar rather than two that happen to be the same width.
+  // 🔴 REPOINTED 2026-09-03 EVENING: `DockSwitcher` (a dropdown) became `DockTabs` (a strip on its
+  // own row). The owner asked for the dropdown that morning to buy space, then sent ChatGPT's
+  // desktop pane and said *"i want it exactly like this"* — and that pane puts tabs alone on top.
+  // What this test protects is unchanged: ONE control over ONE list, drawn identically by both
+  // bodies. Only its name moved.
   for (const [name, source] of [["the document panel", read("./source-preview.tsx")], ["the artifact panel", read("./output-preview.tsx")]] as const) {
-    assert.match(code(source), /<DockSwitcher\b/u, `${name} names what is open its own way again`);
+    assert.match(code(source), /<DockTabs\b/u, `${name} names what is open its own way again`);
   }
 
   // 🔴 ONLY ONE BODY IS EVER IN FRONT, and this is the clause that does it: the document panel
