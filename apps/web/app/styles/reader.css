@@ -94,6 +94,51 @@
   background: var(--reader-highlight-current);
 }
 
+/* ── A reflowed document's page ─────────────────────────────────────────────
+ * A Word, Markdown or plain-text file, on a sheet, in a room.
+ *
+ * 🔴🔴 THIS EXISTS BECAUSE A DOCUMENT WITH NO PAGE READS AS A BROKEN LAYOUT.
+ * Owner, 2026-09-03: "it doesn't really render like a docx, it just looks weird
+ * … it's not rendering like a document." What he was looking at was a 68ch
+ * column of text floating directly on the app background — every typographic
+ * decision correct and nothing underneath it. A PDF page and a slide have been
+ * drawn on a sheet since the reader existed; the reflowed formats were the only
+ * documents in the product that were not.
+ *
+ * 🔴 THEME-AWARE, WHICH `.nemesis-reader-canvas` DELIBERATELY IS NOT, AND THE
+ * DIFFERENCE IS REAL. That class forces white in dark mode because a PDF page is
+ * a PHOTOGRAPH of something white and recolouring it would misreport the source.
+ * This page is not a photograph of anything: the text is reflowed by us, at our
+ * measure, at the reader's window width. Forcing a white sheet here would be a
+ * torch in a dark room for no gain in fidelity, which is why Google Docs' dark
+ * mode darkens its page too. */
+.nemesis-reader-room {
+  background: var(--reader-room);
+}
+
+.nemesis-reader-page {
+  max-width: calc(68ch + 7rem);
+  padding: 3.5rem;
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-stroke-tertiary);
+  border-radius: 0.5rem;
+  color: var(--ui-text-primary);
+}
+
+/* The measure is the TEXT's, not the sheet's: the page is wider than the column
+ * it holds, which is what makes it a margin rather than a coincidence. */
+.nemesis-reader-page > .nemesis-reading-view,
+.nemesis-reader-page > pre {
+  max-width: 68ch;
+  margin-inline: auto;
+}
+
+@media (max-width: 640px) {
+  .nemesis-reader-page {
+    padding: 1.75rem;
+  }
+}
+
 /* Reading mode: a derived, normalised rendering. Constrained measure for text
  * documents (the owner's rule); PDFs and slides get the wide canvas instead. */
 .nemesis-reading-view {

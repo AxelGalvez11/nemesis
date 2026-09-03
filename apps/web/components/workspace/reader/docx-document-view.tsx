@@ -10,6 +10,14 @@
 // The measure is constrained (the owner's rule for text documents): long lines
 // are harder to read than short ones, and a document has no fixed width of its
 // own once it leaves paper.
+//
+// 🔴🔴 THE SHEET CAME BACK, AND THE PARAGRAPH ABOVE IS WHY IT HAD TO BE ARGUED FOR TWICE. Owner,
+// 2026-09-03: *"it doesn't really render like a docx, it just looks weird … it's not rendering like
+// a document."* The reasoning above is about PAGE FURNITURE — A4 proportions, print margins, a
+// ruler — and all of it still stands. What it accidentally also removed was the surface: a bare
+// column of text on the app's own background, with a PDF page and a slide both drawn on sheets two
+// tabs away. A page is not the same claim as a printed page. See `.nemesis-reader-page` in
+// reader.css for why this sheet follows the theme while a PDF's does not.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -96,12 +104,13 @@ export function DocxDocumentView({
   if (blocks === null) return <div className="grid h-full place-items-center text-xs text-(--ui-text-tertiary)">Opening…</div>;
 
   return (
-    <div className="h-full min-h-0 overflow-auto overscroll-contain px-8 py-8" data-testid="reader-docx-scroll">
+    <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-docx-scroll">
       {/* 🔴 EVERY GROUP WRAPPER BELOW CARRIES data-comment-block AND `relative`. A flowing
           document reflows with the panel width, so a pixel anchor is a lie by the first resize —
           the stable thing to hold on to is WHICH BLOCK, and the pin renders inside that block's
           own box. The index is the grouped index, which only changes if the document does. */}
-      <article className="nemesis-reading-view relative mx-auto text-(--ui-text-secondary)" ref={registerArticle}>
+      <article className="nemesis-reader-page relative mx-auto" ref={registerArticle}>
+        <div className="nemesis-reading-view">
         {grouped.map((group, index) => {
           if (group.kind === "list") {
             const List = group.ordered ? "ol" : "ul";
@@ -191,6 +200,7 @@ export function DocxDocumentView({
               return <hr className="my-8 border-0 border-t border-(--ui-stroke-tertiary)" key={index} />;
           }
         })}
+        </div>
       </article>
     </div>
   );

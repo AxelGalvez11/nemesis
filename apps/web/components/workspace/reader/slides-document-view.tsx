@@ -15,7 +15,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { officeImageUrl, openOfficeArchive, unzipOne } from "@/lib/reader/office-zip";
-import { notesPathFor, parseSlide, slideOrder, slideText, type ParsedSlide } from "@/lib/reader/pptx-slides";
+import {
+  DEFAULT_DECK_SIZE,
+  EMU_PER_POINT,
+  deckSize,
+  layoutPathFor,
+  masterPathFor,
+  notesPathFor,
+  parseSlide,
+  relsPathFor,
+  slideIsPlaced,
+  slideOrder,
+  slideText,
+  type DeckSize,
+  type ParsedSlide,
+  type SlideParagraph,
+  type SlideShape,
+} from "@/lib/reader/pptx-slides";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
 import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import { resolveSlidePictures } from "@/lib/reader/slide-pictures";
@@ -52,6 +68,7 @@ export function SlidesDocumentView({
   bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement,
 }: SlidesDocumentViewProps) {
   const [slides, setSlides] = useState<ParsedSlide[] | null>(null);
+  const [size, setSize] = useState<DeckSize>(DEFAULT_DECK_SIZE);
   const [images, setImages] = useState<Map<string, string>>(new Map());
   const [container, setContainer] = useState({ width: 0, height: 0 });
   // 🔴 A CALLBACK ref, not useRef: the scroll column does not exist on the
@@ -76,7 +93,7 @@ export function SlidesDocumentView({
       Math.min(
         resolveScale(zoom, {
           pageWidth: SLIDE_WIDTH,
-          pageHeight: (SLIDE_WIDTH / 16) * 9,
+          pageHeight: SLIDE_WIDTH * (size.cy / size.cx),
           containerWidth: container.width,
           containerHeight: container.height,
         }),
@@ -113,14 +130,35 @@ export function SlidesDocumentView({
     let urls: string[] = [];
     try {
       const archive = openOfficeArchive(bytes);
-      const order = slideOrder(archive.files, archive.text("ppt/presentation.xml"), archive.text("ppt/_rels/presentation.xml.rels"));
+      const presentation = archive.text("ppt/presentation.xml");
+      const order = slideOrder(archive.files, presentation, archive.text("ppt/_rels/presentation.xml.rels"));
       if (order.length === 0) throw new Error("This doesn't look like a PowerPoint (.pptx) file.");
 
+      // 🔴 THE DECK'S OWN SIZE, NOT 16:9. A 4:3 deck — still common in teaching material — drawn in
+      // a 16:9 box is stretched sideways by a third, and every shape's fractional position lands in
+      // the wrong place with it.
+      const size = deckSize(presentation);
+
       const parsed = order.map((path, index) => {
-        const relsPath = path.replace(/^(.*)\/([^/]+)$/, "$1/_rels/$2.rels");
-        const rels = archive.text(relsPath);
+        const rels = archive.text(relsPathFor(path));
         const notesPath = notesPathFor(rels, path);
-        return parseSlide(index + 1, archive.text(path) ?? "", rels, path, notesPath ? archive.text(notesPath) : null);
+        // 🔴🔴 THE LAYOUT AND THE MASTER, BECAUSE MOST PLACEHOLDERS HAVE NO BOX OF THEIR OWN.
+        // PowerPoint writes `a:xfrm` on a placeholder only when the author moved or resized it by
+        // hand; on a template-built deck almost nothing has one, and without this chain the reader
+        // finds geometry on two shapes in a lecture and falls back to the template on every slide.
+        // See `inheritedBox` in pptx-slides.ts.
+        const layoutPath = layoutPathFor(rels, path);
+        const layoutRels = layoutPath ? archive.text(relsPathFor(layoutPath)) : null;
+        const masterPath = layoutPath ? masterPathFor(layoutRels, layoutPath) : null;
+        return parseSlide(
+          index + 1,
+          archive.text(path) ?? "",
+          rels,
+          path,
+          notesPath ? archive.text(notesPath) : null,
+          [layoutPath ? archive.text(layoutPath) : null, masterPath ? archive.text(masterPath) : null],
+          size,
+        );
       });
 
       const resolved = new Map<string, string>();
@@ -136,6 +174,7 @@ export function SlidesDocumentView({
       }
 
       setSlides(parsed);
+      setSize(size);
       setImages(resolved);
       mintedUrls.current.push(...urls);
       urls = [];
@@ -303,6 +342,7 @@ export function SlidesDocumentView({
             query={query}
             registerElement={registerElement}
             scale={scale}
+            size={size}
             slide={slide}
           />
         ))}
@@ -328,9 +368,10 @@ function Disclaimer() {
 
 /** A slide-shaped canvas, 16:9, holding the slide's real contents. */
 function SlideCanvas({
-  slide, images, failedTargets, query, scale, onVisible, onNeedsPictures, registerElement,
+  slide, images, failedTargets, query, scale, size, onVisible, onNeedsPictures, registerElement,
 }: {
   slide: ParsedSlide;
+  size: DeckSize;
   images: Map<string, string>;
   /** Pictures whose decode already failed — no longer "on the way". */
   failedTargets: ReadonlySet<string>;
@@ -349,6 +390,18 @@ function SlideCanvas({
     { decodable: (target) => isTiff(target) && !failedTargets.has(target) },
   );
   const hasPictureColumn = shown.length > 0 || overflow > 0 || missing > 0 || pending > 0;
+
+  // 🔴 THE DECK'S OWN ARRANGEMENT WHEN IT HAS ONE, THE TEMPLATE WHEN IT DOES NOT. See
+  // `slideIsPlaced` for why this is a threshold rather than a flag.
+  const placed = slideIsPlaced(slide);
+  // Points to pixels for THIS deck at THIS zoom: a 13.33in deck is 960pt wide, so an 18pt heading
+  // is 18 × (880/960) × scale pixels. Reading the deck's own width is what makes a 4:3 deck's type
+  // come out the right size instead of a third too small.
+  const pxPerPoint = (SLIDE_WIDTH / (size.cx / EMU_PER_POINT)) * scale;
+  const pictureUrl = useCallback(
+    (shape: SlideShape) => (shape.target ? (images.get(shape.target) ?? null) : null),
+    [images],
+  );
 
   useEffect(() => {
     registerElement(slide.index, element);
@@ -382,8 +435,20 @@ function SlideCanvas({
         className="nemesis-reader-canvas relative flex flex-col gap-3 p-7"
         data-testid={`reader-slide-${slide.index}`}
         ref={setElement}
-        style={{ width: Math.round(SLIDE_WIDTH * scale), aspectRatio: "16 / 9", color: "#111318" }}
+        style={{
+          width: Math.round(SLIDE_WIDTH * scale),
+          aspectRatio: `${size.cx} / ${size.cy}`,
+          color: "#111318",
+          // 🔴 NO PADDING WHEN THE SHAPES CARRY THEIR OWN POSITIONS. A slide's coordinates are
+          // measured from the slide's own edge; 28px of padding around them shifts and shrinks
+          // every shape on the slide by a different amount.
+          ...(placed ? { padding: 0 } : null),
+        }}
       >
+        {placed ? (
+          <PlacedSlide pxPerPoint={pxPerPoint} query={query} scale={scale} shapes={slide.shapes} url={pictureUrl} />
+        ) : (
+          <>
         {slide.title && (
           <h3 className="text-[1.35em] font-semibold leading-tight" style={{ fontSize: `${1.35 * scale}rem` }}>
             <Painted query={query} text={slide.title} />
@@ -438,6 +503,8 @@ function SlideCanvas({
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
       <figcaption className="tabular-nums text-[0.6875rem] text-(--ui-text-tertiary)">Slide {slide.index}</figcaption>
     </figure>
@@ -460,5 +527,145 @@ function Painted({ text, query }: { text: string; query: string | null }) {
         ),
       )}
     </>
+  );
+}
+
+/**
+ * A slide drawn where its author put things.
+ *
+ * 🔴🔴 THIS IS THE HALF THAT MAKES IT A SLIDE RATHER THAN A SUMMARY. The fallback beside it lays
+ * every deck out identically — heading on top, bullets left, pictures right — so a slide built
+ * around one full-width diagram and a slide holding four bullets came out looking the same. Every
+ * shape in a .pptx carries its own box in `a:xfrm` and this module now reads it, resolves it
+ * through the layout and the master, and places the shape at that fraction of the slide.
+ *
+ * 🔴 STILL NOT A RENDER, AND THE DISCLAIMER STAYS. Positions, sizes, type sizes, bold, alignment,
+ * bullets and pictures are the deck's own. Fills, borders, connectors, shadows, gradients and
+ * anything the author DREW are not read, so a slide whose meaning lives in an arrow is still a
+ * slide whose arrow is missing. What changed is the arrangement, not the claim.
+ *
+ * 🔴 EVERY SIZE IS ABSOLUTE, NOT A PERCENTAGE OF THE PARENT. Type scales with the slide because
+ * `pxPerPoint` already carries the zoom; a font-size in `%` would compound against the parent box
+ * and make a caption in a small shape smaller than a caption in a large one.
+ */
+function PlacedSlide({
+  shapes,
+  query,
+  scale,
+  pxPerPoint,
+  url,
+}: {
+  shapes: readonly SlideShape[];
+  query: string | null;
+  scale: number;
+  pxPerPoint: number;
+  url: (shape: SlideShape) => string | null;
+}) {
+  return (
+    <div className="absolute inset-0">
+      {shapes.map((shape, index) => {
+        const box = shape.box;
+        if (!box) return null;
+        const style: React.CSSProperties = {
+          left: `${box.x * 100}%`,
+          top: `${box.y * 100}%`,
+          position: "absolute",
+          width: `${box.w * 100}%`,
+          height: `${box.h * 100}%`,
+        };
+
+        if (shape.kind === "picture") {
+          const source = url(shape);
+          return source ? (
+            // eslint-disable-next-line @next/next/no-img-element -- an in-memory object URL for bytes already in the browser
+            <img alt={shape.alt} className="object-contain" key={index} src={source} style={style} />
+          ) : (
+            // 🔴 THE BOX IS KEPT EVEN WHEN THE PICTURE IS NOT THERE. A slide missing a picture with
+            // a hole where it belongs is readable; a slide missing a picture AND its space has all
+            // its other shapes in the wrong relationship to each other.
+            <div
+              className="flex items-center justify-center rounded border border-dashed text-center leading-snug"
+              key={index}
+              style={{ ...style, borderColor: "#dfe3e8", color: "#9aa0a8", fontSize: `${8 * scale}px` }}
+            >
+              {shape.alt || "Picture"}
+            </div>
+          );
+        }
+
+        return (
+          <div
+            className="flex flex-col overflow-hidden"
+            key={index}
+            style={{
+              ...style,
+              justifyContent: shape.anchor === "ctr" ? "center" : shape.anchor === "b" ? "flex-end" : "flex-start",
+            }}
+          >
+            {shape.paragraphs.map((paragraph, line) => (
+              <PlacedLine
+                key={line}
+                paragraph={paragraph}
+                placeholder={shape.placeholder}
+                pxPerPoint={pxPerPoint}
+                query={query}
+                title={shape.title}
+              />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** PowerPoint's own defaults for a standard master, in points, used only when the deck's XML
+ *  declines to say. A title is 44pt on a title slide and 32 on a content one; 30 sits between them
+ *  and is wrong by less than either extreme. Body text steps down 2pt per outline level. */
+function defaultSizePt(title: boolean, level: number): number {
+  return title ? 30 : Math.max(12, 18 - level * 2);
+}
+
+function PlacedLine({
+  paragraph,
+  placeholder,
+  pxPerPoint,
+  query,
+  title,
+}: {
+  paragraph: SlideParagraph;
+  placeholder: string | null;
+  pxPerPoint: number;
+  query: string | null;
+  title: boolean;
+}) {
+  const sizePx = (paragraph.sizePt ?? defaultSizePt(title, paragraph.level)) * pxPerPoint;
+  // 🔴 THE THIRD BULLET STATE RESOLVED HERE, NOT IN THE PARSER. `bullet: null` means the paragraph
+  // said nothing, and what it inherits depends on the shape it is in — a body placeholder's default
+  // is a bullet, a free-standing text box's is none. The parser cannot know that about a paragraph
+  // in isolation; this can, because it has the shape.
+  const bulleted =
+    paragraph.bullet === true ||
+    (paragraph.bullet === null && !title && placeholder !== null && placeholder !== "title" && placeholder !== "ctrTitle");
+
+  return (
+    <p
+      className="flex gap-[0.4em]"
+      style={{
+        fontSize: `${sizePx}px`,
+        fontWeight: paragraph.bold || title ? 600 : 400,
+        lineHeight: 1.25,
+        marginTop: `${0.18}em`,
+        paddingInlineStart: `${paragraph.level * 1.1}em`,
+        textAlign: paragraph.align === "ctr" ? "center" : paragraph.align === "r" ? "right" : paragraph.align === "just" ? "justify" : "left",
+        // A centred line's bullet would sit at the box's left edge and look detached from the text.
+        justifyContent: paragraph.align === "ctr" ? "center" : paragraph.align === "r" ? "flex-end" : "flex-start",
+      }}
+    >
+      {bulleted && <span aria-hidden className="mt-[0.55em] size-[0.28em] shrink-0 rounded-full" style={{ background: "#9aa0a8" }} />}
+      <span className="min-w-0">
+        <Painted query={query} text={paragraph.text} />
+      </span>
+    </p>
   );
 }

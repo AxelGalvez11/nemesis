@@ -72,17 +72,17 @@ export function CanvasThreadTurnView({
         </div>
       )}
 
-      {/* Material attached during this turn, named rather than announced. */}
-      {turn.attached.length > 0 && (
-        <ul className="mb-4 space-y-1">
-          {turn.attached.map((title) => (
-            <li className="text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)" key={title}>
-              {title}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* 🪦 THE FILE NAMES WERE DRAWN HERE, AND THE OWNER CUT THEM THE SAME DAY (2026-09-03): *"at
+          the beginning of the chat, when you go back, it shows the names of the PowerPoints or the
+          documents that were dropped in. I don't need that there … it's always showing that."*
 
+          🔴 THE DATA BEHIND THEM IS UNTOUCHED, AND THAT DISTINCTION IS THE WHOLE POINT. `#1098`
+          fixed two real defects — a turn filed with `attached: []`, and a duplicate guard that
+          deleted six of seven attachments on reload — and this only stops DRAWING the result. The
+          documents are still filed with the turn, still in `canvas.sources`, still in the reading
+          pane and still what the answer is grounded in. What is gone is a seven-line list printed
+          above every question the learner scrolls past, which on his canvases is most of the
+          screen. Where the files live now is the Sources panel and the pane's own switcher. */}
       {/* 🔴 THE SAME SPLIT THE LIVE REPLY USES, so a drawing lands exactly where the model put it,
           between the sentence that introduces it and the one that follows. */}
       {turn.reply.trim() && (

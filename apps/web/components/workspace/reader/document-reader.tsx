@@ -58,6 +58,8 @@ import { ReaderTopBar, type LinkedNote, type ReaderMode } from "./reader-top-bar
 import { ReadingView } from "./reading-view";
 import { SheetDocumentView, type SheetsReadyPayload } from "./sheet-document-view";
 import { SlidesDocumentView, type SlideTab } from "./slides-document-view";
+import { TextDocumentView } from "./text-document-view";
+import { documentFlavour, markdownOutline } from "@/lib/reader/text-document";
 
 const UNIT_LABELS: Record<string, string> = { pdf: "page", slides: "slide", sheet: "sheet", image: "image", document: "section", audio: "track", file: "part" };
 const KIND_LABELS: Record<string, string> = { pdf: "PDF", slides: "Slides", document: "Document", sheet: "Spreadsheet", image: "Image", audio: "Recording", file: "File" };
@@ -415,6 +417,32 @@ export function DocumentReader({
     setOutlineIsAuthored(true);
   }, []);
 
+  /**
+   * Which reader a `document` actually needs.
+   *
+   * 🔴 THE `document` LANE HELD EXACTLY ONE READER AND THREE FORMATS ROUTE INTO IT. `reader-source.ts`
+   * sends `md`, `txt` and (through `text/*`) `html` here, and every one of them opened the Word
+   * reader, failed to find `word/document.xml` inside bytes that are not a zip, and showed the
+   * learner *"This file couldn't be opened"* — while the chat answered questions about the same
+   * file perfectly. Owner, 2026-09-03: *"anything from Markdown, HTML should be able to be viewed."*
+   */
+  const flavour = useMemo(() => documentFlavour(source.fileName, bytes), [bytes, source.fileName]);
+
+  const onTextReady = useCallback(
+    (payload: { text: string }) => {
+      setUnitCount(1);
+      setDocxText(payload.text);
+      // 🔴 MARKDOWN HAS AN OUTLINE AND NOTHING ELSE IN THIS LANE DOES. A `.md` file's `#` lines are
+      // headings the author wrote, so the contents rail is real; a `.txt` file has no structure to
+      // claim and an `.html` file's is inside a frame this side of the sandbox cannot read. An
+      // empty authored outline is honest — the rail draws nothing rather than an empty promise.
+      const headings = flavour === "markdown" ? markdownOutline(payload.text) : [];
+      setOutline(headings.map((entry, index) => ({ ...entry, dest: null, id: `text-${index}`, unit: 1 })));
+      setOutlineIsAuthored(headings.length > 0);
+    },
+    [flavour],
+  );
+
   const onSheetsReady = useCallback((payload: SheetsReadyPayload) => {
     setUnitCount(payload.sheets.length);
     setUnitTexts(payload.unitTexts);
@@ -524,7 +552,14 @@ export function DocumentReader({
   // 🔴 DECLARED BEFORE THE HIGHLIGHT HOOK BELOW READS IT. Left where it was, the effect that turns
   // a selection into a comment draft closed over a `const` declared later in the same body — a
   // temporal dead zone that `tsc` catches and a runtime would throw on.
-  const canComment = Boolean(commentsDoc) && ["pdf", "slides", "sheet", "image", "document"].includes(source.kind);
+  // 🔴 NOT ON AN HTML FILE, AND THE REASON IS THE SANDBOX. A comment pins to a `data-comment-block`
+  // element and is drawn over it; an HTML file renders inside a sandboxed frame in its own opaque
+  // origin, so there are no blocks on this side to pin to and no way to reach the ones inside.
+  // Offering the control would give the learner a pin that lands nowhere.
+  const canComment =
+    Boolean(commentsDoc) &&
+    ["pdf", "slides", "sheet", "image", "document"].includes(source.kind) &&
+    !(source.kind === "document" && flavour === "html");
 
   /**
    * The comment box a highlight opens.
@@ -668,7 +703,11 @@ export function DocumentReader({
    */
   const boxesDrawable = source.kind === "pdf" || source.kind === "slides" || source.kind === "image";
   /** Only some documents have anything to list in a contents rail. */
-  const hasContents = source.kind === "pdf" || source.kind === "slides" || source.kind === "document" || source.kind === "sheet";
+  const hasContents =
+    source.kind === "pdf" ||
+    source.kind === "slides" ||
+    source.kind === "sheet" ||
+    (source.kind === "document" && flavour !== "html");
   const readingAvailable = source.kind === "pdf" && blocks.length > 0;
   const showZoom = source.kind === "pdf" || source.kind === "image" || source.kind === "slides";
   const trimmedQuery = query.trim() || null;
@@ -843,6 +882,15 @@ export function DocumentReader({
               onReady={onSheetsReady}
               onUnitChange={noteUnit}
               query={trimmedQuery}
+              registerElement={registerSlide}
+            />
+          ) : source.kind === "document" && bytes && flavour !== "word" ? (
+            <TextDocumentView
+              bytes={bytes}
+              fileName={source.fileName}
+              flavour={flavour}
+              onError={onViewError}
+              onReady={onTextReady}
               registerElement={registerSlide}
             />
           ) : source.kind === "document" && bytes ? (

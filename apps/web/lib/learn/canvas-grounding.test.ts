@@ -16,6 +16,7 @@ import {
   excerptsFromSourceContext,
   groundCanonicalAnchor,
   groundingBlock,
+  materialText,
   quotedExcerpt,
 } from "./canvas-grounding";
 import type { CanvasSource } from "./canvas-model";
@@ -385,4 +386,39 @@ test("an anchor whose quote no longer exists yields no citation rather than a pl
 test("a source that was never filed cannot be cited canonically at all", () => {
   const unfiled: CanvasSource = { ...canvasSourceFrom(contextOf(courseModel())), librarySourceId: undefined };
   assert.equal(groundCanonicalAnchor([unfiled], { sourceId: "lib-1", unitId: "p1" }), null);
+});
+
+/**
+ * THE SOURCE HEADER MUST NOT ADD A VERDICT THE COVERAGE NOTE DOES NOT SUPPORT.
+ *
+ * Owner report 2026-09-03. Both grounding builders prefixed every note with the hardcoded string
+ * "(Nemesis could not read all of this: ...)". 24 of production's 27 partially-parsed documents
+ * have every page read and lost only pictures, so that prefix was false about nearly all of them,
+ * and it reached the model as a second, louder claim sitting on top of the real one.
+ */
+test("a source header carries the coverage note and no verdict of its own", () => {
+  const note =
+    "[Source read in full: the text and tables of all 83 pages are below. Not carried over: 255 pictures were not described. The words and tables of this document are COMPLETE. Do not say that any page, or its text or tables, was missing, unreadable or only partly read. Raise the pictures only if the student asks about something a picture would have shown.]";
+  const sources = [
+    {
+      id: "s1",
+      kind: "pdf",
+      title: "Chronic Asthma_student_2026.pdf",
+      coverageNote: note,
+      excerpts: [{ id: "s1:e1", text: "Spirometry measures FEV1 and FVC.", label: "Spirometry", unitId: "b1" }],
+    },
+  ] as unknown as readonly CanvasSource[];
+
+  for (const [name, block] of [
+    ["groundingBlock", groundingBlock(sources)],
+    ["materialText", materialText(sources)],
+  ] as const) {
+    assert.ok(block.includes(note), `${name} must still carry the note verbatim`);
+    assert.ok(
+      !/could not read all of this/i.test(block),
+      `${name} must not assert incomplete reading over a note that says the opposite: ${block}`,
+    );
+    // The note's own claim has to survive intact, or the model meets a contradiction.
+    assert.ok(block.includes("read in full"), `${name} must not strip what the note says WAS read`);
+  }
 });
