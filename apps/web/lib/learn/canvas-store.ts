@@ -403,17 +403,26 @@ export async function listFolders(userId: string | null): Promise<Folder[]> {
   }));
 }
 
-/** Save a project's look and standing instructions. Nulls put the plain folder back. */
+/**
+ * Save a project's look and standing instructions. Nulls put the plain folder back.
+ *
+ * 🔴 `color` IS OPTIONAL, AND OMITTING IT LEAVES THE STORED VALUE ALONE. The colour picker is
+ * gone (owner 2026-09-03, see project-customize-dialog.tsx), so its caller no longer has a value
+ * to send — and if the key were still required, that caller would have to send `null`, which
+ * would erase whatever a project already wears every time anyone edited its instructions. An
+ * absent key writes no column; a null one writes null. Those are different requests and this
+ * signature now lets a caller make the first.
+ */
 export async function customizeFolder(
   userId: string | null,
   id: string,
-  custom: { icon: string | null; color: string | null; instructions: string | null },
+  custom: { icon: string | null; color?: string | null; instructions: string | null },
 ): Promise<boolean> {
   if (!userId) return false;
   const { error } = await supabase
     .from("folders")
     .update({
-      color: custom.color,
+      ...("color" in custom ? { color: custom.color } : {}),
       icon: custom.icon,
       instructions: custom.instructions ? custom.instructions.slice(0, 4000) : null,
     })

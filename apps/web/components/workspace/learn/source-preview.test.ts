@@ -64,10 +64,17 @@ test("🔴🔴 the list and the front tab move together, in one updater", () => 
   // Held apart they become a `setActive` nested inside a `setOpen` updater, which is a defect this
   // codebase has already paid for once: invisible in a diff, and wrong under StrictMode because the
   // updater runs twice. Calibration: split them into two `useState` calls and this reddens.
-  assert.match(CONTROLS, /useState<\{ open: CanvasSource\[\]; activeId: string \| null \}>/, "the open list and the front tab are separate state again");
+  // 🔴 IT MOVED TO `document-dock.tsx` AND THE RULE MOVED WITH IT, UNCHANGED. `SourcesControl` used
+  // to own this privately, which is why a citation chip could not reach it and a second reading
+  // pane got built instead of a wire (owner 2026-09-03). Sharing the state is what let that pane be
+  // deleted; the one-updater rule is exactly as load-bearing in its new home.
+  const dock = strip(readFileSync(new URL("./document-dock.tsx", import.meta.url), "utf8"));
+  // 🔴 `DockItem[]`, NOT `CanvasSource[]` — documents and artifacts are one list since 2026-09-03,
+  // which is what stopped an artifact opening a second panel over an open lecture.
+  assert.match(dock, /useState<\{ open: DockItem\[\]; activeId: string \| null \}>/, "the open list and the front tab are separate state again");
   // The lookahead is not cosmetic: `setDocs` itself matches `set[A-Z]…`, so without it this guard
   // fails on two consecutive well-formed calls and says nothing about nesting at all.
-  assert.ok(!/setDocs\([\s\S]{0,300}?set(?!Docs)[A-Z][A-Za-z]*\(/.test(CONTROLS), "a setState is nested inside the docs updater");
+  assert.ok(!/setDocs\([\s\S]{0,300}?set(?!Docs)[A-Z][A-Za-z]*\(/.test(dock), "a setState is nested inside the docs updater");
 });
 
 test("🔴 a tab remembers the page it was left on", () => {

@@ -209,11 +209,34 @@
        stylesheet already knows, because the theme IS a stylesheet block. So the accent
        supplies both renderings and the fallback here is what "Default" means: no variable
        set, so these values apply unchanged. */
-    --theme-primary: var(--accent-fill-light, #404040);
+    /* 🔴 THE ACCENT REACHES `--ui-action` AND NOTHING ELSE (owner 2026-09-03: "remove any
+       color accents throughout the app, there should only be accents on the mascot and the
+       send button and chat bubble color").
+
+       These three tokens USED TO READ `--accent-fill-*` too, and between them they are the
+       whole app's chrome: `--theme-primary` feeds `--acid`, `--fill-hover`, `--fill-active`,
+       `--line-acid`, `--shadow-acid`, `--dt-primary` and `--dt-accent-foreground`, and it is
+       read directly by 120 call sites. So one colour choice tinted the plan badge, the
+       account initial, every citation chip, every hover surface and every focus ring —
+       measured on the owner's own canvas: 98 saturated elements on one screen, 80 of them
+       citation chips at 12.6% accent.
+
+       The accent now has exactly three homes, and each reads a DIFFERENT token so this
+       cannot quietly widen again:
+         the mascot        `characterInk(accent)`, from the accent id
+         the send button   `bg-(--ui-action)`
+         the chat bubble   `bg-(--ui-action)` + `text-(--ui-action-glyph)`
+
+       🔴 NEUTRAL IS NOT A FALLBACK HERE, IT IS THE VALUE. Writing
+       `var(--accent-fill-light, #404040)` and expecting Default to supply the grey would
+       leave every non-Default accent tinting the chrome again the moment someone picks one,
+       which is exactly the state this replaced. `lib/accent.test.ts` asserts these three do
+       NOT read the accent, and that `--ui-action` still does. */
+    --theme-primary: #404040;
     --theme-secondary: #f2f2f2;
     --theme-accent-soft: #ededed;
-    --theme-midground: var(--accent-fill-light, #404040);
-    --theme-warm: var(--accent-fill-light, #404040);
+    --theme-midground: #404040;
+    --theme-warm: #404040;
     /* 🔴 PAGE AND SIDEBAR ARE THE SAME GREY IN LIGHT MODE. The reference paints both #fcfcfc —
        there is no darker rail on paper, which is why its sidebar reads as part of the page rather
        than as a panel bolted to it. Ours seeded the page at pure #ffffff and the sidebar a step
@@ -351,12 +374,19 @@
        Decoration, not text: these tint 16px glyphs beside a label that carries the
        meaning in words, so the bar is legibility rather than WCAG body-text contrast.
        Every value is checked against the resolved --ui-bg-elevated in both themes. */
-    --ui-kind-blue: #2f6fd0;
-    --ui-kind-red: #cf2d56;
-    --ui-kind-green: #1f8a65;
-    --ui-kind-amber: #c08532;
-    --ui-kind-purple: #7a6fc0;
-    --ui-kind-cyan: #3f7d8c;
+    /* 🔴 ALL SIX ARE THE SAME QUIET GREY NOW (owner 2026-09-03: "remove any color accents
+       throughout the app"). The block above already argued these are "Decoration, not text:
+       these tint 16px glyphs beside a label that carries the meaning in words" — which is
+       exactly why they can go: nothing a learner needs was ever carried by the hue. The six
+       names survive so no call site changes and none of them becomes dead; they simply all
+       resolve to the same ink. Give one of them a hue back and it is a colour accent again,
+       which is what `accent-boundary.test.ts` refuses. */
+    --ui-kind-blue: var(--ui-text-secondary);
+    --ui-kind-red: var(--ui-text-secondary);
+    --ui-kind-green: var(--ui-text-secondary);
+    --ui-kind-amber: var(--ui-text-secondary);
+    --ui-kind-purple: var(--ui-text-secondary);
+    --ui-kind-cyan: var(--ui-text-secondary);
     --context-usage-system: color-mix(in srgb, var(--ui-base) 55%, transparent);
     --context-usage-tools: var(--ui-purple);
     --context-usage-rules: var(--ui-green);
@@ -685,11 +715,13 @@
     /* Dark takes a LIGHTER graphite than light theme's: #404040 on a near-black
        background is almost invisible, and this still carries white button text
        at ~4.3:1. Same reasoning as the light block above. */
-    --theme-primary: var(--accent-fill-dark, #6e6e6e);
+    /* Neutral, and for the reason the light block states at length: the accent reaches
+       `--ui-action` only. */
+    --theme-primary: #6e6e6e;
     --theme-secondary: #161616;
     --theme-accent-soft: #1c1c1c;
-    --theme-midground: var(--accent-fill-dark, #6e6e6e);
-    --theme-warm: var(--accent-fill-dark, #6e6e6e);
+    --theme-midground: #6e6e6e;
+    --theme-warm: #6e6e6e;
     --theme-background-seed: #000000;
     --theme-sidebar-seed: #000000;
     /* 🔴 DARK'S SURFACES ARE MEASURED, NOT INVENTED (owner, 2026-08-14: "copy the darkmode
@@ -725,12 +757,13 @@
        walked into. Lifted to 6.58:1, same hue family, still unmistakably blue. */
     --ui-learner: #5b9bff;
     /* The file-kind tints, lifted for a near-black ground. Same hues, same order. */
-    --ui-kind-blue: #6aa5f5;
-    --ui-kind-red: #e75e78;
-    --ui-kind-green: #55a583;
-    --ui-kind-amber: #d9a44e;
-    --ui-kind-purple: #a99bea;
-    --ui-kind-cyan: #6f9ba6;
+    /* Same grey as the light block, for the reason stated there. */
+    --ui-kind-blue: var(--ui-text-secondary);
+    --ui-kind-red: var(--ui-text-secondary);
+    --ui-kind-green: var(--ui-text-secondary);
+    --ui-kind-amber: var(--ui-text-secondary);
+    --ui-kind-purple: var(--ui-text-secondary);
+    --ui-kind-cyan: var(--ui-text-secondary);
     /* Dark's --ui-action must be LIGHTER than light's, not darker: the glyph on
        it is --ui-bg-editor, which is near-black here, so the fill carries a dark
        glyph. Same inversion the graphite pair already made (#404040 → #6e6e6e).

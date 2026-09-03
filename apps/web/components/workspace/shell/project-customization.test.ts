@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { PROJECT_COLORS, PROJECT_ICONS } from "./project-customize-dialog";
+import { PROJECT_ICONS } from "./project-customize-dialog";
 
 // 🔴 OWNER, 2026-08-30: "chatgpt allows users to customise projects with special instructions and
 // icon and color." Presets, not free input — everything a learner can pick must exist and render.
@@ -16,12 +16,26 @@ test("🔴 every project icon exists in the icon font", () => {
   assert.ok(PROJECT_ICONS.includes("folder"), "the default glyph left the grid, so it cannot be re-chosen");
 });
 
-test("🔴 every colour is a six-digit hex or the default, matching the database constraint", () => {
-  for (const preset of PROJECT_COLORS) {
-    if (preset.value === null) continue;
-    assert.match(preset.value, /^#[0-9a-fA-F]{6}$/, `${preset.name} would be refused by folders_color_shape`);
-  }
-  assert.ok(PROJECT_COLORS.some((preset) => preset.value === null), "there is no way back to the plain folder");
+test("🔴 a project has no colour, and no half of the feature was left behind", () => {
+  // 🔴 THE OWNER REVERSED THE COLOUR HALF (2026-09-03: "remove any color accents throughout the
+  // app, there should only be accents on the mascot and the send button and chat bubble color").
+  // A green `#46a758` flask in his sidebar is what prompted it. The instructions and icon halves
+  // of the 2026-08-30 request stand and are still tested above.
+  //
+  // This test replaces one that pinned the seven hexes against the database's shape constraint,
+  // and it guards the harder thing: that the feature left in ONE piece. A picker with nothing
+  // reading it is a dead control; paint with no picker is a setting nobody can reach.
+  const dialog = readFileSync(new URL("./project-customize-dialog.tsx", import.meta.url), "utf8");
+  const sidebar = readFileSync(new URL("./sidebar-canvases.tsx", import.meta.url), "utf8");
+  // Comments are stripped: every line below asserts an ABSENCE, and the notes left in both files
+  // explaining the removal quote the very things being searched for.
+  const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+  assert.doesNotMatch(code(dialog), /PROJECT_COLORS/u, "the swatch palette is back with nothing reading it");
+  assert.doesNotMatch(code(dialog), /setColor/u, "the dialog still holds a colour to save");
+  assert.doesNotMatch(code(sidebar), /folder\.color/u, "the sidebar glyph is tinted again");
+  // And the halves that stayed are still reachable.
+  assert.match(code(dialog), /PROJECT_ICONS/u, "the icon grid went with the colours");
+  assert.match(code(dialog), /setInstructions/u, "the instructions box went with the colours");
 });
 
 test("the instructions budget matches the database cap on both write paths", () => {

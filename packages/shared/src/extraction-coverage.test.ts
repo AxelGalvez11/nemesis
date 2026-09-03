@@ -210,6 +210,26 @@ test("the version and parser stamp travel with every record", () => {
   assert.ok(coverage.parserVersion.length > 0);
 });
 
+test("🔴 a picture a model looked at and found empty is not a gap", () => {
+  // `FIGURE_PROMPT` asks for exactly "none" when an image carries no teaching
+  // content, so `examined-empty` IS the decorative verdict — reached by looking
+  // instead of by guessing from the shape of the box. Counting it as missing
+  // content marked the better-checked document worse than the guessed-at one.
+  const base = { unitKind: "page" as const, units: 10, unitsNative: 10, unitsVision: 0, unitsBoth: 0, unitsUnread: 0, truncation: [] };
+  const emptyOnly = { ...base, figures: { described: 4, found: 10, reasons: { decorative: 3, "examined-empty": 3 }, skipped: 6 } };
+  assert.equal(lostFigures(emptyOnly.figures), 0, "neither reason costs the student anything");
+  assert.equal(deriveState(emptyOnly), "complete");
+
+  // 🔴 THE CALIBRATION: one genuinely unreadable picture still downgrades it.
+  const withUnreadable = {
+    ...base,
+    figures: { described: 4, found: 10, reasons: { decorative: 3, "examined-empty": 2, "unreadable-format": 1 }, skipped: 6 },
+  };
+  assert.equal(lostFigures(withUnreadable.figures), 1);
+  assert.equal(deriveState(withUnreadable), "partial");
+  assert.match(String(describeCoverage({ ...withUnreadable, state: "partial" })), /1 picture couldn't be read/);
+});
+
 test("deriveState is a pure function of the numbers", () => {
   const base = {
     version: 1, parserVersion: "t", unitKind: "page" as const,
@@ -275,8 +295,15 @@ test("examined-empty also survives storage", () => {
     figures: { found: 3, described: 1, skipped: 2, reasons: { "examined-empty": 2 } },
   });
   const parsed = readCoverage(JSON.parse(JSON.stringify(original)) as unknown);
+  // 🔴 THE BOUNDARY IS WHAT THIS TEST IS FOR: the reason has to survive storage,
+  // because the round trip is where the whole `reasons` map once silently
+  // emptied. It must be READ BACK whatever the policy above it decides.
   assert.equal(parsed?.figures.reasons["examined-empty"], 2);
-  assert.equal(lostFigures(parsed!.figures), 2);
+  // 🔴 AND IT COSTS NOTHING, which is the policy `lostFigures` now holds: a model
+  // that looked and found no teaching content has told us there was nothing to
+  // lose. This line asserted 2 when the reason was counted as missing content.
+  assert.equal(lostFigures(parsed!.figures), 0);
+  assert.equal(parsed?.state, "complete", "a document whose only skips were examined is whole");
 });
 
 // --- PARSER-002: the kinds behind unreadableRegions --------------------------

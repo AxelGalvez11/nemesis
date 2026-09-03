@@ -46,6 +46,8 @@ import type { ReaderSource } from "@/lib/reader/reader-source";
 import { cn } from "@/lib/utils";
 import { loadLibrarySource } from "@/lib/workspace/library-sources";
 
+import { DockTabs } from "./dock-tabs";
+import type { DockItem } from "./document-dock";
 import { CHROME } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
@@ -56,18 +58,36 @@ type PreviewState =
 
 export function SourcePreview({
   activeId,
+  activeKey,
+  items,
   onClose,
+  onCloseKey,
   onCloseTab,
   onSelect,
+  onSelectKey,
   onSendToChat,
   open,
   uid,
 }: {
-  /** Which open document is in front. Null closes the panel. */
+  /**
+   * Which open DOCUMENT is in front, or null.
+   *
+   * 🔴 NULL ALSO MEANS "AN ARTIFACT IS IN FRONT", AND THAT IS HOW ONE PANEL SHOWS AT A TIME. This
+   * component renders nothing without an active document, so the artifact panel taking the front
+   * stands it down while every open document stays mounted behind — see `DocumentDock.activeId`.
+   */
   activeId: string | null;
+  /** The whole sidebar's front tab, documents and artifacts alike. For the strip. */
+  activeKey: string | null;
+  /** Everything open in the sidebar, for the strip. A superset of `open`. */
+  items: readonly DockItem[];
   onClose: () => void;
+  /** Close any tab, by dock key. The strip's per-tab ✕. */
+  onCloseKey: (key: string) => void;
   onCloseTab: (id: string) => void;
   onSelect: (id: string) => void;
+  /** Bring any tab to the front, by dock key. The strip's press. */
+  onSelectKey: (key: string) => void;
   /**
    * Fires when the learner runs one of the reader's actions on a highlighted passage or a marked
    * area: the message it produced, and any material that exists nowhere else (the cut-out picture).
@@ -197,16 +217,57 @@ export function SourcePreview({
     [],
   );
 
+  /**
+   * Docked beside the conversation, or filling the window.
+   *
+   * 🔴 THE ARTIFACT PANEL HAS HAD THIS ALL ALONG AND THE DOCUMENT PANEL HAD NOT (owner,
+   * 2026-09-03: the four header controls *"should be in the sidebar always"*). Opening a lecture
+   * gave you a column you could drag and nothing that would let you read it whole; opening a study
+   * guide gave you both. Same sidebar, two different sets of controls, which is the inconsistency
+   * that made it feel like two products.
+   */
+  const [full, setFull] = useState(false);
+
+  /**
+   * The original file, downloaded.
+   *
+   * 🔴 THROUGH `resolveUrl`, WHICH MINTS A SHORT-LIVED URL AND IS THE ONLY WAY TO THE BYTES. The
+   * reader already calls it to render the document, so nothing new is fetched or stored here — and
+   * a link built any other way would either be dead (storage is not public) or permanent (a signed
+   * url pasted into a page outlives the session that made it).
+   */
+  const downloadActive = useCallback(async () => {
+    const state = activeId ? states[activeId] : undefined;
+    if (state?.kind !== "ready") return;
+    const url = await state.source.resolveUrl();
+    if (!url) return;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = state.source.fileName;
+    // 🔴 IN THE DOCUMENT, NOT DETACHED. Firefox ignores a click on an anchor that was never in the
+    // tree, and the failure is silent — the button simply does nothing.
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }, [activeId, states]);
+
+  const canDownload = Boolean(activeId && states[activeId]?.kind === "ready");
+  const activeState = activeId ? states[activeId] : undefined;
+  const activeFileName = activeState?.kind === "ready" ? activeState.source.fileName : null;
+
   // 🔴 THE CANVAS IS PUSHED, NOT COVERED — see side-panel.tsx. It is what makes this a sidebar
   // rather than a popup wearing a sidebar's shape. Zero while closed, so nothing is inset.
-  useDeclareSidePanel(active ? width : 0, dragging);
+  // 🔴 FULL SCREEN PUSHES NOTHING: it covers everything, so there is no room to make for it. Same
+  // rule the artifact panel follows.
+  useDeclareSidePanel(active && !full ? width : 0, dragging);
 
   if (!active) return null;
 
   return createPortal(
     <div
       className={cn(
-        "fixed inset-y-0 right-0 z-50 flex flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)",
+        "fixed z-50 flex flex-col bg-(--ui-bg-elevated)",
+        full ? "inset-0" : "inset-y-0 right-0 border-l border-(--ui-stroke-tertiary)",
         // 🔴 THE OPENING SLIDE — owner, 2026-08-27: *"make sure to add smooth animation to the
         // sidebar when sources are open."* `.reader-dock-in` slides it in from the right edge when
         // the element is created, on the shared `--pane-slide` clock, and never again.
@@ -221,17 +282,20 @@ export function SourcePreview({
       )}
       data-workspace
       role="dialog"
-      style={{ width }}
+      style={full ? undefined : { width }}
     >
       {/* 🔴 THE GRIP IS ON THE LEFT EDGE, WHICH IS THE EDGE THAT MOVES. 6px wide with a wider
           invisible target either side of it, `col-resize`, and no paint until hover — the same
-          restraint every other control on this surface follows. */}
+          restraint every other control on this surface follows. Only while docked: full screen has
+          no edge to drag. */}
+      {!full && (
       <div
         aria-label="Resize the panel"
         className="absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-(--ui-action)/40"
         onPointerDown={onDragStart}
         role="separator"
       />
+      )}
 
       {/* 🔴 ONE ROW WHETHER THERE IS ONE DOCUMENT OR SIX. A strip that appears only on the second
           document would move the title the learner is reading, and the single-tab case is exactly
@@ -242,58 +306,42 @@ export function SourcePreview({
           so they pushed the one control that closes the panel off the right edge and out of reach.
           The strip scrolls inside its own box; the button is its sibling and never moves. */}
       <div className={CHROME.header}>
-        <div
-          className="flex min-w-0 flex-1 items-center gap-[2px] overflow-x-auto"
-          role="tablist"
-        >
-          {open.map((source) => {
-            const current = source.id === activeId;
-            const mark = fileMark(source.title, source.kind);
-            return (
-              <div
-                className={cn(
-                  "flex min-w-0 max-w-[220px] shrink-0 items-center gap-[6px] rounded-[8px] pl-[8px] pr-[4px] transition-colors",
-                  current
-                    ? "bg-(--ui-bg-tertiary)"
-                    : "hover:bg-(--ui-bg-tertiary)/60",
-                )}
-                key={source.id}
-              >
-                <button
-                  aria-selected={current}
-                  className="flex min-w-0 items-center gap-[6px] py-[7px]"
-                  onClick={() => onSelect(source.id)}
-                  role="tab"
-                  title={source.title}
-                  type="button"
-                >
-                  {/* 🔴 THE SAME MARK THE SHELF DRAWS. A tab strip of six documents was six
-                      identical page glyphs, and this is the surface where telling a deck from a
-                      spreadsheet at a glance matters most — the names truncate at 220px. See
-                      lib/learn/kind-mark.ts. */}
-                  <Codicon className="shrink-0" name={mark.icon} size="14px" style={{ color: `var(${mark.tint})` }} />
-                  <span
-                    className={cn(
-                      CHROME.crumb,
-                      current ? undefined : "text-(--ui-text-tertiary)",
-                    )}
-                  >
-                    {source.title}
-                  </span>
-                </button>
-                <button
-                  aria-label={`Close ${source.title}`}
-                  className="grid size-[20px] shrink-0 place-items-center rounded-[5px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary)"
-                  onClick={() => onCloseTab(source.id)}
-                  type="button"
-                >
-                  <Codicon name="close" size="12px" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        {/* 🔴 THE STRIP IS SHARED WITH THE ARTIFACT PANEL — see dock-tabs.tsx. It used to be
+            written out here over `open`, which is documents only, so an artifact could not appear
+            in it and got a panel of its own instead. */}
+        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
 
+        {/* 🔴 THE SAME CONTROLS THE ARTIFACT PANEL CARRIES, IN THE SAME ORDER (owner, 2026-09-03:
+            they *"should be in the sidebar always"*). One sidebar showing two kinds of thing with
+            two different sets of buttons is the inconsistency that made it read as two panels even
+            after it became one.
+
+            🔴 COMMENT IS NOT HERE, AND ITS ABSENCE IS DELIBERATE RATHER THAN MISSED. A document's
+            comment mode belongs to the READER — it is a mode of the thing being read, owned by
+            `document-reader.tsx`, and it already has a control one row below this. Adding a second
+            here would be two buttons for one state, which is a worse fault than an uneven header.
+            An artifact's comment button is in ITS header because an artifact has no reader row. */}
+        <button
+          aria-label={`Download ${activeFileName ?? "this document"}`}
+          className={cn(CHROME.button, "disabled:opacity-40")}
+          disabled={!canDownload}
+          onClick={() => void downloadActive()}
+          title="Download"
+          type="button"
+        >
+          {/* 🔴 `download`, NOT `desktop-download` — the latter is a MONITOR with an arrow. Same
+              glyph the artifact panel uses, for the same action. */}
+          <Codicon name="download" size={CHROME.icon} />
+        </button>
+        <button
+          aria-label={full ? "Exit full screen" : "Full screen"}
+          className={CHROME.button}
+          onClick={() => setFull((current) => !current)}
+          title={full ? "Exit full screen" : "Full screen"}
+          type="button"
+        >
+          <Codicon name={full ? "screen-normal" : "screen-full"} size={CHROME.icon} />
+        </button>
         <button
           aria-label="Close preview"
           className={cn(

@@ -338,7 +338,38 @@ export function searchCurated(query: ReferenceQuery, registry: readonly CuratedE
   // its word; a specific word can still carry a phrase it dominates). A request this filter drops
   // is not lost — it falls through to the live provider, which is exactly where a concept the
   // shelf does not hold belongs.
-  const wantedMass = wanted.reduce((sum, word) => sum + word.length, 0);
+  // 🔴🔴 GLUE WORDS ARE DROPPED BEFORE ANYTHING IS COUNTED, AND THAT IS THE THIRD TIME THIS SHELF
+  // HAS ANSWERED A QUESTION IT HAS NO ANSWER TO. Reproduced 2026-09-03 from the owner's own canvas:
+  // asking for **"shell-and-tube heat exchanger"** returned an OpenStax NEURAL TUBE diagram, drawn
+  // under an answer about pressure vessels. "tube bundle" returned the heart's bundle branches.
+  //
+  // The two-word floor above was supposed to prevent exactly this, and `and` walked through it.
+  // `tokens` keeps any word over two letters, so the query split to
+  // ["shell","and","tube","heat","exchanger"] and any row whose concepts held both `and` and `tube`
+  // scored two matches. Measured on the real shelf: **`and` appears in 9.9% of its 5,829 rows** and
+  // `the` in 17.9%, so the floor was being cleared by a conjunction.
+  //
+  // 🔴 THE CUT IS MEASURED FROM THE CORPUS, NOT FROM A WORD LIST (CLAUDE.md). A stop-word list is
+  // English-only and would still have missed the words that actually did the damage — this shelf's
+  // own boilerplate: `img` 10.9%, `medical` 10.3%, `illustration` 7.5%, `blausen` 6.8%, `depicting`
+  // 5.7%, `anatomy` 4.5%, `openstax` 3.8%, `textbook` 3.0%. Those sit in the concepts of hundreds of
+  // rows apiece, which is what lets any query brushing one of them match an arbitrary picture. Rank
+  // by how many rows a word appears in and every one of them falls out, in any language and any
+  // field: on a shelf of contract diagrams it would be `clause` and `court` that got cut.
+  //
+  // 🔴 THE THRESHOLD SITS IN A MEASURED GAP, NOT AT A ROUND NUMBER I LIKED. Every word between 1.5%
+  // and 4.5% of the shelf is boilerplate — `physiology`, `openstax`, `version`, `2016`, `published`,
+  // `micrograph`, `cdc`, `lores`. The most common genuine SUBJECT word is `cell` at 1.4%, and
+  // `tube` — the word at the heart of the defect — is 0.2%. So there is a real gap here, and 2%
+  // sits inside it with `cell` below and every piece of boilerplate above.
+  const glue = glueWords(registry);
+  const useful = wanted.filter((word) => !glue.has(word));
+  // 🔴 A QUERY MADE ENTIRELY OF GLUE MATCHES NOTHING, rather than matching whatever sorts first.
+  // `figure-subject.ts` makes the same argument about descriptions: when nothing in the request
+  // identifies a subject, the honest answer is no picture, and the ladder falls through to the live
+  // provider — which is where a concept this shelf does not hold belongs.
+  if (useful.length === 0) return [];
+  const wantedMass = useful.reduce((sum, word) => sum + word.length, 0);
   return registry
     .map((entry) => {
       // 🔴🔴 A ROW IS MATCHED ON ITS REAL CONCEPTS ONLY — see `figure-caption.ts`. 1,235 shelf rows
@@ -348,7 +379,7 @@ export function searchCurated(query: ReferenceQuery, registry: readonly CuratedE
       // winner is then whichever the sort left on top — an arbitrary textbook figure, presented as
       // the answer, and SHADOWING the live provider that would have found the right diagram.
       const have = new Set(matchableConcepts(entry.concepts).flatMap(tokens));
-      const matched = wanted.filter((word) => have.has(word));
+      const matched = useful.filter((word) => have.has(word));
       return { entry, matched: matched.length, score: matched.reduce((sum, word) => sum + word.length, 0) };
     })
     .filter((row) => row.matched >= 2 || row.score >= wantedMass * 0.6)
@@ -414,6 +445,63 @@ function commonsPages(payload: unknown): Array<{ imageinfo?: unknown; title?: un
 
 function tokens(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2);
+}
+
+/**
+ * How much of a shelf a word may cover before it stops identifying anything.
+ *
+ * See `searchCurated` for the measurement this sits in the middle of: the most common real subject
+ * word on the production shelf is `cell` at 1.4%, and everything from 1.5% to 4.5% is boilerplate.
+ */
+const GLUE_SHARE = 0.02;
+
+/**
+ * The smallest shelf whose word frequencies mean anything.
+ *
+ * 🔴 BELOW THIS THE RULE STANDS DOWN, AND WITHOUT THAT IT WOULD INVERT. In a registry of four rows
+ * every word appears in at least 25% of them, so EVERY word reads as glue and the shelf matches
+ * nothing at all — which is what a fixture-sized registry is, and what every test that builds one
+ * would have hit. `vocabulary-lookup.ts` makes the same move for the same reason (`MIN_SENTENCES`):
+ * a frequency rule needs a corpus, and a rule applied to a sample too small to support it is worse
+ * than no rule.
+ */
+const MIN_SHELF_FOR_FREQUENCY = 200;
+
+/**
+ * The words in a registry that are rare enough to identify a picture.
+ *
+ * Cached per registry object: the production shelf is 5,829 rows and this walks all of them, while
+ * `searchCurated` is called once per figure request. A `WeakMap` keyed on the array means the
+ * generated shelf is measured once per process and a test's own fixture is measured separately.
+ */
+const glueByRegistry = new WeakMap<readonly CuratedEntry[], ReadonlySet<string>>();
+
+/**
+ * 🔴 IT RETURNS THE GLUE, NOT THE INFORMATIVE WORDS, AND THE DIRECTION MATTERS. A word the shelf
+ * has never seen — `exchanger` appears in ZERO of the 5,829 rows — is absent from the table
+ * entirely. Listing the informative words would make that set an allow list of KNOWN words, and the
+ * one word that identifies the owner's subject would be dropped as unknown, leaving the query to be
+ * decided by its glue. Naming the glue instead means "not glue" is the default, which is the
+ * correct default for a word nobody has measured.
+ */
+function glueWords(registry: readonly CuratedEntry[]): ReadonlySet<string> {
+  const cached = glueByRegistry.get(registry);
+  if (cached) return cached;
+  const glue = new Set<string>();
+  if (registry.length >= MIN_SHELF_FOR_FREQUENCY) {
+    const counts = new Map<string, number>();
+    for (const entry of registry) {
+      // Per ROW, not per occurrence: a word repeated ten times in one caption still describes one
+      // picture, and counting occurrences would let a single verbose row define the corpus.
+      for (const word of new Set(matchableConcepts(entry.concepts).flatMap(tokens))) {
+        counts.set(word, (counts.get(word) ?? 0) + 1);
+      }
+    }
+    const ceiling = registry.length * GLUE_SHARE;
+    for (const [word, count] of counts) if (count > ceiling) glue.add(word);
+  }
+  glueByRegistry.set(registry, glue);
+  return glue;
 }
 
 // The score above sums MATCHED CHARACTERS, not matched words, and the difference was measured:

@@ -8,21 +8,25 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8");
+
+/** Source with comments stripped: the guards below assert ABSENCES, and the notes explaining each
+ *  removal necessarily quote the very shape being searched for. */
+const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//gu, " ").replace(/^\s*\/\/.*$/gmu, " ");
 const PANE = read("./source-preview.tsx");
 const BAR = readFileSync(new URL("../reader/reader-top-bar.tsx", import.meta.url), "utf8");
 const READER = readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8");
-const TABS = readFileSync(new URL("../../../lib/learn/source-tabs.ts", import.meta.url), "utf8");
-const TABPANE = read("./source-tab-viewer.tsx");
 const CONTROLS = read("./canvas-controls.tsx");
 
 test("🔴🔴 recently-read documents stay mounted, so switching back does not re-read the PDF", () => {
-  // 🔴 THIS IS THE HEADER'S SOURCES PANEL, WHICH IS THE VIEWER IN USE. The citation pane
-  // (`source-tab-viewer`) is a different surface reached only from a pill; the owner's report was
-  // about this one. Guarding the wrong viewer is how a fix ships and the complaint stays.
+  // 🔴 THIS IS THE HEADER'S SOURCES PANEL, AND IT IS NOW THE ONLY VIEWER. When this note was
+  // written there were two — a citation pane (`source-tab-viewer`) reached only from a pill, and
+  // this one — and the warning was to guard the right one, because guarding the wrong viewer is how
+  // a fix ships and the complaint stays. The owner resolved that on 2026-09-03 by having the pill
+  // open this panel and the other pane deleted, so the ambiguity is gone rather than navigated.
   //
   // It rendered the ACTIVE source alone, keyed by its id — a clean remount on every tab switch,
   // which is exactly the cost reported as "it has to load each pdf continually": fetched again,
@@ -74,13 +78,87 @@ test("🔴 the pane's toolbar keeps only what acts on the FILE", () => {
 });
 
 
-test("🔴 the door into a document is the header's Sources list, and there is only one", () => {
-  // 🔴 A `+` WAS ADDED TO THE CITATION PANE'S TAB STRIP AND THEN REMOVED. It rendered only once a
-  // tab was ALREADY open — `SourceTabPane` returns null with none — so it could add a second
-  // document and never the first, which is not the door it claimed to be. The header's Sources
-  // panel already lists every document and opens one, so the `+` was a second control for a job
-  // that had one, on a surface the owner had just asked to simplify.
-  assert.doesNotMatch(TABPANE, /source-tabs-open/, "the redundant opener is back in the citation pane");
+test("🔴🔴 one sidebar: a document and an artifact are tabs in it, never two stacked panels", () => {
+  // Owner, 2026-09-03, with a screenshot of three panels overlapping on one edge: *"i dont want
+  // this, documents, lectures, and everything should open in one sidebar."*
+  //
+  // The cause was two pieces of state that knew nothing about each other — the open documents in
+  // `document-dock`, and `openedOutput` as a private `useState` in `SourcesControl`. Both panels
+  // docked at the same width through the same hook, so opening a study guide while a lecture was
+  // open put the second rectangle exactly on top of the first: two tab strips, two headers, two
+  // close buttons, one behind the other.
+  const controls = code(read("./canvas-controls.tsx"));
+  const dock = code(read("./document-dock.tsx"));
+
+  // 🔴 ONE LIST. If this state comes back, so does the second panel.
+  assert.doesNotMatch(controls, /useState<CanvasOutput \| null>/u, "the artifact is a private state again, so it cannot know a document is open");
+  assert.match(controls, /dock\.active\?\.kind === "output"/u, "the artifact in front no longer comes from the sidebar's own list");
+  assert.match(dock, /openOutput: \(output: CanvasOutput\) => void;/u, "the sidebar cannot hold an artifact");
+
+  // 🔴 AND ONE STRIP. Both bodies draw the same tabs from the same list, which is what makes it
+  // read as one sidebar rather than two that happen to be the same width.
+  for (const [name, source] of [["the document panel", read("./source-preview.tsx")], ["the artifact panel", read("./output-preview.tsx")]] as const) {
+    assert.match(code(source), /<DockTabs\b/u, `${name} draws a strip of its own again`);
+  }
+
+  // 🔴 ONLY ONE BODY IS EVER IN FRONT, and this is the clause that does it: the document panel
+  // renders nothing without an active DOCUMENT, so an artifact taking the front stands it down
+  // while its documents stay mounted behind.
+  assert.match(code(read("./document-dock.tsx")), /active\?\.kind === "document" \? active\.source\.id : null/u,
+    "the document panel no longer stands down when an artifact is in front");
+});
+
+test("🔴 the sidebar carries the same controls whatever kind of thing is in it", () => {
+  // Owner, 2026-09-03, with a picture of the four: comment, download, full screen, close —
+  // *"these icons should be in the sidebar always"*. They were the ARTIFACT panel's header. A
+  // document opened in the same sidebar had close and nothing else: no way to get the file back
+  // out, and no way to read it whole. One sidebar showing two kinds of thing with two sets of
+  // buttons is the inconsistency that made it read as two panels even after it became one.
+  const document_ = code(read("./source-preview.tsx"));
+  const artifact = code(read("./output-preview.tsx"));
+  for (const [name, source] of [["the document panel", document_], ["the artifact panel", artifact]] as const) {
+    assert.match(source, /name="download"/u, `${name} cannot hand the file back`);
+    assert.match(source, /screen-full/u, `${name} cannot be read full screen`);
+    assert.match(source, /name="close"/u, `${name} has no way out`);
+  }
+
+  // 🔴 THE DOWNLOAD GOES THROUGH `resolveUrl`, WHICH IS THE ONLY ROUTE TO THE BYTES. Storage is not
+  // public, so a link built any other way is either dead or a signed url that outlives its session.
+  assert.match(document_, /await state\.source\.resolveUrl\(\)/u, "the document download stopped minting a fresh url");
+  // 🔴 AND FULL SCREEN PUSHES NOTHING. It covers the surface, so claiming an inset for it would
+  // reserve a column beside something already filling the window.
+  assert.match(document_, /useDeclareSidePanel\(active && !full \? width : 0, dragging\)/u,
+    "full screen still pushes the conversation aside");
+
+  // 🔴 COMMENT IS THE ONE THAT IS NOT DUPLICATED, AND THAT IS THE POINT OF THIS CLAUSE. A
+  // document's comment mode belongs to the reader — `document-reader.tsx` owns the state and
+  // already draws a control for it one row below the header. A second button here would be two
+  // owners of one mode, which this repo has paid for before.
+  assert.doesNotMatch(document_, /data-testid="output-comment-mode"/u, "the document panel grew a second comment control");
+  assert.match(code(read("../reader/reader-top-bar.tsx")), /commenting \? "Stop commenting" : "Comment on the document"/u,
+    "the reader lost the comment control the panel is deliberately not duplicating");
+});
+
+test("🔴🔴 there is ONE document reader, and the citation chip opens it", () => {
+  // 🔴 THERE WERE TWO, AND THE CHIP LED TO THE WORSE ONE. Owner, 2026-09-03: *"clicking on the
+  // inline source chip should open documents on the right sidebar, NOT this new sidebar"*, and of
+  // the panel he wanted: *"this is the good sidebar"*.
+  //
+  // `source-tab-viewer.tsx` was a second reader with its own tab strip, its own 360px width and its
+  // own passage view, opened only from a citation. Deleting it is the fix; this test is what keeps
+  // it deleted, because the tempting way to "improve the citation experience" is to build it again.
+  //
+  // An earlier version of this test guarded a `+` that had been added to that pane's tab strip and
+  // then removed — a second door for a job the Sources list already did. The pane went the same way
+  // and for the same reason.
+  assert.ok(
+    !existsSync(new URL("./source-tab-viewer.tsx", import.meta.url)),
+    "a second reading pane is back; a citation chip and the header must open the same one",
+  );
   assert.match(CONTROLS, /<SourceRow key=\{source\.id\} onPreview=\{openDocument\} source=\{source\} \/>/,
     "the Sources list stopped opening documents, which leaves no door at all");
+  // And the chip's route into it: one dock, shared, with no reader of its own.
+  const dock = read("./document-dock.tsx");
+  assert.match(dock, /export function useOpenSource\(\)/, "the pills lost their way into the dock");
+  assert.doesNotMatch(dock, /LibrarySourceReader/, "the dock grew a reader of its own — that is the second pane returning");
 });

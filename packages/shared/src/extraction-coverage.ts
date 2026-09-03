@@ -425,10 +425,27 @@ export function withTruncation(coverage: ExtractionCoverage, cuts: readonly Trun
 /**
  * Figures whose absence actually costs the student something.
  *
- * `decorative` is the only reason that is genuinely free — a bullet or a rule
- * carries nothing. Everything else is content the student uploaded and did not
- * get, including `not-examined`, which is the case where no decision was made
- * at all.
+ * Free are the two reasons that mean "there was nothing here to lose":
+ * `decorative`, where the geometry said so, and `examined-empty`, where a model
+ * said so. Everything else is content the student uploaded and did not get,
+ * including `not-examined`, which is the case where no decision was made at all.
+ *
+ * 🔴 `examined-empty` USED TO COUNT AS A LOSS, AND IT PENALISED THE BETTER
+ * VERDICT. `FIGURE_PROMPT` ends "If an image is a logo, a decorative photo, or
+ * otherwise carries no teaching content, answer exactly 'none'" — so
+ * `examined-empty` IS the decorative verdict, reached by looking rather than by
+ * guessing from the shape of the box. Counting it as missing content meant a
+ * document whose pictures a model had checked reported `partial` while an
+ * identical one the heuristic had guessed at reported `complete`. Measured on
+ * 215 real parses: 23 partial, and the warning a learner saw said "some parts
+ * missing" about pictures that were confirmed to hold nothing.
+ *
+ * 🔴 THIS ONLY HOLDS BECAUSE THE CLAIM IS NOW TRUE WHEN IT IS MADE. There was a
+ * period when a dead model ladder wrote `examined-empty` on every figure it
+ * never sent; `figure-look.ts` now writes `vision-unavailable` for an
+ * unattributed reply and `over-cap` for one never sent, and `examined-empty`
+ * only when a reply came back about THAT picture and said nothing. If that ever
+ * stops being true, this function goes back to counting it.
  */
 export function lostFigures(figures: FigureCoverage): number {
   const reasons = figures.reasons;
@@ -436,8 +453,7 @@ export function lostFigures(figures: FigureCoverage): number {
     (reasons["unreadable-format"] ?? 0) +
     (reasons["over-cap"] ?? 0) +
     (reasons["vision-unavailable"] ?? 0) +
-    (reasons["not-examined"] ?? 0) +
-    (reasons["examined-empty"] ?? 0)
+    (reasons["not-examined"] ?? 0)
   );
 }
 

@@ -110,7 +110,7 @@ import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
 import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
-import { SourceTabPane, SourceTabsProvider, useSourceTabsState } from "./source-tab-viewer";
+import { DocumentDockProvider, useDocumentDockState } from "./document-dock";
 
 /**
  * Where the `×` puts the learner down.
@@ -319,14 +319,6 @@ export function LearningCanvas({
    *  the `/learn` page, where the rules live. */
   strategyOverride?: TeachingStrategyId | null;
 }) {
-  // How wide the canvas may be. The pane is absolutely positioned rather than a flex sibling so
-  // that the composer and the bottom gradient — both absolute to `CanvasSurface` — did not have to
-  // be restructured; they take the same offset instead. Below `xl` the pane floats over the canvas
-  // and none of these offsets apply.
-  const sourceTabs = useSourceTabsState();
-  const paneOpen = (sourceTabs?.state.tabs.length ?? 0) > 0;
-  const paneInset = paneOpen ? " xl:right-[360px]" : "";
-  const paneWidth = paneOpen ? " xl:w-[calc(100%-360px)]" : "";
 
   const router = useRouter();
   // 🔴 DEFINED BEFORE THE EARLY RETURN, so both render branches use the same one. The processing
@@ -499,6 +491,17 @@ export function LearningCanvas({
   }, []);
   const session = useCanvasSession(canvasId);
   const { canvas, busy, error } = session;
+
+  // 🔴 THE CANVAS NO LONGER INSETS ITSELF FOR A READING PANE, BECAUSE THERE IS NO SECOND PANE.
+  // `CanvasSurface` already narrows itself from `useSidePanelInset()`, which is how the Sources
+  // panel and the other docked panels push the conversation. What used to sit up near the top of
+  // this component was a SECOND inset, computed by hand from a hardcoded 360px for a reader that no
+  // longer exists — see `document-dock.tsx` for why the citation chip now opens the Sources panel.
+  //
+  // 🔴 IT HAS TO BE BELOW `canvas`, AND ABOVE EVERY RETURN. It needs the canvas's own sources to
+  // turn a citation chip into a document, and it is a hook, so it cannot sit behind the loading
+  // branch further down.
+  const dock = useDocumentDockState(canvas.sources);
   // A no-op outside the workspace provider, so an isolated preview of this canvas never throws.
   /**
    * The judge decided a submission was not an attempt at the question on screen.
@@ -1810,18 +1813,15 @@ export function LearningCanvas({
    */
   const openCitedFile = useCallback(
     (file: { id: string; librarySourceId?: string | null; title: string }) => {
-      sourceTabs.open({
-        // No excerpt: the pill names a DOCUMENT, not the sentence inside it, which is the same
-        // distinction `chat-citations.ts` makes when it resolves `s1:e4` down to `s1`.
-        excerpt: "",
-        kind: "document",
-        label: file.title,
-        librarySourceId: file.librarySourceId ?? null,
-        section: null,
-        title: file.title,
-      });
+      // 🔴 BY ID, AGAINST THE CANVAS'S OWN SOURCES. This used to build a synthetic pill and hand it
+      // to the deleted reading pane, which then had to guess which document it named. The id is
+      // already exact — `citableFiles` is built from `canvas.sources` a few lines above — so the
+      // guess was never needed here, and the pill's own matching is only for the chips rendered
+      // from a saved answer, which carry no canvas id.
+      const source = canvas.sources.find((entry) => entry.id === file.id);
+      if (source) dock.openDocument(source);
     },
-    [sourceTabs],
+    [canvas.sources, dock],
   );
 
   /** The reply's own text and its index-aligned pages, hoisted out of the JSX.
@@ -2654,6 +2654,13 @@ export function LearningCanvas({
       // is how a fix lands on one of them.
       onDropFiles={attachWithChips}
       chrome={
+      /* 🔴 THE CHROME GETS THE DOCK TOO, AND IT IS THE SAME OBJECT AS THE ONE BELOW. `chrome` is a
+         PROP, so it is built out here rather than inside the surface — and the Sources panel lives
+         in it. Without this provider the header's control and a citation chip would read two
+         different docks and open two different lists of documents, which is a subtler version of
+         the two-viewers bug this whole change removes. One `dock`, two providers, because the
+         subtree is in two pieces. */
+      <DocumentDockProvider value={dock}>
       <CanvasHeader
         activeTaskId={session.activeTask?.id ?? null}
         canvas={canvas}
@@ -2718,17 +2725,18 @@ export function LearningCanvas({
         onFiles={attachWithChips}
         onRename={session.rename}
       />
+      </DocumentDockProvider>
       }
     >
       <ArrivalLabels from={arrival.from} />
       {/* 🔴 INSIDE THE SURFACE, NOT AROUND IT. Wrapping `LearningCanvas` in the provider made
-          this branch return `<SourceTabsProvider>`, and `learn-entry.test.ts` requires every
+          this branch return `<DocumentDockProvider>`, and `learn-entry.test.ts` requires every
           branch to return a `CanvasSurface` — that is the guard standing between a learner and a
-          canvas with no exit in it. The state lives in `useSourceTabsState` above; this only
+          canvas with no exit in it. The state lives in `useDocumentDockState` above; this only
           carries it down to the pills, which sit far below inside the policy view.
           The children are deliberately NOT re-indented: nine hundred untouched lines moving one
           level right would bury the actual change in the diff. */}
-      <SourceTabsProvider value={sourceTabs}>
+      <DocumentDockProvider value={dock}>
       {/* Clearance for the floating controls, expressed as padding on the scroller. It is NOT a
           header height — nothing is reserved, painted or bounded up there; the page simply
           starts below where the controls sit (12px inset + 28px control + 24px breathing room,
@@ -2784,13 +2792,12 @@ export function LearningCanvas({
         </div>
       )}
 
-      <SourceTabPane />
       {/* 🔴 `canvas-enter` — THE ANSWER REGION FADES IN WITH THE CONTROLS RATHER THAN APPEARING
           WITH THEM. Owner, 2026-08-30: *"i want a smooth fade in of everything."* The question
           chip, the thinking caption and the thread all used to land on the same frame as the route
           swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
           the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
-      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]${paneWidth}`} ref={threadRef}>
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[64px]`} ref={threadRef}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
@@ -3569,7 +3576,7 @@ export function LearningCanvas({
           error at once — a failed judge and a failed lesson generation are different events — and
           showing the invisible one would report a failure the learner cannot place. */}
       {(regions.policy ? policy.error ?? error : error) && (
-        <div className={`absolute inset-x-0 bottom-24 z-30 flex justify-center px-4${paneInset}`}>
+        <div className="absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
           <div className="flex max-w-[38rem] items-start gap-3 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-4 py-3 shadow-lg">
             <p className="text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary)">
               {regions.policy ? policy.error ?? error : error}
@@ -3785,7 +3792,7 @@ export function LearningCanvas({
           recording panel offers a second one. Same position, same width — the surface transforms,
           it does not gain a layer. */}
       {showComposer && recording && (
-        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[24px] pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent${paneInset}`}>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[24px] pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent">
           <div className="pointer-events-auto w-full">
             <CanvasRecorder
               // The canvas's ordinary attach path — the identical one a dropped file takes, which is
@@ -3919,7 +3926,7 @@ export function LearningCanvas({
           onCapability={setCapability}
         />
       )}
-      </SourceTabsProvider>
+      </DocumentDockProvider>
     </CanvasSurface>
   );
 }

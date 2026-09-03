@@ -35,6 +35,7 @@ import { fileMark } from "@/lib/learn/kind-mark";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { OutputPreview } from "./output-preview";
+import { documentKey, outputKey, useDocumentDock } from "./document-dock";
 import { SourcePreview } from "./source-preview";
 import type { ExtractionOutcome } from "@/lib/learn/knowledge-extraction";
 import { entrySummary, groupByDay, type TranscriptEntry } from "@/lib/learn/session-transcript";
@@ -201,30 +202,24 @@ export function SourcesControl({
   /**
    * The documents open in the docked reader, and which one is in front.
    *
-   * 🔴 ONE PIECE OF STATE, NOT TWO, AND THAT IS DELIBERATE. Closing the front tab has to choose a
-   * new front tab, which means the list and the choice change together. Held apart, that becomes a
-   * `setActive` nested inside a `setOpen` updater — a defect this codebase has already paid for
-   * once (see `dictation-doubled-every-sentence`), invisible in a diff and impossible to reason
-   * about because the updater runs twice under StrictMode.
+   * 🔴 IT MOVED TO `document-dock.tsx` AND THAT MOVE IS THE FIX (owner 2026-09-03: *"clicking on
+   * the inline source chip should open documents on the right sidebar, NOT this new sidebar"*).
+   * This state was a private `useState` in this component, so nothing outside it could open a
+   * document here — and a citation chip, which renders deep inside the policy view, could not reach
+   * it at all. A second reading pane was built rather than a wire, and the chip led to the worse
+   * of the two viewers. Sharing the state is what let the second pane be deleted.
+   *
+   * The rules it carries — one piece of state rather than two, and where the front tab falls back
+   * to when you close it — moved with it unchanged; see that file.
    */
-  const [docs, setDocs] = useState<{ open: CanvasSource[]; activeId: string | null }>({ activeId: null, open: [] });
-  const openDocument = useCallback((source: CanvasSource) => {
-    setDocs((current) => ({
-      activeId: source.id,
-      // Opening something already open brings it forward rather than listing it twice.
-      open: current.open.some((entry) => entry.id === source.id) ? current.open : [...current.open, source],
-    }));
-  }, []);
-  const closeDocument = useCallback((id: string) => {
-    setDocs((current) => {
-      const open = current.open.filter((entry) => entry.id !== id);
-      // Closing the front tab falls back to the most recently opened one still there, not to the
-      // first: the learner's attention was at the end of the strip, which is where they put it.
-      return { activeId: current.activeId === id ? (open[open.length - 1]?.id ?? null) : current.activeId, open };
-    });
-  }, []);
-  const selectDocument = useCallback((id: string) => setDocs((current) => ({ ...current, activeId: id })), []);
-  const closePanel = useCallback(() => setDocs({ activeId: null, open: [] }), []);
+  const dock = useDocumentDock();
+  const { activeId, closeAll: closePanel, open: openDocs, openDocument } = dock;
+  // 🔴 THE PANEL'S PROPS ARE STILL SOURCE IDS; THE DOCK'S KEYS ARE NOT. One list now holds
+  // documents and outputs, and a `CanvasSource.id` and a `CanvasOutput.id` are uuids from different
+  // tables — so the dock keys them by kind and this is where a document id becomes one. See
+  // `DockItem` for why the two spaces are kept disjoint by construction.
+  const closeDocument = useCallback((id: string) => dock.close(documentKey(id)), [dock]);
+  const selectDocument = useCallback((id: string) => dock.select(documentKey(id)), [dock]);
   /** The one file input both `+` buttons drive. */
   const filePicker = useRef<HTMLInputElement>(null);
   // 🔴 A DECK MADE HERE IS REVIEWED HERE. Owner 2026-08-24: the cards are "an artifact
@@ -237,7 +232,16 @@ export function SourcesControl({
   /** The made artifact open on screen, or null. Mounted beside the panel rather than inside it, so
    *  closing the panel does not tear the document down mid-read — the same arrangement
    *  `SourcePreview` has. */
-  const [openedOutput, setOpenedOutput] = useState<CanvasOutput | null>(null);
+  /**
+   * The artifact in front, or null.
+   *
+   * 🔴 IT COMES FROM THE DOCK NOW, AND IT USED TO BE A `useState` HERE (owner, 2026-09-03: *"i dont
+   * want this, documents, lectures, and everything should open in one sidebar"*). Held here it knew
+   * nothing about the open documents, so opening a study guide while a lecture was open put a
+   * SECOND panel on top of the first — two rectangles, two tab strips, two headers, stacked. One
+   * list means one thing is in front, and the other tabs are still there behind it.
+   */
+  const openedOutput = dock.active?.kind === "output" ? dock.active.output : null;
   const { session } = useAuth();
   const holder = useDismiss(open, () => setOpen(false));
 
@@ -324,7 +328,7 @@ export function SourcesControl({
                   // just launched, hiding the first screen of the document — which is what a
                   // screenshot of this caught.
                   setOpen(false);
-                  setOpenedOutput(chosen);
+                  dock.openOutput(chosen);
                 }}
                 onReviewDeck={setReviewingDeck}
                 output={output}
@@ -397,23 +401,31 @@ export function SourcesControl({
           hooks cannot run in a component that only exists while it is open. It returns null when
           `source` is null and declares a zero inset, so a closed panel costs nothing. */}
       <SourcePreview
-        activeId={docs.activeId}
+        activeId={activeId}
+        activeKey={dock.activeKey}
+        items={dock.items}
         onClose={closePanel}
+        onCloseKey={dock.close}
         onCloseTab={closeDocument}
         onSelect={selectDocument}
+        onSelectKey={dock.select}
         onSendToChat={onSendToChat}
-        open={docs.open}
+        open={openDocs}
         uid={session?.user.id ?? null}
       />
       {reviewingDeck && <DeckReview deckId={reviewingDeck} onClose={() => setReviewingDeck(null)} />}
       {openedOutput && (
         <OutputPreview
+          activeKey={dock.activeKey}
           canvasId={canvas.id}
+          items={dock.items}
+          onCloseKey={dock.close}
+          onSelectKey={dock.select}
           // 🔴 COMMENTS DO NOT WAIT FOR THE REVISE WIRING. A host that cannot revise (the dev
           // harness, a surface that has no canvas session) still lets the learner pin notes;
           // only the send button follows `onRevise`. `session` here is the auth session.
           comments={{ preview: false, uid: outputTools?.uid ?? session?.user.id ?? null }}
-          onClose={() => setOpenedOutput(null)}
+          onClose={() => dock.close(outputKey(openedOutput.id))}
           onRevise={outputTools?.onRevise}
           onUndo={outputTools?.onUndo}
           // 🔴 THE FRESH ROW, NOT THE STATE COPY — a revision lands in `canvas.outputs`, and the

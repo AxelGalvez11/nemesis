@@ -19,6 +19,13 @@ const read = (path: string) => code(readFileSync(new URL(path, import.meta.url),
 const CSS = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
 const SURFACE = read("../learn/canvas-surface.tsx");
 const PANEL = read("../../workspace/shell/side-panel.tsx");
+// 🔴 THREE, AND A FOURTH WAS BRIEFLY ADDED HERE BEFORE BEING DELETED INSTEAD. `source-tab-viewer`
+// was a second document reader that a citation chip opened: a hardcoded 360px, no drag, its own
+// scrim, and an inset computed by hand in `learning-canvas.tsx`. Bringing it onto this shared
+// mechanism was the wrong repair — the owner's answer was that it should not exist at all (2026-09-03:
+// *"clicking on the inline source chip should open documents on the right sidebar, NOT this new
+// sidebar"*), so the chip now opens `source-preview` and the pane is gone. `pane-is-light-and-warm`
+// holds it gone.
 const PANES = ["../learn/output-preview.tsx", "../learn/source-preview.tsx", "../learn/study-panel.tsx"] as const;
 
 test("🔴🔴 every pane that moves reads ONE clock", () => {

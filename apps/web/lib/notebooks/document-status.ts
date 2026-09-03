@@ -36,6 +36,8 @@
  * Deriving costs one function call and cannot drift.
  */
 
+import { describeCoverage, readCoverage } from "@nemesis/shared";
+
 /** The `library_sources` half: enqueue, lease, retry, pre-artifact failure. */
 export interface SourceParseRow {
   /** A LINK, not a completion flag. See the header. */
@@ -64,7 +66,22 @@ export interface ParsedDocumentRow {
   state: string;
   /** Tied to `coverage->>'state' = 'complete'` by a CHECK constraint. */
   complete: boolean;
-  coverage: { state?: string; units?: number; unitsUnread?: number } | null;
+  /**
+   * The raw `coverage` jsonb, exactly as stored.
+   *
+   * 🔴 IT USED TO BE NARROWED TO THREE FIELDS, AND THAT IS WHY THE STUDENT'S
+   * WARNING WAS VAGUE. Both callers already cast the whole record in, so the
+   * figure tally, the unreadable regions and the text cut were all present at
+   * runtime and thrown away by the type — leaving `documentStatusLine` with only
+   * a unit count and, when every unit had been read, nothing to say but "some
+   * parts missing". Measured on production: 20 of 23 partial documents had every
+   * page read, so that vague sentence was almost the only one anyone ever saw.
+   *
+   * Kept as raw jsonb rather than `ExtractionCoverage` because `readCoverage`
+   * rightly refuses a record missing any of its fields, and rows written before
+   * that shape existed still have to yield their unit counts.
+   */
+  coverage: Record<string, unknown> | null;
   failedStage: string | null;
   error: string | null;
 }
@@ -91,7 +108,17 @@ export type DocumentStatus =
    */
   | { kind: "failed"; attempts: number; message: string; detail: string | null; stage: string | null }
   // ── owned by parsed_documents: an artifact exists ──
-  | { kind: "partially_parsed"; units: number; unitsUnread: number }
+  /**
+   * `detail` is `describeCoverage`'s sentence, or null when the stored record is
+   * too old to produce one.
+   *
+   * 🔴 IT IS CARRIED, NOT RECOMPUTED. `describeCoverage` already knows how to
+   * name all four kinds of gap — unread units, lost pictures, regions that would
+   * not turn into text, and a text cut — and a second sentence-writer here would
+   * be a second opinion about what a learner is missing. This module's own
+   * header says why that is the one mistake this file exists to prevent.
+   */
+  | { kind: "partially_parsed"; units: number; unitsUnread: number; detail: string | null }
   | { kind: "parsed" }
   // ── later phases. Not reachable in Phase 1; modelled so the resolver does
   //    not have to be rewritten (and so a test can assert unreachability). ──
@@ -173,10 +200,14 @@ export function describeDocument(
 
     // 🔴 Completion comes from `complete` + coverage, NOT from the link.
     if (!parsed.complete) {
+      const record = readCoverage(parsed.coverage);
       return {
+        detail: record ? describeCoverage(record) : null,
         kind: "partially_parsed",
-        units: parsed.coverage?.units ?? 0,
-        unitsUnread: parsed.coverage?.unitsUnread ?? 0,
+        // Read off the raw record, not off `readCoverage`, so a row that predates
+        // the full shape still reports its unit counts rather than zeroes.
+        units: coverageNumber(parsed.coverage, "units"),
+        unitsUnread: coverageNumber(parsed.coverage, "unitsUnread"),
       };
     }
     return { kind: "parsed" };
@@ -240,6 +271,17 @@ export function isInFlight(status: DocumentStatus): boolean {
 export const MAX_ATTEMPTS = 5;
 
 /**
+ * One number off the raw coverage jsonb.
+ *
+ * Exists for the two fields that predate `readCoverage`'s full shape, so a
+ * record it refuses still yields the counts a learner is shown.
+ */
+function coverageNumber(coverage: Record<string, unknown> | null, key: string): number {
+  const value = coverage?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
  * Plain English, and specific about whether Nemesis is still working, partly
  * succeeded, or needs the student to do something.
  */
@@ -256,6 +298,23 @@ export function documentStatusLine(status: DocumentStatus): string {
     case "retrying":
       return `That attempt did not finish. Trying again — attempt ${status.attempts + 1} of ${MAX_ATTEMPTS}.`;
     case "partially_parsed":
+      // 🔴 NAME THE GAP. "Read, with some parts missing" was true of every
+      // partial document and informative about none of them, and it was what 20
+      // of 23 real partial documents showed — because a gap smaller than a page
+      // (two pictures, one unreadable table) leaves `unitsUnread` at zero and
+      // fell through to it. The panel three inches away was already saying "14
+      // pictures not read" about the same file, so the product held two
+      // vocabularies for one fact and showed the learner the frightening one.
+      //
+      // When every unit was read, lead with the success: the document IS read,
+      // and what is missing is smaller than a page.
+      if (status.detail) {
+        return status.unitsUnread === 0
+          ? `Read. ${status.detail} Answers will say so.`
+          : `${status.detail} Answers will say so.`;
+      }
+      // Only reachable for a stored record too old to describe itself. Says that
+      // something is missing without inventing what.
       return status.unitsUnread > 0
         ? `Read, but ${status.unitsUnread} of ${status.units} could not be read. Answers will say so.`
         : "Read, with some parts missing. Answers will say so.";
