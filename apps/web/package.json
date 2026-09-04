@@ -40,6 +40,7 @@
     "@supabase/supabase-js": "^2.107.0",
     "@tabler/icons-react": "^3.41.1",
     "@vscode/codicons": "^0.0.45",
+    "@xyflow/react": "^12",
     "abcjs": "^6.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

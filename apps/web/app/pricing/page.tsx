@@ -72,7 +72,7 @@ const MONTHLY = INTERVALS[0]!;
 /** What Free actually is: the whole product, for less of the month. Not a worse
  *  tutor, not a smaller model, not a degraded Canvas. */
 const FREE_LINES = [
-  "The same teaching Canvas, and the same reasoning behind it",
+  "The same teaching chat, and the same reasoning behind it",
   "Bring your own lectures, slides, notes and readings",
   "Ask, get taught, get tested — every day",
 ];

@@ -1249,7 +1249,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
   }, [update]);
 
   const requireUid = useCallback((): string | null => {
-    if (!uid) setError("Sign in to use the canvas.");
+    if (!uid) setError("Sign in to use the chat.");
     return uid;
   }, [uid]);
 
@@ -3021,7 +3021,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     // 🔴 Reported in the popover, not only in the page-level error strip. The learner asked about
     // one word and is looking at that word; an explanation that appears at the bottom of the
     // screen is an explanation they will not connect to what they just did.
-    if (!id) setSelectionError("Sign in to use the canvas.");
+    if (!id) setSelectionError("Sign in to use the chat.");
     else {
       setSelectionError(null);
       setSelectionBusy(true);

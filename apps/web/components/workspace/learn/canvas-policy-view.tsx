@@ -156,7 +156,7 @@ function ForcedNotice({ runtime }: { runtime: PolicyRuntime }) {
     <div className="pointer-events-none sticky top-0 z-30 flex justify-center pt-1">
       <p className="rounded-full bg-(--ui-bg-warning,#3a2f14) px-3 py-1 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
         Ownership bypassed:{" "}
-        {unrepresented === 1 ? "1 part of this canvas is" : `${unrepresented} parts of this canvas are`} hidden
+        {unrepresented === 1 ? "1 part of this chat is" : `${unrepresented} parts of this chat are`} hidden
       </p>
     </div>
   );

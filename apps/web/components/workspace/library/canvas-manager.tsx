@@ -333,7 +333,7 @@ export function CanvasManager({
       // Gone from this view means it moved out of the folder being browsed — that absence IS the
       // confirmation, so only a row still present and still unchanged is a failure.
       if (row && !landed(row)) {
-        setFailure("That did not save. Nothing was lost — the canvas is still exactly where it was.");
+        setFailure("That did not save. Nothing was lost — the chat is still exactly where it was.");
       }
     },
     [load],
@@ -445,7 +445,7 @@ export function CanvasManager({
             strokeWidth={2}
           />
           <input
-            aria-label="Search canvases"
+            aria-label="Search chats"
             // 🔴 A BORDERED FIELD, NOT A GREY SLAB. The reference draws its search as white with a
             // 1px hairline; ours filled it with the same grey as the buttons either side of it, so
             // the toolbar read as three identical lozenges and nothing said "you can type here".
@@ -453,7 +453,7 @@ export function CanvasManager({
             // "a surface you can put something into" looks like in both themes.
             className="h-[var(--control-height)] w-[var(--list-search-width)] rounded-full bg-(--ui-bg-elevated) pl-[36px] pr-[14px] text-[14px] text-(--ui-text-primary) outline-none ring-1 ring-(--ui-stroke-tertiary) placeholder:text-(--ui-text-tertiary) focus:ring-(--ui-stroke-secondary)"
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search canvases…"
+            placeholder="Search chats…"
             value={search}
           />
         </div>
@@ -495,7 +495,7 @@ export function CanvasManager({
           active={scope === undefined}
           dropActive={dropTarget === UNFILED_DROP}
           icon={Layers}
-          label="All canvases"
+          label="All chats"
           onClick={() => open(undefined)}
           onDragLeaveTarget={() => setDropTarget((value) => (value === UNFILED_DROP ? null : value))}
           onDragOverTarget={() => setDropTarget(UNFILED_DROP)}
@@ -513,7 +513,7 @@ export function CanvasManager({
       {showCrumb && (
       <div className="mt-[var(--list-filter-gap)] flex items-center gap-1.5 text-[13px] text-(--ui-text-quaternary)">
         {searching ? (
-          <span>Searching every canvas</span>
+          <span>Searching every chat</span>
         ) : (
           <>
             {/* 🔴 THE SCOPE TABS MOVED UP TO THE TOOLBAR and are deliberately not repeated here.
@@ -677,8 +677,8 @@ export function CanvasManager({
             onDragEnd={() => { setDragging(null); setDropTarget(null); }}
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", canvas.title || "Untitled canvas");
-              setDragging({ id: canvas.id, kind: "canvas", name: canvas.title || "Untitled canvas" });
+              event.dataTransfer.setData("text/plain", canvas.title || "Untitled chat");
+              setDragging({ id: canvas.id, kind: "canvas", name: canvas.title || "Untitled chat" });
             }}
             style={{ gridTemplateColumns: LIST_COLUMNS }}
           >
@@ -712,7 +712,7 @@ export function CanvasManager({
                     "should be distinguished"). Derived from the territory's own plan title in
                     the SELECT — not from canvas_sources, which stays empty in production. */}
                 <RowIcon icon={canvas.courseTitle ? GraduationCap : PanelsTopLeft} />
-                <span className="truncate text-[length:var(--list-name-size)] leading-[var(--list-name-leading)] text-(--ui-text-primary)">{canvas.title || "Untitled canvas"}</span>
+                <span className="truncate text-[length:var(--list-name-size)] leading-[var(--list-name-leading)] text-(--ui-text-primary)">{canvas.title || "Untitled chat"}</span>
                 {/* The learner's own mark, kept — the one honest per-canvas distinction there is. */}
                 {canvas.pinnedAt && <Pin className="shrink-0 text-(--ui-text-quaternary)" size={11} strokeWidth={2} />}
               </button>
@@ -761,14 +761,14 @@ export function CanvasManager({
                 {
                   danger: true,
                   icon: Trash2,
-                  label: "Delete canvas",
+                  label: "Delete chat",
                   // Soft delete — the row is flagged, never removed, and the learner's
                   // demonstrations survive regardless (`learner_evidence.canvas_id` is
                   // `on delete set null`). Still confirmed, because it disappears from view.
                   run: () => setDeletingCanvas(canvas),
                 },
               ]}
-              name={canvas.title || "Untitled canvas"}
+              name={canvas.title || "Untitled chat"}
             />
           </div>
         ))}
@@ -821,8 +821,8 @@ export function CanvasManager({
                 so subfolders go with it — and no constraint will ever tell the learner that. */}
             <p className="mt-2 text-[13px] leading-relaxed text-(--ui-text-tertiary)">
               {folders.some((entry) => entry.parentId === confirming.id)
-                ? "The folders inside it are deleted too. No canvas is deleted — everything in them moves back to Unfiled."
-                : "No canvas is deleted. Everything in this folder moves back to Unfiled."}
+                ? "The folders inside it are deleted too. No chat is deleted — everything in them moves back to Unfiled."
+                : "No chat is deleted. Everything in this folder moves back to Unfiled."}
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -883,7 +883,7 @@ export function CanvasManager({
 
       {/* ---------------------------------------------------------------- canvas delete */}
       {deletingCanvas && (
-        <Modal onDismiss={() => setDeletingCanvas(null)} title={`Delete “${deletingCanvas.title || "Untitled canvas"}”?`}>
+        <Modal onDismiss={() => setDeletingCanvas(null)} title={`Delete “${deletingCanvas.title || "Untitled chat"}”?`}>
           {/* What actually survives, said plainly — the learner's demonstrations are kept because
               `learner_evidence.canvas_id` is `on delete set null`, which nothing else here says. */}
           <p className="mt-2 text-[13px] leading-relaxed text-(--ui-text-tertiary)">

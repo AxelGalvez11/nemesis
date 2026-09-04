@@ -3792,7 +3792,7 @@ export function LearningCanvas({
               <p className="canvas-swap mt-5 rounded-2xl p-4 text-[length:var(--canvas-text-small)] leading-relaxed text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary)">
                 {testRun === "nothing-taught"
                   ? "There is nothing to test yet. Learn some of this first, then ask again."
-                  : "Not enough of this canvas can carry a fair question yet. Keep going a little longer and ask again."}
+                  : "Not enough of this chat can carry a fair question yet. Keep going a little longer and ask again."}
               </p>
             ) : (
               // 🔴 THE RECEIPT, NOT THE QUESTIONS. The run itself lives in the panel below; this is

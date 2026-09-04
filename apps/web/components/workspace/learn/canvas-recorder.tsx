@@ -79,7 +79,7 @@ export function CanvasRecorder({ attach, onClose }: Props) {
       //
       // Re-throwing hands it to the hook's catch, which sets the error status, prints the sentence
       // in the panel, honours `.quota` — and, decisively, does NOT discard.
-      setPhase({ kind: "error", message: (caught as Error)?.message || "That recording could not be added to this canvas." });
+      setPhase({ kind: "error", message: (caught as Error)?.message || "That recording could not be added to this chat." });
       throw caught;
     }
   }, [accessToken, attach, onClose, uid]);

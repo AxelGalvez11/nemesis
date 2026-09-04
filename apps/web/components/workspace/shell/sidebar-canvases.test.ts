@@ -92,7 +92,7 @@ test("🔴 hover grammar: ⋯ ALONE on a project row, pin+⋯ on a canvas row", 
   assert.ok(!/aria-label=\{`New canvas in \$\{folder\.name\}`\}/.test(SIDEBAR), "the project row's pencil came back");
   assert.ok(!/\/learn\?new=1&folder=/.test(SIDEBAR), "a second door onto the ?folder= lane reappeared in the rail");
   assert.match(SIDEBAR, /aria-label="Project actions"/, "the project row lost its ⋯ as well, so it has no menu at all");
-  assert.match(SIDEBAR, /aria-label=\{canvas\.pinnedAt \? "Unpin canvas" : "Pin canvas"\}/, "the canvas row lost its hover pin");
+  assert.match(SIDEBAR, /aria-label=\{canvas\.pinnedAt \? "Unpin chat" : "Pin chat"\}/, "the canvas row lost its hover pin");
   // With one control instead of two, the row's own trailing reserve halves. A row still padded for
   // two would print its name stopping 26px short of nothing.
   assert.match(SIDEBAR, /aria-expanded=\{isOpen\}[\s\S]{0,400}pr-\[30px\]/, "the project row still reserves room for the control it lost");

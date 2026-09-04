@@ -1,0 +1,83 @@
+/* The board's own colours and the few rules React Flow and the highlight API need.
+   Tokens map Wondering's theme-v2 (docs/wondering-canvas-reference.md §10) onto ours: the page
+   ground is the app's, the accent is the learner's, and only the three wash colours that have no
+   equivalent here (branch purple, highlight yellow, note tint) are literal. */
+
+[data-workspace] {
+  --board-dot: color-mix(in srgb, var(--ui-base) 12%, transparent);
+  --board-edge: color-mix(in srgb, var(--ui-base) 46%, transparent);
+  --board-branch-highlight: hsl(262 83% 76%);
+  --board-text-highlight: hsl(54 97% 63%);
+  --board-note-bg: color-mix(in srgb, var(--ui-action) 10%, var(--ui-bg-elevated));
+  --board-note-border: color-mix(in srgb, var(--ui-action) 28%, var(--ui-stroke-secondary));
+  --board-error: hsl(7 100% 55%);
+  --board-error-bg: hsl(13 100% 90%);
+  --board-error-text: hsl(7 100% 30%);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-workspace]:not([data-theme="light"]) {
+    --board-branch-highlight: hsl(262 60% 38%);
+    --board-text-highlight: hsl(54 80% 40%);
+    --board-error-bg: hsl(7 60% 22%);
+    --board-error-text: hsl(13 100% 86%);
+  }
+}
+[data-workspace][data-theme="dark"] {
+  --board-branch-highlight: hsl(262 60% 38%);
+  --board-text-highlight: hsl(54 80% 40%);
+  --board-error-bg: hsl(7 60% 22%);
+  --board-error-text: hsl(13 100% 86%);
+}
+
+/* The ::highlight() rules live in text-ranges.ts (`ensureHighlightStyles`): Next's CSS parser
+   (Lightning CSS) rejects the pseudo-element at build time, so they are injected at runtime. */
+
+@keyframes board-menu-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.board-menu-pop {
+  animation: board-menu-pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-menu-pop {
+    animation: none;
+  }
+}
+
+/* React Flow's control shell: our border and ground, no default shadow colour. */
+[data-board] .react-flow__controls {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  border-radius: 6px;
+  overflow: hidden;
+}
+[data-board] .react-flow__controls-button {
+  height: 26px;
+  width: 26px;
+  padding: 4px;
+}
+[data-board] .react-flow__controls-button svg {
+  max-width: 16px;
+  max-height: 16px;
+}
+[data-board] .react-flow__node {
+  /* Cards draw their own ring; React Flow's default selected outline would double it. */
+  outline: none;
+}
+[data-board] .react-flow__node.selected {
+  box-shadow: none;
+}
+[data-board] .react-flow__edge.animated path {
+  stroke-dasharray: 5;
+  animation: dashdraw 0.5s linear infinite;
+}
+[data-board] .react-flow__resize-control.line {
+  border-color: transparent;
+}
