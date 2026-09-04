@@ -15,6 +15,7 @@ import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
 import type { TestRun } from "@/lib/learn/test-run";
 
 import { parseBoardAnnotations, serializeBoardAnnotations, type BoardAnnotation } from "./board-annotations";
+import { makeRoomForDocuments } from "./board-layout";
 
 export const BOARD_DOCUMENT_VERSION = 1;
 
@@ -392,7 +393,10 @@ export function parseBoardState(raw: unknown): BoardState {
   const viewport = parseViewport(value.viewport);
   // 🔴 THE SAME CUT THE CARDS GET: an annotation whose source is gone points at nothing.
   const annotations = serializeBoardAnnotations(parseBoardAnnotations(value.annotations), sourceIds);
-  return {
+  // 🔴 A DOCUMENT SAVED AS FOUR LINES OF PREVIEW OPENS AS A READER, AND THE CARDS UNDER IT MOVE
+  // OUT OF ITS WAY. See `makeRoomForDocuments`: the same object comes back for a board that needs
+  // nothing, so this costs an up-to-date board no render and no save.
+  return makeRoomForDocuments({
     cards,
     sources,
     outputs,
@@ -400,7 +404,7 @@ export function parseBoardState(raw: unknown): BoardState {
     useWebSearch: value.useWebSearch === true,
     ...(viewport ? { viewport } : {}),
     ...(annotations.length > 0 ? { annotations } : {}),
-  };
+  });
 }
 
 /** The turns a model call (or a branch) inherits from a card: what was said, minus errors, last 16. */

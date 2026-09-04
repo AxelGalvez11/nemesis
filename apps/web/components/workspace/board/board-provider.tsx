@@ -39,6 +39,7 @@ import {
   SOURCE_DEFAULT_HEIGHT,
   SOURCE_WIDTH,
   findFreeChildPosition,
+  makeRoomForDocuments,
   nextRootPosition,
   notePosition,
   occupiedRects,
@@ -287,9 +288,12 @@ export function BoardProvider({
     mounted.current = true;
     if (seed) {
       skipNextSave.current = true;
-      dispatch({ type: "replace", cards: seed.cards, history: { past: [], future: [] } });
-      setSources(seed.sources);
-      setOutputs(seed.outputs);
+      // The same pass a loaded board gets in `parseBoardState`, so the harness shows what a
+      // learner sees when an old board opens.
+      const opened = makeRoomForDocuments(seed);
+      dispatch({ type: "replace", cards: opened.cards, history: { past: [], future: [] } });
+      setSources(opened.sources);
+      setOutputs(opened.outputs);
       setAnnotations(seed.annotations ?? []);
       setSelectedSourceIds(seed.selectedSourceIds);
       setUseWebSearch(seed.useWebSearch);

@@ -203,8 +203,14 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
             be seen in the canvas, they only render text"). Pages, slides and layout, not a stripped
             preview and a button to somewhere else. Nothing sits under it any more: the two buttons
             that used to are the four pluses above. */}
+        {/* 🔴🔴 NO MINIMUM HEIGHT ON THE BODY, AND THAT 280px WAS THE SECOND CLIPPING. Owner,
+            2026-09-04, after #1168: the deck on his own canvas was still drawn across the card
+            under it. Measured: the node was 217px (a height saved by the old design), the body
+            insisted on 280, and the box's own `overflow-hidden` is on the READER, so the reader
+            simply clipped 63px below the card's bottom edge. The node's minimum is the resize
+            handle's (`SOURCE_MIN_HEIGHT`) and it is the only one; the body fills what it is given. */}
         {ready && (
-          <div className="flex min-h-[280px] flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             <SourceDocument interactive={selected === true} source={source} />
           </div>
         )}

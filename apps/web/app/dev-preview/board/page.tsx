@@ -249,12 +249,32 @@ const SEED: BoardState = {
   useWebSearch: false,
 };
 
+// 🔴 AN OLD BOARD, AS SAVED BY THE DESIGN BEFORE DOCUMENTS WERE READERS: `?old=1`. The owner's own
+// canvas on 2026-09-04 held three documents in one column at 217, 172 and 325 tall, 8px apart, and
+// the first was drawn across the second's title once each opened as a reader. `makeRoomForDocuments`
+// (board-layout.ts) is what this scene reviews: every document opens at a readable height and the
+// column is still a column. The thread under them is there to be pushed too.
+const OLD_SEED: BoardState = {
+  cards: [card({ id: "old-thread", title: "Which of these is long acting?", parentId: null, position: { x: 0, y: 470 }, height: 320, messages: [{ id: "u1", role: "user", content: "Which of these is long acting?" }, { id: "a1", role: "assistant", content: "Glargine and degludec." }] })],
+  outputs: [],
+  selectedSourceIds: [],
+  sources: [
+    { ...SOURCE, height: 217, id: "old-deck", name: "Status asthmaticus.md", position: { x: 0, y: 0 } },
+    { ...SOURCE, height: 172, id: "old-list", name: "Top drugs list.md", position: { x: 0, y: 225 } },
+    { ...PDF_SOURCE, height: 325, id: "old-pdf", position: { x: 0, y: 405 } },
+  ],
+  viewport: { x: 24, y: 24, zoom: 0.4 },
+  useWebSearch: false,
+};
+
 export default function BoardPreview() {
-  const empty = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("empty") === "1";
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const empty = params?.get("empty") === "1";
+  const old = params?.get("old") === "1";
   return (
     <WorkspacePreviewProvider value={{ email: "preview@nemesis.local" }}>
       <WorkspaceShell>
-        <BoardPage boardId={null} seed={empty ? undefined : SEED} toggle />
+        <BoardPage boardId={null} seed={empty ? undefined : old ? OLD_SEED : SEED} toggle />
       </WorkspaceShell>
     </WorkspacePreviewProvider>
   );
