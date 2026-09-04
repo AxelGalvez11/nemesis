@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { foldersWithContent } from "./library-outputs";
+import { foldersWithContent, shelfFolders } from "./library-outputs";
 import type { Folder } from "@/lib/learn/canvas-store";
 
 // 🔴🔴 THE OWNER'S REPORT, VERBATIM: *"I created a new… project, but it's showed up in the
@@ -23,6 +23,39 @@ function folder(id: string, over: Partial<Folder> = {}): Folder {
 function counts(pairs: readonly (readonly [string, number])[]): ReadonlyMap<string, number> {
   return new Map(pairs);
 }
+
+
+test("🔴🔴 a folder made on the Library shows there while empty; one made elsewhere still does not", () => {
+  // Owner, 2026-09-04: *"making a folder in library doesnt work like in chatgpt, fix it."* Driven
+  // on chatgpt.com/library the same day: an empty folder he had made minutes earlier ("test3") sits
+  // at the TOP of their list with a Size of "—". Ours did not appear at all — the New folder button
+  // arrived on this page on 2026-09-03 and landed straight on the emptiness filter added for a
+  // completely different report.
+  //
+  // 🔴 AND THAT OTHER REPORT STILL HOLDS, which is the whole reason this is two clauses rather than
+  // a deletion: *"I created a new project, but it's showed up in the library, and that's not where
+  // it should go."*
+  const made = { createdAt: "2026-09-04T00:00:00.000Z", id: "made-here", madeIn: "library" as const, name: "Week 5 reading", parentId: null };
+  const project = { createdAt: "2026-09-04T00:00:00.000Z", id: "a-project", name: "Second year", parentId: null };
+  const filled = { createdAt: "2026-08-01T00:00:00.000Z", id: "has-work", name: "Thermodynamics", parentId: null };
+  const withContent = new Set(["has-work"]);
+
+  const shown = shelfFolders([made, project, filled], withContent).map((folder) => folder.id);
+  assert.deepEqual(shown, ["made-here", "has-work"], "an empty project leaked onto the shelf, or the folder just made is still invisible");
+
+  // Calibration, both ways: drop the marker and the new folder vanishes again; add content to the
+  // project and it earns its place the way it always could.
+  assert.deepEqual(
+    shelfFolders([{ ...made, madeIn: null }], withContent).map((f) => f.id),
+    [],
+    "the marker stopped being what makes an empty folder visible",
+  );
+  assert.deepEqual(
+    shelfFolders([project], new Set(["a-project"])).map((f) => f.id),
+    ["a-project"],
+    "a project that holds work is being hidden",
+  );
+});
 
 test("🔴🔴🔴 a brand-new, empty project holds nothing directly and shows nowhere — the reported bug", () => {
   const result = foldersWithContent([folder("new-project")], counts([]));
@@ -89,9 +122,16 @@ const OUTPUTS = strip(readFileSync(new URL("./library-outputs.tsx", import.meta.
 
 test("🔴🔴 the 'Folders' section draws `visibleFolders`, not the raw `folders` state", () => {
   // The memo grew the reference's recency sort 2026-08-30 (folders order by what changed inside
-  // them, newest first); the invariant here is unchanged — it still filters on nonEmptyFolders.
-  assert.match(OUTPUTS, /folders\s*\.filter\(\(folder\) => nonEmptyFolders\.has\(folder\.id\)\)/);
-  assert.match(OUTPUTS, /folderModified\.get\(b\.id\)/, "the Folders section lost its recency ordering");
+  // them, newest first).
+  // 🔴 RE-POINTED 2026-09-04: the rule is TWO clauses now and lives in the pure `shelfFolders`,
+  // which the tests above drive directly. The invariant this line guards is unchanged — the
+  // section must render the FILTERED list and never the raw `folders` state.
+  assert.match(OUTPUTS, /shelfFolders\(folders, nonEmptyFolders\)/);
+  assert.ok(!/const visibleFolders = useMemo\([\s\S]{0,80}=>\s*folders\s*\.sort/.test(OUTPUTS), "the shelf went back to sorting the raw folders state");
+  // 🔴 THE COMPARATOR GOES THROUGH `folderWhen` NOW, so an empty folder made on this page sorts by
+  // its own creation time instead of falling to the bottom with a blank date. Same ordering, one
+  // more row able to take part in it.
+  assert.match(OUTPUTS, /folderWhen\(b\)\.localeCompare\(folderWhen\(a\)\)/, "the Folders section lost its recency ordering");
   // Since the 2026-08-30 recency rework the folder row is one shared renderer; since 2026-09-01 it
   // leads EVERY shelf's list rather than sitting in a table of its own on a kind pill. One element,
   // four homes, so they cannot drift.
@@ -154,7 +194,19 @@ test("🔴 a folder's Modified is a real rollup, and the folders order by it (20
   // what "Modified" means for a container, and it is what the reference prints and sorts by.
   assert.match(OUTPUTS, /const folderModified = useMemo/, "the rollup is gone");
   assert.match(OUTPUTS, /notes\.forEach\(\(row\) => bump\(row\.folderId, row\.updatedAt\)\)/, "notes stopped feeding the rollup");
-  assert.match(OUTPUTS, /folderModified\.has\(folder\.id\) \? when\(folderModified\.get\(folder\.id\) \?\? ""\) : ""/, "an untouched folder would print a false date");
+  // 🔴🔴 RE-POINTED 2026-09-04, AND THE OLD SPELLING WOULD NOW PRINT A BLANK ROW AT THE BOTTOM OF
+  // THE LIST. "An untouched folder prints nothing" was free advice while an untouched folder never
+  // appeared here — and since the Library's own New folder button started showing the folder you
+  // just made, one is on screen the moment you create it. With no date it also sorted below every
+  // folder with content, so the row you made a second ago landed last.
+  //
+  // 🔴 THE FALLBACK IS STILL NOT "BORROW `createdAt` FOR EVERY FOLDER", which is what the original
+  // note refused and was right to. `folderWhen` reads the rollup FIRST and falls back only when
+  // there is nothing inside — for which being created is genuinely the last thing that happened.
+  // A folder with content is unaffected, so filing an old note into a new folder still prints the
+  // note's date rather than quietly promoting the folder.
+  assert.match(OUTPUTS, /folderModified\.get\(folder\.id\) \?\? folder\.createdAt \?\? ""/, "the fallback stopped preferring the rollup, or went away");
+  assert.match(OUTPUTS, /when\(folderWhen\(folder\)\)/, "the Modified cell stopped going through the one helper");
 });
 
 test("🔴🔴 'All' is one list by recency, not sections (owner 2026-08-30)", () => {
