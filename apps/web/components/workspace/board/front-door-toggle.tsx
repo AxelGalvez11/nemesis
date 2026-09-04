@@ -8,6 +8,11 @@
 // raised pill (rgb(27,27,27), 123 × 37, radius full) and white text, the other rgb(205,205,205).
 // Ours draws the same geometry on our tokens.
 //
+// 🔴 THE TRACK IS A FIXED 228px OF TWO EQUAL HALVES, NOT PADDING AROUND THE LABELS. Copying the
+// reference's 8/44 and 8/36 insets literally is what shipped first, and "Canvas" is six letters
+// where "Work" is four: an equal-column grid takes the wider half twice, and the control measured
+// 256 on production, 27px past the thing it was copied from. Labels centre inside their half.
+//
 // 🔴 IT IS A NAVIGATION, NOT A MODE. "Chat" is /learn (the front door), "Canvas" is /canvas (an
 // empty board). Each page shows the switch with its own half lit; a saved board (/canvas/<id>)
 // shows no switch, the same way a chat in progress shows none.
@@ -91,7 +96,7 @@ export function FrontDoorToggle({ value, className }: { value: FrontDoorMode; cl
     <div className={cn("pointer-events-none absolute inset-x-0 top-[8px] z-40 flex justify-center", className)} data-front-door-toggle-host="">
       <div
         aria-label="Start a chat or a canvas"
-        className="pointer-events-auto relative grid h-[36px] grid-cols-2 rounded-full bg-(--ui-bg-secondary)"
+        className="pointer-events-auto relative grid h-[36px] w-[228px] grid-cols-2 rounded-full bg-(--ui-bg-secondary)"
         data-front-door-toggle=""
         role="radiogroup"
       >
@@ -99,7 +104,7 @@ export function FrontDoorToggle({ value, className }: { value: FrontDoorMode; cl
           aria-hidden
           className={cn(
             "absolute top-[-0.5px] h-[37px] w-[123px] rounded-full bg-(--ui-bg-elevated) shadow-[0_1px_2px_rgb(0_0_0/0.08)] transition-[left] duration-200 ease-out motion-reduce:transition-none",
-            side === "chat" ? "left-[-4px]" : "left-[calc(100%-119px)]",
+            side === "chat" ? "left-[-0.5px]" : "left-[calc(100%-122.5px)]",
           )}
         />
         {OPTIONS.map((option) => {
@@ -108,8 +113,7 @@ export function FrontDoorToggle({ value, className }: { value: FrontDoorMode; cl
             <button
               aria-checked={option.id === value}
               className={cn(
-                "relative z-[1] h-[36px] whitespace-nowrap rounded-full text-[14px] font-medium leading-[20px] transition-colors duration-200",
-                option.id === "chat" ? "pl-[44px] pr-[36px]" : "pl-[36px] pr-[44px]",
+                "relative z-[1] h-[36px] whitespace-nowrap rounded-full text-center text-[14px] font-medium leading-[20px] transition-colors duration-200",
                 active ? "text-foreground" : "text-(--ui-text-secondary) hover:text-foreground",
               )}
               key={option.id}
