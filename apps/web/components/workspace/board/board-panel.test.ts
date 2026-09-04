@@ -182,6 +182,43 @@ test("🔴🔴 a document card is a BOX you can move, not a page that grows out 
   assert.match(CHAT, /selected \? "nodrag nopan cursor-auto select-text" : "select-none"/, "the rule the document card copies is gone from the conversation card");
 });
 
+test("🔴🔴 a document card is never taller than its box, and an old board makes room for its documents", () => {
+  // Owner, 2026-09-04, after the fix above shipped, on the same canvas: the deck was still drawn
+  // across the card under it. Two more causes, both measured on his board.
+  const MODEL = read("../../../lib/board/board-model.ts");
+  const PROVIDER = read("./board-provider.tsx");
+
+  // 🔴 CAUSE THREE: the body carried `min-h-[280px]` while the node was 217px, a height the OLD
+  // design saved when a source was four lines of preview text. The reader's `overflow-hidden`
+  // clipped at the body's box, 63px below the card's edge. The node's minimum is the only minimum.
+  // Scoped to the document card: a note's text box keeps its own small minimum, and a note is
+  // auto-height by design.
+  const sourceCard = CARD.slice(CARD.indexOf("function SourceCardInner"), CARD.indexOf("export const SourceCard"));
+  assert.ok(sourceCard.length > 0 && !/min-h-\[\d+px\]/.test(sourceCard), "a document card's body has a minimum height of its own again, so it can outgrow its node");
+
+  // 🔴 CAUSE FOUR: three documents stood in one column 8px apart at the old heights. Opening each
+  // at a readable height without moving the others draws every card over the one under it, so a
+  // loaded board goes through `makeRoomForDocuments` (board-layout.ts, tested there) and so does
+  // a seeded one, or the harness would show a board no learner ever sees.
+  assert.match(MODEL, /return makeRoomForDocuments\(\{/, "a loaded board no longer opens its old documents at a readable height");
+  assert.match(PROVIDER, /const opened = makeRoomForDocuments\(seed\);/, "the harness seeds a board without the pass a loaded board gets");
+
+  // And the pass itself, through the door a real board comes in by.
+  const stacked = parseBoardState({
+    cards: [],
+    selectedSourceIds: [],
+    sources: [
+      { ...SOURCE, height: 217, id: "deck", position: { x: 0, y: 0 } },
+      { ...SOURCE, height: 172, id: "list", position: { x: 0, y: 225 } },
+    ],
+    useWebSearch: false,
+    version: 1,
+  });
+  const [deck, list] = stacked.sources;
+  assert.equal(deck?.height, 560, "the old height survived the load");
+  assert.ok((list?.position.y ?? 0) >= 560, `the second document still starts inside the first (y=${list?.position.y})`);
+});
+
 test("🔴🔴 no board node is registered under one of React Flow's own type names", () => {
   // 🔴 THIS IS A REAL DEFECT THE OWNER REPORTED AND I FIRST MISREAD. *"tests and notes retain a box
   // outline around them"* (2026-09-04) was not our card's border and not the check's own ring: the

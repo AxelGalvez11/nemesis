@@ -212,6 +212,126 @@ export function occupiedRects(cards: readonly BoardCard[], sources: readonly Boa
 /** An output card before it is measured: title row plus the open button. */
 export const OUTPUT_MIN_HEIGHT = 132;
 
+/** A collapsed card or document is its title bar. What it occupies on the board, for placement. */
+export const COLLAPSED_HEIGHT = 48;
+/** A note before it is measured: its header and the shortest text box. */
+export const NOTE_MIN_HEIGHT = 160;
+
+/**
+ * Whether a saved document card is from before documents were readers.
+ *
+ * 🔴 THE RESIZE HANDLE NEVER ALLOWS A HEIGHT UNDER `SOURCE_MIN_HEIGHT`, so a stored height below it
+ * can only have been written by the old design, where a source was four lines of preview text and
+ * was saved at that height (172 and 217 on the owner's own canvas, 2026-09-04). No height at all is
+ * the same era, one version earlier.
+ */
+export function isLegacySourceHeight(height: number | undefined): boolean {
+  return height === undefined || height < SOURCE_MIN_HEIGHT;
+}
+
+interface Occupant {
+  readonly id: string;
+  readonly x: number;
+  y: number;
+  /** Where it stood before anything moved. "Under" is decided by this, never by a position mid-push. */
+  readonly origin: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+function occupant(id: string, position: BoardPosition, width: number, height: number): Occupant {
+  return { id, x: position.x, y: position.y, origin: position.y, width, height };
+}
+
+/**
+ * Open every legacy document card at a readable height, and push whatever sat under it down so
+ * nothing is drawn over anything else.
+ *
+ * 🔴🔴 THE HEIGHT ALONE WAS THE BUG THE OWNER SAW. #1168 gave a document with no stored height the
+ * default; the ones WITH a stored height kept it, and those heights were the old design's. Three
+ * documents on his canvas stood in one column at 217, 172 and 325 tall, and the card body carried
+ * a 280px minimum, so the first deck's slide was drawn across the second card's title and the
+ * second card's text across the third (*"it's sort of not contained within the box"*, again).
+ * Raising the heights without moving anything would have stacked a 560px reader on a card 8px
+ * below it, which is the same picture with more overlap.
+ *
+ * 🔴 ONLY DOWNWARD, ONLY WHAT IS UNDER THE DOCUMENT, AND ONLY WHAT WOULD OVERLAP. A card the
+ * learner placed to the right keeps its place; a card above keeps its place; a card below that was
+ * already clear keeps its place. What moves is a card whose top would end up inside the opened
+ * document's box, and it moves to sit `PLACEMENT_GAP` under it, then pushes its own neighbours in
+ * turn, so a column stays a column in the same order.
+ *
+ * 🔴 IDENTITY IS KEPT WHERE NOTHING MOVED, so a board with no legacy documents is returned as the
+ * very same object and nothing re-renders or re-saves for it.
+ *
+ * PURE. Runs once, at load, in `parseBoardState` and on a seeded board.
+ */
+export function makeRoomForDocuments<TState extends { cards: readonly BoardCard[]; sources: readonly BoardSource[]; outputs: readonly BoardOutputCard[] }>(
+  state: TState,
+): TState {
+  const legacy = state.sources.filter((source) => isLegacySourceHeight(source.height));
+  if (legacy.length === 0) return state;
+
+  const occupants = new Map<string, Occupant>();
+  for (const card of state.cards) {
+    occupants.set(card.id, occupant(card.id, card.position, card.width, card.collapsed ? COLLAPSED_HEIGHT : (card.height ?? EMPTY_CARD_HEIGHT)));
+    for (const note of card.notes) occupants.set(note.id, occupant(note.id, note.position, NOTE_WIDTH, NOTE_MIN_HEIGHT));
+  }
+  for (const source of state.sources) {
+    const height = source.collapsed ? COLLAPSED_HEIGHT : isLegacySourceHeight(source.height) ? SOURCE_DEFAULT_HEIGHT : (source.height as number);
+    occupants.set(source.id, occupant(source.id, source.position, source.width, height));
+  }
+  for (const output of state.outputs) {
+    occupants.set(output.id, occupant(output.id, output.position, output.width, output.height ?? OUTPUT_MIN_HEIGHT));
+  }
+
+  /**
+   * 🔴 "UNDER" IS THE ORIGINAL ORDER, NOT THE CURRENT ONE. The first draft compared live positions,
+   * and a column of three came out as a column of two: the second card was pushed under the first,
+   * and the third, still at its old place, was then ABOVE the second's new place, so nobody pushed
+   * it and both landed on the same line. A card that started under another stays under it.
+   */
+  const pushDown = (anchor: Occupant) => {
+    const bottom = anchor.y + anchor.height + PLACEMENT_GAP;
+    const below = [...occupants.values()]
+      .filter((other) => other.id !== anchor.id && other.origin > anchor.origin && other.x < anchor.x + anchor.width && other.x + other.width > anchor.x)
+      .sort((a, b) => a.origin - b.origin);
+    for (const other of below) {
+      if (other.y >= bottom) continue;
+      other.y = bottom;
+      pushDown(other);
+    }
+  };
+  for (const source of [...legacy].sort((a, b) => a.position.y - b.position.y)) {
+    const occupant = occupants.get(source.id);
+    if (occupant && !source.collapsed) pushDown(occupant);
+  }
+
+  const moved = (id: string, position: BoardPosition): BoardPosition => {
+    const occupant = occupants.get(id);
+    return occupant && occupant.y !== position.y ? { x: position.x, y: occupant.y } : position;
+  };
+  const cards = state.cards.map((card) => {
+    const position = moved(card.id, card.position);
+    const notes = card.notes.map((note) => {
+      const at = moved(note.id, note.position);
+      return at === note.position ? note : { ...note, position: at };
+    });
+    const notesMoved = notes.some((note, index) => note !== card.notes[index]);
+    return position === card.position && !notesMoved ? card : { ...card, position, notes };
+  });
+  const sources = state.sources.map((source) => {
+    const position = moved(source.id, source.position);
+    const height = isLegacySourceHeight(source.height) ? SOURCE_DEFAULT_HEIGHT : source.height;
+    return position === source.position && height === source.height ? source : { ...source, position, height };
+  });
+  const outputs = state.outputs.map((output) => {
+    const position = moved(output.id, output.position);
+    return position === output.position ? output : { ...output, position };
+  });
+  return { ...state, cards, sources, outputs };
+}
+
 /**
  * A test card is wider and taller than a deliverable chip, because it is PLAYED rather than opened.
  *
