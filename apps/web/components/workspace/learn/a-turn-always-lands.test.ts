@@ -32,7 +32,10 @@ test("🔴🔴🔴 an empty turn is never silent AND never a blank screen", () =
     !/if \(!decision\.say\) return null;/.test(SESSION),
     "a turn with no prose bails out without checking whether it drew or asked anything — that is the blank screen",
   );
-  assert.match(BRANCH, /if \(!decision\.say && !drew\)/, "the guard no longer considers what the turn drew");
+  // 🔴 THE LIST GREW BY ONE ON 2026-09-03 (`courseNote`) — see the note further down. What this
+  // line protects is that the guard weighs what the turn PRODUCED rather than only whether it
+  // spoke, so it checks the drawing is still in the reckoning without pinning the whole condition.
+  assert.match(BRANCH, /if \(!decision\.say && !drew\b/, "the guard no longer considers what the turn drew");
   assert.match(BRANCH, /if \(!asked\) setError\(/, "a turn that produced nothing at all now fails silently");
 });
 
@@ -56,6 +59,21 @@ test("🔴🔴 the sentence describes the LEARNER'S request, never Nemesis's sta
   // to the thing they asked for, and what will happen if they ask again.
   assert.ok(!/Nemesis had nothing to add/.test(SESSION), "the banned sentence is back");
   assert.match(SESSION, /That came back empty\. Ask again and it will retry\./, "the honest replacement is gone");
+
+  // 🔴🔴 AND A FAILED COURSE IS NOT AN EMPTY TURN. Owner, 2026-09-03, driving Course on production:
+  // press it, answer "what level?", and the reply was "That came back empty." The course build runs
+  // ~140 lines ABOVE this check and writes its refusal into `courseNote`; `courseNote` is read ~20
+  // lines BELOW it. The early return sat between them, so the one sentence explaining what happened
+  // to the learner's course was built and then discarded.
+  //
+  // 🔴 THE CODE ALREADY CARRIED THE ARGUMENT, one branch up: the refusal is applied early *"only so
+  // a refusal can ride the same reply the turn was going to show anyway: a Course press that failed
+  // and said nothing would be a control that does nothing, this codebase's most-repeated defect."*
+  // This check was the thing defeating that guard.
+  assert.match(SESSION, /if \(!decision\.say && !drew && !courseNote\) \{/, "an empty turn can swallow a failed course's own explanation again");
+  // 🔴 AND THE NOTE IS STILL WHAT GETS SHOWN — asserted as a pair, because letting it past the
+  // check while nothing renders it would be the same silence with more steps.
+  assert.match(SESSION, /text: \[decision\.say, courseNote\]\.filter\(Boolean\)\.join/, "the course refusal is no longer part of the reply");
 });
 
 console.log("a-turn-always-lands.test.ts OK");

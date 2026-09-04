@@ -2427,7 +2427,25 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       //                       was actually wrong with "Nemesis had nothing to add".
       const drew = decision.visuals.length > 0;
       const asked = (decision.check?.questions.length ?? 0) > 0;
-      if (!decision.say && !drew) {
+      // 🔴🔴 `courseNote` COUNTS AS SOMETHING THE TURN PRODUCED, AND LEAVING IT OUT SWALLOWED THE
+      // ONE SENTENCE A FAILED COURSE HAD TO SAY. Owner, 2026-09-03: *"the course mode in chat seems
+      // to not be working"*, and then, of this exact message: *"why does it say 'that came back
+      // empty'?"*
+      //
+      // Driven live on production the same day: press Course, answer "what level?", and the reply
+      // is "That came back empty. Ask again and it will retry." The course build had already run
+      // 140 lines above and failed, and `courseRefusalLine` / `researchRefusalLine` had already
+      // written the real reason into `courseNote` — which is read at the bottom of this function,
+      // BELOW this early return. So the refusal was built and then thrown away, and the learner got
+      // a sentence about Nemesis having nothing to say instead of the sentence explaining what
+      // actually happened to their course.
+      //
+      // 🔴 THE CODE ALREADY KNEW. The note above the curriculum branch says the refusal is applied
+      // early *"only so a refusal can ride the same reply the turn was going to show anyway: a
+      // Course press that failed and said nothing would be a control that does nothing, this
+      // codebase's most-repeated defect."* That guard was defeated by this check, sitting between
+      // where the note is written and where it is read.
+      if (!decision.say && !drew && !courseNote) {
         if (!asked) setError("That came back empty. Ask again and it will retry.");
         return null;
       }
