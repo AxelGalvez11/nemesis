@@ -31,6 +31,8 @@ import {
   CARD_MIN_HEIGHT,
   CARD_WIDTH,
   NOTE_WIDTH,
+  OUTPUT_MIN_HEIGHT,
+  OUTPUT_WIDTH,
   SOURCE_WIDTH,
   findFreeChildPosition,
   nextRootPosition,
@@ -62,9 +64,15 @@ import {
   type BoardState,
   type BoardViewport,
   type MeasuredSize,
+  type BoardOutputCard,
 } from "@/lib/board/board-model";
 import { BoardVersionConflict, createBoard, getBoard, updateBoard } from "@/lib/board/board-store";
-import { DIVE_DEEPER_MESSAGE, MAX_SOURCES_PER_MESSAGE, runBoardTurn, type BoardResponseMode } from "@/lib/board/board-turn";
+import { DIVE_DEEPER_MESSAGE, runBoardTurn, type BoardResponseMode } from "@/lib/board/board-turn";
+import { boardCanvasFor, makeBoardDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/board/board-deliverables";
+import { groundedSources } from "@/lib/board/board-grounding";
+import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
+import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
+import { CANVAS_FILING_FOLDER, coverageLabel, coverageNote, loadCanonicalSource, storedCoverage } from "@/lib/learn/canvas-sources";
 
 const SAVE_DEBOUNCE_MS = 400;
 const SAVE_RETRY_MS = 5_000;
@@ -127,6 +135,14 @@ export interface BoardContextValue {
   addSourceFiles: (files: File[]) => Promise<void>;
   toggleSourceSelection: (sourceId: string) => void;
   createLessonFromSource: (sourceId: string) => void;
+  /** Deliverables made on this board (lib/board/board-deliverables.ts). */
+  outputs: BoardOutputCard[];
+  /** Make one beside a thread (or from the composer, `cardId` null), from what was typed. */
+  makeDeliverable: (kind: DeliverableKind, options?: { cardId?: string | null; topic?: string }) => void;
+  /** The output open in the reading panel, if any. */
+  openedOutput: CanvasOutput | null;
+  openOutput: (outputId: string) => void;
+  closeOutput: () => void;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -164,8 +180,13 @@ export function BoardProvider({
   const updateCards = useCallback((update: BoardCard[] | ((cards: BoardCard[]) => BoardCard[])) => dispatch({ type: "update", update }), []);
 
   const [sources, setSources] = useState<BoardSource[]>([]);
+  const [outputs, setOutputs] = useState<BoardOutputCard[]>([]);
+  const [openedOutputId, setOpenedOutputId] = useState<string | null>(null);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
-  const [useWebSearch, setUseWebSearch] = useState(true);
+  // 🔴 OFF BY DEFAULT (owner 2026-09-03: "websearch on in canvas, off by default"). On by default,
+  // every board answer went to the web unasked and came back wearing [n] marks that read as
+  // invented sources. A board that turned it on keeps it on: the flag is saved with the document.
+  const [useWebSearch, setUseWebSearch] = useState(false);
   const [viewport, setViewport] = useState<BoardViewport | null>(null);
   const [hasSavedViewport, setHasSavedViewport] = useState(false);
   const [lastAddedCardId, setLastAddedCardId] = useState<string | null>(null);
@@ -208,8 +229,8 @@ export function BoardProvider({
 
   const occupied = useCallback(
     (allCards: readonly BoardCard[], allSources: readonly BoardSource[]) =>
-      occupiedRects(allCards, allSources).map((item) => ("id" in item ? measuredRect(item as BoardCard) : item)),
-    [measuredRect],
+      occupiedRects(allCards, allSources, outputs).map((item) => ("id" in item ? measuredRect(item as BoardCard) : item)),
+    [measuredRect, outputs],
   );
 
   // ----------------------------------------------------------------- load
@@ -219,6 +240,7 @@ export function BoardProvider({
       skipNextSave.current = true;
       dispatch({ type: "replace", cards: seed.cards, history: { past: [], future: [] } });
       setSources(seed.sources);
+      setOutputs(seed.outputs);
       setSelectedSourceIds(seed.selectedSourceIds);
       setUseWebSearch(seed.useWebSearch);
       setViewport(seed.viewport ?? null);
@@ -252,6 +274,7 @@ export function BoardProvider({
         skipNextSave.current = true;
         dispatch({ type: "replace", cards: settled, history: storedHistory });
         setSources(state.sources);
+        setOutputs(state.outputs);
         setSelectedSourceIds(state.selectedSourceIds);
         setUseWebSearch(state.useWebSearch);
         setViewport(state.viewport ?? null);
@@ -322,6 +345,7 @@ export function BoardProvider({
                 skipNextSave.current = true;
                 dispatch({ type: "replace", cards: state.cards, history: latest.history });
                 setSources(state.sources);
+                setOutputs(state.outputs);
                 setSelectedSourceIds(state.selectedSourceIds);
                 setUseWebSearch(state.useWebSearch);
                 setViewport(state.viewport ?? null);
@@ -372,15 +396,15 @@ export function BoardProvider({
   // or a conflict replace is skipped: it is the database's own truth coming back.
   useEffect(() => {
     if (!loaded || seed) return;
-    if (cards.length === 0 && sources.length === 0 && boardIdRef.current === null) return;
+    if (cards.length === 0 && sources.length === 0 && outputs.length === 0 && boardIdRef.current === null) return;
     if (skipNextSave.current) {
       skipNextSave.current = false;
       return;
     }
-    const snapshot: BoardState = { cards, sources, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined };
+    const snapshot: BoardState = { cards, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined };
     const timer = window.setTimeout(() => schedule(snapshot, historyForSave()), SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [cards, sources, selectedSourceIds, useWebSearch, viewport, loaded, schedule, historyForSave, seed]);
+  }, [cards, sources, outputs, selectedSourceIds, useWebSearch, viewport, loaded, schedule, historyForSave, seed]);
 
   // ----------------------------------------------------------------- turns
   const setCardStatus = useCallback(
@@ -488,6 +512,52 @@ export function BoardProvider({
     [patchMessage, setCardStatus, sources, uid, updateCards, useWebSearch],
   );
 
+  // ----------------------------------------------------------------- deliverables
+  /**
+   * Make a deliverable beside a thread, or from the composer.
+   *
+   * 🔴 THE CHAT'S MAKERS, A BOARD-SHAPED PLACE (lib/board/board-deliverables.ts). The card appears at
+   * once in its "making" state so the learner sees where it will land; the maker fills it or marks
+   * it failed. A board saved mid-make drops the card on reload (parseBoardState), same as a pending
+   * reply, because nothing would ever finish it.
+   */
+  const makeDeliverable = useCallback(
+    (kind: DeliverableKind, options: { cardId?: string | null; topic?: string } = {}) => {
+      const cardId = options.cardId ?? null;
+      const topic = (options.topic ?? "").trim();
+      if (!uid) {
+        setLimitNotice("Sign in to make things on the canvas.");
+        return;
+      }
+      const parent = cardId ? cards.find((card) => card.id === cardId) : undefined;
+      if (cardId && !parent) return;
+      const outputId = crypto.randomUUID();
+      const position = parent
+        ? findFreeChildPosition({ parent: measuredRect(parent), occupied: occupied(cards, sources), side: "right", childWidth: OUTPUT_WIDTH, childHeight: OUTPUT_MIN_HEIGHT })
+        : nextRootPosition([...cards, ...sources, ...outputs]);
+      const draft: BoardOutputCard = { id: outputId, cardId, kind, status: "making", topic, createdAt: new Date().toISOString(), position, width: OUTPUT_WIDTH };
+      setOutputs((all) => [...all, draft]);
+      const canvas = boardCanvasFor({ boardId: boardIdRef.current, title: deriveBoardTitle(cards, sources), cards, cardId, sources: groundedSources(sources) });
+      const patch = (change: (output: BoardOutputCard) => BoardOutputCard) => {
+        if (!mounted.current) return;
+        setOutputs((all) => all.map((output) => (output.id === outputId ? change(output) : output)));
+      };
+      void makeBoardDeliverable(uid, canvas, kind, topic, (label) => patch((output) => ({ ...output, progress: label })))
+        .then((result) => {
+          if ("error" in result) patch((output) => ({ ...output, status: "error", error: result.error, progress: undefined }));
+          else patch((output) => ({ ...output, status: "ready", output: result.output, progress: undefined }));
+        })
+        .catch((error: unknown) => {
+          patch((output) => ({ ...output, status: "error", error: error instanceof Error ? error.message : "This could not be made. Try again.", progress: undefined }));
+        });
+    },
+    [cards, measuredRect, occupied, outputs, sources, uid],
+  );
+
+  const openedOutput = useMemo(() => outputs.find((output) => output.id === openedOutputId)?.output ?? null, [outputs, openedOutputId]);
+  const openOutput = useCallback((outputId: string) => setOpenedOutputId(outputId), []);
+  const closeOutput = useCallback(() => setOpenedOutputId(null), []);
+
   const startCard = useCallback(
     (
       text: string,
@@ -495,6 +565,13 @@ export function BoardProvider({
     ): boolean => {
       const message = text.trim();
       if (!message) return false;
+      // "Make me flashcards on this" is an ask for a thing, not a question: the chat's own reader
+      // decides (readDeliverableAsk), and the thing lands on the board instead of an answer.
+      const asked = readDeliverableAsk(message);
+      if (asked) {
+        makeDeliverable(asked, { cardId: null, topic: message });
+        return true;
+      }
       if (isMessageTooLong(message)) {
         setLimitNotice(messageLimitNotice(message));
         return false;
@@ -547,7 +624,7 @@ export function BoardProvider({
       });
       return true;
     },
-    [cards, measuredRect, occupied, runTurn, selectedSourceIds, sources, updateCards],
+    [cards, makeDeliverable, measuredRect, occupied, runTurn, selectedSourceIds, sources, updateCards],
   );
 
   const sendRootMessage = useCallback((text: string) => startCard(text, { updatesComposerSuggestions: true }), [startCard]);
@@ -565,6 +642,13 @@ export function BoardProvider({
     (cardId: string, text: string, retry?: RetryTarget, contextExcerpt?: string, occurrence?: number): boolean => {
       const message = text.trim();
       if (!message) return false;
+      if (!retry && !contextExcerpt) {
+        const asked = readDeliverableAsk(message);
+        if (asked) {
+          makeDeliverable(asked, { cardId, topic: message });
+          return true;
+        }
+      }
       if (isMessageTooLong(message)) {
         setLimitNotice(messageLimitNotice(message));
         return false;
@@ -615,7 +699,7 @@ export function BoardProvider({
       });
       return true;
     },
-    [cards, runTurn, updateCards],
+    [cards, makeDeliverable, runTurn, updateCards],
   );
 
   const createBranchCard = useCallback(
@@ -783,6 +867,7 @@ export function BoardProvider({
         ),
       );
       setSources((all) => all.map((source) => (source.id === id ? { ...source, position } : source)));
+      setOutputs((all) => all.map((output) => (output.id === id ? { ...output, position } : output)));
     },
     [updateCards],
   );
@@ -841,6 +926,11 @@ export function BoardProvider({
         setLimitNotice(IN_FLIGHT_DELETE_NOTICE);
         return;
       }
+      const outputIds = ids.filter((id) => outputs.some((output) => output.id === id));
+      if (outputIds.length) {
+        setOutputs((all) => all.filter((output) => !outputIds.includes(output.id)));
+        setOpenedOutputId((open) => (open && outputIds.includes(open) ? null : open));
+      }
       const sourceIds = ids.filter((id) => sources.some((source) => source.id === id));
       if (sourceIds.length) {
         setSources((all) => all.filter((source) => !sourceIds.includes(source.id)));
@@ -849,7 +939,7 @@ export function BoardProvider({
       const targets = buildDeleteTargets(cards, ids);
       if (targets.length) applyHistory({ type: "delete", targets });
     },
-    [applyHistory, cards, sources],
+    [applyHistory, cards, outputs, sources],
   );
 
   const deleteNode = useCallback((id: string) => deleteNodes([id]), [deleteNodes]);
@@ -862,13 +952,13 @@ export function BoardProvider({
       return;
     }
     const restored = applyOperation(cards, entry.operation).cards;
-    const document = serializeBoardState({ cards: restored, sources, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
+    const document = serializeBoardState({ cards: restored, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
     if (!documentFitsSizeLimit(document)) {
       setLimitNotice("This undo would exceed the canvas storage limit. Remove some content or sources and try again.");
       return;
     }
     applyHistory({ type: "undo" });
-  }, [applyHistory, cards, history.past, selectedSourceIds, sources, useWebSearch, viewport]);
+  }, [applyHistory, cards, history.past, outputs, selectedSourceIds, sources, useWebSearch, viewport]);
 
   const redo = useCallback(() => {
     if (history.future.length === 0) return;
@@ -959,11 +1049,10 @@ export function BoardProvider({
       const source = sources.find((item) => item.id === sourceId);
       if (!source || source.status !== "ready") return;
       setSelectedSourceIds((all) => {
+        // No cap any more: the board grounds across every selected document the way the chat
+        // grounds across every attached one (lib/board/board-grounding.ts), so there is nothing
+        // to protect the packet from. Wondering's four was the size of a pasted question.
         if (all.includes(sourceId)) return all.filter((id) => id !== sourceId);
-        if (all.length >= MAX_SOURCES_PER_MESSAGE) {
-          setLimitNotice(`Choose up to ${MAX_SOURCES_PER_MESSAGE} sources for one question.`);
-          return all;
-        }
         return [...all, sourceId];
       });
     },
@@ -999,15 +1088,41 @@ export function BoardProvider({
         }
         return next;
       });
+      // 🔴 THE CHAT'S ATTACH PATH, NOT A SECOND ONE (use-canvas-session.ts, "keep IS WHAT MAKES
+      // CROSS-SESSION LEARNING POSSIBLE"). `keep` files the document so it has a parsed row for
+      // retrieval to search; the canonical parse gives the excerpts their headings and pages; the
+      // coverage disclosure rides so the model never claims a page it could not read.
+      const firstOrdinal = sources.length + 1;
       await Promise.all(
-        drafts.map(async (draft) => {
+        drafts.map(async (draft, draftIndex) => {
           try {
-            const read = await Promise.all(draft.files.map((file) => extractFile(file, uid, {})));
+            const read = await Promise.all(draft.files.map((file) => extractFile(file, uid, { folderPath: CANVAS_FILING_FOLDER, keep: true })));
             const content = read.map((item) => item.text).join("\n\n").trim();
             if (!content) throw new Error("Nothing readable was found in this file.");
             const name = read.length === 1 && read[0]?.title ? read[0].title : draft.name;
-            setSources((all) => all.map((source) => (source.id === draft.id ? { ...source, name, content, status: "ready" } : source)));
-            setSelectedSourceIds((all) => (all.length < MAX_SOURCES_PER_MESSAGE ? [...all, draft.id] : all));
+            const first = read[0];
+            const sourceId = `s${firstOrdinal + draftIndex}`;
+            const canonical = read.length === 1 && first?.librarySourceId ? await loadCanonicalSource(first.librarySourceId) : { ok: false as const };
+            const disclosure =
+              read.length === 1 && first?.librarySourceId
+                ? await storedCoverage(first.librarySourceId)
+                : { label: coverageLabel(first?.coverage), note: coverageNote(first?.coverage) };
+            const grounded: CanvasSource = {
+              id: sourceId,
+              title: name,
+              kind: first?.kind ?? draft.type,
+              excerpts: canonical.ok
+                ? excerptsFromSourceContext(sourceId, canonical.context)
+                : read.length === 1 && first?.model
+                  ? buildExcerptsFromModel(sourceId, first.model)
+                  : buildExcerpts(sourceId, content),
+              ...(disclosure.note ? { coverageNote: disclosure.note } : {}),
+              ...(disclosure.label ? { coverageLabel: disclosure.label } : {}),
+              durability: read.length === 1 && first?.librarySourceId ? "durable" : "ephemeral",
+              ...(read.length === 1 && first?.librarySourceId ? { librarySourceId: first.librarySourceId } : {}),
+            };
+            setSources((all) => all.map((source) => (source.id === draft.id ? { ...source, name, content, grounded, status: "ready" } : source)));
+            setSelectedSourceIds((all) => [...all, draft.id]);
           } catch (error) {
             setSources((all) =>
               all.map((source) =>
@@ -1018,7 +1133,7 @@ export function BoardProvider({
         }),
       );
     },
-    [cards, uid],
+    [cards, sources.length, uid],
   );
 
   const dismissLimitNotice = useCallback(() => setLimitNotice(null), []);
@@ -1067,6 +1182,11 @@ export function BoardProvider({
       addSourceFiles,
       toggleSourceSelection,
       createLessonFromSource,
+      outputs,
+      makeDeliverable,
+      openedOutput,
+      openOutput,
+      closeOutput,
     }),
     [
       loaded,
@@ -1109,6 +1229,11 @@ export function BoardProvider({
       addSourceFiles,
       toggleSourceSelection,
       createLessonFromSource,
+      outputs,
+      makeDeliverable,
+      openedOutput,
+      openOutput,
+      closeOutput,
     ],
   );
 

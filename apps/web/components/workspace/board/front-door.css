@@ -1,0 +1,36 @@
+/* ── The Chat | Canvas switch: the two halves of one motion (front-door-toggle.tsx) ──────────
+   The leaving page fades its content, never the switch itself, for 150ms before the route changes;
+   the arriving page fades its content in from 6px below while the thumb slides across. Both are
+   stamped on the page root by the toggle, so the same rules serve /learn and /canvas. */
+[data-front-door-page][data-front-door-leaving] > :not([data-front-door-toggle-host]) {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 150ms ease-in,
+    transform 150ms ease-in;
+}
+
+@keyframes front-door-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-front-door-page][data-front-door-entering] > :not([data-front-door-toggle-host]) {
+  animation: front-door-enter 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-front-door-page][data-front-door-leaving] > :not([data-front-door-toggle-host]),
+  [data-front-door-page][data-front-door-entering] > :not([data-front-door-toggle-host]) {
+    animation: none;
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+}

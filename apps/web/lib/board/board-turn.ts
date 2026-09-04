@@ -16,16 +16,13 @@
 
 import { THINKING_STANCE } from "@nemesis/shared";
 
+import type { CanvasSource } from "@/lib/learn/canvas-model";
+import { MATERIAL_CITATION_RULE, MATERIAL_HEADER } from "@/lib/learn/turn-router";
 import { postChatCompletion, searchWebContext, type WireMsg } from "@/lib/workspace/chat-api";
 import { formatWebSearchContext, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import { boardMaterialContext, groundedSources } from "./board-grounding";
 import type { BoardCitation, BoardSource, BoardSuggestions } from "./board-model";
 import { CONCEPT_INSTRUCTION, PROTOCOL_INSTRUCTION, readSuggestions, readSummary, visibleAnswer } from "./board-protocol";
-
-/** Wondering's limits for pasted sources, kept so a board behaves the same at the edges. */
-export const MAX_SOURCES_PER_MESSAGE = 4;
-export const MAX_SOURCE_CONTENT_CHARACTERS = 240_000;
-export const MAX_TOTAL_SOURCE_CHARACTERS = 480_000;
-export const TRUNCATED_SOURCE_NOTICE = "\n\n[This source was truncated to fit the canvas context window.]";
 
 export const DIVE_DEEPER_MESSAGE =
   "Dive deeper into the highlighted excerpt: explain it more thoroughly and surface what matters most about it.";
@@ -78,28 +75,12 @@ const BOARD_MAX_TOKENS = 8192;
 const LESSON_MODE =
   "The learner asked for a lesson from a source: teach it in order, with headings for its main ideas, one worked example per idea, and a short check-yourself list at the end.";
 
-/** The sources that ride this question, pasted and truncated to Wondering's limits. */
-export function pastedSources(sources: readonly BoardSource[], sourceIds: readonly string[]): Array<{ type: string; name: string; content: string }> {
-  const out: Array<{ type: string; name: string; content: string }> = [];
-  let budget = MAX_TOTAL_SOURCE_CHARACTERS;
-  for (const id of sourceIds) {
-    const source = sources.find((item) => item.id === id && item.status === "ready");
-    if (!source || budget <= 0) continue;
-    const limit = Math.min(MAX_SOURCE_CONTENT_CHARACTERS, budget);
-    const truncated = source.content.length > limit;
-    const keep = truncated ? Math.max(0, limit - TRUNCATED_SOURCE_NOTICE.length) : limit;
-    const content = `${source.content.slice(0, keep)}${truncated ? TRUNCATED_SOURCE_NOTICE : ""}`;
-    out.push({ type: source.type, name: source.name, content });
-    budget -= content.length;
-  }
-  return out;
-}
-
 export function boardWireMessages(input: {
   message: string;
   history: ReadonlyArray<{ role: "user" | "assistant"; content: string }>;
   contextExcerpt?: string;
-  sources?: Array<{ type: string; name: string; content: string }>;
+  /** The material packet (lib/board/board-grounding.ts), already assembled for this question. */
+  materialContext?: string;
   responseMode?: BoardResponseMode;
   cardTitle?: string;
   cardSummary?: string;
@@ -108,11 +89,12 @@ export function boardWireMessages(input: {
   const system: string[] = [SYSTEM_HEAD];
   if (input.responseMode === "lesson") system.push(LESSON_MODE);
   if (input.cardTitle) system.push(`This card is titled "${input.cardTitle}".${input.cardSummary ? ` So far: ${input.cardSummary}` : ""}`);
-  if (input.sources?.length) {
-    system.push(
-      "The learner attached these sources. Ground the answer in them and say when they do not cover the question:\n\n" +
-        input.sources.map((source) => `### ${source.name} (${source.type})\n${source.content}`).join("\n\n"),
-    );
+  const material = input.materialContext?.trim() ?? "";
+  if (material) {
+    // 🔴 THE CHAT'S PACKET AND THE CHAT'S RULE, WORD FOR WORD. The excerpt ids in the packet are the
+    // ids the answer cites, and chat-markdown.tsx draws them as the same pills.
+    system.push(MATERIAL_CITATION_RULE);
+    system.push(`${MATERIAL_HEADER}\n\n${material}`);
   }
   if (input.webContext) {
     system.push("Live web results for this question. Use them for current facts and cite the relevant URLs as [n]:\n\n" + input.webContext);
@@ -134,18 +116,13 @@ export function boardWireMessages(input: {
   ];
 }
 
-function citationsFrom(results: readonly ChatWebResult[], answer: string): BoardCitation[] {
-  // Only the results the answer actually cited as [n], in the order first cited.
-  const cited: BoardCitation[] = [];
-  const seen = new Set<number>();
-  for (const match of answer.matchAll(/\[(\d{1,2})\]/g)) {
-    const index = Number(match[1]) - 1;
-    const result = results[index];
-    if (!result || seen.has(index)) continue;
-    seen.add(index);
-    cited.push({ url: result.url, title: result.title || result.url });
-  }
-  return cited;
+export function citationsFrom(results: readonly ChatWebResult[], answer: string): BoardCitation[] {
+  // 🔴 EVERY RESULT, IN THE ORDER THE MODEL SAW THEM. The list used to hold only the cited results,
+  // renumbered from 1, so an answer's [16] pointed at the third row of a three-row list and the
+  // learner read numbers that named nothing (owner 2026-09-03: "it makes up its own sources").
+  // Positions are the model's numbering now; the renderer draws [n] as the chat's pills.
+  if (!/\[\d{1,2}\]/.test(answer)) return [];
+  return results.map((result) => ({ url: result.url, title: result.title || result.url }));
 }
 
 export async function runBoardTurn(input: BoardTurnInput): Promise<BoardTurnResult> {
@@ -163,11 +140,13 @@ export async function runBoardTurn(input: BoardTurnInput): Promise<BoardTurnResu
       input.onSearching?.(false);
     }
   }
+  const grounded: CanvasSource[] = input.sources ? groundedSources(input.sources) : [];
+  const materialContext = grounded.length ? await boardMaterialContext(grounded, input.message) : "";
   const messages = boardWireMessages({
     message: input.message,
     history: input.history,
     contextExcerpt: input.contextExcerpt,
-    sources: input.sources ? pastedSources(input.sources, input.sources.map((source) => source.id)) : undefined,
+    materialContext,
     responseMode: input.responseMode,
     cardTitle: input.cardTitle,
     cardSummary: input.cardSummary,

@@ -41,6 +41,8 @@
 
 import { THINKING_STANCE } from "@nemesis/shared";
 
+import { CONCEPT_INSTRUCTION } from "@/lib/workspace/concept-terms";
+
 import type { WireMsg } from "@/lib/workspace/chat-api";
 import { EXAM_ITEM_RULES_SHORT } from "@/lib/workspace/item-writing";
 
@@ -657,6 +659,23 @@ export const HISTORY_TURNS = 6;
  * and one-paragraph replies stopped existing when the canvas became a chat. It outlived its reason
  * by months and quietly made every long answer a wall of prose; see the scanning rule below.
  */
+/**
+ * How an answer cites the attached material. Shared with the board (lib/board/board-turn.ts), so a
+ * card built on a dropped lecture cites it the way the chat does and the same pills draw it.
+ */
+export const MATERIAL_CITATION_RULE =
+  "When a sentence comes from the attached material, mark it with that excerpt's id in square "
+  + "brackets, like [s1:e4], at the end of the sentence. When it draws on more than one, put them "
+  + "in one bracket separated by commas, like [s1:e26, s1:e29]. Use ONLY ids that appear in the "
+  + "material below, exactly as written, and never invent one. Mark the sentences that carry a real "
+  + "claim from the material, not every sentence. Leave a sentence unmarked when it comes from your "
+  + "own knowledge rather than their documents, the difference is the point.";
+
+/** The system line that introduces the material packet. Shared with the board for the same reason. */
+export const MATERIAL_HEADER =
+  "ATTACHED COURSE OR ASSESSMENT MATERIAL. This is source context, not something the learner "
+  + "said in their message.";
+
 const NEMESIS_SYSTEM = [
   "You are Nemesis, an academic operating system a learner talks to. You work in every field: law, "
   + "engineering, history, nursing, computer science, a trade. Never assume the learner's discipline "
@@ -689,12 +708,7 @@ const NEMESIS_SYSTEM = [
   // `[s1:e4]` in the material below, so this asks for an identifier the model is looking at.
   // A number would have to be kept in step with a list built somewhere else, which is precisely
   // the drift `canvas-chat.ts` warns about for `[n]`.
-  "When a sentence comes from the attached material, mark it with that excerpt's id in square "
-  + "brackets, like [s1:e4], at the end of the sentence. When it draws on more than one, put them "
-  + "in one bracket separated by commas, like [s1:e26, s1:e29]. Use ONLY ids that appear in the "
-  + "material below, exactly as written, and never invent one. Mark the sentences that carry a real "
-  + "claim from the material, not every sentence. Leave a sentence unmarked when it comes from your "
-  + "own knowledge rather than their documents, the difference is the point.",
+  MATERIAL_CITATION_RULE,
 
   // 🔴🔴 THE CANVAS CAN DRAW A MOLECULE, AND UNTIL THIS LINE EXISTED THE MODEL HAD NO WAY TO KNOW.
   // Reported 2026-08-20: "i asked it to create the chemical structures using the new tools we gave
@@ -1116,6 +1130,10 @@ const NEMESIS_SYSTEM = [
   + "so and give both, naming which document said which. Never average them, never quietly prefer "
   + "one, and never present a contested figure as settled. A disagreement between their own sources "
   + "is information they need, not a mess to tidy away.",
+
+  // Owner 2026-09-03: the board's key-term pills, "extrapolated to the regular chat". One shared
+  // rule (lib/workspace/concept-terms.ts); chat-markdown.tsx draws the link form as a pill.
+  CONCEPT_INSTRUCTION,
 
   "No closing offer to help further, no restating the question back, no unearned enthusiasm, no "
   + "summary of what you are about to say. Never use an em dash. That punctuation mark must not "
@@ -2095,10 +2113,7 @@ export function turnRouterMessages(input: {
     },
     ...(context.materialContext.trim()
       ? [{
-        content:
-          "ATTACHED COURSE OR ASSESSMENT MATERIAL. This is source context, not something the learner "
-          + "said in their message.\n\n"
-          + context.materialContext.trim(),
+        content: MATERIAL_HEADER + "\n\n" + context.materialContext.trim(),
         role: "system" as const,
       }]
       : []),

@@ -6,6 +6,11 @@
 
 import type { NodeProps } from "@xyflow/react";
 import { BookOpen, Check, CircleAlert, FileImage, FileText, LoaderCircle, Plus, StickyNote, X } from "lucide-react";
+
+import { Codicon } from "@/components/desktop-ui/codicon";
+import { OUTPUT_KIND_MARKS } from "@/components/workspace/learn/artifact-card";
+import { KIND_LABELS, MAKING_LABELS } from "@/lib/board/board-deliverables";
+import { docFilename } from "@/lib/export/doc-file";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { IMAGE_SOURCE_MIN_HEIGHT, SOURCE_MIN_HEIGHT } from "@/lib/board/board-layout";
@@ -17,6 +22,11 @@ import { useBoard } from "./board-provider";
 export interface NoteNodeData extends Record<string, unknown> {
   cardId: string;
   noteId: string;
+  isPickedUp?: boolean;
+}
+
+export interface OutputNodeData extends Record<string, unknown> {
+  outputId: string;
   isPickedUp?: boolean;
 }
 
@@ -177,3 +187,67 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
 }
 
 export const SourceCard = memo(SourceCardInner, (a, b) => a.data.sourceId === b.data.sourceId && a.data.isPickedUp === b.data.isPickedUp && a.selected === b.selected);
+
+
+/**
+ * A deliverable on the board: the chat's artifact chip, standing beside the thread it came from.
+ *
+ * Owner 2026-09-03 ("add deliverables to the canvas"). Three states: being made (the maker's own
+ * step line), ready (open it in the reading panel; the same panel the chat opens), failed (the
+ * maker's own reason). What it shows is the chat's `ArtifactCard`, minus the sentence above it.
+ */
+function OutputCardInner({ data, selected }: NodeProps & { data: OutputNodeData }) {
+  const { outputs, openOutput } = useBoard();
+  const output = outputs.find((item) => item.id === data.outputId);
+  if (!output) return null;
+  const mark = OUTPUT_KIND_MARKS[output.kind] ?? { extension: "", icon: "file", label: KIND_LABELS[output.kind], tint: "--ui-kind-blue" };
+  const title = output.output?.title ?? output.topic;
+  const filename = output.output && mark.extension ? docFilename(output.output.title, mark.extension) : title;
+  return (
+    <div
+      className={cn(
+        "group/card relative flex w-full cursor-grab flex-col rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) shadow-sm transition-[color,transform,box-shadow] duration-150 ease-out motion-reduce:transition-none",
+        data.isPickedUp ? "-translate-y-[4px] scale-[1.02] cursor-grabbing shadow-xl" : "active:cursor-grabbing",
+        selected && "ring-2 ring-foreground",
+      )}
+      data-board-output={output.status}
+    >
+      <div className="flex shrink-0 items-center gap-[8px] rounded-t-[16px] px-[16px] py-[10px]">
+        <Codicon className="shrink-0" name={mark.icon} size="16px" style={{ color: `var(${mark.tint})` }} />
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">{mark.label}</span>
+        <span className="rounded-[6px] bg-(--ui-bg-secondary) px-[8px] py-[2px] text-[11px] font-medium uppercase text-(--ui-text-tertiary)">Made here</span>
+      </div>
+      <div className="flex flex-col px-[16px] pb-[12px]">
+        {output.status === "making" && (
+          <div className="flex items-center gap-[8px] py-[8px] text-[14px] text-(--ui-text-secondary)">
+            <LoaderCircle className="size-[16px] shrink-0 animate-spin" />
+            <span className="min-w-0 truncate">{output.progress || MAKING_LABELS[output.kind]}…</span>
+          </div>
+        )}
+        {output.status === "error" && (
+          <div className="flex items-start gap-[8px] rounded-[8px] bg-(--board-error-bg) px-[12px] py-[10px] text-[14px] text-(--board-error-text)">
+            <CircleAlert className="mt-[2px] size-[16px] shrink-0" />
+            <span>{output.error || "This could not be made."}</span>
+          </div>
+        )}
+        {output.status === "ready" && output.output && (
+          <button
+            className="nodrag nopan flex w-full items-center gap-[12px] rounded-[12px] px-[14px] py-[12px] text-left ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
+            onClick={() => openOutput(output.id)}
+            onPointerDown={(event) => event.stopPropagation()}
+            type="button"
+          >
+            <Codicon className="shrink-0" name={mark.icon} size="22px" style={{ color: `var(${mark.tint})` }} />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-[14px] text-foreground">{filename}</span>
+              <span className="text-[12px] text-(--ui-text-quaternary)">{mark.label}</span>
+            </span>
+          </button>
+        )}
+      </div>
+      <NodeHandles target />
+    </div>
+  );
+}
+
+export const OutputCard = memo(OutputCardInner);
