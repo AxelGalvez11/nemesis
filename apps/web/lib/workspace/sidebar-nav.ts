@@ -36,6 +36,16 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   // stay as they were, the same seam as folder/project and plugins/apps above and below.
   { id: "new-canvas", label: "New chat", codicon: "add", route: "/learn" },
   { id: "library", label: "Library", codicon: "library", route: "/library" },
+  // 🔴 A COURSE IS THE THIRD KIND OF THING (owner, 2026-09-04): *"theres is a new type of canvas,
+  // right now theres only chat and canvas."* A chat has no target; a canvas built from uploads has
+  // material but no stated targets; a course arrives with an ordered outline where every section
+  // names what the learner should be able to DO. 186 open courses, 22,452 objectives, every book
+  // CC BY or CC BY-SA with the licence checked per book.
+  { id: "courses", label: "Courses", codicon: "mortar-board", route: "/courses" },
+  // What the learner has actually shown they can do. 🔴 NOT what they have uploaded — the owner's
+  // ruling of 2026-09-03 is that dropping a document adds nothing to this map, because a map grown
+  // from files is a picture of a filesystem. See lib/knowledge/graph.ts.
+  { id: "knowledge", label: "Knowledge", codicon: "type-hierarchy", route: "/knowledge" },
   // A project IS a folder holding canvases — the same `folders` row the sidebar groups under
   // "Projects" and the Library filters by. The page is a place to see them all at once; the
   // sidebar group stays the place to jump into one. Named after the reference's destination

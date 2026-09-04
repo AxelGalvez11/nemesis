@@ -54,6 +54,15 @@
         "cd /private/tmp/nemesis-wt-pricing/apps/web && npx next start -p 3311"
       ],
       "port": 3311
+    },
+    {
+      "name": "courses-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/axelgalvez/Desktop/nemesis-courses/apps/web && npx next dev -p 3244"
+      ],
+      "port": 3244
     }
   ]
 }
