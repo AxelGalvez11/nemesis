@@ -35,29 +35,68 @@ import { useEffect, type RefObject } from "react";
 const AT_BOTTOM_PX = 80;
 
 interface Anchor {
-  /** The block that was at (or across) the top of the viewport. */
+  /** The block that was at the top of the viewport. */
   element: Element;
-  /** Where its top sat relative to the viewport's top. Usually negative — the block is scrolled
-   *  partly out of view — which is what makes the restore exact rather than approximate. */
+  /** Where its top sat relative to the probe line. Usually negative — the block is scrolled partly
+   *  out of view — which is what makes the restore exact rather than approximate. */
   offset: number;
 }
 
 /**
+ * How far below the scroller's top edge to ask "what is here?".
+ *
+ * 🔴 NOT ZERO, AND NOT ARBITRARY. This scroller carries `pt-[48px]` to clear the floating chrome,
+ * so the first 48px of it is padding: a probe at the very top hits the scroller itself, every time.
+ * 56 clears the padding and lands on the first line the learner can actually read.
+ */
+const PROBE_INSET = 56;
+
+/**
  * The block at the top of the viewport, and how far into it we are.
  *
- * 🔴 DIRECT CHILDREN, NOT `[data-thread-turn]`. A turn is the whole exchange and can easily be
- * three screens tall, so anchoring to one restores "somewhere in this answer" — which for a long
- * answer is the same defect at a smaller scale. Every direct child of the scroller is a real
- * boundary, and on this surface that includes the live region and the composer's spacer.
+ * 🔴🔴 `elementFromPoint`, NOT A SCAN OF THE SCROLLER'S CHILDREN, AND THE FIRST VERSION OF THIS
+ * FILE GOT IT WRONG IN EXACTLY THE WAY ITS OWN COMMENT WARNED ABOUT. That version took the first
+ * direct child whose bottom was on screen — and this scroller has THREE direct children, one of
+ * which is the entire conversation. So the anchor was always that one block, "restoring" it was
+ * arithmetically identical to leaving `scrollTop` alone, and the fix shipped and changed nothing.
+ *
+ * Measured on production after that version was live: opening a citation chip took the top of the
+ * viewport from *"FEV₁/FVC ratio: if this drops below about 0.7…"* to *"Happy to help you learn
+ * this…"* — the start of the answer, thousands of pixels back. Exactly the defect it was meant to
+ * remove.
+ *
+ * Asking the browser what is at a point is the only way to get the DEEPEST element there, which is
+ * the paragraph or table row the learner is looking at rather than the container it sits in.
+ *
+ * 🔴 THEN CLIMB OUT OF INLINE ELEMENTS. A `<span>` inside a paragraph is a valid hit but a poor
+ * anchor: inline boxes reflow horizontally, so the same span's top moves to a different line when
+ * the column narrows. The nearest block-level ancestor does not.
  */
 function anchorOf(scroller: HTMLElement): Anchor | null {
-  const top = scroller.getBoundingClientRect().top;
-  for (const element of scroller.children) {
-    const box = element.getBoundingClientRect();
-    // The first block whose BOTTOM is still on screen is the one being read.
-    if (box.bottom > top + 1) return { element, offset: box.top - top };
+  const box = scroller.getBoundingClientRect();
+  if (box.width === 0 || box.height === 0) return null;
+  const probe = box.top + PROBE_INSET;
+
+  let element = document.elementFromPoint(box.left + box.width / 2, probe);
+  // 🔴 A HIDDEN TAB RETURNS NULL, and so does a point over nothing. Falling through to the coarse
+  // scan is better than dropping the anchor: it is the old behaviour, which is at least stable.
+  if (!element || !scroller.contains(element)) {
+    for (const child of scroller.children) {
+      const rect = child.getBoundingClientRect();
+      if (rect.bottom > probe) return { element: child, offset: rect.top - probe };
+    }
+    return null;
   }
-  return null;
+
+  while (
+    element.parentElement &&
+    element !== scroller &&
+    getComputedStyle(element).display.startsWith("inline")
+  ) {
+    element = element.parentElement;
+  }
+  if (element === scroller) return null;
+  return { element, offset: element.getBoundingClientRect().top - probe };
 }
 
 /**
@@ -90,8 +129,8 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
         return;
       }
       if (!anchor || !node.contains(anchor.element)) return;
-      const top = node.getBoundingClientRect().top;
-      const moved = anchor.element.getBoundingClientRect().top - top;
+      const probe = node.getBoundingClientRect().top + PROBE_INSET;
+      const moved = anchor.element.getBoundingClientRect().top - probe;
       // The block has drifted by `moved - offset`; taking that out of scrollTop puts it back.
       node.scrollTop += moved - anchor.offset;
     };
