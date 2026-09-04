@@ -25,12 +25,29 @@ import { supabase } from "@/lib/supabase";
 /** Which shelf a row sits on. The Library's filter is over exactly these. */
 export type OutputKind = "deck" | "slides" | "note";
 
-/** Table and key column per shelf. Kept here so a caller never names a table. */
-const SHELF: Record<OutputKind, { table: string }> = {
-  deck: { table: "study_decks" },
-  note: { table: "readable_library_documents" },
-  slides: { table: "assets" },
+/**
+ * Table, name column and how each shelf disappears. Kept here so a caller never names a table.
+ *
+ * 🔴 THE NAME COLUMN DIFFERS AND THAT IS NOT TIDINESS TO FIX. A deck's is `name`, a note's and a
+ * slide deck's are `title`, because the three tables were built years apart for different surfaces.
+ * Renaming them to agree would touch every reader of all three.
+ *
+ * 🔴🔴 A DECK IS THE ONLY HARD DELETE, AND ITS CARDS GO WITH IT. `study_decks` has no
+ * `deleted` column, and `study_cards` and `deck_shares` both cascade from it (checked against the
+ * live schema 2026-09-04). Notes and slide decks carry `deleted`, so those are recoverable in the
+ * database even though nothing yet offers a way back. The confirmation the learner reads must
+ * follow this column, not the other way round: promising "recoverable" for a deck would be a lie.
+ */
+const SHELF: Record<OutputKind, { table: string; nameColumn: string; soft: boolean }> = {
+  deck: { nameColumn: "name", soft: false, table: "study_decks" },
+  note: { nameColumn: "title", soft: true, table: "readable_library_documents" },
+  slides: { nameColumn: "title", soft: true, table: "assets" },
 };
+
+/** Whether deleting this kind can be undone in the database. Drives what the confirmation says. */
+export function isSoftDeleted(kind: OutputKind): boolean {
+  return SHELF[kind].soft;
+}
 
 /**
  * Move one output into a folder, or out of every folder when `folderId` is null.
@@ -43,6 +60,47 @@ export async function fileOutput(kind: OutputKind, id: string, folderId: string 
   const { error } = await supabase.from(shelf.table).update({ folder_id: folderId }).eq("id", id);
   if (error) {
     console.warn(`[library] filing a ${kind} failed`, error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Give one output a new name.
+ *
+ * 🔴 THE TITLE ONLY, NEVER THE PATH. A note's identity is its `path`, whose leaf carries the
+ * name it was created with, and that path is the address every reader opens it by. Re-pathing on a
+ * rename would have to walk the shared naming rules in `library-note-path.ts` (which a server route
+ * also obeys), race the `(user_id, path)` unique constraint that counts soft-deleted rows, and
+ * break any link already held. The reference does exactly the same thing: their rename PATCHes
+ * `{file_name}` and nothing else. What the learner reads changes; where it lives does not.
+ */
+export async function renameOutput(kind: OutputKind, id: string, name: string): Promise<boolean> {
+  const shelf = SHELF[kind];
+  const trimmed = name.trim().slice(0, 200);
+  if (!trimmed) return false;
+  const { error } = await supabase.from(shelf.table).update({ [shelf.nameColumn]: trimmed }).eq("id", id);
+  if (error) {
+    console.warn(`[library] renaming a ${kind} failed`, error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Remove one output from the Library.
+ *
+ * 🔴 SOFT WHERE THE TABLE ALLOWS IT, HARD WHERE IT DOES NOT, and the caller is told which by
+ * `isSoftDeleted` so the confirmation can say the true thing. Every read on this page already
+ * filters `deleted = false`, so a soft delete leaves the shelf the moment this returns.
+ */
+export async function deleteOutput(kind: OutputKind, id: string): Promise<boolean> {
+  const shelf = SHELF[kind];
+  const { error } = shelf.soft
+    ? await supabase.from(shelf.table).update({ deleted: true }).eq("id", id)
+    : await supabase.from(shelf.table).delete().eq("id", id);
+  if (error) {
+    console.warn(`[library] deleting a ${kind} failed`, error.message);
     return false;
   }
   return true;
