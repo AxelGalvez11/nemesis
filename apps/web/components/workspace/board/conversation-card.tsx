@@ -69,6 +69,10 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
   const cancelButton = useRef<HTMLButtonElement | null>(null);
   const returnFocusTo = useRef<string | null>(null);
   const measuredHeightKnown = useStore((state) => state.nodeLookup.get(data.cardId)?.height !== undefined);
+  /** The camera, as a value: a streaming card re-measures its room whenever the board pans or
+   *  zooms. Verified on production 2026-09-03: the card measured its ceiling while the camera
+   *  was still on the parent, then the camera centred it and it ran on past the composer. */
+  const cameraKey = useStore((state) => state.transform.join(","));
   const { getInternalNode, getZoom } = useReactFlow();
 
   const streaming = card?.status === "streaming";
@@ -110,6 +114,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
 
   useLayoutEffect(() => {
     if (!streaming || heightFixed) return;
+    void cameraKey;
     fitToComposer();
     const composer = document.querySelector("[data-board-composer]");
     const observer = composer && typeof ResizeObserver !== "undefined" ? new ResizeObserver(fitToComposer) : null;
@@ -119,7 +124,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
       observer?.disconnect();
       window.removeEventListener("resize", fitToComposer);
     };
-  }, [fitToComposer, heightFixed, streaming]);
+  }, [fitToComposer, heightFixed, streaming, cameraKey]);
 
   useLayoutEffect(() => {
     if (!streaming && !heightFixed && autoMax === null) fitToComposer();
