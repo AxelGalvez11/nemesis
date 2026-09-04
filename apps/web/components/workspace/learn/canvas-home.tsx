@@ -32,6 +32,7 @@ import { useTheme } from "@/components/theme-provider";
 import { ACCEPTED_MATERIAL } from "@/lib/learn/canvas-tasks";
 import { createReadPool } from "@/lib/learn/read-pool";
 import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
+import { projectFolders } from "@/lib/learn/project-folders";
 import { connectionStatus, NOT_CONFIGURED } from "@/lib/workspace/composio-client";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
@@ -271,7 +272,9 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
   // the sidebar owns the live list. A stale name here costs nothing — the id is what travels.
   useEffect(() => {
     let alive = true;
-    void listFolders(userId).then((rows) => { if (alive) setFolders(rows); });
+    // 🔴 PROJECTS ONLY. This row offers a project to start the chat in, and a Library folder
+    //    is not one.
+    void listFolders(userId).then((rows) => { if (alive) setFolders([...projectFolders(rows)]); });
     return () => { alive = false; };
   }, [userId]);
   /** What the row below the composer shows about connected apps. Read once, same as the folders. */

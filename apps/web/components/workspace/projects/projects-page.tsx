@@ -57,6 +57,7 @@ import {
   type CanvasSummary,
   type Folder,
 } from "@/lib/learn/canvas-store";
+import { projectFolders } from "@/lib/learn/project-folders";
 import { buildProjects, visibleProjects, type ProjectFilter, type ProjectNode } from "./projects-model";
 import { cn } from "@/lib/utils";
 
@@ -260,7 +261,9 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
       return;
     }
     const [nextFolders, nextCanvases] = await Promise.all([listFolders(userId), listCanvases(userId)]);
-    setFolders(nextFolders);
+    // 🔴 PROJECTS ONLY. A folder made on the Library is a place to file documents, not a
+    //    project (owner 2026-09-04). See lib/learn/project-folders.ts.
+    setFolders([...projectFolders(nextFolders)]);
     setCanvases(nextCanvases);
     setLoaded(true);
   }, [preview, userId]);

@@ -80,6 +80,7 @@ import {
   type CanvasSummary,
   type Folder,
 } from "@/lib/learn/canvas-store";
+import { projectFolders } from "@/lib/learn/project-folders";
 import { PAGE_SIZE, searchCanvases, type CanvasSort, type CanvasTable } from "@/lib/library/canvas-index";
 import { cn } from "@/lib/utils";
 
@@ -250,7 +251,8 @@ export function CanvasManager({
   const load = useCallback(async () => {
     setLoading(true);
     const [dirs, result] = await Promise.all([
-      seedFolders ? Promise.resolve(seedFolders) : listFolders(userId),
+      // 🔴 PROJECTS ONLY. This list is the "move this chat to" menu.
+      seedFolders ? Promise.resolve(seedFolders) : listFolders(userId).then((rows) => [...projectFolders(rows)]),
       searchCanvases(userId, { folderId: effectiveScope, page, search, sort }, table),
     ]);
     setFolders(dirs);

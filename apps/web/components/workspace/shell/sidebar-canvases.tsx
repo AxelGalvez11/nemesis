@@ -75,6 +75,7 @@ import {
   type CanvasSummary,
   type Folder,
 } from "@/lib/learn/canvas-store";
+import { projectFolders } from "@/lib/learn/project-folders";
 import { buildProjects, type ProjectNode } from "@/components/workspace/projects/projects-model";
 import { cn } from "@/lib/utils";
 
@@ -195,7 +196,9 @@ export function SidebarCanvases({
     }
     const [nextCanvases, nextFolders] = await Promise.all([listCanvases(userId), listFolders(userId)]);
     setCanvases(nextCanvases);
-    setFolders(nextFolders);
+    // 🔴 PROJECTS ONLY, for the same reason the Projects page filters: the sidebar's Projects
+    //    section must not list a folder the learner made in the Library.
+    setFolders([...projectFolders(nextFolders)]);
   }, [seed, userId]);
 
   useEffect(() => {
