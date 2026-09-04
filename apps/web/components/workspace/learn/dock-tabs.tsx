@@ -94,8 +94,10 @@ export function DockTabs({
   const active = items.find((item) => item.key === activeKey) ?? items[0];
 
   return (
+    // 🔴 THE STRIP FILLS THE LEFT OF THE PANEL'S ONE ROW NOW (`dock-panel.tsx`, 2026-09-04): the
+    // row owns the padding and the height, so the strip is the tabs and nothing around them.
     <div
-      className="scrollbar-none flex h-[32px] w-full shrink-0 items-center gap-[2px] overflow-x-auto px-[6px]"
+      className="scrollbar-none flex h-[28px] w-full items-center gap-[2px] overflow-x-auto"
       data-testid="dock-tabs"
       role="tablist"
     >

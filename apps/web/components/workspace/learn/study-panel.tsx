@@ -30,13 +30,13 @@
 // specificity, so which one wins would depend on stylesheet order.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { cn } from "@/lib/utils";
 
 import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
+import { DockPanel } from "./dock-panel";
 import { DockTabs } from "./dock-tabs";
 import type { DockItem } from "./document-dock";
 import { biggerThan, CHROME, type ReaderMode } from "./reader-chrome";
@@ -132,17 +132,15 @@ export function StudyPanel({
   const [mode, setMode] = useState<ReaderMode>(initialMode);
   // 🔴 THE `study` SLOT, NOT THE READER'S. Same hook and same drag; a different remembered width,
   // because a card is not a document. See the note on DOCK_SLOTS — this was measured on screen.
-  const { dragging, onDragStart, width: dock } = useDockWidth(widthSlot);
+  const { column, dragging, onDragStart, width: dock } = useDockWidth(widthSlot);
   /** Anything that is not the side sheet. */
   const full = mode === "full" || mode === "maximized";
-  /** 🔴 THE RAIL IS COVERED ONLY HERE. `full` deliberately stops at `--nav-column` so Library,
-   *  Projects and the rest stay reachable while a deck is open — the owner's own description of the
-   *  reference: *"you keep the left sidebar and it just leaves the sidebar open."* */
-  const maximized = mode === "maximized";
-
-  // Push the surface by exactly the docked width; claim nothing while full screen (it covers
-  // everything) or while closed (there is nothing beside the canvas).
-  useDeclareSidePanel(open && !full ? dock : 0, dragging);
+  // Push the surface by the panel's column (panel, gap and margin — use-dock-width.ts); claim
+  // nothing while full screen (it covers everything) or while closed (there is nothing beside the
+  // canvas). `full` deliberately stops at `--nav-column` so Library, Projects and the rest stay
+  // reachable while a deck is open — the owner's own description of the reference: *"you keep the
+  // left sidebar and it just leaves the sidebar open."* `DockPanel` draws that.
+  useDeclareSidePanel(open && !full ? column : 0, dragging);
 
   // Escape closes, same as every transient surface on the canvas. Only while open, or a closed
   // panel would eat the key from whatever is actually on screen.
@@ -155,86 +153,56 @@ export function StudyPanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose, open]);
 
-  // 🔴 PORTALLED TO THE BODY, AND WITHOUT IT THE PANEL COLLAPSES INTO A CORNER. `position: fixed`
-  // resolves against the viewport only while no ancestor carries a transform — the canvas animates,
-  // so `right-0` would otherwise mean "the right edge of the pushed canvas". `output-preview.tsx`
-  // records finding this on screen; it is not visible in a diff.
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  useEffect(() => setHost(document.body), []);
-  if (!host) return null;
-
-  return createPortal(
-    <div
-      className={cn(
-        "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
-        maximized ? "left-0 z-[60]" : full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
-        // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
-        // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
-        // and putting it back is how you restart a CSS animation, so releasing the drag handle made
-        // the panel jump to `translateX(4%)` at opacity 0 and slide in again. Watched live on
-        // /dev-preview/exports: the class went true → false on pointerdown → true on pointerup.
-        // The gate was guarding against nothing: this keyframe moves `transform` and `opacity`, not
-        // width, and it has finished long before anybody can reach the handle.
-        "reader-dock-in",
-      )}
-      // 🔴 THE STAMP TRAVELS WITH THE PORTAL, OR EVERY BUTTON IN HERE GOES ACID GREEN. `globals.css`
-      // gives `button:where(:not([data-workspace] *))` a marketing fill, and moving this subtree to
-      // `document.body` takes it out of the workspace scope.
-      data-workspace
-      data-testid="study-panel"
-      role="dialog"
-      style={{ display: open ? undefined : "none", width: full ? undefined : dock }}
-    >
-      {!full && (
-        <div
-          aria-label="Resize the panel"
-          className="absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-(--ui-action)/40"
-          onPointerDown={onDragStart}
-          role="separator"
-        />
-      )}
-      {items && items.length > 0 && onSelectKey && onCloseKey && !full && (
-        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
-      )}
-      <div className={CHROME.header}>
-        {/* Full screen puts the close on the left beside the crumb, docked puts it on the right —
-            the reference's own arrangement, and the same rule `output-preview.tsx` follows. */}
-        {full && (
-          <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
-            <Codicon name="close" size={CHROME.icon} />
+  // 🔴 THE FRAME IS `DockPanel`'S — the portal, the rounded floating panel, the grip and the one
+  // row of tabs-and-controls. This panel decides what is in the row: its tabs (or its name when it
+  // opened on its own from the Library), the caller's actions, the size toggle, close.
+  return (
+    <DockPanel
+      controls={
+        <>
+          {actions}
+          <button
+            aria-label={mode === initialMode ? "Full screen" : "Exit full screen"}
+            className={CHROME.button}
+            data-testid="study-panel-full"
+            // 🔴 AGAINST WHERE IT OPENED, NOT A FIXED PAIR — the same rule the document reader
+            // follows. From a canvas (`docked`) the step up is `full`; from the Library (`full`) it
+            // is `maximized`. One press out, one press back, and the Library can never reach the
+            // side sheet, which is the arrangement the owner reported as wrong.
+            onClick={() => setMode(mode === initialMode ? biggerThan(initialMode) : initialMode)}
+            title={mode === initialMode ? "Full screen" : "Exit full screen"}
+            type="button"
+          >
+            <Codicon name={mode === initialMode ? "screen-full" : "screen-normal"} size={CHROME.icon} />
           </button>
-        )}
-        <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={title}>
-          <span className="text-(--ui-text-quaternary)">{crumb}&nbsp;/&nbsp;</span>
-          {title}
-        </span>
-        {actions}
-        <button
-          aria-label={mode === initialMode ? "Full screen" : "Exit full screen"}
-          className={CHROME.button}
-          data-testid="study-panel-full"
-          // 🔴 AGAINST WHERE IT OPENED, NOT A FIXED PAIR — the same rule the document reader
-          // follows. From a canvas (`docked`) the step up is `full`; from the Library (`full`) it
-          // is `maximized`. One press out, one press back, and the Library can never reach the
-          // side sheet, which is the arrangement the owner reported as wrong.
-          onClick={() => setMode(mode === initialMode ? biggerThan(initialMode) : initialMode)}
-          title={mode === initialMode ? "Full screen" : "Exit full screen"}
-          type="button"
-        >
-          <Codicon name={mode === initialMode ? "screen-full" : "screen-normal"} size={CHROME.icon} />
-        </button>
-        {!full && (
           <button aria-label="Close" className={CHROME.button} data-testid="study-panel-close" onClick={onClose} title="Close" type="button">
             <Codicon name="close" size={CHROME.icon} />
           </button>
-        )}
-      </div>
-      <div className={cn("min-h-0 flex-1 overflow-auto", full && onAsk && ASK_CLEARANCE)}>{children}</div>
+        </>
+      }
+      dragging={dragging}
+      hidden={!open}
+      label={title}
+      mode={mode}
+      onDragStart={onDragStart}
+      tabs={
+        items && items.length > 0 && onSelectKey && onCloseKey ? (
+          <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+        ) : (
+          <span className={cn(CHROME.crumb, "min-w-0 flex-1 pl-[6px]")} title={title}>
+            <span className="text-(--ui-text-quaternary)">{crumb}&nbsp;/&nbsp;</span>
+            {title}
+          </span>
+        )
+      }
+      testId="study-panel"
+      width={dock}
+    >
+      <div className={cn("h-full min-h-0 overflow-auto", full && onAsk && ASK_CLEARANCE)}>{children}</div>
       {/* 🔴 THE SAME BAR THE DOCUMENT READER DRAWS, from the same module — see `reader-ask.tsx`.
           Typing in it cannot grade a card: `review-session.tsx` scopes its Space and 1-4 hotkeys to
           its own subtree while `bare`, and this sits outside it. */}
       {full && onAsk && <ReaderAsk label={title} onAsk={onAsk} />}
-    </div>,
-    host,
+    </DockPanel>
   );
 }

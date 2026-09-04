@@ -37,7 +37,24 @@ export const CHROME = {
   /** 28x28 at radius 8, holding an 18x18 glyph, on a 32px pitch: 28 + gap 4. */
   button: "flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-(--ui-bg-tertiary)",
   icon: "18px",
-  /** 28 + 4 top + 4 bottom = a 36px band. */
+  /**
+   * The panel's ONE row: the open things as tabs on the left, the controls on the right.
+   *
+   * 🔴🔴 ONE ROW, NOT TWO, AND THE NAME ROW IS GONE — owner, 2026-09-04, with ChatGPT's Work pane
+   * on screen: *"i dont want the top bar or the outline comments … i want the multiple tabs too
+   * with the annotation/comment feature"*. Their row is tabs at the left and Open / download /
+   * expand / close at the right, and nothing under it but the document: the tab IS the name. The
+   * 36px name band this replaced said the name a second time under the tab that already said it.
+   *
+   * 28px controls, 8px above and below: 44px. The left padding is 20px because the panel's corner
+   * is a 40px radius (`DOCK_RADIUS`), and at the tab's top edge that curve reaches 15px in.
+   */
+  row: "flex h-[44px] shrink-0 items-center gap-[8px] pb-[8px] pl-[20px] pr-[12px] pt-[8px]",
+  /**
+   * The flush band a full PAGE wears (`deck-view.tsx`, which is a route and not a panel): 28 + 4
+   * top + 4 bottom = 36px. The panels stopped using it on 2026-09-04 when their name row went; a
+   * page has no tabs to name it, so its band still carries the crumb.
+   */
   header: "flex items-center gap-[4px] px-[10px] py-[4px]",
   /** 14px / 400 / 20px line. `--canvas-text-small` IS 14px (see desktop-ui.css), so the size comes
    *  from the scale as §46.3 requires; only the line height needs stating. */
@@ -45,11 +62,47 @@ export const CHROME = {
 } as const;
 
 /**
- * How wide a docked panel is, as a fraction of the viewport.
+ * The docked panel's geometry: a rounded panel floating beside the conversation.
  *
- * 🔴 MEASURED AT 980 OF 1470 = 0.667, NOT CHOSEN. The panel shipped first at 38rem — 608px, a
- * little over a third — which is a different object: a document at that width wraps every line
- * twice and reads as a sidebar rather than as the thing you opened.
+ * 🔴🔴 GEMINI'S CANVAS, MEASURED IN THE OWNER'S OWN ACCOUNT ON 2026-09-04 (viewport 1470x779,
+ * `getBoundingClientRect` and `getComputedStyle`, never a screenshot). He sent the link and said:
+ * *"it has the rounded corners for the side panel. And essentially, this is kind of how I want to
+ * envision the chat to be, where you have like the chat on the left side and you have the right
+ * panel on the right side where you can view like documents and, you know, annotate."*
+ *
+ *   their panel     left 557, top 24, 865 x 707; right margin 48, bottom margin 48
+ *   corner          40px
+ *   edge            1px solid rgba(0, 0, 0, 0.08); no shadow; white
+ *   chat column     449 = ONE THIRD of the 1346 between the rail and the right margin
+ *   panel column    897 = TWO THIRDS, holding a 32px gap and then the panel
+ *   opening         the panel scales from 0.6 to 1 over 500ms on cubic-bezier(0.2, 0, 0, 1),
+ *                   opacity 0 to 1 over the first 200ms; the chat column slides in 20% of its
+ *                   width on the same curve
+ *
+ * 🔴 THIS REVERSES THE 2026-08-25 RULE ("flush: no radius, no shadow, no inset, right edge on the
+ * viewport"), which was ChatGPT's conversation pane measured the same way. The owner chose the
+ * other reference in writing, so the numbers changed and the method did not.
+ *
+ * 🔴 24 ON EVERY SIDE, NOT THEIR 48 ON THE RIGHT. Their 48 pairs with a 24px gutter their whole
+ * window carries; ours carries none, and a panel 48px from the edge beside a rail 0px from it
+ * read as off-centre. The GAP to the conversation is theirs exactly, because that is the number
+ * the eye reads.
+ */
+export const DOCK_MARGIN = 24;
+export const DOCK_GAP = 32;
+export const DOCK_RADIUS = 40;
+/** `--nav-rail-width` in globals.css. The sidebar folds to this when a panel opens (side-panel.tsx). */
+export const NAV_RAIL_WIDTH = 52;
+
+/**
+ * How wide a docked panel's COLUMN is, as a fraction of the space between the rail and the window's
+ * right edge.
+ *
+ * 🔴 MEASURED TWICE AND THE SAME BOTH TIMES: 980 of 1470 in ChatGPT's pane (2026-08-25), and
+ * Gemini's `grid-template-columns: 1fr 2fr` (2026-09-04). The column holds the gap and the panel
+ * (`use-dock-width.ts`), so the conversation keeps its third. The panel shipped first at 38rem,
+ * 608px, a little over a third, which is a different object: a document at that width wraps every
+ * line twice and reads as a sidebar rather than as the thing you opened.
  */
 export const DOCK_FRACTION = 2 / 3;
 

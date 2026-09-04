@@ -23,6 +23,17 @@ const PREVIEW = code("../../components/workspace/learn/output-preview.tsx");
 // import it — which also means these guards now cover both readers instead of one.
 const CHROME = code("../../components/workspace/learn/reader-chrome.ts");
 const SOURCE = code("../../components/workspace/learn/source-preview.tsx");
+// 🔴🔴 THE FRAME MOVED INTO ONE COMPONENT ON 2026-09-04, and the reference changed with it. Owner,
+// with Gemini's canvas and ChatGPT's Work pane on screen: *"i dont want the top bar or the outline
+// comments … i want the multiple tabs too with the annotation/comment feature"*. The three panels
+// (documents, artifacts, study) used to carry their own portal, shell, grip and two rows of chrome,
+// and half of this file existed to keep the copies agreeing. `dock-panel.tsx` owns all of that now:
+// Gemini's rounded floating panel (measured in his account, see `DOCK_*` in reader-chrome.ts) with
+// ChatGPT's one row of tabs-and-controls on top. The guards below that pinned "flush, no radius,
+// close on the left when full" were ChatGPT's conversation pane measured on 2026-08-25; the owner
+// chose the other reference in writing, so the numbers changed and the method did not.
+const FRAME = code("../../components/workspace/learn/dock-panel.tsx");
+const STUDY = code("../../components/workspace/learn/study-panel.tsx");
 
 test("🔴🔴 the docked panel is two thirds of the viewport, measured — not a fixed rem", () => {
   // 980 of 1470. The first version was 38rem (608px, a little over a third), which is a different
@@ -36,7 +47,12 @@ test("🔴🔴 the docked panel is two thirds of the viewport, measured — not 
   // the hook now, so a width dragged on either is the width both open at — two docked readers that
   // resized differently would be two objects.
   const DOCK = code("../../components/workspace/learn/use-dock-width.ts");
-  assert.match(DOCK, /Math\.round\(viewport \* fraction\)/, "the width is not measured from the viewport");
+  // 🔴 TWO NUMBERS SINCE 2026-09-04: the COLUMN (what pushes the conversation) is the fraction of
+  // the space the rail leaves, and the panel's WIDTH is that column less Gemini's 32px gap and 24px
+  // margin. One number would either glue the panel to the edge or push the conversation too far.
+  assert.match(DOCK, /Math\.round\(Math\.max\(0, viewport - NAV_RAIL_WIDTH\) \* fraction\)/, "the column is not measured from the space the rail leaves");
+  assert.match(DOCK, /width: Math\.max\(0, column - DOCK_GAP - DOCK_MARGIN\)/, "the panel's width no longer leaves the gap and the margin");
+  assert.match(DOCK, /const \{ column, width \} = dockGeometry\(viewport, fraction\)/, "the hook stopped using the pure geometry");
   assert.match(DOCK, /window\.addEventListener\("resize", measure\)/, "the width does not follow a resize");
   // 🔴 THE FRACTION PERSISTS, NOT THE PIXELS. A panel dragged wide on a large monitor would
   // otherwise cover the whole canvas on a laptop; the proportion is what the learner chose.
@@ -44,7 +60,7 @@ test("🔴🔴 the docked panel is two thirds of the viewport, measured — not 
   assert.ok(!/setItem\([^)]*width/i.test(DOCK), "pixels are being stored instead of the fraction");
   for (const [name, source] of [["output-preview", PREVIEW], ["source-preview", SOURCE]] as const) {
     assert.match(source, /useDockWidth\(\)/, `${name}: the reader measures its own width instead of sharing the hook`);
-    assert.match(source, /cursor-col-resize/, `${name}: the panel cannot be resized`);
+    assert.match(source, /onDragStart=\{onDragStart\}/, `${name}: the panel cannot be resized`);
     // 🔴 NOT PINNED TO THE ARGUMENT: the artifact reader passes 0 while full-screen, which is
     // correct — full screen covers everything and pushes nothing. What matters is that it declares.
     assert.match(source, /useDeclareSidePanel\(/, `${name}: the panel covers the canvas instead of pushing it`);
@@ -62,20 +78,46 @@ test("🔴🔴 the docked panel is two thirds of the viewport, measured — not 
     // did apply to every intermediate width a drag produces. Measured with the old rule forced back
     // on: the conversation's right edge sat 400px, 250px and 100px inside the panel through a
     // three-step drag. `useSidePanelLive` publishes the drag so the surface can follow instead.
-    assert.match(source, /^\s*"reader-dock-in",$/m, `${name}: the entrance is conditional again, so it will replay after a resize`);
-    assert.ok(!/!dragging && "reader-dock-in"/.test(source), `${name}: the drag re-arms the entrance animation`);
     assert.match(source, /useDeclareSidePanel\([^)]*, dragging\)/, `${name}: the surface is never told the panel is being dragged`);
+    // 🔴 BY THE COLUMN, never the panel's width: the conversation's edge must land a gap before
+    // the panel's, not under it.
+    assert.match(source, /useDeclareSidePanel\([^)]*\? column : 0, dragging\)/, `${name}: the conversation is pushed by the panel's width instead of its column`);
   }
+  // 🔴🔴 THE ENTRANCE IS UNCONDITIONAL, IN THE FRAME. It used to be `!dragging && "reader-dock-in"`
+  // in each panel, which replayed the entrance on every release of the grip (owner, 2026-09-01:
+  // *"there also seems to be flickering"*): taking a class off and putting it back restarts a CSS
+  // animation. The frame's class is a literal, and nothing can toggle it.
+  assert.match(FRAME, /"dock-panel-in overflow-hidden border/, "the arrival is no longer the frame's own class");
+  assert.match(FRAME, /cursor-col-resize/, "the frame lost its grip");
+  assert.ok(!/dragging && "dock-panel-in"/.test(FRAME), "the drag re-arms the entrance animation");
 });
 
-test("🔴 flush: no radius, no shadow, no inset, right edge on the viewport", () => {
-  // The reference has none of those. A rounded card with a shadow reads as something laid ON the
-  // page; this has to read as part of it.
-  assert.match(PREVIEW, /fixed inset-y-0 right-0 z-50 flex flex-col/, "the panel is not flush to the edge");
-  assert.ok(!/rounded-2xl/.test(PREVIEW), "the panel is a rounded card again");
-  assert.ok(!/shadow-xl/.test(PREVIEW), "the panel floats above the page again");
+test("🔴🔴 floating: Gemini's 24px margins, 40px corner, hairline edge, no shadow, and one row on top", () => {
+  // 🔴 THIS REVERSES "flush: no radius, no shadow, no inset" (2026-08-25, ChatGPT's pane). Owner,
+  // 2026-09-04, of Gemini's canvas: *"it has the rounded corners for the side panel … this is kind
+  // of how I want to envision the chat to be."* Measured in his account: the panel at top 24 with
+  // a 40px corner, `1px solid rgba(0,0,0,0.08)`, `box-shadow: none`, and the chat column one third
+  // of the space between the rail and the margin with a 32px gap to the panel.
+  assert.match(CHROME, /export const DOCK_MARGIN = 24;/, "the margin is not Gemini's 24");
+  assert.match(CHROME, /export const DOCK_GAP = 32;/, "the gap to the conversation is not Gemini's 32");
+  assert.match(CHROME, /export const DOCK_RADIUS = 40;/, "the corner is not Gemini's 40");
+  assert.match(FRAME, /borderRadius: DOCK_RADIUS,\s*bottom: DOCK_MARGIN,\s*right: DOCK_MARGIN,\s*top: DOCK_MARGIN,/, "the docked frame is not the measured floating panel");
+  assert.match(FRAME, /border border-\(--ui-stroke-tertiary\)/, "the hairline edge is gone");
+  assert.ok(!/shadow-xl|shadow-lg|shadow-md/.test(FRAME), "the panel floats on a shadow, which Gemini's does not");
+  // 🔴 ONE ROW, TABS LEFT, CONTROLS RIGHT, AND NOTHING UNDER IT BUT THE BODY. ChatGPT's Work pane,
+  // from the owner's own screenshots: no name bar (the tab is the name), no outline, no comments
+  // rail.
+  assert.match(FRAME, /<div className=\{CHROME\.row\} data-testid="dock-panel-row">/, "the row is not the shared one");
+  assert.match(CHROME, /row: "flex h-\[44px\] shrink-0 items-center gap-\[8px\] pb-\[8px\] pl-\[20px\] pr-\[12px\] pt-\[8px\]"/, "the row is not 44px starting 20px in");
+  for (const [name, source] of [["output-preview", PREVIEW], ["source-preview", SOURCE], ["study-panel", STUDY]] as const) {
+    assert.ok(!/CHROME\.header/.test(source), `${name}: a name band is back under the tabs`);
+    assert.ok(!/fixed inset-y-0 right-0/.test(source), `${name}: the panel writes its own flush shell again`);
+    assert.ok(!/createPortal\(/.test(source), `${name}: the panel portals itself instead of through the frame`);
+    assert.match(source, /<DockPanel/, `${name}: the panel does not wear the shared frame`);
+  }
   // 🔴 AND NO OUTSIDE-PRESS CATCHER. A panel owning two thirds of the window must not vanish
   // because somebody clicked the conversation beside it.
+  assert.ok(!/onMouseDown=\{\(event\) =>/.test(FRAME), "an outside press can dismiss the docked panel again");
   assert.ok(!/onMouseDown=\{\(event\) =>/.test(PREVIEW), "an outside press can dismiss the docked panel again");
 });
 
@@ -109,20 +151,38 @@ test("🔴 the header is the measured one: 28x28 buttons, 8px radius, 18px glyph
   }
 });
 
-test("🔴🔴 close is on the RIGHT when docked and on the LEFT when full, as the reference has it", () => {
-  // Measured: x=193 beside the breadcrumb in the Library reader, far right in the conversation
-  // panel. The control nearest the content is the one that dismisses it.
-  assert.match(PREVIEW, /\{full && \(\s*<button aria-label="Close"/, "full screen does not put the close on the left");
-  assert.match(PREVIEW, /\{!full && \(\s*<button aria-label="Close"/, "the docked panel does not put the close on the right");
-  // And the three controls the reference carries, in its order — measured left to right at
-  // x=1342, 1382, 1422, a 40px pitch.
-  //
-  // 🔴 THE RIGHT-HAND GROUP ONLY. My first version searched the whole header, where the full-screen
-  // branch's close sits BEFORE the download in source order, so the check failed on correct markup.
-  // The order that matters is the one inside the group that is actually right-aligned.
-  const group = PREVIEW.slice(PREVIEW.indexOf("min-w-0 flex-1"), PREVIEW.indexOf("min-h-0 flex-1 overflow-auto"));
+test("🔴🔴 the panel arrives the way Gemini's does, and stands still under reduced motion", () => {
+  // Read off Gemini's own Web Animations in the owner's account on 2026-09-04 (`Element.prototype
+  // .animate` hooked while the canvas opened): the panel scales from 0.6 to 1 over 500ms on
+  // cubic-bezier(0.2, 0, 0, 1), its opacity 0 to 1 over the first 200ms. Filmed headless after
+  // building it: 0.60 at 76ms, 0.88 at 210ms, 0.99 at 476ms, `none` at 609ms, opacity 1 by 276ms.
+  const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.dock-panel-in \{\s*animation: dock-panel-in 500ms cubic-bezier\(0\.2, 0, 0, 1\);\s*transform-origin: center;/, "the arrival is not Gemini's 500ms scale from the centre");
+  assert.match(css, /@keyframes dock-panel-in \{\s*from \{ transform: scale\(0\.6\); opacity: 0; \}\s*40% \{ opacity: 1; \}/, "the arrival does not start at 0.6 or fade in over the first 200ms");
+  // 🔴 THE LAYOUT STILL MOVES ON THE ONE 220ms CLOCK. Filmed: the conversation narrowed from 1418
+  // to 473 between 76ms and 276ms while the panel was still growing into its box; a box that
+  // took 500ms would leave the two edges of one seam apart for 280ms.
+  assert.match(css, /\.canvas-exit-out \{ animation-duration: 1ms; \}/, "the reduced-motion block moved and this guard reads the wrong one");
+  // 🔴 IN THE CANVAS BLOCK'S OWN SELECTOR LIST, NOT A NEW BLOCK AT THE END: canvas-motion.test.ts
+  // reads the LAST reduced-motion query in the stylesheet, and a fresh block appended for this one
+  // class would become that last one and make every other rule in the old block read as unguarded.
+  const reduced = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+  const list = reduced.slice(0, reduced.indexOf("animation: none;"));
+  assert.ok(list.includes(".reader-dock-in,") && list.includes(".dock-panel-in,"), "the panel still scales in for someone who asked the system to stop moving, or it was guarded in a block of its own");
+});
+
+test("🔴🔴 close is on the RIGHT at every size, last in the row", () => {
+  // 🔴 THIS REVERSES "close on the LEFT when full" (2026-08-25, ChatGPT's Library reader with its
+  // breadcrumb). There is no crumb in the row any more (owner, 2026-09-04: *"i dont want the top
+  // bar"*), so there is nowhere on the left for a close to sit beside, and a control that moves
+  // between two ends of the panel depending on its size is one a learner looks for twice.
+  assert.ok(!/\{full && \(\s*<button aria-label="Close"/.test(PREVIEW), "full screen puts a close on the left again");
+  assert.ok(!/\{!full && \(\s*<button aria-label="Close"/.test(PREVIEW), "the close is conditional on the size again");
+  // And the three controls in their order — measured left to right at x=1342, 1382, 1422 on the
+  // 2026-08-25 reference, and the same order at the right end of ChatGPT's Work row.
+  const group = PREVIEW.slice(PREVIEW.indexOf("const controls = ("), PREVIEW.indexOf("<DockPanel"));
   const order = ["Download", "Full screen", "Close"].map((label) => group.indexOf(label));
-  assert.ok(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1]!)), "the header controls are not Download, Full screen, Close");
+  assert.ok(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1]!)), "the row's controls are not Download, Full screen, Close");
 });
 
 test("🔴 the two surfaces differ by where they are opened from", () => {
@@ -218,17 +278,17 @@ test("🔴🔴 all three opened artifacts wear ONE header band", () => {
   //
   // 🔴 THE CHECK IS THAT THEY IMPORT THE SAME NUMBERS, NOT THAT THEY LOOK ALIKE. Three files can
   // each measure 47px today and drift the first time one is adjusted; one module cannot.
+  // 🔴 REPOINTED 2026-09-04: the two PANELS wear `DockPanel`'s one row now and have no band of
+  // their own; the deck PAGE (a route, with no tabs to name it) keeps the flush band and the crumb.
   const view = code("../../components/workspace/deck/deck-view.tsx");
-  for (const [name, source] of [
-    ["output-preview", PREVIEW],
-    ["study-panel", code("../../components/workspace/learn/study-panel.tsx")],
-    ["deck-view", view],
-  ] as const) {
-    assert.match(source, /reader-chrome"/, `${name}: this surface measures its own header instead of importing CHROME`);
-    assert.match(source, /className=\{CHROME\.header\}|CHROME\.header\)/, `${name}: the header band is not the shared one`);
-    assert.match(source, /CHROME\.crumb/, `${name}: the title is not drawn as the shared crumb`);
-    assert.match(source, /CHROME\.button/, `${name}: the header controls are not the shared 36px squares`);
+  for (const [name, source] of [["output-preview", PREVIEW], ["study-panel", STUDY]] as const) {
+    assert.match(source, /reader-chrome"/, `${name}: this surface measures its own controls instead of importing CHROME`);
+    assert.match(source, /<DockPanel/, `${name}: the panel does not wear the shared frame`);
+    assert.match(source, /CHROME\.button/, `${name}: the row's controls are not the shared 28px squares`);
   }
+  assert.match(view, /className=\{cn\("dk-print-hide border-b border-\(--ui-stroke-tertiary\)", CHROME\.header\)\}/, "deck-view: the page's band is not the shared one");
+  assert.match(view, /CHROME\.crumb/, "deck-view: the title is not drawn as the shared crumb");
+  assert.match(view, /CHROME\.button/, "deck-view: the controls are not the shared squares");
   assert.ok(!/px-4 py-2/.test(view), "the deck page went back to its own padding, which is 18px and 9px here");
   // 🔴 AND IT HAS A WAY OUT NOW. It is a PAGE, so before this the only exit was the browser's own
   // back button — and `router.back()` alone does nothing at all on a pasted URL.
@@ -253,17 +313,16 @@ test("🔴🔴 flashcards and the check open in the side panel, with full screen
   // The same geometry as the document reader, from the same module — never a second set of numbers.
   assert.match(panel, /from "\.\/reader-chrome"/, "the study panel measures itself instead of importing CHROME");
   assert.match(panel, /useDockWidth/, "the study panel cannot be resized like the readers beside it");
-  assert.match(panel, /fixed inset-y-0 right-0/, "the study panel is not docked to the right edge");
-  assert.match(panel, /createPortal\(/, "the panel is not portalled — `fixed` will resolve against the canvas");
-  assert.match(panel, /data-workspace/, "the portal left the workspace scope and the global button rule owns it");
+  assert.match(panel, /<DockPanel/, "the study panel is not docked in the shared frame");
+  assert.match(FRAME, /createPortal\(/, "the frame is not portalled — `fixed` will resolve against the canvas");
+  assert.match(FRAME, /data-workspace/, "the portal left the workspace scope and the global button rule owns it");
   // 🔴🔴 FULL SCREEN IS THE MAIN COLUMN, NOT THE VIEWPORT (2026-09-01). Owner, of the reference's
   // library: *"you keep the left sidebar and it just leaves the sidebar open and it'll just have
   // the document viewer in there."* Measured in his Chrome the same day: their viewer spans x=260
   // to the right edge while the 260px sidebar is untouched. `--nav-column` is published on
   // `documentElement` by the shell, because these panels are portalled to `document.body` and are
   // outside the scope `SHELL_VARS` are set on.
-  assert.match(panel, /full \? "left-\[var\(--nav-column,0px\)\]"/, "the panel covers the sidebar again");
-  assert.match(PREVIEW, /full \? "left-\[var\(--nav-column,0px\)\]"/, "the reader covers the sidebar again");
+  assert.match(FRAME, /: "inset-y-0 right-0 left-\[var\(--nav-column,0px\)\]"/, "full screen covers the sidebar again");
   const shell = code("../../components/workspace/shell/workspace-shell.tsx");
   assert.match(shell, /document\.documentElement\.style\.setProperty\("--nav-column", column\)/, "the shell stopped publishing the column a portal can read");
   assert.match(shell, /narrowViewport\s*\?\s*"0px"/, "a phone's reader now leaves a gutter for an overlay sidebar");
@@ -271,7 +330,8 @@ test("🔴🔴 flashcards and the check open in the side panel, with full screen
 
   // 🔴🔴 CLOSED HIDES, IT DOES NOT UNMOUNT. A learner four questions into a check who closes the
   // panel must find those four answers when they reopen it. This is the line that guarantees it.
-  assert.match(panel, /display: open \? undefined : "none"/, "closing the panel now discards what is inside it");
+  assert.match(panel, /hidden=\{!open\}/, "closing the panel now discards what is inside it");
+  assert.match(FRAME, /display: hidden \? "none" : undefined/, "the frame unmounts instead of hiding");
   assert.match(canvas, /open=\{checkOpen\}/, "the check panel does not follow its own open flag");
   assert.doesNotMatch(canvas, /checkOpen && \(\s*<StudyPanel/, "the check is unmounted when the panel closes, losing the learner's answers");
 
@@ -303,7 +363,8 @@ test("🔴🔴 flashcards and the check open in the side panel, with full screen
   // The panel reads the shared three-size model now; landing is still the door's call.
   assert.match(panel, /useState<ReaderMode>\(initialMode\)/, "the panel ignores where it was told to land");
   assert.match(panel, /setMode\(mode === initialMode \? biggerThan\(initialMode\) : initialMode\)/, "the deck's size toggle stopped keying on where it opened");
-  assert.match(panel, /maximized \? "left-0 z-\[60\]" : full \? "left-\[var\(--nav-column,0px\)\]"/, "the deck panel lost the third size, so exiting full screen docks it again");
+  assert.match(panel, /mode=\{mode\}/, "the deck panel does not hand its size to the frame");
+  assert.match(FRAME, /mode === "maximized"\s*\? "inset-0 z-\[60\]"/, "the frame lost the third size, so exiting full screen docks it again");
   const library = code("../../components/workspace/library/library-outputs.tsx");
   assert.doesNotMatch(library, /<DeckReview[\s\S]{0,140}surface="full"/, "the Library took the chrome-less full-screen path instead of the panel's own");
   // 🔴 REPOINTED 2026-09-03: the mount carries the document's toolbar now, so the two props are no
@@ -333,8 +394,9 @@ test("🔴🔴 the portal carries `data-workspace`, or every control in it goes 
   // against the canvas's transformed ancestor — and leaving the workspace scope handed the global
   // rule every header button. Measured `rgb(64,64,64)` filled pills against the reference's
   // transparent squares.
-  assert.match(PREVIEW, /createPortal\(/, "the reader is not portalled — `fixed` will resolve against the canvas");
-  assert.match(PREVIEW, /data-workspace/, "the portal left the workspace scope and the global button rule owns it");
+  assert.match(FRAME, /createPortal\(/, "the frame is not portalled — `fixed` will resolve against the canvas");
+  assert.match(FRAME, /data-workspace/, "the portal left the workspace scope and the global button rule owns it");
+  assert.match(PREVIEW, /<DockPanel/, "the reader does not go through the frame");
 });
 
 test("🔴🔴 the room an artifact sits in is neutral, never an accent fill", () => {
@@ -358,7 +420,7 @@ test("🔴🔴 the room an artifact sits in is neutral, never an accent fill", (
   assert.ok(!/flex-col bg-\(--ui-bg-(primary|secondary|tertiary|quaternary)\)/.test(deck), "the deck room is an accent fill again");
   // The document/PDF reader was already neutral and has to stay that way: measured
   // `color(srgb 0.9915 …)` = rgb(253, 253, 253) for the panel, pure white for the sheet.
-  assert.match(PREVIEW, /flex flex-col bg-\(--ui-bg-elevated\)/, "the reader panel is no longer the neutral elevated ground");
+  assert.match(FRAME, /flex flex-col bg-\(--ui-bg-elevated\)/, "the reader panel is no longer the neutral elevated ground");
   // 🔴 THE CAP IS NAMED HERE because it sits between `w-full` and `bg-white`, and this assertion
   // used to read the two as adjacent — which made a width fix look like a colour regression.
   assert.match(PREVIEW, /mx-auto w-full max-w-\[816px\] bg-white /, "the sheet is no longer white");
@@ -400,8 +462,8 @@ test("🔴🔴 there are THREE sizes, and full screen stops at the rail while ma
   assert.match(chrome, /export type ReaderMode = "docked" \| "full" \| "maximized"/, "the third size is gone");
   assert.ok(!/type Mode = "docked"/.test(reader), "the reader defined its own copy of the size model again");
   assert.match(
-    reader,
-    /maximized \? "left-0 z-\[60\]" : full \? "left-\[var\(--nav-column,0px\)\]"/,
+    FRAME,
+    /mode === "maximized"\s*\? "inset-0 z-\[60\]"\s*: "inset-y-0 right-0 left-\[var\(--nav-column,0px\)\]"/,
     "full screen stopped stopping at the rail, or maximized stopped covering it",
   );
 

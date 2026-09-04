@@ -164,6 +164,11 @@ export function CommentLayer({
           boxesDrawable={boxesDrawable}
           commenting={commenting}
           comments={roots.filter((comment) => comment.resolvedAt === null && (comment.unit ?? 1) === unit)}
+          // 🔴 THE PIN IS ON THE PAGE WHILE THE NOTE IS STILL BEING TYPED, numbered as it will be.
+          // Owner, 2026-09-04, with ChatGPT's Work pane on screen: a numbered pin at the spot and
+          // the "Add a comment…" bubble beside it. Before this the spot was invisible until the
+          // note landed, so a learner typing into a box could not see what it was about.
+          draft={draft && draft.unit === unit ? { anchor: draft.anchor, ordinal: roots.length + 1 } : null}
           element={element}
           key={unit}
           onOpenThread={(comment, at) => {
@@ -226,6 +231,7 @@ function UnitSurface({
   boxesDrawable,
   commenting,
   comments,
+  draft,
   element,
   onOpenThread,
   onTake,
@@ -236,6 +242,8 @@ function UnitSurface({
   boxesDrawable: boolean;
   commenting: boolean;
   comments: readonly DocumentComment[];
+  /** A note being written on this unit: where it points and the number it will wear. */
+  draft: { anchor: CommentAnchor; ordinal: number } | null;
   element: HTMLElement;
   onOpenThread: (comment: DocumentComment, at: { left: number; top: number }) => void;
   onTake: (spot: CommentDraftSpot) => void;
@@ -300,10 +308,32 @@ function UnitSurface({
       {comments.map((comment) => (
         <SavedMark comment={comment} element={element} key={comment.id} onOpen={onOpenThread} ordinal={ordinals.get(comment.id) ?? 0} />
       ))}
+      {draft && (
+        <MarkAt
+          anchor={draft.anchor}
+          element={element}
+          pin={
+            <span aria-hidden className={cn(PIN, "pointer-events-none")} data-testid="reader-comment-pin-draft">
+              {draft.ordinal}
+            </span>
+          }
+        />
+      )}
     </>,
     element,
   );
 }
+
+/**
+ * The numbered pin: a speech bubble, 24px, in the accent, its tail at the spot.
+ *
+ * 🔴 24px, UP FROM 18, AND WITH A TAIL — owner, 2026-09-04, pointing at ChatGPT's Work pane: the pin
+ * there is a green speech bubble with its number inside, big enough to read as a marker on the
+ * page rather than a dot on it. The tail is the one corner left square (`rounded-bl`), which is
+ * the whole of what makes a circle read as "someone said something here".
+ */
+const PIN =
+  "grid size-[24px] place-items-center rounded-[12px] rounded-bl-[3px] bg-(--ui-action) text-[0.6875rem] font-semibold leading-none text-(--ui-action-glyph) shadow-sm ring-2 ring-(--ui-bg-elevated)";
 
 /** A saved comment on the page: its box when it has one, and its numbered pin. */
 function SavedMark({
@@ -326,7 +356,7 @@ function SavedMark({
   const pin = (
     <button
       aria-label={`Comment ${ordinal}`}
-      className="pointer-events-auto grid size-[18px] place-items-center rounded-full bg-(--ui-action) text-[0.625rem] font-semibold text-(--ui-action-glyph) shadow-sm ring-2 ring-(--ui-bg-elevated) transition-transform hover:scale-110"
+      className={cn(PIN, "pointer-events-auto transition-transform hover:scale-110")}
       data-testid={`reader-comment-pin-${ordinal}`}
       onClick={open}
       onPointerDown={(event) => event.stopPropagation()}
@@ -336,33 +366,39 @@ function SavedMark({
     </button>
   );
 
-  if (comment.anchor.box) {
-    const { box } = comment.anchor;
+  return <MarkAt anchor={comment.anchor} element={element} pin={pin} />;
+}
+
+/** A pin placed where an anchor points: on a drawn box's corner, beside a block, or at a point. */
+function MarkAt({ anchor, element, pin }: { anchor: CommentAnchor; element: HTMLElement; pin: React.ReactNode }) {
+  if (anchor.box) {
+    const { box } = anchor;
     return (
       <div
         className="pointer-events-none absolute z-30 rounded-[6px] border-2 border-(--ui-action) bg-(--ui-action)/10"
         style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }}
       >
-        <div className="absolute -right-2 -top-2">{pin}</div>
+        <div className="absolute -right-3 -top-3">{pin}</div>
       </div>
     );
   }
 
-  if (comment.anchor.block !== undefined) {
+  if (anchor.block !== undefined) {
     // The pin lives inside the BLOCK's own box, so a reflow moves them together. The portal
     // target is the block element, which the view stamped `relative` for exactly this.
     // 🔴 A <span>, because the block is often a <p> and a <div> inside one is invalid HTML —
     // React flags it as a hydration hazard in the console, and it was found there, not here.
-    const block = element.querySelector<HTMLElement>(`[data-comment-block="${comment.anchor.block}"]`);
+    const block = element.querySelector<HTMLElement>(`[data-comment-block="${anchor.block}"]`);
     if (!block) return null;
-    return createPortal(<span className="absolute -left-7 top-0 z-30 block">{pin}</span>, block);
+    return createPortal(<span className="absolute -left-8 top-0 z-30 block">{pin}</span>, block);
   }
 
-  const x = comment.anchor.x;
-  const y = comment.anchor.y;
+  const x = anchor.x;
+  const y = anchor.y;
   if (x === undefined || y === undefined) return null;
+  // The TAIL is at the spot: the bubble stands up and to the right of the point it is about.
   return (
-    <div className="absolute z-30 -translate-x-1/2 -translate-y-1/2" style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>
+    <div className="absolute z-30 -translate-y-full" style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>
       {pin}
     </div>
   );
@@ -418,17 +454,20 @@ function CommentNote({
   const ready = body.trim().length > 0;
 
   return (
+    // 🔴 THE BUBBLE — owner, 2026-09-04, pointing at ChatGPT's Work pane: a rounded "Add a comment…"
+    // box beside the pin. Rounder than the card it was (18px, not 10) and worded as theirs is; the
+    // two destinations under it are the product's own (Claude Design's split) and stay.
     <div
-      className="fixed z-[130] w-[334px] rounded-[10px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3 shadow-xl"
+      className="fixed z-[130] w-[334px] rounded-[18px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3 shadow-xl"
       data-testid="reader-comment-note"
       ref={boxRef}
       style={position ? position : { left: -9999, top: -9999 }}
     >
       <textarea
         autoFocus
-        className="min-h-[72px] w-full resize-none rounded-[6px] border border-(--ui-stroke-tertiary) bg-transparent px-2.5 py-2 text-[0.8125rem] leading-relaxed outline-none focus:border-(--ui-action)"
+        className="min-h-[72px] w-full resize-none rounded-[12px] border border-(--ui-stroke-tertiary) bg-transparent px-3 py-2 text-[0.8125rem] leading-relaxed outline-none focus:border-(--ui-action)"
         onChange={(event) => setBody(event.target.value)}
-        placeholder="Say what this spot needs…"
+        placeholder="Add a comment…"
         value={body}
       />
       <div className="mt-2 flex items-center justify-end gap-1.5">

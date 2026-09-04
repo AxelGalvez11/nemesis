@@ -184,7 +184,9 @@ test("🔴 the sidebar carries the same controls whatever kind of thing is in it
   assert.match(document_, /await state\.source\.resolveUrl\(\)/u, "the document download stopped minting a fresh url");
   // 🔴 AND FULL SCREEN PUSHES NOTHING. It covers the surface, so claiming an inset for it would
   // reserve a column beside something already filling the window.
-  assert.match(document_, /useDeclareSidePanel\(active && !full \? width : 0, dragging\)/u,
+  // 🔴 BY THE COLUMN SINCE 2026-09-04: the panel floats a gap and a margin from the conversation
+  // (dock-panel.tsx), and the conversation is pushed by all of it, never by the panel's width alone.
+  assert.match(document_, /useDeclareSidePanel\(active && !full \? column : 0, dragging\)/u,
     "full screen still pushes the conversation aside");
 
   // 🔴 COMMENT IS THE ONE THAT IS NOT DUPLICATED, AND THAT IS THE POINT OF THIS CLAUSE. A
