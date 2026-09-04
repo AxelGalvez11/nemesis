@@ -341,7 +341,13 @@ test("🔴🔴 there is no 'Now' mark, and the way back to live is still there",
   // when sidebar is open."* The rail is pinned to the RIGHT EDGE and the panel covers that edge, so
   // the two were stacked — a column of markers painted underneath a document. Same reasoning §38.1
   // uses for the nav rail inside a canvas: a surface that owns the screen owns the edges too.
-  assert.match(RAIL_CODE, /if \(entries\.length === 0 \|\| inset > 0\) return null;/, "an empty history still paints a rail, or a docked reader no longer hides it");
+  // 🔴 REPOINTED AGAIN 2026-09-04, FROM `entries` TO `shown`, AND THE CHECK GOT STRICTER RATHER
+  // THAN LOOSER. The rail draws only the learner's own prompt bubbles now (owner: *"it should only
+  // show the bubble prompts"*), so a canvas that holds moments but none the learner spoke in — an
+  // attachment dropped and nothing asked yet — would have passed the old spelling while painting
+  // an empty column with a live hover target on it. Reading the FILTERED list is the only version
+  // of this assertion that still means "there is nothing to show, so show nothing".
+  assert.match(RAIL_CODE, /if \(shown\.length === 0 \|\| inset > 0\) return null;/, "an empty history still paints a rail, or a docked reader no longer hides it");
   assert.match(RAIL_CODE, /const inset = useSidePanelInset\(\);/, "the rail is reading something other than the panel's own inset");
   const view = readFileSync(new URL("./canvas-history-view.tsx", import.meta.url), "utf8");
   assert.match(view, /Return to now/, "🔴 nothing returns the learner to live — the rail's Now is gone too");
@@ -417,6 +423,58 @@ test("🔴🔴 the two rails are ONE family, pinned to each other rather than to
     assert.match(RAIL_CODE, shared, `the history panel dropped a shape the document panel still has: ${shared.source}`);
     assert.match(doc, shared, `the document panel dropped a shape this guard pairs them on: ${shared.source}`);
   }
+});
+
+test("🔴🔴 the panel is not a card, and it is not transparent either", () => {
+  // Owner, 2026-09-04, circling the open panel: *"remove that grayish outline there."* It was
+  // `bg-(--ui-bg-elevated)` with `shadow-lg` and a `ring-1` — a lifted grey rectangle down the
+  // right edge of a near-black page. Measured on production before the change: background
+  // `color(srgb 0.129412 …)` against a page painting `color(srgb 0 0 0)`, plus a 1px ring and a
+  // 36px shadow. After: background `color(srgb 0 0 0)`, `box-shadow: none`, and the same in light
+  // (`0.990824` panel on `0.990824` page).
+  const at = RAIL_CODE.indexOf("data-canvas-history-panel");
+  // 🔴 CLAMPED. `RAIL_CODE` is comment-stripped, so this attribute sits ~2000 chars in and a bare
+  // subtraction goes negative — which `slice` reads as an offset from the END and returns nothing.
+  // The check then fails as "the panel moved" while the panel is exactly where it was.
+  const panel = at < 0 ? "" : RAIL_CODE.slice(Math.max(0, at - 2600), at);
+  assert.ok(panel.length > 0, "the panel moved; re-point this check");
+  const code = panel.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/bg-\(--ui-bg-elevated\)/.test(code), "the panel is a lifted grey card again");
+  assert.ok(!/shadow-lg/.test(code), "the panel grew a shadow again");
+  assert.ok(!/ring-1/.test(code), "the panel grew an outline again");
+  // 🔴 AND IT MUST STAY OPAQUE. The panel is 287px against the right edge and the reading column is
+  // centred: they clear each other at 1470px but overlap by ~93px at 1280, and more as the window
+  // narrows. Transparent would lay this list on top of the answer's own words. `--ui-bg-editor` is
+  // what the canvas paints, so it is invisible where there is nothing under it and still covers
+  // what there is. Measured both themes: panel and page report the identical colour.
+  assert.match(code, /bg-\(--ui-bg-editor\)/, "the panel stopped painting the page's own ground — it is now see-through over the answer");
+});
+
+test("🔴🔴 the rail shows the learner's own prompts and nothing else", () => {
+  // Owner, 2026-09-04: *"the attachment name is showing and it should only show the bubble
+  // prompts."* His canvas opened by dropping in a file and asking "help me learn this", and the
+  // rail printed the file name as a row of equal weight above the question. Measured on production
+  // against the `conversation` seed, which is that exact shape: four markers, the second one
+  // "Cardiac action potentials (lecture 7).pdf". After: three, all of them his.
+  const code = RAIL_CODE.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.match(code, /entries\.filter\(\(entry\) => entry\.fromLearner\)/, "the rail stopped filtering to the learner's own bubbles");
+  // 🔴🔴 AND THE WINDOW ACTUALLY CALLS IT. Calibrating this guard caught its first version passing
+  // with the rail showing everything: the assertion above only proves the helper EXISTS, and
+  // swapping `spoken(entries)` back to `[...entries]` leaves it sitting there unused. The call
+  // site is the thing that has to be pinned.
+  assert.match(code, /const rows = spoken\(entries\);/, "the window stopped using the filter — the helper is there and nothing calls it");
+  // 🔴 BOTH SURFACES READ THE FILTERED LIST. The strip and the panel both map `shown`; drawing a
+  // marker for a moment the panel will not name is a mark that opens onto nothing.
+  assert.equal((code.match(/shown\.map\(/g) ?? []).length, 2, "the strip and the panel no longer read the same list");
+  // 🔴 AND THE PROJECTION ITSELF STILL RETURNS EVERYTHING. `learning-canvas.tsx` walks that array
+  // forward to find the turn a rewind should land on, so filtering at the source would make a
+  // rewind step past its own target. `canvas-history.test.ts` holds the other half of this.
+  const history = readFileSync(new URL("../../../lib/learn/canvas-history.ts", import.meta.url), "utf8");
+  const build = history.slice(
+    history.indexOf("export function buildCanvasHistory"),
+    history.indexOf("export function", history.indexOf("export function buildCanvasHistory") + 1),
+  );
+  assert.ok(!/fromLearner\s*\)/.test(build.replace(/fromLearner: Boolean/g, "")), "buildCanvasHistory started filtering, which breaks the rewind walk");
 });
 
 test("🔴 the rail listens to no scroll event", () => {
