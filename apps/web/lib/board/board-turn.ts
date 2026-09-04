@@ -111,10 +111,15 @@ export function boardWireMessages(input: {
   // names the cause: prose accepts anything, so a model with no channel for questions uses the one
   // channel that never refuses. The board's channel is a card the learner taps, made beside this
   // thread; saying so here is what stops the prose version.
+  // 🔴 AND THE SECOND HALF OF THE SAME RULE, ADDED AFTER THE FIRST HALF WAS MEASURED: with only
+  // "no numbered list", the model wrote "Now, to quiz you, I will ask one question at a time. Here
+  // is the first:" and asked it, beside a test card holding the same six questions. The chat's
+  // prompt has carried the no-announcing sentence since 2026-08-24 for exactly this.
   system.push(
-    "Never put questions to the learner as a numbered list in your answer, and never write out a quiz or its answers. "
-    + "When they ask to be tested, a test card is made beside this one and they tap through it, so teach the material in your reply "
-    + "and stop. If a single question genuinely belongs in what you are saying, ask ONE, in a sentence, and wait for their reply.",
+    "Never put questions to the learner as a numbered list in your answer, never write out a quiz or its answers, and never announce one: "
+    + "no \"here is your first question\", no \"I will ask you one at a time\", no describing what is about to be asked. "
+    + "When they ask to be tested, a test card is made beside this one and they tap through it, so teach the material in your reply and stop. "
+    + "A question inside your teaching is fine where it is part of the explanation, never as the opening of a quiz.",
   );
   system.push(CONCEPT_INSTRUCTION);
   system.push(PROTOCOL_INSTRUCTION);

@@ -237,10 +237,20 @@ export function BoardProvider({
   const retryTimer = useRef<number | null>(null);
   const mounted = useRef(true);
   const turnAborts = useRef(new Map<string, AbortController>());
-  /** 🔴 A REF, BECAUSE `runTurn` IS DEFINED BEFORE `makeDeliverable` AND FINISHES AFTER IT. The turn
-   *  needs to make a test card when the learner asked to be taught and tested in one sentence, and
-   *  reordering the two callbacks would put the maker above the turn it depends on. */
-  const makeDeliverableRef = useRef<((kind: BoardMakeKind, options?: { cardId?: string | null; topic?: string }) => void) | null>(null);
+  /**
+   * A test to make once the answer it tests has actually landed in the card.
+   *
+   * 🔴🔴 STATE, NOT A CALL FROM INSIDE THE TURN, AND THAT DISTINCTION WAS A REAL DEFECT MEASURED ON
+   * PRODUCTION (2026-09-04). The first version called the maker straight from `runTurn`'s `then`,
+   * one line after `patchMessage` wrote the finished answer. React had not re-rendered yet, so the
+   * maker closed over the PREVIOUS `cards` — where that assistant message is still pending and
+   * empty — and `boardCanvasFor` handed the writer a thread with nothing in it. The card arrived
+   * saying "There is nothing on this thread to test you on yet", underneath the answer it was
+   * supposed to be testing.
+   *
+   * An effect runs after the commit, so by the time this fires the thread holds the lesson.
+   */
+  const [pendingCheck, setPendingCheck] = useState<{ cardId: string; topic: string } | null>(null);
 
   const reportNodeSize = useCallback((id: string, size: MeasuredSize, remeasure: boolean) => {
     const known = measured.current.get(id);
@@ -533,7 +543,7 @@ export function BoardProvider({
           setCardStatus(input.cardId, "idle");
           // 🔴 AFTER THE ANSWER, NEVER INSTEAD OF IT. See `asksToBeTaughtToo`. A failed turn taught
           // nothing, so there is nothing to be tested on and no card is made.
-          if (input.thenCheck && !result.error) makeDeliverableRef.current?.("check", { cardId: input.cardId, topic: input.requestMessage });
+          if (input.thenCheck && !result.error) setPendingCheck({ cardId: input.cardId, topic: input.requestMessage });
         })
         .catch((error) => {
           if (!mounted.current) return;
@@ -602,7 +612,20 @@ export function BoardProvider({
     },
     [cards, measuredRect, occupied, outputs, sources, uid],
   );
-  makeDeliverableRef.current = makeDeliverable;
+  // 🔴 THE QUEUED TEST, MADE ONCE THE ANSWER IS ON THE BOARD. See `pendingCheck` for what happens
+  // when this is called a render too early.
+  useEffect(() => {
+    if (!pendingCheck) return;
+    const card = cards.find((item) => item.id === pendingCheck.cardId);
+    // Gone, or still writing: wait. A card that vanished takes its test with it.
+    if (!card) {
+      setPendingCheck(null);
+      return;
+    }
+    if (card.status === "streaming") return;
+    setPendingCheck(null);
+    makeDeliverable("check", { cardId: pendingCheck.cardId, topic: pendingCheck.topic });
+  }, [cards, makeDeliverable, pendingCheck]);
 
   const openedOutput = useMemo(() => outputs.find((output) => output.id === openedOutputId)?.output ?? null, [outputs, openedOutputId]);
   const openOutput = useCallback((outputId: string) => setOpenedOutputId(outputId), []);
