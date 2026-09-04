@@ -16,6 +16,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import type { BoardAnnotation } from "@/lib/board/board-annotations";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import {
   buildDeleteTargets,
@@ -132,6 +133,11 @@ export interface BoardContextValue {
   removeCardNote: (cardId: string, noteId: string) => void;
   noteFocusRequest: NoteFocusRequest | null;
   focusNoteExcerpt: (cardId: string, excerpt: string, occurrence?: number) => void;
+  /** Notes pinned inside a source, from the reading panel. Saved with the board. */
+  annotations: BoardAnnotation[];
+  /** 🔴 AN UPDATER, NOT A VALUE. Two annotations landing in the same tick (a follow-up and its
+   *  answer) must not overwrite each other, which is exactly what setting a captured array does. */
+  updateAnnotations: (update: (current: readonly BoardAnnotation[]) => BoardAnnotation[]) => void;
   addSourceFiles: (files: File[]) => Promise<void>;
   toggleSourceSelection: (sourceId: string) => void;
   createLessonFromSource: (sourceId: string) => void;
@@ -182,6 +188,8 @@ export function BoardProvider({
   const [sources, setSources] = useState<BoardSource[]>([]);
   const [outputs, setOutputs] = useState<BoardOutputCard[]>([]);
   const [openedOutputId, setOpenedOutputId] = useState<string | null>(null);
+  /** Notes pinned inside a source in the reading panel. Saved with the board. See board-panel.tsx. */
+  const [annotations, setAnnotations] = useState<BoardAnnotation[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   // 🔴 OFF BY DEFAULT (owner 2026-09-03: "websearch on in canvas, off by default"). On by default,
   // every board answer went to the web unasked and came back wearing [n] marks that read as
@@ -241,6 +249,7 @@ export function BoardProvider({
       dispatch({ type: "replace", cards: seed.cards, history: { past: [], future: [] } });
       setSources(seed.sources);
       setOutputs(seed.outputs);
+      setAnnotations(seed.annotations ?? []);
       setSelectedSourceIds(seed.selectedSourceIds);
       setUseWebSearch(seed.useWebSearch);
       setViewport(seed.viewport ?? null);
@@ -275,6 +284,7 @@ export function BoardProvider({
         dispatch({ type: "replace", cards: settled, history: storedHistory });
         setSources(state.sources);
         setOutputs(state.outputs);
+        setAnnotations(state.annotations ?? []);
         setSelectedSourceIds(state.selectedSourceIds);
         setUseWebSearch(state.useWebSearch);
         setViewport(state.viewport ?? null);
@@ -401,10 +411,10 @@ export function BoardProvider({
       skipNextSave.current = false;
       return;
     }
-    const snapshot: BoardState = { cards, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined };
+    const snapshot: BoardState = { annotations, cards, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined };
     const timer = window.setTimeout(() => schedule(snapshot, historyForSave()), SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [cards, sources, outputs, selectedSourceIds, useWebSearch, viewport, loaded, schedule, historyForSave, seed]);
+  }, [annotations, cards, sources, outputs, selectedSourceIds, useWebSearch, viewport, loaded, schedule, historyForSave, seed]);
 
   // ----------------------------------------------------------------- turns
   const setCardStatus = useCallback(
@@ -956,13 +966,13 @@ export function BoardProvider({
       return;
     }
     const restored = applyOperation(cards, entry.operation).cards;
-    const document = serializeBoardState({ cards: restored, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
+    const document = serializeBoardState({ annotations, cards: restored, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
     if (!documentFitsSizeLimit(document)) {
       setLimitNotice("This undo would exceed the canvas storage limit. Remove some content or sources and try again.");
       return;
     }
     applyHistory({ type: "undo" });
-  }, [applyHistory, cards, history.past, outputs, selectedSourceIds, sources, useWebSearch, viewport]);
+  }, [annotations, applyHistory, cards, history.past, outputs, selectedSourceIds, sources, useWebSearch, viewport]);
 
   const redo = useCallback(() => {
     if (history.future.length === 0) return;
@@ -1071,6 +1081,11 @@ export function BoardProvider({
   }, []);
   const sourcesRef = useRef<BoardSource[]>([]);
   sourcesRef.current = sources;
+
+  const updateAnnotations = useCallback(
+    (update: (current: readonly BoardAnnotation[]) => BoardAnnotation[]) => setAnnotations((current) => update(current)),
+    [],
+  );
 
   const addSourceFiles = useCallback(
     async (files: File[]) => {
@@ -1195,6 +1210,8 @@ export function BoardProvider({
       removeCardNote,
       noteFocusRequest,
       focusNoteExcerpt,
+      annotations,
+      updateAnnotations,
       addSourceFiles,
       toggleSourceSelection,
       createLessonFromSource,
@@ -1205,6 +1222,8 @@ export function BoardProvider({
       closeOutput,
     }),
     [
+      annotations,
+      updateAnnotations,
       loaded,
       cards,
       sources,

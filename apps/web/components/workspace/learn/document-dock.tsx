@@ -130,7 +130,7 @@ const DocumentDockContext = createContext<DocumentDock | null>(null);
  * branch returning anything else is a canvas a learner can enter and not leave. So the state is
  * made here, in the canvas's own body, and carried down by providers placed INSIDE the surface.
  */
-interface DockState {
+export interface DockState {
   open: DockItem[];
   activeId: string | null;
   /** What was open when the panel was last closed, or null when nothing is put by. */
@@ -148,6 +148,44 @@ function keptAside(current: DockState): DockState["shut"] {
   return current.open.length > 0 ? { activeId: current.activeId, open: current.open } : current.shut;
 }
 
+/**
+ * Opening something. PURE.
+ *
+ * 🔴 EXTRACTED SO THE RULES CAN BE TESTED WITHOUT A BROWSER (2026-09-04). The two transitions below
+ * ARE the tab behaviour a learner meets — several documents open as several tabs, the same document
+ * twice comes forward instead of listing twice, closing the front one falls back to the end of the
+ * strip — and while they lived inside the `setDocs` updaters the only way to check any of it was to
+ * read the source and believe it. The one-updater rule these exist inside is unchanged: `setDocs`
+ * still computes the list and the front tab together, in one call, from one function.
+ */
+export function withOpened(current: DockState, item: DockItem): DockState {
+  return {
+    activeId: item.key,
+    // Opening anything at all retires what was set aside: the learner has chosen a new place, and a
+    // reopen that jumped somewhere else would be a door with a memory of its own.
+    shut: null,
+    // Opening something already open brings it forward rather than listing it twice.
+    // 🔴 THE STORED ROW IS REPLACED, NOT KEPT. A revision lands in `canvas.outputs` and the object
+    // captured when the tab was first opened predates it, so re-opening has to adopt the fresh one.
+    open: current.open.some((entry) => entry.key === item.key)
+      ? current.open.map((entry) => (entry.key === item.key ? item : entry))
+      : [...current.open, item],
+  };
+}
+
+/** Closing one tab. PURE. */
+export function withClosed(current: DockState, key: string): DockState {
+  const open = current.open.filter((entry) => entry.key !== key);
+  // Closing the front tab falls back to the most recently opened one still there, not to the first:
+  // the learner's attention was at the end of the strip, which is where they put it.
+  return {
+    activeId: current.activeId === key ? (open[open.length - 1]?.key ?? null) : current.activeId,
+    open,
+    // Closing the LAST tab is what shuts the panel, so that is the moment worth remembering.
+    shut: open.length === 0 ? keptAside(current) : current.shut,
+  };
+}
+
 export function useDocumentDockState(sources: readonly CanvasSource[]): DocumentDock {
   /**
    * 🔴 ONE PIECE OF STATE, NOT TWO, AND THAT IS DELIBERATE. Closing the front tab has to choose a
@@ -159,19 +197,7 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
   const [docs, setDocs] = useState<DockState>({ activeId: null, open: [], shut: null });
 
   const put = useCallback((item: DockItem) => {
-    setDocs((current) => ({
-      activeId: item.key,
-      // Opening anything at all retires what was set aside: the learner has chosen a new place,
-      // and a reopen that jumped somewhere else would be a door with a memory of its own.
-      shut: null,
-      // Opening something already open brings it forward rather than listing it twice.
-      // 🔴 THE STORED ROW IS REPLACED, NOT KEPT. A revision lands in `canvas.outputs` and the object
-      // captured when the tab was first opened predates it, so re-opening has to adopt the fresh
-      // one — the same rule the output panel already applied when it looked its row up by id.
-      open: current.open.some((entry) => entry.key === item.key)
-        ? current.open.map((entry) => (entry.key === item.key ? item : entry))
-        : [...current.open, item],
-    }));
+    setDocs((current) => withOpened(current, item));
   }, []);
 
   const openDocument = useCallback(
@@ -190,17 +216,7 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
   const openCheck = useCallback((title: string) => put({ key: CHECK_KEY, kind: "check", title }), [put]);
 
   const close = useCallback((key: string) => {
-    setDocs((current) => {
-      const open = current.open.filter((entry) => entry.key !== key);
-      // Closing the front tab falls back to the most recently opened one still there, not to the
-      // first: the learner's attention was at the end of the strip, which is where they put it.
-      return {
-        activeId: current.activeId === key ? (open[open.length - 1]?.key ?? null) : current.activeId,
-        open,
-        // Closing the LAST tab is what shuts the panel, so that is the moment worth remembering.
-        shut: open.length === 0 ? keptAside(current) : current.shut,
-      };
-    });
+    setDocs((current) => withClosed(current, key));
   }, []);
 
   const select = useCallback((key: string) => setDocs((current) => ({ ...current, activeId: key })), []);

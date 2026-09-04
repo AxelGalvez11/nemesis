@@ -5,7 +5,7 @@
 // docs/wondering-canvas-reference.md §6 and §7.
 
 import type { NodeProps } from "@xyflow/react";
-import { BookOpen, Check, CircleAlert, FileImage, FileText, LoaderCircle, Plus, StickyNote, X } from "lucide-react";
+import { BookOpen, Check, CircleAlert, FileImage, FileText, LoaderCircle, MessageSquareQuote, PanelRight, Plus, StickyNote, X } from "lucide-react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { OUTPUT_KIND_MARKS } from "@/components/workspace/learn/artifact-card";
@@ -14,9 +14,11 @@ import { docFilename } from "@/lib/export/doc-file";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { IMAGE_SOURCE_MIN_HEIGHT, SOURCE_MIN_HEIGHT } from "@/lib/board/board-layout";
+import { annotationCountLabel, openAnnotationCount } from "@/lib/board/board-annotations";
 import { cn } from "@/lib/utils";
 
 import { AutoResizingTextarea, IconTooltip, NodeHandles, NodeResizeControls } from "./board-chrome";
+import { useOpenBoardSource } from "./board-panel";
 import { useBoard } from "./board-provider";
 
 export interface NoteNodeData extends Record<string, unknown> {
@@ -99,12 +101,14 @@ function NoteCardInner({ data, selected }: NodeProps & { data: NoteNodeData }) {
 export const NoteCard = memo(NoteCardInner);
 
 function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData }) {
-  const { sources, selectedSourceIds, toggleSourceSelection, createLessonFromSource } = useBoard();
+  const { annotations, sources, selectedSourceIds, toggleSourceSelection, createLessonFromSource } = useBoard();
+  const openInPanel = useOpenBoardSource();
   const source = sources.find((item) => item.id === data.sourceId);
   const [resizing, setResizing] = useState(false);
   const start = useCallback(() => setResizing(true), []);
   const end = useCallback(() => setResizing(false), []);
   if (!source) return null;
+  const marks = openAnnotationCount(annotations, source.id);
   const chosen = selectedSourceIds.includes(source.id);
   const Icon = source.type === "image" ? FileImage : FileText;
   const preview = source.content
@@ -126,7 +130,32 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
       <NodeResizeControls minHeight={hasImage ? IMAGE_SOURCE_MIN_HEIGHT : SOURCE_MIN_HEIGHT} onVerticalResizeEnd={end} onVerticalResizeStart={start} />
       <div className="flex shrink-0 items-center gap-[8px] rounded-t-[16px] px-[16px] py-[10px]">
         <Icon className="size-[16px] shrink-0 text-(--ui-action)" />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">{source.name}</span>
+        {/* 🔴 THE TITLE IS THE DOOR, which is where a person reaches for it. The panel's own
+            control is beside it for the same reason a link is not the only way into a page, but the
+            name of the document opening the document is the gesture nobody has to be taught.
+            🔴 `nodrag nopan` AND a stopped pointerdown, or React Flow takes the press as the start
+            of a card drag and the click never lands. */}
+        <button
+          className="nodrag nopan min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-foreground transition-colors hover:text-(--ui-action) disabled:cursor-default disabled:hover:text-foreground"
+          disabled={source.status !== "ready"}
+          onClick={() => openInPanel(source)}
+          onPointerDown={(event) => event.stopPropagation()}
+          title={source.status === "ready" ? `Open ${source.name} in the reading panel` : source.name}
+          type="button"
+        >
+          {source.name}
+        </button>
+        {/* 🔴 THE SAME PHRASE THE CHAT'S CHIP USES, in full. A card has room for the word, and
+            "3" alone on a document card reads as a page count. The TAB gets the number. */}
+        {marks > 0 && (
+          <span
+            className="inline-flex shrink-0 items-center gap-[4px] rounded-[6px] bg-(--ui-bg-secondary) px-[8px] py-[2px] text-[11px] font-medium text-(--ui-text-secondary)"
+            data-testid="source-card-annotations"
+          >
+            <MessageSquareQuote className="size-[12px]" />
+            {annotationCountLabel(marks)}
+          </span>
+        )}
         <span className="rounded-[6px] bg-(--ui-bg-secondary) px-[8px] py-[2px] text-[11px] font-medium uppercase text-(--ui-text-tertiary)">
           {source.type === "pdf" ? "PDF source" : source.type === "image" ? "Image source" : "Document source"}
         </span>
@@ -157,6 +186,18 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
               {preview || "Source ready to explore."}
             </p>
             <div className="mt-[12px] flex shrink-0 gap-[8px] border-t border-(--ui-stroke-secondary) pt-[12px]">
+              {/* 🔴 "Open" SAYS WHAT IT DOES AND NAMES THE THING IT OPENS. The panel is where a
+                  document is read and annotated; a control called "Preview" or a bare icon would
+                  leave the whole annotate lane behind a gesture nobody discovers. */}
+              <button
+                className="flex min-w-0 flex-1 items-center justify-center gap-[6px] rounded-[8px] bg-(--ui-bg-secondary) px-[12px] py-[8px] text-[12px] font-semibold text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground"
+                onClick={() => openInPanel(source)}
+                onPointerDown={(event) => event.stopPropagation()}
+                type="button"
+              >
+                <PanelRight className="size-[14px]" />
+                <span>Open</span>
+              </button>
               <button
                 aria-pressed={chosen}
                 className={cn(
