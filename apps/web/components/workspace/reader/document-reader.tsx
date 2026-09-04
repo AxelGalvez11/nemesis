@@ -1025,6 +1025,7 @@ export function DocumentReader({
             />
           ) : source.kind === "slides" && bytes ? (
             <SlidesDocumentView
+              bare={bare}
               bytes={bytes}
               onError={onViewError}
               onReady={onSlidesReady}
