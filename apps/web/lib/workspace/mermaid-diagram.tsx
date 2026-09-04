@@ -149,10 +149,16 @@ export function MermaidDiagram({ chart }: { chart: string }) {
         // an aspect around 1:2.7, so fitting 2,289 units of height into 340 pixels left the picture
         // 127px wide in a 617px card. Every label was there and none of them could be read.
         //
-        // So the figure still takes at most 340px of the reading flow, which is the whole of the
+        // So the figure still takes a fixed slice of the reading flow, which is the whole of the
         // owner's rule, and the diagram is drawn at the column's width where its text is legible.
         // What does not fit scrolls inside the box rather than shrinking the drawing.
-        "my-[16px] max-h-[340px] overflow-auto",
+        //
+        // 🔴 220, NOT 340, AND THE REAL FIX IS UPSTREAM. Owner, 2026-09-04, a day after the cap
+        // moved to the box: *"i feel like the mermaid diagrams are still big, could you make them
+        // smaller"*. Shrinking the window is only half of it, because a drawing is big when the
+        // GRAPH is big; `DIAGRAM_INSTRUCTION` cuts the node budget from fifteen to eight in the
+        // same change, and sends every comparison, sequence and set to the designed figure instead.
+        "my-[16px] max-h-[220px] overflow-auto",
         // 🔴 `nowheel` IS FOR THE BOARD. React Flow pans the canvas on wheel unless the element
         // opts out, so without it a scroll inside a tall diagram would slide the whole board.
         "nowheel",

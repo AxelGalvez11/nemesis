@@ -1,25 +1,28 @@
-// The board's reading panel: many documents open at once, and an annotation that survives the save.
+// The board's documents: drawn in their own cards, with no panel and no annotation layer.
 //
-// Owner, 2026-09-04: *"i still want the right sidebar panel to work too where i can view many tabs
-// of the sources and also annotate any document to have an inline chat with the annotation"*, and
-// *"preferably in the style of the canvas chats"*.
+// 🔴🔴🔴 READ THIS BEFORE "FIXING" A GUARD BELOW. This file has been rewritten three times in one
+// day, and every rewrite was the owner reversing himself in writing, 2026-09-04:
 //
-// 🔴 WHAT THESE GUARD IS THE REUSE, not a new feature's wiring. The chat already had a reader, a tab
-// strip, a comment layer and a model door for a margin answer; the risk in this change was never
-// that the board would lack one of those, it was that the board would grow a SECOND of each. So
-// half of what is below asserts that a thing is imported rather than rebuilt.
+//   1. *"i still want the right sidebar panel to work too where i can view many tabs of the sources
+//      and also annotate any document"* — it shipped as a docked sidebar with tabs and annotations.
+//   2. *"i dont want a sidebar to open in canvas, that does not make sense"* — it became a cover.
+//   3. *"pdfs, docx, pptx, still cannot be seen in the canvas, they only render text"* and *"i dont
+//      want any popups in canvas, everything should be seen and done within the cards"* — the
+//      document moved INTO the card it was dropped as, and the panel went.
+//   4. *"remove the annotation from pdf docs"* — the annotate layer went with it.
+//
+// So the tests that used to assert an annotation layer now assert its ABSENCE. They were flipped
+// rather than deleted, because the parse and save of an annotated board still has to work: a board
+// annotated between (1) and (4) holds notes that must survive every future save.
+//
+// 🔴 WHAT THE REST GUARD IS REUSE, not a new feature's wiring. The chat already had a reader; the
+// risk was never that the board would lack one, it was that the board would grow a SECOND.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import {
-  annotationCountLabel,
-  openAnnotationCount,
-  parseBoardAnnotations,
-  serializeBoardAnnotations,
-  type BoardAnnotation,
-} from "@/lib/board/board-annotations";
+import { parseBoardAnnotations, serializeBoardAnnotations, type BoardAnnotation } from "@/lib/board/board-annotations";
 import { parseBoardState, serializeBoardState, type BoardSource, type BoardState } from "@/lib/board/board-model";
 import { documentKey, withClosed, withOpened, type DockItem, type DockState } from "@/components/workspace/learn/document-dock";
 
@@ -28,9 +31,10 @@ const PANEL = read("./board-panel.tsx");
 const DOC = read("./source-document.tsx");
 const PAGE = read("./board-page.tsx");
 const CARD = read("./other-cards.tsx");
-const STORE = read("./board-annotation-store.ts");
-const LAYER = readFileSync(new URL("../reader/comment-layer.tsx", import.meta.url), "utf8");
 const READER = readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8");
+const CHROME = read("./board-chrome.tsx");
+const CHAT = read("./conversation-card.tsx");
+const PROVIDER = read("./board-provider.tsx");
 
 // ── Many tabs ────────────────────────────────────────────────────────────────
 
@@ -104,50 +108,75 @@ test("🔴🔴 a document opens IN ITS CARD: no sidebar, no cover, nothing over 
   assert.match(PAGE, /const inset = useSidePanelInset\(\);/, "the board page stopped reading a panel's claim");
 });
 
-test("🔴🔴 an annotation opens ONE conversation, in the board's card language, through the one model door", () => {
-  // Owner: *"an inline chat with the annotation ... preferably in the style of the canvas chats"*.
-  assert.match(DOC, /annotationLook="card"/, "the board's annotations wear the margin's look");
-  assert.match(READER, /annotationLook\?: "margin" \| "card";/, "the reader lost the look it draws annotations in");
-  assert.match(LAYER, /look\?: "margin" \| "card";/, "the comment layer cannot be asked for the card look");
-  // The card's own grammar: the learner's turn in the learner's bubble, Nemesis's in the chat's
-  // markdown, and a follow-up field. All three are what a conversation card on the board is.
-  assert.match(LAYER, /bg-\(--ui-learner-bubble\)/, "the learner's turn lost the learner's colour");
-  assert.match(LAYER, /<AssistantMarkdown className="text-\[14px\] leading-\[1\.625\]" key=\{reply\.id\} text=\{reply\.body\} \/>/, "Nemesis's answer is no longer drawn in the chat's markdown");
-  assert.match(LAYER, /placeholder=\{card \|\| replies\.length > 0 \? "Ask a follow-up…"/, "the card stopped inviting a follow-up");
-  assert.match(LAYER, /w-\[360px\]/, "the annotation card is no longer the width it was asked for");
-
-  // 🔴 ONE MODEL DOOR. The margin's answer already goes through `postChatCompletion` by way of
-  // `answerComment`; a board lane calling the API itself would be a second cognition with its own
-  // opinions about length, stance and tools.
-  assert.ok(!/postChatCompletion/.test(PANEL), "the board panel calls the model itself");
-  assert.match(READER, /await answerComment\(/, "the in-document answer no longer goes through the shared lane");
-
-  // 🔴 AND NO "SEND TO NEMESIS" ON THE BOARD, because the board's send takes text and no files, so
-  // a marked region's cut-out could not travel with it. `commentAskPrompt` would then claim a
-  // picture that is not there, which is the exact defect `mark-an-area.test.ts` exists to stop.
-  // 🔴 THE PROP, NOT THE WORD. The header explains at length why the send is absent, and a guard
-  // that fails on its own explanation teaches the next person to delete the explanation.
-  assert.ok(!/onSendToChat=/.test(PANEL), "the board panel offers a send that cannot carry the crop");
+test("🔴🔴 a document on the board has NO annotation layer, and cannot grow one", () => {
+  // Owner, 2026-09-04, hours after asking for it: *"remove the annotation from pdf docs"*. What he
+  // saw is what his screenshot circled — a comment icon, a count and a three-dot menu stacked above
+  // the first line of the document, which is a second grammar for talking to Nemesis on a board
+  // whose whole grammar is cards.
+  //
+  // 🔴 THE READER TURNS THE WHOLE LAYER OFF WHEN IT IS GIVEN NO `commentsDoc` (`canComment` is
+  // `Boolean(commentsDoc) && …`), so absence is the switch. Nothing is hidden with CSS and nothing
+  // is left inert underneath.
+  assert.ok(!/commentsDoc=/.test(DOC), "the card still hands the reader a comment document");
+  assert.ok(!/annotationLook/.test(DOC), "the card still asks for an annotation look");
+  assert.ok(!/CommentLayer/.test(DOC), "the card reaches for the comment layer itself");
+  assert.match(READER, /Boolean\(commentsDoc\) &&/, "the reader stopped gating comments on being given a document");
+  assert.ok(!/source-card-annotations/.test(CARD), "the source card still shows an annotation count");
 });
 
-test("🔴🔴 board annotations are kept in the BOARD, not in the comments table", () => {
-  // A file dropped on a board is read for its text and need never be filed, so there is usually no
-  // durable `library_sources.id` to key a row to. What the reader gets is a store over the board's
-  // own document; nothing else about the annotate layer changes.
-  assert.match(DOC, /store,/, "the card stopped handing the reader its own store");
-  assert.match(STORE, /export function boardAnnotationStore/, "the board's store is gone");
-  assert.ok(!/supabase/i.test(STORE), "the board's annotation store reaches for the database");
-  // 🔴 THE STORE READS THROUGH A FUNCTION, NEVER A CAPTURED ARRAY. Held as a value, the second note
-  // of a session is written on top of the first.
-  assert.match(DOC, /boardAnnotationStore\(source\.id, \(\) => annotationsRef\.current, updateAnnotations\)/, "the store captured the annotation list");
+test("🔴 an annotated board still loads and saves, with nothing left to draw its notes", () => {
+  // The store that wrote these is deleted; the field is not. A learner who annotated a document
+  // between the morning and the evening of 2026-09-04 has notes inside their board's JSON, and the
+  // board reads them, carries them and writes them back. Dropping the field instead would delete
+  // that learner's work on their next autosave.
+  assert.ok(!/board-annotation-store/.test(DOC) && !/board-annotation-store/.test(PANEL), "the deleted store is still imported");
+  const kept = parseBoardState(serializeBoardState(board([NOTE, ANSWER])));
+  assert.equal(kept.annotations?.length, 2, "an annotated board lost its notes on a save");
 });
 
-test("🔴 a source card says how many notes are on its document, and can be worked on", () => {
-  assert.match(CARD, /data-testid="source-card-annotations"/, "the source card lost its annotation chip");
-  assert.match(CARD, /\{annotationCountLabel\(marks\)\}/, "the chip stopped using the shared phrase");
+test("🔴🔴 no board node is registered under one of React Flow's own type names", () => {
+  // 🔴 THIS IS A REAL DEFECT THE OWNER REPORTED AND I FIRST MISREAD. *"tests and notes retain a box
+  // outline around them"* (2026-09-04) was not our card's border and not the check's own ring: the
+  // deliverable node was registered as `output`, which is a BUILT-IN React Flow type, and its
+  // stylesheet styles built-ins by class name. `.react-flow__node-output` carries `padding: 10px`,
+  // `width: 150px`, `text-align: center` and a solid border, so every deliverable was drawn inside
+  // a second rectangle with a centred title. Found by reading `getComputedStyle` in a browser.
+  const SURFACE = read("./board-surface.tsx");
+  const types = SURFACE.match(/const NODE_TYPES = \{([^}]*)\}/)?.[1] ?? "";
+  assert.ok(types.length > 0, "the node type map moved or was renamed");
+  for (const built of ["input", "output", "default", "group"]) {
+    assert.ok(!new RegExp(`(^|[{,\\s])${built}:`).test(types), `a node is registered as "${built}", which React Flow styles itself`);
+  }
+  // And nothing builds a node with one of those names either.
+  for (const built of ["input", "output", "default", "group"]) {
+    assert.ok(!SURFACE.includes(`type: "${built}"`), `a node is built with the built-in type "${built}"`);
+  }
+});
+
+test("🔴🔴 a document wears the conversation card's chrome, and the same verbs", () => {
+  // Owner, 2026-09-04: *"make sure all card node designs are consistent and match, use
+  // wondering.app/canvas for baseline"*, and *"users should be allowed to collapse, delete, make
+  // note, make flashcards, and make tests from documents too that were dropped in"*.
+  //
+  // 🔴 ONE BAR, ONE SET OF PLUSES. Every card kind reaches for the shared parts rather than
+  // hand-rolling a header row of its own, which is how the board came to have three of them: one
+  // floating above a thread, one inside a document, one inside a deliverable.
+  assert.match(CHROME, /export function CardTitleBar/, "the shared title bar is gone");
+  assert.match(CHROME, /export function BranchButtons/, "the shared branch buttons are gone");
+  for (const [name, file] of [["the document card", CARD], ["the conversation card", CHAT]] as const) {
+    assert.match(file, /<CardTitleBar/, `${name} draws its own header row`);
+    assert.match(file, /<BranchButtons/, `${name} has no four-sided pluses`);
+  }
   for (const label of ["Make a note from this", "Make flashcards from this", "Make a test from this", "Collapse document", "Delete document"]) {
     assert.ok(CARD.includes(label), `a dropped document cannot ${label.toLowerCase()}`);
   }
+  // 🔴 AND THE TWO BUTTONS UNDER IT ARE GONE — owner, same message: *"remove 'create lesson'"* and
+  // *"remove 'ask about this'"*. A plus on the side of the document is how a thread starts from one
+  // now, which is the same gesture a thread already used.
+  assert.ok(!CARD.includes("Create lesson"), "the document card still offers to create a lesson");
+  assert.ok(!CARD.includes("Ask about this"), "the document card still offers to ask about it");
+  assert.ok(!PROVIDER.includes("const createLessonFromSource"), "the lesson maker outlived its button");
+  assert.match(PROVIDER, /const source = parent \? undefined : sources\.find/, "a document cannot start a card of its own");
 });
 
 // ── The round trip ───────────────────────────────────────────────────────────
@@ -244,13 +273,4 @@ test("🔴 a stored annotation is read defensively, because it is learner data i
   assert.equal(row.anchor.x, 1, "a fraction outside 0-1 was not clamped");
   assert.equal(row.anchor.y, 0);
   assert.equal(row.anchor.box, undefined, "a half-built box was kept");
-});
-
-test("🔴 the count is OPEN notes, never replies, and it reads the way the chat's chip reads", () => {
-  const resolved: BoardAnnotation = { ...NOTE, id: "ann-3", resolvedAt: "2026-09-04T10:00:00.000Z" };
-  const second: BoardAnnotation = { ...NOTE, id: "ann-4" };
-  assert.equal(openAnnotationCount([NOTE, ANSWER, resolved, second], "src-1"), 2, "an answer or a resolved note was counted as a mark");
-  assert.equal(openAnnotationCount([NOTE], "other"), 0);
-  assert.equal(annotationCountLabel(1), "1 annotation");
-  assert.equal(annotationCountLabel(3), "3 annotations");
 });

@@ -1,7 +1,14 @@
 // Annotations made on a document opened from the board, kept IN the board document.
 //
-// Owner, 2026-09-04: *"i still want the right sidebar panel to work too where i can view many tabs
-// of the sources and also annotate any document to have an inline chat with the annotation"*.
+// 🔴🔴🔴 NOTHING WRITES THESE ANY MORE, AND THE FILE STAYS ANYWAY. The owner asked for them on the
+// morning of 2026-09-04 (*"annotate any document to have an inline chat with the annotation"*) and
+// cut them the same evening (*"remove the annotation from pdf docs"*). Between those two messages a
+// learner could pin notes inside a document, and those notes are sitting in saved boards right now.
+// So the READ and the WRITE-BACK below are load-bearing: `board-model.ts` parses this field on every
+// open and serialises it on every save, which is the only reason those notes are not deleted by the
+// next autosave. What went with the layer are the parts that only a UI could use — the count, the
+// label, the `DocumentComment` conversion — because furniture nothing sits on is how a codebase
+// stops being readable.
 //
 // 🔴🔴 THE BOARD IS ITS OWN STORE, AND THAT IS NOT A SECOND COMMENT SYSTEM. The chat's reader keeps
 // its notes in `document_comments`, keyed by the DURABLE `library_sources.id` — which is exactly
@@ -17,7 +24,7 @@
 //
 // PURE. No React, no I/O.
 
-import type { CommentAnchor, CommentAuthor, DocumentComment } from "@/lib/workspace/document-comments";
+import type { CommentAnchor, CommentAuthor } from "@/lib/workspace/document-comments";
 
 /**
  * One note pinned to a spot in a board source, or one turn of the conversation under it.
@@ -117,64 +124,4 @@ export function serializeBoardAnnotations(
   const kept = annotations.filter((annotation) => sourceIds.has(annotation.sourceId));
   const roots = new Set(kept.filter((annotation) => annotation.parentId === null).map((annotation) => annotation.id));
   return kept.filter((annotation) => annotation.parentId === null || roots.has(annotation.parentId));
-}
-
-/** Every annotation on one source, oldest first — the order a margin reads in. */
-export function annotationsForSource(
-  annotations: readonly BoardAnnotation[],
-  sourceId: string,
-): BoardAnnotation[] {
-  return annotations.filter((annotation) => annotation.sourceId === sourceId);
-}
-
-/**
- * How many marks a source wears: OPEN notes, never replies.
- *
- * 🔴 THE SAME NUMBER THE PIN, THE CHIP AND THE TAB ALL SHOW. The chat's pane counts
- * `rootsOf(comments).filter(resolvedAt === null)`; this is that number for a board source, in one
- * place, so the chip on the card and the chip on the tab cannot disagree.
- */
-export function openAnnotationCount(annotations: readonly BoardAnnotation[], sourceId: string): number {
-  return annotations.filter(
-    (annotation) =>
-      annotation.sourceId === sourceId && annotation.parentId === null && annotation.resolvedAt === null,
-  ).length;
-}
-
-/** "1 annotation" / "3 annotations" — the chat's chip, word for word. */
-export function annotationCountLabel(count: number): string {
-  return `${count} annotation${count === 1 ? "" : "s"}`;
-}
-
-/** One annotation, as the reader's comment layer already understands it. */
-export function asDocumentComment(annotation: BoardAnnotation): DocumentComment {
-  return {
-    anchor: annotation.anchor,
-    author: annotation.author,
-    body: annotation.body,
-    createdAt: annotation.createdAt,
-    docId: annotation.sourceId,
-    // 🔴 "source", BECAUSE A DROPPED FILE IS THEIRS. The other value, "output", means something
-    // Nemesis made and may revise on request; nothing on the board is that.
-    docKind: "source",
-    id: annotation.id,
-    parentId: annotation.parentId,
-    resolvedAt: annotation.resolvedAt,
-    unit: annotation.unit,
-  };
-}
-
-/** And back, when the reader hands one over to be kept. */
-export function fromDocumentComment(comment: DocumentComment): BoardAnnotation {
-  return {
-    anchor: comment.anchor,
-    author: comment.author,
-    body: comment.body,
-    createdAt: comment.createdAt,
-    id: comment.id,
-    parentId: comment.parentId,
-    resolvedAt: comment.resolvedAt,
-    sourceId: comment.docId,
-    unit: comment.unit,
-  };
 }

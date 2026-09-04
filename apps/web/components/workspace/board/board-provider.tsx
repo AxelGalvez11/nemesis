@@ -119,7 +119,8 @@ export interface BoardContextValue {
   redo: () => void;
   sendRootMessage: (text: string) => boolean;
   sendCardMessage: (cardId: string, text: string, retry?: RetryTarget, contextExcerpt?: string, occurrence?: number) => boolean;
-  createBranchCard: (cardId: string, side?: BranchSide) => void;
+  /** From a thread OR from a document: see the implementation for what each child carries. */
+  createBranchCard: (nodeId: string, side?: BranchSide) => void;
   sendBranchQuestion: (cardId: string, text: string, side?: BranchSide, contextExcerpt?: string, occurrence?: number) => boolean;
   branchFromSelection: (cardId: string, excerpt: string, occurrence?: number) => void;
   deleteNode: (id: string) => void;
@@ -137,14 +138,18 @@ export interface BoardContextValue {
   removeCardNote: (cardId: string, noteId: string) => void;
   noteFocusRequest: NoteFocusRequest | null;
   focusNoteExcerpt: (cardId: string, excerpt: string, occurrence?: number) => void;
-  /** Notes pinned inside a source, from the reading panel. Saved with the board. */
+  /**
+   * Notes pinned inside a source, saved with the board.
+   *
+   * 🔴 READ-ONLY SINCE 2026-09-04, and deliberately still here. The owner cut the annotate layer
+   * from documents on the board (*"remove the annotation from pdf docs"*), so nothing writes these
+   * any more — but a board annotated that morning still holds them, and dropping the field would
+   * delete a learner's notes on their next save. They round-trip; they are not drawn.
+   */
   annotations: BoardAnnotation[];
-  /** 🔴 AN UPDATER, NOT A VALUE. Two annotations landing in the same tick (a follow-up and its
-   *  answer) must not overwrite each other, which is exactly what setting a captured array does. */
-  updateAnnotations: (update: (current: readonly BoardAnnotation[]) => BoardAnnotation[]) => void;
+
   addSourceFiles: (files: File[]) => Promise<void>;
   toggleSourceSelection: (sourceId: string) => void;
-  createLessonFromSource: (sourceId: string) => void;
   /** Deliverables made on this board (lib/board/board-deliverables.ts). */
   outputs: BoardOutputCard[];
   /** Make one beside a thread (or from the composer, `cardId` null), from what was typed. */
@@ -745,14 +750,10 @@ export function BoardProvider({
 
   const sendRootMessage = useCallback((text: string) => startCard(text, { updatesComposerSuggestions: true }), [startCard]);
 
-  const createLessonFromSource = useCallback(
-    (sourceId: string) => {
-      const source = sources.find((item) => item.id === sourceId && item.status === "ready");
-      if (!source) return;
-      startCard(`Create a lesson from ${source.name}.`, { sourceIds: [sourceId], kind: "lesson", responseMode: "lesson" });
-    },
-    [sources, startCard],
-  );
+  // 🔴 NO `createLessonFromSource` ANY MORE — owner, 2026-09-04: *"remove 'create lesson'"*. It was
+  // the black button along the bottom of a document card, and it is the one door that ever made a
+  // `kind: "lesson"` card. The lesson RESPONSE MODE stays (board-turn.ts), because boards saved
+  // before today still hold lesson cards and retrying a turn in one must still answer as a lesson.
 
   const sendCardMessage = useCallback(
     (cardId: string, text: string, retry?: RetryTarget, contextExcerpt?: string, occurrence?: number, options: { readsAsk?: boolean } = {}): boolean => {
@@ -857,24 +858,36 @@ export function BoardProvider({
     [cards, outputs, sendCardMessage, startCard],
   );
 
+  /**
+   * An empty card joined to the node it was started from.
+   *
+   * 🔴🔴 THE NODE MAY BE A DOCUMENT, NOT ONLY A THREAD — owner, 2026-09-04: *"documents should have
+   * the four 'create card' like chats"*, in the message that also cut this card's *"Ask about
+   * this"* and *"Create lesson"* buttons. From a thread the child inherits the conversation so far;
+   * from a document it inherits the DOCUMENT, as its only source, so every question typed into the
+   * new card is answered from that file. Two starting points, one gesture, one function: a second
+   * `createCardFromSource` would be a second set of rules about what a child carries.
+   */
   const createBranchCard = useCallback(
-    (cardId: string, side: BranchSide = "right") => {
-      const parent = cards.find((item) => item.id === cardId);
-      if (!parent) return;
+    (nodeId: string, side: BranchSide = "right") => {
+      const parent = cards.find((item) => item.id === nodeId);
+      const source = parent ? undefined : sources.find((item) => item.id === nodeId && item.status === "ready");
+      const anchor = parent ?? source;
+      if (!anchor) return;
       const id = crypto.randomUUID();
       const card: BoardCard = {
         id,
         kind: "conversation",
-        parentId: cardId,
-        sourceIds: parent.sourceIds,
+        parentId: nodeId,
+        sourceIds: parent ? parent.sourceIds : [nodeId],
         contextExcerpt: null,
-        inheritedContext: cardContext(parent),
+        inheritedContext: parent ? cardContext(parent) : [],
         title: NEW_THREAD_TITLE,
         highlights: [],
         savedImages: [],
         notes: [],
         status: "idle",
-        position: findFreeChildPosition({ parent: measuredRect(parent), occupied: occupied(cards, sources), side }),
+        position: findFreeChildPosition({ parent: measuredRect(anchor), occupied: occupied(cards, sources), side }),
         width: CARD_WIDTH,
         messages: [],
       };
@@ -1223,11 +1236,6 @@ export function BoardProvider({
   const sourcesRef = useRef<BoardSource[]>([]);
   sourcesRef.current = sources;
 
-  const updateAnnotations = useCallback(
-    (update: (current: readonly BoardAnnotation[]) => BoardAnnotation[]) => setAnnotations((current) => update(current)),
-    [],
-  );
-
   const addSourceFiles = useCallback(
     async (files: File[]) => {
       const pdfs = files.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
@@ -1357,10 +1365,8 @@ export function BoardProvider({
       noteFocusRequest,
       focusNoteExcerpt,
       annotations,
-      updateAnnotations,
       addSourceFiles,
       toggleSourceSelection,
-      createLessonFromSource,
       outputs,
       makeDeliverable,
       finishCheck,
@@ -1372,7 +1378,6 @@ export function BoardProvider({
     }),
     [
       annotations,
-      updateAnnotations,
       loaded,
       cards,
       sources,
@@ -1412,7 +1417,6 @@ export function BoardProvider({
       focusNoteExcerpt,
       addSourceFiles,
       toggleSourceSelection,
-      createLessonFromSource,
       outputs,
       makeDeliverable,
       finishCheck,

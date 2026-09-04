@@ -39,9 +39,25 @@ type BoardNode =
   | Node<ConversationNodeData, "conversation">
   | Node<NoteNodeData, "note">
   | Node<SourceNodeData, "source">
-  | Node<OutputNodeData, "output">;
+  | Node<OutputNodeData, "deliverable">;
 
-const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard, output: OutputCard };
+/**
+ * What each kind of node is drawn by.
+ *
+ * 🔴🔴 NEVER NAME A TYPE `input`, `output`, `default` OR `group`. Those four are React Flow's OWN
+ * built-in node types, and its stylesheet styles them by class name: `.react-flow__node-output`
+ * carries `padding: 10px`, `width: 150px`, `font-size: 12px`, `text-align: center` and a solid
+ * border. A custom component registered under one of those keys is drawn INSIDE that box, so the
+ * card wears a second outline nothing in this repo draws and its title is mysteriously centred.
+ *
+ * That is exactly what shipped: deliverables were registered as `output`, and the owner reported it
+ * as *"tests and notes retain a box outline around them"* (2026-09-04) — tests and notes being the
+ * two deliverables he had on the board. Measured in the browser, not guessed: the extra rectangle
+ * is inset 10px, has a 3px radius where ours has 16, and `getComputedStyle` on the title said
+ * `text-align: center` with nothing in our own CSS asking for it. `board-panel.test.ts` guards
+ * the names now.
+ */
+const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard, deliverable: OutputCard };
 const PRO_OPTIONS = { hideAttribution: true };
 const EDGE_STROKE = "var(--board-edge)";
 const CONTROL_CLASS =
@@ -257,10 +273,10 @@ function BoardInner() {
           return { id: source.id, type: "source", position: source.position, width: source.width, height: source.height, deletable: false, data: { sourceId: source.id } } as BoardNode;
         }),
         ...outputs.map((output) => {
-          const existing = byId.get(output.id) as Node<OutputNodeData, "output"> | undefined;
+          const existing = byId.get(output.id) as Node<OutputNodeData, "deliverable"> | undefined;
           if (existing) return reuse(output.id, existing, output.position, output.width, undefined, output.status !== "making");
           changed = true;
-          return { id: output.id, type: "output", position: output.position, width: output.width, deletable: output.status !== "making", data: { outputId: output.id } } as BoardNode;
+          return { id: output.id, type: "deliverable", position: output.position, width: output.width, deletable: output.status !== "making", data: { outputId: output.id } } as BoardNode;
         }),
       ];
       return changed ? rebuilt : was;
