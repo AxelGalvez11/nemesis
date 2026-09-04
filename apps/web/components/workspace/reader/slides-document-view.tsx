@@ -33,6 +33,7 @@ import {
   type SlideShape,
 } from "@/lib/reader/pptx-slides";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
+import { renderDeckSvgs } from "@/lib/reader/pptx-render";
 import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import { resolveSlidePictures } from "@/lib/reader/slide-pictures";
 import { isTiff, tiffObjectUrl } from "@/lib/reader/tiff-image";
@@ -78,6 +79,11 @@ export function SlidesDocumentView({
   bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement, bare = false,
 }: SlidesDocumentViewProps) {
   const [slides, setSlides] = useState<ParsedSlide[] | null>(null);
+  /**
+   * The deck drawn as itself: one SVG per slide, or null while it is being drawn and forever if it
+   * cannot be. See `pptx-render.ts` for why null is a normal answer.
+   */
+  const [drawn, setDrawn] = useState<string[] | null>(null);
   const [size, setSize] = useState<DeckSize>(DEFAULT_DECK_SIZE);
   const [images, setImages] = useState<Map<string, string>>(new Map());
   const [container, setContainer] = useState({ width: 0, height: 0 });
@@ -86,6 +92,23 @@ export function SlidesDocumentView({
   // mount-time effect is null and the observer never attaches — leaving every
   // slide at its full 880px with a horizontal scrollbar under the deck.
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+
+  /**
+   * 🔴🔴 THE DECK IS DRAWN ONCE PER FILE, AND THE PARSE IS NOT WAITED FOR. They are independent:
+   * `pptx-slides.ts` reads what the deck MEANS (outline, notes, per-slide text, the units a comment
+   * pins to) and this reads what it LOOKS like. Chaining them would make a slow parse hold back a
+   * picture that is already ready, and a failed parse take the picture with it.
+   */
+  useEffect(() => {
+    let live = true;
+    setDrawn(null);
+    void renderDeckSvgs(bytes).then((result) => {
+      if (live) setDrawn(result);
+    });
+    return () => {
+      live = false;
+    };
+  }, [bytes]);
 
   useEffect(() => {
     const element = scrollElement;
@@ -339,11 +362,15 @@ export function SlidesDocumentView({
   return (
     <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-slides-scroll" ref={setScrollElement}>
       <div className="mx-auto flex w-fit flex-col items-center gap-5">
+        {/* 🔴 THE DISCLAIMER IS ABOUT A REBUILT SLIDE, so it goes when the slide is the real one.
+            Saying "these are rebuilt, anything the author drew is not here" over a drawing that
+            HAS what the author drew would be worse than saying nothing. */}
         <div className="w-full max-w-3xl">
-          {!bare && <Disclaimer />}
+          {!bare && !drawn && <Disclaimer />}
         </div>
         {slides.map((slide) => (
           <SlideCanvas
+            drawn={drawn?.[slide.index - 1] || null}
             failedTargets={failedTargets}
             images={images}
             key={slide.index}
@@ -378,9 +405,11 @@ function Disclaimer() {
 
 /** A slide-shaped canvas, 16:9, holding the slide's real contents. */
 function SlideCanvas({
-  slide, images, failedTargets, query, scale, size, onVisible, onNeedsPictures, registerElement,
+  slide, images, failedTargets, query, scale, size, onVisible, onNeedsPictures, registerElement, drawn,
 }: {
   slide: ParsedSlide;
+  /** This slide's own SVG, when the deck could be drawn. Sanitised already (`safeSlideSvg`). */
+  drawn: string | null;
   size: DeckSize;
   images: Map<string, string>;
   /** Pictures whose decode already failed — no longer "on the way". */
@@ -452,10 +481,18 @@ function SlideCanvas({
           // 🔴 NO PADDING WHEN THE SHAPES CARRY THEIR OWN POSITIONS. A slide's coordinates are
           // measured from the slide's own edge; 28px of padding around them shifts and shrinks
           // every shape on the slide by a different amount.
-          ...(placed ? { padding: 0 } : null),
+          ...(placed || drawn ? { padding: 0 } : null),
         }}
       >
-        {placed ? (
+        {/* 🔴🔴 THE SLIDE ITSELF, WHEN WE HAVE IT. Everything below this branch is the
+            reconstruction, and it stays exactly as it was: it is what a deck this renderer cannot
+            open still shows, and it is what the outline and notes tabs are built from.
+            🔴 SANITISED AT THE SOURCE, NOT HERE. `renderDeckSvgs` returns markup that has already
+            been through `safeSlideSvg`: an allow-list of SVG elements, no `on*` handlers, and no
+            URL that is not `data:` or a local `#id`. */}
+        {drawn ? (
+          <div className="size-full [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: drawn }} />
+        ) : placed ? (
           <PlacedSlide pxPerPoint={pxPerPoint} query={query} scale={scale} shapes={slide.shapes} url={pictureUrl} />
         ) : (
           <>
