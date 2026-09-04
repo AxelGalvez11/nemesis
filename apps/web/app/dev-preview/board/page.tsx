@@ -244,12 +244,38 @@ const CHECK: BoardOutputCard = {
   width: CHECK_WIDTH,
 };
 
+// 🔴 A REAL PDF, SO THE CARD'S READER IS REVIEWED ON A PDF AND NOT ONLY ON MARKDOWN. The harness's
+// library fixture `preview-src-conlaw-slides` points at /reader-sample.pdf, and `useBoardReader`
+// resolves a source with a `librarySourceId` to its filed original exactly as production does.
+const PDF_SOURCE: BoardSource = {
+  content: "Constitutional law, slides 1 to 12. The commerce clause and its limits.",
+  grounded: {
+    excerpts: [{ id: "s2:e1", label: null, text: "The commerce clause and its limits." }],
+    id: "s2",
+    kind: "pdf",
+    librarySourceId: "preview-src-conlaw-slides",
+    title: "Constitutional law slides.pdf",
+  },
+  height: 560,
+  id: "src-pdf",
+  name: "Constitutional law slides.pdf",
+  position: { x: 1600, y: 520 },
+  previewUrls: [],
+  status: "ready",
+  type: "pdf",
+  width: 640,
+};
+
 const SEED: BoardState = {
   annotations: ANNOTATIONS,
   cards: [ROOT, BRANCH, STREAMING],
   outputs: [CHECK],
   selectedSourceIds: [],
-  sources: [SOURCE],
+  sources: [SOURCE, PDF_SOURCE],
+  // 🔴 THE HARNESS OPENS ON EVERYTHING. Without a viewport the board lands at 0,0 and half the
+  // fixture (the PDF card, the test) is off screen, so a review measures what happened to be
+  // visible. Zoomed out enough to hold every card at once.
+  viewport: { x: 24, y: 24, zoom: 0.55 },
   useWebSearch: false,
 };
 
