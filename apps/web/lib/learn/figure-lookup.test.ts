@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveFigures, type FigureLookupDeps } from "./figure-lookup";
+import { resolveFigures, resolveSubjects, type FigureLookupDeps } from "./figure-lookup";
 
 function routeReturning(results: unknown, status = 200): FigureLookupDeps & { calls: number } {
   const deps = {
@@ -122,4 +122,88 @@ test("no token degrades to a plain request, never a throw — the route answers 
   const out = await resolveFigures(LESSON, deps);
   assert.equal(seen.authorization, undefined);
   assert.equal(typeof out, "string");
+});
+
+// ── the relevance judge (2026-09-04) ─────────────────────────────────────────────────────────────
+
+const LICENSED = (path: string, caption: string) => ({
+  assetPath: path,
+  caption,
+  licence: { attribution: "Someone", licence: "CC-BY-4.0", source: "Wikimedia Commons" },
+  provenance: "reference_image" as const,
+});
+
+const routeAnswering = (asset: unknown, alternatives: unknown[] = []) =>
+  (async () =>
+    new Response(JSON.stringify({ results: [{ alternatives, asset, ok: true }] }), {
+      headers: { "content-type": "application/json" },
+      status: 200,
+    })) as unknown as typeof globalThis.fetch;
+
+test("🔴🔴 a picture the judge says is not of the thing is dropped", async () => {
+  // The measured failure: "the doctrine of precedent" returns a scan of Kant's Doctrine du droit.
+  // Its licence is genuinely fine, so only a relevance check can stop it.
+  const out = await resolveSubjects(["the doctrine of precedent"], {
+    fetch: routeAnswering(LICENSED("https://upload.wikimedia.org/a/Kant.jpg", "Kant - Doctrine du droit")),
+    judge: async () => ({ verdict: "none" }),
+  });
+  assert.equal(out?.[0]?.ok, false);
+});
+
+test("🔴🔴 the judge may choose a runner-up the licence gate ranked second", async () => {
+  // 🔴 WHY `alternatives` TRAVELS AT ALL. `chooseAsset` ranks TRUST and keeps arrival order on
+  // ties, so among equally-licensed candidates the winner is the provider's own full-text ranking —
+  // which is what puts the wrong picture first. A judge given one option can only say yes or no.
+  const out = await resolveSubjects(["mitosis stages"], {
+    fetch: routeAnswering(
+      LICENSED("https://upload.wikimedia.org/a/wrong.jpg", "a portrait of Walther Flemming"),
+      [LICENSED("https://upload.wikimedia.org/a/right.jpg", "A diagram of mitosis stages")],
+    ),
+    judge: async () => ({ index: 1, verdict: "shows" }),
+  });
+  assert.equal(out?.[0]?.ok, true);
+  assert.equal(out?.[0]?.ok === true ? out[0].asset.assetPath : "", "https://upload.wikimedia.org/a/right.jpg");
+});
+
+test("🔴🔴 a judge that cannot answer keeps the picture, and one that throws does too", async () => {
+  // A filter on a working lane must never be able to close the lane. Both failure paths are the
+  // same outcome: whatever the licence gate chose still shows.
+  for (const judge of [
+    async () => ({ verdict: "unknown" as const }),
+    async () => {
+      throw new Error("the model lane is down");
+    },
+  ]) {
+    const out = await resolveSubjects(["mitosis stages"], {
+      fetch: routeAnswering(LICENSED("https://upload.wikimedia.org/a/right.jpg", "A diagram of mitosis stages")),
+      judge,
+    });
+    assert.equal(out?.[0]?.ok, true, "a judge failure removed a picture");
+  }
+});
+
+test("🔴 with no judge at all, nothing changes", async () => {
+  // Every caller and every test that predates the judge takes this path.
+  const out = await resolveSubjects(["mitosis stages"], {
+    fetch: routeAnswering(LICENSED("https://upload.wikimedia.org/a/right.jpg", "A diagram of mitosis stages")),
+  });
+  assert.equal(out?.[0]?.ok, true);
+});
+
+test("🔴🔴 the learner's own figure is never sent to the judge", async () => {
+  // It was chosen by matching their own material, not by a repository's full-text search. A model
+  // second-guessing their lecture slide is the one place this check could take away a picture that
+  // was right by construction.
+  let asked = 0;
+  const mine = LICENSED("https://upload.wikimedia.org/a/theirs.jpg", "their own slide");
+  const out = await resolveSubjects(["mitosis stages"], {
+    fetch: (async () => new Response("{}", { status: 500 })) as unknown as typeof globalThis.fetch,
+    judge: async () => {
+      asked += 1;
+      return { verdict: "none" };
+    },
+    own: async () => [mine],
+  });
+  assert.equal(asked, 0, "the judge was asked about the learner's own figure");
+  assert.equal(out?.[0]?.ok, true);
 });
