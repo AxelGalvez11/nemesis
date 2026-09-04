@@ -396,8 +396,11 @@ function Disclaimer() {
         <span className="font-medium text-foreground">
           These are rebuilt from the deck&rsquo;s contents, not pictures of the slides.
         </span>{" "}
-        Text, pictures and notes are the real ones. Anything the author <em>drew</em> — arrows, boxes, SmartArt — is not
-        a picture in the file, so it is not here. Slide images are coming; they need a renderer Nemesis does not host yet.
+        {/* 🔴 THE LAST SENTENCE WENT WHEN THE RENDERER ARRIVED. It used to say slide images were
+            coming and needed a renderer Nemesis did not host; it hosts one now (`pptx-render.ts`),
+            and this notice is only shown for a deck that renderer could not open. */}
+        Text, pictures and notes are the real ones. Anything the author <em>drew</em>, arrows, boxes, SmartArt, is not
+        a picture in the file, so it is not here.
       </p>
     </div>
   );
