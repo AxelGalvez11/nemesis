@@ -53,6 +53,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { FolderCreateDialog } from "@/components/workspace/library/folder-create-dialog";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { DeckShare } from "./deck-share";
 import { deckFileName, deckToAnkiText } from "@/lib/workspace/deck-export";
@@ -620,34 +621,39 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
   }, []);
 
   /**
-   * Naming a new folder, inline in the folder bar.
+   * Naming a new folder.
    *
-   * 🔴 AN INPUT IN THE BAR, NOT `window.prompt`. The first version of this used the browser's
-   * prompt, which is unstyled, modal to the whole tab, suppressible by the browser, and unlike
-   * every other input in this app. The sidebar already names a new folder inline; this is the same
-   * gesture in the row the folder is about to appear in. `naming` is the draft text, or null when
-   * nothing is being named.
+   * 🔴🔴 A DIALOG, AND THAT IS THE OWNER'S BAR RATHER THAN A PREFERENCE. 2026-09-03: *"Making a new
+   * folder in the library should work exactly like it does in ChatGPT."* Measured in his own
+   * browser the same day — chatgpt.com/library, "New ⌄" → "Folder" — opens a 448 x 190 modal with a
+   * Cancel and a Create, and `folder-create-dialog.tsx` carries every number.
+   *
+   * 🔴 WHAT STOOD HERE WAS AN INPUT IN THE TABLE, and it had three exits with different meanings:
+   * Enter created, Escape cancelled, and clicking ANYWHERE ELSE also created. It also forced the
+   * page out of grid view for as long as it was open, because a naming row can only exist in a
+   * list. One button, one dialog, one way to commit.
    */
-  const [naming, setNaming] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   /**
-   * 🔴🔴 THE NAME IS AN ARGUMENT, NOT READ FROM STATE, AND THAT IS THE WHOLE CORRECTNESS ARGUMENT.
-   * Committing happens on Enter AND on blur, and Escape has to cancel a blur it causes itself. A
-   * version that read `naming` from the closure could not: `setNaming` does not update the already-
-   * mounted blur handler, so cancelling with a name typed created the folder anyway on the way out.
-   * Taking the value from the event means every caller passes what the input holds AT THAT MOMENT,
-   * and Escape simply empties the input first — an empty name is already a no-op here.
+   * 🔴 IT REPORTS WHETHER THE FOLDER EXISTS, and the dialog stays open when it does not. The inline
+   * row this replaced could not: it had already removed itself by the time the database answered,
+   * so a refusal left the learner looking at a list with no new folder in it and nothing said.
+   *
+   * 🔴 THE NAME IS STILL AN ARGUMENT RATHER THAN STATE. That began as a fix for a blur handler
+   * holding a stale closure, and the reason outlives the row it was written for: the dialog owns
+   * the draft text, so passing the value at the moment of the press keeps exactly one copy of it.
    */
   const addFolder = useCallback(
-    async (raw: string) => {
+    async (raw: string): Promise<boolean> => {
       const name = raw.trim();
-      setNaming(null);
-      if (!name) return;
+      if (!name) return false;
       const made = await createFolder(userId, name);
       // 🔴 A REFUSED CREATE LEAVES THE LIST ALONE. `createFolder` returns null when the database
       // refuses — the two-level depth trigger raises rather than nesting deeper — and pushing a
       // folder that does not exist would give the learner somewhere to file things that vanishes.
       if (made) setFolders((was) => [...was, made].sort((a, b) => a.name.localeCompare(b.name)));
+      return made !== null;
     },
     [userId],
   );
@@ -875,35 +881,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
                   <span aria-hidden className={COL_ACTIONS} />
                 </button>
-              </li>
-  );
-  const namingRow = naming !== null && (
-              <li className={ROW}>
-                <span className={COL_TILE}><FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} /></span>
-                <input
-                  aria-label="Name the new folder"
-                  autoFocus
-                  className="min-w-0 flex-1 bg-transparent text-[14px] text-(--ui-text-primary) outline-none"
-                  maxLength={120}
-                  // Enter commits, clicking away commits, Escape abandons.
-                  onBlur={(event) => void addFolder(event.currentTarget.value)}
-                  onChange={(event) => setNaming(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void addFolder(event.currentTarget.value);
-                    if (event.key === "Escape") {
-                      // 🔴 EMPTY THE INPUT ITSELF, NOT THE STATE. Whatever blur follows this reads
-                      // the DOM node's value, so clearing it here is what makes cancelling actually
-                      // cancel, with no assumption about when React next renders.
-                      event.currentTarget.value = "";
-                      setNaming(null);
-                    }
-                  }}
-                  placeholder="Folder name"
-                  value={naming}
-                />
-                <span aria-hidden className={COL_MODIFIED} />
-                <span aria-hidden className={COL_COUNT} />
-                <span aria-hidden className={COL_ACTIONS} />
               </li>
   );
   const deckRow = (deck: DeckRow) => (
@@ -1178,20 +1155,21 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               made where projects live. Filing outputs into folders is something only this page can
               do (`fileOutput`, and the `openFolder` filter below), and it had no door of its own.
 
-              🔴 THE ACTION IS UNCHANGED — `setNaming("")` already created a folder row; it was
-              LABELLED "New project" because folders and projects are one table. What changed is the
-              word and the fact that it is no longer buried under a chevron. The seam is the one
+              🔴 THE ACTION IS UNCHANGED — this always created a folder row; it was LABELLED "New
+              project" because folders and projects are one table. What changed is the word, the
+              fact that it is no longer buried under a chevron, and (2026-09-03) that it opens
+              `FolderCreateDialog` rather than writing an input into the table. The seam is the one
               `sidebar-canvases.tsx` records: a learner reading this page is organising documents,
               so the word here is folder.
 
               🔴 STILL ONLY AT THE TOP LEVEL. Folders nest two deep in the database and the sidebar
               already spends that second level; offering this from inside one would either hit the
               trigger's refusal or quietly make a sibling, and neither is what the button says. */}
-          {openFolder === null && naming === null && (
+          {openFolder === null && (
             <button
               aria-label="New folder"
               className="flex h-[36px] shrink-0 items-center gap-[6px] rounded-full bg-(--ui-action) px-[16px] text-[14px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-80"
-              onClick={() => setNaming("")}
+              onClick={() => setCreating(true)}
               type="button"
             >
               <Plus size={16} strokeWidth={2} />
@@ -1317,7 +1295,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           heading over an empty list would make a filtered-out shelf look like an emptied one. */}
       {shelf === "all" && (
       <section className="pb-[40px]">
-        {allRows.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
+        {allRows.length === 0 && (openFolder !== null || visibleFolders.length === 0) ? (
           <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
@@ -1327,7 +1305,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "Nothing in this folder yet."
                   : "Nothing here yet. Ask Nemesis for flashcards, slides or a write-up in any conversation."}
           </p>
-        ) : view === "grid" && naming === null ? (
+        ) : view === "grid" ? (
           <>
             {openFolder === null && visibleFolders.length > 0 && (
               <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
@@ -1344,7 +1322,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               <span aria-hidden className={COL_ACTIONS} />
             </li>
             {openFolder === null && visibleFolders.map(folderRow)}
-            {openFolder === null && namingRow}
             {allRows.map(allRow)}
           </ul>
         )}
@@ -1353,7 +1330,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {showing("deck") && (
       <section className="pb-[40px]">
-        {shownDecks.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
+        {shownDecks.length === 0 && (openFolder !== null || visibleFolders.length === 0) ? (
           <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
@@ -1363,7 +1340,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No decks in this folder."
                   : "No decks yet. Ask Nemesis for flashcards in any conversation."}
           </p>
-        ) : view === "grid" && naming === null ? (
+        ) : view === "grid" ? (
           <>
             {openFolder === null && visibleFolders.length > 0 && (
               <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
@@ -1391,7 +1368,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               <span aria-hidden className={COL_ACTIONS} />
             </li>
             {openFolder === null && visibleFolders.map(folderRow)}
-            {openFolder === null && namingRow}
             {shownDecks.map(deckRow)}
           </ul>
         )}
@@ -1400,7 +1376,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {showing("slides") && (
       <section className="pb-[40px]">
-        {shownSlides.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
+        {shownSlides.length === 0 && (openFolder !== null || visibleFolders.length === 0) ? (
           <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
@@ -1410,7 +1386,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No slide decks in this folder."
                   : "No slide decks yet. Ask Nemesis for a PowerPoint in any conversation."}
           </p>
-        ) : view === "grid" && naming === null ? (
+        ) : view === "grid" ? (
           <>
             {openFolder === null && visibleFolders.length > 0 && (
               <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
@@ -1438,7 +1414,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               <span aria-hidden className={COL_ACTIONS} />
             </li>
             {openFolder === null && visibleFolders.map(folderRow)}
-            {openFolder === null && namingRow}
             {shownSlides.map(slidesRow)}
           </ul>
         )}
@@ -1447,7 +1422,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
 
       {showing("note") && (
       <section className="pb-[40px]">
-        {shownNotes.length === 0 && (openFolder !== null || visibleFolders.length === 0) && naming === null ? (
+        {shownNotes.length === 0 && (openFolder !== null || visibleFolders.length === 0) ? (
           <p className={ROW_EMPTY}>
             {!loaded
               ? "Loading…"
@@ -1457,7 +1432,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   ? "No documents in this folder."
                   : "No documents yet. Ask Nemesis for a summary or a write-up in any conversation."}
           </p>
-        ) : view === "grid" && naming === null ? (
+        ) : view === "grid" ? (
           <>
             {openFolder === null && visibleFolders.length > 0 && (
               <div className={cn(CARD_GRID, "mb-[24px]")}>{visibleFolders.map(folderCard)}</div>
@@ -1485,7 +1460,6 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
               <span aria-hidden className={COL_ACTIONS} />
             </li>
             {openFolder === null && visibleFolders.map(folderRow)}
-            {openFolder === null && namingRow}
             {shownNotes.map(noteRow)}
           </ul>
         )}
@@ -1592,6 +1566,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
           2026-08-25: "I don't want users to edit flashcards, really"). In all three cases the
           component still exists and still works — this page simply no longer offers it. */}
       {sharing && <DeckShare deck={sharing} onClose={() => setSharing(null)} userId={userId} />}
+      <FolderCreateDialog onCreate={addFolder} onOpenChange={setCreating} open={creating} />
       </main>
     </div>
   );
