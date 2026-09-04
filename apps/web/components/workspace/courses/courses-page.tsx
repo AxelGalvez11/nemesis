@@ -211,6 +211,19 @@ export function CoursesPage({ userId }: { userId: string | null }) {
             </div>
           </section>
         ))}
+
+        {/* 🔴 THE ONE LINK THAT KEEPS ALL 186 COURSES LICENSED. The credit came off the course page
+            by owner ruling; CC BY §3(a)(2) permits meeting the condition with a link to a resource
+            carrying it, and this is that link. It is deliberately the quietest thing on the page,
+            and it is not decoration — removing it uses every author's work without the permission
+            the whole catalogue depends on. */}
+        {!loading && groups.length > 0 ? (
+          <div className="pt-[36px] text-[12px] text-(--ui-text-tertiary)">
+            <button className="underline" onClick={() => router.push("/courses/sources")} type="button">
+              Sources and licences
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

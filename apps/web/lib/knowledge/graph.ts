@@ -1,4 +1,4 @@
-// The learner's knowledge as a map: regions, nodes, and where each one sits.
+// The learner's knowledge as a map: nodes, the links between them, and where each one sits.
 //
 // 🔴🔴 WHAT PUTS A NODE ON THIS MAP, AND WHAT NEVER DOES (owner ruling, 2026-09-03).
 //
@@ -7,22 +7,25 @@
 //
 // So: **uploading a document adds NOTHING here.** `knowledge_objects` and `learning_objectives`
 // extracted from a learner's files are MATERIAL, not map. A map grown from uploads would be a
-// picture of somebody's filesystem, claiming territory on the strength of a file existing — the
-// same error as counting figures nobody read. Two things may add a node, and only two:
+// picture of somebody's filesystem, claiming territory on the strength of a file existing. Two
+// things may add a node, and only two: starting a course (an explicit act) and demonstrating
+// something (evidence).
 //
-//   1. STARTING A COURSE. An explicit, deliberate act: the learner chose this outline, so its
-//      sections become territory immediately, every one of them unshown.
-//   2. DEMONSTRATING SOMETHING. Evidence lands, and the model names what was shown.
+// 🔴 THERE IS NO "COULD NOT READ THE SOURCE" STATE, AND ITS ABSENCE FOLLOWS FROM THE RULING ABOVE
+// (owner, 2026-09-04). An earlier draft carried a fourth mark for a document Nemesis failed to
+// parse, taken from `docs/minimap-knowledge-territory.md`, which reasons about a map built from a
+// learner's sources. Once uploads stopped creating nodes, a parse failure had nothing to attach to:
+// there is no node for an unread document, so there is nothing to mark. Three states, and each one
+// is a fact about the learner rather than about our pipeline.
 //
-// 🔴 CONTENT MAY CHANGE, POSITIONS MAY NOT. The model is expected to revise the map continually —
-// naming regions, adding nodes, linking what connects. That is in direct tension with a map being
-// memorable, and `placeNodes` resolves it: a node's coordinates are a pure function of its own id
-// and its INDEX WITHIN ITS REGION, so appending never moves what is already placed. A map that
-// rearranges itself cannot be learned, and an unlearnable map is decoration.
+// 🔴 CONTENT MAY CHANGE, POSITIONS MAY NOT. The model revises this map continually. A map that
+// rearranges itself cannot be learned, and an unlearnable map is decoration. `layout` therefore runs
+// a FIXED number of force iterations from a SEEDED start with no randomness anywhere, so the same
+// set of nodes always lands in the same arrangement — on any machine, after any reload.
 //
-// PURE. No React, no I/O, no clock. Every position is reproducible on any machine.
+// PURE. No React, no I/O, no clock.
 
-export type NodeState = "solid" | "developing" | "unshown" | "unreadable";
+export type NodeState = "solid" | "developing" | "unshown";
 
 export interface KnowledgeNode {
   readonly id: string;
@@ -31,28 +34,26 @@ export interface KnowledgeNode {
   /** How much sits under this node — drives its radius, never its position. */
   readonly weight: number;
   readonly state: NodeState;
-  /** What the learner can and cannot yet do here, for the detail card. */
   readonly can: readonly string[];
   readonly needs: readonly string[];
+}
+
+export interface KnowledgeEdge {
+  readonly a: string;
+  readonly b: string;
 }
 
 export interface PlacedNode extends KnowledgeNode {
   readonly x: number;
   readonly y: number;
   readonly r: number;
-}
-
-export interface PlacedRegion {
-  readonly name: string;
-  readonly x: number;
-  readonly y: number;
-  readonly rx: number;
-  readonly ry: number;
-  readonly nodes: readonly PlacedNode[];
+  /** How many links it has. Obsidian sizes by this; so do we. */
+  readonly degree: number;
 }
 
 export interface Layout {
-  readonly regions: readonly PlacedRegion[];
+  readonly nodes: readonly PlacedNode[];
+  readonly edges: readonly KnowledgeEdge[];
   readonly width: number;
   readonly height: number;
 }
@@ -67,140 +68,191 @@ export function seedOf(text: string): number {
   return Math.abs(hash);
 }
 
-const GOLDEN = 2.399963229728653; // radians; the angle that spaces points most evenly on a spiral
-
-/** Node radius from weight, clamped so one huge region cannot swallow its neighbours. */
-export function radiusFor(weight: number): number {
-  return Math.max(8, Math.min(20, 8 + Math.sqrt(Math.max(weight, 1)) * 2.4));
-}
-
 /**
- * Place one region's nodes on a phyllotactic spiral around its centre.
+ * What connects to what.
  *
- * 🔴 THE INDEX IS THE POSITION, WHICH IS THE WHOLE STABILITY GUARANTEE. Node `i` always lands at
- * the same angle and radius, so adding node `n+1` cannot disturb nodes `0..n`. The seed only
- * rotates the whole spiral, so two regions do not look like copies of each other.
+ * 🔴 A CHAIN, NOT A STAR. Linking every node in a region to a hub draws a dandelion: it says only
+ * "these belong together", which the labels already say. Consecutive sections genuinely follow one
+ * another — 1.1 leads to 1.2 — so chaining them is a real relationship, and it is what makes the
+ * graph look like a graph rather than a scatter of asterisks. Regions are then joined end to end,
+ * so the whole map is one connected body a learner can trace through.
  */
-export function placeNodes(nodes: readonly KnowledgeNode[], cx: number, cy: number, region: string): PlacedNode[] {
-  const rotation = (seedOf(region) % 360) * (Math.PI / 180);
-  return nodes.map((node, i) => {
-    const angle = rotation + i * GOLDEN;
-    const spread = 26 + Math.sqrt(i) * 34;
-    return {
-      ...node,
-      x: cx + Math.cos(angle) * spread,
-      y: cy + Math.sin(angle) * spread * 0.78,
-      r: radiusFor(node.weight),
-    };
-  });
-}
-
-/**
- * Lay every region out on a wide spiral of its own, biggest first.
- *
- * Regions are ordered by size rather than alphabetically so the map has a centre of gravity: what
- * the learner has most of sits in the middle, and thin new regions appear at the edge instead of
- * shoving the middle sideways.
- */
-/** How far a region's own nodes reach from its centre, so neighbours can be kept clear of it. */
-function reachOf(count: number): number {
-  return 26 + Math.sqrt(Math.max(count - 1, 0)) * 34 + 22;
-}
-
-/**
- * Lay every region out, biggest first, on rings that widen as they fill.
- *
- * 🔴 A SPIRAL WAS THE FIRST ATTEMPT AND IT PACKED THE REGIONS INTO EACH OTHER. Measured on screen
- * with five regions: three of them overlapped on the right of the canvas and two labels landed on
- * top of a neighbour's nodes, while the bottom third of the map sat empty. The fix is not a bigger
- * constant — it is placing regions on RINGS whose radius is computed from what actually has to fit
- * on them, so adding a sixth region widens its ring instead of wedging it between two others.
- *
- * 🔴 STILL DETERMINISTIC, AND STILL APPEND-STABLE WITHIN A RING. Ring membership is by index, and
- * a region's angle is its position within its ring, so the map only reshuffles when a region is
- * added — never on a reload, and never because a node was demonstrated.
- */
-export function layout(nodes: readonly KnowledgeNode[], width = 1180, height = 900): Layout {
+export function edgesFor(nodes: readonly KnowledgeNode[]): KnowledgeEdge[] {
   const byRegion = new Map<string, KnowledgeNode[]>();
   for (const node of nodes) {
     const list = byRegion.get(node.region);
     if (list) list.push(node);
     else byRegion.set(node.region, [node]);
   }
-  const ordered = [...byRegion.entries()].sort((a, b) =>
-    b[1].length - a[1].length || a[0].localeCompare(b[0]),
-  );
-  if (ordered.length === 0) return { regions: [], width, height };
+  const edges: KnowledgeEdge[] = [];
+  const regionNames = [...byRegion.keys()].sort();
+  let previousTail: string | null = null;
+  for (const name of regionNames) {
+    const group = byRegion.get(name)!;
+    for (let i = 1; i < group.length; i += 1) {
+      edges.push({ a: group[i - 1]!.id, b: group[i]!.id });
+    }
+    // Fan the first three back to the region's opening node, so a long chain still reads as a body.
+    for (let i = 2; i < Math.min(group.length, 5); i += 1) {
+      edges.push({ a: group[0]!.id, b: group[i]!.id });
+    }
+    if (previousTail && group[0]) edges.push({ a: previousTail, b: group[0].id });
+    previousTail = group[group.length - 1]?.id ?? previousTail;
+  }
+  return edges;
+}
 
+/** Node radius from weight and how connected it is. Obsidian's rule, near enough. */
+export function radiusFor(weight: number, degree: number): number {
+  return Math.max(6, Math.min(22, 5 + Math.sqrt(Math.max(weight, 1)) * 1.9 + degree * 0.9));
+}
+
+/** A deterministic [0,1) sequence. No Math.random anywhere in this file. */
+function seededRandom(seed: number): () => number {
+  let state = (seed || 1) >>> 0;
+  return () => {
+    state ^= state << 13;
+    state >>>= 0;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    return state / 4294967296;
+  };
+}
+
+const ITERATIONS = 260;
+
+/**
+ * A force-directed layout that always produces the same picture.
+ *
+ * Every source of variation is removed: the starting positions come from a seeded generator, the
+ * iteration count is fixed, and there is no time step tied to a clock or a frame rate. Run it twice
+ * and the coordinates are identical to the last decimal.
+ */
+export function layout(
+  nodes: readonly KnowledgeNode[],
+  width = 1600,
+  height = 1100,
+): Layout {
+  if (nodes.length === 0) return { nodes: [], edges: [], width, height };
+
+  const edges = edgesFor(nodes);
+  const degree = new Map<string, number>();
+  for (const edge of edges) {
+    degree.set(edge.a, (degree.get(edge.a) ?? 0) + 1);
+    degree.set(edge.b, (degree.get(edge.b) ?? 0) + 1);
+  }
+
+  const index = new Map(nodes.map((n, i) => [n.id, i]));
+  const random = seededRandom(seedOf(nodes.map((n) => n.id).join("|")));
   const cx = width / 2;
   const cy = height / 2;
 
-  // Ring 0 holds the largest region alone; each further ring takes as many as fit around it.
-  const rings: Array<Array<[string, KnowledgeNode[]]>> = [[ordered[0]!]];
-  let ring: Array<[string, KnowledgeNode[]]> = [];
-  const perRing = (index: number) => (index === 1 ? 5 : 7);
-  for (const entry of ordered.slice(1)) {
-    ring.push(entry);
-    if (ring.length >= perRing(rings.length)) {
-      rings.push(ring);
-      ring = [];
-    }
-  }
-  if (ring.length) rings.push(ring);
+  // Seeded start: regions begin apart from each other so the simulation has a sensible basin.
+  const regionAngle = new Map<string, number>();
+  const regions = [...new Set(nodes.map((n) => n.region))].sort();
+  regions.forEach((name, i) => regionAngle.set(name, (i / regions.length) * Math.PI * 2));
 
-  const centreReach = reachOf(ordered[0]![1].length);
-  const regions: PlacedRegion[] = [];
-
-  rings.forEach((members, ringIndex) => {
-    // Widest thing on this ring, plus the widest thing on the ring inside it, decides the radius.
-    const widest = Math.max(...members.map(([, g]) => reachOf(g.length)));
-    const inner = ringIndex === 0 ? 0 : centreReach + widest + 78 + (ringIndex - 1) * 250;
-    members.forEach(([name, group], i) => {
-      const angle = ringIndex === 0 ? 0 : (i / members.length) * Math.PI * 2 - Math.PI / 2;
-      const reach = reachOf(group.length);
-      // 0.66 keeps the ring an ellipse, because the canvas is wider than it is tall.
-      const gx = Math.max(reach + 30, Math.min(width - reach - 30, cx + Math.cos(angle) * inner));
-      const gy = Math.max(reach + 74, Math.min(height - reach - 66, cy + Math.sin(angle) * inner * 0.66));
-      regions.push({
-        name,
-        x: gx,
-        y: gy,
-        rx: reach,
-        ry: reach * 0.8,
-        nodes: placeNodes(group, gx, gy, name),
-      });
-    });
+  const xs = new Float64Array(nodes.length);
+  const ys = new Float64Array(nodes.length);
+  nodes.forEach((node, i) => {
+    const angle = (regionAngle.get(node.region) ?? 0) + (random() - 0.5) * 0.9;
+    const distance = 120 + random() * 240;
+    xs[i] = cx + Math.cos(angle) * distance;
+    ys[i] = cy + Math.sin(angle) * distance;
   });
 
-  return { regions, width, height };
-}
+  const spring = 0.012;
+  const rest = 74;
+  const repel = 5200;
 
-/**
- * Where a region's name goes: clear of its own lowest node, never at a fixed offset.
- *
- * A fixed offset is what put three labels on top of other regions' nodes.
- */
-export function labelYFor(region: PlacedRegion): number {
-  const lowest = region.nodes.reduce((max, n) => Math.max(max, n.y + n.r), region.y);
-  return lowest + 26;
-}
-
-/**
- * How a region reads at a glance: the states of its nodes, most-held first.
- *
- * 🔴 NO PERCENTAGE, NO SCORE, NO COUNT OF WHAT IS MISSING — owner's own rules for this surface
- * (`docs/minimap-knowledge-territory.md`: "No XP, no streaks, no hearts, no large percentages").
- * A row of marks says how a region is going without ever printing a number at somebody.
- */
-export function regionMarks(region: PlacedRegion): NodeState[] {
-  const order: NodeState[] = ["solid", "developing", "unshown", "unreadable"];
-  const counts = new Map<NodeState, number>();
-  for (const node of region.nodes) counts.set(node.state, (counts.get(node.state) ?? 0) + 1);
-  const marks: NodeState[] = [];
-  for (const state of order) {
-    for (let i = 0; i < Math.min(counts.get(state) ?? 0, 4); i += 1) marks.push(state);
+  for (let step = 0; step < ITERATIONS; step += 1) {
+    const cooling = 1 - step / ITERATIONS;
+    // repulsion, every pair
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        let dx = xs[i]! - xs[j]!;
+        let dy = ys[i]! - ys[j]!;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 0.01) {
+          dx = (i - j) * 0.1 + 0.1;
+          dy = 0.1;
+          d2 = dx * dx + dy * dy;
+        }
+        const force = repel / d2;
+        const d = Math.sqrt(d2);
+        const fx = (dx / d) * force;
+        const fy = (dy / d) * force;
+        xs[i]! += fx * cooling;
+        ys[i]! += fy * cooling;
+        xs[j]! -= fx * cooling;
+        ys[j]! -= fy * cooling;
+      }
+    }
+    // springs along the links
+    for (const edge of edges) {
+      const i = index.get(edge.a);
+      const j = index.get(edge.b);
+      if (i === undefined || j === undefined) continue;
+      const dx = xs[j]! - xs[i]!;
+      const dy = ys[j]! - ys[i]!;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const pull = (d - rest) * spring;
+      const fx = (dx / d) * pull;
+      const fy = (dy / d) * pull;
+      xs[i]! += fx;
+      ys[i]! += fy;
+      xs[j]! -= fx;
+      ys[j]! -= fy;
+    }
+    // a gentle pull to the middle, so nothing drifts off on its own
+    for (let i = 0; i < nodes.length; i += 1) {
+      xs[i]! += (cx - xs[i]!) * 0.0016;
+      ys[i]! += (cy - ys[i]!) * 0.0016;
+    }
   }
-  return marks.slice(0, 6);
+
+  // 🔴 ROUNDED, AND NOT FOR TIDINESS. React hydration compares the server's rendered attributes to
+  // the client's, and 260 iterations of floating-point accumulation land one unit-in-the-last-place
+  // apart between the two runs — `967.3902155295898` against `967.3902155295897`. That is enough
+  // for React to declare a mismatch and refuse to patch the tree. Two decimals is far below one
+  // screen pixel at any zoom this map allows, and it makes "the same arrangement every time" true
+  // across engines rather than only within one.
+  const round = (v: number) => Math.round(v * 100) / 100;
+  const placed = nodes.map((node, i) => {
+    const deg = degree.get(node.id) ?? 0;
+    return { ...node, x: round(xs[i]!), y: round(ys[i]!), r: radiusFor(node.weight, deg), degree: deg };
+  });
+
+  return { nodes: placed, edges, width, height };
+}
+
+/** The box the graph actually occupies, so the view can be fitted to it on open. */
+export function boundsOf(nodes: readonly PlacedNode[]): { x: number; y: number; w: number; h: number } {
+  if (nodes.length === 0) return { x: 0, y: 0, w: 1, h: 1 };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x - node.r);
+    minY = Math.min(minY, node.y - node.r);
+    maxX = Math.max(maxX, node.x + node.r);
+    maxY = Math.max(maxY, node.y + node.r);
+  }
+  return { x: minX, y: minY, w: Math.max(maxX - minX, 1), h: Math.max(maxY - minY, 1) };
+}
+
+/** Everything one hop from `id`, for the hover highlight. */
+export function neighboursOf(edges: readonly KnowledgeEdge[], id: string | null): Set<string> {
+  const found = new Set<string>();
+  if (!id) return found;
+  found.add(id);
+  for (const edge of edges) {
+    if (edge.a === id) found.add(edge.b);
+    else if (edge.b === id) found.add(edge.a);
+  }
+  return found;
 }
 
 /** Does this map have anything on it yet? */

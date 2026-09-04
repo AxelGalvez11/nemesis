@@ -5,8 +5,8 @@
 // 🔴 THE WORLD IS SCRIPTED BECAUSE THE REAL ONE IS PRIVATE. `learner_courses` and
 // `learner_evidence` are owner-only by RLS, so a signed-out page can only ever draw an empty map —
 // which cannot show whether the map works. The component is the shipped one; only the nodes are
-// hand-written, and they are written to exercise all four states including the one that matters
-// most: `unreadable`, which must never look like a learner failure.
+// hand-written. Three states, since the "could not read the source" mark was removed by owner
+// ruling on 2026-09-04 — see lib/knowledge/graph.ts for why its absence is consistent.
 
 import { KnowledgePage } from "@/components/workspace/knowledge/knowledge-page";
 import type { KnowledgeNode } from "@/lib/knowledge/graph";
@@ -33,8 +33,8 @@ const NODES: KnowledgeNode[] = [
     ["Explain why blocking AT1 raises potassium, step by step", "Apply it to combined therapy"]),
   node("cv-5", "Capillary exchange", "The cardiovascular system", 3, "unshown", [],
     ["Explain how hydrostatic and oncotic pressure decide net movement"]),
-  node("cv-6", "Blood pressure regulation", "The cardiovascular system", 4, "unreadable", [],
-    ["The tables in week 6 could not be read, so this has not been mapped"]),
+  node("cv-6", "Blood pressure regulation", "The cardiovascular system", 4, "unshown", [],
+    ["Explain how baroreceptors correct a fall in pressure"]),
 
   node("re-1", "Gas exchange at the alveolus", "The respiratory system", 4, "solid"),
   node("re-2", "Ventilation and perfusion", "The respiratory system", 4, "developing",

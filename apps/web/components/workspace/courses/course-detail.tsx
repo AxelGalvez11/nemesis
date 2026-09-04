@@ -63,11 +63,32 @@ export function outlineOf(sections: readonly CourseSection[]): OutlineUnit[] {
   return units;
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      className="shrink-0 text-(--ui-text-tertiary) transition-transform"
+      fill="none"
+      height="14"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      style={{ transform: open ? "rotate(90deg)" : "none" }}
+      viewBox="0 0 16 16"
+      width="14"
+    >
+      <path d="M6 3.5 10.5 8 6 12.5" />
+    </svg>
+  );
+}
+
 function Objectives({ items }: { items: readonly string[] }) {
   if (items.length === 0) return null;
   return (
     <div className="my-[4px] rounded-[10px] bg-(--ui-bg-quaternary) px-[14px] py-[12px]">
-      <div className="mb-[8px] text-[12px] text-(--ui-text-tertiary)">By the end of this section you will be able to</div>
+      {/* 🔴 NO "By the end of this section you will be able to" — owner, 2026-09-04. The list is
+          self-evidently a list of things you will be able to do; the sentence was a header saying
+          what the next four lines already say. */}
       <div className="flex flex-col gap-[6px]">
         {items.map((objective) => (
           <div className="flex gap-[8px] text-[13px] leading-[1.45] text-(--ui-text-primary)" key={objective}>
@@ -111,9 +132,12 @@ export function CourseDetail({
       const rows = await listSections(found.id);
       if (!live) return;
       setSections(rows);
-      // The first chapter opens, so the page shows real objectives without a click.
+      // The first unit and its first chapter open, so the page shows real objectives without a
+      // click. Everything below stays folded: a 28-chapter book unfolded is not a contents page.
       const first = rows.find((s) => s.objectives.length > 0) ?? rows[0];
-      if (first) setOpen(new Set([`${first.unit ?? ""}|${first.chapter ?? ""}`]));
+      if (first) {
+        setOpen(new Set([`unit:${first.unit ?? ""}|0`, `${first.unit ?? ""}|${first.chapter ?? ""}`]));
+      }
     })();
     return () => {
       live = false;
@@ -121,6 +145,15 @@ export function CourseDetail({
   }, [slug]);
 
   const units = useMemo(() => outlineOf(sections), [sections]);
+
+  const toggle = useCallback((key: string) => {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const begin = useCallback(async () => {
     if (!course) return;
@@ -175,75 +208,68 @@ export function CourseDetail({
                 </p>
               ) : null}
 
-              <div className="mt-[22px] flex items-baseline gap-[10px]">
+              <div className="mt-[22px]">
                 <h2 className="m-0 text-[15px] font-semibold text-(--ui-text-primary)">Contents</h2>
-                <span className="text-[13px] text-(--ui-text-tertiary) tabular-nums">
-                  {units.length} units · {sections.length} sections
-                </span>
               </div>
 
+              {/* 🔴 UNITS COLLAPSE TOO — owner, 2026-09-04. A 169-section book is 7 units and 28
+                  chapters; with only the chapters folding, the page still opened as a 28-row wall.
+                  Folding at the top level is what makes a long course scannable. */}
               <div className="mt-[10px] border-t border-(--ui-stroke-tertiary)">
-                {units.map((unit, ui) => (
-                  <div key={`${unit.title ?? "u"}-${ui}`}>
-                    {unit.title ? (
-                      <div className="flex items-center gap-[10px] border-b border-(--ui-stroke-tertiary) py-[12px] text-[14px] font-medium text-(--ui-text-primary)">
-                        {unit.title}
-                        <span className="ml-auto text-[12px] font-normal text-(--ui-text-tertiary) tabular-nums">
-                          {unit.chapters.length} chapters
-                        </span>
-                      </div>
-                    ) : null}
-                    {unit.chapters.map((chapter, ci) => {
-                      const key = `${unit.title ?? ""}|${chapter.title}`;
-                      const isOpen = open.has(key);
-                      return (
-                        <div className="border-b border-(--ui-stroke-tertiary)" key={`${key}-${ci}`}>
-                          <button
-                            className="flex w-full items-center gap-[10px] py-[12px] pl-[24px] text-left"
-                            onClick={() =>
-                              setOpen((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(key)) next.delete(key);
-                                else next.add(key);
-                                return next;
-                              })
-                            }
-                            type="button"
-                          >
-                            <svg
-                              className="shrink-0 text-(--ui-text-tertiary) transition-transform"
-                              fill="none"
-                              height="14"
-                              stroke="currentColor"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="1.5"
-                              style={{ transform: isOpen ? "rotate(90deg)" : "none" }}
-                              viewBox="0 0 16 16"
-                              width="14"
-                            >
-                              <path d="M6 3.5 10.5 8 6 12.5" />
-                            </svg>
-                            <span className="text-[14px] text-(--ui-text-primary)">{chapter.title || "Sections"}</span>
-                          </button>
-                          {isOpen ? (
-                            <div className="ml-[48px] flex flex-col pb-[12px]">
-                              {chapter.sections.map((section) => (
-                                <div key={section.ordinal}>
-                                  <div className="flex min-h-[26px] items-center text-[13px] text-(--ui-text-primary)">
-                                    {section.number ? `${section.number} ` : ""}
-                                    {section.title}
+                {units.map((unit, ui) => {
+                  const unitKey = `unit:${unit.title ?? ""}|${ui}`;
+                  const unitOpen = unit.title === null || open.has(unitKey);
+                  return (
+                    <div key={`${unit.title ?? "u"}-${ui}`}>
+                      {unit.title ? (
+                        <button
+                          className="flex w-full items-center gap-[10px] border-b border-(--ui-stroke-tertiary) py-[14px] text-left"
+                          onClick={() => toggle(unitKey)}
+                          type="button"
+                        >
+                          <Chevron open={unitOpen} />
+                          <span className="text-[17px] font-semibold text-(--ui-text-primary)">{unit.title}</span>
+                          <span className="ml-auto text-[12px] font-normal text-(--ui-text-tertiary) tabular-nums">
+                            {unit.chapters.length} chapters
+                          </span>
+                        </button>
+                      ) : null}
+                      {unitOpen
+                        ? unit.chapters.map((chapter, ci) => {
+                            const key = `${unit.title ?? ""}|${chapter.title}`;
+                            const isOpen = open.has(key);
+                            return (
+                              <div className="border-b border-(--ui-stroke-tertiary)" key={`${key}-${ci}`}>
+                                <button
+                                  className="flex w-full items-center gap-[10px] py-[13px] pl-[24px] text-left"
+                                  onClick={() => toggle(key)}
+                                  type="button"
+                                >
+                                  <Chevron open={isOpen} />
+                                  <span className="text-[15px] font-medium text-(--ui-text-primary)">
+                                    {chapter.title || "Sections"}
+                                  </span>
+                                </button>
+                                {isOpen ? (
+                                  <div className="ml-[48px] flex flex-col pb-[12px]">
+                                    {chapter.sections.map((section) => (
+                                      <div key={section.ordinal}>
+                                        <div className="flex min-h-[28px] items-center text-[14px] text-(--ui-text-primary)">
+                                          {section.number ? `${section.number} ` : ""}
+                                          {section.title}
+                                        </div>
+                                        <Objectives items={section.objectives} />
+                                      </div>
+                                    ))}
                                   </div>
-                                  <Objectives items={section.objectives} />
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                                ) : null}
+                              </div>
+                            );
+                          })
+                        : null}
+                    </div>
+                  );
+                })}
               </div>
             </>
           ) : (
@@ -276,13 +302,13 @@ export function CourseDetail({
               </div>
             </div>
 
-            <div className="mt-[16px] px-[2px] text-[11px] leading-[1.5] text-(--ui-text-tertiary)">
-              Nemesis teaches from this outline and checks you against its objectives. It does not
-              reproduce the book.{" "}
-              <a className="underline" href={course.sourceUrl} rel="noreferrer noopener" target="_blank">
-                {course.attribution}
-              </a>
-            </div>
+            {/* 🔴 NOTHING HERE — owner, 2026-09-04: the credit line comes off this page entirely.
+                CC BY still requires it, so it has MOVED rather than gone: `/courses/sources` lists
+                every course with its author, licence and link, and the shelf links to that page at
+                its foot. The licence explicitly allows this — §3(a)(2) lets the conditions be met
+                "by providing a URI or hyperlink to a resource that includes the required
+                information" — which is why a single credits page is a lawful home for it and
+                deleting it outright would not be. Do not remove that page or the link to it. */}
           </div>
         ) : null}
       </div>
