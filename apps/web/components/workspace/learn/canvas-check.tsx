@@ -72,7 +72,9 @@ export function CanvasCheck({
   run,
   onDismiss,
   onFinished,
+  onAnswers,
   offer = "quiz",
+  bare = false,
 }: {
   run: TestRun;
   /** They closed the test. Nothing is scored and nothing is kept. */
@@ -93,6 +95,15 @@ export function CanvasCheck({
    */
   onFinished: (account: string) => void;
   /**
+   * What they picked, question by question, handed over with the account.
+   *
+   * 🔴 ADDITIVE AND OPTIONAL, BECAUSE ONE SURFACE NEEDS THE ANSWERS AND THE OTHER DOES NOT. The
+   * chat's marking is a reply, so the account is all it wants. The board shows the result in a card
+   * of its own (owner 2026-09-04: *"tests should show results in their own card node"*), and a card
+   * that draws which option was picked needs the picks, not a paragraph about them.
+   */
+  onAnswers?: (picks: readonly (string | null)[]) => void;
+  /**
    * What the learner actually asked for.
    *
    * 🔴🔴 THE OWNER'S RULE LIVES ON THIS PROP — 2026-08-26: *"don't give the user both tests and
@@ -102,6 +113,15 @@ export function CanvasCheck({
    * is the exact thing he ruled out; defaulting to "quiz" keeps every existing caller unchanged.
    */
   offer?: "quiz" | "cards" | "both";
+  /**
+   * Drop the card chrome: no ring, no 28px inset, no top margin.
+   *
+   * 🔴 FOR A SURFACE THAT IS ALREADY A CARD. On the board this runs inside a node that has its own
+   * border and padding, and the owner saw the result at once (2026-09-04: *"tests and notes retain
+   * a box outline around them"*). The chat keeps the chrome, because there the check sits in a
+   * column of prose and needs an edge of its own.
+   */
+  bare?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const [picks, setPicks] = useState<(string | null)[]>([]);
@@ -159,7 +179,10 @@ export function CanvasCheck({
     // 🔴 THE ACCOUNT IS BUILT FROM `answered`, NOT FROM `picks`. `setPicks` does not update the
     // value this closure captured, so reading state here would describe the run as it was BEFORE
     // the last tap — reporting the final question as skipped, every time.
-    if (last) onFinished(describeAttempt(run, answered));
+    if (last) {
+      onAnswers?.(answered);
+      onFinished(describeAttempt(run, answered));
+    }
     else setIndex((was) => was + 1);
   };
 
@@ -201,7 +224,7 @@ export function CanvasCheck({
     // click the answer". Their card needs Next because it marks as you go; ours marks at the end.
     <section
       aria-label={`Question ${index + 1} of ${run.questions.length}`}
-      className="canvas-swap mt-5 rounded-[8px] p-[28px] ring-1 ring-(--ui-stroke-tertiary)"
+      className={bare ? "canvas-swap" : "canvas-swap mt-5 rounded-[8px] p-[28px] ring-1 ring-(--ui-stroke-tertiary)"}
       ref={frame}
     >
       {/* 🔴🔴 THE SEGMENTED TOGGLE, AND IT IS ABSENT UNLESS BOTH WERE ASKED FOR — owner, 2026-08-26:
