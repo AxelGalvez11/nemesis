@@ -35,20 +35,26 @@ import { useEffect, type RefObject } from "react";
 const AT_BOTTOM_PX = 80;
 
 interface Anchor {
-  /** The block that was at the top of the viewport. */
-  element: Element;
+  /**
+   * Where the block sits in the tree, as child indices from the scroller down.
+   *
+   * 🔴🔴 A PATH, NOT THE ELEMENT, AND THIS IS THE SECOND THING THIS FILE GOT WRONG. Holding the
+   * node looks obviously right and fails silently: opening the pane re-renders the conversation, so
+   * by the time the width settles React has replaced the very node the anchor points at.
+   * `scroller.contains(anchor.element)` is then false and the restore quietly does nothing.
+   *
+   * Measured on production against the live DOM: the anchor resolved correctly to the `<li>` at the
+   * top of the viewport, and `contains` came back FALSE a beat later. Re-created markup has the
+   * same SHAPE, so an index path finds the equivalent node — verified on the same page, same
+   * gesture: path [1,1,0,0,0,0,11,2] resolved after the reflow and put the same line back at the
+   * top.
+   */
+  path: readonly number[];
   /** Where its top sat relative to the probe line. Usually negative — the block is scrolled partly
    *  out of view — which is what makes the restore exact rather than approximate. */
   offset: number;
 }
 
-/**
- * How far below the scroller's top edge to ask "what is here?".
- *
- * 🔴 NOT ZERO, AND NOT ARBITRARY. This scroller carries `pt-[48px]` to clear the floating chrome,
- * so the first 48px of it is padding: a probe at the very top hits the scroller itself, every time.
- * 56 clears the padding and lands on the first line the learner can actually read.
- */
 const PROBE_INSET = 56;
 
 /**
@@ -83,7 +89,10 @@ function anchorOf(scroller: HTMLElement): Anchor | null {
   if (!element || !scroller.contains(element)) {
     for (const child of scroller.children) {
       const rect = child.getBoundingClientRect();
-      if (rect.bottom > probe) return { element: child, offset: rect.top - probe };
+      if (rect.bottom > probe) {
+        const path = pathTo(scroller, child);
+        return path ? { offset: rect.top - probe, path } : null;
+      }
     }
     return null;
   }
@@ -96,7 +105,31 @@ function anchorOf(scroller: HTMLElement): Anchor | null {
     element = element.parentElement;
   }
   if (element === scroller) return null;
-  return { element, offset: element.getBoundingClientRect().top - probe };
+  const path = pathTo(scroller, element);
+  return path ? { offset: element.getBoundingClientRect().top - probe, path } : null;
+}
+
+/** Child indices from `root` down to `element`, or null when it is not inside. */
+function pathTo(root: Element, element: Element): number[] | null {
+  const path: number[] = [];
+  let node: Element | null = element;
+  while (node && node !== root) {
+    const parent: HTMLElement | null = node.parentElement;
+    if (!parent) return null;
+    path.unshift([...parent.children].indexOf(node));
+    node = parent;
+  }
+  return node === root ? path : null;
+}
+
+/** The element that path leads to now, or null when the shape has changed under it. */
+function resolve(root: Element, path: readonly number[]): Element | null {
+  let node: Element | undefined = root;
+  for (const index of path) {
+    node = node?.children[index];
+    if (!node) return null;
+  }
+  return node === root ? null : (node ?? null);
 }
 
 /**
@@ -117,10 +150,19 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
     // the learner scrolling away and does not overwrite the anchor we are in the middle of using.
     let restoring = false;
 
+    // 🔴 ONE ANCHOR PER FRAME AT MOST. `scroll` fires many times per frame on a trackpad, and each
+    // anchor costs an `elementFromPoint`, a `getComputedStyle` walk and a tree walk. Coalescing
+    // keeps a fast scroll through a long conversation from doing that work dozens of times for a
+    // value only the last of which is ever used.
+    let queued = 0;
     const remember = () => {
-      if (restoring) return;
-      pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
-      anchor = pinned ? null : anchorOf(node);
+      if (restoring || queued) return;
+      queued = requestAnimationFrame(() => {
+        queued = 0;
+        if (restoring) return;
+        pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
+        anchor = pinned ? null : anchorOf(node);
+      });
     };
 
     const restore = () => {
@@ -128,14 +170,21 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
         node.scrollTop = node.scrollHeight;
         return;
       }
-      if (!anchor || !node.contains(anchor.element)) return;
+      if (!anchor) return;
+      const found = resolve(node, anchor.path);
+      // The conversation genuinely changed shape under us — a new turn arrived mid-resize. Leaving
+      // the scroll alone is the honest answer; guessing would move the page for no reason.
+      if (!found) return;
       const probe = node.getBoundingClientRect().top + PROBE_INSET;
-      const moved = anchor.element.getBoundingClientRect().top - probe;
+      const moved = found.getBoundingClientRect().top - probe;
       // The block has drifted by `moved - offset`; taking that out of scrollTop puts it back.
       node.scrollTop += moved - anchor.offset;
     };
 
-    remember();
+    // 🔴 THE FIRST ONE IS SYNCHRONOUS, not queued: a panel opened in the same frame the hook mounts
+    // would otherwise resize against an anchor that does not exist yet.
+    pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
+    anchor = pinned ? null : anchorOf(node);
     node.addEventListener("scroll", remember, { passive: true });
 
     // 🔴🔴 A RESIZE OBSERVER, NOT A ONE-SHOT ON THE INSET. The column does not jump to its new
@@ -160,6 +209,7 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
     observer.observe(node);
 
     return () => {
+      if (queued) cancelAnimationFrame(queued);
       observer.disconnect();
       node.removeEventListener("scroll", remember);
     };
