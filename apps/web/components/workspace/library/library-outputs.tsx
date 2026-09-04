@@ -54,12 +54,14 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { FolderCreateDialog } from "@/components/workspace/library/folder-create-dialog";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { usePrompt } from "@/components/desktop-ui/prompt-dialog";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { DeckShare } from "./deck-share";
 import { deckFileName, deckToAnkiText } from "@/lib/workspace/deck-export";
-import { createFolder, listFolders, type Folder } from "@/lib/learn/canvas-store";
+import { createFolder, deleteFolder, listFolders, renameFolder, type Folder } from "@/lib/learn/canvas-store";
 import { applyRevision, reviseOutputMarkdown, undoRevision, type ReviseAsk } from "@/lib/learn/revise-output";
-import { fileOutput, type OutputKind } from "@/lib/workspace/library-filing";
+import { deleteOutput, fileOutput, isSoftDeleted, renameOutput, type OutputKind } from "@/lib/workspace/library-filing";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
 import { replaceLibraryNoteBody } from "@/lib/workspace/library-write";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
@@ -445,6 +447,8 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
   // 🔴 SHARING IS PUBLISHING, so it is one deliberate press on one named deck — never a default,
   // never applied in bulk. `sharing` holds the deck whose link panel is open.
   const [sharing, setSharing] = useState<DeckRow | null>(null);
+  const ask = usePrompt();
+  const confirm = useConfirm();
   /** The deck currently being written to a file, so its button cannot be pressed twice. */
   const [downloading, setDownloading] = useState<string | null>(null);
   // 🔴 THE SHELF FILTER AND THE OPEN FOLDER ARE INDEPENDENT, AND BOTH ARE VIEW STATE ONLY. Neither
@@ -650,6 +654,93 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     if (kind === "note") setNotes((was) => was.map((row) => (row.id === id ? { ...row, folderId } : row)));
     if (kind === "slides") setSlides((was) => was.map((row) => (row.assetId === id ? { ...row, folderId } : row)));
   }, []);
+
+  /**
+   * Renaming and deleting, added 2026-09-04 on the owner's *"yes add rename and delete"*.
+   *
+   * 🔴🔴 THE LIST IS ONLY CHANGED AFTER THE DATABASE AGREES, which is the rule `addFolder`
+   * already states one screen down: a row that renames itself optimistically and then fails leaves
+   * the learner reading a name that does not exist, and the only way to find out is a reload.
+   *
+   * 🔴 ONE PROMPT AND ONE CONFIRM, NOT FOUR DIALOGS. `usePrompt` and `useConfirm` are already
+   * mounted app-wide and already carry the measured geometry; a second set written here would be
+   * the same seam `folder-create-dialog.tsx` was built to close.
+   */
+  const renameRow = useCallback(
+    async (kind: OutputKind, id: string, currentName: string, noun: string) => {
+      const next = await ask({
+        confirmLabel: "Rename",
+        initial: currentName,
+        placeholder: "Name",
+        title: `Rename ${noun}`,
+      });
+      if (next === null || !next.trim() || next.trim() === currentName) return;
+      const name = next.trim();
+      if (!(await renameOutput(kind, id, name))) return;
+      if (kind === "deck") setDecks((was) => was.map((row) => (row.id === id ? { ...row, name } : row)));
+      if (kind === "note") setNotes((was) => was.map((row) => (row.id === id ? { ...row, title: name } : row)));
+      if (kind === "slides") setSlides((was) => was.map((row) => (row.assetId === id ? { ...row, title: name } : row)));
+    },
+    [ask],
+  );
+
+  const removeRow = useCallback(
+    async (kind: OutputKind, id: string, name: string, detail: string) => {
+      // 🔴🔴 THE PERMANENCE SENTENCE IS READ OFF THE SCHEMA, NOT TYPED BY THE CALLER. A deck is a
+      //    hard delete and takes its cards with it; a note and a slide deck carry a `deleted`
+      //    column. "This can't be undone" would be false for two of the three and its absence
+      //    false for the third, and a hand-written sentence per caller is exactly the kind of
+      //    thing that stays behind when a table changes. `isSoftDeleted` is the single source.
+      const body = isSoftDeleted(kind) ? detail : `${detail} This can't be undone.`;
+      const yes = await confirm({ body, confirmLabel: "Delete", title: `Delete "${name}"?` });
+      if (!yes) return;
+      if (!(await deleteOutput(kind, id))) return;
+      if (kind === "deck") setDecks((was) => was.filter((row) => row.id !== id));
+      if (kind === "note") setNotes((was) => was.filter((row) => row.id !== id));
+      if (kind === "slides") setSlides((was) => was.filter((row) => row.assetId !== id));
+    },
+    [confirm],
+  );
+
+  const renameFolderRow = useCallback(
+    async (folder: Folder) => {
+      const next = await ask({
+        confirmLabel: "Rename",
+        initial: folder.name,
+        placeholder: "Folder name",
+        title: "Rename folder",
+      });
+      if (next === null || !next.trim() || next.trim() === folder.name) return;
+      const name = next.trim();
+      if (!(await renameFolder(userId, folder.id, name))) return;
+      setFolders((was) => was.map((row) => (row.id === folder.id ? { ...row, name } : row)));
+    },
+    [ask, userId],
+  );
+
+  const removeFolderRow = useCallback(
+    async (folder: Folder) => {
+      // 🔴 WHAT IS INSIDE IS NOT DESTROYED, AND THE SENTENCE HAS TO SAY SO. Every child table
+      //    (assets, notes, decks, canvases) is ON DELETE SET NULL against `folders`, checked against
+      //    the live schema — so the things filed here come back to the Library root. Only a child
+      //    FOLDER cascades. The reference says "will be permanently deleted with all files and
+      //    subfolders", which is true of theirs and would be a lie about ours.
+      const yes = await confirm({
+        body: `Anything filed in it moves back to your Library. A folder inside it is deleted too.`,
+        confirmLabel: "Delete folder",
+        title: `Delete "${folder.name}"?`,
+      });
+      if (!yes) return;
+      if (!(await deleteFolder(userId, folder.id))) return;
+      setFolders((was) => was.filter((row) => row.id !== folder.id));
+      setOpenFolder((open) => (open === folder.id ? null : open));
+      // The rows that were inside it are at the root now, exactly as the sentence promised.
+      setDecks((was) => was.map((row) => (row.folderId === folder.id ? { ...row, folderId: null } : row)));
+      setNotes((was) => was.map((row) => (row.folderId === folder.id ? { ...row, folderId: null } : row)));
+      setSlides((was) => was.map((row) => (row.folderId === folder.id ? { ...row, folderId: null } : row)));
+    },
+    [confirm, userId],
+  );
 
   /**
    * Naming a new folder.
@@ -945,15 +1036,32 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
   // places, so they cannot drift apart (owner 2026-08-30, the recency rework).
   const folderRow = (folder: Folder) => (
               <li key={folder.id}>
-                <button className={cn(ROW, "w-full")} onClick={() => setOpenFolder(folder.id)} type="button">
-                  <span className={COL_TILE}><FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} /></span>
-                  <span className={ROW_NAME}>{folder.name}</span>
-                  <span className={cn(COL_MODIFIED, ROW_META)}>
-                    {when(folderWhen(folder))}
+                {/* 🔴🔴 A DIV WEARING THE ROW, NOT A BUTTON CONTAINING ONE. The menu added on
+                    2026-09-04 is a second action on this row, and a button inside a button is
+                    invalid markup that browsers resolve by dropping one of them — which is how an
+                    Options control quietly becomes an Open control. Same reasoning `dock-tabs.tsx`
+                    records for its close button. The other three row kinds were already shaped
+                    this way; this one only ever had one action, so it had not needed to be. */}
+                <div className={ROW}>
+                  <button className={ROW_MAIN} onClick={() => setOpenFolder(folder.id)} type="button">
+                    <span className={COL_TILE}><FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} /></span>
+                    <span className={ROW_NAME}>{folder.name}</span>
+                    <span className={cn(COL_MODIFIED, ROW_META)}>
+                      {when(folderWhen(folder))}
+                    </span>
+                    <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
+                  </button>
+                  <span className={COL_ACTIONS}>
+                    {/* 🔴 NO "Add to folder" HERE. Folders are one level deep by database trigger,
+                        so filing one into another is an offer the write would refuse. */}
+                    <RowMenu
+                      deleteLabel="Delete folder"
+                      label={`Options for ${folder.name}`}
+                      onDelete={() => void removeFolderRow(folder)}
+                      onRename={() => void renameFolderRow(folder)}
+                    />
                   </span>
-                  <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
-                  <span aria-hidden className={COL_ACTIONS} />
-                </button>
+                </div>
               </li>
   );
   const deckRow = (deck: DeckRow) => (
@@ -991,7 +1099,9 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                     current={deck.folderId}
                     folders={folders}
                     label={`Options for ${deck.name}`}
+                    onDelete={() => void removeRow("deck", deck.id, deck.name, `Its ${deck.cards} ${deck.cards === 1 ? "card goes" : "cards go"} with it.`)}
                     onFile={(folderId) => void file("deck", deck.id, folderId)}
+                    onRename={() => void renameRow("deck", deck.id, deck.name, "deck")}
                   >
                     <DropdownMenuItem disabled={downloading === deck.id} onClick={() => void takeDeck(deck)}>
                       Download for Anki
@@ -1027,7 +1137,9 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                     current={note.folderId}
                     folders={folders}
                     label={`Options for ${note.title}`}
+                    onDelete={() => void removeRow("note", note.id, note.title, "It leaves your Library.")}
                     onFile={(folderId) => void file("note", note.id, folderId)}
+                    onRename={() => void renameRow("note", note.id, note.title, "document")}
                   />
                 </span>
               </li>
@@ -1060,7 +1172,9 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                     current={row.folderId}
                     folders={folders}
                     label={`Options for ${row.title}`}
+                    onDelete={() => void removeRow("slides", row.assetId, row.title, "It leaves your Library.")}
                     onFile={(folderId) => void file("slides", row.assetId, folderId)}
+                    onRename={() => void renameRow("slides", row.assetId, row.title, "slide deck")}
                   />
                 </span>
               </li>
@@ -1660,17 +1774,25 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
  */
 function RowMenu({
   children,
-  current,
-  folders,
+  current = null,
+  folders = [],
   label,
   onFile,
+  onRename,
+  onDelete,
+  deleteLabel = "Delete",
 }: {
   /** Items this kind of row has and the others do not. Rendered above the filing submenu. */
   children?: ReactNode;
-  current: string | null;
-  folders: readonly Folder[];
+  current?: string | null;
+  folders?: readonly Folder[];
   label: string;
-  onFile: (folderId: string | null) => void;
+  /** Absent on a folder row: a folder does not go inside another folder from here. */
+  onFile?: (folderId: string | null) => void;
+  onRename?: () => void;
+  onDelete?: () => void;
+  /** "Delete folder" on a folder, following the reference's own wording. */
+  deleteLabel?: string;
 }) {
   return (
     <DropdownMenu>
@@ -1679,7 +1801,8 @@ function RowMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {children}
-        {children ? <DropdownMenuSeparator /> : null}
+        {children && onFile ? <DropdownMenuSeparator /> : null}
+        {onFile && (
         <DropdownMenuSub>
           {/* 🔴 "FOLDER", NOT "PROJECT", ON THIS PAGE. The button at the top says New folder and the
               rows it makes are folders; this menu said "Move to project" for the same reason the
@@ -1705,6 +1828,26 @@ function RowMenu({
             )}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        )}
+        {/* 🔴🔴 RENAME AND DELETE, LAST, WITH DELETE LAST OF ALL. Owner, 2026-09-04: *"yes add
+            rename and delete"*, after a comparison that found their Library menu is Download,
+            separator, Rename, Delete and ours had neither of the last two. Destructive goes at the
+            bottom, furthest from the pointer's resting place, which is the reference's order too.
+
+            🔴 THEY ARE OPTIONAL PROPS RATHER THAN ALWAYS DRAWN. A row whose kind cannot do one of
+            them must not show a control that does nothing — the same absent-not-inert rule the
+            reader's action bar follows. */}
+        {(onRename || onDelete) && (children || onFile) ? <DropdownMenuSeparator /> : null}
+        {onRename && <DropdownMenuItem onSelect={onRename}>Rename</DropdownMenuItem>}
+        {onDelete && (
+          <DropdownMenuItem
+            className="text-(--ui-danger) focus:text-(--ui-danger)"
+            data-testid="library-row-delete"
+            onSelect={onDelete}
+          >
+            {deleteLabel}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
