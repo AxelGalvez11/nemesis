@@ -139,6 +139,32 @@
   }
 }
 
+/* A document drawn INSIDE a board card (`DocumentReader`'s `bare`).
+ *
+ * 🔴🔴 THE CARD IS THE WINDOW, SO THE PAGE FILLS IT — owner, 2026-09-04: *"fit document width to
+ * size of the card node by default"*. Measured before changing anything: in a 640px card the
+ * reader room took 27px of padding each side and the sheet another 63px, so a .md file's text
+ * column was 424px — two thirds of the card, with a third spent on margins that mean something on
+ * a full-screen reader and nothing inside a card the learner sized themselves.
+ *
+ * 🔴 THIS CANNOT BE A MEDIA QUERY, WHICH IS WHY THE RULE ABOVE NEVER FIRED HERE. `max-width: 640px`
+ * asks the WINDOW, and the window is 1800px wide while the card is 640. An attribute on the reader
+ * root is the only thing that knows which of the two it is inside.
+ *
+ * 🔴 THE SHEET LOSES ITS EDGE HERE AND KEEPS IT EVERYWHERE ELSE. The card is already a bordered,
+ * rounded box; a second one 9px inside it is the doubled outline the owner has now cut twice. A PDF
+ * page keeps its own border (`.nemesis-reader-canvas`) because that one is a photograph of paper. */
+.nemesis-reader[data-bare="true"] .nemesis-reader-room {
+  padding: 0;
+}
+
+.nemesis-reader[data-bare="true"] .nemesis-reader-page {
+  max-width: none;
+  padding: 1.25rem;
+  border: 0;
+  border-radius: 0;
+}
+
 /* Reading mode: a derived, normalised rendering. Constrained measure for text
  * documents (the owner's rule); PDFs and slides get the wide canvas instead. */
 .nemesis-reading-view {

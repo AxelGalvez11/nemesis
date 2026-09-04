@@ -6,7 +6,9 @@
 // the whole of the owner's report on 2026-09-04 ("pdfs, docx, pptx still cannot be seen in the
 // canvas, they only render text"): when the drop was FILED, the original is in the Library and the
 // reader must be given that, so a PDF is pages and a deck is slides. Only when there is no filed
-// row does the extracted text stand in, and the card says so out loud.
+// row does the extracted text stand in. The card no longer says so in a sentence above the
+// document (owner, 2026-09-04: *"remove this line"*); what says it is the NAME, since
+// `extractedTextFileName` calls a reconstruction "Lecture 9.md" and never "Lecture 9.pdf".
 //
 // 🔴 THE HARNESS MAKES NO NETWORK CALLS. `/dev-preview/board` signs a mock session, so `uid` is
 // set, so a library lookup went to the database, found nothing under a fixture id, and the one
@@ -21,13 +23,12 @@ import type { BoardSource } from "@/lib/board/board-model";
 import type { ReaderSource } from "@/lib/reader/reader-source";
 import { loadLibrarySource } from "@/lib/workspace/library-sources";
 
-import { boardReaderSource, filedIdOf, filedReaderSource, isExtractedText } from "./board-reader-source";
+import { boardReaderSource, filedIdOf, filedReaderSource } from "./board-reader-source";
 
 export type BoardReaderState =
   | { readonly kind: "loading" }
   | { readonly kind: "unavailable"; readonly reason: string }
-  /** `extracted` is true when what is on screen is Nemesis's reading, not the file itself. */
-  | { readonly kind: "ready"; readonly source: ReaderSource; readonly extracted: boolean };
+  | { readonly kind: "ready"; readonly source: ReaderSource };
 
 const NOTHING_READ = "Nemesis could not read any text out of this source, so there is nothing to show here yet.";
 
@@ -58,7 +59,7 @@ export function useBoardReader(source: BoardSource | undefined, enabled: boolean
       if (filed) {
         const row = await loadLibrarySource(uid, filed, { preview });
         if (row) {
-          put({ extracted: false, kind: "ready", source: filedReaderSource(row) });
+          put({ kind: "ready", source: filedReaderSource(row) });
           return;
         }
       }
@@ -67,7 +68,7 @@ export function useBoardReader(source: BoardSource | undefined, enabled: boolean
         put({ kind: "unavailable", reason: NOTHING_READ });
         return;
       }
-      put({ extracted: isExtractedText(source), kind: "ready", source: reader });
+      put({ kind: "ready", source: reader });
     })();
     return () => {
       live = false;
