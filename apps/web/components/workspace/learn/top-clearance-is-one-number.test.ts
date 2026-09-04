@@ -35,6 +35,19 @@ test("🔴 there is no masthead to reach into the text — the ground is on the 
   assert.ok(!/top-0 z-20 h-\[\d+px\]/.test(code(read("./canvas-surface.tsx"))), "a masthead band is back, and it will paint over the conversation");
 });
 
+test("🔴🔴 the PIN targets that same clearance, and 16px apart was visible on screen", () => {
+  // 🔴 MEASURED, NOT REASONED: on /dev-preview/learn the first prompt of a conversation landed at
+  // 48px from the top of the scroller and every prompt after it at 64. Nothing above the first turn
+  // can be scrolled away, so `scrollTop` clamps at 0 and the pin cannot reach its own target: it
+  // asked for -16 and got 0. Two numbers for one clearance, which is the exact failure this file is
+  // named for; it simply had not been told the pin is the third place the number lives.
+  const canvas = code(read("./learning-canvas.tsx"));
+  const top = Number(/overflow-y-auto[^"`]*pt-\[(\d+)px\]/.exec(canvas)?.[1]);
+  const pin = Number(/PIN_INSET_PX = (\d+)/.exec(canvas)?.[1]);
+  assert.ok(Number.isFinite(top) && Number.isFinite(pin), "could not find the clearance or the pin inset");
+  assert.equal(pin, top, `the pin aims at ${pin}px into a column that rests at ${top}px, so the first prompt cannot reach it`);
+});
+
 test("🔴 and the clearance still clears the controls, which are 12px in and 28px tall", () => {
   // Owner asked for the space back but also to leave the controls where they are. Text starting
   // above 40px would run under them.

@@ -199,10 +199,26 @@ const ARRIVING_MS = 1_200;
 /**
  * How far below the top of the thread a freshly sent prompt lands.
  *
- * 🔴 IT IS THE SCROLLER'S OWN `pt-[48px]`, WHICH IS CLEARANCE FOR THE FLOATING HEADER CONTROLS.
+ * 🔴🔴 IT IS THE SCROLLER'S OWN `pt-[48px]`, AND `PIN_INSET_PX` IS NOW THE SAME NUMBER (2026-09-03).
+ * The pin targeted 64 against a column resting at 48, and measured on /dev-preview/learn the two
+ * disagreed in a way anyone can see: the FIRST prompt of a conversation landed at 48px and every
+ * prompt after it at 64. Nothing above the first turn can be scrolled away, so `scrollTop` clamps
+ * at 0 and the pin cannot reach its own target — it asked for -16 and got 0.
+ *
+ * 🔴 THE PIN MOVED TO THE CLEARANCE, NOT THE CLEARANCE TO THE PIN. 48 is an owner ruling with a
+ * guard around it (40..56, "asked for the space back but leave the controls where they are"), so
+ * raising the column to meet the pin would have traded a 16px inconsistency for an ignored
+ * instruction. `top-clearance-is-one-number.test.ts` now knows the pin is the third place this
+ * number lives.
  * Pinning to the true top tucks the learner's own sentence under Sources and the ⋯.
+ *
+ * 🔴 48, AND IT WAS 64 — SEE THE CLEARANCE NOTE ABOVE. Measured on /dev-preview/learn: the first
+ * prompt of a conversation landed at 48 and every one after it at 64, because nothing above the
+ * first turn can be scrolled away and the pin's own request clamped at `scrollTop: 0`. It is the
+ * column's resting clearance now, which is where every other first line on this surface already
+ * sits, so a pinned prompt and an unpinned one agree about where the top is.
  */
-const PIN_INSET_PX = 64;
+const PIN_INSET_PX = 48;
 
 /** How long the prompt may be held at the top before the page is the learner's again. Long enough
  *  for a slow answer to finish forming, short enough that nothing is held hostage. */
