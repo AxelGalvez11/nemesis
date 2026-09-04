@@ -1,37 +1,48 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
-import { Alert, Animated, AppState, Easing, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, Animated, Easing, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, usePathname } from "expo-router";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
-import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, Easing as ReEasing } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
-import { deleteThread, listThreads, newThreadId, pinThread, renameThread } from "@/api/chat";
-import type { ThreadSummary } from "@/lib/chat-threads";
-// The hold haptic now fires inside useRowDrag, with the gesture that earns it.
+import { createFolder, deleteCanvas, deleteFolder, loadCanvas, renameCanvas, renameFolder, setCanvasFolder, setCanvasPinned, setFolderPinned } from "@/api/canvases";
+import { buildProjects, canvasLabel, sidebarSections, threadFromCanvas, type CanvasSummary, type Folder, type ProjectNode } from "@/lib/canvases";
+import { flattenProjects } from "@/lib/relative-time";
+import { isFresh } from "@/lib/canvas-freshness";
 import { hapticDrawerOpened } from "@/lib/haptics";
-import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
-import Svg, { Path } from "react-native-svg";
-import { MiniMenu, type MenuAnchor } from "./MiniMenu";
+import { MiniMenu, type MenuAnchor, type MenuRow } from "./MiniMenu";
+import { CanvasRow } from "./ProjectRows";
+import { useCanvasesAndFolders } from "./useCanvasesAndFolders";
 import { useRowDrag } from "./useRowDrag";
-import { TextPromptSheet, type RowAction } from "./RowActionSheets";
-import { CalendarIcon, ChevronIcon, LibraryIcon, NotebookIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { TextPromptSheet } from "./RowActionSheets";
+import { ChatIcon, PinIcon, SearchIcon, SettingsIcon, TrashIcon, type IconProps } from "./icons";
+import {
+  CalendarGlyphIcon,
+  ComposeIcon,
+  FolderPlusIcon,
+  LibraryShelfIcon,
+  PencilIcon,
+  PluginsGlyphIcon,
+  ProjectFolderIcon,
+  ShareIcon,
+} from "./icons-sidebar";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { control, radius, space, type } from "@/theme/tokens";
+import { control, inset, radius, row, space, type } from "@/theme/tokens";
 
 // ChatGPT/Claude-style side drawer + the app-shell context that drives it. Built on RN's built-in
 // Animated (no extra deps; renders identically under react-native-web for previews). The sidebar is
 // always mounted UNDERNEATH the page; opening PUSHES the whole page (Slot + StatusBarBlur + TopBar) to
 // the right by the panel width to reveal it, instead of sliding an overlay on top — see DrawerShell.
 //
-// The drawer IS the desktop sidebar on the phone: a compact nav (Chat · Study ·
-// Library · Calendar), then the live CHATS history (owner: "chats should
-// save to the sidebar") — each conversation persisted as its own thread — then a
-// solid "New chat" button and a settings gear. Tapping a chat reopens it (via the
-// /chat?c=<id> route param). Mac-dispatch "sessions" (the missions feature) are
-// removed from the phone entirely (owner call 2026-07-20; see
-// docs/design/nemesis-cloud-first-phone-2026-07.md §10) — this drawer no longer
-// lists them.
+// The drawer IS the desktop sidebar on the phone, redrawn to match the ChatGPT iOS app
+// one-to-one (nemesis-ios-catchup): a compact nav (Library · Projects · Plugins ·
+// Calendar), then a plain "Pinned" header (a pinned canvas or project, icon-led, no
+// chevron/count) and a plain "Recents" header below it (canvases only — there is no
+// standalone "Projects" section here; unpinned projects live on the Projects page). Data
+// is the learner's `learning_canvases` + `folders` rows (src/lib/canvases.ts's
+// `sidebarSections`). Tapping a canvas reopens it (`/canvas?c=<id>`); tapping a pinned
+// project opens its own page (`/project?id=<id>`) rather than expanding in place. A solid
+// accent "Chat" pill and a settings gear float over the bottom of the list.
 //
 // Owner call 2026-07-18: the drawer opens on a rightward swipe from ANYWHERE (plus
 // tapping TopBar's menu button); on /graph and /calendar — which own their own
@@ -52,8 +63,10 @@ interface ShellState {
   open: boolean;
   openDrawer: () => void;
   closeDrawer: () => void;
-  /** Open a brand-new chat thread (navigates to /chat with a fresh thread id). */
-  newChat: () => void;
+  /** Start a brand-new canvas — navigates to "/", the front door. Nothing is created by
+   *  this alone (api/canvases.ts's `startCanvas`: "nothing is created by pressing this,
+   *  only by beginning"); the front door mints and saves the canvas on the first send. */
+  newCanvas: () => void;
   /** The TopBar's center label: null → blank (owner call 2026-07-18, no logo/wordmark chrome); a string → that title. */
   headerTitle: string | null;
   setHeaderTitle: (title: string | null) => void;
@@ -64,6 +77,10 @@ interface ShellState {
    *  are set, and unlike the title slot it accepts taps. */
   headerCenter: ReactNode;
   setHeaderCenter: (node: ReactNode) => void;
+  /** A control in the TopBar's LEFT slot, in place of the menu button — the reference's round
+   *  back button on a pushed page (a project). Null restores the menu button. */
+  headerLeft: ReactNode;
+  setHeaderLeft: (node: ReactNode) => void;
   /** Optional right-side TopBar chrome — a screen's own action (Graph's gear, Chat's
    *  "…" menu). Rendered in the top-right slot, which paints ABOVE the status-bar blur,
    *  so it stays crisp and lines up exactly with the left menu button (owner 2026-07-18). */
@@ -105,6 +122,7 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
   const [headerCenter, setHeaderCenter] = useState<ReactNode>(null);
+  const [headerLeft, setHeaderLeft] = useState<ReactNode>(null);
   const [headerRight, setHeaderRight] = useState<ReactNode>(null);
   const [immersive, setImmersive] = useState(false);
   // Opening the drawer always drops the keyboard (owner 2026-07-20: swiping to the
@@ -125,26 +143,25 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
     else finishOpen();
   }, []);
   const closeDrawer = useCallback(() => setOpen(false), []);
-  // A fresh chat is a new thread id in the route param; the chat screen loads it
-  // (empty) and persists it on the first send, so it shows up in this drawer.
-  const newChat = useCallback(() => {
-    router.push(`/chat?c=${newThreadId()}` as never);
+  const newCanvas = useCallback(() => {
+    router.push("/" as never);
   }, []);
 
   const value = useMemo<ShellState>(
     () => ({
-      open, openDrawer, closeDrawer, newChat,
+      open, openDrawer, closeDrawer, newCanvas,
       headerTitle, setHeaderTitle,
       headerCenter, setHeaderCenter,
+      headerLeft, setHeaderLeft,
       headerRight, setHeaderRight,
       immersive, setImmersive,
     }),
-    [open, openDrawer, closeDrawer, newChat, headerTitle, headerCenter, headerRight, immersive],
+    [open, openDrawer, closeDrawer, newCanvas, headerTitle, headerCenter, headerLeft, headerRight, immersive],
   );
 
   return (
     <ShellContext.Provider value={value}>
-      <DrawerShell open={open} onOpen={openDrawer} onClose={closeDrawer} onNewChat={newChat} immersive={immersive}>
+      <DrawerShell open={open} onOpen={openDrawer} onClose={closeDrawer} onNewCanvas={newCanvas} immersive={immersive}>
         {children}
       </DrawerShell>
     </ShellContext.Provider>
@@ -163,14 +180,14 @@ function DrawerShell({
   open,
   onOpen,
   onClose,
-  onNewChat,
+  onNewCanvas,
   immersive,
   children,
 }: {
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
-  onNewChat: () => void;
+  onNewCanvas: () => void;
   /** Switches the open-swipe off outright — see ShellState.immersive. */
   immersive: boolean;
   children: ReactNode;
@@ -259,7 +276,7 @@ function DrawerShell({
             edge that competed with the page's rounded corners. A plain dark fill has no
             edge, so the pushed page's corners + shadow read cleanly against it. */}
         <View style={styles.panelSolid}>
-          <DrawerContent open={open} onClose={onClose} onNewChat={onNewChat} />
+          <DrawerContent open={open} onClose={onClose} onNewCanvas={onNewCanvas} />
         </View>
       </View>
 
@@ -291,100 +308,53 @@ function DrawerShell({
   );
 }
 
-// Short "5m / 3h / 2d / Jul 8" stamp for a row.
-function relTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const sec = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (sec < 60) return "now";
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h`;
-  const day = Math.round(hr / 24);
-  if (day < 7) return `${day}d`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+/** What the long-press menu is acting on — a canvas row or a project tile. One Modal
+ *  serves both, its rows swapped by `menuMode` below, rather than stacking a second menu. */
+type ActionTarget = { kind: "canvas"; canvas: CanvasSummary } | { kind: "project"; project: ProjectNode };
 
-function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: () => void; onNewChat: () => void }) {
+/** The one text-prompt dialog, in its three shapes. `newProject` carries the CANVAS id
+ *  it will file once the folder exists — `onConfirm` creates the folder, then files it. */
+type PromptState =
+  | { mode: "renameCanvas"; id: string; initial: string }
+  | { mode: "renameProject"; id: string; initial: string }
+  | { mode: "newProject"; canvasId: string };
+
+function DrawerContent({ open, onClose, onNewCanvas }: { open: boolean; onClose: () => void; onNewCanvas: () => void }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
-  const [chats, setChats] = useState<ThreadSummary[]>([]);
+
+  // Data + its three refresh paths (open, debounced-on-mutation, on-foreground) live
+  // in one hook shared with the Projects page — see useCanvasesAndFolders.ts.
+  const { canvases, folders, setCanvases, setFolders } = useCanvasesAndFolders(uid, open);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  // Pinned chats get their own collapsible block above the main list (owner
-  // 2026-07-23). Expanded by default; the chevron rotates open exactly like the
-  // folder rows on the Library/Study trees.
-  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
-  // …and so does the main Chats list (owner 2026-07-23: "chats should also have
-  // that downward arrow for collapse like pin does").
-  const [chatsCollapsed, setChatsCollapsed] = useState(false);
-  // Long-press a chat row → a mini menu (owner 2026-07-23: "hold down on chats
-  // in the side bar to open up minimenu for delete chat, rename, pin", then
-  // "should bring out a minimenu not a popup from the bottom"). The first pass
-  // reused the Library/Study bottom sheet; this now opens at the touch point.
-  // `actionAt` is where the press landed, in window coordinates.
-  const [actionTarget, setActionTarget] = useState<ThreadSummary | null>(null);
+
+  // Long-press a row -> a MiniMenu at the touch point (owner 2026-07-23 precedent,
+  // carried over from the retired chat list). `menuMode` swaps the SAME menu's rows to
+  // the "Add to project" picker rather than opening a second menu on top of it.
+  const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [actionAt, setActionAt] = useState<MenuAnchor | null>(null);
-  const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
-  // Every chat currently on screen, so the hold gesture can find the one it
-  // picked up by id. Rebuilt below from the same list the rows render from.
-  const chatsByIdRef = useRef(new Map<string, ThreadSummary>());
+  const [menuMode, setMenuMode] = useState<"actions" | "addToProject">("actions");
+  const [prompt, setPrompt] = useState<PromptState | null>(null);
 
-  // Count of in-flight local mutations (pin/rename/delete). A refresh while one
-  // is still writing to the cloud would re-read the STALE row and
-  // mergeCloudThreadList (cloud-wins) would revert the optimistic change — the
-  // just-deleted chat reappears, or a rename/pin snaps back (review finding). So
-  // every refresh path skips while this is non-zero.
-  const pendingRef = useRef(0);
-  const withPending = useCallback(async (work: () => Promise<unknown>) => {
-    pendingRef.current += 1;
-    try {
-      await work();
-    } finally {
-      pendingRef.current -= 1;
-    }
-  }, []);
-  const refresh = useCallback(() => {
-    if (!uid || pendingRef.current > 0) return;
-    void listThreads(uid).then(setChats).catch(() => {});
-  }, [uid]);
+  // Every canvas/project on screen, so the hold gesture can find the one it picked up
+  // by its (section-prefixed) key — rebuilt each render from the arrays the rows draw
+  // from, same pattern the old chat list used for its own lookup map.
+  const canvasesByIdRef = useRef(new Map<string, CanvasSummary>());
+  const projectsByIdRef = useRef(new Map<string, ProjectNode>());
 
-  // Refresh chats each time the drawer opens (cheap; keeps it current) — unless
-  // a local write is still in flight (see pendingRef).
-  useEffect(() => {
-    if (!open || !uid || pendingRef.current > 0) return;
-    let alive = true;
-    void listThreads(uid).then((rows) => alive && setChats(rows)).catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [open, uid]);
-
-  // …and again whenever the app returns to the foreground while the drawer is
-  // open, so a chat started on the web (or another device) appears without
-  // having to close and reopen the sidebar (owner 2026-07-23: "chats still
-  // arent synced with the webapp"). This is the drawer's half of the
-  // refresh-on-foreground story; the open chat thread refreshes itself the same
-  // way — see chat.tsx.
-  useEffect(() => {
-    if (!open || !uid) return;
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") refresh();
-    });
-    return () => sub.remove();
-  }, [open, uid, refresh]);
-
-  // The long-press menu / rename dialog must not survive the drawer closing:
-  // dismissing via the dimmed page taps the drawer's OWN close-catcher, not the
-  // sheet's, so without this the menu would silently reappear on the next open.
+  // The menu/prompt must not survive the drawer closing: dismissing via the dimmed
+  // page taps the drawer's OWN close-catcher, not the sheet's, so without this the
+  // menu would silently reappear on the next open.
   useEffect(() => {
     if (!open) {
       setActionTarget(null);
-      setRenameTarget(null);
+      setActionAt(null);
+      setMenuMode("actions");
+      setPrompt(null);
     }
   }, [open]);
 
@@ -393,148 +363,293 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     router.push(path as never);
   };
 
-  const togglePin = (chat: ThreadSummary) => {
+  function closeMenu() {
     setActionTarget(null);
-    const next = !chat.pinned;
-    // Optimistic — the row jumps between the Pinned block and the main list at
-    // once; the cloud write is best-effort. withPending blocks a refresh from
-    // reverting it before the write lands.
-    setChats((rows) => rows.map((row) => (row.id === chat.id ? { ...row, pinned: next } : row)));
-    if (uid) void withPending(() => pinThread(uid, chat.id, next));
-  };
+    setActionAt(null);
+    setMenuMode("actions");
+  }
 
-  const confirmDelete = (chat: ThreadSummary) => {
-    setActionTarget(null);
-    Alert.alert("Delete chat?", `"${chat.title}" will be removed from your chats on every device.`, [
+  // ---- canvas row actions ----
+
+  function togglePinCanvas(canvas: CanvasSummary) {
+    closeMenu();
+    const next = !canvas.pinnedAt;
+    setCanvases((rows) => rows.map((row) => (row.id === canvas.id ? { ...row, pinnedAt: next ? new Date().toISOString() : null } : row)));
+    if (uid) void setCanvasPinned(uid, canvas.id, next);
+  }
+
+  function beginRenameCanvas(canvas: CanvasSummary) {
+    closeMenu();
+    setPrompt({ id: canvas.id, initial: canvasLabel(canvas), mode: "renameCanvas" });
+  }
+
+  /** "Share" (IMG_6536): RN's own Share sheet, given the title plus a plain-text transcript.
+   *  Re-reads the full canvas rather than trusting the summary row — a `CanvasSummary` carries
+   *  only the last line, and `loadCanvas` can come back null for a row whose canvas was deleted
+   *  out from under this menu between the long-press and the tap. */
+  async function shareCanvas(canvas: CanvasSummary) {
+    closeMenu();
+    if (!uid) return;
+    const full = await loadCanvas(uid, canvas.id);
+    if (!full) return;
+    const label = canvasLabel(canvas);
+    const transcript = threadFromCanvas(full)
+      .map((turn) => (turn.said ? `Q: ${turn.said}\nA: ${turn.reply}` : turn.reply))
+      .join("\n\n");
+    try {
+      await Share.share({ title: label, message: transcript ? `${label}\n\n${transcript}` : label });
+    } catch {
+      // The share sheet itself throws on a user cancel — nothing to recover from.
+    }
+  }
+
+  function confirmDeleteCanvas(canvas: CanvasSummary) {
+    closeMenu();
+    Alert.alert("Delete canvas?", `"${canvasLabel(canvas)}" will be removed from your canvases on every device.`, [
       { style: "cancel", text: "Cancel" },
       {
         onPress: () => {
-          setChats((rows) => rows.filter((row) => row.id !== chat.id));
-          if (uid) void withPending(() => deleteThread(uid, chat.id));
+          setCanvases((rows) => rows.filter((row) => row.id !== canvas.id));
+          if (uid) void deleteCanvas(uid, canvas.id);
         },
         style: "destructive",
         text: "Delete",
       },
     ]);
-  };
+  }
 
-  const confirmRename = (value: string) => {
-    const chat = renameTarget;
-    setRenameTarget(null);
+  function fileCanvas(canvasId: string, folderId: string | null) {
+    closeMenu();
+    setCanvases((rows) => rows.map((row) => (row.id === canvasId ? { ...row, folderId } : row)));
+    if (uid) void setCanvasFolder(uid, canvasId, folderId);
+  }
+
+  // ---- project tile actions ----
+
+  function togglePinProject(project: ProjectNode) {
+    closeMenu();
+    const next = !project.pinnedAt;
+    setFolders((rows) => rows.map((row) => (row.id === project.id ? { ...row, pinnedAt: next ? new Date().toISOString() : null } : row)));
+    if (uid) void setFolderPinned(uid, project.id, next);
+  }
+
+  function beginRenameProject(project: ProjectNode) {
+    closeMenu();
+    setPrompt({ id: project.id, initial: project.name, mode: "renameProject" });
+  }
+
+  function confirmDeleteProject(project: ProjectNode) {
+    closeMenu();
+    Alert.alert(`Delete "${project.name}"?`, "Its canvases go back to Canvases. Projects inside it are deleted too.", [
+      { style: "cancel", text: "Cancel" },
+      {
+        onPress: () => {
+          setFolders((rows) => rows.filter((row) => row.id !== project.id));
+          if (uid) void deleteFolder(uid, project.id);
+        },
+        style: "destructive",
+        text: "Delete",
+      },
+    ]);
+  }
+
+  // The one prompt dialog, in its three shapes (see PromptState).
+  async function handlePromptConfirm(value: string) {
+    const p = prompt;
+    setPrompt(null);
     const clean = value.trim();
-    if (!chat || !uid || !clean) return;
-    setChats((rows) => rows.map((row) => (row.id === chat.id ? { ...row, title: clean } : row)));
-    void withPending(() => renameThread(uid, chat.id, clean));
-  };
+    if (!p || !uid || !clean) return;
+    if (p.mode === "renameCanvas") {
+      setCanvases((rows) => rows.map((row) => (row.id === p.id ? { ...row, title: clean } : row)));
+      void renameCanvas(uid, p.id, clean);
+    } else if (p.mode === "renameProject") {
+      setFolders((rows) => rows.map((row) => (row.id === p.id ? { ...row, name: clean } : row)));
+      void renameFolder(uid, p.id, clean);
+    } else {
+      const folder = await createFolder(uid, clean);
+      if (!folder) return;
+      setFolders((rows) => [...rows, folder]);
+      fileCanvas(p.canvasId, folder.id);
+    }
+  }
 
-  // The SAME hold gesture the Library and Study trees use (owner 2026-08-01:
-  // "the entire card should appear to be picked up, same goes for side bar
-  // chats"). Adopting it rather than keeping the row's own onLongPress is what
-  // makes the hold two-phase: the Pan activates at HOLD_MS — the moment the row
-  // lifts — and the menu opens on RELEASE. A Pressable's onLongPress only ever
-  // fires once, so there was no "still holding" state to draw.
+  // The SAME hold gesture the Library/Study trees use, adopted here 2026-07-23 for the
+  // (now retired) chat list and carried over unchanged. No DragChip: this panel is
+  // ~330pt wide with its overflow clipped, so the row lifts where it sits instead.
   //
-  // 🔴 THE ROW'S onLongPress HAD TO GO WITH IT, or every hold would open two
-  // menus. useRowDrag's own header says so; it is worth repeating here because
-  // this is the file that had one.
-  //
-  // No DragChip here, unlike the trees. That card is positioned in WINDOW
-  // coordinates, and this panel is ~330pt wide with its overflow clipped — the
-  // same reason the MiniMenu below has to escape into a Modal. The row lifts
-  // where it sits instead, which is legible in a list this narrow and needs no
-  // Modal to appear mid-gesture.
+  // Keys are scoped by WHERE a row is drawn ("pin:c:<id>", "rec:c:<id>",
+  // "proj:<projectId>:c:<id>", "p:<projectId>") rather than bare ids: a canvas that is
+  // both pinned AND filed in a project draws TWICE (once under Pinned, once inside its
+  // project's expansion) — bare ids would make holding either copy light up both.
   const rowDrag = useRowDrag({
-    // Nothing to drop onto and nothing to reorder: a chat list is flat and
-    // ordered by recency. Only the hold half of this hook is in use.
     onDrop: () => {},
     onHold: (key, x, y) => {
-      const chat = chatsByIdRef.current.get(key);
-      if (!chat) return;
-      // Window coordinates, which is what MiniMenu wants — this panel's own
-      // coordinate space would put the menu in the wrong place the moment it
-      // escapes into the Modal.
-      setActionAt({ x, y });
-      setActionTarget(chat);
+      const id = key.slice(key.lastIndexOf(":") + 1);
+      if (key.startsWith("p:")) {
+        const project = projectsByIdRef.current.get(id);
+        if (project) {
+          setActionAt({ x, y });
+          setActionTarget({ kind: "project", project });
+        }
+        return;
+      }
+      const canvas = canvasesByIdRef.current.get(id);
+      if (canvas) {
+        setActionAt({ x, y });
+        setActionTarget({ kind: "canvas", canvas });
+      }
     },
   });
+  const liftGesture = (key: string) => rowDrag.gestureFor(key, { canDropOn: () => false, draggable: false, lift: true });
 
-  const rowActions: RowAction[] = actionTarget
-    ? [
-        { key: "pin", label: actionTarget.pinned ? "Unpin" : "Pin", onPress: () => togglePin(actionTarget) },
-        {
-          key: "rename",
-          label: "Rename",
-          onPress: () => {
-            const target = actionTarget;
-            setActionTarget(null);
-            setRenameTarget(target);
-          },
+  const sections = useMemo(() => sidebarSections(canvases, folders, query), [canvases, folders, query]);
+  const allProjects = useMemo(() => buildProjects(folders, canvases), [folders, canvases]);
+  const flatProjects = useMemo(() => flattenProjects(allProjects), [allProjects]);
+
+  canvasesByIdRef.current = new Map(canvases.map((canvas) => [canvas.id, canvas]));
+  // Only pinned projects draw a "p:<id>" row now (there is no standalone Projects
+  // section any more — see the file's own doc comment), so this only needs to cover them.
+  projectsByIdRef.current = new Map(sections.pinnedProjects.map((project) => [project.id, project]));
+
+  const trimmed = query.trim();
+  const hasPinned = sections.pinnedCanvases.length > 0 || sections.pinnedProjects.length > 0;
+
+  /** A canvas row. `Icon` is set only in the Pinned section (IMG_6531: a pinned canvas
+   *  carries a chat-bubble glyph, a pinned project a folder glyph); Recents rows below carry
+   *  none. Every row can show the green freshness dot regardless of section. */
+  const renderCanvasRow = (canvas: CanvasSummary, scope: string, Icon?: ComponentType<IconProps>) => {
+    const key = `${scope}:c:${canvas.id}`;
+    return (
+      <CanvasRow
+        key={key}
+        label={canvasLabel(canvas)}
+        fresh={isFresh(canvas.updatedAt)}
+        Icon={Icon}
+        lifted={rowDrag.activeKey === key}
+        gesture={liftGesture(key)}
+        onPress={() => go(`/canvas?c=${canvas.id}`)}
+        testID={`drawer-canvas-${canvas.id}`}
+      />
+    );
+  };
+
+  /** A pinned project row — plain icon + name like a pinned canvas (IMG_6531 has no tile
+   *  here; the coloured tile is the Projects PAGE's own look, see ProjectRows.tsx). Tapping
+   *  opens the project's own page instead of expanding in place — project.tsx now exists to
+   *  hold that job, so a second, cramped copy of it inside the drawer would be redundant. */
+  const renderPinnedProjectRow = (project: ProjectNode) => {
+    const key = `p:${project.id}`;
+    return (
+      <CanvasRow
+        key={key}
+        label={project.name}
+        Icon={ProjectFolderIcon}
+        lifted={rowDrag.activeKey === key}
+        gesture={liftGesture(key)}
+        onPress={() => go(`/project?id=${project.id}`)}
+        testID={`drawer-project-${project.id}`}
+      />
+    );
+  };
+
+  const rowActions: MenuRow[] = (() => {
+    if (!actionTarget) return [];
+    if (menuMode === "addToProject" && actionTarget.kind === "canvas") {
+      const canvas = actionTarget.canvas;
+      const rows: MenuRow[] = [];
+      if (canvas.folderId) {
+        rows.push({
+          icon: ProjectFolderIcon,
+          key: "remove",
+          label: "Remove from project",
+          onPress: () => fileCanvas(canvas.id, null),
+        });
+      }
+      for (const { depth, node } of flatProjects) {
+        rows.push({ icon: ProjectFolderIcon, indent: depth, key: `to:${node.id}`, label: node.name, onPress: () => fileCanvas(canvas.id, node.id) });
+      }
+      rows.push({
+        icon: FolderPlusIcon,
+        key: "new-project",
+        label: "New project…",
+        onPress: () => {
+          // Both state changes land in the same handler so the Modal's `visible`
+          // (actionTarget !== null || prompt !== null) never goes false between
+          // them — the menu and the prompt are one continuous sheet, not two.
+          setActionTarget(null);
+          setActionAt(null);
+          setMenuMode("actions");
+          setPrompt({ canvasId: canvas.id, mode: "newProject" });
         },
-        { key: "delete", label: "Delete", destructive: true, onPress: () => confirmDelete(actionTarget) },
-      ]
-    : [];
+      });
+      return rows;
+    }
+    if (actionTarget.kind === "canvas") {
+      const canvas = actionTarget.canvas;
+      return [
+        { icon: ShareIcon, key: "share", label: "Share", onPress: () => void shareCanvas(canvas) },
+        { icon: PinIcon, key: "pin", label: canvas.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePinCanvas(canvas) },
+        { chevron: true, icon: ProjectFolderIcon, key: "add-to-project", label: "Add to project", onPress: () => setMenuMode("addToProject") },
+        { icon: PencilIcon, key: "rename", label: "Rename", onPress: () => beginRenameCanvas(canvas) },
+        { destructive: true, icon: TrashIcon, key: "delete", label: "Delete", onPress: () => confirmDeleteCanvas(canvas) },
+      ];
+    }
+    // A project row's own menu omits Share (IMG_6543's project-detail "…" menu has none
+    // either — there is no single conversation to hand off).
+    const project = actionTarget.project;
+    return [
+      { icon: PinIcon, key: "pin", label: project.pinnedAt ? "Unpin" : "Pin", onPress: () => togglePinProject(project) },
+      { icon: PencilIcon, key: "rename", label: "Rename", onPress: () => beginRenameProject(project) },
+      { destructive: true, icon: TrashIcon, key: "delete", label: "Delete", onPress: () => confirmDeleteProject(project) },
+    ];
+  })();
 
-  const trimmed = query.trim().toLowerCase();
-  const shownChats = trimmed ? chats.filter((chat) => chat.title.toLowerCase().includes(trimmed)) : chats;
-  const pinnedChats = shownChats.filter((chat) => chat.pinned);
-  const otherChats = shownChats.filter((chat) => !chat.pinned);
-  chatsByIdRef.current = new Map(shownChats.map((chat) => [chat.id, chat]));
+  const menuTitle =
+    menuMode === "actions" && actionTarget
+      ? actionTarget.kind === "canvas"
+        ? canvasLabel(actionTarget.canvas)
+        : actionTarget.project.name
+      : undefined;
+  const menuSectionTitle = menuMode === "addToProject" ? "Add to project" : undefined;
 
-  const renderChatRow = (chat: ThreadSummary) => (
-    <ChatRow
-      key={chat.id}
-      chat={chat}
-      lifted={rowDrag.activeKey === chat.id}
-      gesture={rowDrag.gestureFor(chat.id, {
-        // Chats have no folders, so there is nowhere to drag one TO. The hold
-        // still has to look like it did something, which is what `lift` is for.
-        canDropOn: () => false,
-        draggable: false,
-        lift: true,
-      })}
-      onPress={() => go(`/chat?c=${chat.id}`)}
-      styles={styles}
-    />
-  );
+  const promptTitle =
+    prompt?.mode === "renameCanvas" ? "Rename canvas" : prompt?.mode === "renameProject" ? "Rename project" : "New project";
+  const promptInitial = prompt?.mode === "renameCanvas" || prompt?.mode === "renameProject" ? prompt.initial : "";
 
   return (
-    <View style={[styles.panelInner, { paddingTop: insets.top + space(2) }]}>
+    // Coordinator fix #4 (on-simulator diff): the title's ink sat 24pt too low. The extra
+    // space(2) here was most of that — the reference's "Nemesis" sits right at the safe-area
+    // inset with no added gap.
+    <View style={[styles.panelInner, { paddingTop: insets.top }]}>
       <View style={styles.brandRow}>
         <Text style={styles.brand}>Nemesis</Text>
         {/* No "+" here (owner 2026-07-24: "remove the '+' from the main
-            sidebar"). It was added the day before for "users cannot create a new
-            note from the library sidebar", and the CONTROL is what's gone — you
-            can still make a note from the "+" on the note screen's bottom bar and
-            from the Library screen, which is also where you can see which folder
-            it lands in. */}
+            sidebar") — the floating "New canvas" pill below covers that job. */}
         <Pressable
           style={({ pressed }) => [styles.searchBtn, (pressed || searchOpen) && styles.searchBtnActive]}
           onPress={() => setSearchOpen((v) => !v)}
           hitSlop={8}
-          accessibilityLabel="Search chats"
+          accessibilityLabel="Search canvases and projects"
         >
-          <SearchIcon size={19} color={searchOpen ? c.text : c.text2} />
+          <SearchIcon size={20} color={c.text} />
         </Pressable>
       </View>
 
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
-        // Bottom padding tracks the floating Chat pill + gear's REAL footprint
+        // Bottom padding tracks the floating pill + gear's REAL footprint
         // (insets.bottom + 10 gap + 46 button + breathing room) — a flat
-        // constant undershot it on home-indicator iPhones and the last chat
-        // row slid under the buttons (review finding, 2026-07-21).
+        // constant undershot it on home-indicator iPhones and the last row
+        // slid under the buttons (review finding, 2026-07-21).
         contentContainerStyle={{ paddingBottom: insets.bottom + space(2.5) + 46 + space(4) }}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.navGroup}>
-          <NavRow Icon={StudyIcon} label="Study" onPress={() => go("/study")} />
-          <NavRow Icon={LibraryIcon} label="Library" onPress={() => go("/library")} />
-          {/* Notebooks retired — see lib/notebooks-retired.ts. */}
-          {NOTEBOOKS_RETIRED ? null : (
-            <NavRow Icon={NotebookIcon} label="Notebooks" onPress={() => go("/notebooks")} />
-          )}
-          <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
+          <NavRow Icon={LibraryShelfIcon} label="Library" onPress={() => go("/library")} />
+          <NavRow Icon={ProjectFolderIcon} label="Projects" onPress={() => go("/projects")} />
+          <NavRow Icon={PluginsGlyphIcon} label="Plugins" onPress={() => go("/plugins")} />
+          <NavRow Icon={CalendarGlyphIcon} label="Calendar" onPress={() => go("/calendar")} />
         </View>
 
         {searchOpen ? (
@@ -544,7 +659,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
               style={styles.searchInput}
               value={query}
               onChangeText={setQuery}
-              placeholder="Search chats"
+              placeholder="Search canvases and projects"
               placeholderTextColor={c.textHint}
               autoFocus
               testID="drawer-search"
@@ -552,71 +667,50 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           </View>
         ) : null}
 
-        {pinnedChats.length > 0 ? (
+        {/* Plain headers (IMG_6531: no chevron, no count, not collapsible) — the reference
+            has neither a "Projects" section (projects live on the Projects page and inside
+            Pinned) nor a way to collapse Pinned/Recents. */}
+        {hasPinned ? (
           <>
-            <Pressable
-              style={({ pressed }) => [styles.sectionHeader, pressed && styles.rowPressed]}
-              onPress={() => setPinnedCollapsed((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel="Pinned chats"
-              accessibilityState={{ expanded: !pinnedCollapsed }}
-              testID="drawer-pinned-header"
-            >
-              <View style={pinnedCollapsed ? undefined : styles.chevronOpen}>
-                <ChevronIcon size={12} color={c.text2} strokeWidth={2.2} />
-              </View>
-              <Text style={styles.sectionHeaderLabel}>Pinned</Text>
-              <Text style={styles.sectionCount}>{pinnedChats.length}</Text>
-            </Pressable>
-            {pinnedCollapsed ? null : pinnedChats.map(renderChatRow)}
+            <Text style={styles.sectionHeaderLabel} testID="drawer-pinned-header">
+              Pinned
+            </Text>
+            {sections.pinnedCanvases.map((canvas) => renderCanvasRow(canvas, "pin", ChatIcon))}
+            {sections.pinnedProjects.map(renderPinnedProjectRow)}
           </>
         ) : null}
 
-        {/* Same collapsible header as Pinned, chevron and all. */}
-        <Pressable
-          style={({ pressed }) => [styles.sectionHeader, pressed && styles.rowPressed]}
-          onPress={() => setChatsCollapsed((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel="Chats"
-          accessibilityState={{ expanded: !chatsCollapsed }}
-          testID="drawer-chats-header"
-        >
-          <View style={chatsCollapsed ? undefined : styles.chevronOpen}>
-            <ChevronIcon size={12} color={c.text2} strokeWidth={2.2} />
-          </View>
-          <Text style={styles.sectionHeaderLabel}>Chats</Text>
-          <Text style={styles.sectionCount}>{otherChats.length}</Text>
-        </Pressable>
-        {chatsCollapsed ? null : otherChats.length === 0 ? (
-          <Text style={styles.emptyRows}>
-            {trimmed ? "No matches" : pinnedChats.length ? "No other chats" : "No chats yet"}
-          </Text>
+        <Text style={styles.sectionHeaderLabel} testID="drawer-recents-header">
+          Recents
+        </Text>
+        {sections.recents.length === 0 ? (
+          <Text style={styles.emptyRows}>{trimmed ? "No matches" : "No canvases yet"}</Text>
         ) : (
-          otherChats.map(renderChatRow)
+          sections.recents.map((canvas) => renderCanvasRow(canvas, "rec"))
         )}
-
       </ScrollView>
 
       {/* Footer (owner 2026-07-21, matching their ChatGPT reference crop): a
-          FLOATING bottom row hovering over the chat list — a solid ACCENT "Chat"
-          pill (compose icon + label; its color follows the appearance setting's
-          accent swatch) that starts a new chat, and a raised circular Settings
+          FLOATING bottom row hovering over the list — a solid ACCENT pill
+          (compose icon + "New canvas"; its color follows the appearance setting's
+          accent swatch) that starts a fresh canvas, and a raised circular Settings
           gear. Close the drawer before presenting Settings: otherwise the pushed
           page shadow intersects the floating gear and makes its right edge look
           clipped beneath the modal. */}
       <View style={[styles.footerFloat, { bottom: insets.bottom + space(2.5) }]} pointerEvents="box-none">
         <Pressable
-          style={({ pressed }) => [styles.chatPill, pressed && styles.chatPillPressed]}
+          style={({ pressed }) => [styles.canvasPill, pressed && styles.canvasPillPressed]}
           onPress={() => {
-            onNewChat();
+            onNewCanvas();
             onClose();
           }}
-          testID="drawer-new-chat"
+          testID="drawer-new-canvas"
           accessibilityRole="button"
-          accessibilityLabel="New chat"
+          accessibilityLabel="New canvas"
         >
           <ComposeIcon size={18} color={c.onAccent} strokeWidth={1.9} />
-          <Text style={styles.chatPillText}>Chat</Text>
+          {/* "Chat" — the reference's own word (IMG_6531); a Nemesis canvas IS a chat. */}
+          <Text style={styles.canvasPillText}>Chat</Text>
         </Pressable>
 
         <Pressable
@@ -634,101 +728,40 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         </Pressable>
       </View>
 
-      {/* Long-press chat menu + rename dialog (owner 2026-07-23). Wrapped in a
-          Modal so they present FULL-SCREEN above the app: the drawer panel is
-          only ~330pt wide with its overflow clipped, so inline the menu would be
-          both cut off and stuck inside a sidebar-width strip. The Modal escapes
-          that — and it is why MiniMenu is positioned from window coordinates.
-          GestureHandlerRootView keeps the rename dialog's gestures working
-          inside it. */}
+      {/* Long-press row menu + rename/new-project dialog. Wrapped in a Modal so they
+          present FULL-SCREEN above the app: the drawer panel is only ~330pt wide with
+          its overflow clipped, so inline the menu would be both cut off and stuck
+          inside a sidebar-width strip. The Modal escapes that — and it is why MiniMenu
+          is positioned from window coordinates. GestureHandlerRootView keeps the
+          prompt's gestures working inside it. */}
       <Modal
         transparent
         animationType="none"
-        visible={actionTarget !== null || renameTarget !== null}
-        onRequestClose={() => {
-          setActionTarget(null);
-          setRenameTarget(null);
-        }}
+        visible={actionTarget !== null || prompt !== null}
+        onRequestClose={closeMenu}
       >
         <GestureHandlerRootView style={StyleSheet.absoluteFill}>
           <MiniMenu
             visible={actionTarget !== null}
             anchor={actionAt}
             actions={rowActions}
-            onClose={() => setActionTarget(null)}
-            testID="drawer-chat-actions"
+            title={menuTitle}
+            sectionTitle={menuSectionTitle}
+            onClose={closeMenu}
+            testID="drawer-row-actions"
           />
           <TextPromptSheet
-            visible={renameTarget !== null}
-            title="Rename chat"
-            placeholder="Chat name"
-            initialValue={renameTarget?.title ?? ""}
-            onConfirm={confirmRename}
-            onClose={() => setRenameTarget(null)}
-            testID="drawer-chat-rename"
+            visible={prompt !== null}
+            title={promptTitle}
+            placeholder={prompt?.mode === "renameCanvas" ? "Canvas name" : "Project name"}
+            initialValue={promptInitial}
+            onConfirm={(value) => void handlePromptConfirm(value)}
+            onClose={() => setPrompt(null)}
+            testID="drawer-text-prompt"
           />
         </GestureHandlerRootView>
       </Modal>
     </View>
-  );
-}
-
-/**
- * One chat in the sidebar, which LIFTS while it is being held.
- *
- * Its own component so the animated style is one hook per row rather than a
- * loop of them in DrawerContent — and so the lift is a plain style animation on
- * a shared value. A layout animation would have been fewer lines and is exactly
- * what not to use here: this list lives in a panel that is sometimes behind a
- * Modal, where those are unreliable.
- *
- * Scale plus a raised surface and a shadow, not a colour change: "picked up" is
- * a statement about depth, and the row already uses its background for the
- * pressed state.
- */
-function ChatRow({
-  chat,
-  lifted,
-  gesture,
-  onPress,
-  styles,
-}: {
-  chat: ThreadSummary;
-  lifted: boolean;
-  gesture: ReturnType<typeof Gesture.Pan>;
-  onPress: () => void;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  const lift = useSharedValue(0);
-  useEffect(() => {
-    lift.value = withTiming(lifted ? 1 : 0, {
-      duration: lifted ? 140 : 120,
-      easing: ReEasing.out(ReEasing.cubic),
-    });
-  }, [lift, lifted]);
-  const animated = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + lift.value * 0.04 }],
-    shadowOpacity: lift.value * 0.35,
-    shadowRadius: 4 + lift.value * 12,
-    elevation: lift.value * 10,
-  }));
-
-  return (
-    <GestureDetector gesture={gesture}>
-      <Reanimated.View style={[styles.rowLift, animated]}>
-        <Pressable
-          testID={`drawer-chat-${chat.id}`}
-          // No onLongPress. The gesture above owns the hold — see the note on
-          // useRowDrag in DrawerContent for why having both opened two menus.
-          style={({ pressed }) => [styles.row, pressed && styles.rowPressed, lifted && styles.rowLifted]}
-          onPress={onPress}
-          accessibilityHint="Touch and hold to rename, pin, or delete this chat."
-        >
-          <Text style={styles.rowTitle} numberOfLines={1}>{chat.title}</Text>
-          <Text style={styles.rowTime}>{relTime(chat.updatedAt)}</Text>
-        </Pressable>
-      </Reanimated.View>
-    </GestureDetector>
   );
 }
 
@@ -738,27 +771,15 @@ function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; labe
   return (
     <Pressable style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]} onPress={onPress}>
       <View style={styles.navIcon}>
-        <Icon size={17} color={c.text2} />
+        {/* 22pt, c.text — measured off IMG_6531 (icon_library.png etc): the glyph's own ink
+            bbox is ~18.5×17-19pt at x0≈27pt, and it reads solid black, not the muted grey
+            this used to render at 17pt. No strokeWidth override — each icon in
+            icons-sidebar.tsx now carries its own tuned default (Library bumped to 2 after
+            coordinator feedback that it read as three plain strokes at a flat 1.7). */}
+        <Icon size={22} color={c.text} />
       </View>
       <Text style={styles.navLabel}>{label}</Text>
     </Pressable>
-  );
-}
-
-/** Pencil-in-square "compose" glyph — the floating Chat pill's icon (the
- * ChatGPT-style mark the owner's crop shows). */
-function ComposeIcon({ size = 23, color, strokeWidth = 1.8 }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M11.3 5.4H7.1A2.6 2.6 0 0 0 4.5 8v8.9a2.6 2.6 0 0 0 2.6 2.6H16a2.6 2.6 0 0 0 2.6-2.6v-4.2M18.9 3.8l1.3 1.3a1.7 1.7 0 0 1 0 2.4l-7.5 7.5-3.9 1 1-3.9 7.5-7.5a1.7 1.7 0 0 1 2.4 0Z"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
   );
 }
 
@@ -804,10 +825,17 @@ const createStyles = (c: ThemeColors) =>
     scroll: { flex: 1 },
 
     // gap + marginRight:auto on the wordmark so the two buttons sit together on
-    // the right rather than space-between pushing them apart.
-    brandRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: space(4), paddingBottom: space(3) },
-    brand: { ...type.h2, color: c.text, letterSpacing: -0.3, marginRight: "auto" },
-    searchBtn: { width: control.md, height: control.md, borderRadius: control.md / 2, alignItems: "center", justifyContent: "center" },
+    // the right rather than space-between pushing them apart. inset.sidebarIcon (26) —
+    // coordinator fix #3: was space(4)=16, reference measures x≈25.3.
+    brandRow: { flexDirection: "row", alignItems: "center", gap: space(1), paddingHorizontal: inset.sidebarIcon, paddingBottom: space(3) },
+    // ~26pt/700 — coordinator fix #4 (on-simulator diff): the old type.h2 (22/600) inked
+    // 16.7pt tall, the reference inks 20.0pt tall, which is a 26pt line, not 22. Tight
+    // lineHeight (31, not h2's 28-for-22pt ratio scaled up) keeps the box from adding back
+    // the vertical space the trimmed top padding just removed.
+    brand: { fontSize: 26, lineHeight: 31, fontWeight: "700", color: c.text, letterSpacing: -0.3, marginRight: "auto" },
+    // control.lg (44), not control.md — measured off IMG_6531 (crop_footer_grid.png's gear,
+    // the same round-button family as this search button): ~44-48pt across, not 36.
+    searchBtn: { width: control.lg, height: control.lg, borderRadius: control.lg / 2, alignItems: "center", justifyContent: "center" },
     searchBtnActive: { backgroundColor: c.surface },
     // Borderless (owner 2026-07-20: "remove the sidebar borders") — fills only.
     searchField: {
@@ -818,66 +846,64 @@ const createStyles = (c: ThemeColors) =>
     },
     searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
 
-    navGroup: { paddingHorizontal: space(2), marginBottom: space(2) },
+    // paddingHorizontal moved onto navRow itself (coordinator fix #3) — the group no
+    // longer contributes its own inset, so navRow's own padding IS the row's left edge.
+    navGroup: { marginBottom: space(3) },
+    // height: row.nav (48), explicit — coordinator fix #1: paddingVertical-derived rows
+    // pitched at ~43.5pt on-simulator; alignItems:"center" centers the label/icon inside
+    // the fixed box instead. paddingHorizontal: inset.sidebarIcon (26) — fix #3.
     navRow: {
       flexDirection: "row", alignItems: "center", gap: space(3),
-      paddingVertical: space(2.75), paddingHorizontal: space(2.5), borderRadius: radius.md,
+      height: row.nav, paddingHorizontal: inset.sidebarIcon, borderRadius: radius.md,
     },
     navRowPressed: { backgroundColor: c.surface },
-    navIcon: { width: 26, alignItems: "center" },
-    // Sidebar text rides the shared type ramp (owner 2026-07-20: bigger + standardized).
-    navLabel: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "500", flex: 1 },
+    // No fixed width here any more (coordinator fix #3) — a 26-wide centering box on top
+    // of navRow's own 26 padding pushed the icon's ink past the target x; removed, so the
+    // icon's own left edge sits flush at navRow's padding edge.
+    navIcon: { alignItems: "center", justifyContent: "center" },
+    // type.label (17/regular) — tokens.ts calls this out by name for exactly this row.
+    navLabel: { color: c.text, fontSize: type.label.fontSize, flex: 1 },
 
-
-    // Collapsible "Pinned" header — a tappable row with a chevron that rotates
-    // open (owner 2026-07-23). Same chevron idiom as the Library/Study folder rows.
-    sectionHeader: {
-      flexDirection: "row", alignItems: "center", gap: space(1.5),
-      paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5),
-      paddingVertical: space(1), borderRadius: radius.sm, marginHorizontal: space(2),
+    // Plain header (IMG_6531: bold, no chevron, no count, not a button). type.title
+    // (17/600) in c.text, not the old micro/grey pairing — measured off IMG_6531
+    // (crop_pinned.png / crop_recents.png): "Pinned"/"Recents" both ink at ~13pt with no
+    // descender, which is a 17pt cap+ascender line, not a 13pt one, and they read
+    // near-black, not grey.
+    sectionHeaderLabel: {
+      ...type.title,
+      color: c.text,
+      // inset.sidebarIcon (26) — coordinator fix #3: was space(4)=16, reference x≈28.
+      paddingHorizontal: inset.sidebarIcon,
+      // Coordinator fix #5: with nav rows now exactly row.nav (48) tall, the reference's
+      // measured row-top-to-header-top gap (53pt) is only 5pt more than one row height —
+      // this used to add a full space(7)=28 on top, nearly 6x too much.
+      marginTop: space(1),
+      marginBottom: space(1.5),
     },
-    sectionHeaderLabel: { color: c.text2, fontSize: type.micro.fontSize, fontWeight: "700", flex: 1 },
-    sectionCount: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
-    // ChevronIcon points right by default; rotate it down for the expanded state.
-    chevronOpen: { transform: [{ rotate: "90deg" }] },
 
-    // Chat rows share one compact row style.
-    row: {
-      flexDirection: "row", alignItems: "center", gap: space(2.5),
-      paddingVertical: space(2.5), paddingHorizontal: space(3.5), marginHorizontal: space(2), borderRadius: radius.md,
-    },
     rowPressed: { backgroundColor: c.surface },
-    // The shadow's own colour and offset are static; only its opacity, radius
-    // and the scale animate, which keeps the animated style to properties
-    // Reanimated can drive without re-laying out the list.
-    rowLift: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 } },
-    // Held rows sit on the raised surface so the card reads as solid rather than
-    // as the list showing through whatever is behind it.
-    rowLifted: { backgroundColor: c.surface2, borderWidth: 1, borderColor: c.line },
-    rowTitle: { flex: 1, color: c.text2, fontSize: type.small.fontSize + 1, minWidth: 0 },
-    rowTime: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
-    // Footer — a FLOATING row over the chat list (owner 2026-07-21, ChatGPT
-    // style; replaces the in-flow "New chat"/plain-gear row). Extra right
-    // padding so the gear clears the pushed page's shadow that bleeds onto the
-    // sidebar's right edge (owner: the gear was "cutting out to the right").
+    // Footer — a FLOATING row over the list (owner 2026-07-21, ChatGPT style;
+    // replaces the in-flow "New chat"/plain-gear row). Both insets are 34pt — measured
+    // off IMG_6531 (crop_footer_grid.png): the pill's left edge and the gear's right
+    // edge sit the same distance from their side of the panel.
     footerFloat: {
       position: "absolute", left: 0, right: 0,
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      paddingLeft: space(3.5), paddingRight: space(4),
+      paddingLeft: 34, paddingRight: 34,
     },
-    // The Chat pill: solid ACCENT fill (the appearance setting's swatch drives
-    // it), onAccent content, soft drop shadow (c.pageShadow bakes the alpha).
-    chatPill: {
+    // The pill: solid ACCENT fill (the appearance setting's swatch drives it),
+    // onAccent content, soft drop shadow (c.pageShadow bakes the alpha).
+    canvasPill: {
       flexDirection: "row", alignItems: "center", gap: space(1.75),
       height: 46, paddingHorizontal: space(4.5), borderRadius: 23,
       backgroundColor: c.accent,
       shadowColor: c.pageShadow, shadowOpacity: 1, shadowRadius: 10,
       shadowOffset: { height: 5, width: 0 }, elevation: 8,
     },
-    chatPillPressed: { backgroundColor: c.accentDeep },
-    chatPillText: { color: c.onAccent, fontSize: type.small.fontSize + 2, fontWeight: "700" },
+    canvasPillPressed: { backgroundColor: c.accentDeep },
+    canvasPillText: { color: c.onAccent, fontSize: type.small.fontSize + 2, fontWeight: "700" },
 
     // The gear rides its own raised disc now (owner's crop shows a circled
     // gear floating beside the pill — supersedes the 2026-07-20 plain-icon

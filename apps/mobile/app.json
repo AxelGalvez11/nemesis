@@ -64,7 +64,8 @@
           "speechRecognitionPermission": "Nemesis turns what you say into text in the chat box when you tap the mic."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

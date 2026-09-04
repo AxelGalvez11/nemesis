@@ -189,7 +189,7 @@ function withFreshDateAnchor(query: string): string {
 
 /** Prompt-feeding copied from web's chat-api.ts::searchWebContext: fetch live
  *  results and format them into a context block the model is told to cite. */
-async function searchWebContext(
+export async function searchWebContext(
   uid: string,
   query: string,
   /** How many pages the model asked to read. Null means it did not choose. */
@@ -240,6 +240,28 @@ export interface ChatReply {
    *  Deliberately NOT a ChatOutput: a decision they have not made yet is not a
    *  deliverable, so it is never persisted and closing the app declines it. */
   pendingDelete?: PendingDelete;
+}
+
+/**
+ * One plain completion for a caller that is not a chat thread — the canvas screen's turn
+ * (api/canvases.ts). Same valve, same device key, same routing default as an ordinary chat turn
+ * with nothing special asked; nothing here touches `chat_threads`.
+ */
+export async function completeMessages(
+  uid: string,
+  wireMessages: WireMsg[],
+  options: { onDelta?: CompletionDeltaHandler; signal?: AbortSignal; decision?: ChatRouteDecision } = {},
+): Promise<{ text: string | null; errorText: string | null }> {
+  const reply = await postChatCompletion(
+    uid,
+    wireMessages,
+    options.decision ?? routeForTurn(DEFAULT_INTENT, null),
+    options.onDelta,
+    undefined,
+    undefined,
+    options.signal,
+  );
+  return { text: reply.text, errorText: reply.errorText };
 }
 
 /** One completion turn over expo/fetch's streaming Response.body (SDK 56, no

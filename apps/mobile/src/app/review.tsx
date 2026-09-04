@@ -371,7 +371,11 @@ export default function ReviewScreen() {
    * deck and an expired session. Same for `deck === undefined` if the fetch
    * hangs. `current` is null in all three, so one condition covers them.
    */
-  const backVisible = backShown || !current;
+  // 🔴 ALWAYS VISIBLE. The reference's viewers (IMG_6540) keep their round close button on screen
+  // for the whole session; a fading one left the learner on a card with no way out (seen on the
+  // simulator 2026-09-01, the edge swipe being disabled here by design). `backShown` still drives
+  // nothing else and stays for the tap-to-reveal path if the owner ever wants the fade back.
+  const backVisible = true || backShown || !current;
 
   const backFade = useRef(new Animated.Value(0)).current;
   useEffect(() => {
