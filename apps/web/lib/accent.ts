@@ -167,6 +167,44 @@ export function accentFill(hex: string, dark: boolean): string {
   return fill;
 }
 
+/**
+ * How far the learner's chat bubble lifts off the send button's fill.
+ *
+ * 🔴 22% TOWARD THE PAGE. Owner, 2026-09-03: *"make the chat bubble colours a little bit lighter,
+ * because they're a bit too harsh on the eye."* A quarter is visibly a different weight without
+ * becoming a pastel, and the loop below gives it back only as far as the text needs.
+ */
+const BUBBLE_LIFT = 0.22;
+
+/**
+ * The accent as the learner's chat bubble, in one theme.
+ *
+ * 🔴🔴 A BUBBLE IS NOT A BUTTON, WHICH IS WHY IT GETS ITS OWN FILL. `accentFill` pushes a hue
+ * AWAY from the middle until a 4.5:1 glyph fits on it — correct for a 40px send button carrying
+ * one arrow, and it is exactly what makes a whole sentence on that ground feel loud. The owner
+ * has a coral accent and the bubble was the darkened, most saturated version of it, at 16px,
+ * several words wide, on every turn.
+ *
+ * 🔴 IT STARTS FROM THE AUTHORED HUE, NOT FROM THE FILL. Lightening an already-darkened colour
+ * would undo a step that was taken for a reason and land somewhere neither value chose.
+ *
+ * 🔴 AND THE TEXT IS STILL HELD TO AA. The 2026-08-26 ruling — *"make sure the user text bubble
+ * font is white"* — was measured off ChatGPT, and it holds for every accent where white still
+ * wins; `accentGlyph` decides per hue, exactly as it does for the send button, so a pale accent
+ * gets near-black ink rather than an unreadable white one. Lightening without this is how you ship
+ * a bubble nobody can read on `cream`.
+ */
+export function accentBubble(hex: string, dark: boolean): string {
+  const ground = dark ? GROUND_DARK : GROUND_LIGHT;
+  let bubble = mix(hex, ground, BUBBLE_LIFT);
+  // Give the lift back a step at a time, but only as far as the ink needs. Toward the fill's own
+  // direction, so a hue that had to be deepened for legibility ends up deeper rather than greyer.
+  for (let i = 0; i < 100 && bestGlyphRatio(bubble) < MIN_GLYPH; i++) {
+    bubble = mix(bubble, dark ? "#ffffff" : "#000000", 0.02);
+  }
+  return bubble;
+}
+
 const bestGlyphRatio = (hex: string): number =>
   Math.max(contrastRatio(hex, "#ffffff"), contrastRatio(hex, GLYPH_DARK));
 
@@ -240,6 +278,10 @@ export function accentProperties(accent: Exclude<AccentPreference, "default">): 
   const hue = ACCENT_COLORS[accent];
   const light = accentFill(hue, false);
   const dark = accentFill(hue, true);
+  // 🔴 A SECOND PAIR, NOT A REUSE OF THE FIRST. See `accentBubble`: the send button and the chat
+  // bubble are different objects with different amounts of the colour on screen.
+  const bubbleLight = accentBubble(hue, false);
+  const bubbleDark = accentBubble(hue, true);
   return {
     // The hue as chosen. What the character wears and what the swatch shows.
     "--accent-hue": hue,
@@ -247,6 +289,10 @@ export function accentProperties(accent: Exclude<AccentPreference, "default">): 
     "--accent-fill-dark": dark,
     "--accent-glyph-light": accentGlyph(light),
     "--accent-glyph-dark": accentGlyph(dark),
+    "--accent-bubble-light": bubbleLight,
+    "--accent-bubble-dark": bubbleDark,
+    "--accent-bubble-glyph-light": accentGlyph(bubbleLight),
+    "--accent-bubble-glyph-dark": accentGlyph(bubbleDark),
   };
 }
 

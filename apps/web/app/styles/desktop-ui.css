@@ -315,6 +315,10 @@
        far above the green it replaces. accent.test.ts pins this file to inkFor
        so the two can never drift apart again. */
     --ui-action: var(--accent-fill-light, #0a0a0c);
+    /* 🔴 THE LEARNER'S BUBBLE IS LIGHTER THAN THE SEND BUTTON, and falls back to it when no accent
+       is set (the Default accent is a near-black that is already calm). See `accentBubble`. */
+    --ui-learner-bubble: var(--accent-bubble-light, var(--accent-fill-light, #0a0a0c));
+    --ui-learner-bubble-glyph: var(--accent-bubble-glyph-light, var(--accent-glyph-light, #ffffff));
     /* The glyph ON the action fill. accentProperties() computes this per accent;
        these are the defaults for the ink pair above, from the same accentGlyph
        rule (white on the near-black ink, near-black on the near-white one). */
@@ -786,6 +790,8 @@
        Since 2026-08-23 the value is the character's own dark ink (see the light
        block's note): the send button and the mascot wear one colour. */
     --ui-action: var(--accent-fill-dark, #f2f2f4);
+    --ui-learner-bubble: var(--accent-bubble-dark, var(--accent-fill-dark, #f2f2f4));
+    --ui-learner-bubble-glyph: var(--accent-bubble-glyph-dark, var(--accent-glyph-dark, #1a1a1a));
     --ui-action-glyph: var(--accent-glyph-dark, #1a1a1a);
 
     --dt-muted: #1e1e1e;

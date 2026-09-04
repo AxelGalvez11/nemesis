@@ -271,7 +271,25 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
           gives up is the soft hand-off — scrolled text now ends at a hard line instead of thinning
           out — which is what the reference does too, and is the price of text that is never
           half-erased. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[44px] bg-(--ui-bg-editor)" />
+      {/* 🔴🔴 IT IS ANCHORED TO THE CONTROLS NOW, NOT DRAWN ACROSS THE COLUMN (2026-09-03). Owner:
+          *"there still seems to be a header block up top that's blocking the page."* He is right,
+          and the measurement says so: a solid 44px band at [52, 0, 1388, 44] over the whole
+          conversation, for the benefit of a control cluster that occupies the top RIGHT corner.
+          At rest it covered nothing (the scroller sits at `pt-[48px]`), so this was only ever
+          visible while scrolling — and then it hid a full line of the learner's own text behind a
+          blank strip with a hard edge, right across the reading column.
+
+          🔴 THE MASTHEAD'S JOB IS TO KEEP TEXT FROM RUNNING UNDER THE CONTROLS, and the controls
+          are 12px from the right edge. So the ground goes where they are. `w-[280px]` is the
+          cluster at its widest — two 36px buttons, their gaps and the 12px inset — plus room for a
+          third if one is ever added; the centred reading column ends well left of it on any window
+          wide enough for both, and on a narrow one the overlap is the controls' own footprint,
+          which is unavoidable and correct.
+
+          🔴 STILL SOLID, AND STILL THE PAGE'S OWN COLOUR. The 2026-08-19 ruling that replaced a
+          gradient with a flat masthead stands: a vertical ramp fades the LETTERS, not the ground,
+          and in dark mode it dissolved white text into black. Nothing here reintroduces one. */}
+      <div className="pointer-events-none absolute right-0 top-0 z-20 h-[44px] w-[280px] bg-(--ui-bg-editor)" />
 
       {draggingOver && <FileDropOverlay note="Drop any file here to add it to this canvas" />}
 

@@ -26,5 +26,14 @@ test("🔴🔴 it is a row above the answer that opens to the model's own lines,
 test("🔴 same slot and same type as the live caption: the canvas column, 16 on 24", () => {
   assert.match(SOURCE, /max-w-\(--canvas-column\) px-6 pb-2/);
   assert.match(SOURCE, /text-\[length:var\(--canvas-text-body\)\] leading-\[24px\]/);
-  assert.doesNotMatch(SOURCE, /—/, "an em dash reached learner-facing copy");
+  // 🔴🔴 THE COPY, NOT THE COMMENTS. This read the raw file and reddened on 2026-09-03 for an em
+  // dash inside a NOTE about the spacing — prose that no learner can ever see. The ban (owner
+  // 2026-08-25) is on em dashes in words Nemesis shows people; a guard that also polices the
+  // explanation of the code is the same "reads prose, not code" trap this repo has now paid for
+  // three times, just pointing the other way. Comments are stripped first.
+  const copy = SOURCE.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(copy, /—/, "an em dash reached learner-facing copy");
+  // 🔴 CALIBRATION: the file DOES still contain one, in a comment, so a guard that had not been
+  // narrowed would fail here. This proves the narrowing is real rather than vacuous.
+  assert.match(SOURCE, /—/, "the calibration is stale: nothing in this file has an em dash any more");
 });
