@@ -42,21 +42,37 @@ test("🔴🔴 pressing send does not erase what was attached to it", () => {
   assert.match(CANVAS, /const attachedNow = committedTitles\.current;\s*committedTitles\.current = \[\];/, "the committed titles are no longer taken single-use");
 });
 
-test("🪦 no turn PRINTS its file names — the owner cut that the same afternoon", () => {
-  // 🔴 THIS TEST IS THE REVERSAL, NOT A RELAXATION. The two assertions it replaces required the
-  // live region to draw `currentAttached`, and the owner asked for the opposite within the hour:
-  // *"it shows the names of the PowerPoints or the documents that were dropped in. I don't need
-  // that there … it's always showing that."* On his canvases that list is seven lines above every
-  // question, which is most of the screen.
+test("🔴🔴 a turn shows its files as CARDS on one scrolling row, never as a list of names", () => {
+  // 🔴 THREE SHAPES IN ONE DAY, AND THE OWNER IS CONSISTENT ACROSS ALL THREE. `#1098` drew the
+  // names as a bare `<ul>` to fix turns being filed with no attachments at all. Hours later:
+  // *"it shows the names of the PowerPoints … I don't need that there."* Then, back in the same
+  // chat: *"I'm supposed to have the chat attached multiple documents and I don't see the cards
+  // there. They should show up similarly to how they do in ChatGPT … but ideally this should be
+  // horizontally, and you should be able to scroll."*
   //
-  // What must NOT come back is the printing. What must survive is everything below: the turn is
-  // still FILED with its attachments, and they are still in the sources panel and the reading
-  // pane. Deleting the whole feature would have taken the fix out with the list.
+  // He rejected a LIST OF NAMES and asked for a ROW OF CARDS. Same data, different object: seven
+  // bare filenames is seven lines and reads as debug output; seven cards is one card tall however
+  // many there are. This test holds both halves so neither can quietly come back as the other.
   const THREAD = strip(read("./canvas-thread-turn.tsx"));
-  assert.ok(!/turn\.attached\.map/.test(THREAD), "a filed turn is printing its file names again");
-  assert.ok(!/currentAttached/.test(CANVAS), "the live turn is printing its file names again");
+  const ROW = strip(read("./attached-row.tsx"));
+  assert.match(THREAD, /<AttachedRow titles=\{turn\.attached\}/, "a filed turn stopped showing what it was sent with");
+  assert.match(CANVAS, /<AttachedRow titles=\{currentAttached\}/, "the newest exchange shows no files until it is reloaded");
+  // 🔴 THE LIST MUST NOT COME BACK. `turn.attached.map` into bare text is exactly what was cut.
+  assert.ok(!/turn\.attached\.map/.test(THREAD), "a filed turn is printing its file names as a list again");
+  // 🔴 AND THE ROW HAS TO ACTUALLY SCROLL. Without `shrink-0` on the card, flexbox solves the
+  // overflow by compressing every card to nothing — silently, and only at the file counts that
+  // matter. Without `overflow-x-auto` the row widens the whole conversation instead.
+  assert.match(ROW, /overflow-x-auto/, "the row of cards cannot scroll, so it widens the conversation");
+  assert.match(ROW, /className="shrink-0"/, "the cards squash instead of scrolling");
 });
 
+test("🔴 the cards are above the words, which is the order the files arrived in", () => {
+  const THREAD = strip(read("./canvas-thread-turn.tsx"));
+  assert.ok(
+    THREAD.indexOf("<AttachedRow") < THREAD.indexOf("data-learner-said"),
+    "the files are drawn under the question that refers to them",
+  );
+});
 test("🔴🔴🔴 two different files are not 'the same moment recorded twice'", () => {
   // Calibration: delete the `sameIds` line and this reddens. Every other field `sameMoment`
   // compares is `undefined` on both sides of a source moment, so without it the comparison is
@@ -117,12 +133,11 @@ test("🔴🔴🔴 the first message of a new chat is not seeded over while it i
   // chat again until it is reloaded.
   assert.match(seed, /const switching = seededFor\.current !== null && seededFor\.current !== canvas\.id;/, "the seed stopped telling a switch from a first seed");
   assert.match(seed, /if \(switching \|\| held\?\.said\) setCurrentSaid/, "a first seed can erase the live question again");
-  // 🪦 THE THIRD LINE OF THIS GUARD WAS `setCurrentAttached`, AND THERE IS NOTHING LEFT TO GUARD.
-  // The owner cut the printed file names hours after they shipped (*"it's always showing that"* —
-  // see the tombstone in canvas-thread-turn.tsx), so the live region holds no attachment state for
-  // a first seed to erase. The rule itself is unchanged and is still asserted twice above: a first
-  // seed ADDS, a switch REPLACES. If the names ever come back, this line comes back with them.
-  assert.ok(!/setCurrentAttached/.test(seed), "the live turn is holding attachment state again — restore the third guard with it");
+  // 🔴 THE THIRD LINE, RESTORED EXACTLY AS ITS OWN TOMBSTONE SAID IT WOULD BE. It was retired for
+  // half a day, while the live region held no attachment state at all, under a note ending "if the
+  // names ever come back, this line comes back with them". They came back the same day as CARDS
+  // (see `attached-row.tsx`), so the state is here again and a first seed can erase it again.
+  assert.match(seed, /if \(switching \|\| held\?\.attached\?\.length\) setCurrentAttached/, "a first seed can erase the live attachments again");
   assert.ok(
     seed.indexOf("if (restored.length > 0) seededFor.current") > seed.indexOf("const restored = history"),
     "the latch runs before the seeding it is meant to record",

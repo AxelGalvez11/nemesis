@@ -119,6 +119,8 @@ import { CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
 import { DocumentDockProvider, useDocumentDockState, CHECK_KEY } from "./document-dock";
+import { AttachedRow } from "./attached-row";
+import { useAnchoredScroll } from "./use-anchored-scroll";
 
 /**
  * The staged reads share one pool, page-wide.
@@ -417,6 +419,11 @@ export function LearningCanvas({
   const arriving = arrival.from ? "" : Date.now() - mountedAt < ARRIVING_MS ? "canvas-enter" : "";
   /** The thread's scroller, so an opening canvas can be put at its most recent turn. */
   const threadRef = useRef<HTMLDivElement | null>(null);
+  // 🔴 THE READING POSITION SURVIVES THE COLUMN CHANGING WIDTH. Opening the reading pane or the
+  // sidebar narrows this scroller, the conversation reflows taller, and a raw `scrollTop` stops
+  // meaning what it meant — measured on production as 1704 → 453, a screen and a half backwards,
+  // which the owner reported as the chat reloading. See use-anchored-scroll.ts.
+  useAnchoredScroll(threadRef);
   /** The turn being answered right now: the learner's sentence, the thinking line, the answer. */
   const currentTurnRef = useRef<HTMLDivElement | null>(null);
   /** Empty space under that turn, so a short exchange can still be scrolled to the top. */
@@ -1132,6 +1139,10 @@ export function LearningCanvas({
    * owner's own canvas: five markers, four anchors, and the fifth one blanked the page.
    */
   const [currentMomentId, setCurrentMomentId] = useState<string | null>(null);
+  /** The files sent with the turn the live region is showing, drawn as the same card row a filed
+   *  turn draws — see `attached-row.tsx` for why a ROW OF CARDS is not the LIST OF NAMES the owner
+   *  cut earlier the same day. */
+  const [currentAttached, setCurrentAttached] = useState<readonly string[]>([]);
   /**
    * What is on screen right now, mirrored where `converse` can read it without going stale.
    *
@@ -1224,6 +1235,7 @@ export function LearningCanvas({
       // chip: a picture claiming to be about a sentence it has nothing to do with.
       setCurrentNotes((held) => (held.length > 0 ? [] : held));
       setCurrentSaidVia(spokenNow);
+      setCurrentAttached(attachedNow);
       setCurrentMomentId(null);
       // Owner picked option A from the mockup: the prompt goes to the top and stays there.
       setSendSeq((n) => n + 1);
@@ -2169,9 +2181,12 @@ export function LearningCanvas({
     const switching = seededFor.current !== null && seededFor.current !== canvas.id;
     if (switching || held?.said) setCurrentSaid(held?.said ?? null);
     if (switching || held?.saidVia) setCurrentSaidVia(held?.saidVia ?? null);
-    // 🪦 `setCurrentAttached` STOOD HERE AND IS GONE WITH THE LIST IT FED. The owner cut the
-    // printed file names the same afternoon they shipped — see the tombstone in
-    // canvas-thread-turn.tsx. What the turn was FILED with is untouched.
+    // 🔴 AND WHAT IT WAS SENT WITH. A restored turn carries its own `attached`; the held-back one is
+    // drawn by the live region instead of the thread, so it has to be handed them here or the newest
+    // exchange is the one exchange whose documents are invisible.
+    // 🔴 `switching ||` FOR THE SAME REASON THE TWO LINES ABOVE CARRY IT (#1105): on a first seed
+    // there is nothing to replace and assigning would wipe what `converse` has already put up.
+    if (switching || held?.attached?.length) setCurrentAttached(held?.attached ?? []);
     // 🔴🔴 AND ITS MOMENT ID COMES WITH IT, WHICH IS THE HALF THAT WAS MISSING. Held back from the
     // thread, this exchange has no `[data-thread-turn]` of its own — so its marker, the newest one
     // on the rail and the one a learner is most likely to press, resolved to nothing and rewound.
@@ -3082,10 +3097,14 @@ export function LearningCanvas({
             marking only that one was a bug I shipped and caught on film: the selector matched
             nothing on the way in and the sentence appeared at its destination instead of
             travelling to it. Same warning as `#canvas-composer` carries in canvas-composer.tsx. */}
-        {/* 🪦 THE LIVE TURN NAMED ITS FILES HERE FOR ABOUT AN HOUR (see the tombstone in
-            canvas-thread-turn.tsx). Owner cut both lists the same afternoon. `attachedNow` still
-            rides the filed turn, because THAT was the defect; printing it was the part he never
-            asked for. */}
+        {/* 🔴 THE SAME CARD ROW THE FILED TURN DRAWS, so the newest exchange does not look like a
+            different kind of thing from the one above it. It was a LIST of names for an hour, cut,
+            and asked for again as CARDS a few hours later — `attached-row.tsx` has both quotes. */}
+        {threadOpen && currentAttached.length > 0 && (
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6">
+            <AttachedRow titles={currentAttached} />
+          </div>
+        )}
         {threadOpen && currentSaid?.trim() && (
           <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
             {/* 🔴🔴 THE REGION FIRST, THEN THE COUNT, THEN THE SENTENCE — the reference's order, and
