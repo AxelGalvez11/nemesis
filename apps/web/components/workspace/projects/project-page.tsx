@@ -12,13 +12,13 @@
 // the right call until this page existed). It is not the right call anymore, so the row now
 // pushes here and this page owns everything that used to render inline.
 //
-// 🔴 DRAWN TO A MEASUREMENT, LIKE THE REST OF THIS FEATURE. Every pixel value in the block below
-// was read off the owner's own signed-in ChatGPT account, 1470px viewport, 2026-08-26, and is
-// recorded verbatim in `docs/chatgpt-reference.md`. Where the arithmetic below produces a number
-// that IS one of the four measured absolutes (y=116, 176, 260, 326) that is not a coincidence —
-// it is the same "state the anchors, derive the gaps" discipline `projects-page.tsx` already
-// uses for its own title/pills offsets, and `projects-page.test.ts` re-derives it rather than
-// trusting the literal.
+// 🔴🔴 2026-09-04: THE PAGE WEARS THE SHARED FRAME (`shell/page-frame.tsx`). It was drawn to
+// ChatGPT's project page (title on y=116, composer on 176, tabs on 260, rows on 326, measured
+// 2026-08-26). That day the owner said the shelf pages "looked too much like ChatGPT", pointed at
+// gemini.google.com/library, asked for "consistent spacing across projects, library, and apps
+// pages", and then "do the project page, calendar, and settings too". So the column, the title
+// row, the round buttons, the pills and the soft rows are the frame's, and the composer sits
+// under the title at the frame's section gap. What a row DOES is unchanged.
 //
 // 🔴 WHAT ISN'T ON THE REFERENCE, BECAUSE CHATGPT HAS NOTHING TO MEASURE IT FROM:
 //
@@ -60,6 +60,19 @@ import { fileMark } from "@/lib/learn/kind-mark";
 import { projectTint } from "@/lib/learn/project-look";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
+import {
+  FRAME_BUTTON_FILL,
+  FRAME_HEAD_GAP_PX,
+  FRAME_ROW_GAP_PX,
+  FRAME_ROW_H_PX,
+  FRAME_SECTION_GAP_PX,
+  PageFrame,
+  PageTitle,
+  Pill,
+  RowIcon,
+  RowText,
+  SOFT_ROW,
+} from "@/components/workspace/shell/page-frame";
 import { ProjectCustomizeDialog } from "@/components/workspace/shell/project-customize-dialog";
 import {
   CANVASES_CHANGED_EVENT,
@@ -79,72 +92,14 @@ import {
 import { buildProjects, findProject, type ProjectNode } from "./projects-model";
 import { cn } from "@/lib/utils";
 
-// ── The measured frame ───────────────────────────────────────────────────────────────────────
-// Same discipline as projects-page.tsx: state the anchors the reference actually measured, then
-// derive every gap as an expression so a test can recompute it rather than trust a literal.
+// ── The frame ────────────────────────────────────────────────────────────────────────────────
+// Every measurement is the frame's now. The only number this page owns is the composer's height,
+// which is the composer's own token everywhere else in the app.
 
-/** Content column. Reference: 768px — the same column every page in this feature shares. */
-const COLUMN_PX = 768;
-/** Top of the title row (folder glyph, name, overflow). Reference: y=116. */
-const TITLE_TOP_PX = 116;
-/**
- * The title row's own height. Not independently measured — the reference records where the
- * COMPOSER starts beneath it (y=176), not the row's own box — but 36 is what every other
- * title-row control on this page and on `/projects` already stands on (`CONTROL_H_PX` there),
- * and it is the value that makes the derived composer/tabs/rows tops land exactly on the three
- * numbers that WERE measured. See the arithmetic below.
- */
-const HEADER_H_PX = 36;
-/** Reference: the composer's top is 24px below the title row's bottom. */
-const COMPOSER_GAP_PX = 24;
-/**
- * The composer's own height. Reference: 52px, `min-height: 52px` — the same `--composer-min-
- * height` token every composer in the product uses (see `globals.css`). Named again here, rather
- * than only read off the CSS custom property, so the y=260 arithmetic below is checkable from
- * source text the way `projects-page.tsx`'s `HEADER_TOP_PX` is.
- */
+/** The composer's box. The front door's composer measures the same; a project's composer is it. */
 const COMPOSER_H_PX = 52;
-/** Reference: the tabs' top is 32px below the composer's bottom. */
-const TABS_GAP_PX = 32;
-/** Reference: a tab pill is 38px tall. */
-const TAB_H_PX = 38;
-/** Reference: rows start 28px below the tabs' bottom. */
-const ROWS_GAP_PX = 28;
-/** Reference: a row is 40px tall — exactly two 20px lines stacked with no gap between them. */
-const ROW_H_PX = 40;
-/**
- * Reference, RE-MEASURED 2026-08-30 in the owner's Chrome: the rows are separated by a hairline
- * divider now (rgba(255,255,255,0.05) dark / rgba(0,0,0,0.05) light), with 13px of padding on
- * each side of the 40px content block — title-to-title pitch 66-67px, confirmed on a six-chat
- * project.
- *
- * 🔴 THE 2026-08-26 SPEC SAID "no divider", AND IT WAS TRUE THEN — the reference changed under
- * us (its project list now draws the same hairline its Library table does). This is why the
- * measurement carries a date: a 1:1 page is 1:1 with a moving target, and the honest move when
- * the target moves is to re-measure and say so, not to defend a stale number.
- *
- * 🔴 PADDING ON THE LIST ITEM, DIVIDER ON THE LIST ITEM, HOVER ON THE ROW. The 40px content box
- * keeps its own hover fill (dead hover above the title was the reason the old gap lived on the
- * list); the li carries the air and the hairline, so the divider spans the full column the way
- * the reference's does.
- */
-const ROW_PAD_Y_PX = 13;
-
-/** 116 + 36 + 24 = 176, the reference's own measured composer top. */
-const COMPOSER_TOP_PX = TITLE_TOP_PX + HEADER_H_PX + COMPOSER_GAP_PX;
-/** 176 + 52 + 32 = 260, the reference's own measured tabs top. */
-const TABS_TOP_PX = COMPOSER_TOP_PX + COMPOSER_H_PX + TABS_GAP_PX;
-/** 260 + 38 + 28 = 326, the reference's own measured rows top. */
-const ROWS_TOP_PX = TABS_TOP_PX + TAB_H_PX + ROWS_GAP_PX;
-
-const TITLE_TEXT = "text-[28px] font-medium text-(--ui-text-primary)";
-/** 14px / 500 / 20px line / `#0d0d0d` — a row's own title. */
-const ROW_NAME_TEXT = "text-[14px] leading-[20px] font-medium text-(--ui-text-primary)";
-/** 14px / 400 / 20px line / `rgb(93,93,93)` — a row's snippet AND its date; the reference gives
- *  the date no separate weight or colour from the snippet beneath it. `--ui-text-secondary` is
- *  used rather than the literal because `projects-page.tsx` already established the two are the
- *  same colour on this page's own text tokens. */
-const ROW_META_TEXT = "text-[14px] leading-[20px] font-normal text-(--ui-text-secondary)";
+/** Empty-state copy, in a row's own padding so it sits where a row would. */
+const EMPTY = "px-[20px] py-[12px] text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)";
 
 type Tab = "canvases" | "sources" | "outputs";
 
@@ -300,202 +255,172 @@ export function ProjectPage({
   }, [draft, project, router, starting, userId]);
 
   return (
-    <main className="scrollbar-dt h-full overflow-x-hidden overflow-y-auto overscroll-contain bg-(--ui-bg-sidebar)">
-      <div className="flex justify-center px-[24px] pb-[96px]">
-        <div className="w-full" style={{ maxWidth: COLUMN_PX, paddingTop: TITLE_TOP_PX }}>
-          {!loaded ? null : !project ? (
-            <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>
-              This project is gone, or never existed. <a className="underline" href="/projects">Back to Projects</a>
-            </p>
-          ) : (
-            <>
-              <header className="flex items-center gap-[10px]" style={{ height: HEADER_H_PX }}>
-                {/* 🔴 THE PROJECT'S OWN MARK, NOT A GENERIC FOLDER. Re-measured 2026-08-30: the
-                    reference draws the project's own icon in its own colour at 32px beside the
-                    28px title ("school" wears its blue mortar-board on its page, not a folder).
-                    `buildProjects` carries icon/colour through `ProjectNode` for exactly this. */}
-                <Codicon
-                  aria-hidden
-                  className={cn("shrink-0", !project.color && "text-(--ui-text-secondary)")}
-                  name={project.icon ?? "folder"}
-                  size="32px"
-                  style={projectTint(project)}
-                />
-                {/* 🔴 `self-start` ON THE NAME ALONE, NOT THE WHOLE ROW. The icon and the overflow
-                    button both want to sit centred in the 36px row (`items-center`, above); the
-                    name wants its OWN top pinned to the measured y=116 exactly. A 34px line
-                    centred in a 36px row lands its top at 117 — one pixel off a number the owner
-                    can and does check — while the row's BOTTOM has to stay at 116+36=152 for the
-                    composer to land on its own measured y=176 (152+24). Both are true at once
-                    only if the row's height carries the 36 and the name alone opts out of being
-                    centred inside it. */}
-                {renaming !== null ? (
-                  <input
-                    aria-label="Rename this project"
-                    autoFocus
-                    className={cn("min-w-0 flex-1 self-start bg-transparent outline-none", TITLE_TEXT)}
-                    maxLength={120}
-                    onBlur={(event) => void commitRename(event.currentTarget.value)}
-                    onChange={(event) => setRenaming(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void commitRename(event.currentTarget.value);
-                      if (event.key === "Escape") {
-                        // Empty the DOM node, not the state — the blur this causes reads the node.
-                        event.currentTarget.value = "";
-                        setRenaming(null);
-                      }
-                    }}
-                    style={{ lineHeight: "34px" }}
-                    value={renaming}
-                  />
-                ) : (
-                  <h1 className={cn("min-w-0 flex-1 self-start truncate", TITLE_TEXT)} style={{ lineHeight: "34px" }}>
-                    {project.name}
-                  </h1>
-                )}
-
-                {/* 🔴 NO SHARE BUTTON — see the header comment. The ⋯ carries what the
-                    reference's page ⋯ carries (measured 2026-08-30: Project settings, Pin
-                    project) plus the Rename/Delete the reference keeps inside its settings
-                    modal — ours are menu rows because our settings dialog does not rename. */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    aria-label={`${project.name} options`}
-                    className="flex size-[36px] shrink-0 items-center justify-center rounded-lg text-(--ui-text-secondary) transition-colors hover:bg-black/[0.05] hover:text-(--ui-text-primary) dark:hover:bg-white/[0.10]"
-                  >
-                    <MoreHorizontal aria-hidden size={20} strokeWidth={1.8} />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() =>
-                        setCustomizing({
-                          color: project.color,
-                          icon: project.icon,
-                          id: project.id,
-                          instructions: project.instructions,
-                          name: project.name,
-                          parentId: null,
-                        })
-                      }
-                    >
-                      Project settings
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => void setFolderPinned(userId, project.id, !project.pinnedAt)}>
-                      {project.pinnedAt ? "Unpin project" : "Pin project"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setRenaming(project.name)}>Rename</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => void removeProject()} variant="destructive">
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </header>
-
-              {/* The SAME composer object as everywhere else — see globals.css's `--composer-*`
-                  tokens and canvas-composer.tsx's own use of them. Not that component itself:
-                  this feature does not own it, and this composer's job (start a canvas already
-                  FILED here) is different from the front door's. Same tokens, same look, own
-                  wiring. */}
-              <form
-                className={cn(
-                  "flex items-center bg-(--composer-fill)",
-                  "rounded-[var(--composer-radius)]",
-                  "shadow-[var(--composer-edge)]",
-                )}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void startCanvas();
-                }}
-                style={{ marginTop: COMPOSER_GAP_PX, minHeight: COMPOSER_H_PX, maxWidth: "var(--composer-max-width)" }}
-              >
-                <input
-                  aria-label={`New chat in ${project.name}`}
-                  className="min-w-0 flex-1 bg-transparent px-[20px] text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-secondary)"
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder={`New chat in ${project.name}`}
-                  type="text"
-                  value={draft}
-                />
-                <button
-                  aria-label="Start canvas"
-                  className="mr-[var(--composer-pad-x)] flex shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity disabled:opacity-40"
-                  disabled={!draft.trim() || starting}
-                  style={{ height: "var(--composer-control)", width: "var(--composer-control)" }}
-                  type="submit"
+    <PageFrame>
+      {!loaded ? null : !project ? (
+        <p className="px-[20px] pt-[16px] text-[length:var(--canvas-text-small)] text-(--ui-text-secondary)">
+          This project is gone, or never existed. <a className="underline" href="/projects">Back to Projects</a>
+        </p>
+      ) : (
+        <>
+          {/* The project's own icon in its own colour beside its name — the same mark its row on
+              /projects and its row in the sidebar wear. Rename swaps the name for a field in the
+              same slot, so nothing else on the row moves. */}
+          <PageTitle
+            before={
+              <Codicon
+                aria-hidden
+                className={cn("shrink-0", !project.color && "text-(--ui-text-secondary)")}
+                name={project.icon ?? "folder"}
+                size="28px"
+                style={projectTint(project)}
+              />
+            }
+            controls={
+              // 🔴 NO SHARE BUTTON. We have no sharing. The ⋯ carries what the reference's page
+              // ⋯ carries (Project settings, Pin) plus the Rename/Delete the reference keeps
+              // inside its settings modal — ours are menu rows because our dialog does not rename.
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label={`${project.name} options`}
+                  className={cn("flex size-[40px] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) transition-colors", FRAME_BUTTON_FILL)}
                 >
-                  <ArrowUp aria-hidden size={18} strokeWidth={2} />
-                </button>
-              </form>
-
-              <div className="flex items-center gap-[8px]" style={{ marginTop: TABS_GAP_PX }}>
-                {TABS.map((option) => (
-                  <button
-                    aria-pressed={tab === option.id}
-                    className={cn(
-                      "rounded-full text-[14px] leading-[20px] font-medium transition-colors",
-                      tab === option.id
-                        ? "bg-black/[0.05] text-(--ui-text-primary) dark:bg-white/[0.10]"
-                        : "bg-transparent text-(--ui-text-tertiary)",
-                    )}
-                    key={option.id}
-                    onClick={() => setTab(option.id)}
-                    style={{ height: TAB_H_PX, padding: "9px 16px" }}
-                    type="button"
+                  <MoreHorizontal aria-hidden size={18} strokeWidth={1.8} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() =>
+                      setCustomizing({
+                        color: project.color,
+                        icon: project.icon,
+                        id: project.id,
+                        instructions: project.instructions,
+                        name: project.name,
+                        parentId: null,
+                      })
+                    }
                   >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+                    Project settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void setFolderPinned(userId, project.id, !project.pinnedAt)}>
+                    {project.pinnedAt ? "Unpin project" : "Pin project"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setRenaming(project.name)}>Rename</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => void removeProject()} variant="destructive">
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            }
+          >
+            {renaming !== null ? (
+              <input
+                aria-label="Rename this project"
+                autoFocus
+                className="w-full min-w-0 bg-transparent font-[inherit] text-[length:inherit] leading-[inherit] outline-none"
+                maxLength={120}
+                onBlur={(event) => void commitRename(event.currentTarget.value)}
+                onChange={(event) => setRenaming(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void commitRename(event.currentTarget.value);
+                  if (event.key === "Escape") {
+                    event.currentTarget.value = "";
+                    setRenaming(null);
+                  }
+                }}
+                value={renaming}
+              />
+            ) : (
+              project.name
+            )}
+          </PageTitle>
 
-              <ul className="flex flex-col" style={{ marginTop: ROWS_GAP_PX - ROW_PAD_Y_PX }}>
-                {tab === "canvases" ? (
-                  project.canvases.length === 0 ? (
-                    <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>Nothing filed here yet.</p>
-                  ) : (
-                    project.canvases.map((canvas) => (
-                      <CanvasRow canvas={canvas} key={canvas.id} onOpen={(id) => router.push(`/learn?c=${id}`)} />
-                    ))
-                  )
-                ) : tab === "sources" ? (
-                  material.sources.length === 0 ? (
-                    <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>No sources filed here yet.</p>
-                  ) : (
-                    material.sources.map((row) => (
-                      <MaterialRow
-                        canvasTitle={row.canvasTitle}
-                        key={row.item.id}
-                        mark={fileMark(row.item.title, row.item.kind)}
-                        onOpen={() => router.push(`/learn?c=${row.canvasId}`)}
-                        title={row.item.title}
-                      />
-                    ))
-                  )
-                ) : material.outputs.length === 0 ? (
-                  <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>Nothing made here yet.</p>
-                ) : (
-                  material.outputs.map((row) => (
-                    <MaterialRow
-                      canvasTitle={row.canvasTitle}
-                      key={row.item.id}
-                      mark={fileMark(row.item.title, row.item.kind)}
-                      onOpen={() => router.push(`/learn?c=${row.canvasId}`)}
-                      title={row.item.title}
-                    />
-                  ))
-                )}
-              </ul>
-            </>
-          )}
-        </div>
-      </div>
+          {/* The composer: the front door's tokens (`--composer-*`), not its component — this
+              one starts a canvas already FILED here. It sits under the title at the frame's
+              section gap, where the Library's first heading would be. */}
+          <form
+            className={cn("flex items-center bg-(--composer-fill)", "rounded-[var(--composer-radius)]", "shadow-[var(--composer-edge)]")}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void startCanvas();
+            }}
+            style={{ marginTop: FRAME_SECTION_GAP_PX, minHeight: COMPOSER_H_PX, maxWidth: "var(--composer-max-width)" }}
+          >
+            <input
+              aria-label={`New chat in ${project.name}`}
+              className="min-w-0 flex-1 bg-transparent px-[20px] text-[length:var(--canvas-text-body)] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-secondary)"
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={`New chat in ${project.name}`}
+              type="text"
+              value={draft}
+            />
+            <button
+              aria-label="Start canvas"
+              className="mr-[var(--composer-pad-x)] flex shrink-0 items-center justify-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity disabled:opacity-40"
+              disabled={!draft.trim() || starting}
+              style={{ height: "var(--composer-control)", width: "var(--composer-control)" }}
+              type="submit"
+            >
+              <ArrowUp aria-hidden size={18} strokeWidth={2} />
+            </button>
+          </form>
+
+          {/* Three pills in the frame's grammar, on the heading line a section would take. The
+              labels say what we actually have: a canvas is not a chat. */}
+          <div className="flex items-center gap-[4px]" role="tablist" style={{ marginTop: FRAME_SECTION_GAP_PX }}>
+            {TABS.map((option) => (
+              <Pill active={tab === option.id} key={option.id} onClick={() => setTab(option.id)} pressed={tab === option.id}>
+                {option.label}
+              </Pill>
+            ))}
+          </div>
+
+          <ul className="flex flex-col" style={{ gap: FRAME_ROW_GAP_PX, marginTop: FRAME_HEAD_GAP_PX }}>
+            {tab === "canvases" ? (
+              project.canvases.length === 0 ? (
+                <p className={EMPTY}>Nothing filed here yet.</p>
+              ) : (
+                project.canvases.map((canvas) => (
+                  <CanvasRow canvas={canvas} key={canvas.id} onOpen={(id) => router.push(`/learn?c=${id}`)} />
+                ))
+              )
+            ) : tab === "sources" ? (
+              material.sources.length === 0 ? (
+                <p className={EMPTY}>No sources filed here yet.</p>
+              ) : (
+                material.sources.map((row) => (
+                  <MaterialRow
+                    canvasTitle={row.canvasTitle}
+                    key={row.item.id}
+                    mark={fileMark(row.item.title, row.item.kind)}
+                    onOpen={() => router.push(`/learn?c=${row.canvasId}`)}
+                    title={row.item.title}
+                  />
+                ))
+              )
+            ) : material.outputs.length === 0 ? (
+              <p className={EMPTY}>Nothing made here yet.</p>
+            ) : (
+              material.outputs.map((row) => (
+                <MaterialRow
+                  canvasTitle={row.canvasTitle}
+                  key={row.item.id}
+                  mark={fileMark(row.item.title, row.item.kind)}
+                  onOpen={() => router.push(`/learn?c=${row.canvasId}`)}
+                  title={row.item.title}
+                />
+              ))
+            )}
+          </ul>
+        </>
+      )}
       <ProjectCustomizeDialog
         folder={customizing}
         onClose={() => setCustomizing(null)}
         onSaved={() => void refresh()}
         userId={userId}
       />
-    </main>
+    </PageFrame>
   );
 }
 
@@ -530,61 +455,37 @@ function MaterialRow({
   onOpen: () => void;
 }) {
   return (
-    <li
-      className="border-b border-b-black/[0.05] dark:border-b-white/[0.05]"
-      style={{ paddingBottom: ROW_PAD_Y_PX, paddingTop: ROW_PAD_Y_PX }}
-    >
-      <button
-        className="flex w-full items-center gap-[12px] text-left transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.10]"
-        onClick={onOpen}
-        style={{ height: ROW_H_PX }}
-        type="button"
-      >
-        {/* The shared kind mark, so a .pptx here and a .pptx in the sources panel are the same
+    <li>
+      <button className={cn(SOFT_ROW, "items-start")} onClick={onOpen} style={{ minHeight: FRAME_ROW_H_PX }} type="button">
+        {/* The same glyph and tint the canvas's own source list draws for this object — one
             object drawn the same way. See `lib/learn/kind-mark.ts`. */}
-        <Codicon className="shrink-0" name={mark.icon} size="20px" style={{ color: `var(${mark.tint})` }} />
-        <span className="flex min-w-0 flex-1 flex-col justify-center">
-          <span className={cn("truncate", ROW_NAME_TEXT)}>{title || "Untitled"}</span>
-          <span className={cn("truncate", ROW_META_TEXT)}>{canvasTitle || "Untitled chat"}</span>
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function CanvasRow({ canvas, onOpen }: { canvas: CanvasSummary; onOpen: (id: string) => void }) {
-  return (
-    <li
-      className="border-b border-b-black/[0.05] dark:border-b-white/[0.05]"
-      style={{ paddingBottom: ROW_PAD_Y_PX, paddingTop: ROW_PAD_Y_PX }}
-    >
-      {/* 🔴 NO RADIUS, EVEN ON HOVER — the measured spec says so explicitly, and the /projects
-          list page's own hover (`ROW_HOVER`) is square-cornered for the same reason: a rounded
-          hover on a full-width band reads as a button, and this is a row in a list. */}
-      <button
-        className="flex w-full items-center gap-[12px] text-left transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.10]"
-        onClick={() => onOpen(canvas.id)}
-        style={{ height: ROW_H_PX }}
-        type="button"
-      >
-        <span className="flex min-w-0 flex-1 flex-col justify-center">
-          <span className={cn("truncate", ROW_NAME_TEXT)}>{canvas.title || "Untitled"}</span>
-          {/* See the header comment: the conversation's real tail, then the course title, then a
-              plain label — never an invented sentence. */}
-          <span className={cn("truncate", ROW_META_TEXT)}>{snippet(canvas)}</span>
-        </span>
-        <span className={cn("shrink-0", ROW_META_TEXT)}>{when(canvas.updatedAt)}</span>
+        <RowIcon>
+          <Codicon className="shrink-0" name={mark.icon} size="22px" style={{ color: `var(${mark.tint})` }} />
+        </RowIcon>
+        <RowText meta={canvasTitle || "Untitled chat"} title={title || "Untitled"} />
       </button>
     </li>
   );
 }
 
 /**
- * Line two of a row: the last thing Nemesis said, flattened to one plain line. Markdown survives
- * in the stored moment (a reply can open with a ```mermaid fence), and a snippet that prints
- * fence syntax reads as a bug — so code fences drop to their bare text, whitespace collapses,
- * and list/heading markers at the start go. The fallbacks are the old honest ones.
+ * One canvas filed here. Line one is its title; line two is the REAL tail of its conversation
+ * (`listCanvases` extracts it inside its own SELECT), falling back to the course title and then
+ * to a plain label — never an invented sentence. The date sits at the row's right.
  */
+function CanvasRow({ canvas, onOpen }: { canvas: CanvasSummary; onOpen: (id: string) => void }) {
+  return (
+    <li>
+      <button className={cn(SOFT_ROW, "items-start")} onClick={() => onOpen(canvas.id)} style={{ minHeight: FRAME_ROW_H_PX }} type="button">
+        <RowText meta={snippet(canvas)} title={canvas.title || "Untitled"} />
+        <span className="shrink-0 pt-[3px] text-[length:var(--canvas-text-small)] leading-[18px] text-(--ui-text-tertiary) tabular-nums">
+          {when(canvas.updatedAt)}
+        </span>
+      </button>
+    </li>
+  );
+}
+
 function snippet(canvas: CanvasSummary): string {
   const raw = canvas.preview?.trim();
   if (raw) {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-// The Plugins page, guarded the way every other surface in this repo is guarded: by reading its
+// The Apps page, guarded the way every other surface in this repo is guarded: by reading its
 // own source. This app has no DOM test harness (see `canvas-runtime-branch.test.ts`), so a
 // structural property is checked by reading the file rather than by rendering it. The idiom, the
 // comment stripper and the two calibration tests below are copied from
@@ -10,10 +10,8 @@ import { test } from "node:test";
 //
 // Two things are worth a guard here, and they are different in kind.
 //
-// 🔴 ONE: THE MEASURED NUMBERS. This page exists to match a reference that was measured off the
-// live product on 2026-08-26 at a 1456px viewport, with `getComputedStyle` rather than by eye. A
-// number that drifts does not break anything, throws nothing, and is invisible in review, which is
-// exactly why it needs a test. Each assertion below names the reference section it came from.
+// 🔴 ONE: THE PRECISION GEOMETRY. A number that drifts does not break anything, throws nothing,
+// and is invisible in review, which is exactly why the selected layout needs a source-level test.
 //
 // 🔴 TWO: "NOT SET UP YET". `/api/composio` answers HTTP 200 with `{apps, configured: false}` when
 // the server has no key. That is a state the page renders, not a failure it interprets, and it is
@@ -51,89 +49,65 @@ test("the comment stripper removes real content, and rendered copy survives it",
   // string. This page is heavily commented, so the surviving fraction is genuinely small.
   assert.ok(pageCode.length < PAGE.length, "stripCopy removed nothing");
   assert.ok(pageCode.length > PAGE.length * 0.2, "stripCopy removed almost everything");
-  assert.match(pageCode, /All apps/, "a plain rendered string did not survive stripping");
+  assert.match(pageCode, /Connected/, "a plain rendered string did not survive stripping");
 });
 
 // ── The measured numbers (reference: scratchpad/ref/chatgpt-reference.md) ──────────────────────
 
-test("🔴 the page frame is a centred 776px box holding the reference's 768px reading column", () => {
-  // Reference §2 measures the content column at 768px; §4 measures the app grid at 776px overall.
-  // Both are true at once because the grid sits 4px proud of the column on each side, so the box
-  // is 776 and everything that is not the grid is inset by 4 (`ALIGNED`).
-  assert.match(pageCode, /max-w-\[776px\]/, "the 776px content box is gone");
-  assert.match(pageCode, /mx-auto/, "the content box is no longer centred");
-  assert.match(pageCode, /const ALIGNED = "px-\[4px\]";/, "the 4px reading-column inset is gone");
-  // 🔴 AND THE PAGE PADDING IS NOT ON THE SAME ELEMENT. It was, in the first draft, and it ate
-  // 48px out of the box: the two 384px tracks silently shrank to 356 and nothing errored. The
-  // padding belongs to a wrapper OUTSIDE the box whose width is being measured.
-  assert.ok(
-    !/max-w-\[776px\][^"]*px-\[/.test(pageCode),
-    "page padding is back on the 776px box; the 384px columns will shrink to fit",
-  );
+// ── The frame ────────────────────────────────────────────────────────────────────────────────
+//
+// 🔴🔴 2026-09-04: THE NUMBERS LEFT THIS FILE. The owner pointed at gemini.google.com/library and
+// asked for "consistent spacing across projects, library, and apps pages", so the column, the
+// title row, the round buttons and the soft row live in `shell/page-frame.tsx` and are guarded
+// once, in `page-frame.test.ts`. What this file guards is that Apps USES that frame, that its
+// sections are TRUE of what is under them, and that a row still does the one thing it is for.
+
+test("🔴🔴 the page is drawn on the shared frame, not on a private copy of it", () => {
+  assert.match(pageCode, /from "@\/components\/workspace\/shell\/page-frame"/, "the page stopped importing the frame");
+  assert.match(pageCode, /<PageFrame>/, "the scroller and column are not the frame's");
+  assert.match(pageCode, /<PageTitle controls=\{searchControl\}>Apps<\/PageTitle>/, "the title row is not the frame's");
+  assert.match(pageCode, /<Section\b/, "the sections are not the frame's");
+  assert.ok(!/<h1\b|max-w-\[768px\]|max-w-\[776px\]|ALIGNED/.test(pageCode), "a page-private title or column survived");
+  assert.ok(!/Work with Nemesis in the apps you already use/.test(pageCode), "the removed Apps subtitle returned");
 });
 
-test("🔴 the title block is 28px/500 over a 16px subtitle", () => {
-  // Reference §2 and §4: page title 28px / weight 500 / line-height 34px; the optional subtitle
-  // directly under it is 16px / weight 400 / --text-secondary.
-  assert.match(
-    pageCode,
-    /text-\[28px\] leading-\[34px\] font-medium text-\(--ui-text-primary\)/,
-    "the title drifted from 28px / 34px / weight 500",
-  );
-  assert.match(
-    pageCode,
-    /text-\[16px\][^"]*text-\(--ui-text-secondary\)/,
-    "the subtitle drifted from 16px in secondary text",
-  );
+test("🔴🔴 the sections are the list's own groups, in the list's own order", () => {
+  // Every app the route sends carries a `group`; `APP_GROUPS` names them. An earlier draft cut
+  // the list at its sixth entry and called the halves "Popular" and "Study & productivity", which
+  // put Gmail in one and Outlook in the other. A heading has to be true of what is under it.
+  assert.match(pageCode, /import \{ APP_GROUPS \} from "@\/lib\/workspace\/composio-apps";/);
+  assert.match(pageCode, /APP_GROUPS\.map\(\(group\) => \(\{ apps: shown\.filter\(\(app\) => app\.group === group\.id\), label: group\.label \}\)\)/);
+  assert.ok(!/slice\(0, 6\)|"Popular"|"Study & productivity"/.test(pageCode), "the invented categories came back");
+  // 🔴 AN EMPTY GROUP IS NOT DRAWN. A heading over nothing looks broken, not empty.
+  assert.match(pageCode, /\.filter\(\s*\(section\) => section\.apps\.length > 0,?\s*\)/);
 });
 
-test("🔴 the search input is a 36px rounded-full pill, 240px wide, at 14px", () => {
-  // Reference §2: "Search input, right-aligned on the title row: height 36px, font 14px, rounded
-  // full, 240px wide (Library) to 240-280px (Plugins). Leading magnifier icon."
-  assert.match(pageCode, /h-\[36px\] w-\[240px\][^"]*rounded-full/, "the search pill drifted from 36x240 rounded-full");
-  assert.match(pageCode, /text-\[14px\] text-\(--ui-text-primary\)/, "the search field is no longer 14px");
-  assert.match(pageCode, /<Search\b/, "the leading magnifier is gone");
+test("🔴 Connected is a section with no chevron, drawn only when something is connected", () => {
+  // There is nothing to view all OF, so no round chevron; and an empty strip under "Connected"
+  // is a shelf that looks broken rather than empty.
+  assert.match(pageCode, /\{connected\.length > 0 && \(\s*<Section title="Connected">/);
+  const connectedBlock = pageCode.slice(pageCode.indexOf('<Section title="Connected">'), pageCode.indexOf("</Section>"));
+  assert.ok(!/ChevronRight|View all/.test(connectedBlock), "the Connected heading grew a chevron that goes nowhere");
 });
 
-test("🔴 section headers are 14px / weight 500", () => {
-  // Reference §4: 'Section headers ("Featured", "Productivity"): 14px / weight 500 /
-  // --text-primary.' Two headers use it here, "Connected" and "All apps".
-  const headers = pageCode.match(/text-\[14px\] font-medium text-\(--ui-text-primary\)/g) ?? [];
-  assert.ok(headers.length >= 2, `expected both section headers at 14px/500, found ${headers.length}`);
-});
-
-test("🔴 the app grid is 2 columns of 384px, row-gap 16px, column-gap 8px", () => {
-  // Reference §4: "App grid: 2 columns of 384px, row-gap 16px, column-gap 8px (776px overall)."
-  assert.match(pageCode, /gap-x-\[8px\]/, "the 8px column gap is gone");
-  assert.match(pageCode, /gap-y-\[16px\]/, "the 16px row gap is gone");
-  assert.match(pageCode, /minmax\(0,384px\)/, "the 384px column width is gone");
-  // Measured in a browser against the compiled stylesheet on 2026-08-26: at a 1456px viewport the
-  // two tracks come out at exactly 384px and the grid at 776px. It only does so while the grid is
-  // the full width of the 776px box, so the grid takes `w-full` and no max-width of its own.
-  assert.match(pageCode, /grid w-full grid-cols-1/, "the grid stopped filling the 776px box");
-});
-
-test("🔴 an app row is 76px tall with a 40x40 rounded icon", () => {
-  // Reference §4: "App row height ~76px: icon 40x40, rounded ~10px". The icon is its own
-  // component because the "Connected" strip draws the same 40px tile.
-  assert.match(pageCode, /h-\[76px\][^"]*px-\[4px\]/, "the row drifted from 76px tall on the 4px reading inset");
+test("🔴🔴 an app row is the frame's soft row, single column, with its whole sentence", () => {
+  assert.match(pageCode, /cn\(SOFT_ROW, "items-center hover:bg-black\/\[0\.03\] dark:hover:bg-white\/\[0\.06\]"\)/, "the row is not the frame's soft row, or it lights up on hover while doing nothing");
+  assert.match(pageCode, /style=\{\{ minHeight: FRAME_ROW_H_PX \}\}/, "the row is not the frame's 89px");
+  assert.match(pageCode, /<div className="flex flex-col" style=\{\{ gap: FRAME_ROW_GAP_PX \}\}>/, "the rows are not on the frame's 8px gap, or went back to two columns");
   assert.match(iconCode, /h-\[40px\] w-\[40px\]/, "the app icon drifted from 40x40");
   assert.match(iconCode, /rounded-\[10px\]/, "the app icon's 10px corner is gone");
+  // 🔴 THE DESCRIPTION IS READ, NOT TRUNCATED. On a 760px row it has room for two lines; the
+  // one-line-with-an-ellipsis version cut ten of eleven sentences.
+  assert.match(pageCode, /line-clamp-2 text-\[length:var\(--canvas-text-small\)\] leading-\[18px\] text-\(--ui-text-secondary\)">\{app\.detail\}/, "the description truncates again, or left the small step");
+  assert.ok(!/truncate[^"]*">\{app\.detail\}|text-\[11px\]/.test(pageCode), "the 11px one-line description came back");
+  assert.match(pageCode, /block truncate text-\[length:var\(--canvas-text-body\)\] leading-\[24px\] font-normal text-\(--ui-text-primary\)">\{app\.label\}/, "the row title is not the frame's body step");
 });
 
-test("🔴 the row's title is 14px primary and its description one truncated line of 13px tertiary", () => {
-  // Reference §4: "title 14px / weight 400 / --text-primary; description 13px / weight 400 /
-  // --text-tertiary, one line, truncated".
-  assert.match(
-    pageCode,
-    /truncate text-\[14px\][^"]*font-normal text-\(--ui-text-primary\)/,
-    "the row title drifted from a truncated 14px/400 primary line",
-  );
-  assert.match(
-    pageCode,
-    /truncate text-\[13px\][^"]*font-normal text-\(--ui-text-tertiary\)/,
-    "the row description drifted from a truncated 13px/400 tertiary line",
-  );
+test("🔴🔴 the row's one control is the frame's round button, and there is none until the server is configured", () => {
+  assert.match(pageCode, /\{configured && \(/, "a connect control is drawn on a server that cannot connect anything");
+  assert.match(pageCode, /<RoundButton label=\{`Connect \$\{app\.label\}`\} onClick=\{onConnect\}>/, "Connect is not the frame's round button");
+  assert.match(pageCode, /aria-label=\{`Options for \$\{app\.label\}`\}/, "a connected app lost its menu");
+  assert.match(pageCode, /Disconnect/, "a connected app cannot be disconnected");
 });
 
 test("🔴 no rem-named type class is used on this page", () => {
@@ -184,7 +158,7 @@ test("🔴🔴 no connect control is drawn until the server is configured", () =
   // The counterpart to the test above, and the reason this page can show the list at all: the row
   // draws its `+` only when the connection can actually be started. A `+` that cannot connect
   // anything is this codebase's most-repeated defect (§38, "a control that does not do anything").
-  assert.match(pageCode, /configured && \(\s*<div className="shrink-0">/, "the trailing control is no longer gated on `configured`");
+  assert.match(pageCode, /configured && \(\s*<span className="shrink-0">/, "the trailing control is no longer gated on `configured`");
   assert.match(pageCode, /configured: boolean;/, "the row stopped being told whether the server is set up");
 });
 

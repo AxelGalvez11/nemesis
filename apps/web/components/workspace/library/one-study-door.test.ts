@@ -42,44 +42,39 @@ test("🔴🔴 the Library is the learner's shelves, and not a home for retired 
   // 🔴 MATCHED AS HEADINGS, NOT AS BARE WORDS. The old spelling of this checked for `/Notes/`,
   // which passed on the `setNotes` state setter and would have gone on passing with every shelf
   // deleted. A guard that cannot fail is worse than no guard, because it is counted as coverage.
-  // 🔴 NAMED BY THEIR PILLS SINCE 2026-09-01, NOT BY HEADINGS. Each shelf used to print a heading
-  // ("Flashcard decks", "Slides", "Documents") above its table, under a pill that already said the
-  // same word — two things on the page saying which shelf you were on, and part of why the shelves
-  // read as different pages (owner: *"it's kinda weird because all of them have different
-  // settings"*). The shelves themselves are unchanged, so this checks the thing that still names
-  // them; `SHELVES` is what the pills are built from and what the guard below already pins.
-  for (const shelf of ["Flashcards", "Slides", "Documents"]) {
-    assert.ok(new RegExp(`label: "${shelf}"`).test(OUTPUTS), `the ${shelf} shelf is gone`);
-    assert.ok(!new RegExp(`SECTION_TITLE\\}>`).test(OUTPUTS), "a shelf heading came back beside its own pill");
-  }
+  // 🔴 NAMED ONCE, IN `SECTION_LABEL`. From 2026-09-01 the pills were the only thing naming a
+  // shelf (a heading under a pill saying the same word was part of why the shelves read as
+  // different pages). From 2026-09-04 the shelves are sections with headings and there are no
+  // pills, so the one map below is what names them everywhere: the heading, the View all, the
+  // kind's own page title and its empty-state copy.
+  assert.match(OUTPUTS, /const SECTION_LABEL: Record<OutputKind, string> = \{ deck: "Flashcards", note: "Documents", slides: "Slides" \};/, "a shelf lost its one name");
+  assert.ok(!/label: "Flashcards"|label: "Slides"|label: "Documents"/.test(OUTPUTS), "the filter pills came back beside the sections");
 });
 
-test("🔴🔴 the filter offers exactly the three kinds the owner named, plus All", () => {
+test("🔴🔴 the page offers exactly the three kinds the owner named, as sections, and opens on all of them", () => {
   // Owner 2026-08-24: *"make sure you add the flashcards, slides, or documents, selection, or
-  // filter in the library like in ChatGPT."*
+  // filter in the library like in ChatGPT."* 2026-09-04, pointing at Gemini's library: the three
+  // are shelves now, each with its own View all, and the same `shelf` state that was the filter
+  // says which one is open — "all" is the overview.
   //
-  // 🔴 "All" IS PART OF THE CONTRACT, NOT A FOURTH OPTION SOMEBODY ADDED. Without a way back to
-  // everything, picking a filter is a one-way door and the other two shelves read as deleted.
-  const shelves = OUTPUTS.slice(OUTPUTS.indexOf("const SHELVES"), OUTPUTS.indexOf("export function LibraryOutputs"));
-  assert.ok(shelves.length > 0, "the shelf filter is gone — this guard is pointed at nothing");
-  for (const label of ["All", "Flashcards", "Slides", "Documents"]) {
-    assert.ok(shelves.includes(`"${label}"`), `the filter lost "${label}"`);
+  // 🔴 "all" IS PART OF THE CONTRACT. Without a way back to everything, opening a kind is a
+  // one-way door and the other two shelves read as deleted.
+  assert.match(OUTPUTS, /const SECTION_ORDER: readonly OutputKind\[\] = \["deck", "slides", "note"\];/, "the three sections are gone");
+  for (const label of ["Flashcards", "Slides", "Documents"]) {
+    assert.ok(OUTPUTS.includes(`"${label}"`), `the page lost "${label}"`);
   }
   assert.match(OUTPUTS, /useState<Shelf>\("all"\)/, "the Library no longer opens showing everything");
+  assert.match(OUTPUTS, /label="Back to the Library"/, "there is no way back from a kind's page");
 });
 
-test("🔴🔴 there is exactly ONE control meaning 'show me everything'", () => {
+test("🔴🔴 there is exactly ONE control meaning 'show me everything', and no projects on the page", () => {
   // 🔴 THE OWNER'S CATCH, 2026-08-24: *"why is there an everything button if we already have the
-  // all button"*. The first version had two rows of pills — kinds above, folders below — whose
-  // selected states read "All" and "Everything". Two controls, same English word, stacked.
-  //
-  // The reference they pointed at (ChatGPT's library) has no second row: one row of kind pills, and
-  // folders are ROWS IN THE LIST you open. So folders moved into the list and "Everything" stopped
-  // needing to exist — being in no folder IS the top of the list.
+  // all button"*. Then 2026-09-04: "remove projects from library". So there is no folder row, no
+  // open-folder breadcrumb, no "Everything" chip — the back arrow on a kind's page is the one way
+  // to everything, and projects are browsed on /projects.
   assert.ok(!/>\s*Everything\s*</.test(OUTPUTS), "the second 'show me everything' control is back");
-  // …and the folders it replaced are really rows now, with a way back out of one.
-  assert.match(OUTPUTS, /setOpenFolder\(folder\.id\)/, "a folder can no longer be opened");
-  assert.match(OUTPUTS, /openFolder !== null && \(/, "there is no way back out of an open folder");
+  assert.ok(!/setOpenFolder|openFolder/.test(OUTPUTS), "folders can be opened on the Library again");
+  assert.ok(!/label: "All"/.test(OUTPUTS), "an All pill is back beside the sections");
 });
 
 test("🔴 the page does not explain itself under its own heading", () => {
@@ -88,25 +83,30 @@ test("🔴 the page does not explain itself under its own heading", () => {
   assert.ok(!/What Nemesis has made for you/.test(OUTPUTS), "the subtitle is back under the heading");
 });
 
-test("🔴🔴 a hidden shelf is not rendered, heading and all", () => {
-  // A heading left standing over a list the filter emptied says "you have no decks", which is a
-  // different and false claim. Calibration: drop the `showing(...)` wrappers and this reddens.
-  for (const kind of ["deck", "slides", "note"]) {
-    assert.ok(OUTPUTS.includes(`{showing("${kind}") && (`), `the ${kind} shelf renders even when filtered out`);
-  }
+test("🔴 the removed canvas/folder explainer does not return at the bottom", () => {
+  assert.ok(
+    !/Your canvases live in the sidebar/.test(OUTPUTS),
+    "the removed Library explainer footer returned",
+  );
 });
 
-test("🔴🔴 Library folders are the SIDEBAR's folders, never a second tree", () => {
-  // Owner 2026-08-24: *"And the library, I don't know if you added the folders. Could you… yeah.
-  // Add the folders."*
-  //
-  // 🔴 THE `folders` TABLE WAS BUILT GENERIC FOR EXACTLY THIS — its migration says *"folders
-  // organise sessions, and Nemesis is not education-only"*. A `library_folders` table would give
-  // one learner two unrelated trees, so "Fall 2026 / Pharmacology" would have to be typed once
-  // for the canvas and again for the deck that canvas produced.
+test("🔴🔴 a kind's own page shows only that kind, and a search hides the sections it empties", () => {
+  // A heading left standing over a list the search emptied says "you have no decks", which is a
+  // different and false claim; on the overview an empty section without a search says what
+  // would fill it, and on a kind's page there is only that kind.
+  assert.match(OUTPUTS, /if \(rows\.length === 0 && query\.trim\(\) !== ""\) return null;/, "a searched-out section still stands with its heading");
+  assert.match(OUTPUTS, /rowsOf\(shelf\)/, "a kind's page draws something other than that kind");
+});
+
+test("🔴🔴 Library rows file into the SIDEBAR's folders, never a second tree", () => {
+  // Owner 2026-08-24: the `folders` table was built generic for exactly this — its migration says
+  // *"folders organise sessions, and Nemesis is not education-only"*. A `library_folders` table
+  // would give one learner two unrelated trees. Projects left the page on 2026-09-04, but a row's
+  // ⋯ still moves it into one, and that list is the shared store's.
   assert.match(OUTPUTS, /from "@\/lib\/learn\/canvas-store"/, "the Library stopped using the shared folder store");
-  assert.match(OUTPUTS, /listFolders\(userId\)/, "the Library does not load the learner's folders");
-  assert.match(OUTPUTS, /createFolder\(userId/, "there is no way to make a folder from the Library");
+  assert.match(OUTPUTS, /listFolders\(userId\)/, "the Library does not load the learner's folders for filing");
+  assert.match(OUTPUTS, /Move to project/, "a row can no longer be filed into a project");
+  assert.ok(!/createFolder\(userId/.test(OUTPUTS), "the Library makes folders again — projects are made on /projects");
   assert.ok(!/library_folders/.test(OUTPUTS), "a second folder tree appeared");
 });
 

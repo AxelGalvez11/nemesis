@@ -5,16 +5,8 @@ import { test } from "node:test";
 import { buildProjects, findProject, matchesQuery, visibleProjects } from "./projects-model";
 import type { CanvasSummary, Folder } from "@/lib/learn/canvas-store";
 
-// 🔴🔴🔴 THE OWNER'S ACCEPTANCE CONDITION FOR THIS PAGE WAS A NUMBER, NOT A FEELING: "pixel,
-// sizing, spacing and colouring 1 to 1" with ChatGPT's Projects page. Every value asserted below
-// was read off the live signed-in app at a 1456px viewport on 2026-08-26 with `getComputedStyle`
-// / `getBoundingClientRect` and written down in scratchpad/ref/chatgpt-reference.md.
-//
-// A page can be tidied into failing this without anyone noticing: `h-[60px]` becomes `py-4`,
-// a 5%-black hairline becomes `border-border`, `768px` becomes `max-w-3xl` (which is 48px
-// narrower). Each of those is an ordinary-looking cleanup and each one breaks the only
-// condition the page was accepted on. So the measurements are pinned to the source text, the
-// way this repo pins other load-bearing source facts.
+// Atlas is the selected production direction for Projects. The structural guards below pin its
+// Claude-style two-card geometry while the model tests preserve the page's real folder behavior.
 
 const PAGE = readFileSync(new URL("./projects-page.tsx", import.meta.url), "utf8");
 const MODEL = readFileSync(new URL("./projects-model.ts", import.meta.url), "utf8");
@@ -32,174 +24,60 @@ const page = code(PAGE);
 const model = code(MODEL);
 const route = code(ROUTE);
 
-/** Pull a measured constant back out of the source so the test can do the reference's arithmetic. */
-function measured(name: string): number {
-  const found = new RegExp(`const ${name} = (\\d+);`).exec(page);
-  assert.notEqual(found, null, `${name} is gone from the page`);
-  return Number(found?.[1]);
-}
 
-// ── The frame: 768px column, and the title and pills on their measured lines ──────────────────
+// ── The frame: an 832px Atlas column, with the existing title/control rhythm ─────────────────
 
-test("🔴 the content column is 768px, not a Tailwind size that is nearly 768px", () => {
-  // `max-w-3xl` is 48rem = 768px ONLY at a 16px root; this app sets its own type scale and the
-  // Library page uses `max-w-3xl` with `px-6`, which renders a 720px column. Naming the number
-  // is what stops this page quietly inheriting that.
-  assert.equal(measured("COLUMN_PX"), 768);
-  assert.match(page, /maxWidth: COLUMN_PX/, "the column constant is declared but not applied");
-  assert.ok(!/max-w-3xl/.test(page), "the column went back to a Tailwind size that is not 768px");
-});
-
-test("🔴🔴 the title lands on y=116 and the pills on y=204, by arithmetic and not by luck", () => {
-  // The reference's two vertical anchors. They are 88px apart, and the gap is NOT 88 minus the
-  // title's height: the h1 is 34px tall and centred inside a 36px row of controls, so the row
-  // begins one pixel above the title. Both derived values are written as expressions in the
-  // source precisely so this test can re-derive them; replacing either with a literal is the
-  // failure mode being guarded against.
-  const titleTop = measured("TITLE_TOP_PX");
-  const pillsTop = measured("PILLS_TOP_PX");
-  const controlH = measured("CONTROL_H_PX");
-  const titleLine = measured("TITLE_LINE_PX");
-  assert.equal(titleTop, 116);
-  assert.equal(pillsTop, 204);
-  assert.equal(controlH, 36);
-  assert.equal(titleLine, 34);
-
-  assert.match(page, /const HEADER_TOP_PX = TITLE_TOP_PX - \(CONTROL_H_PX - TITLE_LINE_PX\) \/ 2;/);
-  assert.match(page, /const PILLS_GAP_PX = PILLS_TOP_PX - HEADER_TOP_PX - CONTROL_H_PX;/);
-
-  const headerTop = titleTop - (controlH - titleLine) / 2;
-  assert.equal(headerTop + (controlH - titleLine) / 2, 116, "the h1 no longer starts on the measured line");
-  assert.equal(headerTop + controlH + (pillsTop - headerTop - controlH), 204, "the pills moved off y=204");
-
-  assert.match(page, /paddingTop: HEADER_TOP_PX/, "the header offset is declared but not applied");
-  assert.match(page, /marginTop: PILLS_GAP_PX/, "the pills offset is declared but not applied");
-});
-
-test("🔴 the title is 28px/500 on a 34px line", () => {
-  assert.match(page, /text-\[28px\] font-medium text-\(--ui-text-primary\)/);
-  assert.match(page, /lineHeight: `\$\{TITLE_LINE_PX\}px`/);
-});
-
-// ── The list: 60px rows, one 5% hairline, no card ─────────────────────────────────────────────
-
-test("🔴🔴🔴 a row is 60px tall with `10px 8px 10px 0` of padding", () => {
-  assert.equal(measured("ROW_H_PX"), 60);
-  assert.equal(measured("ROW_PAD_Y_PX"), 10);
-  assert.equal(measured("ROW_PAD_RIGHT_PX"), 8);
-  // One box function, so a nested row cannot become a different height than a top-level one.
-  const at = page.indexOf("function rowBox(");
-  assert.notEqual(at, -1, "the shared row box is gone and every row now sizes itself");
-  const box = page.slice(at, page.indexOf("}", page.indexOf("return {", at)));
-  assert.match(box, /height: ROW_H_PX/);
-  assert.match(box, /paddingTop: ROW_PAD_Y_PX/);
-  assert.match(box, /paddingBottom: ROW_PAD_Y_PX/);
-  assert.match(box, /paddingRight: ROW_PAD_RIGHT_PX/);
-  // 🔴 NOTHING ON THE LEFT. The reference's rows run to the left edge of the column; a left pad
-  // here would inset the folder icons and nothing would look obviously wrong.
-  assert.match(box, /paddingLeft: indent/);
-});
-
-test("🔴🔴🔴 the divider is a 1px 5% hairline, and it is the ONLY thing between two rows", () => {
-  // `--border-light` = rgba(0,0,0,0.05) light, rgba(255,255,255,0.05) dark. A default Tailwind
-  // border is roughly three times heavier and reads as a table; this reads as a list.
-  assert.match(page, /border-b border-b-black\/\[0\.05\] dark:border-b-white\/\[0\.05\]/);
-  // The reference uses no shadow anywhere on this page, and no card or box around the rows.
-  assert.ok(!/shadow-/.test(page), "a shadow appeared on a page whose reference has none");
-  assert.ok(!/\brounded-xl\b|\brounded-2xl\b/.test(page), "the rows grew a card the reference does not have");
-});
-
-test("🔴 the row hover is the reference's `--interactive-bg-secondary-hover`, both themes", () => {
-  assert.match(page, /hover:bg-black\/\[0\.05\] dark:hover:bg-white\/\[0\.10\]/);
-});
-
-test("🔴 the leading icon is 20x20 on `--icon-secondary`, and the name is 14px/400", () => {
-  assert.equal(measured("ICON_PX"), 20);
-  // A Codicon now (the icon font takes a fontSize string), wearing the project's OWN icon and
-  // colour so the row, the sidebar and the project page all paint one identity.
-  assert.match(page, /size=\{`\$\{ICON_PX\}px`\}/);
-  assert.match(page, /name=\{project\.icon \?\? "folder"\}/, "the row fell back to a generic glyph for customized projects");
-  assert.match(page, /const NAME_TEXT = "text-\[14px\] leading-\[20px\] font-normal text-\(--ui-text-primary\)";/);
-  assert.match(page, /const META_TEXT = "text-\[14px\] leading-\[20px\] font-normal text-\(--ui-text-secondary\)";/);
-});
-
-test("🔴🔴🔴 the columns pack from the LEFT and stop — a right-aligned Modified is a 200px seam", () => {
-  // The reference's Library cells are Name 368 / Modified 160 / Size 88 — 616 together, since
-  // Size's 16px of left padding sits INSIDE its 88 rather than beside it. At a 768px column the
-  // row then accounts exactly: 32 lead + 616 cells + 112 empty tail + 8 right padding = 768.
-  // 112px of every Library row is deliberately empty at the right, which a right-aligned Modified
-  // cannot produce. Projects is that list minus Size, so Name and Modified hold their positions
-  // and the empty tail grows.
-  //
-  // This page right-aligned Modified until both pages were measured in one browser: Library put
-  // its date 400px into the column and Projects put it at 600px, so the date column jumped 200px
-  // between two sibling pages. Calibration: give the Name cell `flex-1` again and this reddens.
-  assert.equal(measured("NAME_W_PX"), 368);
-  assert.equal(measured("MODIFIED_W_PX"), 160);
-});
-
-test("🔴🔴🔴 the column heading sits over ITS OWN column, which means it clears the icon too", () => {
-  // 🔴 THE HALF THAT WAS STILL WRONG AFTER THE DATES LINED UP. The reference gives `Name 368` and,
-  // separately, "leading icon 20x20, then a gap to the name", and never says whether the 368
-  // includes the icon. Both readings satisfy every published width — so the reference cannot
-  // settle it, but this can: a heading has to sit over the text it names. With the icon inside the
-  // cell, "Name" drew at x=370 above a column of FOLDER ICONS while the names it labelled began at
-  // x=402, and every name got 336px before truncating where the Library gave 368.
-  //
-  // Measured after the fix: heading (402, 368) and the depth-0 name cell (402, 368) — same box.
-  // Calibration: delete the empty lead span from the headings and this reddens alone.
-  const at = page.indexOf("Column headings") + 1 || page.indexOf('style={{ height: HEADINGS_H_PX');
-  const headings = page.slice(page.indexOf("style={{ height: HEADINGS_H_PX"), page.indexOf(">\n              Modified"));
-  assert.notEqual(at, -1, "the column headings are gone");
-  assert.match(
-    headings,
-    /<span aria-hidden className="shrink-0" style=\{\{ width: INDENT_PX \}\} \/>/,
-    "the headings skipped the icon's lead, so Name is above the icons instead of the names",
-  );
-  assert.match(headings, /style=\{\{ width: NAME_W_PX \}\}/, "the Name heading is not the Name column's width");
-});
-
-test("🔴🔴 one 32, one meaning: the icon's lead IS the nesting indent", () => {
-  // These were briefly two numbers modelled from opposite sides — a lead BEFORE the Name column on
-  // the Library page, a gap AFTER it here. Both produced identical ROWS, which is why it survived
-  // a row-by-row comparison, and they disagreed about where the Name column starts, which is what
-  // the heading exposed. Derived from the icon and its gap so the two can never drift again.
-  assert.equal(measured("ICON_PX"), 20);
-  assert.equal(measured("ICON_GAP_PX"), 12);
-  assert.match(page, /const INDENT_PX = ICON_PX \+ ICON_GAP_PX;/);
-  assert.ok(!/COLUMN_GAP_PX/.test(page), "a second, independent 32 came back");
-});
-
-// 🔴 THIS USED TO CHECK THREE DEPTHS: `indent={0}`, `indent={indent}`, `indent={indent +
-// INDENT_PX}`, one per nesting level a row used to be able to open to. Nesting is gone from THIS
-// page (see the test above), so there is one depth left to check. `NameCells` itself is untouched
-// and is still the one shared helper; only how many depths call into it shrank.
+// ── The frame ────────────────────────────────────────────────────────────────────────────────
 //
-// 🔴 AND FROM 2026-09-04 THERE IS ONE CALLER RATHER THAN TWO. The second was the inline "naming"
-// input, which named a new project in the table; the name is taken in `ProjectCreateDialog` now,
-// the way chatgpt.com/projects does it. `ProjectRow` is the only row this page draws.
-test("🔴🔴 every row still draws its left side through the ONE shared Name-cells helper", () => {
-  const at = page.indexOf("function NameCells(");
-  assert.notEqual(at, -1, "the shared cells are gone and each row now sizes its own columns");
-  const cells = page.slice(at, page.indexOf("\n}", at));
-  assert.match(cells, /style=\{\{ height: ICON_PX, width: INDENT_PX \}\}/, "the icon's lead is not held open");
-  // 🔴 THE SUBTRACTION SURVIVES EVEN THOUGH NOTHING ON THIS PAGE NESTS ANY MORE, because
-  // `NameCells` is shared with nothing guaranteeing every future caller passes 0 — the formula
-  // being generally correct is cheaper than a second helper for "the un-nested case".
-  assert.match(cells, /width: NAME_W_PX - indent/);
-  const sites = [...page.matchAll(/indent=\{[^}]+\}/g)].map((m) => m[0]);
-  assert.deepEqual(sites, ["indent={0}"], "a row on this page is indenting to a depth that can no longer exist");
-  assert.ok(!/<NameCell\b/.test(page.replace(/<NameCells/g, "")), "a stale single-cell helper is still in use");
+// 🔴🔴 2026-09-04: THE NUMBERS LEFT THIS FILE. Until this date the page carried ChatGPT's measured
+// title line (y=116) and then, for a day, Claude-style 404x112 cards. The owner then pointed at
+// gemini.google.com/library and asked for "consistent spacing across projects, library, and apps
+// pages", so the column, the title row, the round buttons and the soft row all live in
+// `shell/page-frame.tsx` and are guarded once, in `page-frame.test.ts`. What this file guards is
+// that Projects USES that frame rather than a private copy, and what a project row is made of.
+
+test("🔴🔴 the page is drawn on the shared frame, not on a private copy of it", () => {
+  assert.match(page, /from "@\/components\/workspace\/shell\/page-frame"/, "the page stopped importing the frame");
+  assert.match(page, /<PageFrame>/, "the scroller and column are not the frame's");
+  assert.match(page, /<PageTitle[\s\S]{0,600}>\s*Projects\s*<\/PageTitle>/, "the title row is not the frame's");
+  assert.ok(!/<h1\b/.test(page), "the page draws its own <h1> beside the frame's");
+  assert.ok(!/mx-auto[^"]*max-w-\[|COLUMN_PX|TITLE_TOP_PX|PILLS_TOP_PX|CARDS_TOP_PX/.test(page), "a page-private column or title line survived");
 });
 
-test("🔴 there are two columns, Name and Modified, and Modified is the measured 160px", () => {
-  assert.equal(measured("MODIFIED_W_PX"), 160);
-  assert.equal(measured("HEADINGS_H_PX"), 20);
-  assert.match(page, /width: MODIFIED_W_PX/);
-  assert.match(page, />\s*Name\s*<\/span>/);
-  assert.match(page, />\s*Modified\s*<\/span>/);
-  // Projects has Name and Modified only — Size belongs to the Library's list.
-  assert.ok(!/>\s*Size\s*</.test(page), "the Library's Size column leaked onto Projects");
+test("🔴🔴 a project is one soft row, two across, on the frame's own gaps", () => {
+  // (760 - 8) / 2 = 376 each: the frame's column and the frame's row gap, nothing invented.
+  assert.match(page, /const ACROSS = 2;/);
+  assert.match(page, /gridTemplateColumns: `repeat\(\$\{ACROSS\}, minmax\(0, 1fr\)\)`/, "the two-across grid is not built on the frame's column");
+  assert.match(page, /style=\{\{ gap: FRAME_ROW_GAP_PX, gridTemplateColumns[\s\S]{0,120}marginTop: FRAME_SECTION_GAP_PX \}\}/, "the grid's gap or its distance under the title is not the frame's");
+  assert.match(page, /cn\("group\/row min-w-0", SOFT_ROW\)/, "a project row is not the frame's soft row");
+  assert.match(page, /style=\{\{ minHeight: FRAME_ROW_H_PX \}\}/, "a project row is not the frame's 89px");
+  assert.ok(!/rounded-\[12px\]|shadow-\[inset_0_0_0_1px|CARD_H_PX|CARD_GAP_PX/.test(page), "the Claude-style card came back");
+});
+
+test("🔴🔴 the row shows the project's own mark, its name and its date — nothing else", () => {
+  // The card version dropped the mark; the sidebar row and the project page both draw it, and a
+  // page showing the same project without it is the one place it looks like somebody else's.
+  assert.match(page, /<Codicon aria-hidden name=\{project\.icon \?\? "folder"\} size="22px" style=\{projectTint\(project\)\} \/>/, "the project's icon and colour are missing from its row");
+  assert.match(page, /<RowText meta=\{modified\(project\.modifiedAt\) \|\| "Nothing in it yet"\} title=\{project\.name\} \/>/);
+  assert.ok(!/project\.description|project\.topic/.test(page), "a project description appeared on the row");
+  assert.ok(!/>\s*Name\s*<|>\s*Modified\s*<|NameCells|rowBox/.test(page), "the old file-table anatomy returned");
+});
+
+test("🔴🔴 the whole row navigates, and the ⋯ is not inside the press", () => {
+  // A menu trigger inside a button is a button inside a button. The press covers the row with
+  // `inset-0`; the ⋯ floats at the right padding, quiet until the row is hovered.
+  assert.match(page, /className="absolute inset-0 flex items-start gap-\[16px\] rounded-\[28px\] p-\[20px\] pr-\[72px\] text-left"/);
+  assert.match(page, /onClick=\{\(\) => onOpen\(project\.id\)\}/);
+  assert.match(page, /opacity-0 transition-\[background-color,color,opacity\] group-hover\/row:opacity-100 focus-visible:opacity-100 data-\[state=open\]:opacity-100/, "the ⋯ is painted at rest, or its fade and hover colour overwrite each other");
+  const row = page.slice(page.indexOf("function ProjectRow"));
+  assert.ok(row.indexOf("</button>") < row.indexOf("<DropdownMenu>"), "the menu trigger is nested inside the row's press");
+  assert.ok(!/#[0-9a-f]{6}/i.test(row), "a literal colour leaked into the row");
+});
+
+test("🔴 project actions remain available from the row's menu", () => {
+  assert.match(page, /Project settings/);
+  assert.match(page, /project\.pinnedAt \? "Unpin project" : "Pin project"/);
+  assert.match(page, /Delete project/);
 });
 
 test("🔴🔴🔴 no rem-based spacing class survives on this page — `px-4` is EIGHTEEN pixels here", () => {
@@ -240,57 +118,44 @@ test("🔴🔴 the token spelling that silently applies NO font size cannot land
 
 // ── The controls ─────────────────────────────────────────────────────────────────────────────
 
-test("🔴🔴 a filter pill is 36px tall, `0 16px`, rounded full, 14px/500 on a 20px line", () => {
-  const at = page.indexOf("{FILTERS.map(");
-  assert.notEqual(at, -1, "the pills are gone");
-  const pills = page.slice(at, page.indexOf("</div>", at));
-  assert.match(pills, /rounded-full px-\[16px\] text-\[14px\] leading-\[20px\] font-medium/);
-  assert.match(pills, /height: CONTROL_H_PX/);
-  // Selected: `--bg-tertiary`, measured #f3f3f3 light / #414141 dark. We have no token for it —
-  // `--ui-bg-tertiary` blends the accent in and lands near #e2e2e2, a visibly darker pill.
-  assert.match(pills, /bg-\[#f3f3f3\] text-\(--ui-text-primary\) dark:bg-\[#414141\]/);
-  // Unselected: transparent on `--text-secondary`.
-  assert.match(pills, /bg-transparent text-\(--ui-text-secondary\)/);
-});
-
-test("🔴🔴 the pills are All and Pinned — the reference's sharing pills would be dead controls", () => {
-  assert.match(page, /\{ id: "all", label: "All" \}/);
-  assert.match(page, /\{ id: "pinned", label: "Pinned" \}/);
-  // Nemesis has no sharing. Copying "Created by you / Shared with you" would match the reference
-  // pixel for pixel and still be two buttons that change nothing.
+test("🔴🔴 there are no filter pills — Pinned was removed, and a lone All would filter nothing", () => {
+  // Owner 2026-09-04: "remove the pinned for projects". The reference's other pills describe
+  // sharing, which Nemesis does not have, so nothing was left for a pill row to do. The page
+  // still shows every project, and the pin itself survives in the card's menu because the
+  // sidebar still orders by it.
+  assert.ok(!/FILTERS/.test(page), "the filter pill row came back");
+  assert.ok(!/label: "Pinned"/.test(page), "the Pinned pill came back");
   assert.ok(!/Shared with you|Created by you/.test(page), "a sharing filter appeared in a product with no sharing");
+  assert.match(page, /visibleProjects\(projects, "all", query\)/, "the page no longer shows every project");
 });
 
-test("🔴 the search field is the measured 240x36 pill, and it says what it searches", () => {
-  assert.equal(measured("SEARCH_W_PX"), 240);
-  assert.match(page, /width: SEARCH_W_PX/);
+test("🔴 the search is the frame's round magnifier, and it says what it searches", () => {
+  assert.match(page, /<RoundButton label="Search projects" onClick=\{\(\) => setSearching\(true\)\}>/);
   assert.match(page, /placeholder="Search projects"/);
-  assert.match(page, /rounded-full border border-black\/\[0\.10\][^"]*dark:border-white\/\[0\.15\]/);
+  assert.match(page, /onBlur=\{\(\) => \{ if \(query === ""\) setSearching\(false\); \}\}/, "an emptied search no longer folds back into its button");
 });
 
-test("🔴 the New button really makes a folder, in the reference's own dialog, and wears the product's accent", () => {
+test("🔴 the New button really makes a folder, in the reference's own dialog, from the frame's round button", () => {
   assert.match(page, /import \{[\s\S]*?createFolder,[\s\S]*?\} from "@\/lib\/learn\/canvas-store";/);
   // 🔴🔴 THE GLYPH RIDES ALONG NOW, because the door is the dialog rather than a bare row. Owner,
   // 2026-09-04: *"creating a new project in the project page should work like in chatgpt
-  // https://chatgpt.com/projects."* Driven there the same day: their "New" pill opens the SAME
-  // "Create project" modal the sidebar's row opens, so this page opens `ProjectCreateDialog` — the
-  // component measured against it in #1107 — instead of writing an input into the table.
+  // https://chatgpt.com/projects."* Their "New" pill opens the SAME "Create project" modal the
+  // sidebar's row opens, so this page opens `ProjectCreateDialog` — the component measured
+  // against it in #1107 — instead of writing an input into the table.
   assert.match(page, /await createFolder\(userId, name, null, icon\)/);
   assert.match(page, /<ProjectCreateDialog onCreate=\{addProject\}/, "the page stopped using the reference's dialog");
+  assert.match(page, /<RoundButton label="New project" onClick=\{\(\) => setCreating\(true\)\}>/, "New project is not the frame's round button");
   // 🔴 AND THE ROW IS GONE, NOT MERELY UNUSED. It committed on Enter AND on blur, so clicking
   // anywhere else made a project; the Library lost the same row for the same reason (#1134).
   assert.ok(!/Name the new project/.test(page), "the inline naming row is back");
   assert.ok(!/onBlur=\{\(event\) => void addProject/.test(page), "a project is created by clicking away again");
-  // `--ui-action` rather than the reference's #0d0d0d: three units apart on screen, but this is
-  // the token the Settings accent picker writes, and the owner ruled the accent is one colour.
-  assert.match(page, /bg-\(--ui-action\)[^"]*text-\(--ui-action-glyph\)/);
-  assert.match(page, /height: CONTROL_H_PX/);
 });
 
 test("🔴 the page sits on the reference's #fcfcfc ground, which is our own sidebar token", () => {
   // The reference's page background is `--component-sidebar-bg` (#fcfcfc), not white; our
   // `--ui-bg-sidebar` resolves to exactly that, so page and sidebar share one ground with no seam.
-  assert.match(page, /bg-\(--ui-bg-sidebar\)/);
+  // The ground is the frame's now (`PageFrame` paints `--ui-bg-sidebar`); the page must not repaint it.
+  assert.ok(!/bg-\(--ui-bg-sidebar\)/.test(page), "the page repaints the frame's ground on its own");
   // `bg-white/[0.10]` is the dark row hover and is fine; a bare `bg-white` is the ground going wrong.
   assert.ok(!/bg-white(?![/-])/.test(page), "the page went to pure white, which reads wrong beside the sidebar");
 });
