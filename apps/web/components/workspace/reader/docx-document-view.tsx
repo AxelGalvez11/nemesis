@@ -1,29 +1,39 @@
 "use client";
 
-// A Word document, laid out like a documentation page rather than like Word.
+// A Word document, drawn as its pages.
 //
-// No simulated A4 sheet, no page margins, no ruler: those are artefacts of
-// printing, and this is being read on a screen. What IS kept is everything that
-// carries meaning — heading levels, list nesting and numbering, table columns,
-// images where the author put them, and the boundaries between sections.
+// 🔴🔴 THE PAGES ARE THE AUTHOR'S NOW, AND THE REFLOW BELOW IS THE FALLBACK. Owner, 2026-09-04:
+// *"make sure any documents can be viewed too"*, the day after the deck started drawing as itself.
+// What this view used to be is still here, one branch down: OUR layout of the file's paragraphs,
+// headings, lists, tables and pictures on a sheet, which he had already called *"it doesn't really
+// render like a docx, it just looks weird"* (2026-09-03). Right headings, right lists, none of the
+// author's page. `docx-render.ts` lays the file out from its own XML instead: page size and
+// margins, the author's fonts, sizes and colours, tables with their borders, pictures where they
+// were put, headers, footers, footnotes. When that renderer cannot open a file, the reflow is what
+// the learner sees, exactly as before; a document is never taken away because a picture of it
+// could not be made.
 //
-// The measure is constrained (the owner's rule for text documents): long lines
-// are harder to read than short ones, and a document has no fixed width of its
-// own once it leaves paper.
+// 🔴 THE PARSE STILL RUNS, AND IT IS STILL WHAT THE READER KNOWS. `docxBlocks` feeds the outline,
+// the search text and the material a question is answered from. The pages change what is seen,
+// not what is understood.
 //
-// 🔴🔴 THE SHEET CAME BACK, AND THE PARAGRAPH ABOVE IS WHY IT HAD TO BE ARGUED FOR TWICE. Owner,
-// 2026-09-03: *"it doesn't really render like a docx, it just looks weird … it's not rendering like
-// a document."* The reasoning above is about PAGE FURNITURE — A4 proportions, print margins, a
-// ruler — and all of it still stands. What it accidentally also removed was the surface: a bare
-// column of text on the app's own background, with a PDF page and a slide both drawn on sheets two
-// tabs away. A page is not the same claim as a printed page. See `.nemesis-reader-page` in
-// reader.css for why this sheet follows the theme while a PDF's does not.
+// 🔴🔴 THE PAGES ARE DOM NODES THE RENDERER BUILT, NOT REACT ELEMENTS, and that is why one `<div>`
+// below is a leaf React never writes into: the effect appends the scrubbed nodes and clears them
+// on the way out. Letting React reconcile a subtree it did not create is how you get a page that
+// disappears on the next render.
+//
+// 🔴 FIT-WIDTH IS CSS `zoom`, NOT `transform`. A transform scales the paint and leaves the layout
+// box at full size, so the scroll area would still be 816px wide inside a 595px card. `zoom`
+// scales the box too, which is what "fits the card" means. Same arithmetic `reader-zoom.ts` does
+// for a slide.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { docxBlocks, docxBlockText, type DocxBlock, type DocxRun } from "@/lib/reader/docx-blocks";
+import { releaseDocxRender, renderDocxPages, type RenderedDocx } from "@/lib/reader/docx-render";
 import { officeImageUrl, openOfficeArchive } from "@/lib/reader/office-zip";
 import { findInUnit, highlightRuns } from "@/lib/reader/reader-search";
+import { resolveScale, type ZoomMode } from "@/lib/reader/reader-zoom";
 import { resolveRelationships } from "@/lib/reader/pptx-slides";
 import { cn } from "@/lib/utils";
 
@@ -41,22 +51,157 @@ const HEADING_CLASS: Record<number, string> = {
   6: "mt-5 text-[0.8125rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary) first:mt-0",
 };
 
+/** Room either side of a page inside the scroll column, at 1:1. */
+const GUTTER = 24;
+
 export function DocxDocumentView({
   bytes,
   query,
   onReady,
   onError,
+  onScaleChange,
   registerElement,
+  zoom,
 }: {
   bytes: ArrayBuffer;
   query: string | null;
   onReady: (payload: DocxReadyPayload) => void;
   onError: (message: string) => void;
+  /** What the pages are drawn at right now, for the reader's zoom control. */
+  onScaleChange?: (scale: number) => void;
   /** The reader's comment layer pins to the article (the document's one unit). */
   registerElement?: (unit: number, element: HTMLElement | null) => void;
+  /** Fit-width by default; a fixed scale after the learner presses − or +. */
+  zoom?: ZoomMode;
 }) {
   const [blocks, setBlocks] = useState<DocxBlock[] | null>(null);
   const [images, setImages] = useState<Map<string, string>>(new Map());
+  /**
+   * The drawn pages: null while drawing, "failed" when this file cannot be drawn.
+   *
+   * 🔴 "failed" IS A STATE, NOT AN ERROR. It selects the reflow below and nothing else changes;
+   * `onError` is for a file that is not a Word file at all, which the parse above decides.
+   */
+  const [rendered, setRendered] = useState<RenderedDocx | "failed" | null>(null);
+  const [container, setContainer] = useState({ width: 0, height: 0 });
+  // 🔴 A CALLBACK ref, not useRef, for the reason `slides-document-view.tsx` gives: the scroll
+  // column mounts after the first paint, and an observer attached in a mount effect sees null.
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const pagesHost = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    let drawn: RenderedDocx | null = null;
+    setRendered(null);
+    void renderDocxPages(bytes).then((result) => {
+      if (!live) {
+        releaseDocxRender(result);
+        return;
+      }
+      drawn = result;
+      setRendered(result ?? "failed");
+    });
+    return () => {
+      live = false;
+      releaseDocxRender(drawn);
+    };
+  }, [bytes]);
+
+  useEffect(() => {
+    const element = scrollElement;
+    if (!element) return;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box) setContainer({ width: Math.max(0, box.width), height: Math.max(0, box.height) });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [scrollElement]);
+
+  const pages = rendered && rendered !== "failed" ? rendered : null;
+  const scale = useMemo(
+    () =>
+      pages
+        ? Math.min(
+            resolveScale(zoom ?? { kind: "fit-width" }, {
+              pageWidth: pages.pageWidth,
+              pageHeight: pages.pageHeight,
+              containerWidth: Math.max(0, container.width - GUTTER * 2),
+              containerHeight: container.height,
+            }),
+            2,
+          )
+        : 1,
+    [container.height, container.width, pages, zoom],
+  );
+  useEffect(() => onScaleChange?.(scale), [onScaleChange, scale]);
+
+  /**
+   * The drawn pages go into their host, and out again.
+   *
+   * 🔴 EVERY TOP-LEVEL BLOCK OF EVERY PAGE IS STAMPED `data-comment-block`, in document order, so a
+   * comment pins to a paragraph exactly as it did on the reflow, and `relative` so the pin's
+   * portal lands inside the block's own box (comment-layer.tsx). A page reflows with the zoom;
+   * "which block" does not.
+   */
+  useEffect(() => {
+    const host = pagesHost.current;
+    if (!host || !pages) return;
+    host.replaceChildren(...pages.styles, ...pages.pages);
+    let index = 0;
+    for (const page of pages.pages) {
+      for (const block of page.querySelectorAll<HTMLElement>("article > p, article > table, article > ol, article > ul, article > div")) {
+        block.dataset.commentBlock = String(index);
+        index += 1;
+        if (!block.style.position) block.style.position = "relative";
+      }
+    }
+    return () => {
+      host.replaceChildren();
+    };
+  }, [pages]);
+
+  /**
+   * The searched phrase, painted onto the drawn pages.
+   *
+   * 🔴 IN PLACE, BY TEXT NODE. The pages are not React's, so the reflow's `<Runs>` cannot paint
+   * them; a walk over the text nodes wraps every match in a `<mark>` and the previous walk's marks
+   * are unwrapped first, so a changed query never doubles up.
+   */
+  useEffect(() => {
+    const host = pagesHost.current;
+    if (!host || !pages) return;
+    for (const mark of [...host.querySelectorAll("mark[data-reader-match]")]) {
+      const parent = mark.parentNode;
+      if (!parent) continue;
+      parent.replaceChild(document.createTextNode(mark.textContent ?? ""), mark);
+      parent.normalize();
+    }
+    const needle = query?.trim().toLowerCase();
+    if (!needle) return;
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    const hits: Text[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if ((node.textContent ?? "").toLowerCase().includes(needle)) hits.push(node as Text);
+    }
+    for (const text of hits) {
+      const value = text.textContent ?? "";
+      const fragment = document.createDocumentFragment();
+      let from = 0;
+      let at = value.toLowerCase().indexOf(needle);
+      while (at !== -1) {
+        fragment.append(value.slice(from, at));
+        const mark = document.createElement("mark");
+        mark.dataset.readerMatch = "true";
+        mark.textContent = value.slice(at, at + needle.length);
+        fragment.append(mark);
+        from = at + needle.length;
+        at = value.toLowerCase().indexOf(needle, from);
+      }
+      fragment.append(value.slice(from));
+      text.replaceWith(fragment);
+    }
+  }, [pages, query]);
 
   useEffect(() => {
     let urls: string[] = [];
@@ -91,9 +236,63 @@ export function DocxDocumentView({
     };
   }, [bytes, onError, onReady]);
 
+  // 🔴 THE PAGES' HOST IS REGISTERED AS THE DOCUMENT'S ONE UNIT when the pages are up, and the
+  // reflow's article when they are not, so the comment layer and the selection anchor follow
+  // whichever is on screen.
+  const registerPages = useCallback(
+    (element: HTMLDivElement | null) => {
+      pagesHost.current = element;
+      registerElement?.(1, element);
+    },
+    [registerElement],
+  );
+
+  if (blocks === null || rendered === null) {
+    return <div className="grid h-full place-items-center text-xs text-(--ui-text-tertiary)">Opening…</div>;
+  }
+
+  return (
+    <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-docx-scroll" ref={setScrollElement}>
+      {pages ? (
+        /* 🔴 `data-page` AND `data-selectable-text` for the same reasons the reflow's article
+           carries them: selection is re-enabled inside `[data-workspace]` by the first, and anchored
+           by the second. The host is a leaf: React never writes inside it (see the head note). */
+        <div
+          className="nemesis-docx-pages mx-auto w-fit"
+          data-page={1}
+          data-selectable-text="true"
+          ref={registerPages}
+          style={{ zoom: scale }}
+        />
+      ) : (
+        <ReflowedDocument blocks={blocks} images={images} query={query} registerElement={registerElement} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The document laid out like a documentation page rather than like Word: the view this file WAS,
+ * kept whole as the fallback for a file the page renderer cannot open.
+ *
+ * No simulated sheet, no page margins, no ruler; heading levels, list nesting and numbering, table
+ * columns, pictures where the author put them. The measure is constrained (the owner's rule for
+ * text documents): long lines are harder to read than short ones.
+ */
+function ReflowedDocument({
+  blocks,
+  images,
+  query,
+  registerElement,
+}: {
+  blocks: readonly DocxBlock[];
+  images: ReadonlyMap<string, string>;
+  query: string | null;
+  registerElement?: (unit: number, element: HTMLElement | null) => void;
+}) {
   // Consecutive list items of the same kind and depth render as one list, so a
   // numbered list actually counts 1, 2, 3 instead of restarting at every item.
-  const grouped = useMemo(() => groupBlocks(blocks ?? []), [blocks]);
+  const grouped = useMemo(() => groupBlocks(blocks), [blocks]);
 
   // 🔴 A STABLE REF CALLBACK, NOT AN INLINE ARROW — found as a CRASH, not a review note. An inline
   // `ref={(el) => register(1, el)}` is a new function every render, so React detaches (null) and
@@ -101,10 +300,8 @@ export function DocxDocumentView({
   // the arrow, which detaches again — "Maximum update depth exceeded" on every Word file.
   const registerArticle = useCallback((element: HTMLElement | null) => registerElement?.(1, element), [registerElement]);
 
-  if (blocks === null) return <div className="grid h-full place-items-center text-xs text-(--ui-text-tertiary)">Opening…</div>;
-
   return (
-    <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-docx-scroll">
+    <>
       {/* 🔴 EVERY GROUP WRAPPER BELOW CARRIES data-comment-block AND `relative`. A flowing
           document reflows with the panel width, so a pixel anchor is a lie by the first resize —
           the stable thing to hold on to is WHICH BLOCK, and the pin renders inside that block's
@@ -212,7 +409,7 @@ export function DocxDocumentView({
         })}
         </div>
       </article>
-    </div>
+    </>
   );
 }
 

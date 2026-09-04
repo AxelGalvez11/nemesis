@@ -47,6 +47,7 @@
     "codemirror": "^6.0.2",
     "cytoscape": "^3.34.0",
     "docx": "^9.7.1",
+    "docx-preview": "0.4.0",
     "fflate": "^0.8.3",
     "fzstd": "^0.1.1",
     "katex": "^0.16.45",

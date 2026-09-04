@@ -1055,7 +1055,15 @@ export function DocumentReader({
               registerElement={registerSlide}
             />
           ) : source.kind === "document" && bytes ? (
-            <DocxDocumentView bytes={bytes} onError={onViewError} onReady={onDocxReady} query={trimmedQuery} registerElement={registerSlide} />
+            <DocxDocumentView
+              bytes={bytes}
+              onError={onViewError}
+              onReady={onDocxReady}
+              onScaleChange={setScale}
+              query={trimmedQuery}
+              registerElement={registerSlide}
+              zoom={zoom}
+            />
           ) : source.kind === "image" && url ? (
             <ImageDocumentView
               fileName={source.fileName}
