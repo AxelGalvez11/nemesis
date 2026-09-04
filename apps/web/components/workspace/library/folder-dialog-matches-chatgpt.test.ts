@@ -15,8 +15,13 @@
 //     dialog 448 x 190 radius 16px · insets 16 left / 12 top · field 416 x 38 · gaps 16 / 8 / 16
 //     Cancel 71 x 36 · Create 36 tall and disabled on an empty box · no close ✕ · autofocused
 //
-// re-run with:
-//     node .scratch/folder-dialog.mjs      (see the PR that added this file)
+// 🔴 THAT RUN IS REPRODUCIBLE AND NO FILE IN THIS REPO HOLDS IT, which is why the recipe is here
+// rather than a path. Playwright is already in `node_modules` and its headless Chromium renders
+// properly (the in-app browser pane does not — its tab is hidden, so rAF and ResizeObserver never
+// fire and every frame-driven check reads as broken). Point it at
+// `/dev-preview/library/outputs` on a dev server or on production — the route needs no session —
+// click "New folder", and read `getBoundingClientRect()` on `[data-slot="dialog-content"]`, its
+// title, label, input and buttons. The same numbers came back from production after the merge.
 //
 // 🔴 AND THE INSETS ARE 15/11/15 ON PURPOSE. Our dialogs carry a 1px border the reference's does
 // not, and the box is border-box, so 16 would put the content 17px in and the panel 192 tall.
