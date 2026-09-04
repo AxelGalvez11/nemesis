@@ -21,6 +21,7 @@
 // 🔴 READ-ONLY. No session, no policy, no handler that writes.
 
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
+import { AttachedRow } from "./attached-row";
 
 import type { CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { replySegments } from "@/lib/learn/reply-visuals";
@@ -66,23 +67,17 @@ export function CanvasThreadTurnView({
           in from the front door's composer; without it the sentence is the one piece of the
           arrival that appears out of nowhere, which is the half of the report that said prompts
           "disappear". Same warning as `#canvas-composer` carries in canvas-composer.tsx. */}
+      {/* 🔴 ABOVE THE WORDS, WHICH IS BOTH THE REFERENCE'S ORDER AND THE TRUE ONE: the files were
+          attached before the question was typed, and the question usually refers to them. A LIST of
+          names was cut earlier the same day and a ROW of cards asked for a few hours later —
+          `attached-row.tsx` carries both quotes and why they are not in conflict. */}
+      <AttachedRow titles={turn.attached} />
       {turn.said?.trim() && (
         <div className="mb-4 flex justify-end" data-learner-said>
           <LearnerUtterance via={turn.saidVia}>{turn.said}</LearnerUtterance>
         </div>
       )}
 
-      {/* 🪦 THE FILE NAMES WERE DRAWN HERE, AND THE OWNER CUT THEM THE SAME DAY (2026-09-03): *"at
-          the beginning of the chat, when you go back, it shows the names of the PowerPoints or the
-          documents that were dropped in. I don't need that there … it's always showing that."*
-
-          🔴 THE DATA BEHIND THEM IS UNTOUCHED, AND THAT DISTINCTION IS THE WHOLE POINT. `#1098`
-          fixed two real defects — a turn filed with `attached: []`, and a duplicate guard that
-          deleted six of seven attachments on reload — and this only stops DRAWING the result. The
-          documents are still filed with the turn, still in `canvas.sources`, still in the reading
-          pane and still what the answer is grounded in. What is gone is a seven-line list printed
-          above every question the learner scrolls past, which on his canvases is most of the
-          screen. Where the files live now is the Sources panel and the pane's own switcher. */}
       {/* 🔴 THE SAME SPLIT THE LIVE REPLY USES, so a drawing lands exactly where the model put it,
           between the sentence that introduces it and the one that follows. */}
       {turn.reply.trim() && (
