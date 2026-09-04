@@ -36,6 +36,7 @@ import { useRouter } from "next/navigation";
 import { MoreHorizontal, Plus, Search } from "lucide-react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { projectTint } from "@/lib/learn/project-look";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import {
   DropdownMenu,
@@ -532,7 +533,7 @@ function ProjectRow({
               className={cn("shrink-0", !project.color && "text-(--ui-text-secondary)")}
               name={project.icon ?? "folder"}
               size={`${ICON_PX}px`}
-              style={project.color ? { color: project.color } : undefined}
+              style={projectTint(project)}
             />
           }
           indent={0}

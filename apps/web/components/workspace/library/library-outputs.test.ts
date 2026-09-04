@@ -125,8 +125,13 @@ test("🔴 the title row's New is a menu of real doors, and the view toggle pers
   // canvas (where every artifact this page lists is actually made). Menu rows that AUTHOR a
   // deck, note or slides here would be §38/cards-are-output-only violations dressed as menu
   // items, so their absence is asserted too.
-  assert.match(OUTPUTS, />New project</, "the New menu lost its project door");
-  assert.match(OUTPUTS, />New canvas</, "the New menu lost its canvas door");
+  // 🔴🔴 ONE VERB NOW, AND IT IS FOLDER. Owner, 2026-09-03: *"the only thing I want in the library
+  // page is for user to create a new folder so that they can organize the documents into the
+  // folder."* The menu offered "New project" and "New canvas"; both are started better elsewhere,
+  // and filing outputs into folders is the one thing only this page can do. The ACTION is
+  // unchanged — `setNaming("")` always created a folder row — so this is a word and a shape.
+  assert.match(OUTPUTS, />\s*New folder/, "the Library lost its one organising door");
+  assert.ok(!/>New project<|>New canvas</.test(OUTPUTS), "the Library's New is a menu of doors again");
   assert.ok(!/>New deck<|>New note<|>New document<|>New slides</.test(OUTPUTS), "the New menu grew an authoring door");
   assert.match(OUTPUTS, /const VIEW_KEY = "nemesis\.library\.v1\.view";/, "the view choice no longer persists");
   // Three 240px cards close on the 768 column: 240·3 + 24·2 = 768, the same closing-sum

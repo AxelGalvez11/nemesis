@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/desktop-ui/dialog";
 import { customizeFolder, type Folder } from "@/lib/learn/canvas-store";
+import { PROJECT_COLORS, projectTint } from "@/lib/learn/project-look";
 import { cn } from "@/lib/utils";
 
 /** The glyphs a project may wear. Codicon names; a test proves each exists in the font. */
@@ -44,19 +45,21 @@ export const PROJECT_ICONS: readonly string[] = [
   "flame",
 ];
 
-// 🔴 A PROJECT'S COLOUR IS GONE, AND ITS ICON IS NOT (owner 2026-09-03: "remove any color
-// accents throughout the app, there should only be accents on the mascot and the send button and
-// chat bubble color"). This surface shipped 2026-08-30 with a seven-swatch palette, and a green
-// `#46a758` flask in the sidebar is what prompted the instruction — it was the one saturated thing
-// on screen that the character accent could not explain.
+// 🔴🔴 THE COLOUR IS BACK, BY THE SAME OWNER WHO REMOVED IT, AND THE NOTE HE REMOVED IT UNDER IS
+// WORTH KEEPING. On 2026-09-03 he swept every accent (*"there should only be accents on the mascot
+// and the send button and chat bubble color"*) and a green `#46a758` flask in his sidebar was the
+// thing that prompted it. Later the same day: *"allow projects to have color too. and allow user to
+// choose that color in the project settings."*
 //
-// 🔴 THE PICKER WENT WITH IT RATHER THAN JUST THE PAINT. Leaving the swatches while ignoring what
-// they set would be a dead control, which this repo has a standing rule against; a project is
-// identified by its glyph now, and the glyph choice is untouched.
+// Both instructions are right and they are about different objects — `lib/learn/project-look.ts`
+// carries the distinction in full. The short version: the accent is the CHARACTER'S colour and
+// means "act here"; a project colour is an identity the learner assigned so they can find one
+// project in a list. The original complaint was fair for a further reason the second instruction
+// names: the colour had been applied with no way to change or clear it. It is a setting now.
 //
-// `folders.color` is still a column and still holds whatever anyone picked. Nothing reads it, so
-// nothing shows it, and restoring the feature is a matter of putting this list back — but a
-// SECOND colour system beside the character accent is exactly what the instruction removed.
+// 🔴 THE PALETTE IS NOT REDRAWN FROM THE OLD SEVEN. It is the six `--ui-kind-*` pairs, which were
+// contrast-checked in both themes when #1097 restored them; the swatch stores its light hex and
+// draws through the token. See project-look.ts for why that indirection exists.
 
 export function ProjectCustomizeDialog({
   folder,
@@ -72,6 +75,7 @@ export function ProjectCustomizeDialog({
   userId: string | null;
 }) {
   const [icon, setIcon] = useState<string | null>(null);
+  const [color, setColor] = useState<string | null>(null);
   const [instructions, setInstructions] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -79,6 +83,7 @@ export function ProjectCustomizeDialog({
   useEffect(() => {
     if (!folder) return;
     setIcon(folder.icon ?? null);
+    setColor(folder.color ?? null);
     setInstructions(folder.instructions ?? "");
   }, [folder]);
 
@@ -86,9 +91,11 @@ export function ProjectCustomizeDialog({
     if (!folder) return;
     setSaving(true);
     const ok = await customizeFolder(userId, folder.id, {
-      // 🔴 NO `color` KEY AT ALL, not `color: null`. Writing null would erase whatever a
-      // project already wears every time anyone saves an instruction, which turns a
-      // reversible removal into a destructive one.
+      // 🔴 `color` IS WRITTEN AGAIN, AND NULL IS NOW A REAL CHOICE. While the picker was gone this
+      // key was omitted entirely so that saving an instruction could not erase a colour nobody
+      // could see or restore. The swatch row has a "None" option now, so null means the learner
+      // asked for no colour rather than "this surface has no opinion".
+      color,
       // "folder" IS the default glyph; storing it as null keeps "no choice" and "chose the
       // default" the same state, so a future default change reaches everyone who never picked.
       icon: icon === "folder" ? null : icon,
@@ -129,6 +136,44 @@ export function ProjectCustomizeDialog({
                     type="button"
                   >
                     <Codicon name={name} size="16px" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[length:var(--canvas-text-meta)] uppercase tracking-wide text-(--ui-text-quaternary)">
+              Colour
+            </p>
+            {/* 🔴 "NONE" IS A SWATCH, NOT A MISSING ONE. Without it the only way back from a colour
+                is to guess that some other gesture clears it — and being unable to undo the choice
+                is half of why this feature was removed the first time. */}
+            <div className="flex flex-wrap gap-1">
+              {[null, ...PROJECT_COLORS.map((entry) => entry.hex)].map((hex) => {
+                const chosen = (color ?? null) === hex;
+                const entry = PROJECT_COLORS.find((option) => option.hex === hex);
+                return (
+                  <button
+                    aria-label={entry?.name ?? "No colour"}
+                    aria-pressed={chosen}
+                    className={cn(
+                      "grid h-9 w-9 place-items-center rounded-lg border border-transparent transition-colors hover:bg-(--ui-control-hover-background)",
+                      chosen && "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background)",
+                    )}
+                    key={hex ?? "none"}
+                    onClick={() => setColor(hex)}
+                    title={entry?.name ?? "No colour"}
+                    type="button"
+                  >
+                    {/* The swatch is the project's own glyph in that colour, not an abstract dot:
+                        it shows exactly what the sidebar row will look like. */}
+                    <Codicon
+                      className={cn(!hex && "text-(--ui-text-tertiary)")}
+                      name={icon ?? "folder"}
+                      size="16px"
+                      style={projectTint({ color: hex })}
+                    />
                   </button>
                 );
               })}

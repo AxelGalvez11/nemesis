@@ -17,6 +17,7 @@ import {
   normaliseQuestion,
   type CanvasLevel,
   type CanvasResponse,
+  type CanvasOutput,
   type CanvasSource,
   type CanvasState,
   type LearningCanvas,
@@ -313,6 +314,75 @@ export interface Folder {
  *  `(user_id, pinned_at desc nulls last, updated_at desc)` exists precisely so this never
  *  becomes a client-side sort over whatever page of rows happened to arrive — which is the
  *  quiet way a list starts lying once it exceeds one page. */
+/** One piece of material a project holds, and which of its canvases it came from. */
+export interface ProjectMaterial<T> {
+  readonly item: T;
+  readonly canvasId: string;
+  readonly canvasTitle: string;
+}
+
+/**
+ * Everything filed into a project: the documents its canvases were given, and the artifacts they
+ * made.
+ *
+ * 🔴🔴 THE SOURCES TAB WAS DELIBERATELY EMPTY AND THAT WAS A MISREADING, NOT A LIE. `project-page.
+ * tsx` carried a long note saying *"Nemesis has no per-project source list — a canvas's sources
+ * live on that canvas, not indexed by folder"*, and refused to invent one. The refusal was right in
+ * spirit and wrong in fact: a canvas carries `folder_id`, so its sources ARE indexed by folder, one
+ * join away. Owner, 2026-09-03: *"if a project has sources like for example I dropped in a lot of
+ * documents nothing showing up in the sources for the project."* Read out of production at the
+ * time: his IPT4 project held one canvas carrying seven sources, and the tab said none.
+ *
+ * 🔴 ONE ROUND TRIP AND ONLY THE TWO KEYS. `document` on a busy canvas is large — moments, answers,
+ * the whole thread — and this needs two arrays out of it. Extracting them server-side is the same
+ * discipline `listCanvases` applies to its preview line, and for the same reason: the alternative
+ * is shipping every canvas's whole conversation to render a list of file names.
+ *
+ * 🔴 DE-DUPLICATED BY ID, KEEPING THE FIRST. The same document attached to two canvases in one
+ * project is one document to a learner looking at a shelf.
+ */
+export async function projectMaterial(
+  userId: string | null,
+  folderId: string,
+): Promise<{ sources: ProjectMaterial<CanvasSource>[]; outputs: ProjectMaterial<CanvasOutput>[] }> {
+  const empty = { outputs: [], sources: [] };
+  if (!userId) return empty;
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select("id,title,sources:document->sources,outputs:document->outputs")
+    .eq("deleted", false)
+    .eq("folder_id", folderId)
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  if (error || !data) {
+    if (error && !isMissingTableError(error)) console.warn("[learn] project material failed", error.message);
+    return empty;
+  }
+
+  const sources: ProjectMaterial<CanvasSource>[] = [];
+  const outputs: ProjectMaterial<CanvasOutput>[] = [];
+  const seenSource = new Set<string>();
+  const seenOutput = new Set<string>();
+  for (const row of data as unknown as {
+    id: string;
+    title: string;
+    sources: CanvasSource[] | null;
+    outputs: CanvasOutput[] | null;
+  }[]) {
+    for (const item of row.sources ?? []) {
+      if (!item?.id || seenSource.has(item.id)) continue;
+      seenSource.add(item.id);
+      sources.push({ canvasId: row.id, canvasTitle: row.title, item });
+    }
+    for (const item of row.outputs ?? []) {
+      if (!item?.id || seenOutput.has(item.id)) continue;
+      seenOutput.add(item.id);
+      outputs.push({ canvasId: row.id, canvasTitle: row.title, item });
+    }
+  }
+  return { outputs, sources };
+}
+
 export async function listCanvases(userId: string | null): Promise<CanvasSummary[]> {
   if (userId) {
     const { data, error } = await supabase

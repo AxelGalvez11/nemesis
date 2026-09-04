@@ -38,7 +38,7 @@ import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
 import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { cn } from "@/lib/utils";
 import { AddMenuRow, ADD_MENU, useMenuSide } from "./add-menu-row";
-import { backspaceClearsToken, CapabilityChip, ProjectToken } from "./capability-chip";
+import { backspaceClearsCapability, CapabilityChip } from "./capability-chip";
 import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 import { ProjectPicker } from "./project-picker";
@@ -266,7 +266,6 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
    * 🔴 RESOLVED HERE RATHER THAN CARRIED, so a project renamed in the sidebar while the front door
    * is open shows its new name on the line. `project` is an id for exactly that reason.
    */
-  const chosenProject = folders.find((folder) => folder.id === project) ?? null;
   // 🔴 READ ONCE, NOT SUBSCRIBED. The front door is a surface a learner passes through in seconds;
   // the sidebar owns the live list. A stale name here costs nothing — the id is what travels.
   useEffect(() => {
@@ -1067,14 +1066,18 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   departing ? "" : "mx-[10px] self-start [grid-area:text]",
                 )}
               >
-              {/* 🔴 THE PROJECT SITS ON THE LINE, AHEAD OF THE CAPABILITY AND AHEAD OF THE WORDS
-                  (owner, 2026-09-03: *"compare with ChatGPT because it looks different when you add
-                  it"*). Measured on chatgpt.com the same day: choosing a project puts an inline
-                  token at the head of the paragraph you are typing into, not a chip on a strip
-                  below. It is the same component the capability already uses, because it is the
-                  same object — see capability-chip.tsx for the measurement.
-                  🔴 PROJECT FIRST, THEN CAPABILITY, and the Backspace order below depends on it. */}
-              {chosenProject && <ProjectToken icon={chosenProject.icon} name={chosenProject.name} />}
+              {/* 🪦 THE PROJECT SAT ON THIS LINE FOR A DAY, AND THE OWNER SENT IT BACK DOWN. It was
+                  put here to match chatgpt.com, which does put an inline token at the head of the
+                  paragraph — and once it was on screen in OUR composer he read it as a mode rather
+                  than as a filing (2026-09-03: *"the project shows up in the chat bar as if it's a
+                  mode. But I need it to be down there where it says choose project instead"*).
+
+                  He is right, and the reference does not settle it. In ChatGPT the composer line is
+                  where MODES live and a project token there is one more of the same kind of thing.
+                  In Nemesis the one thing on that line is the capability — what this canvas is going
+                  to MAKE — so a project beside it says "you are in project mode", which is not what
+                  filing a chat means. The project is now shown on the control that sets it, which is
+                  the one place it cannot be mistaken for a mode. See `project-picker.tsx`. */}
               {capability && <CapabilityChip capability={capability} />}
               <input
                 // §46.3-exempt: iOS Safari zooms the viewport on focus below 16px
@@ -1111,11 +1114,13 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
                   // *"user should be able to backspace to delete the mode"*). `preventDefault` so
                   // the same keypress cannot also eat a character of a sentence the learner walked
                   // the caret back through.
-                  const clears = backspaceClearsToken(event, { capability, project: chosenProject });
-                  if (clears) {
+                  // 🔴 THE CAPABILITY ONLY, AGAIN. It shared this gesture with the project for one
+                  // day; the project left the line (see the tombstone above) and its Backspace went
+                  // with it, because a gesture that removes a thing you cannot see is a keypress
+                  // that deletes something at random.
+                  if (backspaceClearsCapability(event)) {
                     event.preventDefault();
-                    if (clears === "capability") setCapability(null);
-                    else setProject(null);
+                    setCapability(null);
                   }
                 }}
                 // 🔴 THE SAME PASTE RULE THE CANVAS COMPOSER CARRIES, FROM THE SAME FUNCTION. This
