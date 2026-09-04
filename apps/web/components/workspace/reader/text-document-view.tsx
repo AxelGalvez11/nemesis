@@ -124,7 +124,26 @@ export function DocumentPage({
 
   return (
     <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid={testId}>
-      <article className="nemesis-reader-page relative mx-auto" ref={registerArticle}>
+      {/* 🔴🔴 TWO STAMPS, AND A MARKDOWN FILE COULD NOT BE HIGHLIGHTED AT ALL WITHOUT BOTH. Found on
+          screen, not reasoned about: dragging across a sentence in this view selected nothing and
+          offered nothing.
+
+          `data-selectable-text` is the workspace's own opt-in. `desktop-chrome.css` sets
+          `user-select: none` on `[data-workspace]` as the desktop baseline and re-enables text only
+          for the listed selectors; a PDF escapes it because `reader.css` re-enables the pdf.js text
+          layer, and nothing had ever re-enabled a FLOWING document. So a Range constructed over
+          this article read back empty and the whole highlight lane was dead here.
+
+          `data-page` is what a highlight then anchors AGAINST: `document-reader.tsx` measures the
+          selection as fractions of the nearest `[data-page]` box. The article IS this document's
+          one unit (it is what `registerElement` registers as unit 1), so the fractions land in the
+          same box the pins are drawn in. Clicking in annotate mode still snaps to a block. */}
+      <article
+        className="nemesis-reader-page relative mx-auto"
+        data-page={1}
+        data-selectable-text="true"
+        ref={registerArticle}
+      >
         {children}
       </article>
     </div>

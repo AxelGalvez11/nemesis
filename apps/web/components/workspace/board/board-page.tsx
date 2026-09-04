@@ -14,10 +14,12 @@ import { useCallback, type ReactNode } from "react";
 import type { BoardState } from "@/lib/board/board-model";
 
 import { BoardComposer } from "./board-composer";
+import { BoardDock } from "./board-panel";
 import { BoardProvider, useBoard } from "./board-provider";
 import { BoardSurface } from "./board-surface";
 import { FrontDoorToggle } from "./front-door-toggle";
 import { useAuth } from "@/components/AuthProvider";
+import { useDocumentDock } from "@/components/workspace/learn/document-dock";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
 import { useSidePanelInset, useSidePanelLive } from "@/components/workspace/shell/side-panel";
 
@@ -56,7 +58,19 @@ function LimitNotice() {
   );
 }
 
-export function BoardPage({ boardId, seed, toggle = true }: { boardId: string | null; seed?: BoardState; toggle?: boolean }) {
+export function BoardPage({
+  boardId,
+  seed,
+  toggle = true,
+  openSourceId,
+}: {
+  boardId: string | null;
+  seed?: BoardState;
+  toggle?: boolean;
+  /** 🔴 DEV-PREVIEW SEAM: open this source in the reading panel on mount, so /dev-preview/board
+   *  shows the panel. Nothing in the real product opens a document by itself. */
+  openSourceId?: string;
+}) {
   const onCreated = useCallback((id: string) => {
     // 🔴 `history.replaceState`, NOT `router.replace`. A router navigation from /canvas to
     // /canvas/<id> mounts a different page module, which remounts this provider and drops the
@@ -75,14 +89,20 @@ export function BoardPage({ boardId, seed, toggle = true }: { boardId: string | 
       {/* The same provider instance for the life of the board: creating the row and replacing the
           URL must not remount the tree, or the streaming first answer would be lost. */}
       <BoardProvider boardId={boardId} key={boardId ?? "new"} onBoardCreated={onCreated} seed={seed}>
-        <BoardArea frontDoor={boardId === null && toggle}>
-          <BoardSurface />
-          <EmptyStateHint />
-          <LimitNotice />
-          <BoardComposer />
-          {boardId === null && toggle && <FrontDoorSwitch />}
-        </BoardArea>
-        <BoardOutputPanel />
+        {/* 🔴🔴 ONE DOCK AROUND EVERYTHING, WHICH IS WHAT MAKES A DELIVERABLE AND A LECTURE TABS OF
+            THE SAME PANEL. The dock has to wrap the board because the thing that opens a document is
+            a source card drawn deep inside the surface, and it has to wrap the output panel because
+            that panel now draws the dock's own tab strip. See board-panel.tsx. */}
+        <BoardDock openSourceId={openSourceId}>
+          <BoardArea frontDoor={boardId === null && toggle}>
+            <BoardSurface />
+            <EmptyStateHint />
+            <LimitNotice />
+            <BoardComposer />
+            {boardId === null && toggle && <FrontDoorSwitch />}
+          </BoardArea>
+          <BoardOutputPanel />
+        </BoardDock>
       </BoardProvider>
     </main>
   );
@@ -108,10 +128,36 @@ function BoardArea({ children, frontDoor }: { children: ReactNode; frontDoor: bo
   );
 }
 
-/** A deliverable opened from its card: the chat's own reading panel, docked right. */
+/**
+ * A deliverable opened from its card: the chat's own reading panel, docked right.
+ *
+ * 🔴🔴 IT IS A TAB OF THE READING PANEL NOW, NOT A PANEL OF ITS OWN (2026-09-04). It used to render
+ * straight from `openedOutput`, which was correct while a deliverable was the only thing the board
+ * could open — but the moment documents opened on that same edge, a page Nemesis made and a lecture
+ * the learner dropped were two rectangles at the same width, each certain it owned that side of the
+ * screen. That is the exact failure the chat's dock was extracted to end (`document-dock.tsx` says
+ * so at length), and the answer is the same one: one list, one strip, whichever body is in front.
+ *
+ * 🔴 THE FRONT ITEM DECIDES, NOT A FLAG. `dock.active` is the single answer to "what is showing",
+ * so this cannot disagree with the document panel about which of them is on screen.
+ */
 function BoardOutputPanel() {
-  const { openedOutput, closeOutput, boardId } = useBoard();
+  const { boardId } = useBoard();
   const { session } = useAuth();
-  if (!openedOutput) return null;
-  return <OutputPreview canvasId={boardId ?? ""} comments={{ preview: false, uid: session?.user?.id ?? null }} initialMode="docked" onClose={closeOutput} output={openedOutput} />;
+  const dock = useDocumentDock();
+  const active = dock.active;
+  if (active?.kind !== "output") return null;
+  return (
+    <OutputPreview
+      activeKey={dock.activeKey}
+      canvasId={boardId ?? ""}
+      comments={{ preview: false, uid: session?.user?.id ?? null }}
+      initialMode="docked"
+      items={dock.items}
+      onClose={dock.closeAll}
+      onCloseKey={dock.close}
+      onSelectKey={dock.select}
+      output={active.output}
+    />
+  );
 }

@@ -13,6 +13,8 @@
 import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
 
+import { parseBoardAnnotations, serializeBoardAnnotations, type BoardAnnotation } from "./board-annotations";
+
 export const BOARD_DOCUMENT_VERSION = 1;
 
 export const MAX_BOARD_CARDS = 250;
@@ -163,6 +165,10 @@ export interface BoardDocument {
   selectedSourceIds: string[];
   useWebSearch: boolean;
   viewport?: BoardViewport;
+  /** Notes pinned inside a source, opened in the reading panel. See `board-annotations.ts`.
+   *  🔴 OPTIONAL, BECAUSE EVERY BOARD SAVED BEFORE THIS EXISTED HAS NO SUCH FIELD and must load
+   *  exactly as it always did. Absent reads as none. */
+  annotations?: BoardAnnotation[];
 }
 
 export type BoardOutputStatus = "making" | "ready" | "error";
@@ -202,6 +208,7 @@ export interface BoardState {
   selectedSourceIds: string[];
   useWebSearch: boolean;
   viewport?: BoardViewport;
+  annotations?: BoardAnnotation[];
 }
 
 export function normalizeContextExcerpt(text: string | undefined | null): string | undefined {
@@ -302,6 +309,11 @@ export function serializeBoardState(state: BoardState, measured?: ReadonlyMap<st
     selectedSourceIds: state.selectedSourceIds.filter((id) => sourceIds.has(id)),
     useWebSearch: state.useWebSearch,
     ...(state.viewport ? { viewport: state.viewport } : {}),
+    // 🔴 WRITTEN ONLY WHEN THERE ARE SOME. An empty array on every board would add a field to every
+    // document that has never been annotated, for nothing.
+    ...(state.annotations && state.annotations.length > 0
+      ? { annotations: serializeBoardAnnotations(state.annotations, sourceIds) }
+      : {}),
   };
 }
 
@@ -350,6 +362,8 @@ export function parseBoardState(raw: unknown): BoardState {
     ? (value.selectedSourceIds as unknown[]).filter((id): id is string => typeof id === "string" && sourceIds.has(id))
     : [];
   const viewport = parseViewport(value.viewport);
+  // 🔴 THE SAME CUT THE CARDS GET: an annotation whose source is gone points at nothing.
+  const annotations = serializeBoardAnnotations(parseBoardAnnotations(value.annotations), sourceIds);
   return {
     cards,
     sources,
@@ -357,6 +371,7 @@ export function parseBoardState(raw: unknown): BoardState {
     selectedSourceIds,
     useWebSearch: value.useWebSearch === true,
     ...(viewport ? { viewport } : {}),
+    ...(annotations.length > 0 ? { annotations } : {}),
   };
 }
 

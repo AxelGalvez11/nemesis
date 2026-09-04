@@ -318,6 +318,47 @@ export async function openCommentsForDocs(
   }
 }
 
+/**
+ * Where ONE document's comments are read and written.
+ *
+ * 🔴🔴 A SEAM, NOT A SECOND COMMENT SYSTEM (added 2026-09-04 for the board's reading panel). The
+ * reader used to call the four functions above directly, which quietly said "every document's notes
+ * live in `document_comments`, keyed by a durable `library_sources.id`". That is right for the chat
+ * and impossible for the board: a file dropped on a board is read for its text and need never be
+ * filed at all, so most board sources have no durable id to key on, and rows keyed to a board-local
+ * id would be unresolvable from anywhere else.
+ *
+ * So WHERE a note lives became the host's answer instead of an assumption. Everything above this
+ * line is unchanged and is still the default; the board hands over a store that writes into the one
+ * JSON document it already saves. The reader cannot tell the difference, which is the point.
+ */
+export interface CommentStore {
+  list(): Promise<DocumentComment[]>;
+  add(comment: {
+    unit: number | null;
+    anchor: CommentAnchor;
+    body: string;
+    parentId?: string | null;
+    author?: CommentAuthor;
+  }): Promise<DocumentComment | null>;
+  setResolved(id: string, resolved: boolean): Promise<boolean>;
+  remove(id: string): Promise<boolean>;
+}
+
+/** The default store: the `document_comments` table, or the in-memory preview map. */
+export function documentCommentStore(
+  uid: string | null,
+  ref: CommentDocRef,
+  options?: { preview?: boolean },
+): CommentStore {
+  return {
+    add: (comment) => addDocumentComment(uid, ref, comment, options),
+    list: () => listDocumentComments(uid, ref, options),
+    remove: (id) => deleteDocumentComment(uid, ref, id, options),
+    setResolved: (id, resolved) => setCommentResolved(uid, ref, id, resolved, options),
+  };
+}
+
 /** How a comment names its spot in prose: "slide 3", "page 12, marked area", "section 4". */
 export function describeCommentSpot(comment: DocumentComment, unitLabel: string): string {
   const parts: string[] = [];

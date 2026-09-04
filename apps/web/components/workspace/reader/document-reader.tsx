@@ -32,13 +32,11 @@ import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { readerActionPrompt, type ReaderActionId } from "@/lib/reader/reader-actions";
 import { cropFileName, fileFromDataUrl } from "@/lib/reader/region-crop";
 import {
-  addDocumentComment,
   commentAskPrompt,
-  deleteDocumentComment,
-  listDocumentComments,
-  setCommentResolved,
+  documentCommentStore,
   type CommentAnchor,
   type CommentDocRef,
+  type CommentStore,
   rootsOf,
   type DocumentComment,
 } from "@/lib/workspace/document-comments";
@@ -124,7 +122,29 @@ export interface DocumentReaderProps {
    * the same absent-not-inert rule the action bar follows. `uid`/`preview` ride along because the
    * store has a real lane and an in-memory one and only the host knows which this surface is on.
    */
-  commentsDoc?: { ref: CommentDocRef; uid: string | null; preview: boolean };
+  commentsDoc?: {
+    ref: CommentDocRef;
+    uid: string | null;
+    preview: boolean;
+    /**
+     * Somewhere other than `document_comments` to keep them.
+     *
+     * 🔴 THE HOST ANSWERS "WHERE", THE READER STILL OWNS "WHAT". Absent is the table (or the
+     * preview map), exactly as before. The board's reading panel passes a store that writes into
+     * the board's own JSON document, because a file dropped on a board need never be filed and so
+     * has no durable id for the table to key on. See `document-comments.ts` on `CommentStore`.
+     */
+    store?: CommentStore;
+  };
+  /**
+   * How an opened annotation is drawn.
+   *
+   * 🔴 "margin" IS THE READER'S OWN VOICE and stays the default everywhere. "card" is the board's,
+   * asked for by the owner in as many words (2026-09-04, of the annotation conversation:
+   * *"preferably in the style of the canvas chats"*) — a wider card, the quoted passage or the
+   * cut-out at the top, the learner's turn in a bubble and Nemesis's in the chat's own markdown.
+   */
+  annotationLook?: "margin" | "card";
   /** Trim the toolbar for a narrow pane beside a conversation. See `ReaderTopBar`'s `dense`. */
   dense?: boolean;
   /**
@@ -141,7 +161,7 @@ export interface DocumentReaderProps {
 
 export function DocumentReader({
   source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page", grounded = false,
-  onUnitChange, commentsDoc, dense = false, toolbarSlot,
+  onUnitChange, commentsDoc, dense = false, toolbarSlot, annotationLook = "margin",
 }: DocumentReaderProps) {
   const isDialog = variant === "dialog";
   const unitLabel = UNIT_LABELS[source.kind] ?? "part";
@@ -505,10 +525,21 @@ export function DocumentReader({
   // ── Comments ──────────────────────────────────────────────────────────────
   const commentsRef = commentsDoc?.ref ?? null;
   const commentsKey = commentsRef ? `${commentsRef.kind}:${commentsRef.id}` : null;
+  /** Where this document's notes live. The table unless the host said otherwise. */
+  const commentStore: CommentStore | null = commentsDoc
+    ? (commentsDoc.store ?? documentCommentStore(commentsDoc.uid, commentsDoc.ref, { preview: commentsDoc.preview }))
+    : null;
+  // 🔴 HELD IN A REF FOR THE LOAD BELOW, AND ONLY FOR IT. A host rebuilds `commentsDoc` (and so the
+  // store) on every render; a load effect that depended on it would re-read the document on every
+  // render, and `setComments` with a fresh array would then cause the next one. The read is keyed
+  // by WHICH document, which is the only thing that should make it happen again.
+  const storeRef = useRef(commentStore);
+  storeRef.current = commentStore;
   useEffect(() => {
-    if (!commentsDoc) return;
+    const store = storeRef.current;
+    if (!store) return;
     let live = true;
-    void listDocumentComments(commentsDoc.uid, commentsDoc.ref, { preview: commentsDoc.preview }).then((list) => {
+    void store.list().then((list) => {
       if (live) setComments(list);
     });
     return () => {
@@ -549,20 +580,28 @@ export function DocumentReader({
     [source.kind, unitElements],
   );
 
+  /**
+   * The same cut-out, for a note that is already saved.
+   *
+   * 🔴 THE CARD LOOK SHOWS WHAT THE NOTE IS ABOUT, and for a boxed region that is a picture rather
+   * than a sentence. Nothing else in the app can produce it: the crop is taken from the rendered
+   * page in this reader, so a host drawing the thread itself would have only coordinates.
+   */
+  const cropForOpenComment = useCallback(
+    (comment: DocumentComment): string | null =>
+      comment.anchor.box && comment.unit !== null ? cropForComment(comment.unit, comment.anchor.box) : null,
+    [cropForComment],
+  );
+
   const keepComment = useCallback(
     async (draft: { unit: number; anchor: CommentAnchor; body: string }) => {
-      if (!commentsDoc) return false;
-      const made = await addDocumentComment(
-        commentsDoc.uid,
-        commentsDoc.ref,
-        { anchor: draft.anchor, body: draft.body, unit: draft.unit },
-        { preview: commentsDoc.preview },
-      );
+      if (!commentStore) return false;
+      const made = await commentStore.add({ anchor: draft.anchor, body: draft.body, unit: draft.unit });
       if (!made) return false;
       setComments((current) => [...current, made]);
       return true;
     },
-    [commentsDoc],
+    [commentStore],
   );
 
   /**
@@ -579,15 +618,16 @@ export function DocumentReader({
    */
   const askAboutComment = useCallback(
     async (comment: DocumentComment, question: string): Promise<string | null> => {
-      if (!commentsDoc) return null;
+      if (!commentsDoc || !commentStore) return null;
       const asked = question.trim();
       if (asked) {
-        const mine = await addDocumentComment(
-          commentsDoc.uid,
-          commentsDoc.ref,
-          { anchor: {}, author: "learner", body: asked, parentId: comment.id, unit: comment.unit },
-          { preview: commentsDoc.preview },
-        );
+        const mine = await commentStore.add({
+          anchor: {},
+          author: "learner",
+          body: asked,
+          parentId: comment.id,
+          unit: comment.unit,
+        });
         if (mine) setComments((current) => [...current, mine]);
       }
       const said = comments.filter((row) => row.parentId === comment.id).map((row) => ({ author: row.author, body: row.body }));
@@ -601,17 +641,18 @@ export function DocumentReader({
         unitLabel,
       });
       if (!answer) return null;
-      const kept = await addDocumentComment(
-        commentsDoc.uid,
-        commentsDoc.ref,
-        { anchor: {}, author: "nemesis", body: answer, parentId: comment.id, unit: comment.unit },
-        { preview: commentsDoc.preview },
-      );
+      const kept = await commentStore.add({
+        anchor: {},
+        author: "nemesis",
+        body: answer,
+        parentId: comment.id,
+        unit: comment.unit,
+      });
       if (!kept) return null;
       setComments((current) => [...current, kept]);
       return answer;
     },
-    [comments, commentsDoc, source.fileName, unitLabel, unitTexts],
+    [comments, commentStore, commentsDoc, source.fileName, unitLabel, unitTexts],
   );
 
   /** "Send to Nemesis": the note is KEPT and handed over — one gesture, both destinations, which
@@ -735,27 +776,27 @@ export function DocumentReader({
 
   const resolveComment = useCallback(
     (comment: DocumentComment) => {
-      if (!commentsDoc) return;
+      if (!commentStore) return;
       const resolved = comment.resolvedAt === null;
       setComments((current) =>
         current.map((row) => (row.id === comment.id ? { ...row, resolvedAt: resolved ? new Date().toISOString() : null } : row)),
       );
-      void setCommentResolved(commentsDoc.uid, commentsDoc.ref, comment.id, resolved, { preview: commentsDoc.preview });
+      void commentStore.setResolved(comment.id, resolved);
     },
-    [commentsDoc],
+    [commentStore],
   );
 
   const removeComment = useCallback(
     (comment: DocumentComment) => {
-      if (!commentsDoc) return;
+      if (!commentStore) return;
       const left = comments.filter((row) => row.id !== comment.id);
       setComments(left);
       // The pane's rail lists comments and nothing else, so with the last one gone it would be an
       // empty column; close it, so the next note does not open the list unasked.
       if (dense && left.length === 0) setRailOpen(false);
-      void deleteDocumentComment(commentsDoc.uid, commentsDoc.ref, comment.id, { preview: commentsDoc.preview });
+      void commentStore.remove(comment.id);
     },
-    [comments, commentsDoc, dense],
+    [comments, commentStore, dense],
   );
 
   const meta = describeSource(source, KIND_LABELS[source.kind] ?? "File");
@@ -1044,6 +1085,10 @@ export function DocumentReader({
           boxesDrawable={boxesDrawable}
           commenting={commenting}
           comments={comments}
+          // The card look shows what the note is ABOUT above the conversation; a boxed region has
+          // a picture of itself and this is the only place that can cut one.
+          cropFor={annotationLook === "card" ? cropForOpenComment : undefined}
+          look={annotationLook}
           onAsk={askAboutComment}
           onDelete={removeComment}
           onKeep={keepComment}

@@ -72,6 +72,7 @@ export function DockTabs({
   onSelect,
   onClose,
   onAdd,
+  badgeFor,
 }: {
   items: readonly DockItem[];
   activeKey: string | null;
@@ -79,6 +80,15 @@ export function DockTabs({
   onClose: (key: string) => void;
   /** Open something else. Absent on a surface with nothing to add. */
   onAdd?: () => void;
+  /**
+   * How many annotations one tab's document carries, for the chip beside its name.
+   *
+   * 🔴 THE HOST COUNTS, THE STRIP DRAWS — the same "it is dumb" rule this file already states. What
+   * a mark is and where the notes live differ between surfaces (the chat's are rows in a table, the
+   * board's ride in its own document), and a strip with an opinion about either would be a second
+   * answer to a question already answered. Zero and absent both draw nothing.
+   */
+  badgeFor?: (item: DockItem) => number;
 }) {
   if (items.length === 0) return null;
   const active = items.find((item) => item.key === activeKey) ?? items[0];
@@ -92,6 +102,7 @@ export function DockTabs({
       {items.map((item) => {
         const row = face(item);
         const current = item.key === active?.key;
+        const marks = badgeFor?.(item) ?? 0;
         return (
           // 🔴 A `div` WEARING THE TAB, NOT A BUTTON CONTAINING ONE. The ✕ is a second action on the
           // same tab, and a button inside a button is invalid markup that browsers resolve by
@@ -108,7 +119,7 @@ export function DockTabs({
             key={item.key}
             role="tab"
             aria-selected={current}
-            title={row.title}
+            title={marks > 0 ? `${row.title} · ${marks} annotation${marks === 1 ? "" : "s"}` : row.title}
           >
             <button
               className="flex min-w-0 flex-1 items-center gap-[6px] text-left"
@@ -117,6 +128,20 @@ export function DockTabs({
             >
               <Codicon className="shrink-0" name={row.icon} size="14px" />
               <span className="truncate text-[length:var(--canvas-text-small)] leading-[20px]">{row.title}</span>
+              {/* 🔴 A NUMBER, NOT THE WHOLE PHRASE. The tab has 220px at most and the file's name is
+                  what the learner is looking for; "3 annotations" is in the tab's own tooltip and on
+                  the card the document was opened from, where there is room to say it. */}
+              {/* 🔴 `--canvas-text-meta` (12px), THE SMALLEST STEP ON THE SCALE, not a 10px of its
+                  own. §46.3 is one type scale for the whole surface, and `canvas-shell.test.ts`
+                  catches a size invented for one badge. */}
+              {marks > 0 && (
+                <span
+                  className="shrink-0 rounded-full bg-(--ui-action) px-[5px] text-[length:var(--canvas-text-meta)] font-semibold leading-[16px] text-(--ui-action-glyph)"
+                  data-testid="dock-tab-annotations"
+                >
+                  {marks}
+                </span>
+              )}
             </button>
             <button
               aria-label={`Close ${row.title}`}

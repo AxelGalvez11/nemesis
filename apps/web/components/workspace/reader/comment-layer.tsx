@@ -28,6 +28,7 @@ import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { repliesTo, rootsOf, type CommentAnchor, type DocumentComment } from "@/lib/workspace/document-comments";
+import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { cn } from "@/lib/utils";
 
 import { useRegionDrag, type RegionAnchor, type RegionBox } from "./use-region-drag";
@@ -56,6 +57,8 @@ export function CommentLayer({
   onAsk = null,
   request = null,
   onRequestTaken,
+  look = "margin",
+  cropFor,
 }: {
   /** The mode. Off = this layer draws saved pins and nothing else captures the pointer. */
   commenting: boolean;
@@ -102,6 +105,18 @@ export function CommentLayer({
   request?: CommentDraftSpot | null;
   /** Fired once the request has been taken, so the host can forget it. */
   onRequestTaken?: () => void;
+  /**
+   * How an OPENED note is drawn.
+   *
+   * 🔴 "margin" IS THE READER'S OWN VOICE and stays the default on every surface that had one
+   * before this existed. "card" is the board's — owner, 2026-09-04, of the annotation
+   * conversation: *"preferably in the style of the canvas chats"*. Same thread, same store, same
+   * model door; what changes is the shape it wears, because on the board an annotation opens
+   * beside chat cards and a narrow margin popover next to them reads as a different product.
+   */
+  look?: "margin" | "card";
+  /** A picture of the marked region, for the card look's header. Only the reader can cut one. */
+  cropFor?: (comment: DocumentComment) => string | null;
 }) {
   const [draft, setDraft] = useState<CommentDraftSpot | null>(null);
   const [openThread, setOpenThread] = useState<{ comment: DocumentComment; at: { left: number; top: number } } | null>(null);
@@ -182,6 +197,8 @@ export function CommentLayer({
       {openThread && (
         <CommentThread
           comment={openThread.comment}
+          crop={cropFor?.(openThread.comment) ?? null}
+          look={look}
           onAsk={onAsk ? (question) => onAsk(openThread.comment, question) : null}
           onClose={() => setOpenThread(null)}
           onDelete={() => {
@@ -458,6 +475,8 @@ function CommentThread({
   onDelete,
   onAsk,
   replies,
+  look = "margin",
+  crop = null,
 }: {
   comment: DocumentComment;
   ordinal: number;
@@ -470,21 +489,55 @@ function CommentThread({
   onAsk: ((question: string) => Promise<string | null>) | null;
   /** What has been said under this note already, oldest first. */
   replies: readonly DocumentComment[];
+  /** See `CommentLayer`'s own prop. */
+  look?: "margin" | "card";
+  /** A data URL of the marked region, when the host could cut one. */
+  crop?: string | null;
 }) {
+  const card = look === "card";
   const boxRef = useRef<HTMLDivElement>(null);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState("");
   const [failed, setFailed] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
+  /**
+   * Pulled back inside the window, and pulled back AGAIN whenever the card changes size.
+   *
+   * 🔴🔴 MEASURING ONCE PUT THE FOOT OF THE CARD OFF THE SCREEN, and it was found on screen rather
+   * than reasoned about: a thread with two answers in it measured 540px at layout time and settled
+   * at 589px, so a card clamped to the viewport when it was placed ended 39px below the bottom and
+   * lost its Delete and Resolve row entirely. The content is markdown that reflows as it renders,
+   * and a one-shot measurement of something that is still growing is a measurement of the wrong
+   * thing. The margin popover has the same latent fault with a long answer, so this fixes both.
+   *
+   * 🔴🔴 AND THE SIZE IS `offsetWidth`/`offsetHeight`, NOT THE BOUNDING RECT, which is the other
+   * half of the same bug. The card's entrance (`board-menu-pop`) scales it from 0.92, and a
+   * bounding rect is the TRANSFORMED box: measured mid-animation it read 331x541 for a card that
+   * settles at 360x589, so the clamp was solving for a card 48px shorter than the one it was
+   * placing. `offset*` is the layout size and is indifferent to the transform, so the answer no
+   * longer depends on when this happens to run.
+   *
+   * 🔴 THE OBSERVER CANNOT LOOP. It watches SIZE; the only thing this writes is POSITION, which
+   * does not change the box's height. The equality guard is belt and braces for a browser that
+   * reports a sub-pixel wobble.
+   */
   useLayoutEffect(() => {
-    const box = boxRef.current?.getBoundingClientRect();
-    if (!box) return;
-    const margin = 8;
-    setPosition({
-      left: Math.min(Math.max(margin, spot.left), window.innerWidth - box.width - margin),
-      top: Math.min(Math.max(margin, spot.top), window.innerHeight - box.height - margin),
-    });
+    const node = boxRef.current;
+    if (!node) return;
+    const place = () => {
+      const margin = 8;
+      const next = {
+        left: Math.min(Math.max(margin, spot.left), window.innerWidth - node.offsetWidth - margin),
+        top: Math.min(Math.max(margin, spot.top), window.innerHeight - node.offsetHeight - margin),
+      };
+      setPosition((current) => (current && current.left === next.left && current.top === next.top ? current : next));
+    };
+    place();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(place);
+    observer.observe(node);
+    return () => observer.disconnect();
   }, [spot.left, spot.top]);
 
   useEffect(() => {
@@ -513,61 +566,121 @@ function CommentThread({
 
   return (
     <div
-      className="fixed z-[130] w-[320px] rounded-[10px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3 shadow-xl"
+      className={cn(
+        "fixed z-[130] shadow-xl",
+        card
+          // 🔴 THE BOARD'S OWN CARD: 360 wide at the card radius, on the elevated ground every
+          // conversation card uses, and it scrolls inside itself rather than growing off screen.
+          ? "board-menu-pop flex max-h-[70vh] w-[360px] flex-col overflow-hidden rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated)"
+          : "w-[320px] rounded-[10px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3",
+      )}
       data-testid="reader-comment-thread"
       ref={boxRef}
       style={position ? position : { left: -9999, top: -9999 }}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className={cn("flex items-center justify-between gap-2", card && "px-[14px] pt-[12px]")}>
         <p className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
-          Comment {ordinal}
+          {card ? "Annotation" : "Comment"} {ordinal}
           {comment.unit !== null ? ` · ${unitLabel} ${comment.unit}` : ""}
         </p>
         <button aria-label="Close" className="grid size-5 place-items-center rounded text-(--ui-text-quaternary) hover:text-foreground" onClick={onClose} type="button">
           <Codicon name="close" size="0.7rem" />
         </button>
       </div>
-      <p className="mt-1.5 whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-foreground">{comment.body}</p>
 
-      {/* 🔴🔴 THE CONVERSATION LIVES HERE, NOT IN THE CANVAS (owner, 2026-09-04). Each turn is
-          labelled by who said it, because an unlabelled block under a note reads as more of the
-          note. Nemesis's own answers sit on a tinted ground for the same reason a chat bubble
-          does: one glance has to separate the question from the answer. */}
-      {replies.length > 0 && (
-        <div className="mt-2.5 flex flex-col gap-2" data-testid="reader-comment-replies">
-          {replies.map((reply) => (
-            <div
-              className={cn(
-                "rounded-[8px] px-2 py-1.5",
-                reply.author === "nemesis" ? "bg-(--ui-bg-tertiary)" : "bg-transparent",
-              )}
-              key={reply.id}
-            >
-              <p className="text-[0.625rem] font-medium uppercase tracking-[0.06em] text-(--ui-text-quaternary)">
-                {reply.author === "nemesis" ? "Nemesis" : "You"}
+      {/* 🔴 THE CARD SAYS WHAT IT IS ABOUT BEFORE IT SAYS ANYTHING ELSE. A conversation card on the
+          board carries the sentence it branched from at its head; an annotation card carries the
+          same thing — the words that were highlighted, or a picture of the region that was boxed.
+          Without it the thread is an answer floating over a page with no visible subject. */}
+      {card && crop && (
+        // eslint-disable-next-line @next/next/no-img-element -- a data URL cut from the rendered page.
+        <img alt={`The area marked on ${unitLabel} ${comment.unit ?? 1}`} className="mx-[14px] mt-[8px] max-h-[140px] w-[calc(100%-28px)] rounded-[8px] border border-(--ui-stroke-tertiary) object-contain" src={crop} />
+      )}
+      {card && !crop && comment.anchor.quote && (
+        <p className="mx-[14px] mt-[8px] border-l-2 border-(--ui-action) pl-[8px] text-[12px] italic leading-[1.625] text-(--ui-text-secondary)" dir="auto">
+          <span className="line-clamp-4">{comment.anchor.quote}</span>
+        </p>
+      )}
+
+      {card ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-[14px] pb-[4px] pt-[10px]">
+          {/* 🔴 THE NOTE IS THE LEARNER'S FIRST TURN, so it wears the learner's bubble — the same
+              `--ui-learner-bubble` a board card's question wears, on the same side. */}
+          <div className="flex justify-end">
+            <div className="max-w-[85%] rounded-[16px] bg-(--ui-learner-bubble) px-[14px] py-[10px]">
+              <p className="whitespace-pre-wrap break-words text-[14px] leading-[1.625] text-(--ui-learner-bubble-glyph)" dir="auto">
+                {comment.body}
               </p>
-              <p className="mt-0.5 whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-foreground">{reply.body}</p>
             </div>
-          ))}
+          </div>
+          {replies.length > 0 && (
+            <div className="mt-[10px] flex flex-col gap-[10px]" data-testid="reader-comment-replies">
+              {replies.map((reply) =>
+                reply.author === "nemesis" ? (
+                  // 🔴 THE CHAT'S OWN MARKDOWN, not a second renderer. A margin answer and a board
+                  // answer are the same object arriving from two directions.
+                  <AssistantMarkdown className="text-[14px] leading-[1.625]" key={reply.id} text={reply.body} />
+                ) : (
+                  <div className="flex justify-end" key={reply.id}>
+                    <div className="max-w-[85%] rounded-[16px] bg-(--ui-learner-bubble) px-[14px] py-[10px]">
+                      <p className="whitespace-pre-wrap break-words text-[14px] leading-[1.625] text-(--ui-learner-bubble-glyph)" dir="auto">
+                        {reply.body}
+                      </p>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
         </div>
+      ) : (
+        <>
+          <p className="mt-1.5 whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-foreground">{comment.body}</p>
+
+          {/* 🔴🔴 THE CONVERSATION LIVES HERE, NOT IN THE CANVAS (owner, 2026-09-04). Each turn is
+              labelled by who said it, because an unlabelled block under a note reads as more of the
+              note. Nemesis's own answers sit on a tinted ground for the same reason a chat bubble
+              does: one glance has to separate the question from the answer. */}
+          {replies.length > 0 && (
+            <div className="mt-2.5 flex flex-col gap-2" data-testid="reader-comment-replies">
+              {replies.map((reply) => (
+                <div
+                  className={cn(
+                    "rounded-[8px] px-2 py-1.5",
+                    reply.author === "nemesis" ? "bg-(--ui-bg-tertiary)" : "bg-transparent",
+                  )}
+                  key={reply.id}
+                >
+                  <p className="text-[0.625rem] font-medium uppercase tracking-[0.06em] text-(--ui-text-quaternary)">
+                    {reply.author === "nemesis" ? "Nemesis" : "You"}
+                  </p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-foreground">{reply.body}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {asking && (
-        <p className="mt-2 text-[0.6875rem] text-(--ui-text-tertiary)" data-testid="reader-comment-asking">
+        <p className={cn("mt-2 text-[0.6875rem] text-(--ui-text-tertiary)", card && "px-[14px]")} data-testid="reader-comment-asking">
           Nemesis is reading that spot…
         </p>
       )}
       {failed && !asking && (
-        <p className="mt-2 text-[0.6875rem] text-(--ui-danger)">That did not come back. Try again.</p>
+        <p className={cn("mt-2 text-[0.6875rem] text-(--ui-danger)", card && "px-[14px]")}>That did not come back. Try again.</p>
       )}
 
       {/* 🔴 ONE FIELD, WHICH IS BOTH "ask this" AND "follow that up". A separate first-ask button and
           follow-up box would be two controls for one thing; the note above is the first question
           already, so an empty field asks about the note and a filled one asks what it says. */}
       {onAsk && (
-        <div className="mt-2 flex items-end gap-1.5">
+        <div className={cn("mt-2 flex items-end gap-1.5", card && "shrink-0 px-[14px]")}>
           <textarea
-            className="max-h-24 min-h-[30px] w-full flex-1 resize-none rounded-[8px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-base) px-2 py-1.5 text-[0.75rem] leading-relaxed text-foreground outline-none placeholder:text-(--ui-text-quaternary) focus:border-(--ui-stroke-secondary)"
+            className={cn(
+              "max-h-24 min-h-[30px] w-full flex-1 resize-none rounded-[8px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-base) px-2 py-1.5 text-[0.75rem] leading-relaxed text-foreground outline-none placeholder:text-(--ui-text-quaternary) focus:border-(--ui-stroke-secondary)",
+              card && "min-h-[36px] rounded-[12px] px-[12px] py-[8px] text-[13px]",
+            )}
             data-testid="reader-comment-ask-field"
             disabled={asking}
             onChange={(event) => setQuestion(event.target.value)}
@@ -577,7 +690,10 @@ function CommentThread({
                 void ask();
               }
             }}
-            placeholder={replies.length > 0 ? "Ask a follow-up…" : "Ask Nemesis about this spot…"}
+            // 🔴 THE CARD ALWAYS INVITES A FOLLOW-UP, because on the board the NOTE is already the
+            // first question and it is drawn as one — a field offering to "ask about this spot"
+            // under a bubble that just did would read as though the note had not counted.
+            placeholder={card || replies.length > 0 ? "Ask a follow-up…" : "Ask Nemesis about this spot…"}
             rows={1}
             value={question}
           />
@@ -594,7 +710,7 @@ function CommentThread({
         </div>
       )}
 
-      <div className="mt-2.5 flex items-center justify-end gap-1.5">
+      <div className={cn("mt-2.5 flex items-center justify-end gap-1.5", card && "shrink-0 px-[14px] pb-[12px]")}>
         <button
           className="rounded-[8px] px-2 py-1 text-[0.6875rem] font-medium text-(--ui-text-tertiary) transition-colors hover:text-(--ui-danger)"
           onClick={onDelete}

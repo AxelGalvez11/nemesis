@@ -109,7 +109,17 @@ export function DocxDocumentView({
           document reflows with the panel width, so a pixel anchor is a lie by the first resize —
           the stable thing to hold on to is WHICH BLOCK, and the pin renders inside that block's
           own box. The index is the grouped index, which only changes if the document does. */}
-      <article className="nemesis-reader-page relative mx-auto" ref={registerArticle}>
+      {/* 🔴 THE SAME TWO STAMPS `text-document-view.tsx` EXPLAINS AT LENGTH, for the same reason:
+          `data-selectable-text` is what re-enables selection inside `[data-workspace]` (a Word file
+          could not be highlighted at all without it), and `data-page` is what the selection then
+          anchors against. Clicking in annotate mode still snaps to `data-comment-block`, which is
+          the reflow-proof anchor and is unchanged. */}
+      <article
+        className="nemesis-reader-page relative mx-auto"
+        data-page={1}
+        data-selectable-text="true"
+        ref={registerArticle}
+      >
         <div className="nemesis-reading-view">
         {grouped.map((group, index) => {
           if (group.kind === "list") {
