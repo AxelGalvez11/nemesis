@@ -17,34 +17,22 @@
 // pointerdown unless an element opts out, so scrolling a PDF would slide the board and selecting a
 // sentence would throw the card across it.
 //
-// 🔴 ANNOTATIONS COME WITH IT, unchanged: the same `CommentLayer` through the same board store, so
-// a note pinned in a document still rides the board's own JSON (board-annotation-store.ts).
-
-import { useMemo, useRef } from "react";
+// 🔴🔴 NO ANNOTATION LAYER HERE, AND THAT IS A REVERSAL OF THE SAME DAY. It shipped that morning at
+// the owner's own request (*"annotate any document to have an inline chat with the annotation"*),
+// and he cut it that evening: *"remove the annotation from pdf docs"*. What he saw is what the
+// screenshot shows — a comment icon, a count and a three-dot menu stacked above the first line of a
+// document, a second grammar for talking to Nemesis on a board whose whole grammar is cards. The
+// card's own four pluses are how you ask about a document now. The board's annotation FIELD is
+// untouched (`board-annotations.ts`), so a board that was annotated this morning keeps its notes in
+// the document and simply stops drawing them; nothing was thrown away in the reversal.
 
 import { DocumentReader } from "@/components/workspace/reader/document-reader";
-import { useAuth } from "@/components/AuthProvider";
-import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import type { BoardSource } from "@/lib/board/board-model";
 
-import { boardAnnotationStore } from "./board-annotation-store";
-import { useBoard } from "./board-provider";
 import { useBoardReader } from "./use-board-reader";
 
 export function SourceDocument({ source }: { source: BoardSource }) {
-  const { annotations, updateAnnotations } = useBoard();
-  const { session } = useAuth();
-  const uid = session?.user?.id ?? null;
-  const preview = useWorkspacePreview() !== null;
   const state = useBoardReader(source, source.status === "ready" && !source.collapsed);
-  /**
-   * 🔴 THE STORE READS THROUGH A FUNCTION OVER A REF, NEVER A CAPTURED ARRAY. Built from this
-   * render's `annotations`, it would answer with them for as long as the reader held it, so the
-   * second note of a session is written on top of the first. The panel learned this first.
-   */
-  const annotationsRef = useRef(annotations);
-  annotationsRef.current = annotations;
-  const store = useMemo(() => boardAnnotationStore(source.id, () => annotationsRef.current, updateAnnotations), [source.id, updateAnnotations]);
 
   if (state.kind === "loading") {
     return <p className="py-[24px] text-center text-[12px] text-(--ui-text-quaternary)">Opening the document…</p>;
@@ -62,15 +50,15 @@ export function SourceDocument({ source }: { source: BoardSource }) {
           This is the text Nemesis read out of the file. The original was not kept with the canvas.
         </p>
       )}
-      <div className="nodrag nopan nowheel min-h-0 flex-1 overflow-hidden rounded-[10px] border border-(--ui-stroke-tertiary)" onPointerDown={(event) => event.stopPropagation()}>
+      {/* 🔴 NO SECOND OUTLINE. The card is already a bordered box and the page inside is already a
+          sheet with an edge of its own; a third rounded border between them is the *"box outline"*
+          the owner cut from tests and notes on 2026-09-04, in another shape. */}
+      <div className="nodrag nopan nowheel min-h-0 flex-1 overflow-hidden rounded-[10px]" onPointerDown={(event) => event.stopPropagation()}>
         <DocumentReader
-          annotationLook="card"
-          commentsDoc={{
-            preview: preview || uid === null,
-            ref: { id: source.id, kind: "source" },
-            store,
-            uid,
-          }}
+          // 🔴 NO READER HEADER IN A CARD. The card's own bar above it already names the file and
+          // carries its verbs; what was left in the reader's was one "…" that opens a dropdown, and
+          // a dropdown is a popup. See `DocumentReader`'s `bare`.
+          bare
           dense
           // The board already holds this document's text as material; sending it again would file
           // the same document into the same canvas twice.

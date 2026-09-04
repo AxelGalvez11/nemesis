@@ -296,6 +296,10 @@ export function CanvasCheck({
             );
           })}
         </ol>
+        {/* 🔴 NOT ON A BOARD CARD, WHERE THE CARD ITSELF HAS A DELETE. `bare` means this check is
+            drawn inside a node whose title bar already carries a bin, and two controls that end the
+            same thing, ten pixels apart, is a question the learner should not have to answer. */}
+        {!bare && (
         <button
           // 🔴 NEITHER "TEST" NOR "QUIZ" IN THE LABEL. Owner 2026-08-26: *"the term quiz and test
           // should be similar"*. They already reach the same component; the label was the last
@@ -307,6 +311,7 @@ export function CanvasCheck({
         >
           ✕
         </button>
+        )}
       </div>
 
       {/* 🔴🔴 ONE TAP ENDS A QUESTION AND THE NEXT ONE FADES UP IN ITS PLACE (owner 2026-08-26: *"I

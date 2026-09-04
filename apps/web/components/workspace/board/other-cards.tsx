@@ -1,11 +1,21 @@
 "use client";
 
-// The two other node kinds: a NOTE (260 wide, tinted, anchored to a sentence of its card) and a
-// SOURCE (a dropped file, 640 wide, with "Ask about this" and "Create lesson").
+// The other node kinds: a NOTE (260 wide, tinted, anchored to a sentence of its card), a SOURCE (a
+// dropped file, 640 wide, drawn as the document it is) and an OUTPUT (a thing Nemesis made).
 // docs/wondering-canvas-reference.md §6 and §7.
+//
+// 🔴🔴 A SOURCE AND AN OUTPUT WEAR THE CONVERSATION CARD'S CHROME, and that is the whole of the
+// owner's 2026-09-04 note *"make sure all card node designs are consistent and match, use
+// wondering.app/canvas for baseline"*. Same shell, same floating title bar above the box
+// (`CardTitleBar`), same icon order (make, collapse, delete), same four hover pluses
+// (`BranchButtons`) on anything a thread can grow from.
+//
+// 🔴 A NOTE IS THE ONE DELIBERATE EXCEPTION, as it is in the reference (§6): a 260-wide tinted
+// sticky with its header INSIDE it, because it is a thing the learner wrote rather than a place to
+// work from. Making it match the others would make a jotting look like a document.
 
 import type { NodeProps } from "@xyflow/react";
-import { BookOpen, Check, CircleAlert, FileImage, FileText, Layers, ListChecks, LoaderCircle, Maximize2, MessageSquareQuote, Minimize2, PanelRight, Plus, StickyNote, Trash2, X } from "lucide-react";
+import { CircleAlert, FileImage, FileText, Layers, ListChecks, LoaderCircle, Maximize2, MessageSquareQuote, Minimize2, StickyNote, Trash2, X } from "lucide-react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { OUTPUT_KIND_MARKS } from "@/components/workspace/learn/artifact-card";
@@ -16,10 +26,9 @@ import { docFilename } from "@/lib/export/doc-file";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { IMAGE_SOURCE_MIN_HEIGHT, SOURCE_MIN_HEIGHT } from "@/lib/board/board-layout";
-import { annotationCountLabel, openAnnotationCount } from "@/lib/board/board-annotations";
 import { cn } from "@/lib/utils";
 
-import { AutoResizingTextarea, CardIcon, IconTooltip, NodeHandles, NodeResizeControls } from "./board-chrome";
+import { AutoResizingTextarea, BranchButtons, CardIcon, CardTitleBar, IconTooltip, NodeHandles, NodeResizeControls } from "./board-chrome";
 import { useBoard } from "./board-provider";
 import { SourceDocument } from "./source-document";
 
@@ -103,13 +112,13 @@ function NoteCardInner({ data, selected }: NodeProps & { data: NoteNodeData }) {
 export const NoteCard = memo(NoteCardInner);
 
 function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData }) {
-  const { annotations, sources, selectedSourceIds, toggleSourceSelection, createLessonFromSource, deleteNode, makeDeliverable, setSourceCollapsed } = useBoard();
+  const { cards, sources, selectedSourceIds, createBranchCard, deleteNode, makeDeliverable, setSourceCollapsed } = useBoard();
   const source = sources.find((item) => item.id === data.sourceId);
   const [resizing, setResizing] = useState(false);
   const start = useCallback(() => setResizing(true), []);
   const end = useCallback(() => setResizing(false), []);
   if (!source) return null;
-  const marks = openAnnotationCount(annotations, source.id);
+  const ready = source.status === "ready";
   const chosen = selectedSourceIds.includes(source.id);
   const Icon = source.type === "image" ? FileImage : FileText;
   const fixed = source.height !== undefined || resizing;
@@ -120,38 +129,36 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
         "group/card relative flex w-full cursor-grab flex-col rounded-[16px] border bg-(--ui-bg-elevated) shadow-sm transition-[color,transform,box-shadow] duration-150 ease-out motion-reduce:transition-none",
         data.isPickedUp ? "-translate-y-[4px] scale-[1.02] cursor-grabbing shadow-xl" : "active:cursor-grabbing",
         fixed && "h-full",
+        // The accent says the composer at the bottom of the board will read this document with the
+        // next question. A drop turns it on by itself; sending clears it.
         chosen ? "border-(--ui-action)" : "border-(--ui-stroke-secondary)",
         selected && "ring-2 ring-foreground",
       )}
     >
       {!source.collapsed && <NodeResizeControls minHeight={hasImage ? IMAGE_SOURCE_MIN_HEIGHT : SOURCE_MIN_HEIGHT} onVerticalResizeEnd={end} onVerticalResizeStart={start} />}
-      <div className="flex shrink-0 items-center gap-[8px] rounded-t-[16px] px-[16px] py-[10px]">
-        <Icon className="size-[16px] shrink-0 text-(--ui-action)" />
-        {/* 🔴 THE TITLE IS THE DOOR, which is where a person reaches for it. The panel's own
-            control is beside it for the same reason a link is not the only way into a page, but the
-            name of the document opening the document is the gesture nobody has to be taught.
-            🔴 `nodrag nopan` AND a stopped pointerdown, or React Flow takes the press as the start
-            of a card drag and the click never lands. */}
-        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground" title={source.name}>
-          {source.name}
-        </span>
-        {/* 🔴 THE SAME PHRASE THE CHAT'S CHIP USES, in full. A card has room for the word, and
-            "3" alone on a document card reads as a page count. The TAB gets the number. */}
-        {marks > 0 && (
-          <span
-            className="inline-flex shrink-0 items-center gap-[4px] rounded-[6px] bg-(--ui-bg-secondary) px-[8px] py-[2px] text-[11px] font-medium text-(--ui-text-secondary)"
-            data-testid="source-card-annotations"
-          >
-            <MessageSquareQuote className="size-[12px]" />
-            {annotationCountLabel(marks)}
-          </span>
-        )}
-        {/* 🔴🔴 A DOCUMENT IS A CARD LIKE ANY OTHER, AND CARRIES THE SAME VERBS — owner 2026-09-04:
-            *"users should be allowed to collapse, delete, make note, make flashcards, and make
-            tests from documents too that were dropped in"*. Every one of these already existed for
-            a thread; what was missing was the row. The makers read THIS document only, never the
-            whole board (board-provider's `makeDeliverable`). */}
-        {source.status === "ready" && (
+      {/* 🔴🔴 THE FOUR PLUSES, AS ON A THREAD — owner, 2026-09-04: *"documents should have the four
+          'create card' like chats"*, in the same message that cut the two buttons along this card's
+          bottom edge: *"remove 'create lesson'"*, *"remove 'ask about this'"*. Pressing one opens an
+          empty card joined to this document, and every question typed into it is answered from the
+          document alone.
+          🔴 THE OWNER'S LOWERCASE IS QUOTED ON PURPOSE. `board-panel.test.ts` fails on the literal
+          button labels appearing anywhere in this file, and a guard that trips on its own
+          explanation teaches the next person to delete the explanation. */}
+      <BranchButtons
+        disabled={!ready}
+        emphasiseRight={cards.length + sources.length === 1 && !selected}
+        onBranch={(side) => createBranchCard(source.id, side)}
+        selected={selected}
+      />
+      {/* 🔴 THE SAME BAR A THREAD WEARS, in the same order: make, collapse, delete. It used to be a
+          header row INSIDE the box, which is what made a document card read as a different species
+          from the card beside it (owner: *"make sure all card node designs are consistent"*).
+          🔴🔴 A DOCUMENT CARRIES THE SAME VERBS AS A THREAD — owner, 2026-09-04: *"users should be
+          allowed to collapse, delete, make note, make flashcards, and make tests from documents too
+          that were dropped in"*. The makers read THIS document only, never the whole board
+          (board-provider's `makeDeliverable`). */}
+      <CardTitleBar icon={<Icon className="size-[16px] shrink-0 text-(--ui-action)" />} title={source.name}>
+        {ready && (
           <>
             <CardIcon label="Make a note from this" onClick={() => makeDeliverable("note", { sourceId: source.id })}>
               <StickyNote className="size-[16px]" />
@@ -170,7 +177,7 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
         <CardIcon label="Delete document" onClick={() => deleteNode(source.id)} tone="danger">
           <Trash2 className="size-[16px]" />
         </CardIcon>
-      </div>
+      </CardTitleBar>
       <div className={cn("flex min-h-0 flex-1 flex-col px-[16px] py-[12px]", source.collapsed && "hidden")}>
         {source.status === "processing" && (
           <div className="flex items-center gap-[8px] py-[16px] text-[14px] text-(--ui-text-secondary)">
@@ -184,37 +191,14 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
             <span>{source.error || "This source could not be processed."}</span>
           </div>
         )}
-        {source.status === "ready" && (
-          <>
-            {/* 🔴🔴 THE DOCUMENT ITSELF, IN THE CARD (owner 2026-09-04: "pdfs, docx, pptx, still
-                cannot be seen in the canvas, they only render text"). Pages, slides and layout, not
-                a stripped preview and a button to somewhere else. */}
-            <div className="flex min-h-[280px] flex-1 flex-col">
-              <SourceDocument source={source} />
-            </div>
-            <div className="mt-[12px] flex shrink-0 gap-[8px] border-t border-(--ui-stroke-secondary) pt-[12px]">
-              <button
-                aria-pressed={chosen}
-                className={cn(
-                  "flex min-w-0 flex-1 items-center justify-center gap-[6px] rounded-[8px] px-[12px] py-[8px] text-[12px] font-semibold transition-colors",
-                  chosen ? "bg-(--ui-bg-secondary) text-foreground" : "bg-(--ui-bg-secondary) text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground",
-                )}
-                onClick={() => toggleSourceSelection(source.id)}
-                type="button"
-              >
-                {chosen ? <Check className="size-[14px]" /> : <Plus className="size-[14px]" />}
-                <span>{chosen ? "Added to question" : "Ask about this"}</span>
-              </button>
-              <button
-                className="flex min-w-0 flex-1 items-center justify-center gap-[6px] rounded-[8px] bg-(--ui-action) px-[12px] py-[8px] text-[12px] font-semibold text-(--ui-action-glyph) transition-opacity hover:opacity-90"
-                onClick={() => createLessonFromSource(source.id)}
-                type="button"
-              >
-                <BookOpen className="size-[14px]" />
-                <span>Create lesson</span>
-              </button>
-            </div>
-          </>
+        {/* 🔴🔴 THE DOCUMENT ITSELF, IN THE CARD (owner 2026-09-04: "pdfs, docx, pptx, still cannot
+            be seen in the canvas, they only render text"). Pages, slides and layout, not a stripped
+            preview and a button to somewhere else. Nothing sits under it any more: the two buttons
+            that used to are the four pluses above. */}
+        {ready && (
+          <div className="flex min-h-[280px] flex-1 flex-col">
+            <SourceDocument source={source} />
+          </div>
         )}
       </div>
       <NodeHandles />
@@ -255,14 +239,17 @@ function OutputCardInner({ data, selected }: NodeProps & { data: OutputNodeData 
       )}
       data-board-output={output.status}
     >
-      <div className="flex shrink-0 items-center gap-[8px] rounded-t-[16px] px-[16px] py-[10px]">
-        <Codicon className="shrink-0" name={mark.icon} size="16px" style={{ color: `var(${mark.tint})` }} />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">{score ? `${score.correct} out of ${score.total}` : mark.label}</span>
-        <CardIcon label="Delete" onClick={() => deleteNode(output.id)}>
-          <X className="size-[16px]" />
+      {/* The same bar the thread and the document wear, so a board of three kinds reads as one set
+          of cards. A made thing has nothing to make FROM it, so the row is delete alone. */}
+      <CardTitleBar
+        icon={<Codicon className="shrink-0" name={mark.icon} size="16px" style={{ color: `var(${mark.tint})` }} />}
+        title={score ? `${score.correct} out of ${score.total}` : mark.label}
+      >
+        <CardIcon label="Delete" onClick={() => deleteNode(output.id)} tone="danger">
+          <Trash2 className="size-[16px]" />
         </CardIcon>
-      </div>
-      <div className="flex flex-col px-[16px] pb-[12px]">
+      </CardTitleBar>
+      <div className="flex flex-col px-[16px] py-[12px]">
         {output.status === "making" && (
           <div className="flex items-center gap-[8px] py-[8px] text-[14px] text-(--ui-text-secondary)">
             <LoaderCircle className="size-[16px] shrink-0 animate-spin" />

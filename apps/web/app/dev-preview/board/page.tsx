@@ -7,9 +7,8 @@
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
 import { BoardPage } from "@/components/workspace/board/board-page";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
-import type { BoardAnnotation } from "@/lib/board/board-annotations";
 import type { BoardCard, BoardOutputCard, BoardSource, BoardState } from "@/lib/board/board-model";
-import { CHECK_WIDTH } from "@/lib/board/board-layout";
+import { CHECK_WIDTH, OUTPUT_WIDTH } from "@/lib/board/board-layout";
 
 const ANSWER =
   "Insulin analogues are engineered to change **how quickly** insulin is absorbed after an injection.\n\n" +
@@ -54,7 +53,7 @@ const ROOT = card({
   position: { x: 0, y: 0 },
   height: 640,
   highlights: [{ id: "h1", category: "highlighted-text", kind: "branch", text: "has no real peak", occurrence: 0, savedByUser: false, noteIds: [] }],
-  notes: [{ id: "n1", category: "note", contextExcerpt: "lasts beyond 42 hours", contextOccurrence: 0, text: "Check the lecture: does it say 42 or 48?", position: { x: 792, y: 700 } }],
+  notes: [{ id: "n1", category: "note", contextExcerpt: "lasts beyond 42 hours", contextOccurrence: 0, text: "Check the lecture: does it say 42 or 48?", position: { x: 500, y: 900 } }],
   messages: [
     { id: "u1", role: "user", content: "Compare insulin aspart, glargine and degludec by onset, peak and duration." },
     {
@@ -99,7 +98,7 @@ const STREAMING = card({
   id: "streaming",
   title: "New thread",
   parentId: "root",
-  position: { x: 0, y: 900 },
+  position: { x: 0, y: 1400 },
   status: "streaming",
   messages: [
     { id: "u3", role: "user", content: "Which one would a shift worker with irregular meals prefer?" },
@@ -147,57 +146,6 @@ const SOURCE: BoardSource = {
   height: 560,
 };
 
-// 🔴 A THREAD, NOT A LONE NOTE. What the owner asked for is the CONVERSATION inside the document,
-// so the fixture carries a question, Nemesis's answer and a follow-up already answered — which is
-// what the card in the panel has to be reviewed as. No model call: these are stored rows.
-const ANNOTATIONS: BoardAnnotation[] = [
-  {
-    anchor: { quote: "precipitates at the neutral pH under the skin", x: 0.42, y: 0.62 },
-    author: "learner",
-    body: "Why does a lower pH keep it dissolved?",
-    createdAt: "2026-09-04T09:00:00.000Z",
-    id: "ann-1",
-    parentId: null,
-    resolvedAt: null,
-    sourceId: SOURCE.id,
-    unit: 1,
-  },
-  {
-    anchor: {},
-    author: "nemesis",
-    body:
-      "Glargine carries two extra arginines, which shift the pH at which the molecule is least soluble up to about 6.7. In the vial at pH 4 it sits well below that point and stays in solution. Injected into tissue at pH 7.4 it is pushed past it, so the molecule comes out of solution and forms a small depot that redissolves over the day.",
-    createdAt: "2026-09-04T09:00:20.000Z",
-    id: "ann-1-a",
-    parentId: "ann-1",
-    resolvedAt: null,
-    sourceId: SOURCE.id,
-    unit: 1,
-  },
-  {
-    anchor: {},
-    author: "learner",
-    body: "So is the depot the same thing as a peak?",
-    createdAt: "2026-09-04T09:01:00.000Z",
-    id: "ann-1-b",
-    parentId: "ann-1",
-    resolvedAt: null,
-    sourceId: SOURCE.id,
-    unit: 1,
-  },
-  {
-    anchor: {},
-    author: "nemesis",
-    body:
-      "No. A peak is a moment when a lot of hormone arrives at once. The depot is the opposite: it hands over a little at a time, which is exactly why glargine's curve is flat.",
-    createdAt: "2026-09-04T09:01:30.000Z",
-    id: "ann-1-c",
-    parentId: "ann-1",
-    resolvedAt: null,
-    sourceId: SOURCE.id,
-    unit: 1,
-  },
-];
 
 // 🔴 A REAL TEST CARD, PLAYABLE IN THE PREVIEW. Owner 2026-09-04: *"it still cannot make tests (it
 // drops tests in chat)"*. The run is a fixture, so no model call is made; the card is the shipped
@@ -207,7 +155,7 @@ const CHECK: BoardOutputCard = {
   createdAt: "2026-09-04T10:00:00.000Z",
   id: "check-1",
   kind: "check",
-  position: { x: 0, y: 700 },
+  position: { x: 0, y: 900 },
   run: {
     questions: [
       {
@@ -266,10 +214,32 @@ const PDF_SOURCE: BoardSource = {
   width: 640,
 };
 
+// 🔴 THE OTHER DELIVERABLE HE NAMED. Owner, 2026-09-04: *"tests and notes retain a box outline
+// around them"*. Both are this one component, and the outline turned out to be React Flow styling
+// our node because it was registered under its own built-in type name (`board-surface.tsx`), so the
+// review needs a made note on the board as well as a test.
+const NOTE_OUTPUT: BoardOutputCard = {
+  cardId: ROOT.id,
+  createdAt: "2026-09-04T10:05:00.000Z",
+  id: "note-out",
+  kind: "note",
+  output: {
+    createdAt: "2026-09-04T10:05:00.000Z",
+    id: "out-note-1",
+    kind: "note",
+    markdown: "# The three analogues\n\nAspart starts in 10 to 20 minutes.",
+    notePath: "Notes/The three analogues.md",
+    title: "The three analogues",
+  },
+  position: { x: 500, y: 1160 },
+  status: "ready",
+  topic: "Make me a note on the three analogues",
+  width: OUTPUT_WIDTH,
+};
+
 const SEED: BoardState = {
-  annotations: ANNOTATIONS,
   cards: [ROOT, BRANCH, STREAMING],
-  outputs: [CHECK],
+  outputs: [CHECK, NOTE_OUTPUT],
   selectedSourceIds: [],
   sources: [SOURCE, PDF_SOURCE],
   // 🔴 THE HARNESS OPENS ON EVERYTHING. Without a viewport the board lands at 0,0 and half the

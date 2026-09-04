@@ -36,7 +36,11 @@ import { VISUAL_INSTRUCTION } from "@/lib/workspace/visual-block";
  * sentence is the brake that keeps a definition from arriving as art.
  *
  * 🔴 THE SIZE CAP AND THE PLAIN-LABEL RULE ARE WHAT KEEP DRAWINGS READABLE: a forty-node graph lays
- * out as spaghetti, and HTML in a label is stripped by the renderer's strict mode anyway. The mind
+ * out as spaghetti, and HTML in a label is stripped by the renderer's strict mode anyway. Owner,
+ * 2026-09-04: *"i feel like the mermaid diagrams are still big, could you make them smaller"* —
+ * the cap came down from fifteen nodes to eight in that change, because a drawing is big when
+ * the GRAPH is big, and no amount of shrinking the window fixes it (`mermaid-diagram.tsx` holds
+ * the other half, and its box came down too). The mind
  * map is the exception, because since 2026-09-03 it draws as an interactive tree the learner opens
  * branch by branch (owner: *"a ladder of things you need to know from shallow to deeply
  * detailed"*), so depth costs nothing on screen and is the whole point of asking for one.
@@ -56,9 +60,10 @@ export const DIAGRAM_INSTRUCTION: string =
   + "decision, a cycle, a hierarchy, or several parts relating to each other lands better drawn, "
   + 'and if you find yourself writing "first... then... which leads to...", draw that answer '
   + "beside the prose. Always use one when the learner asks for a flow chart, diagram, mind map "
-  + "or similar. Keep a diagram under about fifteen nodes, write labels as short plain "
+  + "or similar. Keep a diagram under about eight nodes, write labels as short plain "
   + 'text in double quotes (no HTML, no LaTeX inside labels), and let the prose still carry the '
-  + "explanation. "
+  + "explanation. If what you want to draw needs more than eight, draw the part that matters most "
+  + "and put the rest in sentences. "
   + "A mindmap is the exception to that cap: it draws as an interactive tree the learner opens "
   + "one branch at a time, so when they ask for a mind map go deep, three to five levels and up "
   + "to about sixty nodes, the big ideas nearest the root and the specifics at the leaves, one "

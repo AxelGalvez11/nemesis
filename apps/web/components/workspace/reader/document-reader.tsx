@@ -148,6 +148,21 @@ export interface DocumentReaderProps {
   /** Trim the toolbar for a narrow pane beside a conversation. See `ReaderTopBar`'s `dense`. */
   dense?: boolean;
   /**
+   * No toolbar at all: the host has its own name for this document and its own controls.
+   *
+   * 🔴🔴 FOR A DOCUMENT DRAWN INSIDE A BOARD CARD, WHERE EVERY BAR IS A SECOND ONE. The card
+   * already writes the file's name above itself with collapse, delete and the makers beside it, so
+   * a reader header under that is chrome about chrome. What was left in it once the board's
+   * annotations were cut (owner, 2026-09-04: *"remove the annotation from pdf docs"*) was a single
+   * "…" — and that button opens a DROPDOWN, which the same message forbids: *"i dont want any
+   * popups in canvas, everything should be seen and done within the cards"*.
+   *
+   * 🔴 NOTHING IS LOST WITH IT. In `dense` the bar already hides the title, the mode switch, zoom,
+   * the page field and the contents rail; the menu's own two actions (download the original, open
+   * it in a tab) are about a filed document, and a board source may never have been filed.
+   */
+  bare?: boolean;
+  /**
    * Somewhere else to draw the toolbar's controls, instead of a bar of this reader's own.
    *
    * 🔴 THE HOST LENDS A ROW; IT DOES NOT TAKE THE CONTROLS (owner, 2026-09-03: *"all the tabs and
@@ -161,7 +176,7 @@ export interface DocumentReaderProps {
 
 export function DocumentReader({
   source, anchor, linkedNotes = [], onOpenNote, onBack, onSendToChat, variant = "page", grounded = false,
-  onUnitChange, commentsDoc, dense = false, toolbarSlot, annotationLook = "margin",
+  onUnitChange, commentsDoc, dense = false, bare = false, toolbarSlot, annotationLook = "margin",
 }: DocumentReaderProps) {
   const isDialog = variant === "dialog";
   const unitLabel = UNIT_LABELS[source.kind] ?? "part";
@@ -865,6 +880,7 @@ export function DocumentReader({
       data-variant={variant}
       data-testid="document-reader"
     >
+      {!bare && (
       <ReaderTopBar
         course={courseOf(source.folderPath)}
         currentMatch={matchIndex}
@@ -908,6 +924,7 @@ export function DocumentReader({
         unitCount={unitCount}
         unitLabel={unitLabel}
       />
+      )}
 
       {/* 🔴 NOT IN THE PANE (owner, 2026-09-01: *"also remove the slides, notes, outline options"*).
           A second row of tabs directly under the document's own tab strip reads as chrome about

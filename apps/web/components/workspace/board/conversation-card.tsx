@@ -4,7 +4,7 @@
 // branch from. Geometry and behaviour from docs/wondering-canvas-reference.md §4 and §5.
 
 import { useReactFlow, useStore, type NodeProps } from "@xyflow/react";
-import { ArrowUp, BookOpen, Bookmark, GitBranch, Highlighter, Image as ImageIcon, Layers, ListChecks, Maximize2, MessageCircle, Minimize2, Plus, Sparkles, StickyNote, Trash2, X } from "lucide-react";
+import { ArrowUp, BookOpen, Bookmark, GitBranch, Highlighter, Image as ImageIcon, Layers, ListChecks, Maximize2, MessageCircle, Minimize2, Sparkles, StickyNote, Trash2, X } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { CARD_AUTO_MAX_HEIGHT, CARD_MIN_HEIGHT, CONTRACTED_CARD_MIN_HEIGHT } from "@/lib/board/board-layout";
@@ -15,7 +15,7 @@ import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { cn } from "@/lib/utils";
 import { ConceptPillContext, type ConceptPillActions } from "@/components/workspace/concept-pill";
 
-import { AutoResizingTextarea, BRANCH_BUTTONS, CardIcon, IconTooltip, NodeHandles, NodeResizeControls, StreamingDots, measureBoardArea } from "./board-chrome";
+import { AutoResizingTextarea, BranchButtons, CardIcon, CardTitleBar, IconTooltip, NodeHandles, NodeResizeControls, StreamingDots, measureBoardArea } from "./board-chrome";
 import { useBoard, type RetryTarget } from "./board-provider";
 import { CardMessage } from "./card-message";
 import { SelectionActions } from "./selection-actions";
@@ -299,85 +299,21 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
   };
 
   const hasAnswer = card.messages.some((message) => message.content.trim() && !message.isError);
-  const onlyCard = cards.length === 1 && !selected;
 
-  const branchButtons = BRANCH_BUTTONS.map(({ side, positionClassName }) => (
-    <div
-      // 🔴 ALL FOUR, ON HOVER, ON EVERY CARD — owner 2026-09-04: *"making new chats does not show up
-      // in all four sides of each chat only until clicking on them, compare against wondering"*. He
-      // is right and the reference agrees: their buttons are opacity-0 and revealed by
-      // `group-hover/card` alone (measured in his own canvas, 2026-09-04). Ours also required the
-      // card to be SELECTED, and hid three of the four on a board holding a single card, so the
-      // first thing a learner meets is one lonely plus on the right.
-      className={cn(
-        "absolute z-10 transition-opacity",
-        selected
-          ? ""
-          : "[@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/card:pointer-events-auto [@media(hover:hover)]:group-focus-within/card:opacity-100 [@media(hover:hover)]:group-hover/card:pointer-events-auto [@media(hover:hover)]:group-hover/card:opacity-100",
-        positionClassName,
-      )}
-      key={side}
-    >
-      <IconTooltip label={`Create a card from the ${side} side`} side={side}>
-        <button
-          aria-label={`Create a card from the ${side} side`}
-          className="group/branch flex size-[40px] items-center justify-center outline-none disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={!hasAnswer}
-          onClick={(event) => {
-            event.stopPropagation();
-            createBranchCard(card.id, side);
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-          type="button"
-        >
-          <span
-            className={cn(
-              "flex items-center justify-center rounded-full border border-(--ui-action)/60 bg-(--ui-action)/40 text-(--ui-action-glyph) shadow-sm transition-all duration-200 ease-out group-hover/branch:size-[36px] group-hover/branch:border-(--ui-action) group-hover/branch:bg-(--ui-action) group-hover/branch:shadow-md group-focus-visible/branch:size-[36px] group-focus-visible/branch:bg-(--ui-action) group-focus-visible/branch:ring-2 group-focus-visible/branch:ring-(--ui-action) group-focus-visible/branch:ring-offset-2",
-              onlyCard && side === "right" ? "size-[32px] shadow-md" : "size-[20px]",
-            )}
-          >
-            <Plus className={cn("shrink-0 transition-all duration-200 ease-out group-hover/branch:size-[16px] group-focus-visible/branch:size-[16px]", onlyCard && side === "right" ? "size-[16px]" : "size-[12px]")} />
-          </span>
-        </button>
-      </IconTooltip>
-    </div>
-  ));
+  const branchButtons = (
+    <BranchButtons
+      disabled={!hasAnswer}
+      emphasiseRight={cards.length + sources.length === 1 && !selected}
+      onBranch={(side) => createBranchCard(card.id, side)}
+      selected={selected}
+    />
+  );
 
+  // 🔴 ONE ROW, ONE ORDER, ON EVERY CARD KIND: make (note, flashcards, test), then collapse, then
+  // delete. This row used to run collapse, delete, note, flashcards, test, so the destructive
+  // control sat in the middle of the makers and in a different place from the document card's.
   const titleBar = (
-    <div className="absolute bottom-full left-[4px] right-[4px] mb-[6px] flex items-center gap-[8px]">
-      {card.kind === "lesson" && <BookOpen className="size-[16px] shrink-0 text-(--ui-action)" />}
-      <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-[20px] text-foreground">{card.title}</span>
-      <IconTooltip label={card.collapsed ? "Expand card" : "Collapse card"}>
-        <button
-          aria-label={card.collapsed ? "Expand card" : "Collapse card"}
-          aria-pressed={card.collapsed === true}
-          className="nodrag nopan hidden shrink-0 rounded-[6px] p-[4px] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary) md:block"
-          onClick={(event) => {
-            event.stopPropagation();
-            setCardCollapsed(card.id, !card.collapsed);
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-          type="button"
-        >
-          {card.collapsed ? <Maximize2 className="size-[16px]" /> : <Minimize2 className="size-[16px]" />}
-        </button>
-      </IconTooltip>
-      <span className="flex size-[24px] shrink-0 items-center justify-center">
-        <IconTooltip label="Delete card">
-          <button
-            aria-label="Delete card"
-            className="nodrag nopan rounded-[6px] p-[4px] text-(--board-error) transition-colors hover:bg-(--board-error-bg)"
-            onClick={(event) => {
-              event.stopPropagation();
-              deleteNode(card.id);
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            type="button"
-          >
-            <Trash2 className="size-[16px]" />
-          </button>
-        </IconTooltip>
-      </span>
+    <CardTitleBar icon={card.kind === "lesson" ? <BookOpen className="size-[16px] shrink-0 text-(--ui-action)" /> : undefined} title={card.title}>
       <CardIcon count={card.notes.length} label="Add note" onClick={() => addCardNote(card.id)}>
         <StickyNote className="size-[16px]" />
       </CardIcon>
@@ -391,7 +327,13 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
       <CardIcon label="Make a test from this" onClick={() => makeDeliverable("check", { cardId: card.id })}>
         <ListChecks className="size-[16px]" />
       </CardIcon>
-    </div>
+      <CardIcon label={card.collapsed ? "Expand card" : "Collapse card"} onClick={() => setCardCollapsed(card.id, !card.collapsed)}>
+        {card.collapsed ? <Maximize2 className="size-[16px]" /> : <Minimize2 className="size-[16px]" />}
+      </CardIcon>
+      <CardIcon label="Delete card" onClick={() => deleteNode(card.id)} tone="danger">
+        <Trash2 className="size-[16px]" />
+      </CardIcon>
+    </CardTitleBar>
   );
 
   if (card.collapsed) {
