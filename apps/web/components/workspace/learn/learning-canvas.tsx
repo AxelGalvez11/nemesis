@@ -200,7 +200,9 @@ const ARRIVING_MS = 1_200;
 /**
  * How far below the top of the thread a freshly sent prompt lands.
  *
- * 🔴🔴 IT IS THE SCROLLER'S OWN `pt-[48px]`, AND `PIN_INSET_PX` IS NOW THE SAME NUMBER (2026-09-03).
+ * 🔴🔴 IT IS THE SCROLLER'S OWN `pt-[60px]`, AND `PIN_INSET_PX` IS THE SAME NUMBER (2026-09-03).
+ * 60 is our controls' bottom edge (12 + 36 = 48) plus the 12px ChatGPT leaves below its own
+ * header — measured, see the note on `PIN_INSET_PX`.
  * The pin targeted 64 against a column resting at 48, and measured on /dev-preview/learn the two
  * disagreed in a way anyone can see: the FIRST prompt of a conversation landed at 48px and every
  * prompt after it at 64. Nothing above the first turn can be scrolled away, so `scrollTop` clamps
@@ -213,13 +215,29 @@ const ARRIVING_MS = 1_200;
  * number lives.
  * Pinning to the true top tucks the learner's own sentence under Sources and the ⋯.
  *
- * 🔴 48, AND IT WAS 64 — SEE THE CLEARANCE NOTE ABOVE. Measured on /dev-preview/learn: the first
- * prompt of a conversation landed at 48 and every one after it at 64, because nothing above the
- * first turn can be scrolled away and the pin's own request clamped at `scrollTop: 0`. It is the
- * column's resting clearance now, which is where every other first line on this surface already
- * sits, so a pinned prompt and an unpinned one agree about where the top is.
+ * 🔴🔴 60, AND IT IS 12px BELOW OUR OWN HEADER BECAUSE THAT IS WHAT THE REFERENCE DOES. Owner,
+ * 2026-09-03: *"why don't you use ChatGPT for reference?"* — after I had moved this number twice in
+ * one afternoon on my own reasoning. He was right, and measuring it changed the answer.
+ *
+ * MEASURED IN HIS SIGNED-IN CHATGPT, viewport 1470x779, over 9.1 seconds of a streaming answer:
+ *   header               52px tall, sticky
+ *   pinned user message  64px from the top of the WINDOW
+ *   gap below the header 12px
+ *   drift                NONE — fourteen samples, all 64
+ *   runway reserved      none; overflow below the fold was 48px, not a screenful
+ *
+ * Ours: the floating controls sit at `top-[12px]` and are 36px tall, so their bottom edge is 48.
+ * 48 + 12 = 60. The 64 this started the day at was 16px clear of our controls rather than 12 —
+ * close, and not the reference. The 48 I replaced it with put the prompt exactly ON the controls'
+ * edge with no gap at all, which is worse and was my own arithmetic rather than a measurement.
+ *
+ * 🔴 THE COLUMN'S RESTING CLEARANCE IS THE SAME NUMBER, which is what makes the FIRST prompt of a
+ * conversation land where every later one does: nothing above it can be scrolled away, so a pin
+ * aiming past the clearance simply clamps at `scrollTop: 0`. That was the original defect (48 vs
+ * 64, measured on /dev-preview/learn); one number fixes it and matches the reference at the same
+ * time.
  */
-const PIN_INSET_PX = 48;
+const PIN_INSET_PX = 60;
 
 /** How long the prompt may be held at the top before the page is the learner's again. Long enough
  *  for a slow answer to finish forming, short enough that nothing is held hostage. */
@@ -3129,7 +3147,7 @@ export function LearningCanvas({
           z-20/z-30 in `CanvasSurface` and must stay pressable — a history view that trapped the
           learner would be a worse bug than the one it fixes. */}
       {viewing && (
-        <div className="absolute inset-0 z-10 overflow-y-auto bg-(--ui-bg-editor) pb-[160px] pt-[48px]">
+        <div className="absolute inset-0 z-10 overflow-y-auto bg-(--ui-bg-editor) pb-[160px] pt-[60px]">
           <CanvasFade contentKey={`moment:${viewing.momentId}`}>
             <CanvasHistoryView moment={viewing} onReturn={() => setRewound(null)} />
           </CanvasFade>
@@ -3141,7 +3159,7 @@ export function LearningCanvas({
           chip, the thinking caption and the thread all used to land on the same frame as the route
           swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
           the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
-      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[48px]`} ref={attachThread}>
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[60px]`} ref={attachThread}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and

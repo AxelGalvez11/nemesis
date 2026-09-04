@@ -527,9 +527,12 @@ test("🔴🔴 the canvas scrolls past the composer, which floats over it", () =
   // There was nothing below to scroll to.
   //
   // Calibration: drop the pb and this reddens.
-  // 🔴 THE TOP NUMBER MOVED TO 48 ON 2026-09-03 (space for the text); the BOTTOM one is what this
-  // test is about and is untouched. Kept in one match so the pair cannot drift apart.
-  assert.match(canvasCode, /overflow-y-auto pb-\[160px\] pt-\[48px\]/, "the scroller does not clear the floating composer");
+  // 🔴 THE TOP NUMBER MOVED TWICE ON 2026-09-03 — to 48 for space, then to 60 on ChatGPT's own
+  // measurement (its prompt sits 12px below a 52px header; our controls end at 48). The BOTTOM one
+  // is what this test is about and is untouched. Kept in one match so the pair cannot drift apart,
+  // with the top read as a number rather than pinned: its value belongs to
+  // `top-clearance-is-one-number.test.ts`.
+  assert.match(canvasCode, /overflow-y-auto pb-\[160px\] pt-\[\d+px\]/, "the scroller does not clear the floating composer");
 });
 
 // ── Arriving at the canvas ───────────────────────────────────────────────────────────────────
