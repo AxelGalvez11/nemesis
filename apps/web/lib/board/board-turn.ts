@@ -68,6 +68,13 @@ const SYSTEM_HEAD =
   // 🔴 THE STANCE RIDES EVERY SURFACE THAT SPEAKS AS NEMESIS (every-surface-has-a-stance.test.ts).
   THINKING_STANCE;
 
+/** Appended to every user turn: the last thing the model reads before it writes. */
+const TURN_TAIL = "\n\n(Reply in full, mark key terms as [term](#concept \"meaning\") links, then end with the [[SUMMARY]] and [[SUGGEST]] blocks.)";
+
+/** How much room a board answer may take. The provider's default cut long answers before the
+ *  machine blocks at their tail; the deck writer learned the same lesson at 8192. */
+const BOARD_MAX_TOKENS = 8192;
+
 const LESSON_MODE =
   "The learner asked for a lesson from a source: teach it in order, with headings for its main ideas, one worked example per idea, and a short check-yourself list at the end.";
 
@@ -112,9 +119,14 @@ export function boardWireMessages(input: {
   }
   system.push(CONCEPT_INSTRUCTION);
   system.push(PROTOCOL_INSTRUCTION);
-  const user = input.contextExcerpt
+  const question = input.contextExcerpt
     ? `The learner selected this passage from the previous answer:\n\n> ${input.contextExcerpt.replace(/\n/g, "\n> ")}\n\nTheir question about it: ${input.message}`
     : input.message;
+  // 🔴 THE REMINDER RIDES THE USER TURN, NOT ONLY THE SYSTEM PROMPT. Verified on production
+  // 2026-09-03: with the stance, sixteen web results and a long answer in front of it, DeepSeek
+  // followed the protocol from a short system prompt and dropped it from the long one. The same
+  // model wrote both blocks every time once the last thing it read was the ask.
+  const user = `${question}${TURN_TAIL}`;
   return [
     { role: "system", content: system.join("\n\n") },
     ...input.history.map((turn) => ({ role: turn.role, content: turn.content }) as WireMsg),
@@ -164,6 +176,7 @@ export async function runBoardTurn(input: BoardTurnInput): Promise<BoardTurnResu
   let raw = "";
   const reply = await postChatCompletion(input.uid, messages, {
     signal: input.signal,
+    maxTokens: BOARD_MAX_TOKENS,
     onDelta: (_delta, accumulated) => {
       raw = accumulated;
       input.onContent?.(visibleAnswer(accumulated, true));
@@ -180,13 +193,36 @@ export async function runBoardTurn(input: BoardTurnInput): Promise<BoardTurnResu
   }
   const full = reply.text;
   const content = visibleAnswer(full, false);
-  const summary = readSummary(full);
+  let summary = readSummary(full);
+  let suggestions = readSuggestions(full);
+  const hasSuggestions = suggestions.followUps.length + suggestions.branches.length + suggestions.newThreads.length > 0;
+  if (!hasSuggestions || !summary.title) {
+    // The blocks did not arrive. One small, non-streaming call asks for nothing else, so the card
+    // still gets its title and its next questions rather than a bare answer.
+    const recovered = await recoverBlocks(input.uid, input.message, content, input.signal);
+    if (recovered) {
+      if (!hasSuggestions) suggestions = readSuggestions(recovered);
+      if (!summary.title) summary = readSummary(recovered);
+    }
+  }
   return {
     content,
     citations: citationsFrom(webResults, content),
-    suggestions: readSuggestions(full),
+    suggestions,
     ...summary,
     truncated: false,
     error: null,
   };
+}
+
+async function recoverBlocks(uid: string, question: string, answer: string, signal?: AbortSignal): Promise<string | null> {
+  const reply = await postChatCompletion(
+    uid,
+    [
+      { role: "system", content: "You write two machine blocks about a question and its answer, and nothing else. " + PROTOCOL_INSTRUCTION },
+      { role: "user", content: `Question:\n${question}\n\nAnswer:\n${answer.slice(0, 6000)}\n\nWrite only the [[SUMMARY]] and [[SUGGEST]] blocks.` },
+    ],
+    { signal, maxTokens: 600, background: true },
+  );
+  return reply.text ?? null;
 }

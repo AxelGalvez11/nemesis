@@ -22,7 +22,8 @@ describe("a board turn goes out as one packet", () => {
     assert.match(branch[3]?.content ?? "", /> has no real peak/);
     assert.match(branch[3]?.content ?? "", /Their question about it: Why\?/);
     const plain = boardWireMessages({ message: "Why?", history: [] });
-    assert.equal(plain[1]?.content, "Why?");
+    assert.ok(plain[1]?.content.startsWith("Why?"), "the question leads the user turn");
+    assert.match(plain[1]?.content ?? "", /\[\[SUMMARY\]\] and \[\[SUGGEST\]\] blocks/, "the reminder rides the user turn");
   });
 
   it("pastes at most four ready sources, truncated to the reference's limits", () => {
