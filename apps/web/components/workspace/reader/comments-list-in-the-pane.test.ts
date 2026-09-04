@@ -31,7 +31,10 @@ test("🔴🔴 the pane's reader opens its rail on the comments, and only when t
 });
 
 test("🔴 the count the control wears is OPEN comments, the same number the rail's tab carries", () => {
-  assert.match(READER, /const openCommentCount = comments\.filter\(\(comment\) => comment\.resolvedAt === null\)\.length;/);
+  // 🔴 RE-PINNED 2026-09-04: the count is over ROOTS now. `comments` grew Nemesis's own replies
+  // when answers moved into the document, and the plain filter counted each of those as a mark —
+  // one question followed up twice would have worn a "3".
+  assert.match(READER, /const openCommentCount = rootsOf\(comments\)\.filter\(\(comment\) => comment\.resolvedAt === null\)\.length;/);
   assert.match(READER, /commentCount=\{openCommentCount\}/);
   assert.match(BAR, /\{onToggleCommentList && \(/);
   assert.match(BAR, /aria-pressed=\{commentListOpen\}/, "the control does not say whether the list is open");

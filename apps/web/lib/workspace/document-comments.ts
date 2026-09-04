@@ -52,10 +52,28 @@ export interface CommentAnchor {
   quote?: string;
 }
 
+/**
+ * Who wrote a row.
+ *
+ * 🔴 NOT A BOOLEAN. `is_ai` answers one question forever; this has to survive a reply from a
+ * study partner or an import from another tool, and a CHECK can grow a value where a flag cannot.
+ */
+export type CommentAuthor = "learner" | "nemesis";
+
 export interface DocumentComment {
   id: string;
   docKind: CommentDocKind;
   docId: string;
+  /**
+   * The note this answers, or null when this IS the note.
+   *
+   * 🔴🔴 A REPLY IS A COMMENT (owner, 2026-09-04: *"it would be useful to have annotations
+   * with chat responses within the document so users dont bloat the main chat"*). Every caller that
+   * draws a pin, counts marks, or hands comments to the model wants ROOTS — `rootsOf` is there so
+   * none of them has to remember the filter, and forgetting it shows up as two pins on one spot.
+   */
+  parentId: string | null;
+  author: CommentAuthor;
   /** Page / slide / sheet, 1-based; null when the document has no units to speak of. */
   unit: number | null;
   anchor: CommentAnchor;
@@ -86,6 +104,8 @@ interface CommentRow {
   body: string;
   resolved_at: string | null;
   created_at: string;
+  parent_id: string | null;
+  author: string | null;
 }
 
 /** The anchor as stored is learner data via jsonb — read it defensively, never trust the shape. */
@@ -124,10 +144,29 @@ function rowToComment(row: CommentRow): DocumentComment {
     body: row.body ?? "",
     resolvedAt: row.resolved_at,
     createdAt: row.created_at,
+    parentId: row.parent_id ?? null,
+    // 🔴 UNKNOWN READS AS THE LEARNER. Every row written before this column existed is theirs,
+    // and a null that fell through as "nemesis" would put their own words in Nemesis's voice.
+    author: row.author === "nemesis" ? "nemesis" : "learner",
   };
 }
 
-const COLUMNS = "id,doc_origin,doc_id,unit,anchor,body,resolved_at,created_at";
+/**
+ * The notes, without the answers. PURE.
+ *
+ * 🔴 THE ONE PLACE THE FILTER LIVES. Pins, counts, the "N" on the pane's control and the packet
+ * block all mean roots; a reply is part of a thread, never a second mark on the page.
+ */
+export function rootsOf(comments: readonly DocumentComment[]): DocumentComment[] {
+  return comments.filter((comment) => comment.parentId === null);
+}
+
+/** Every answer to one note, oldest first. PURE. */
+export function repliesTo(comments: readonly DocumentComment[], rootId: string): DocumentComment[] {
+  return comments.filter((comment) => comment.parentId === rootId);
+}
+
+const COLUMNS = "id,doc_origin,doc_id,unit,anchor,body,resolved_at,created_at,parent_id,author";
 
 /** Every comment on one document, oldest first — the order a margin reads in. */
 export async function listDocumentComments(
@@ -154,7 +193,7 @@ export async function listDocumentComments(
 export async function addDocumentComment(
   uid: string | null,
   ref: CommentDocRef,
-  comment: { unit: number | null; anchor: CommentAnchor; body: string },
+  comment: { unit: number | null; anchor: CommentAnchor; body: string; parentId?: string | null; author?: CommentAuthor },
   options?: { preview?: boolean },
 ): Promise<DocumentComment | null> {
   const body = comment.body.trim();
@@ -169,6 +208,8 @@ export async function addDocumentComment(
       body,
       resolvedAt: null,
       createdAt: new Date().toISOString(),
+      parentId: comment.parentId ?? null,
+      author: comment.author ?? "learner",
     };
     previewStore.set(keyOf(ref), [...(previewStore.get(keyOf(ref)) ?? []), made]);
     return made;
@@ -183,6 +224,8 @@ export async function addDocumentComment(
         unit: comment.unit,
         anchor: comment.anchor as Record<string, unknown>,
         body,
+        parent_id: comment.parentId ?? null,
+        author: comment.author ?? "learner",
       })
       .select(COLUMNS)
       .single();
@@ -248,7 +291,9 @@ export async function openCommentsForDocs(
 ): Promise<DocumentComment[]> {
   if (refs.length === 0) return [];
   if (options?.preview || !uid) {
-    return refs.flatMap((ref) => (previewStore.get(keyOf(ref)) ?? []).filter((comment) => comment.resolvedAt === null));
+    return refs.flatMap((ref) =>
+      rootsOf(previewStore.get(keyOf(ref)) ?? []).filter((comment) => comment.resolvedAt === null),
+    );
   }
   try {
     const { data, error } = await supabase
@@ -257,6 +302,9 @@ export async function openCommentsForDocs(
       .eq("user_id", uid)
       .in("doc_id", refs.map((ref) => ref.id))
       .is("resolved_at", null)
+      // 🔴 ROOTS ONLY. This drives the pins in the margin and the "N" on the pane's control;
+      // counting Nemesis's answers here would draw two marks for one question.
+      .is("parent_id", null)
       .order("created_at", { ascending: true });
     if (error || !data) return [];
     // 🔴 FILTERED AGAIN BY (kind, id), not just by the `in` above. Two kinds share one id space
@@ -293,6 +341,10 @@ export function commentsContextBlock(
   for (const doc of docs) {
     for (const comment of doc.comments) {
       if (comment.resolvedAt !== null) continue;
+      // 🔴 THE LEARNER'S QUESTIONS, NOT NEMESIS'S OWN ANSWERS. A reply in a thread is already
+      // in the document; feeding it back as if the learner had written it would have the model
+      // treating its own words as a fresh ask.
+      if (comment.parentId !== null || comment.author !== "learner") continue;
       const spot = describeCommentSpot(comment, doc.unitLabel);
       lines.push(`On "${doc.title}"${spot ? ` (${spot})` : ""}: "${comment.body}"`);
     }
