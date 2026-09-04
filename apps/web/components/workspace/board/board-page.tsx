@@ -60,7 +60,12 @@ export function BoardPage({ boardId, seed, toggle = true }: { boardId: string | 
     // answer that is streaming into the first card. Rewriting the address in place keeps the tree;
     // Next syncs `usePathname` to it (so the sidebar row lights up) and a reload lands on the
     // saved-board route.
-    window.history.replaceState(window.history.state, "", `/canvas/${id}`);
+    // 🔴 `null` STATE, NOT `window.history.state`. Verified on production 2026-09-03: Next's patched
+    // replaceState treats a call carrying its OWN state object (`__NA`) as an internal navigation
+    // and does not re-sync `usePathname`, so the sidebar kept showing the "Untitled canvas"
+    // placeholder as the current row after the first save. A null state is a plain address change
+    // and Next picks it up.
+    window.history.replaceState(null, "", `/canvas/${id}`);
   }, []);
   return (
     <main className="relative h-full min-h-0 overflow-hidden bg-(--ui-bg-editor)">
