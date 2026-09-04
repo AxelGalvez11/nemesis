@@ -2274,6 +2274,15 @@ export function LearningCanvas({
     // 🔴 `switching ||` FOR THE SAME REASON THE TWO LINES ABOVE CARRY IT (#1105): on a first seed
     // there is nothing to replace and assigning would wipe what `converse` has already put up.
     if (switching || held?.attached?.length) setCurrentAttached(held?.attached ?? []);
+    // 🔴 AND WHAT IT MARKED. The count survives on the moment (annotation-finish.test.ts); the picture
+    // does not, so the held-back exchange gets count-only notes and draws the "N annotations" chip
+    // exactly as a filed turn does. Found on production 2026-09-04, minutes after the count shipped:
+    // the newest exchange is the one the thread holds back for the live region, and the live region
+    // read `currentNotes`, which a reload leaves empty. Every other turn had its chip; the newest,
+    // the one just made, was the one without.
+    if (switching || held?.annotations) {
+      setCurrentNotes(held?.annotations ? Array.from({ length: held.annotations }, () => ({ thumbnail: null, where: null })) : []);
+    }
     // 🔴 THE MODE IS NOT RESTORED, AND SAYING SO IS THE HONEST SHAPE. A reopened thread reads from
     // the stored moments, which have never carried the capability: it is consumed at send by §38.
     // Showing the last mode of THIS session over a sentence from a previous one would be a claim
