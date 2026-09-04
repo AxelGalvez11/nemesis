@@ -202,3 +202,13 @@ export function occupiedRects(cards: readonly BoardCard[], sources: readonly Boa
 
 /** An output card before it is measured: title row plus the open button. */
 export const OUTPUT_MIN_HEIGHT = 132;
+
+/**
+ * A test card is wider and taller than a deliverable chip, because it is PLAYED rather than opened.
+ *
+ * 🔴 MEASURED FROM THE CHAT'S OWN CHECK, not chosen: a question stem on two lines above four
+ * options, each option a row of at least 40px, plus the progress line and the Back control. At 320
+ * (the chip's width) every option wrapped onto three lines and the card became a column of text.
+ */
+export const CHECK_WIDTH = 420;
+export const CHECK_MIN_HEIGHT = 300;

@@ -10,8 +10,9 @@
 // `board` so the ~120 `canvas-*` files of the chat cannot be confused with it; what a learner
 // reads says "Canvas".
 
-import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import type { BoardMakeKind } from "./board-deliverables";
 import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
+import type { TestRun } from "@/lib/learn/test-run";
 
 import { parseBoardAnnotations, serializeBoardAnnotations, type BoardAnnotation } from "./board-annotations";
 
@@ -187,7 +188,7 @@ export interface BoardOutputCard {
   id: string;
   /** The thread it was made from, or null when asked from the board composer. */
   cardId: string | null;
-  kind: DeliverableKind;
+  kind: BoardMakeKind;
   status: BoardOutputStatus;
   /** What was asked, so an errored card can say what it failed to make. */
   topic: string;
@@ -195,6 +196,16 @@ export interface BoardOutputCard {
   /** Runtime only: the maker's current step ("Reading 3 of 8 pages…"). */
   progress?: string;
   output?: CanvasOutput;
+  /**
+   * The questions, when this card is a check.
+   *
+   * 🔴 THE RUN IS SAVED WITH THE BOARD AND THE ANSWERS ARE NOT. A board is a place you come back
+   * to, so a test that vanished on reload would be a card that lied about being there; but the
+   * taps live in `CanvasCheck`'s own state and die with it, which is the chat's rule ("nothing here
+   * is kept") and the only honest one, since a half-answered test resumed a day later is not a
+   * measurement of anything.
+   */
+  run?: TestRun;
   createdAt: string;
   position: BoardPosition;
   width: number;

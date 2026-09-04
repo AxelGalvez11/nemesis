@@ -21,6 +21,23 @@ const PARTIAL_SUGGEST_TAIL = /\s*\[\[SUGGEST\b[\s\S]*$/;
 const SUMMARY_BLOCK = /\s*\[\[SUMMARY\b[\s\S]*?\n[ \t]*\]\]/g;
 const PARTIAL_SUMMARY_TAIL = /\s*\[\[SUMMARY\b[\s\S]*$/;
 
+/**
+ * A diagram the model is still writing, replaced by a line saying so.
+ *
+ * 🔴 WONDERING MASKS THEIRS TOO, AND FOR THE SAME REASON (reference §8: an `[[EMBED]]` block reads
+ * as *"Creating a visual…"* while it streams). Half of a mermaid fence is not a diagram and not
+ * prose: it is `flowchart TD` and three arrows, arriving one token at a time inside the card the
+ * learner is reading. `MermaidDiagram` is parse-gated, so it would show that syntax as a code block
+ * for as long as the drawing takes, then swap it for a picture.
+ *
+ * 🔴 ONLY WHILE STREAMING, AND ONLY THE LAST FENCE. A finished fence is a diagram and is left
+ * alone; an unclosed one at the END of the text is the one being written. A fence the model never
+ * closes stays visible once the stream ends, which is the honest outcome: the learner sees what
+ * arrived rather than a promise of a picture that is not coming.
+ */
+const UNFINISHED_DIAGRAM_TAIL = /\s*```(?:mermaid)\b(?![\s\S]*```)[\s\S]*$/;
+const DRAWING_LINE = "\n\n_Drawing a diagram…_";
+
 /** The prose the learner reads: the answer minus every protocol block (and any half-arrived one). */
 export function visibleAnswer(raw: string, streaming: boolean): string {
   let text = raw.replace(LAYOUT_DIRECTIVE_LINE, "").replace(SUGGEST_BLOCK, "").replace(SUMMARY_BLOCK, "");
@@ -29,7 +46,8 @@ export function visibleAnswer(raw: string, streaming: boolean): string {
       .replace(PARTIAL_LAYOUT_TAIL, "")
       .replace(PARTIAL_SUGGEST_TAIL, "")
       .replace(PARTIAL_SUMMARY_TAIL, "")
-      .replace(PARTIAL_OPENER_TAIL, "");
+      .replace(PARTIAL_OPENER_TAIL, "")
+      .replace(UNFINISHED_DIAGRAM_TAIL, DRAWING_LINE);
   }
   if (text !== raw) text = text.trimStart();
   return text;

@@ -73,7 +73,7 @@ test("🔴 opening a document already open brings it forward instead of listing 
   assert.equal(again.activeId, documentKey("a"), "re-opening did not bring it to the front");
 });
 
-test("🔴🔴 the panel reuses the chat's reader, strip, chrome and width, and builds none of its own", () => {
+test("🔴🔴 the panel reuses the chat's reader, strip and chrome, and builds none of its own", () => {
   // Every one of these was already built and tested. A second copy of any of them is the failure
   // this repo has shipped twice (a second reading pane, a second study panel) and deleted twice.
   for (const [what, needle] of [
@@ -81,7 +81,6 @@ test("🔴🔴 the panel reuses the chat's reader, strip, chrome and width, and 
     ["the tab strip", /import \{ DockTabs \} from "@\/components\/workspace\/learn\/dock-tabs"/],
     ["the dock's state", /useDocumentDockState/],
     ["the measured chrome", /import \{ CHROME \} from "@\/components\/workspace\/learn\/reader-chrome"/],
-    ["the drag-to-resize width", /useDockWidth\(\)/],
   ] as const) {
     assert.match(PANEL, needle, `the board panel no longer uses ${what}`);
   }
@@ -92,21 +91,24 @@ test("🔴🔴 the panel reuses the chat's reader, strip, chrome and width, and 
   }
 });
 
-test("🔴🔴 the board is pushed by the panel, not covered by it, through the inset already there", () => {
-  // A panel floating over the board hides the cards the learner opened the document from. The board
-  // element itself narrows, which is also why `measureBoardArea()` needs no knowledge of the panel:
-  // it measures `[data-board]`, and `[data-board]` sits inside `BoardArea`, which shrank.
+test("🔴🔴 nothing opens as a sidebar on the board: the reader covers the window and gives it back", () => {
+  // 🔴🔴 THIS GUARD IS THE REVERSE OF THE ONE IT REPLACES, AND THE REVERSAL IS THE OWNER'S. It
+  // shipped this morning asserting that the board is PUSHED by a docked panel, on the reasoning
+  // that a floating panel hides the cards the document was opened from. He read it the same day:
+  // *"i dont want a sidebar to open in canvas, that does not make sense"*. A chat is one column, so
+  // a panel beside it is the obvious place to read; a canvas is already the spatial surface, and a
+  // slice off its right edge squeezes every card on it.
   //
-  // 🔴 THE READING PANEL PUBLISHES INTO THE INSET THE DELIVERABLE PANEL ALREADY USED. A second
-  // wire — a width prop, or another element narrowing itself — is how two panels end up disagreeing
-  // about where the board's right edge is.
-  assert.match(PANEL, /useDeclareSidePanel\(showing && !full \? width : 0, dragging\)/, "the panel no longer publishes its width");
+  // So: no width published, no width dragged, no way back to a drawer.
+  assert.match(PANEL, /useDeclareSidePanel\(0, false\);/, "the board's reader claims room from the board again");
+  assert.ok(!PANEL.includes("useDockWidth"), "the reader is draggable-wide again, which is a sidebar");
+  assert.match(PANEL, /className="reader-cover-in fixed inset-0/, "the reader no longer covers the window");
+  assert.ok(!/Full screen"/.test(PANEL), "a full-screen toggle is a way back to the sidebar");
+  // A deliverable opens the same way, or the board would have one of each.
+  assert.match(PAGE, /initialMode="full"/, "a deliverable still opens in a docked panel");
+  // The inset wrapper stays: it is how the board reads ANY panel's claim, and it now always reads 0.
   assert.match(PAGE, /function BoardArea\(/, "the board's own inset wrapper is gone");
   assert.match(PAGE, /const inset = useSidePanelInset\(\);/, "the board page does not read the panel's width");
-  assert.match(PAGE, /style=\{\{ right: inset \}\}/, "the board no longer narrows for the panel");
-  // 🔴 AND IT FOLLOWS THE DRAG INSTEAD OF EASING BEHIND IT. Owner, 2026-09-01, of the chat's
-  // version: *"no lagg in sizing adjustment for chat and sidebar."*
-  assert.match(PAGE, /dragging \? "absolute inset-y-0 left-0" :/, "the board's edge eases behind the pointer during a drag");
 });
 
 test("🔴🔴 a deliverable and a document are tabs of ONE panel, not two rectangles on one edge", () => {

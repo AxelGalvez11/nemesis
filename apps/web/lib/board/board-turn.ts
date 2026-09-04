@@ -17,6 +17,7 @@
 import { THINKING_STANCE } from "@nemesis/shared";
 
 import type { CanvasSource } from "@/lib/learn/canvas-model";
+import { DIAGRAM_INSTRUCTION } from "@/lib/learn/diagram-instruction";
 import { MATERIAL_CITATION_RULE, MATERIAL_HEADER } from "@/lib/learn/turn-router";
 import { postChatCompletion, searchWebContext, type WireMsg } from "@/lib/workspace/chat-api";
 import { formatWebSearchContext, type ChatWebResult } from "@/lib/workspace/chat-web-search";
@@ -66,7 +67,7 @@ const SYSTEM_HEAD =
   THINKING_STANCE;
 
 /** Appended to every user turn: the last thing the model reads before it writes. */
-const TURN_TAIL = "\n\n(Reply in full, mark key terms as [term](#concept \"meaning\") links, then end with the [[SUMMARY]] and [[SUGGEST]] blocks.)";
+const TURN_TAIL = "\n\n(Reply in full, draw a ```mermaid diagram when the answer has a shape, mark key terms as [term](#concept \"meaning\") links, then end with the [[SUMMARY]] and [[SUGGEST]] blocks.)";
 
 /** How much room a board answer may take. The provider's default cut long answers before the
  *  machine blocks at their tail; the deck writer learned the same lesson at 8192. */
@@ -97,6 +98,12 @@ export function boardWireMessages(input: {
   if (input.webContext) {
     system.push("Live web results for this question. Use them for current facts and cite the relevant URLs as [n]:\n\n" + input.webContext);
   }
+  // 🔴 THE BOARD DRAWS TOO, BY THE CHAT'S OWN RULES (owner 2026-09-04, on wondering's pictures:
+  // "can we implement visuals similar?"). The renderer was already here, since a card's answer goes
+  // through `AssistantMarkdown` and a ```mermaid fence draws there; what was missing was the
+  // instruction, so the same model drew in the chat and wrote prose on the board. One constant,
+  // two surfaces: lib/learn/diagram-instruction.ts.
+  system.push(DIAGRAM_INSTRUCTION);
   system.push(CONCEPT_INSTRUCTION);
   system.push(PROTOCOL_INSTRUCTION);
   const question = input.contextExcerpt
