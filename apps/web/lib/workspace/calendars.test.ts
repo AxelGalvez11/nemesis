@@ -6,15 +6,7 @@ import { test } from "node:test";
 
 import { CALENDAR_COLORS, calendarColorOf, inkOn } from "./calendar-colors";
 import { monthGrid, startOfWeek, weekGrid, type WeekStart } from "./calendar-model";
-import {
-  type Calendar,
-  calendarById,
-  calendarList,
-  decodeCalendar,
-  encodeCalendar,
-  hiddenCalendarIds,
-  PRIMARY_CALENDAR,
-} from "./calendars";
+import { PRIMARY_CALENDAR, calendarById, calendarList, decodeCalendar, encodeCalendar, hiddenCalendarIds, type Calendar } from "./calendars";
 import { paintForEvent } from "./event-colors";
 
 // ------------------------------------------------------------ the palette
@@ -155,4 +147,23 @@ test("🔴 deleting a calendar keeps its events", () => {
   assert.ok(!/references public\.calendars \(id\) on delete cascade/.test(sql));
   assert.match(sql, /APPLIED 2026-09-01/);
   assert.match(sql, /enable row level security/, "the calendars table is readable by anyone");
+});
+
+test("🔴🔴 a stored primary REPLACES the built-in one, or a Google sync colours nothing", () => {
+  // `PRIMARY_CALENDAR`'s Blueberry is a stand-in for "nobody has told us yet". Once Google's
+  // calendar list has arrived, the real primary is a stored row under the same empty id — the
+  // owner's is Peacock. Prepending the constant unconditionally would put the stand-in in front of
+  // the answer, and every lookup takes the first match.
+  const fromGoogle = { colorId: "14", id: "", name: "axelgalvez1121@gmail.com" };
+  const list = calendarList([fromGoogle, { colorId: "23", id: "family@group", name: "Family" }]);
+  assert.equal(list[0]?.colorId, "14", "the built-in primary shadowed the one Google sent");
+  // 🔴 TWO, NOT THREE: the stored primary REPLACES the built-in one rather than joining it. My
+  // first version of this line expected three and was wrong about the code, not the other way
+  // round — the whole point is that there is exactly one entry under the empty id.
+  assert.equal(list.length, 2, "the stored primary was listed alongside the built-in one");
+  assert.equal(list.filter((c) => c.id === "").length, 1);
+  // 🔴 AND THE STAND-IN IS STILL THERE UNTIL IT IS TOLD OTHERWISE — a fresh account has no stored
+  // calendars at all, and must still draw its events in a colour rather than in grey.
+  assert.equal(calendarList([])[0]?.colorId, PRIMARY_CALENDAR.colorId);
+  assert.equal(PRIMARY_CALENDAR.colorId, "16", "the stand-in lost its colour");
 });

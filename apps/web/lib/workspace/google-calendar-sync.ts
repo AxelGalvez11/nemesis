@@ -21,8 +21,11 @@ import { runAction } from "./composio-client";
 import { saveCalendarEvent } from "./calendar-model";
 import type { DecodedCalendarEvent } from "./calendar-codec";
 import { findProviderDisagreements, type ProviderDisagreement } from "./calendar-conflicts";
+import type { Calendar } from "./calendars";
+import { saveCalendar } from "./calendars";
 import {
   eventsFromListResult,
+  fromGoogleCalendars,
   fromGoogleEvents,
   type LinkedCalendarEvent,
   type MappedGoogleEvent,
@@ -41,6 +44,10 @@ const CREATE_EVENT = "GOOGLECALENDAR_CREATE_EVENT";
 // fields we do not send are left alone, so writing a title back does not blank a description
 // somebody added in Google.
 const PATCH_EVENT = "GOOGLECALENDAR_PATCH_EVENT";
+// 🔴 READ OFF THE LIVE CATALOGUE, 2026-09-03, on the owner's own account: `op: "tools"` lists 24
+// googlecalendar actions and this is the one that returns the calendar list. It is a READ, so
+// `riskOf()` lets it through without a confirmation — verified by calling it (`held: false`).
+const LIST_CALENDARS = "GOOGLECALENDAR_LIST_CALENDARS";
 
 // ── The plan ───────────────────────────────────────────────────────────────────────────────────
 
@@ -214,6 +221,27 @@ export async function pullGoogleEvents(window: PullWindow): Promise<PullResult> 
   }
 }
 
+/**
+ * The calendars themselves, so their COLOURS can arrive.
+ *
+ * 🔴 A SEPARATE CALL, AND A CHEAP ONE. Google's events endpoint says nothing about the calendar
+ * they came from beyond its id; the colour lives on the calendar list. One round trip per sync,
+ * against 250 events in the other one.
+ *
+ * 🔴 IT NEVER FAILS THE SYNC. A calendar list that does not answer means the colours stay as they
+ * are, which is a stand-in rather than a wrong answer — and refusing to import a term's events
+ * because a colour could not be read would be the wrong trade by a wide margin.
+ */
+export async function pullGoogleCalendars(): Promise<Calendar[]> {
+  try {
+    const result = await runAction({ action: LIST_CALENDARS, app: GOOGLE_CALENDAR_APP, arguments: {} });
+    if (result.kind !== "ran") return [];
+    return fromGoogleCalendars(result.data);
+  } catch {
+    return [];
+  }
+}
+
 export interface PushResult {
   ok: boolean;
   error?: string;
@@ -358,6 +386,17 @@ export async function syncGoogleCalendar(
   // and uploads — so a preview sync would hand one student's Google calendar to another. The
   // syllabus importer states the same reason at its own guard.
   if (ctx.preview || !ctx.userId) return { ...empty, error: "Sign in to sync your calendar.", ok: false };
+
+  // 🔴 THE COLOURS FIRST, AND DELIBERATELY BEFORE THE EVENTS. A sync that imported forty events and
+  // then failed to save a calendar would draw all forty in the stand-in blue until the next one;
+  // doing it first means the very events this run adds come out in the right colour.
+  for (const calendar of await pullGoogleCalendars()) {
+    try {
+      await saveCalendar(calendar, ctx);
+    } catch {
+      // One calendar that will not save is a colour, not a sync. The events still matter.
+    }
+  }
 
   const pulled = await pullGoogleEvents(options.window ?? defaultWindow());
   if (!pulled.ok) return { ...empty, error: pulled.error, ok: false };
