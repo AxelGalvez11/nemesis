@@ -13,7 +13,7 @@
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { OutlineEntry } from "@/lib/reader/pdf-outline";
-import { describeCommentSpot, type DocumentComment } from "@/lib/workspace/document-comments";
+import { describeCommentSpot, repliesTo, rootsOf, type DocumentComment } from "@/lib/workspace/document-comments";
 import type { PdfDocument } from "@/lib/reader/pdfjs";
 import { cn } from "@/lib/utils";
 
@@ -52,7 +52,11 @@ export function ReaderSidebar({
   tab, onTabChange, outline, outlineIsAuthored, document: pdf, unitCount, unit, unitLabel, onGoToUnit,
   comments, onResolveComment, onDeleteComment, commentsOnly = false,
 }: ReaderSidebarProps) {
-  const openComments = comments?.filter((comment) => comment.resolvedAt === null) ?? [];
+  // 🔴 THE LIST IS OF NOTES, NOT OF SENTENCES. Since 2026-09-04 `comments` carries Nemesis's
+  // answers too; listing them as rows would show one question as three pinned marks, and the count
+  // beside the tab would climb every time the learner asked a follow-up.
+  const notes = rootsOf(comments ?? []);
+  const openComments = notes.filter((comment) => comment.resolvedAt === null);
   const commentsLabel = openComments.length > 0 ? `Comments · ${openComments.length}` : "Comments";
   /** What the body draws. In the pane that is the comments, whatever tab the host last held. */
   const showing: SidebarTab = commentsOnly ? "comments" : tab;
@@ -95,15 +99,16 @@ export function ReaderSidebar({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
         {showing === "comments" && comments ? (
-          comments.length === 0 ? (
+          notes.length === 0 ? (
             <p className="px-2 py-6 text-center text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">
               Nothing pinned yet. Turn on comment mode in the toolbar, then click a spot or drag a box.
             </p>
           ) : (
             <ul className="flex flex-col gap-1" data-testid="reader-comment-list">
-              {comments.map((comment, index) => {
+              {notes.map((comment, index) => {
                 const spot = describeCommentSpot(comment, unitLabel);
                 const resolved = comment.resolvedAt !== null;
+                const answered = repliesTo(comments, comment.id).filter((reply) => reply.author === "nemesis").length;
                 return (
                   <li
                     className={cn(
@@ -125,6 +130,14 @@ export function ReaderSidebar({
                         <span className={cn("block text-[0.75rem] leading-snug text-(--ui-text-secondary)", resolved && "line-through")}>
                           {comment.body}
                         </span>
+                        {/* 🔴 THE ROW SAYS THAT AN ANSWER EXISTS, AND DOES NOT REPEAT IT. The answer
+                            is a paragraph; a list of them is a second reading column, and the note
+                            is what this list is for. Opening the pin shows the whole thread. */}
+                        {answered > 0 && (
+                          <span className="mt-0.5 block text-[0.625rem] text-(--ui-text-quaternary)" data-testid="reader-comment-answered">
+                            {answered === 1 ? "Answered by Nemesis" : `Answered by Nemesis, ${answered} replies`}
+                          </span>
+                        )}
                       </span>
                     </button>
                     <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover/comment:opacity-100">

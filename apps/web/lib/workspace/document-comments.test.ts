@@ -71,7 +71,7 @@ test("🔴 the packet block carries only OPEN comments, under the document's own
 });
 
 test("the spot description names what the anchor actually is", () => {
-  const base = { id: "c", docKind: "source" as const, docId: "d", body: "x", resolvedAt: null, createdAt: "now" };
+  const base = { id: "c", docKind: "source" as const, docId: "d", body: "x", resolvedAt: null, createdAt: "now", parentId: null, author: "learner" as const };
   const point: DocumentComment = { ...base, unit: 7, anchor: { x: 0.2, y: 0.9 } };
   const area: DocumentComment = { ...base, unit: 2, anchor: { box: { x: 0, y: 0, width: 0.5, height: 0.5 } } };
   const block: DocumentComment = { ...base, unit: 1, anchor: { block: 4 } };

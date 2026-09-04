@@ -12,6 +12,7 @@ const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf
 const LAYER = read("./comment-layer.tsx");
 const READER = read("./document-reader.tsx");
 const SIDEBAR = read("./reader-sidebar.tsx");
+const TOP_BAR = read("./reader-top-bar.tsx");
 const COMMENTS = readFileSync(new URL("../../../lib/workspace/document-comments.ts", import.meta.url), "utf8");
 const PANEL = readFileSync(new URL("../learn/source-preview.tsx", import.meta.url), "utf8");
 const CHAT = readFileSync(new URL("../learn/canvas-chat.ts", import.meta.url), "utf8");
@@ -80,12 +81,20 @@ test("🔴 a highlight carries its WORDS, not just where the cursor was", () => 
   assert.match(COMMENTS, /I highlighted "\$\{quoted/, "the prompt does not quote what was highlighted");
 });
 
-test("🔴 the gestures are said out loud, because neither is discoverable", () => {
-  assert.match(READER, /data-testid="reader-comment-hint"/, "the hint pill is gone");
-  assert.match(READER, /Click to comment, drag to draw a box/, "the pill stopped naming both gestures");
-  // And on a flowing document — where boxes are not drawable because the page reflows — the pill
-  // must not advertise a drag that does nothing.
-  assert.match(READER, /Click a paragraph to comment/, "the flowing-document pill promises a box it cannot draw");
+// 🔴🔴 RE-PINNED, INVERTED, 2026-09-04. This guard used to REQUIRE a floating hint pill
+// ("Click to comment, drag to draw a box"), on the reasoning that neither gesture is discoverable.
+// The owner cut it: *"remove the 'click to comment, drag to draw a box' when annotating"*, part of
+// the same ruling that shrank the pane chrome — *"i want it to look like how chatgpt does it,
+// minimalist"*. The instruction did not go missing with the pill: the toggle in the bar reads
+// "Annotating" for as long as the mode is on, its tooltip spells both gestures out, and the page
+// wears a crosshair cursor. The test is kept and turned around rather than deleted, so the pill
+// cannot drift back in without someone reading why it left.
+test("🔴 no floating hint pill over the document while annotating", () => {
+  assert.ok(!/data-testid="reader-comment-hint"/.test(READER), "the hint pill is back, over the document it explains");
+  assert.ok(!/Click to comment, drag to draw a box/.test(READER), "the cut hint text is back in the reader");
+  // The mode still SAYS it is on, in the control that turns it on — that is the part that had to survive.
+  assert.match(TOP_BAR, /Annotating/, "the annotate toggle stopped naming the mode it is in");
+  assert.match(TOP_BAR, /click a spot or drag a box/, "the toggle's tooltip stopped spelling out both gestures");
 });
 
 test("🔴 resolving is a state, not a deletion, everywhere it appears", () => {

@@ -41,6 +41,10 @@ import { KIND_MARKS } from "@/lib/learn/kind-mark";
 const KIND: Record<string, { extension: string; icon: string; label: string; tint: string }> = {
   document: { extension: "docx", ...KIND_MARKS.document },
   flashcards: { extension: "", icon: "layers", label: "Flashcards", tint: "--ui-kind-purple" },
+  // 🔴 ITS OWN GLYPH AND ITS OWN WORD. A page is not a document with different bytes: the thing
+  // that makes it worth asking for is that it runs, and `KIND_MARKS.text` would file it beside the
+  // .md a learner dropped in.
+  html: { extension: "html", icon: "browser", label: "Page", tint: "--ui-kind-cyan" },
   note: { extension: "md", ...KIND_MARKS.text },
   pdf: { extension: "pdf", ...KIND_MARKS.pdf },
   report: { extension: "", icon: "book", label: "Research", tint: "--ui-kind-cyan" },

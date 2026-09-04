@@ -22,6 +22,8 @@ import { createPortal } from "react-dom";
 import { DockTabs } from "./dock-tabs";
 import type { DockItem } from "./document-dock";
 import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
+import { sandboxedPage } from "@/lib/learn/html-output";
+
 import { biggerThan, CHROME, type ReaderMode } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
 
@@ -41,7 +43,7 @@ import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { docBlocks } from "@/lib/export/doc-blocks";
 import { downloadDeck } from "@/lib/export/deck-download";
-import { downloadDocx, downloadMarkdown, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
+import { downloadDocx, downloadHtml, downloadMarkdown, downloadPdf, downloadSheet, pdfBlob, type SheetData } from "@/lib/export/doc-file";
 import type { CanvasOutput } from "@/lib/learn/canvas-model";
 import { readLibraryNote } from "@/lib/workspace/library-note-read";
 import { cn } from "@/lib/utils";
@@ -66,6 +68,7 @@ import { PdfPages } from "./pdf-pages";
 const DOWNLOAD_LABEL: Record<string, string> = {
   slides: "Download .pptx",
   document: "Download .docx",
+  html: "Download .html",
   // 🔴 `.md`, NOT `.docx`, SINCE 2026-09-03. A note is Markdown from the moment it is written, and
   // this button promised a Word file for it. Owner: *"I like to make a markdown file of all the
   // points that I should be able to recall from memory myself."* `report` keeps .docx: a cited
@@ -404,6 +407,8 @@ export function OutputPreview({
     // forgets the signatures ships a deck with captions where the pictures should be.
     if (output.kind === "slides" && output.deck) return void downloadDeck(output.deck, output.title);
     if (output.kind === "sheet" && output.sheet) return void downloadSheet(output.sheet as SheetData, output.title);
+    // 🔴 THE PAGE IS ITS OWN FILE. It carries no Markdown, so it must leave before the guard below.
+    if (output.kind === "html" && output.html) return void downloadHtml(output.html, output.title);
     if (!markdown) return;
     // 🔴 A NOTE LEAVES AS THE MARKDOWN IT IS. Every Markdown output used to go through the Word
     // writer, so the one artifact whose text was already the file the learner wanted was the one
@@ -635,6 +640,23 @@ export function OutputPreview({
         <div className="mx-auto w-full max-w-[816px] bg-white px-[40px] py-[32px] shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-(--ui-bg-editor)">
           {deck ? (
             <DeckPreview canvasId={canvasId} outputId={output.assetId ?? output.id} plan={deck} registerElement={canComment ? registerUnit : undefined} />
+          ) : output.kind === "html" && output.html ? (
+            // 🔴🔴 A FRAME, NOT `dangerouslySetInnerHTML`, and the reasoning is in `html-output.ts`.
+            // `allow-scripts` WITHOUT `allow-same-origin` gives the page an opaque origin, so it
+            // runs but can reach nothing of this app's; the injected policy blocks the network
+            // outright, so material a learner uploaded cannot talk the model into writing a page
+            // that phones home with it.
+            //
+            // 🔴 `h-[70vh]`, BECAUSE A FRAME HAS NO CONTENT HEIGHT. An iframe does not grow to fit
+            // what is inside it and cannot be measured across an opaque origin, so an unsized one
+            // collapses to the 150px default every browser gives it.
+            <iframe
+              className="h-[70vh] w-full border-0 bg-white"
+              data-testid="output-html-frame"
+              sandbox="allow-scripts"
+              srcDoc={sandboxedPage(output.html)}
+              title={output.title}
+            />
           ) : output.sheet ? (
             <SheetTable sheet={output.sheet as SheetData} />
           ) : output.kind === "pdf" ? (

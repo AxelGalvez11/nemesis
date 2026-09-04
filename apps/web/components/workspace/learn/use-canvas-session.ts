@@ -43,7 +43,7 @@ import { canvasNeedsName, firstUntriedExchange, nameCanvasFromExchange, type Can
 import { blocksForConcepts, diagnose } from "@/lib/learn/canvas-diagnosis";
 import { appendEvent, type NewLearningEvent } from "@/lib/learn/canvas-events";
 import { fileMoment, lastThingSaid, type NewCanvasMoment } from "@/lib/learn/canvas-moment";
-import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import { makeDocumentDeliverable, makeFlashcardsDeliverable, makeHtmlDeliverable, makeNoteDeliverable, makeReportDeliverable, makeSheetDeliverable, makeSlidesDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-deliverables";
 import { attachOutcomeMessage } from "@/lib/learn/attach-outcome";
 import { supabase } from "@/lib/supabase";
 import { isMakerCapability } from "@/lib/learn/composer-capability";
@@ -521,6 +521,7 @@ export interface CanvasSession {
 const MAKING_LABELS: Record<DeliverableKind, string> = {
   document: "Writing your document",
   flashcards: "Making your flashcards",
+  html: "Building your page",
   note: "Writing your note",
   pdf: "Writing your PDF",
   // 🔴 "Starting", NOT "Planning", AND THE DIFFERENCE IS WHETHER IT IS TRUE. A run reached from the
@@ -1902,7 +1903,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
                 ? await makeDocumentDeliverable(uid, latest.current, kind, topic)
                 : kind === "sheet"
                   ? await makeSheetDeliverable(uid, latest.current, topic)
-                  : kind === "report"
+                  : kind === "html"
+                    ? await makeHtmlDeliverable(uid, latest.current, topic)
+                    : kind === "report"
                 // 🔴 THE ONLY DELIVERABLE THAT NEEDS A TOPIC RATHER THAN LIKING ONE. The other
                 // three read the canvas; this one goes and searches for material the canvas does
                 // not have, so with nothing to research there is nothing to do. The canvas title

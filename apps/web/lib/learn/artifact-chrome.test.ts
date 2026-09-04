@@ -79,15 +79,23 @@ test("🔴 flush: no radius, no shadow, no inset, right edge on the viewport", (
   assert.ok(!/onMouseDown=\{\(event\) =>/.test(PREVIEW), "an outside press can dismiss the docked panel again");
 });
 
-test("🔴 the header is the measured one: 36x36 buttons, 8px radius, 20px glyphs, 14px crumb", () => {
+// 🔴🔴 RE-PINNED 2026-09-04, SMALLER, AND STILL MEASURED. Owner: *"the sidebar headers containing
+// the tabs and tools feel too big ... i want it to look like how chatgpt does it, minimalist"*.
+// The old numbers were read off the reference's CLOSE button, which is the one control in their
+// header that is bigger than the rest. Read out of their desktop bundle instead
+// (`artifact-source-bootstrap`, every control `size:"toolbar"` with `uniform:true`): 28x28 holding
+// an 18px glyph, 4px apart. Ours is now that, in a 36px band, with the tab row above it at 32px —
+// 68px of chrome where there used to be 83px. The rem-utility ban below is untouched and is still
+// the thing this test is really for.
+test("🔴 the header is the measured one: 28x28 buttons, 8px radius, 18px glyphs, 14px crumb", () => {
   // 🔴 EXPLICIT PIXELS. `html { font-size: 112.5% }` in this app, so `size-9 rounded-lg gap-2`
-  // measured 40.5x40.5 at radius 13.5 on a 49.5 pitch — against 36x36 at 8 on 40. Measuring BOTH
-  // sides is what caught it; each of those reads as correct in a screenshot.
+  // measured 40.5x40.5 at radius 13.5 on a 49.5 pitch. Measuring BOTH sides is what caught it;
+  // each of those reads as correct in a screenshot.
   assert.ok(!/size-9|rounded-lg|gap-2\b|leading-5/.test(CHROME), "a rem utility is back in the shared chrome — every one lands 1.125x too big here");
-  assert.match(CHROME, /button: "flex h-\[36px\] w-\[36px\]/, "the button is not 36x36");
+  assert.match(CHROME, /button: "flex h-\[28px\] w-\[28px\]/, "the button is not 28x28");
   assert.match(CHROME, /rounded-\[8px\]/, "the button radius is not the measured 8px");
-  assert.match(CHROME, /icon: "20px"/, "the header glyph is not 20px");
-  assert.match(CHROME, /header: "flex items-center gap-\[4px\] px-\[12px\] py-\[5\.5px\]"/, "the header band is not the measured 47px on a 40px pitch");
+  assert.match(CHROME, /icon: "18px"/, "the header glyph is not 18px");
+  assert.match(CHROME, /header: "flex items-center gap-\[4px\] px-\[10px\] py-\[4px\]"/, "the header band is not 36px");
   assert.match(CHROME, /leading-\[20px\] text-\(--ui-text-primary\)/, "the filename is not 14px on a 20px line");
   // 🔴 AND NEITHER READER MAY WRITE ITS OWN. A rem utility lands 1.125x too big here, and a second
   // hand-written copy of the header is how the two panels stop matching.

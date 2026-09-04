@@ -27,7 +27,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
-import type { CommentAnchor, DocumentComment } from "@/lib/workspace/document-comments";
+import { repliesTo, rootsOf, type CommentAnchor, type DocumentComment } from "@/lib/workspace/document-comments";
 import { cn } from "@/lib/utils";
 
 import { useRegionDrag, type RegionAnchor, type RegionBox } from "./use-region-drag";
@@ -53,6 +53,7 @@ export function CommentLayer({
   onSend,
   onResolve,
   onDelete,
+  onAsk = null,
   request = null,
   onRequestTaken,
 }: {
@@ -78,6 +79,17 @@ export function CommentLayer({
   onSend: ((draft: { unit: number; anchor: CommentAnchor; body: string }) => void) | null;
   onResolve: (comment: DocumentComment) => void;
   onDelete: (comment: DocumentComment) => void;
+  /**
+   * Ask Nemesis about this spot and have the answer land IN the thread.
+   *
+   * 🔴🔴 THE ANSWER STAYS IN THE DOCUMENT (owner, 2026-09-04: *"it would be useful to have
+   * annotations with chat responses within the document so users dont bloat the main chat"*). This
+   * is a different destination from `onSend`, not a different question: `onSend` hands the note to
+   * the canvas, where the full lane can make cards and open panels; this answers in the margin,
+   * beside the sentence that prompted it. Null when the host cannot ask at all (the preview
+   * harness makes no network calls), and then the control is absent rather than inert.
+   */
+  onAsk?: ((comment: DocumentComment, question: string) => Promise<string | null>) | null;
   /**
    * A draft opened from OUTSIDE the mode — today, by highlighting text.
    *
@@ -124,7 +136,10 @@ export function CommentLayer({
 
   /** Comments numbered in creation order, so the pin, the list row and the learner agree. */
   const ordinals = new Map<string, number>();
-  comments.forEach((comment, index) => ordinals.set(comment.id, index + 1));
+  // 🔴 ROOTS ARE THE MARKS. `comments` carries the replies too since 2026-09-04; numbering or
+  // pinning them would put a second mark on a spot that was asked about once.
+  const roots = rootsOf(comments);
+  roots.forEach((comment, index) => ordinals.set(comment.id, index + 1));
 
   return (
     <>
@@ -133,7 +148,7 @@ export function CommentLayer({
           blockSnap={blockSnap}
           boxesDrawable={boxesDrawable}
           commenting={commenting}
-          comments={comments.filter((comment) => comment.resolvedAt === null && (comment.unit ?? 1) === unit)}
+          comments={roots.filter((comment) => comment.resolvedAt === null && (comment.unit ?? 1) === unit)}
           element={element}
           key={unit}
           onOpenThread={(comment, at) => {
@@ -167,6 +182,7 @@ export function CommentLayer({
       {openThread && (
         <CommentThread
           comment={openThread.comment}
+          onAsk={onAsk ? (question) => onAsk(openThread.comment, question) : null}
           onClose={() => setOpenThread(null)}
           onDelete={() => {
             onDelete(openThread.comment);
@@ -177,6 +193,7 @@ export function CommentLayer({
             setOpenThread(null);
           }}
           ordinal={ordinals.get(openThread.comment.id) ?? 0}
+          replies={repliesTo(comments, openThread.comment.id)}
           spot={openThread.at}
           unitLabel={unitLabel}
         />
@@ -439,6 +456,8 @@ function CommentThread({
   onClose,
   onResolve,
   onDelete,
+  onAsk,
+  replies,
 }: {
   comment: DocumentComment;
   ordinal: number;
@@ -447,8 +466,15 @@ function CommentThread({
   onClose: () => void;
   onResolve: () => void;
   onDelete: () => void;
+  /** Ask about this spot; the answer arrives in this thread. Null when the host cannot ask. */
+  onAsk: ((question: string) => Promise<string | null>) | null;
+  /** What has been said under this note already, oldest first. */
+  replies: readonly DocumentComment[];
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
+  const [asking, setAsking] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [failed, setFailed] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -469,9 +495,25 @@ function CommentThread({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const ask = useCallback(async () => {
+    if (!onAsk || asking) return;
+    setFailed(false);
+    setAsking(true);
+    // 🔴 THE FIELD EMPTIES BEFORE THE WAIT, not after it. The question is already on screen as a
+    // row the moment the answer lands, and a field still holding it reads as "that did not send".
+    const said = question.trim();
+    setQuestion("");
+    const answered = await onAsk(said);
+    setAsking(false);
+    if (answered === null) {
+      setFailed(true);
+      setQuestion(said);
+    }
+  }, [asking, onAsk, question]);
+
   return (
     <div
-      className="fixed z-[130] w-[300px] rounded-[10px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3 shadow-xl"
+      className="fixed z-[130] w-[320px] rounded-[10px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3 shadow-xl"
       data-testid="reader-comment-thread"
       ref={boxRef}
       style={position ? position : { left: -9999, top: -9999 }}
@@ -486,6 +528,72 @@ function CommentThread({
         </button>
       </div>
       <p className="mt-1.5 whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-foreground">{comment.body}</p>
+
+      {/* 🔴🔴 THE CONVERSATION LIVES HERE, NOT IN THE CANVAS (owner, 2026-09-04). Each turn is
+          labelled by who said it, because an unlabelled block under a note reads as more of the
+          note. Nemesis's own answers sit on a tinted ground for the same reason a chat bubble
+          does: one glance has to separate the question from the answer. */}
+      {replies.length > 0 && (
+        <div className="mt-2.5 flex flex-col gap-2" data-testid="reader-comment-replies">
+          {replies.map((reply) => (
+            <div
+              className={cn(
+                "rounded-[8px] px-2 py-1.5",
+                reply.author === "nemesis" ? "bg-(--ui-bg-tertiary)" : "bg-transparent",
+              )}
+              key={reply.id}
+            >
+              <p className="text-[0.625rem] font-medium uppercase tracking-[0.06em] text-(--ui-text-quaternary)">
+                {reply.author === "nemesis" ? "Nemesis" : "You"}
+              </p>
+              <p className="mt-0.5 whitespace-pre-wrap text-[0.8125rem] leading-relaxed text-foreground">{reply.body}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {asking && (
+        <p className="mt-2 text-[0.6875rem] text-(--ui-text-tertiary)" data-testid="reader-comment-asking">
+          Nemesis is reading that spot…
+        </p>
+      )}
+      {failed && !asking && (
+        <p className="mt-2 text-[0.6875rem] text-(--ui-danger)">That did not come back. Try again.</p>
+      )}
+
+      {/* 🔴 ONE FIELD, WHICH IS BOTH "ask this" AND "follow that up". A separate first-ask button and
+          follow-up box would be two controls for one thing; the note above is the first question
+          already, so an empty field asks about the note and a filled one asks what it says. */}
+      {onAsk && (
+        <div className="mt-2 flex items-end gap-1.5">
+          <textarea
+            className="max-h-24 min-h-[30px] w-full flex-1 resize-none rounded-[8px] border border-(--ui-stroke-tertiary) bg-(--ui-bg-base) px-2 py-1.5 text-[0.75rem] leading-relaxed text-foreground outline-none placeholder:text-(--ui-text-quaternary) focus:border-(--ui-stroke-secondary)"
+            data-testid="reader-comment-ask-field"
+            disabled={asking}
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void ask();
+              }
+            }}
+            placeholder={replies.length > 0 ? "Ask a follow-up…" : "Ask Nemesis about this spot…"}
+            rows={1}
+            value={question}
+          />
+          <button
+            aria-label="Ask Nemesis about this spot"
+            className="shrink-0 rounded-[8px] bg-(--ui-action) px-2.5 py-1.5 text-[0.6875rem] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-90 disabled:opacity-40"
+            data-testid="reader-comment-ask"
+            disabled={asking}
+            onClick={() => void ask()}
+            type="button"
+          >
+            Ask
+          </button>
+        </div>
+      )}
+
       <div className="mt-2.5 flex items-center justify-end gap-1.5">
         <button
           className="rounded-[8px] px-2 py-1 text-[0.6875rem] font-medium text-(--ui-text-tertiary) transition-colors hover:text-(--ui-danger)"

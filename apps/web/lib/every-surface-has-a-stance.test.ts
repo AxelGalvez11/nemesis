@@ -32,6 +32,10 @@ const SURFACES: readonly { file: string; why: string }[] = [
   { file: "lib/learn/turn-router.ts", why: "the canvas conversation, where a learner argues back" },
   { file: "lib/workspace/chat-api.ts", why: "the chat lane" },
   { file: "lib/workspace/study-ai-extras.ts", why: "the study coach beside a card the student got wrong" },
+  // 🔴 ADDED 2026-09-04 with the in-document answer lane. It has a follow-up field, so a learner
+  // can push back on the answer without leaving the page they are reading — which is exactly the
+  // test this list applies: can a student disagree with this output in the moment it is produced?
+  { file: "lib/reader/comment-answer.ts", why: "the answer pinned beside a note, which a learner can argue with in place" },
 ];
 
 const WEB = join(import.meta.dirname, "..");
