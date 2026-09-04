@@ -159,7 +159,14 @@ test("🔴 the header wears the project's OWN icon and colour at 32px (measured 
   // folder. `buildProjects` carries icon/colour through ProjectNode for exactly this read.
   assert.match(PAGE, /name=\{project\.icon \?\? "folder"\}/, "the header fell back to a generic glyph for customized projects");
   assert.match(PAGE, /size="32px"/, "the header icon left the measured 32px");
-  assert.match(PAGE, /style=\{project\.color \? \{ color: project\.color \} : undefined\}/, "the header ignores the project's colour");
+  // 🔴 THE COLOUR IS DRAWN THROUGH A TOKEN NOW, NOT AS THE STORED HEX. This page never lost its
+  // tint during the 2026-09-03 accent sweep — only the sidebar and the dialog did — so it had been
+  // painting a LIGHT-MODE hex in dark mode the whole time. `projectTint` maps the stored value onto
+  // the `--ui-kind-*` pair, which desktop-ui.css defines once per theme. See project-look.ts.
+  assert.match(PAGE, /style=\{projectTint\(project\)\}/, "the header ignores the project's colour");
+  // 🔴 SCOPED TO A `style=`, NOT THE BARE PHRASE. `color: project.color` also appears where the
+  // "…" menu builds the Folder object it hands the customize dialog, which is DATA and correct.
+  assert.doesNotMatch(PAGE, /style=\{\{[^}]*color: project\.color/u, "the header paints the raw stored hex again");
 });
 
 test("🔴🔴🔴 no rem-based spacing class survives — `px-4` is EIGHTEEN pixels here, not sixteen", () => {

@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { menuSide } from "./add-menu-row";
-import { backspaceClearsCapability, backspaceClearsToken } from "./capability-chip";
+import { backspaceClearsCapability } from "./capability-chip";
 import { CAPABILITY_COPY, COMPOSER_CAPABILITIES } from "@/lib/learn/composer-capability";
 
 const read = (name: string) => readFileSync(new URL(`./${name}`, import.meta.url), "utf8");
@@ -70,25 +70,21 @@ test("🔴🔴 there is no ✕ on the chip, on either composer", () => {
   assert.ok(!/<button/.test(CHIP), "the chip is not a control — removing it belongs to the field beside it");
 });
 
-test("🔴 with a project AND a capability staged, one Backspace takes off the nearer one", () => {
-  // 🔴 THE NEAREST IS THE LAST ONE BEFORE THE CARET. They are drawn project first, capability
-  // second, so the capability is what the caret is standing next to. Removing both would be one
-  // keypress doing two deletions; removing the far one would be a keypress the learner cannot
-  // account for.
-  const press = (staged: { capability: unknown; project: unknown }) =>
-    backspaceClearsToken({ key: "Backspace", currentTarget: { selectionStart: 0, selectionEnd: 0 } }, staged);
-  assert.equal(press({ capability: "spreadsheet", project: "p1" }), "capability");
-  assert.equal(press({ capability: null, project: "p1" }), "project");
-  assert.equal(press({ capability: "spreadsheet", project: null }), "capability");
-  assert.equal(press({ capability: null, project: null }), null, "a Backspace with nothing staged must fall through to the text");
-  // The caret rule is the same one, borrowed rather than restated.
-  assert.equal(
-    backspaceClearsToken({ key: "Backspace", currentTarget: { selectionStart: 4, selectionEnd: 4 } }, { capability: "x", project: "p" }),
-    null,
-    "Backspace mid-sentence would eat a token instead of a character",
-  );
+test("🪦 the composer's line carries the capability alone again", () => {
+  // 🔴 THIS REPLACES A TEST OF `backspaceClearsToken`, which answered "with a project AND a
+  // capability staged, which does Backspace take off". The project left that line the day after it
+  // arrived — owner, 2026-09-03: *"the project shows up in the chat bar as if it's a mode. But I
+  // need it to be down there where it says choose project instead."*
+  //
+  // What must not come back is a SECOND token on that line; the gesture itself is unchanged and is
+  // tested below, on the one thing that can still be there.
+  const chip = readFileSync(new URL("./capability-chip.tsx", import.meta.url), "utf8");
+  const code = chip.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+  assert.ok(!/export function ProjectToken/.test(code), "the inline project token is back on the composer's line");
+  assert.ok(!/backspaceClearsToken/.test(code), "the two-token Backspace is back with nothing to disambiguate");
+  const home = readFileSync(new URL("./canvas-home.tsx", import.meta.url), "utf8");
+  assert.ok(!/<ProjectToken/.test(home), "the front door is drawing a project token on the composer's line again");
 });
-
 test("🔴 Backspace at the head of the line takes the capability off it", () => {
   const at = (start: number, end: number) => backspaceClearsCapability({ key: "Backspace", currentTarget: { selectionStart: start, selectionEnd: end } });
   assert.ok(at(0, 0), "Backspace with the caret at the start does not clear the capability");

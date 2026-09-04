@@ -165,8 +165,11 @@ export function PluginsPage({ userId }: { userId: string | null }) {
           <header className={ALIGNED}>
             <div className="flex items-start justify-between gap-[16px]">
               <div className="min-w-0">
-                {/* Reference §4: "Plugins" at 28px / weight 500 / line-height 34px. */}
-                <h1 className="text-[28px] leading-[34px] font-medium text-(--ui-text-primary)">Plugins</h1>
+                {/* Reference §4: the title at 28px / weight 500 / line-height 34px.
+                    🔴 THE WORD IS "APPS" — owner, 2026-09-03: *"rename the plugins into apps."* See
+                    the note on the rail's own row in `sidebar-nav.ts`: the copy changes, the route
+                    and the file names do not. */}
+                <h1 className="text-[28px] leading-[34px] font-medium text-(--ui-text-primary)">Apps</h1>
                 {/* Reference §4: subtitle 16px / weight 400 / secondary text.
 
                     🔴 ONE LINE, AND IT WAS TWO. The title block shares its row with a 240px search

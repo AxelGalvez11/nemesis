@@ -174,7 +174,13 @@ export async function deleteCalendar(id: string, ctx: CalendarsCtx): Promise<voi
  * called "My calendar", holding everything.
  */
 export function calendarList(stored: readonly Calendar[]): Calendar[] {
-  return [PRIMARY_CALENDAR, ...stored];
+  // 🔴🔴 A STORED `""` REPLACES THE BUILT-IN ONE, and without this a Google sync could not colour
+  // anything. `PRIMARY_CALENDAR`'s Blueberry is a stand-in for "nobody has told us"; once Google's
+  // calendar list has arrived, the real primary — the owner's is Grape — is a stored row under the
+  // same empty id. Prepending the constant unconditionally would put the stand-in in front of the
+  // answer, and every lookup takes the first match.
+  const own = stored.find((calendar) => calendar.id === "");
+  return [own ?? PRIMARY_CALENDAR, ...stored.filter((calendar) => calendar.id !== "")];
 }
 
 export function calendarById(stored: readonly Calendar[], id: string | undefined): Calendar {

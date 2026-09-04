@@ -128,14 +128,26 @@ test("🔴 the picker wears each project's own icon, at the reference's measured
   // whatever anyone picked before the feature was removed; this file was the last place it reached
   // the screen, so a row here is the one way it comes back.
   const code = PICKER.replace(/\/\*[\s\S]*?\*\//gu, " ").replace(/^\s*\/\/.*$/gmu, " ");
-  assert.doesNotMatch(code, /folder\.color/u, "a project's stored colour is painting the picker again");
+  // 🔴 REVERSED 2026-09-03, BY THE OWNER, HOURS AFTER HE ASKED FOR THE REMOVAL THIS LINE GUARDED.
+  // It read `doesNotMatch(/folder.color/)` under *"remove any color accents throughout the app"*;
+  // the same day: *"allow projects to have color too."* `lib/learn/project-look.ts` carries why an
+  // identity colour and the character's accent are different objects, and `projectTint` is the one
+  // function every surface tints through — a raw `folder.color` here would be the drift.
+  assert.match(code, /projectTint\(folder\)/u, "the picker stopped wearing each project's colour");
+  assert.doesNotMatch(code, /color: folder\.color/u, "the picker paints the raw stored hex instead of the token");
 
-  // 🔴 THE CONTROL IS A DOOR, NOT THE STATE (owner 2026-09-03: *"compare with ChatGPT because it
-  // looks different when you add it"*). It used to fill in, take the chosen project's name and grow
-  // a ✕. What the reference does — and what the composer does now — is put an inline token at the
-  // head of the line you are typing into; see `capability-chip.tsx`.
+  // 🔴🔴 THE CONTROL IS THE STATE AGAIN, AND THIS IS THE THIRD SHAPE IN THREE DAYS. It filled in
+  // with the project's name and a ✕; then the state moved to an inline token on the composer's own
+  // line to match chatgpt.com; then the owner used that and read it as a MODE (2026-09-03: *"the
+  // project shows up in the chat bar as if it's a mode. But I need it to be down there where it
+  // says choose project instead"*).
+  //
+  // What survives from the middle version, and is the reason it is not simply a revert: NO ✕. The
+  // control is a menu with a "None" row, so a second affordance for the same removal would put the
+  // state in two places, which is what the ✕ did the first time round.
   assert.doesNotMatch(code, /aria-label="Clear project"/u, "the control grew its ✕ back, so the state is in two places");
-  assert.match(code, />Choose project</u, "the control stopped reading as the door it is");
+  assert.match(code, /\{chosen\?\.name \?\? "Choose project"\}/u, "the control stopped naming the project it set");
+  assert.doesNotMatch(code, /<ProjectToken/u, "the project is back on the composer's line as a mode-looking token");
 });
 
 test("🔴🔴 the + menu opens clear of the character instead of hiding it", () => {
@@ -290,7 +302,9 @@ test("🔴 the apps menu connects for real, and a connected row is status rather
   // A CONNECTION IS ACCOUNT-WIDE: there is nothing per-conversation to toggle, so a connected row
   // is a div with a check, not a button that does nothing (§38 bans dead controls).
   assert.match(PICKER, /cursor-default hover:bg-transparent/, "a connected row became a control again");
-  assert.match(PICKER, /Manage plugins/, "the door to the plugins page is gone from the menu");
+  // 🔴 THE WORD IS "APPS" NOW (owner, 2026-09-03: *"rename the plugins into apps"*). The ROUTE
+  // and the file names are deliberately untouched — see `sidebar-nav.ts` for that seam.
+  assert.match(PICKER, /Manage apps/, "the door to the apps page is gone from the menu");
   // 🔴 AND IT OPENS THE PLUGINS PAGE. It routed to a card buried in Settings when Settings was the
   // only surface; /plugins is a destination with a rail row of its own now (owner 2026-08-30:
   // *"it should take users to the plugin page, not to the settings"*).
@@ -299,4 +313,20 @@ test("🔴 the apps menu connects for real, and a connected row is status rather
   // An unconfigured server skips the menu: `apps` is empty exactly then, and a panel whose only
   // row points at Settings is the long way of just going there.
   assert.match(PICKER, /if \(apps\.length === 0\) \{ onOpen\(\); return; \}/, "an unconfigured server no longer falls back to Settings");
+});
+
+test("🔴🔴 a filed chat can be un-filed, and that gesture has vanished once already", () => {
+  // The control carried a ✕ until 2026-09-03, when it was removed because Backspace on the inline
+  // composer token cleared the project instead. The same day the owner sent the project back to
+  // this control (*"I need it to be down there where it says choose project instead"*) — and the
+  // token went with it, taking the ONLY way to un-file a chat. Nothing failed; the state simply
+  // became one-way, which is the kind of hole a screenshot does not show.
+  //
+  // Calibration: delete the row and this reddens. A ✕ is deliberately NOT the fix — it puts the
+  // state in two places, which is why it was removed the first time.
+  const code = PICKER.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+  assert.match(code, /onChange\(null\)/u, "there is no way to take a chat out of a project");
+  assert.match(code, />No project</u, "the un-file row lost its label");
+  // Only offered when there is something to clear.
+  assert.match(code, /\{value !== null && \(/u, "the un-file row shows on chats that are not filed anywhere");
 });

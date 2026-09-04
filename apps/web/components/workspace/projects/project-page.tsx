@@ -55,6 +55,9 @@ import { useRouter } from "next/navigation";
 import { ArrowUp, MoreHorizontal } from "lucide-react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
+import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
+import { fileMark } from "@/lib/learn/kind-mark";
+import { projectTint } from "@/lib/learn/project-look";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { ProjectCustomizeDialog } from "@/components/workspace/shell/project-customize-dialog";
@@ -62,6 +65,8 @@ import {
   CANVASES_CHANGED_EVENT,
   deleteFolder,
   listCanvases,
+  projectMaterial,
+  type ProjectMaterial,
   listFolders,
   newCanvas,
   renameFolder,
@@ -141,13 +146,18 @@ const ROW_NAME_TEXT = "text-[14px] leading-[20px] font-medium text-(--ui-text-pr
  *  same colour on this page's own text tokens. */
 const ROW_META_TEXT = "text-[14px] leading-[20px] font-normal text-(--ui-text-secondary)";
 
-type Tab = "canvases" | "sources";
+type Tab = "canvases" | "sources" | "outputs";
 
 const TABS: readonly { id: Tab; label: string }[] = [
   // "Chats" → "Canvases": see the header comment. Shape and every measurement are the
   // reference's; the word is ours.
   { id: "canvases", label: "Canvases" },
   { id: "sources", label: "Sources" },
+  // 🔴 OUTPUTS IS THE THIRD TAB, ADDED 2026-09-03 ON THE OWNER'S ASK (*"in the projects home could
+  // you show like another tab for viewing like the outputs of the project"*). It reads the same
+  // one query Sources does — a canvas's `document.outputs` beside its `document.sources` — so the
+  // tab costs nothing beyond its own rows, and cannot show a list the Sources tab disagrees with.
+  { id: "outputs", label: "Outputs" },
 ];
 
 /** Same shape as `projects-page.tsx`'s own preview — see that file for why. */
@@ -171,6 +181,10 @@ export function ProjectPage({
   const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>("canvases");
+  const [material, setMaterial] = useState<{
+    sources: ProjectMaterial<CanvasSource>[];
+    outputs: ProjectMaterial<CanvasOutput>[];
+  }>({ outputs: [], sources: [] });
   /** The draft rename text, or null when the title is not being edited. */
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -185,11 +199,19 @@ export function ProjectPage({
       setLoaded(true);
       return;
     }
-    const [nextFolders, nextCanvases] = await Promise.all([listFolders(userId), listCanvases(userId)]);
+    const [nextFolders, nextCanvases, nextMaterial] = await Promise.all([
+      listFolders(userId),
+      listCanvases(userId),
+      // 🔴 KEYED ON THE ROUTE'S OWN id, NOT ON A RESOLVED PROJECT. `project` is derived from the
+      // folders that have not arrived yet, so waiting for it would cost a second round trip on
+      // every open; the query is a `folder_id` equality and needs nothing else.
+      projectMaterial(userId, projectId),
+    ]);
     setFolders(nextFolders);
     setCanvases(nextCanvases);
+    setMaterial(nextMaterial);
     setLoaded(true);
-  }, [preview, userId]);
+  }, [preview, projectId, userId]);
 
   useEffect(() => {
     void refresh();
@@ -297,7 +319,7 @@ export function ProjectPage({
                   className={cn("shrink-0", !project.color && "text-(--ui-text-secondary)")}
                   name={project.icon ?? "folder"}
                   size="32px"
-                  style={project.color ? { color: project.color } : undefined}
+                  style={projectTint(project)}
                 />
                 {/* 🔴 `self-start` ON THE NAME ALONE, NOT THE WHOLE ROW. The icon and the overflow
                     button both want to sit centred in the 36px row (`items-center`, above); the
@@ -435,10 +457,32 @@ export function ProjectPage({
                       <CanvasRow canvas={canvas} key={canvas.id} onOpen={(id) => router.push(`/learn?c=${id}`)} />
                     ))
                   )
+                ) : tab === "sources" ? (
+                  material.sources.length === 0 ? (
+                    <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>No sources filed here yet.</p>
+                  ) : (
+                    material.sources.map((row) => (
+                      <MaterialRow
+                        canvasTitle={row.canvasTitle}
+                        key={row.item.id}
+                        mark={fileMark(row.item.title, row.item.kind)}
+                        onOpen={() => router.push(`/learn?c=${row.canvasId}`)}
+                        title={row.item.title}
+                      />
+                    ))
+                  )
+                ) : material.outputs.length === 0 ? (
+                  <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>Nothing made here yet.</p>
                 ) : (
-                  // 🔴 AN HONEST EMPTY TAB, NOT A MISSING FEATURE DRESSED UP — see the header
-                  // comment on why there is no per-project source list to read yet.
-                  <p className={cn("text-[14px]", "text-(--ui-text-secondary)")}>No sources filed here yet.</p>
+                  material.outputs.map((row) => (
+                    <MaterialRow
+                      canvasTitle={row.canvasTitle}
+                      key={row.item.id}
+                      mark={fileMark(row.item.title, row.item.kind)}
+                      onOpen={() => router.push(`/learn?c=${row.canvasId}`)}
+                      title={row.item.title}
+                    />
+                  ))
                 )}
               </ul>
             </>
@@ -462,6 +506,52 @@ export function ProjectPage({
  * probed for its OWN row hover here — but every other list in this product signals a clickable
  * row that way, and a row nothing on screen marks as clickable is the worse miss.
  */
+/**
+ * One document or artifact a project holds.
+ *
+ * 🔴 THE SAME ROW GEOMETRY AS `CanvasRow`, BECAUSE THE TABS SIT ON THE SAME LIST. Three tabs whose
+ * rows are three different heights read as three pages, and the measured spec this page follows
+ * only ever specified one row.
+ *
+ * 🔴 IT OPENS THE CANVAS, NOT THE FILE. A source belongs to a conversation — that is where it was
+ * dropped, what it was read for, and the only place the reading pane exists. A row that opened a
+ * bare document would strand the learner outside the thing that gives it meaning, and the second
+ * line names that conversation so the row says where it is going.
+ */
+function MaterialRow({
+  title,
+  canvasTitle,
+  mark,
+  onOpen,
+}: {
+  title: string;
+  canvasTitle: string;
+  mark: { icon: string; tint: string };
+  onOpen: () => void;
+}) {
+  return (
+    <li
+      className="border-b border-b-black/[0.05] dark:border-b-white/[0.05]"
+      style={{ paddingBottom: ROW_PAD_Y_PX, paddingTop: ROW_PAD_Y_PX }}
+    >
+      <button
+        className="flex w-full items-center gap-[12px] text-left transition-colors hover:bg-black/[0.05] dark:hover:bg-white/[0.10]"
+        onClick={onOpen}
+        style={{ height: ROW_H_PX }}
+        type="button"
+      >
+        {/* The shared kind mark, so a .pptx here and a .pptx in the sources panel are the same
+            object drawn the same way. See `lib/learn/kind-mark.ts`. */}
+        <Codicon className="shrink-0" name={mark.icon} size="20px" style={{ color: `var(${mark.tint})` }} />
+        <span className="flex min-w-0 flex-1 flex-col justify-center">
+          <span className={cn("truncate", ROW_NAME_TEXT)}>{title || "Untitled"}</span>
+          <span className={cn("truncate", ROW_META_TEXT)}>{canvasTitle || "Untitled canvas"}</span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
 function CanvasRow({ canvas, onOpen }: { canvas: CanvasSummary; onOpen: (id: string) => void }) {
   return (
     <li
