@@ -234,6 +234,31 @@ test("🔴 a source row reads its title through to the live source, never from a
   assert.equal(buildCanvasHistory(renamed)[0]?.title, "Week 4 handout");
 });
 
+test("🔴 `fromLearner` marks the moments the learner spoke in, and the projection still returns the rest", () => {
+  // Owner, 2026-09-04, looking at a rail that listed a file name beside his question: *"the
+  // attachment name is showing and it should only show the bubble prompts."* The rail filters on
+  // this; the projection must not, because `learning-canvas.tsx` walks the array it gets back to
+  // find the turn a rewind lands on, and a row missing here is a rewind that steps past its target.
+  const entries = buildCanvasHistory(
+    canvasWith({
+      moments: [
+        makeMoment({ assistantText: "Because aldosterone falls.", kind: "assistant", userText: "help me learn this" }, "2026-08-23T10:00:00.000Z", "asked"),
+        makeMoment({ kind: "source", sourceIds: ["s1"] }, "2026-08-23T10:01:00.000Z", "attached"),
+        // A turn that opened without a question: the KIND is the same as the first one, so a filter
+        // written on `type` would have kept this and a filter on `fromLearner` does not.
+        makeMoment({ assistantText: "Here is where that leaves you.", kind: "assistant" }, "2026-08-23T10:02:00.000Z", "unprompted"),
+      ],
+      sources: [{ excerpts: [], id: "s1", kind: "pdf", title: "Pre-Assignment.pdf" }] as CanvasHistorySource["sources"],
+    }),
+  );
+  assert.deepEqual(entries.map((entry) => entry.momentId), ["asked", "attached", "unprompted"], "the projection dropped a row navigation needs");
+  assert.deepEqual(
+    entries.filter((entry) => entry.fromLearner).map((entry) => entry.title),
+    ["help me learn this"],
+    "the rail's filter would show something that is not one of the learner's own bubbles",
+  );
+});
+
 test("🔴 a moment whose target is gone keeps its row rather than vanishing", () => {
   // `session-transcript.ts` made this exact call for the same reason: "dropping rows would make the
   // record quietly incomplete, which is worse than an ugly line".

@@ -124,6 +124,29 @@ export const RAIL_MARKERS = 24;
  */
 const PANEL_GRACE_MS = 140;
 
+/**
+ * The learner's own prompts, and nothing else.
+ *
+ * 🔴🔴 OWNER, 2026-09-04, LOOKING AT A CANVAS WHOSE RAIL LISTED A FILE NAME: *"the attachment name
+ * is showing and it should only show the bubble prompts."* His canvas opened by dropping in
+ * "Pre-Assignment Asthma-COPD …" and asking "help me learn this", and the panel printed both — the
+ * attachment as a row of equal weight, above the question.
+ *
+ * 🔴 IT IS NOT A LIST OF KINDS TO EXCLUDE, AND THAT DISTINCTION IS THE WHOLE OF IT. Dropping
+ * `source` would have answered the screenshot and left `question`, `response`, `correction`,
+ * `teaching`, `visual`, `curriculum` and `milestone` free to arrive on this strip the moment a
+ * course canvas is opened — none of which is a bubble either, and each of which would be a
+ * separate report. A bubble is a moment the learner spoke in; `fromLearner` is that fact, read off
+ * `userText` where the moment still has it.
+ *
+ * 🔴 AND IT FILTERS HERE, NOT IN `buildCanvasHistory`. That array is also what
+ * `learning-canvas.tsx` walks to find the turn a rewind lands on, so shortening it at the source
+ * would make a rewind step past its own target — see the projection's header.
+ */
+function spoken(entries: readonly CanvasHistoryEntry[]): CanvasHistoryEntry[] {
+  return entries.filter((entry) => entry.fromLearner);
+}
+
 export function CanvasHistoryRail({
   activeMomentId,
   entries,
@@ -150,7 +173,7 @@ export function CanvasHistoryRail({
    * active marker that is not on screen, which is the one thing a position indicator may not do.
    */
   const shown = useMemo(() => {
-    const rows = [...entries];
+    const rows = spoken(entries);
     if (rows.length <= RAIL_MARKERS) return rows;
     const at = rows.findIndex((entry) => entry.momentId === activeMomentId);
     // Nothing rewound to: hold the tail, because the bottom of the column is where the learner is.
@@ -204,7 +227,7 @@ export function CanvasHistoryRail({
   // object. Without it an empty history renders an empty `<nav>` — invisible, and still holding a
   // hover target down the right edge that opens a panel with nothing in it. A control that reacts
   // and then shows nothing reads as broken, which is worse than an edge that is simply quiet.
-  if (entries.length === 0 || inset > 0) return null;
+  if (shown.length === 0 || inset > 0) return null;
 
   return (
     <>
@@ -260,7 +283,20 @@ export function CanvasHistoryRail({
                 // items with their own furniture. Was 288px / rounded-2xl / 36px rows carrying a
                 // duplicate of the strip's mark.
                 "max-h-[70vh] w-[287px] overflow-y-auto rounded-[12px] py-[20px] pl-[20px] pr-[16px]",
-                "bg-(--ui-bg-elevated) shadow-lg ring-1 ring-(--ui-stroke-secondary)",
+                // 🔴🔴 NO CARD. Owner, 2026-09-04, circling this panel: *"remove that grayish
+                // outline there."* It was `bg-(--ui-bg-elevated)` with `shadow-lg` and a
+                // `ring-1` — a lifted grey rectangle down the right edge of a near-black page,
+                // which is the same complaint this rail has now collected three times: the marks
+                // are meant to nearly disappear until needed, and the surface that arrives with
+                // them should too.
+                //
+                // 🔴 STILL OPAQUE, AND IN THE PAGE'S OWN COLOUR RATHER THAN TRANSPARENT. The panel
+                // is 287px wide against the right edge, and the reading column is centred: at
+                // 1470px they do not meet, but at 1280 they overlap by about 65px and it grows as
+                // the window narrows. Transparent would put this list on top of the answer's
+                // words. `--ui-bg-editor` is what the canvas itself paints, so the panel is
+                // invisible where there is nothing under it and still covers what there is.
+                "bg-(--ui-bg-editor)",
               )}
               data-canvas-history-panel=""
             >

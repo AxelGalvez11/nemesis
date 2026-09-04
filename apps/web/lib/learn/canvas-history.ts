@@ -34,6 +34,16 @@ export interface CanvasHistoryEntry {
   createdAt: string;
   /** The moment this row navigates to. 🔴 `id` may be synthesised; this is the real anchor. */
   momentId: string;
+  /**
+   * The learner spoke here — this moment is one of their own prompt bubbles.
+   *
+   * 🔴 IT IS COMPUTED WHERE `userText` IS IN SCOPE, WHICH IS THE ONLY PLACE IT CAN BE HONEST. The
+   * entry keeps `type`, but a kind cannot answer this: an `assistant` moment is a turn that may or
+   * may not have opened with a question, and `titleFor` falls through to Nemesis's own words when
+   * it did not. Whether the learner said anything is a fact about the moment, so it is read from
+   * the moment.
+   */
+  fromLearner: boolean;
 }
 
 /** What the projection reads. A narrow slice so nothing here can reach the learner model. */
@@ -188,6 +198,12 @@ export const ORIGIN_MOMENT_ID = "origin";
 /**
  * The rail's rows, oldest first.
  *
+ * 🔴🔴 THIS RETURNS EVERY MOMENT AND MUST KEEP DOING SO. `learning-canvas.tsx` walks the array it
+ * gets back to find the turn a rewind should land on — forward from the moment being asked for
+ * until an anchored row is found — so a row missing here is a rewind that steps past its target.
+ * The rail draws only the learner's own prompts (owner, 2026-09-04) and filters for that ITSELF,
+ * on `fromLearner`, precisely so that choice cannot reach navigation.
+ *
  * 🔴🔴 OLDEST FIRST, AND BOTH SURFACES RENDER IT EXACTLY AS RETURNED. Owner's screenshot,
  * 2026-08-23: the bright marker sits at the BOTTOM of the rail and the rows above it run back
  * through the session. Time goes downwards, "Now" is last. An earlier version reversed this on
@@ -212,6 +228,7 @@ export function buildCanvasHistory(
       const preview = previewFor(moment, canvas);
       return {
         createdAt: moment.occurredAt,
+        fromLearner: Boolean(moment.userText?.trim()),
         id: moment.id,
         momentId: moment.id,
         title: titleFor(moment, canvas, limit),
