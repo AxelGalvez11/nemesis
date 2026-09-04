@@ -252,7 +252,20 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
         // jumping — and it is the SHARED clock now (`--pane-slide`, globals.css), so the canvas,
         // the panel and the nav column all settle on the same frame instead of 40ms apart.
         transition: draggingPanel ? "none" : "width var(--pane-slide)",
-        width: inset ? `calc(100% - ${inset}px)` : undefined,
+        // 🔴🔴 ALWAYS A WIDTH, EVEN AT ZERO — AND THAT ONE WORD IS WHY THE TRANSITION ABOVE HAD
+        // NEVER RUN. This was `inset ? calc(…) : undefined`, so a closed panel left the element
+        // with NO width and the browser used its layout width. `width: auto` and a length are not
+        // interpolatable, so there is nothing for a transition to run between: the column jumped to
+        // its new size in a single frame while the panel beside it slid in over 470ms.
+        //
+        // Owner, 2026-09-04: *"could you add a smooth animation when opening the right sidebar
+        // panel in chats?"* — and the animation had been declared here since the panel shipped.
+        // Filmed at full frame rate before the fix: the panel's own transform went 39.2 → 0 across
+        // fourteen frames while this element reported 1418 then 438, with nothing in between.
+        //
+        // `calc(100% - 0px)` resolves to exactly the width it had, so the resting layout does not
+        // move; what changes is that both ends of the transition are now the same kind of value.
+        width: `calc(100% - ${inset}px)`,
       }}
     >
       {/* A masthead the page scrolls under, NOT a fade over it — owner call, 2026-08-19.

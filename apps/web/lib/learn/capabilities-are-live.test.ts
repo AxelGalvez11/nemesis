@@ -248,9 +248,17 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   // document while leaving the composer under the panel: an absolutely positioned child is laid out
   // against its containing block's PADDING box, which includes the padding. Narrowing the element
   // moves everything inside it, in flow or not. Seen on screen, not reasoned about.
+  // 🔴🔴 RE-POINTED 2026-09-04, AND THE TERNARY IT USED TO PIN WAS ITSELF THE DEFECT. Written
+  // `inset ? calc(…) : undefined`, a closed panel left the element with NO width, so the browser
+  // used its layout width — and `width: auto` cannot be interpolated with a length. The transition
+  // declared on the line above had therefore never run: filmed at full frame rate, the panel slid
+  // in over 470ms while this element reported 1418 and then 438, with nothing in between. Owner:
+  // *"could you add a smooth animation when opening the right sidebar panel in chats?"*
+  // `calc(100% - 0px)` resolves to the same width it had, so the resting layout is unchanged and
+  // both ends of the transition are finally the same kind of value.
   assert.match(
     code("../../components/workspace/learn/canvas-surface.tsx"),
-    /width: inset \? `calc\(100% - \$\{inset\}px\)` : undefined/,
+    /width: `calc\(100% - \$\{inset\}px\)`/,
     "the canvas is covered by the reader instead of pushed by it",
   );
   assert.ok(!/setSidebarOpen|nav-rail/.test(preview), "🔴 the panel writes the learner's sidebar preference");

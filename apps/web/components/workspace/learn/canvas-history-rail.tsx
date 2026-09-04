@@ -283,20 +283,24 @@ export function CanvasHistoryRail({
                 // items with their own furniture. Was 288px / rounded-2xl / 36px rows carrying a
                 // duplicate of the strip's mark.
                 "max-h-[70vh] w-[287px] overflow-y-auto rounded-[12px] py-[20px] pl-[20px] pr-[16px]",
-                // 🔴🔴 NO CARD. Owner, 2026-09-04, circling this panel: *"remove that grayish
-                // outline there."* It was `bg-(--ui-bg-elevated)` with `shadow-lg` and a
-                // `ring-1` — a lifted grey rectangle down the right edge of a near-black page,
-                // which is the same complaint this rail has now collected three times: the marks
-                // are meant to nearly disappear until needed, and the surface that arrives with
-                // them should too.
+                // 🔴🔴 THE FILL STAYS, THE OUTLINE GOES, AND THE OWNER HAD TO SAY IT TWICE BECAUSE
+                // I OVER-READ HIM THE FIRST TIME. 2026-09-04, circling the open panel: *"remove
+                // that grayish outline there."* I removed the ring, the shadow AND the background,
+                // and the panel became three lines of text on a black page. His correction, same
+                // day: *"its now completely dark in dark mode, could you just add the light gray
+                // box?"*
                 //
-                // 🔴 STILL OPAQUE, AND IN THE PAGE'S OWN COLOUR RATHER THAN TRANSPARENT. The panel
-                // is 287px wide against the right edge, and the reading column is centred: at
-                // 1470px they do not meet, but at 1280 they overlap by about 65px and it grows as
-                // the window narrows. Transparent would put this list on top of the answer's
-                // words. `--ui-bg-editor` is what the canvas itself paints, so the panel is
-                // invisible where there is nothing under it and still covers what there is.
-                "bg-(--ui-bg-editor)",
+                // So "that grayish outline" meant the OUTLINE — the `ring-1` hairline and the
+                // `shadow-lg` lifting it off the page — not the surface it drew around. The box is
+                // what makes this readable as a thing you can point at; the edge around the box was
+                // the part that read as furniture.
+                //
+                // 🔴 IT ALSO HAS TO BE OPAQUE, WHICH THE ALL-BLACK VERSION QUIETLY WAS TOO. The
+                // panel is 287px against the right edge and the reading column is centred: they
+                // clear each other at 1470px but overlap by ~93px at 1280, and more as the window
+                // narrows. Whatever this paints, it must cover the answer's words rather than let
+                // them show through.
+                "bg-(--ui-bg-elevated)",
               )}
               data-canvas-history-panel=""
             >

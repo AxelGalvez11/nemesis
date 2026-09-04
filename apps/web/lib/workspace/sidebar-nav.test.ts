@@ -6,29 +6,37 @@ import { test } from "node:test";
 
 import { SIDEBAR_NAV, visibleNav } from "./sidebar-nav";
 
-test("🔴 the plugins row wears the puzzle piece, and the rail icons carry the owner's tilt", () => {
+test("🔴 the plugins row wears the puzzle piece, and the rail icons do not move", () => {
   // Owner 2026-08-30, picking from four candidates drawn on the real row: `extensions`, with the
   // plug offered and passed over — the same day the plug was retired from the composer's apps
-  // control (#915). The motion is "Tilt", chosen by feel from three candidates; web ChatGPT has no
-  // such animation (its sidebar sprite is static and its stylesheets carry zero hover-transform
-  // rules — measured 2026-08-30), so the motion is designed, not copied.
+  // control (#915).
   const nav = SIDEBAR_NAV.find((item) => item.id === "plugins");
   assert.equal(nav?.codicon, "extensions", "the plugins row lost the owner's pick");
   assert.ok(!SIDEBAR_NAV.some((item) => item.codicon === "plug"), "the plug crept back into the rail");
-  // 🔴 BOTH RENDER PATHS. The nav draws twice — chat-sidebar's expanded rows and nav-rail's
-  // collapsed rail. #921 dressed only the first; production then showed a still icon on the rail,
-  // which is the state the owner actually looks at most.
+
+  // 🔴🔴 THE TILT IS GONE, AND THIS ASSERTION USED TO REQUIRE IT. Owner, 2026-09-04: *"remove the
+  // left sidebars animation of the icons."* The motion was his own pick, felt live on three
+  // candidates (2026-08-30) — so this is a reversal after living with it, not a regression, and the
+  // guard flips rather than being deleted: the next person to "restore the nice hover" has to read
+  // this first.
+  //
+  // 🔴 BOTH RENDER PATHS, WHICH IS WHY THE ORIGINAL GUARD CHECKED TWO FILES. The nav draws twice —
+  // chat-sidebar's expanded rows and nav-rail's collapsed rail — and #921 dressed only the first,
+  // so production showed a still icon on the rail and a moving one in the list. Removing it from
+  // one file would recreate that split with the states swapped.
   for (const file of ["chat-sidebar.tsx", "nav-rail.tsx"]) {
     const src = readFileSync(new URL(`../../components/workspace/shell/${file}`, import.meta.url), "utf8");
-    assert.match(src, /nav-icon-tilt/, `${file} lost the tilt class`);
+    assert.ok(!/nav-icon-tilt/.test(src), `${file}: the icon animation is back`);
   }
   const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
-  // 🔴 THE TILT LIVES INSIDE THE REDUCED-MOTION GATE. Someone who asked the system to stop moving
-  // gets a still icon and keeps the hover background. The slice runs gate-start → keyframes, so a
-  // rule drifting out of the gate fails here rather than shipping.
-  const gate = css.slice(css.indexOf("@media (prefers-reduced-motion: no-preference)"), css.indexOf("@keyframes nav-icon-tilt"));
-  assert.match(gate, /\.nav-icon-tilt[\s\S]*?animation: nav-icon-tilt/, "the tilt fires outside the reduced-motion gate, or not at all");
-  assert.match(css, /@keyframes nav-icon-tilt/, "the tilt keyframes are gone");
+  assert.ok(!/@keyframes nav-icon-tilt/.test(css), "the tilt keyframes are back in the stylesheet");
+  // 🔴 AND THE `no-preference` GATE WENT WITH IT, CORRECTLY. The tilt was the only rule inside it —
+  // it existed to keep a hover animation away from anyone who asked the system to stop moving, and
+  // with no animation there is nothing to gate. This is NOT the `reduce` block further up, which
+  // `canvas-motion.test.ts` reads and which still carries the canvas's own motion.
+  assert.ok(!/@media \(prefers-reduced-motion: no-preference\)/.test(css), "an empty no-preference gate came back");
+  // 🔴 THE ROW'S HOVER BACKGROUND IS NOT PART OF THIS. It is how a row says it is under the
+  // pointer; the owner asked for the ICONS to stop moving.
 });
 
 // 🔴🔴 WHAT THIS FILE GUARDS — owner ruling, 2026-08-30: "Why are there so many icons in the top
