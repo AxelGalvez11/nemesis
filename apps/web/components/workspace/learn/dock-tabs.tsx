@@ -57,8 +57,14 @@ function face(item: DockItem): { title: string; icon: string } {
  * instead of squeezing every label into an ellipsis. That is the reference's behaviour and it is
  * the honest one: a strip of eight unreadable stubs is a worse answer than a strip you push.
  *
- * 🔴 NO SCROLLBAR IS DRAWN. `scrollbar-none` keeps the row 36px whatever is in it; the tabs
- * themselves are the affordance, and a horizontal bar under them would eat the gap to row two.
+ * 🔴 NO SCROLLBAR IS DRAWN. `scrollbar-none` keeps the row at its height whatever is in it; the
+ * tabs themselves are the affordance, and a horizontal bar under them would eat the gap to row two.
+ *
+ * 🔴 32px, DOWN FROM 36, ON 2026-09-04 (owner: *"the sidebar headers containing the tabs and tools
+ * feel too big"*). The tab itself is 26px, which is the reference's own closable-tab geometry read
+ * out of their bundle (`tabs`, toolbar variant: `rounded-md px-2 py-1` at 13px over an 18px line,
+ * gap 2px between tabs, a 20px-wide close hit box). This row and the 36px band under it come to
+ * 68px of chrome, where the two rows used to come to 83px.
  */
 export function DockTabs({
   items,
@@ -79,7 +85,7 @@ export function DockTabs({
 
   return (
     <div
-      className="scrollbar-none flex h-[36px] w-full shrink-0 items-center gap-[2px] overflow-x-auto px-[6px]"
+      className="scrollbar-none flex h-[32px] w-full shrink-0 items-center gap-[2px] overflow-x-auto px-[6px]"
       data-testid="dock-tabs"
       role="tablist"
     >
@@ -93,7 +99,7 @@ export function DockTabs({
           // The same reason `dock-switcher.tsx` gives for its menu rows.
           <div
             className={cn(
-              "group/tab flex h-[28px] min-w-[120px] max-w-[220px] shrink-0 items-center gap-[6px] rounded-[8px] pl-[8px] transition-colors",
+              "group/tab flex h-[26px] min-w-[120px] max-w-[220px] shrink-0 items-center gap-[6px] rounded-[8px] pl-[8px] transition-colors",
               current
                 ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
                 : "text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)/60",
@@ -136,7 +142,7 @@ export function DockTabs({
       {onAdd && (
         <button
           aria-label="Open another document"
-          className="grid size-[28px] shrink-0 place-items-center rounded-[8px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+          className="grid size-[26px] shrink-0 place-items-center rounded-[8px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
           onClick={onAdd}
           title="Open another document"
           type="button"

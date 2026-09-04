@@ -39,8 +39,10 @@ import {
   setCommentResolved,
   type CommentAnchor,
   type CommentDocRef,
+  rootsOf,
   type DocumentComment,
 } from "@/lib/workspace/document-comments";
+import { answerComment } from "@/lib/reader/comment-answer";
 import { parseReaderAnchor, resolveAnchorUnit, type ReaderAnchor } from "@/lib/reader/reader-anchor";
 import { findInDocument, stepMatch, type SearchMatch } from "@/lib/reader/reader-search";
 import { describeCoverage } from "@nemesis/shared";
@@ -563,6 +565,55 @@ export function DocumentReader({
     [commentsDoc],
   );
 
+  /**
+   * "Ask": the answer lands in the thread, in the document, not in the conversation.
+   *
+   * 🔴🔴 THE OWNER'S REASON (2026-09-04): *"it would be useful to have annotations with chat
+   * responses within the document so users dont bloat the main chat"*. A follow-up is written down
+   * as the learner's own reply BEFORE the model is called, so the thread reads in the order it
+   * happened even if the answer never arrives.
+   *
+   * 🔴 THE SPOT'S OWN TEXT IS WHAT MAKES THE ANSWER TRUE. `unitTexts` is already in hand for search
+   * and read-aloud; without it the model can only see the file's name and would fill the gap by
+   * guessing what a page called that probably says.
+   */
+  const askAboutComment = useCallback(
+    async (comment: DocumentComment, question: string): Promise<string | null> => {
+      if (!commentsDoc) return null;
+      const asked = question.trim();
+      if (asked) {
+        const mine = await addDocumentComment(
+          commentsDoc.uid,
+          commentsDoc.ref,
+          { anchor: {}, author: "learner", body: asked, parentId: comment.id, unit: comment.unit },
+          { preview: commentsDoc.preview },
+        );
+        if (mine) setComments((current) => [...current, mine]);
+      }
+      const said = comments.filter((row) => row.parentId === comment.id).map((row) => ({ author: row.author, body: row.body }));
+      const answer = await answerComment(commentsDoc.uid, {
+        anchor: comment.anchor,
+        body: comment.body,
+        fileName: source.fileName,
+        spotText: unitTexts.find((page) => page.unit === (comment.unit ?? 1))?.text ?? null,
+        thread: asked ? [...said, { author: "learner" as const, body: asked }] : said,
+        unit: comment.unit,
+        unitLabel,
+      });
+      if (!answer) return null;
+      const kept = await addDocumentComment(
+        commentsDoc.uid,
+        commentsDoc.ref,
+        { anchor: {}, author: "nemesis", body: answer, parentId: comment.id, unit: comment.unit },
+        { preview: commentsDoc.preview },
+      );
+      if (!kept) return null;
+      setComments((current) => [...current, kept]);
+      return answer;
+    },
+    [comments, commentsDoc, source.fileName, unitLabel, unitTexts],
+  );
+
   /** "Send to Nemesis": the note is KEPT and handed over — one gesture, both destinations, which
    *  is how the reference behaves (docs/claude-design-reference.md). */
   // 🔴 DECLARED BEFORE THE HIGHLIGHT HOOK BELOW READS IT. Left where it was, the effect that turns
@@ -746,7 +797,9 @@ export function DocumentReader({
    * control is drawn at all; the button appears with the first note and goes with the last.
    */
   const commentsListable = dense && canComment && comments.length > 0;
-  const openCommentCount = comments.filter((comment) => comment.resolvedAt === null).length;
+  // 🔴 NOTES, NOT SENTENCES. Replies live in `comments` too; counting them would make the pane's
+  // control read "3" for one question that was followed up twice.
+  const openCommentCount = rootsOf(comments).filter((comment) => comment.resolvedAt === null).length;
   const readingAvailable = source.kind === "pdf" && blocks.length > 0;
   const showZoom = source.kind === "pdf" || source.kind === "image" || source.kind === "slides";
   const trimmedQuery = query.trim() || null;
@@ -854,13 +907,14 @@ export function DocumentReader({
         </div>
       )}
 
-      {commenting && (
-        // 🔴 SAID OUT LOUD, because neither gesture is discoverable — the reference floats the same
-        // pill for the same reason ("Click to comment, drag to draw").
-        <p className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[0.6875rem] font-medium text-(--ui-text-secondary) shadow-md" data-testid="reader-comment-hint">
-          {boxesDrawable ? "Click to comment, drag to draw a box" : source.kind === "document" ? "Click a paragraph to comment" : "Click to comment"}
-        </p>
-      )}
+      {/* 🔴🔴 NO HINT PILL. It floated here from 2026-08-28 until the owner cut it on
+          2026-09-04: *"remove the 'click to comment, drag to draw a box' when annotating"*, under
+          the same ruling as the pane chrome — *"i want it to look like how chatgpt does it,
+          minimalist"*. The instruction it carried is already carried better: the toggle in the bar
+          says "Annotating" while the mode is on, its own tooltip spells out both gestures, and the
+          cursor over the page is a crosshair. A banner that repeats what the control beside it
+          already says is chrome, and it sat over the top of the document it was explaining.
+          `comments-on-documents.test.ts` holds the door shut. */}
 
       {anchorMissed && (
         <p className="shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-4 py-1.5 text-[0.6875rem] text-(--ui-text-secondary)">
@@ -990,6 +1044,7 @@ export function DocumentReader({
           boxesDrawable={boxesDrawable}
           commenting={commenting}
           comments={comments}
+          onAsk={askAboutComment}
           onDelete={removeComment}
           onKeep={keepComment}
           onResolve={resolveComment}

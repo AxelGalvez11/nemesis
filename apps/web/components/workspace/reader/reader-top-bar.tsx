@@ -347,8 +347,14 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           className={cn(
             "ease-basic flex h-7 shrink-0 items-center overflow-hidden rounded-md",
             "transition-[max-width,padding,background-color,color] duration-300 motion-reduce:transition-none",
+            // 🔴 A TINT, NOT A FILL, AND IT IS THEIRS. Read out of the reference's own bundle on
+            // 2026-09-04: the on state is `color-mix(in srgb, surface 90%, blue 10%)` with the
+            // accent kept for the TEXT, going to 15% on hover. A solid accent block is the loudest
+            // thing in a header whose whole job is to stay quiet, and the owner's word for what he
+            // wants here was "minimalist". The mode still reads as on at a glance: the pill has
+            // grown a word, which is a bigger change than any colour.
             commenting
-              ? "max-w-40 justify-start bg-(--ui-action) px-[7px] text-(--ui-action-glyph)"
+              ? "max-w-40 justify-start px-[7px] text-(--ui-action) [background-color:color-mix(in_srgb,var(--ui-bg-elevated)_90%,var(--ui-action)_10%)] hover:[background-color:color-mix(in_srgb,var(--ui-bg-elevated)_85%,var(--ui-action)_15%)]"
               : "max-w-7 min-w-7 justify-center px-0 text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground",
           )}
           data-testid="reader-comment-mode"

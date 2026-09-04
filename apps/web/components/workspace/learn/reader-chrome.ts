@@ -12,12 +12,33 @@
 // 20px line. Every one of those reads as "close enough" in a screenshot and none of them is the
 // number.
 
+// 🔴🔴 RE-MEASURED AND SHRUNK 2026-09-04. Owner: *"the sidebar headers containing the tabs and
+// tools feel too big, do you understand? ... i want it to look like how chatgpt does it,
+// minimalist"*. The old numbers came from the reference's OWN pane, but from the wrong part of it:
+// 36x36 buttons with 20px glyphs are what their CLOSE control wears, and every other control in
+// that header is smaller. Read out of their desktop bundle
+// (`artifact-source-bootstrap`, `size:"toolbar"` + `uniform:true`):
+//
+//   their control    28x28, radius 12.5, an 18px glyph, 4px apart, in a 48px band
+//   their close      32x32, the one control that is bigger than the rest
+//   ours, before     36x36, radius 8, a 20px glyph, 4px apart, in a 47px band
+//   ours, now        28x28, radius 8, an 18px glyph, 4px apart, in a 36px band
+//
+// 🔴 THE BAND IS TIGHTER THAN THEIRS ON PURPOSE, AND ONLY BECAUSE WE HAVE TWO. Their pane shows one
+// document and has no tab strip at all (checked: no `role="tablist"` anywhere in its 53-module
+// manifest). Ours shows several, so the tabs need their own row above this one — the arrangement
+// the owner asked for and `dock-tabs.tsx` explains. Two rows at their 48px would be 96px of chrome
+// over the document. At 32 + 36 it is 68px, down from 83px, and every number in it is measured.
+//
+// 🔴 ONE SIZE FOR EVERY CONTROL, WHICH IS WHERE WE DEPART FROM THE REFERENCE. They make close 32px
+// among 28s. At their scale that reads as emphasis; at ours it reads as a mistake, and "minimalist"
+// was the instruction.
 export const CHROME = {
-  /** 36x36 at radius 8, holding a 20x20 glyph, on a 40px pitch: 36 + gap 4. */
-  button: "flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-(--ui-bg-tertiary)",
-  icon: "20px",
-  /** Buttons sit at y=5.5 in the reference, so the band is 47px; the gap makes the 40px pitch. */
-  header: "flex items-center gap-[4px] px-[12px] py-[5.5px]",
+  /** 28x28 at radius 8, holding an 18x18 glyph, on a 32px pitch: 28 + gap 4. */
+  button: "flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-(--ui-bg-tertiary)",
+  icon: "18px",
+  /** 28 + 4 top + 4 bottom = a 36px band. */
+  header: "flex items-center gap-[4px] px-[10px] py-[4px]",
   /** 14px / 400 / 20px line. `--canvas-text-small` IS 14px (see desktop-ui.css), so the size comes
    *  from the scale as §46.3 requires; only the line height needs stating. */
   crumb: "truncate text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-primary)",
