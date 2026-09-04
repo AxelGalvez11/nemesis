@@ -423,7 +423,28 @@ export function LearningCanvas({
   // sidebar narrows this scroller, the conversation reflows taller, and a raw `scrollTop` stops
   // meaning what it meant — measured on production as 1704 → 453, a screen and a half backwards,
   // which the owner reported as the chat reloading. See use-anchored-scroll.ts.
-  useAnchoredScroll(threadRef);
+  const anchorThread = useAnchoredScroll();
+  /**
+   * 🔴🔴 BOTH REFS, AND THE CALLBACK IS WHY THIS WORKS AT ALL. `threadRef` is read by three other
+   * effects here and stays a `RefObject`; `anchorThread` is a callback ref because the hook needs
+   * to be TOLD when the node appears.
+   *
+   * It appears late: the not-ready gate further down returns a loading surface that does not
+   * contain this column, so at first mount there is no element. A hook that read
+   * `threadRef.current` inside an effect keyed on the ref object ran once, found null, and never
+   * ran again — which is exactly what shipped twice and never attached.
+   *
+   * 🔴 `useCallback`, NOT AN INLINE ARROW. A new function each render makes React detach and
+   * reattach every time, and the reattach sets state, which renders — the "Maximum update depth"
+   * loop `docx-document-view.tsx` records finding as a crash rather than as a review note.
+   */
+  const attachThread = useCallback(
+    (node: HTMLDivElement | null) => {
+      threadRef.current = node;
+      anchorThread(node);
+    },
+    [anchorThread],
+  );
   /** The turn being answered right now: the learner's sentence, the thinking line, the answer. */
   const currentTurnRef = useRef<HTMLDivElement | null>(null);
   /** Empty space under that turn, so a short exchange can still be scrolled to the top. */
@@ -3056,7 +3077,7 @@ export function LearningCanvas({
           chip, the thinking caption and the thread all used to land on the same frame as the route
           swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
           the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
-      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[48px]`} ref={threadRef}>
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[48px]`} ref={attachThread}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and

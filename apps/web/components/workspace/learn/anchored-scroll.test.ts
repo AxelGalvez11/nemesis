@@ -57,3 +57,29 @@ test("🔴 corrections do not feed themselves back in as the learner's position"
   assert.match(code, /if \(restoring \|\| queued\) return;/u, "our own scroll writes are recorded as the learner's");
   assert.match(code, /requestAnimationFrame\(\(\) => \{\s*restoring = false;/u, "the flag clears before the scroll event it guards against");
 });
+
+test("🔴🔴🔴 the hook is TOLD when the column appears, because it appears late", () => {
+  // The third and worst of the three mistakes, and the one that made the other two invisible.
+  //
+  // The hook took a `RefObject` and read `.current` inside an effect keyed on the ref object and a
+  // boolean — both stable for the component's life, so the effect ran exactly once, at mount. And
+  // at mount the column does not exist: `learning-canvas.tsx` returns a loading surface while
+  // `session.ready` is false and the scroller is not in that branch. `.current` was null, the
+  // effect returned, and nothing ever re-ran it. The observer was NEVER attached, on any canvas.
+  //
+  // That is why two rounds of correcting the anchor changed nothing on screen. Measured on
+  // production with the second round live: opening the pane left `scrollTop` at 1313 exactly —
+  // untouched, not restored to the wrong place.
+  //
+  // Calibration: take a `RefObject` again and this reddens.
+  assert.ok(!/RefObject/.test(code), "the hook is back to reading a ref that is null when it mounts");
+  assert.match(code, /useState<HTMLElement \| null>\(null\)/u, "the hook has no way to learn that the column appeared");
+  assert.match(code, /\}, \[node\]\);/u, "the effect no longer re-runs when the column appears");
+
+  const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  // 🔴 AND THE CALLER HAS TO ATTACH IT. A hook returning a ref nobody puts on an element is the
+  // same defect wearing a different shape.
+  assert.match(CANVAS, /ref=\{attachThread\}/u, "the scrolling column is not wired to the anchor");
+  assert.match(CANVAS, /const attachThread = useCallback\(/u, "the ref callback is inline, so React detaches it every render");
+  assert.match(CANVAS, /threadRef\.current = node;\s*anchorThread\(node\);/u, "the other effects lost the ref they read");
+});

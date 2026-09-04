@@ -658,7 +658,12 @@ test("🔴🔴🔴 every hook runs before the not-ready gate, so a loading canva
   // button down with it.
   //
   // Calibration: move the gate back above `useCanvasVoice` and this reddens.
-  const source = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  // 🔴 COMMENTS STRIPPED FIRST, AND THIS GUARD WAS TRIPPED BY PROSE (2026-09-03). A note added
+  // above the hooks explained why a ref attaches late and quoted `if (!session.ready)` to say
+  // where the gate is — so `indexOf` found the SENTENCE, put the gate near the top of the file,
+  // and reported every hook below it as an ordering violation. The claim is about CODE.
+  const raw = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
+  const source = raw.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
   const gate = source.indexOf("if (!session.ready)");
   assert.ok(gate > 0, "the not-ready gate is gone entirely");
   const hooks = [...source.matchAll(/\buse[A-Z][A-Za-z]*\(/g)];
