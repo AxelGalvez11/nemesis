@@ -119,6 +119,15 @@ export interface CanvasMoment {
   visualIds?: string[];
   sourceIds?: string[];
   curriculumNodeId?: string;
+  /**
+   * How many regions of a document the learner marked and sent with these words.
+   *
+   * 🔴 THE COUNT, NEVER THE PICTURE. The crop is an object URL that dies with the document and is
+   * also filed as a real source, so what a reopened conversation can honestly draw is "1 annotation"
+   * above the note (annotation-note.ts). Stored only when non-zero, so every ordinary moment's row is
+   * byte-identical to before this field existed.
+   */
+  annotations?: number;
 }
 
 /**
@@ -217,6 +226,8 @@ export interface NewCanvasMoment {
   visualIds?: readonly string[];
   sourceIds?: readonly string[];
   curriculumNodeId?: string;
+  /** Regions marked on a document and sent with these words. See `CanvasMoment.annotations`. */
+  annotations?: number;
 }
 
 /**
@@ -244,6 +255,7 @@ export function makeMoment(input: NewCanvasMoment, occurredAt: string, id: strin
     ...(input.visualIds?.length ? { visualIds: [...input.visualIds] } : {}),
     ...(input.sourceIds?.length ? { sourceIds: [...input.sourceIds] } : {}),
     ...(input.curriculumNodeId ? { curriculumNodeId: input.curriculumNodeId } : {}),
+    ...(input.annotations && input.annotations > 0 ? { annotations: Math.floor(input.annotations) } : {}),
   };
 }
 

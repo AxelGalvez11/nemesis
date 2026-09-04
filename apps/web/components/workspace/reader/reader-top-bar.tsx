@@ -100,6 +100,18 @@ export interface ReaderTopBarProps {
    *  our layout rather than of the deck. */
   commenting?: boolean;
   onToggleCommenting?: () => void;
+  /**
+   * The pinned comments as a list, in the pane.
+   *
+   * 🔴 ABSENT UNLESS THERE IS SOMETHING TO LIST. The full reader reaches its comments through the
+   * contents rail's own tab; the pane has no rail toggle (the outline was cut from it, owner
+   * 2026-09-01), so the reader lends it this one control instead, and only once a note exists. A
+   * header that grows a button for a list with nothing in it is the furniture the pane keeps
+   * shedding.
+   */
+  commentCount?: number;
+  commentListOpen?: boolean;
+  onToggleCommentList?: () => void;
   /** What an AI action would act on right now, in words. */
   actionScope: string;
   onAction: (action: ReaderActionId) => void;
@@ -142,6 +154,9 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
     onToggleRail,
     commenting = false,
     onToggleCommenting,
+    commentCount = 0,
+    commentListOpen = false,
+    onToggleCommentList,
     actionScope,
     onAction,
     actionsDisabled,
@@ -355,6 +370,27 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           >
             Annotating
           </span>
+        </button>
+      )}
+
+      {onToggleCommentList && (
+        // 🔴 THE LIST OF WHAT IS PINNED, DRAWN ONLY WHILE SOMETHING IS. The count is OPEN comments,
+        // the same number the rail's own tab carries: it answers "is anything still pinned here?",
+        // and a resolved note is history rather than a number to wear in the chrome.
+        <button
+          aria-label={commentListOpen ? "Hide the comments" : "Show the comments pinned on this document"}
+          aria-pressed={commentListOpen}
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-[4px] rounded-md px-[6px] text-[length:var(--canvas-text-meta)] leading-[20px] tabular-nums",
+            commentListOpen ? "bg-(--ui-bg-tertiary) text-foreground" : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground",
+          )}
+          data-testid="reader-comment-list-toggle"
+          onClick={onToggleCommentList}
+          title={commentListOpen ? "Hide the comments" : "Show the comments pinned on this document"}
+          type="button"
+        >
+          <Codicon className="shrink-0" name="comment-discussion" size="0.85rem" />
+          {commentCount}
         </button>
       )}
 

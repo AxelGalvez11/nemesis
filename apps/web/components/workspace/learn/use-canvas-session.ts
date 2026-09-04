@@ -2263,19 +2263,24 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       // there is nothing to decide here — this is the write, not a second gate on what may be
       // stored. The gates live in the contract paragraph and in `readRemembered`.
       if (decision.remember.length > 0 && uid) {
-        void Promise.all(
-          decision.remember.map((fact) =>
-            rememberLine(uid, { kind: fact.kind, sourceCanvasId: id, statement: fact.statement }),
-          ),
-        ).then((written) => {
+        // 🔴🔴 ONE AFTER ANOTHER, NEVER IN PARALLEL. `rememberLine` refuses a near-duplicate by
+        // reading what is already held, and three writes launched together all read the table
+        // BEFORE any of them lands, so a turn that phrased one fact twice stored it twice. Found in
+        // the owner's own memory on 2026-09-04: "Learning the anatomy of the uterus for the first
+        // time" and "Learning the parts of the uterus for the first time", the same turn, one under
+        // each kind, which is exactly the pair `saysTheSameThing` exists to catch.
+        void (async () => {
+          let saved = 0;
+          for (const fact of decision.remember) {
+            if (await rememberLine(uid, { kind: fact.kind, sourceCanvasId: id, statement: fact.statement })) saved += 1;
+          }
           // 🔴🔴 SAID ONLY WHEN SOMETHING WAS ACTUALLY WRITTEN — owner 2026-08-24, asking whether
           // memory works "like it does in ChatGPT where you can see the memory prompt and the
           // updates". `rememberLine` returns false for a near-duplicate, and announcing "memory
           // updated" for a fact already held would train the learner to ignore the notice, which is
           // the one thing a transparency signal cannot afford. Counting the trues is the difference.
-          const saved = written.filter(Boolean).length;
           if (saved > 0) setMemoryNotice(saved);
-        });
+        })();
       }
 
       // 🔴 THE COURSE IS APPLIED BESIDE THE TURN, NEVER INSTEAD OF IT. Everything below runs

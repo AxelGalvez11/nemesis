@@ -31,5 +31,21 @@ export function fileFromDataUrl(dataUrl: string, fileName: string): File | null 
 export function cropFileName(sourceFileName: string, unitLabel: string, unit: number | null): string {
   const base = sourceFileName.replace(/\.[^./\\]+$/, "").replace(/[\\/:]/g, "-").trim() || "document";
   const where = unit === null ? "" : ` ${unitLabel} ${unit}`;
-  return `${base}${where} (marked area).png`;
+  return `${base}${where}${CROP_SUFFIX}`;
+}
+
+/** The tail every cut-out's name ends with, so a crop can be told from a file the learner dropped. */
+export const CROP_SUFFIX = " (marked area).png";
+
+/**
+ * Is this attachment a cut-out the reader made, rather than a file the learner dropped in?
+ *
+ * 🔴 BY NAME, BECAUSE THE NAME IS THE ONLY THING THAT SURVIVES. The crop is attached to the canvas
+ * as an ordinary file (that is what keeps the MATERIAL after the session's thumbnail dies), so a
+ * reopened conversation only has the source's title to go on. `cropFileName` writes the suffix;
+ * this reads it. The conversation uses it to draw an annotation as an annotation ("1 annotation"
+ * above the learner's note) instead of as a PNG card, which is what it drew until 2026-09-04.
+ */
+export function isCropFileName(name: string): boolean {
+  return name.trim().toLowerCase().endsWith(CROP_SUFFIX.toLowerCase());
 }

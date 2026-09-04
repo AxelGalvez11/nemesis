@@ -77,6 +77,7 @@ import {
   type ProducedTest,
 } from "@/lib/learn/canvas-tools";
 import { loadMemory, memoryBlock } from "@/lib/learn/learner-memory";
+import { activityBlock, loadStudyActivity } from "@/lib/learn/study-activity";
 import { loadProjectInstructions } from "@/lib/learn/canvas-store";
 
 /** The non-thinking model, same choice `lib/learn/canvas-api.ts`'s own `ask()` makes for every
@@ -392,15 +393,19 @@ export async function askCanvasChat(
   // · retrieval — which passages of the learner's own attached documents bear on THIS question.
   //   Returns null for every problem, including the ordinary one of a file attached seconds ago
   //   whose chunks are not written yet, and the turn falls back to reading the material in order.
-  const [pinnedComments, memoryRows, project, catalogue, retrieved] = await Promise.all([
+  const [pinnedComments, memoryRows, project, catalogue, retrieved, studyActivity] = await Promise.all([
     pinnedCommentsBlock(uid, canvas),
     loadMemory(uid),
     loadProjectInstructions(uid, canvas.id),
     loadToolCatalogue(),
     retrieveChunks(canvas.sources, question, TURN_CHUNKS),
+    // 🔴 WHAT THEY HAVE DONE, beside what they have said. Read each turn and never stored, see
+    // study-activity.ts; a failed read is null and the packet simply carries no such block.
+    loadStudyActivity(uid),
   ]);
 
   const memory = memoryBlock(memoryRows);
+  const activity = activityBlock(studyActivity);
   const projectInstructions = project
     ? `The project is called "${project.name}".\n${project.instructions}`
     : "";
@@ -480,6 +485,7 @@ export async function askCanvasChat(
           history: surroundings.history,
           materialContext,
           memory,
+          activity,
           objectives: surroundings.objectives,
           passages: canvas.blocks.length,
           sources: canvas.sources.length,

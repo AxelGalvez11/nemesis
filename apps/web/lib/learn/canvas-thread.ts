@@ -60,6 +60,11 @@ export interface CanvasThreadTurn {
   restored?: boolean;
   /** The stored text was cut to its cap. */
   truncated?: boolean;
+  /**
+   * Regions the learner marked on a document and sent with these words. Drawn as the "N annotations"
+   * chip above the note; the picture itself lives only on the live turn (annotation-note.ts).
+   */
+  annotations?: number;
 }
 
 /** Whether a turn has anything at all worth drawing. Guards against an empty row in the thread. */
@@ -92,8 +97,10 @@ export function fileTurn(input: {
   sources?: readonly ThreadSource[];
   attached?: readonly string[];
   output?: CanvasOutput | null;
+  annotations?: number;
 }): CanvasThreadTurn {
   return {
+    ...(input.annotations && input.annotations > 0 ? { annotations: input.annotations } : {}),
     at: input.at,
     attached: input.attached ?? [],
     id: input.id,
