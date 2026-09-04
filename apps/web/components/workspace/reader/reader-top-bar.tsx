@@ -345,7 +345,12 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           aria-label={commenting ? "Stop annotating" : "Annotate the document"}
           aria-pressed={commenting}
           className={cn(
-            "ease-basic flex h-7 shrink-0 items-center overflow-hidden rounded-md",
+            // 🔴 EXPLICIT PIXELS, MEASURED 2026-09-04. This bar PORTALS its controls into the pane's
+            // header, so they sit beside CHROME.button, which is 28px. `h-7` is 1.75rem and this
+            // app sets `html { font-size: 112.5% }`, so it rendered 31.5px — a row of controls in
+            // two sizes, and the taller one setting the band's height at 39.5px instead of 36.
+            // The same trap `artifact-chrome.test.ts` was written for, one component over.
+            "ease-basic flex h-[28px] shrink-0 items-center overflow-hidden rounded-md",
             "transition-[max-width,padding,background-color,color] duration-300 motion-reduce:transition-none",
             // 🔴 A TINT, NOT A FILL, AND IT IS THEIRS. Read out of the reference's own bundle on
             // 2026-09-04: the on state is `color-mix(in srgb, surface 90%, blue 10%)` with the
@@ -355,14 +360,14 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
             // grown a word, which is a bigger change than any colour.
             commenting
               ? "max-w-40 justify-start px-[7px] text-(--ui-action) [background-color:color-mix(in_srgb,var(--ui-bg-elevated)_90%,var(--ui-action)_10%)] hover:[background-color:color-mix(in_srgb,var(--ui-bg-elevated)_85%,var(--ui-action)_15%)]"
-              : "max-w-7 min-w-7 justify-center px-0 text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground",
+              : "max-w-[28px] min-w-[28px] justify-center px-0 text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground",
           )}
           data-testid="reader-comment-mode"
           onClick={onToggleCommenting}
           title={commenting ? "Annotating: click a spot or drag a box. Turn off to select text again." : "Annotate the document"}
           type="button"
         >
-          <Codicon className="shrink-0" name="comment" size="0.85rem" />
+          <Codicon className="shrink-0" name="comment" size="18px" />
           {/* 🔴 ALWAYS IN THE DOM, WIDTH-ANIMATED TO NOTHING — never conditionally rendered. A label
               that mounts on activation cannot animate out of zero width, so the button would jump
               to its full size in one frame, which is the artefact the reference's own transition
@@ -387,7 +392,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           aria-label={commentListOpen ? "Hide the comments" : "Show the comments pinned on this document"}
           aria-pressed={commentListOpen}
           className={cn(
-            "flex h-7 shrink-0 items-center gap-[4px] rounded-md px-[6px] text-[length:var(--canvas-text-meta)] leading-[20px] tabular-nums",
+            "flex h-[28px] shrink-0 items-center gap-[4px] rounded-md px-[6px] text-[length:var(--canvas-text-meta)] leading-[20px] tabular-nums",
             commentListOpen ? "bg-(--ui-bg-tertiary) text-foreground" : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground",
           )}
           data-testid="reader-comment-list-toggle"
@@ -395,7 +400,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           title={commentListOpen ? "Hide the comments" : "Show the comments pinned on this document"}
           type="button"
         >
-          <Codicon className="shrink-0" name="comment-discussion" size="0.85rem" />
+          <Codicon className="shrink-0" name="comment-discussion" size="18px" />
           {commentCount}
         </button>
       )}

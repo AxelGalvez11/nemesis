@@ -327,9 +327,28 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
     sidebarLocked,
   });
 
+  /**
+   * 🔴🔴 READING A FILE HIDES THIS PAGE'S OWN LIBRARY SIDEBAR. Owner, 2026-09-04, pointing at it
+   * beside an open document: *"get rid of this library, this is the old one we dont use"*.
+   *
+   * It was deliberate before, and the line right above the reader still said so: *"The left
+   * sidebar above is untouched — that is the point of rendering the reader from here."* What that
+   * missed is that the workspace already has a left sidebar, so opening a file from the Library
+   * put TWO navigations side by side and pushed the document into what was left. That is the
+   * arrangement the owner ruled against on 2026-09-01, of the reference's own library: *"you keep
+   * the left sidebar and it just leaves the sidebar open and it'll just have the document viewer
+   * in there."* One sidebar, and the viewer takes the column.
+   *
+   * 🔴 HIDDEN WHILE READING, NOT DELETED. Browsing the Library still needs a tree, and this is the
+   * only one there is — the workspace sidebar lists canvases and projects, not folders and notes.
+   * The way back out is the reader's own Back control (`onBack={goHome}`), which is why removing
+   * the panel does not strand anyone.
+   */
+  const reading = sourceId !== null;
+
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-bg-chrome)">
-      {sidebarShown && (
+      {sidebarShown && !reading && (
         <>
           {sidebarLocked && narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setNavOpen(false)} type="button" />}
           {/* The panel is ALWAYS the same rounded box (owner 2026-08-04:
@@ -378,7 +397,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
           the panel slides out on hover and slides away when the pointer
           leaves. With auto-hide off the sidebar is simply always docked, so
           neither exists. */}
-      {markerMounted && (
+      {markerMounted && !reading && (
         <>
           <div
             className={cn(
@@ -405,7 +424,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
       )}
 
       {/* Narrow viewports have no hover — they keep the icon opener + drawer. */}
-      {!sidebarLocked && narrowViewport && (
+      {!sidebarLocked && narrowViewport && !reading && (
         <Button aria-label="Expand Library sidebar" className="workspace-inline-sidebar-toggle absolute left-2 top-2 z-20" onClick={() => setNavOpen(true)} size="icon-xs" variant="ghost">
           <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />
         </Button>
@@ -419,7 +438,10 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
             — that is the point of rendering the reader from here. */}
         {sourceId !== null ? (
           <LibrarySourceReader
-            className={cn(autoHide && !sidebarShown && !narrowViewport && "pl-24")}
+            // 🔴 NO `pl-24`. That inset existed to keep the document clear of the floating
+            // "Library" word; nothing floats there while reading now, and the padding would be a
+            // 96px gutter holding nothing.
+            className={undefined}
             onBack={goHome}
             onOpenNote={openPath}
             sourceId={sourceId}

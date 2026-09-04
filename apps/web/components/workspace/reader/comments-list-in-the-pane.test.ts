@@ -39,7 +39,10 @@ test("🔴 the count the control wears is OPEN comments, the same number the rai
   assert.match(BAR, /\{onToggleCommentList && \(/);
   assert.match(BAR, /aria-pressed=\{commentListOpen\}/, "the control does not say whether the list is open");
   assert.match(BAR, /data-testid="reader-comment-list-toggle"/);
-  assert.match(BAR, /<Codicon className="shrink-0" name="comment-discussion" size="0\.85rem" \/>\n\s+\{commentCount\}/, "the count is not on the control");
+  // 🔴 18px, RE-PINNED 2026-09-04. This control is portalled into the pane's header beside
+  // CHROME.button, whose glyph is 18px; 0.85rem rendered 15.3px here (html is at 112.5%), so the
+  // two sat side by side at different sizes.
+  assert.match(BAR, /<Codicon className="shrink-0" name="comment-discussion" size="18px" \/>\n\s+\{commentCount\}/, "the count is not on the control");
 });
 
 test("🔴 comments-only means no Outline and no Pages tab, which the owner cut from the pane", () => {
