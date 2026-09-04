@@ -35,29 +35,101 @@ import { useEffect, type RefObject } from "react";
 const AT_BOTTOM_PX = 80;
 
 interface Anchor {
-  /** The block that was at (or across) the top of the viewport. */
-  element: Element;
-  /** Where its top sat relative to the viewport's top. Usually negative — the block is scrolled
-   *  partly out of view — which is what makes the restore exact rather than approximate. */
+  /**
+   * Where the block sits in the tree, as child indices from the scroller down.
+   *
+   * 🔴🔴 A PATH, NOT THE ELEMENT, AND THIS IS THE SECOND THING THIS FILE GOT WRONG. Holding the
+   * node looks obviously right and fails silently: opening the pane re-renders the conversation, so
+   * by the time the width settles React has replaced the very node the anchor points at.
+   * `scroller.contains(anchor.element)` is then false and the restore quietly does nothing.
+   *
+   * Measured on production against the live DOM: the anchor resolved correctly to the `<li>` at the
+   * top of the viewport, and `contains` came back FALSE a beat later. Re-created markup has the
+   * same SHAPE, so an index path finds the equivalent node — verified on the same page, same
+   * gesture: path [1,1,0,0,0,0,11,2] resolved after the reflow and put the same line back at the
+   * top.
+   */
+  path: readonly number[];
+  /** Where its top sat relative to the probe line. Usually negative — the block is scrolled partly
+   *  out of view — which is what makes the restore exact rather than approximate. */
   offset: number;
 }
+
+const PROBE_INSET = 56;
 
 /**
  * The block at the top of the viewport, and how far into it we are.
  *
- * 🔴 DIRECT CHILDREN, NOT `[data-thread-turn]`. A turn is the whole exchange and can easily be
- * three screens tall, so anchoring to one restores "somewhere in this answer" — which for a long
- * answer is the same defect at a smaller scale. Every direct child of the scroller is a real
- * boundary, and on this surface that includes the live region and the composer's spacer.
+ * 🔴🔴 `elementFromPoint`, NOT A SCAN OF THE SCROLLER'S CHILDREN, AND THE FIRST VERSION OF THIS
+ * FILE GOT IT WRONG IN EXACTLY THE WAY ITS OWN COMMENT WARNED ABOUT. That version took the first
+ * direct child whose bottom was on screen — and this scroller has THREE direct children, one of
+ * which is the entire conversation. So the anchor was always that one block, "restoring" it was
+ * arithmetically identical to leaving `scrollTop` alone, and the fix shipped and changed nothing.
+ *
+ * Measured on production after that version was live: opening a citation chip took the top of the
+ * viewport from *"FEV₁/FVC ratio: if this drops below about 0.7…"* to *"Happy to help you learn
+ * this…"* — the start of the answer, thousands of pixels back. Exactly the defect it was meant to
+ * remove.
+ *
+ * Asking the browser what is at a point is the only way to get the DEEPEST element there, which is
+ * the paragraph or table row the learner is looking at rather than the container it sits in.
+ *
+ * 🔴 THEN CLIMB OUT OF INLINE ELEMENTS. A `<span>` inside a paragraph is a valid hit but a poor
+ * anchor: inline boxes reflow horizontally, so the same span's top moves to a different line when
+ * the column narrows. The nearest block-level ancestor does not.
  */
 function anchorOf(scroller: HTMLElement): Anchor | null {
-  const top = scroller.getBoundingClientRect().top;
-  for (const element of scroller.children) {
-    const box = element.getBoundingClientRect();
-    // The first block whose BOTTOM is still on screen is the one being read.
-    if (box.bottom > top + 1) return { element, offset: box.top - top };
+  const box = scroller.getBoundingClientRect();
+  if (box.width === 0 || box.height === 0) return null;
+  const probe = box.top + PROBE_INSET;
+
+  let element = document.elementFromPoint(box.left + box.width / 2, probe);
+  // 🔴 A HIDDEN TAB RETURNS NULL, and so does a point over nothing. Falling through to the coarse
+  // scan is better than dropping the anchor: it is the old behaviour, which is at least stable.
+  if (!element || !scroller.contains(element)) {
+    for (const child of scroller.children) {
+      const rect = child.getBoundingClientRect();
+      if (rect.bottom > probe) {
+        const path = pathTo(scroller, child);
+        return path ? { offset: rect.top - probe, path } : null;
+      }
+    }
+    return null;
   }
-  return null;
+
+  while (
+    element.parentElement &&
+    element !== scroller &&
+    getComputedStyle(element).display.startsWith("inline")
+  ) {
+    element = element.parentElement;
+  }
+  if (element === scroller) return null;
+  const path = pathTo(scroller, element);
+  return path ? { offset: element.getBoundingClientRect().top - probe, path } : null;
+}
+
+/** Child indices from `root` down to `element`, or null when it is not inside. */
+function pathTo(root: Element, element: Element): number[] | null {
+  const path: number[] = [];
+  let node: Element | null = element;
+  while (node && node !== root) {
+    const parent: HTMLElement | null = node.parentElement;
+    if (!parent) return null;
+    path.unshift([...parent.children].indexOf(node));
+    node = parent;
+  }
+  return node === root ? path : null;
+}
+
+/** The element that path leads to now, or null when the shape has changed under it. */
+function resolve(root: Element, path: readonly number[]): Element | null {
+  let node: Element | undefined = root;
+  for (const index of path) {
+    node = node?.children[index];
+    if (!node) return null;
+  }
+  return node === root ? null : (node ?? null);
 }
 
 /**
@@ -78,10 +150,19 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
     // the learner scrolling away and does not overwrite the anchor we are in the middle of using.
     let restoring = false;
 
+    // 🔴 ONE ANCHOR PER FRAME AT MOST. `scroll` fires many times per frame on a trackpad, and each
+    // anchor costs an `elementFromPoint`, a `getComputedStyle` walk and a tree walk. Coalescing
+    // keeps a fast scroll through a long conversation from doing that work dozens of times for a
+    // value only the last of which is ever used.
+    let queued = 0;
     const remember = () => {
-      if (restoring) return;
-      pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
-      anchor = pinned ? null : anchorOf(node);
+      if (restoring || queued) return;
+      queued = requestAnimationFrame(() => {
+        queued = 0;
+        if (restoring) return;
+        pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
+        anchor = pinned ? null : anchorOf(node);
+      });
     };
 
     const restore = () => {
@@ -89,14 +170,21 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
         node.scrollTop = node.scrollHeight;
         return;
       }
-      if (!anchor || !node.contains(anchor.element)) return;
-      const top = node.getBoundingClientRect().top;
-      const moved = anchor.element.getBoundingClientRect().top - top;
+      if (!anchor) return;
+      const found = resolve(node, anchor.path);
+      // The conversation genuinely changed shape under us — a new turn arrived mid-resize. Leaving
+      // the scroll alone is the honest answer; guessing would move the page for no reason.
+      if (!found) return;
+      const probe = node.getBoundingClientRect().top + PROBE_INSET;
+      const moved = found.getBoundingClientRect().top - probe;
       // The block has drifted by `moved - offset`; taking that out of scrollTop puts it back.
       node.scrollTop += moved - anchor.offset;
     };
 
-    remember();
+    // 🔴 THE FIRST ONE IS SYNCHRONOUS, not queued: a panel opened in the same frame the hook mounts
+    // would otherwise resize against an anchor that does not exist yet.
+    pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
+    anchor = pinned ? null : anchorOf(node);
     node.addEventListener("scroll", remember, { passive: true });
 
     // 🔴🔴 A RESIZE OBSERVER, NOT A ONE-SHOT ON THE INSET. The column does not jump to its new
@@ -121,6 +209,7 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
     observer.observe(node);
 
     return () => {
+      if (queued) cancelAnimationFrame(queued);
       observer.disconnect();
       node.removeEventListener("scroll", remember);
     };
