@@ -36,13 +36,26 @@ interface ReaderSidebarProps {
   comments?: readonly DocumentComment[];
   onResolveComment?: (comment: DocumentComment) => void;
   onDeleteComment?: (comment: DocumentComment) => void;
+  /**
+   * Draw the comments and nothing else: no Outline tab, no Pages tab, no strip to switch them.
+   *
+   * 🔴 THE PANE'S RAIL, NOT THE STANDALONE READER'S. Owner, 2026-09-01: *"also remove the slides,
+   * notes, outline options"* from the column beside a conversation. The outline never came back
+   * there, and this must not be the door it sneaks in through. What the pane DOES need is the list
+   * of what the learner pinned on the document: until 2026-09-04 a note kept with "Add comment" was
+   * a pin on a page and nothing else, findable only by scrolling for it.
+   */
+  commentsOnly?: boolean;
 }
 
 export function ReaderSidebar({
   tab, onTabChange, outline, outlineIsAuthored, document: pdf, unitCount, unit, unitLabel, onGoToUnit,
-  comments, onResolveComment, onDeleteComment,
+  comments, onResolveComment, onDeleteComment, commentsOnly = false,
 }: ReaderSidebarProps) {
   const openComments = comments?.filter((comment) => comment.resolvedAt === null) ?? [];
+  const commentsLabel = openComments.length > 0 ? `Comments · ${openComments.length}` : "Comments";
+  /** What the body draws. In the pane that is the comments, whatever tab the host last held. */
+  const showing: SidebarTab = commentsOnly ? "comments" : tab;
   const pagesTabLabel = unitLabel === "slide" ? "Slides" : unitLabel === "sheet" ? "Sheets" : "Pages";
   // A Word file is one flowing document: it has no pages to show as pictures,
   // and every outline entry would carry a meaningless "1".
@@ -50,13 +63,19 @@ export function ReaderSidebar({
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-sidebar)" data-testid="reader-sidebar">
+      {commentsOnly ? (
+        // One label where the strip would be, so the rail still says what it is.
+        <p className="shrink-0 border-b border-(--ui-stroke-quaternary) px-3 py-2 text-[0.6875rem] font-medium text-foreground" data-testid="reader-comments-heading">
+          {commentsLabel}
+        </p>
+      ) : (
       <div className="flex shrink-0 gap-0.5 border-b border-(--ui-stroke-quaternary) p-1.5">
         {[
           { id: "outline" as const, label: "Outline" },
           ...(hasUnits ? [{ id: "pages" as const, label: pagesTabLabel }] : []),
           // The count is OPEN comments: the tab answers "is anything still pinned here?",
           // and resolved rows are history, not a number to carry in the chrome.
-          ...(comments ? [{ id: "comments" as const, label: openComments.length > 0 ? `Comments · ${openComments.length}` : "Comments" }] : []),
+          ...(comments ? [{ id: "comments" as const, label: commentsLabel }] : []),
         ].map((option) => (
           <button
             aria-pressed={tab === option.id}
@@ -72,9 +91,10 @@ export function ReaderSidebar({
           </button>
         ))}
       </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
-        {tab === "comments" && comments ? (
+        {showing === "comments" && comments ? (
           comments.length === 0 ? (
             <p className="px-2 py-6 text-center text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">
               Nothing pinned yet. Turn on comment mode in the toolbar, then click a spot or drag a box.
@@ -128,7 +148,7 @@ export function ReaderSidebar({
               })}
             </ul>
           )
-        ) : tab === "outline" || !hasUnits ? (
+        ) : showing === "outline" || !hasUnits ? (
           outline.length === 0 ? (
             <p className="px-2 py-6 text-center text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">
               This document has no headings Nemesis could find.

@@ -32,6 +32,7 @@
 // `button:where(:not([data-workspace] *)) { background: var(--acid) }`, so a subtree moved to
 // `document.body` leaves the workspace scope and every button in it goes acid green.
 
+import type { AnnotationNote } from "@/lib/learn/annotation-note";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -95,7 +96,7 @@ export function SourcePreview({
    * Absent means the reader hides its action bar entirely rather than offering controls with
    * nowhere to send — see `document-reader.tsx`.
    */
-  onSendToChat?: (prompt: string, files: File[]) => void;
+  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[], said?: string) => void;
   /** Every document the learner has open, oldest first. Empty closes the panel. */
   open: readonly CanvasSource[];
   uid: string | null;

@@ -1153,6 +1153,21 @@ export function LearningCanvas({
    *  🔴 IT LIVES BESIDE `currentSaid` BECAUSE IT BELONGS TO THE SAME SENTENCE, and dies with it. */
   const [currentNotes, setCurrentNotes] = useState<readonly AnnotationNote[]>([]);
   /**
+   * What the NEXT send carries from the reader: its marked regions, and the learner's own words.
+   *
+   * 🔴🔴 A HAND-OFF, NOT STATE SET BEFORE THE SEND. `askFromReader` used to `setCurrentNotes` and
+   * then call `submit`, and `converse` cleared the notes on the way in as it does for every
+   * ordinary send, so the picture and the "1 annotation" chip never drew: measured on production
+   * 2026-09-04, the reply came and `[data-annotations]` was nowhere in the document. The reader now
+   * leaves its notes here and `converse` TAKES them, in the same breath it takes the committed
+   * titles; an ordinary send finds nothing and clears, which is the sticky-crop rule kept.
+   *
+   * 🔴 `said` IS THE LEARNER'S NOTE, FOR THE BUBBLE. The prompt the model reads names the file, the
+   * page and the attached picture; none of that is something they typed, and the reference shows
+   * the note with the picture above it. The model still receives the whole prompt.
+   */
+  const readerSend = useRef<{ notes: readonly AnnotationNote[]; said: string | null }>({ notes: [], said: null });
+  /**
    * The moment id of the exchange the live region is showing, or null while a turn is still in
    * flight and no moment has been recorded for it yet.
    *
@@ -1176,6 +1191,8 @@ export function LearningCanvas({
    * every consumer holding it would re-render with it.
    */
   const onScreen = useRef<{
+    /** Regions marked on a document and sent with these words; drawn as the chip when filed. */
+    annotations: number;
     said: string | null;
     saidVia: "spoken" | null;
     aside: typeof session.aside;
@@ -1188,6 +1205,7 @@ export function LearningCanvas({
     /** The mode the sentence was sent with, so the bubble can say so. See `currentSaidCapability`. */
     capability: ComposerCapability | null;
   }>({
+    annotations: 0,
     capability: null,
     aside: null,
     attached: [],
@@ -1230,6 +1248,7 @@ export function LearningCanvas({
             // answers "which documents is this answer about" — so the thread lost every
             // attachment the moment it was filed.
             attached: outgoing.attached,
+            annotations: outgoing.annotations,
             // 🔴🔴 THE MOMENT ID WHEN THERE IS ONE, because that id is what the History Rail's
             // row carries and `goToMoment` looks the anchor up by. The made-up `turn-N-…` form
             // below is now only the fallback for an exchange that was never recorded (a turn that
@@ -1256,8 +1275,12 @@ export function LearningCanvas({
       // single-use rule `takePending` states next door, for the same reason.
       const attachedNow = committedTitles.current;
       committedTitles.current = [];
-      onScreen.current = { aside: null, attached: attachedNow, capability, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
-      setCurrentSaid(trimmed);
+      // 🔴 TAKEN, NOT COPIED, for the same single-use reason as the titles above. See `readerSend`.
+      const fromReader = readerSend.current;
+      readerSend.current = { notes: [], said: null };
+      const shown = fromReader.said?.trim() || trimmed;
+      onScreen.current = { annotations: fromReader.notes.length, aside: null, attached: attachedNow, capability, momentId: null, output: null, said: shown, saidVia: spokenNow };
+      setCurrentSaid(shown);
       // 🔴 READ BEFORE THE COMPOSER CLEARS IT. The chip is one-shot by §38, so by the time the turn
       // resolves `capability` is already null; the bubble's copy has to be taken here, at the same
       // moment the words are.
@@ -1265,7 +1288,7 @@ export function LearningCanvas({
       // 🔴 EVERY ORDINARY SEND CLEARS THE MARKS. Without this the crop from an annotation would
       // hang above the NEXT question too, which is the same class of bug as a sticky attachment
       // chip: a picture claiming to be about a sentence it has nothing to do with.
-      setCurrentNotes((held) => (held.length > 0 ? [] : held));
+      setCurrentNotes((held) => (fromReader.notes.length > 0 ? fromReader.notes : held.length > 0 ? [] : held));
       setCurrentSaidVia(spokenNow);
       setCurrentAttached(attachedNow);
       setCurrentMomentId(null);
@@ -1316,7 +1339,10 @@ export function LearningCanvas({
         // marker on the rail that opens to an empty reconstruction.
         const momentId = session.recordMoment({
           kind: decision?.say ? "assistant" : "user",
-          userText: trimmed,
+          // 🔴 THE LEARNER'S OWN WORDS, AND THE COUNT OF WHAT THEY MARKED. The record is what the
+          // reopened thread draws; the model's fuller prompt lives in `remember` for the window.
+          userText: shown,
+          ...(fromReader.notes.length > 0 ? { annotations: fromReader.notes.length } : {}),
           ...(spokenNow ? { spoken: true } : {}),
           ...(decision?.say ? { assistantText: decision.say } : {}),
         });
@@ -1451,8 +1477,20 @@ export function LearningCanvas({
         undefined,
         waiting.map((entry) => entry.read),
       );
+      // 🔴🔴 MATERIAL WITH NO WORDS IS A TURN FROM THIS DOOR TOO. The front door sends files
+      // without a sentence as `/learn?new=1` and no `?ask=`, so the opening-ask effect below has
+      // nothing to consume and never runs — which left the canvas open, the files attached, and
+      // NOTHING answering. Found on production 2026-09-04: one PDF dropped on the front door,
+      // Enter, thirty seconds of silence. The composer's own empty send had been fixed (#1117,
+      // `beginOrAnswer`); this door had not. Same mechanism: the committed titles say the send
+      // carried material, and `beginOrAnswer("")` runs the arrival turn. `attachFiles` registered
+      // its in-flight work synchronously just above, which is what lets that turn wait for it.
+      if (!openingAsk) {
+        committedTitles.current = waiting.map((entry) => entry.file.name);
+        beginOrAnswer("");
+      }
     }
-  }, [session]);
+  }, [beginOrAnswer, openingAsk, session]);
 
   // Consume the opening instruction exactly once, when the canvas is ready and still empty.
   // 🔴 Guarded by a ref rather than by state: `begin` updates the canvas, which re-runs this
@@ -2150,6 +2188,7 @@ export function LearningCanvas({
       .filter((moment): moment is NonNullable<typeof moment> => moment !== null)
       .map((moment) => ({
         ...fileTurn({
+          annotations: moment.annotations,
           at: moment.occurredAt,
           attached: moment.sourceTitles ?? [],
           id: moment.momentId,
@@ -2792,11 +2831,10 @@ export function LearningCanvas({
   };
   const undoOutput = (output: CanvasOutput) => session.updateOutput(output.id, undoRevision);
 
-  const askFromReader = async (asked: string, files: File[], notes?: readonly AnnotationNote[]) => {
-    // 🔴 SET BEFORE THE SEND, CLEARED BY THE NEXT ONE. The turn being answered draws these above
-    // the learner's sentence; a turn that marked nothing must draw nothing, so this cannot be
-    // sticky. `converse` clears it for every ordinary send.
-    setCurrentNotes(notes && notes.length > 0 ? notes : []);
+  const askFromReader = async (asked: string, files: File[], notes?: readonly AnnotationNote[], said?: string) => {
+    // 🔴 LEFT FOR THE SEND TO TAKE, never set as state first: `converse` clears the notes on the
+    // way in, so state set here was gone before it drew. See `readerSend`.
+    readerSend.current = { notes: notes ?? [], said: said?.trim() || null };
     // 🔴 THE READER'S OWN SEND COMMITS DIRECTLY AND WAITS. Everywhere else material is staged and
     // committed by the composer's send; here the question and the picture are one gesture, so
     // there is no staging step to pass through — and the turn must not start before the picture is

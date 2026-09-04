@@ -190,7 +190,7 @@ export function SourcesControl({
   /** A question asked FROM the open document: a highlighted passage or a marked area, with one of
    *  the reader's actions on it. Absent means the reader shows no action bar at all — see
    *  `SourcePreview`. */
-  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[]) => void;
+  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[], said?: string) => void;
   outputTools?: OutputTools;
 }) {
   const [open, setOpen] = useState(false);

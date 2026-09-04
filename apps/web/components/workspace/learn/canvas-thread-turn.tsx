@@ -22,6 +22,7 @@
 
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { AttachedRow } from "./attached-row";
+import { AnnotationNoteView } from "./annotation-note-view";
 
 import type { CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { replySegments } from "@/lib/learn/reply-visuals";
@@ -72,6 +73,15 @@ export function CanvasThreadTurnView({
           names was cut earlier the same day and a ROW of cards asked for a few hours later —
           `attached-row.tsx` carries both quotes and why they are not in conflict. */}
       <AttachedRow titles={turn.attached} />
+      {/* 🔴 THE MARKED REGIONS, AS A COUNT. The picture is an object URL that died with the session
+          it was cut in, so a filed turn draws what it can honestly say: "1 annotation" between the
+          cards and the note, the reference's own order. The crop itself is still a source on the
+          canvas; it is kept out of the card row above by name (`isCropFileName`). */}
+      {(turn.annotations ?? 0) > 0 && (
+        <div className="mb-[6px] flex justify-end">
+          <AnnotationNoteView notes={Array.from({ length: turn.annotations ?? 0 }, () => ({ thumbnail: null, where: null }))} />
+        </div>
+      )}
       {turn.said?.trim() && (
         <div className="mb-4 flex justify-end" data-learner-said>
           <LearnerUtterance via={turn.saidVia}>{turn.said}</LearnerUtterance>

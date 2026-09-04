@@ -42,7 +42,7 @@ test("🔴🔴 the reader SENDS what was marked and the conversation SHOWS it", 
   assert.match(canvas, /<AnnotationNoteView notes=\{currentNotes\} \/>/, "the conversation has nowhere to show it");
   // 🔴 AND IT CANNOT BE STICKY. An ordinary send must clear the marks, or the crop hangs above the
   // next question as a picture about a sentence it has nothing to do with.
-  assert.match(canvas, /setCurrentNotes\(\(held\) => \(held\.length > 0 \? \[\] : held\)\)/,
+  assert.match(canvas, /setCurrentNotes\(\(held\) => \(fromReader\.notes\.length > 0 \? fromReader\.notes : held\.length > 0 \? \[\] : held\)\)/,
     "an ordinary send no longer clears the marks");
 });
 

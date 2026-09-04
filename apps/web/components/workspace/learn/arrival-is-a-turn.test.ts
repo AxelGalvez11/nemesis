@@ -78,7 +78,10 @@ test("🔴 the model gets a sentinel for the empty words, and the learner's own 
   assert.match(CHAT, /utterance: question\.trim\(\) \|\| ARRIVAL_UTTERANCE/, "an empty send puts an empty user message on the wire");
   assert.match(CHAT, /saidNothing: question\.trim\(\)\.length === 0/);
   // The recorded moment and the live bubble keep the empty text: nothing is forged in the learner's name.
-  assert.match(CANVAS, /userText: trimmed,/);
+  // `shown` is the learner's own words: their note when the reader handed one over, otherwise exactly
+  // what they typed — and on an arrival that is still nothing at all (annotation-finish.test.ts).
+  assert.match(CANVAS, /userText: shown,/);
+  assert.match(CANVAS, /const shown = fromReader\.said\?\.trim\(\) \|\| trimmed;/);
   assert.match(CANVAS, /\{threadOpen && currentSaid\?\.trim\(\) && \(/);
   // The six-turn window keeps the arrival's reply, under the same sentinel the packet used.
   assert.match(CANVAS, /const exchange: TurnExchange = given\.said\.trim\(\) \? given : \{ \.\.\.given, said: ARRIVAL_UTTERANCE \};/);
@@ -112,4 +115,17 @@ test("🔴🔴 a turn the door took is remembered as done, so the next ask is no
   for (const kind of ["document", "flashcards", "note", "pdf", "report", "sheet", "slides"]) {
     assert.match(CANVAS, new RegExp(`\\b${kind}: "`), `${kind} has no learner-facing noun in MADE_NOUN`);
   }
+});
+
+test("🔴🔴 files sent from the FRONT DOOR with no words are an arrival turn too", () => {
+  // The front door sends files-without-a-sentence as `/learn?new=1` with no `?ask=`, so the
+  // opening-ask effect never runs. Found on production 2026-09-04: one PDF, Enter, thirty seconds of
+  // nothing. The files effect now runs the same arrival the composer's empty send runs.
+  assert.match(
+    CANVAS,
+    /if \(!openingAsk\) \{\n\s+committedTitles\.current = waiting\.map\(\(entry\) => entry\.file\.name\);\n\s+beginOrAnswer\(""\);\n\s+\}/,
+    "the front door's files-only send asks nothing",
+  );
+  // And the ask effect is untouched: words from the front door still go through it once.
+  assert.match(CANVAS, /if \(!openingAsk \|\| askedOnce\.current \|\| !session\.ready\) return;/);
 });

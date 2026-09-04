@@ -98,7 +98,7 @@ test("🔴 a send is keyed on a counter, not the sentence", () => {
   // Asking the same thing twice in a row is what someone does when the first answer missed, and
   // that must still pin.
   assert.match(code, /setSendSeq\(\(n\) => n \+ 1\)/, "the send counter stopped being bumped");
-  const send = code.slice(code.indexOf("setCurrentSaid(trimmed)"), code.indexOf("setCurrentSaid(trimmed)") + 400);
+  const send = code.slice(code.indexOf("setCurrentSaid(shown)"), code.indexOf("setCurrentSaid(shown)") + 400);
   assert.match(send, /setSendSeq/, "the counter is no longer bumped where a turn actually starts");
 });
 

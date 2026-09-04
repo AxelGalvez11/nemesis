@@ -102,7 +102,7 @@ test("🔴 every read and write survives the table not existing yet", () => {
   // remembering feature is not switched on is the use-policy-runtime defect all over again.
   const guarded = STORE.match(/} catch \{/g) ?? [];
   assert.ok(guarded.length >= 4, "a memory call can now throw into the caller");
-  assert.match(SESSION, /void Promise\.all\(/, "the memory write is awaited, so a failed write can cost the learner their answer");
+  assert.match(SESSION, /void \(async \(\) => \{\n\s+let saved = 0;/, "the memory write is awaited, so a failed write can cost the learner their answer");
 });
 
 test("🔴 memory is loaded once per turn, not once per search round", () => {
@@ -202,8 +202,18 @@ test("🔴🔴 the notice fires only when something was actually written", () =>
   // `rememberLine` returns false for a near-duplicate. Saying "memory updated" for a fact already
   // held would train the learner to ignore the notice, which is the one thing a transparency
   // signal cannot afford.
-  assert.match(SESSION, /const saved = written\.filter\(Boolean\)\.length;/, "the notice stopped counting real writes");
+  assert.match(SESSION, /if \(await rememberLine\(uid, \{ kind: fact\.kind, sourceCanvasId: id, statement: fact\.statement \}\)\) saved \+= 1;/, "the notice stopped counting real writes");
   assert.match(SESSION, /if \(saved > 0\) setMemoryNotice\(saved\);/, "the notice fires regardless of whether anything was kept");
+});
+
+test("🔴🔴 a turn's facts are written one after another, never in parallel", () => {
+  // `rememberLine` refuses a near-duplicate by reading what is already held. Launched together,
+  // three writes all read the table BEFORE any of them lands, so a turn that phrased one fact twice
+  // stored it twice. Found in the owner's own memory, 2026-09-04: "Learning the anatomy of the
+  // uterus for the first time" and "Learning the parts of the uterus for the first time", the same
+  // turn, one under each kind — the exact pair `saysTheSameThing` scores at 0.67 and exists to catch.
+  assert.match(SESSION, /for \(const fact of decision\.remember\) \{\n\s+if \(await rememberLine\(/, "the writes are not sequential");
+  assert.ok(!/Promise\.all\(\n\s+decision\.remember\.map/.test(SESSION), "the parallel write is back, and with it the same-turn duplicate");
 });
 
 test("🔴🔴🔴 the canvas does not announce that memory was updated", () => {

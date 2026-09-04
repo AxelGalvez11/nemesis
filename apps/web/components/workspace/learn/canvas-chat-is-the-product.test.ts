@@ -238,7 +238,9 @@ test("🔴🔴 a turn is filed with its payload when the NEXT turn starts", () =
   assert.match(body, /visuals: outgoing\.aside\?\.visuals \?\? \[\]/, "a filed turn loses its drawings");
   assert.match(body, /sources: outgoing\.aside\?\.sources \?\? outgoing\.aside\?\.consulted \?\? \[\]/, "a filed turn loses its sources");
   assert.match(body, /output: outgoing\.output/, "a filed turn loses what it made");
-  assert.match(body, /setCurrentSaid\(trimmed\)/, "the learner's words are not kept above the answer");
+  // `shown` is the learner's own words: what they typed, or the note they wrote on a document when
+  // the reader handed one over (annotation-finish.test.ts). Never the machine-written prompt.
+  assert.match(body, /setCurrentSaid\(shown\)/, "the learner's words are not kept above the answer");
 });
 
 test("🔴 the learner's message is not cleared when the answer lands", () => {

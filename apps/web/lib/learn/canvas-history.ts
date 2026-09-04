@@ -19,6 +19,8 @@
 //
 // PURE. No React, no I/O.
 
+import { isCropFileName } from "@/lib/reader/region-crop";
+
 import type { CanvasMoment, CanvasMomentKind } from "./canvas-moment";
 import type { CanvasQuestion, CanvasResponse, CanvasSource } from "./canvas-model";
 
@@ -252,6 +254,8 @@ export function momentClock(iso: string, locale?: string): string {
 export interface HistoricalMoment {
   momentId: string;
   occurredAt: string;
+  /** Regions the learner marked on a document and sent with these words. */
+  annotations?: number;
   /** The learner's words in this moment were spoken in a voice conversation. */
   spoken?: boolean;
   kind: CanvasMomentKind;
@@ -296,11 +300,17 @@ export function reconstructMoment(
   const question = canvas.questions.find(
     (row) => row.id === (moment.questionId ?? response?.questionId),
   );
+  // 🔴 A CROP IS NOT A CARD. The reader files the marked region as a real source so the material
+  // outlives the session, and it used to come back as a "PNG" card above the note; it is the
+  // annotation the count below draws, and drawing it twice as two different things is the confusion
+  // annotation-note.ts exists to end.
   const sourceTitles = (moment.sourceIds ?? [])
     .map((id) => canvas.sources.find((source) => source.id === id)?.title)
-    .filter((title): title is string => Boolean(title?.trim()));
+    .filter((title): title is string => Boolean(title?.trim()))
+    .filter((title) => !isCropFileName(title));
 
   const built: HistoricalMoment = {
+    ...(moment.annotations ? { annotations: moment.annotations } : {}),
     kind: moment.kind,
     momentId,
     occurredAt: moment.occurredAt,

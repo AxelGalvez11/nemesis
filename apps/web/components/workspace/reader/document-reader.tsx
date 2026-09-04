@@ -93,7 +93,13 @@ export interface DocumentReaderProps {
    * same crop as something the turn can SHOW above the sentence. Optional, so every other caller of
    * this reader is unchanged. See lib/learn/annotation-note.ts.
    */
-  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[]) => void;
+  /**
+   * Hand a question to the conversation. `prompt` is what the model reads; `said` is the
+   * learner's OWN words for the bubble when the two differ, which they do for an annotation: the
+   * prompt says which file, which page and that a picture is attached, and none of that is
+   * something the learner typed. The reference shows the note; the context rides underneath.
+   */
+  onSendToChat?: (prompt: string, files: File[], notes?: readonly AnnotationNote[], said?: string) => void;
   /** "dialog" trims the chrome for the chat popup: no back button, no rails. */
   variant?: "page" | "dialog";
   /**
@@ -671,7 +677,7 @@ export function DocumentReader({
       // changes, and the canvas element this came from is thrown away right after.
       onSendToChat?.(prompt, [...documentAttachment(), ...(cropped ? [cropped] : [])], [
         { thumbnail: crop, where: unitLabel ? `${unitLabel} ${draft.unit}` : null },
-      ]);
+      ], draft.body.trim());
     },
     [cropForComment, documentAttachment, keepComment, onSendToChat, source.fileName, unitLabel],
   );
@@ -691,10 +697,14 @@ export function DocumentReader({
   const removeComment = useCallback(
     (comment: DocumentComment) => {
       if (!commentsDoc) return;
-      setComments((current) => current.filter((row) => row.id !== comment.id));
+      const left = comments.filter((row) => row.id !== comment.id);
+      setComments(left);
+      // The pane's rail lists comments and nothing else, so with the last one gone it would be an
+      // empty column; close it, so the next note does not open the list unasked.
+      if (dense && left.length === 0) setRailOpen(false);
       void deleteDocumentComment(commentsDoc.uid, commentsDoc.ref, comment.id, { preview: commentsDoc.preview });
     },
-    [commentsDoc],
+    [comments, commentsDoc, dense],
   );
 
   const meta = describeSource(source, KIND_LABELS[source.kind] ?? "File");
@@ -723,6 +733,20 @@ export function DocumentReader({
     source.kind === "slides" ||
     source.kind === "sheet" ||
     (source.kind === "document" && flavour !== "html");
+  /**
+   * The pane's own rail: the pinned comments, and only when there are some.
+   *
+   * 🔴 THE PANE HAD NO WAY TO LIST WHAT WAS PINNED. `dense` closes the contents rail and hides its
+   * toggle, both deliberately (the outline was cut from the column beside a conversation, owner
+   * 2026-09-01), and the Comments tab lived INSIDE that rail. So a note kept with "Add comment" was
+   * a pin on a page and nothing else, findable only by scrolling the document for it. This opens
+   * the same rail on the comments alone (`commentsOnly`), never on the outline.
+   *
+   * 🔴 GATED ON DATA, NOT ON THE FEATURE. With nothing pinned there is nothing to list, so no
+   * control is drawn at all; the button appears with the first note and goes with the last.
+   */
+  const commentsListable = dense && canComment && comments.length > 0;
+  const openCommentCount = comments.filter((comment) => comment.resolvedAt === null).length;
   const readingAvailable = source.kind === "pdf" && blocks.length > 0;
   const showZoom = source.kind === "pdf" || source.kind === "image" || source.kind === "slides";
   const trimmedQuery = query.trim() || null;
@@ -766,6 +790,9 @@ export function DocumentReader({
         onRotate={source.kind === "image" ? () => setRotation((current) => (current + 90) % 360) : undefined}
         onStepMatch={stepToMatch}
         onToggleRail={hasContents ? () => setRailOpen((open) => !open) : undefined}
+        commentCount={openCommentCount}
+        commentListOpen={railOpen}
+        onToggleCommentList={commentsListable ? () => setRailOpen((open) => !open) : undefined}
         commenting={commenting}
         dense={dense}
         toolbarSlot={toolbarSlot}
@@ -936,9 +963,10 @@ export function DocumentReader({
           )}
         </main>
 
-        {railOpen && hasContents && (
+        {railOpen && (dense ? commentsListable : hasContents) && (
           <ReaderSidebar
             comments={canComment ? comments : undefined}
+            commentsOnly={dense}
             document={pdfDocument}
             onDeleteComment={removeComment}
             onGoToUnit={goToUnit}
@@ -948,7 +976,7 @@ export function DocumentReader({
             outlineIsAuthored={outlineIsAuthored}
             // Pages-as-pictures exist only on PDFs; the comments tab exists wherever commenting
             // does. Everything else falls back to the outline.
-            tab={sidebarTab === "pages" && source.kind !== "pdf" ? "outline" : sidebarTab === "comments" && !canComment ? "outline" : sidebarTab}
+            tab={dense ? "comments" : sidebarTab === "pages" && source.kind !== "pdf" ? "outline" : sidebarTab === "comments" && !canComment ? "outline" : sidebarTab}
             unit={unit}
             unitCount={unitCount}
             unitLabel={unitLabel}

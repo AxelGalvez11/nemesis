@@ -29,6 +29,7 @@ import {
   MEMORY_KIND_COPY,
   type MemoryLine,
 } from "@/lib/learn/learner-memory";
+import { activityLines, loadStudyActivity } from "@/lib/learn/study-activity";
 
 export function MemorySettings() {
   const { session } = useAuth();
@@ -36,10 +37,21 @@ export function MemorySettings() {
   const [lines, setLines] = useState<readonly MemoryLine[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  /**
+   * The other half of what Nemesis knows: what you have DONE, worked out from your study record.
+   *
+   * 🔴 SHOWN HERE, ON THE SAME SCREEN AS THE SENTENCES, SO "WHAT DOES NEMESIS KNOW ABOUT ME" HAS
+   * ONE ANSWER. These lines ride the turn packet beside the remembered sentences (study-activity.ts),
+   * and a screen that listed the sentences and kept the counts quiet would be the unreadable file
+   * this feature was built to refuse. There is no × on them because nothing is stored: delete a
+   * deck and its share of this is gone.
+   */
+  const [seen, setSeen] = useState<readonly string[]>([]);
 
   const refresh = useCallback(async () => {
-    const rows = await loadMemory(uid);
+    const [rows, activity] = await Promise.all([loadMemory(uid), loadStudyActivity(uid)]);
     setLines(rows);
+    setSeen(activityLines(activity));
     setLoaded(true);
   }, [uid]);
 
@@ -145,6 +157,23 @@ export function MemorySettings() {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {loaded && seen.length > 0 && (
+        <div className="mt-4 border-t border-(--ui-stroke-tertiary) pt-3" data-testid="memory-seen">
+          <h4 className="text-xs font-semibold text-foreground">What Nemesis has seen you do</h4>
+          <p className="mt-1 text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
+            Worked out from your own study record each time, never stored: it rides along with the lines above so
+            answers can pick up where you left off. Delete a deck and its share of this goes with it.
+          </p>
+          <ul className="mt-2 flex list-none flex-col gap-1 p-0">
+            {seen.map((line) => (
+              <li className="rounded-lg border border-(--ui-stroke-tertiary) px-3 py-2 text-[0.7rem] leading-relaxed text-foreground" key={line}>
+                {line}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>
