@@ -149,7 +149,14 @@ export function CanvasHeader({
           ancestor they resolve against — see the note on `PANEL` in canvas-controls.tsx.
           🔴 `shrink-0` BECAUSE THE TITLE BESIDE IT IS `flex-1`: without it a long canvas name
           squeezes the glyphs instead of truncating itself. */}
-      <div className="relative flex h-full shrink-0 items-center gap-1">
+      {/* 🔴🔴 THE GROUND IS HERE NOW, NOT ON A BAND ACROSS THE PAGE (2026-09-03). `canvas-surface.tsx`
+          drew a solid strip at the top so the conversation would not run under these glyphs; the
+          owner reported it as a block twice, and the second geometry — anchored to this corner —
+          sat exactly on top of his own right-aligned bubbles. A ground that is the size of the
+          controls cannot cover anything that is not behind the controls, which is the property both
+          strips lacked. Rounded and inset by 2px so it reads as a floating cluster rather than as a
+          panel; the page's own colour, so it draws no edge. */}
+      <div className="relative flex h-full shrink-0 items-center gap-1 rounded-[10px] bg-(--ui-bg-editor) px-[2px]">
           {/* 🔴 TWO GLYPHS AT MOST, EACH GATED — owner, 2026-08-30: Sources & outputs, and the
               course map on a course canvas. The `×` is `canvas-surface.tsx`'s and is not in this
               row. The 2026-08-19 lineup ("sources… progress… a '⋯' for options") is dead: Progress

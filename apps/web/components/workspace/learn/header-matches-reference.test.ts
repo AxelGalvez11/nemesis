@@ -86,7 +86,11 @@ test("🔴🔴 the glyph row is the positioning context, so no panel hangs off i
   const map = readFileSync(new URL("./course-map.tsx", import.meta.url), "utf8");
 
   // The row, right-anchored with the header, is the one positioned ancestor.
-  assert.match(header, /<div className="relative flex h-full shrink-0 items-center gap-1">/, "the glyph row is not a positioning context");
+  // 🔴 REPOINTED 2026-09-03: the row carries the page's own ground now. The masthead band that used
+  // to provide it was removed after the owner reported it as a block twice — see the tombstone in
+  // `canvas-surface.tsx`. What this guards, that the row is the ONE positioned ancestor the panels
+  // resolve against, is unchanged.
+  assert.match(header, /<div className="relative flex h-full shrink-0 items-center gap-1 rounded-\[10px\] bg-\(--ui-bg-editor\) px-\[2px\]">/, "the glyph row is not a positioning context");
 
   // 🔴 AND NO CONTROL MAY BE ONE. This is the half that actually broke; calibration: put `relative`
   // back on any wrapper and that control's panel goes back to tracking its own glyph.

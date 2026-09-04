@@ -27,16 +27,12 @@ test("🔴🔴 both scrollers clear the header by the same amount", () => {
   assert.equal(new Set(tops).size, 1, `the scrollers disagree about the top clearance: ${tops.join(" and ")}px`);
 });
 
-test("🔴 the masthead stops short of the text, or it paints over a line", () => {
-  // `canvas-surface.tsx` states the rule in its own note: solid, and SHORTER than the content's
-  // resting offset, so at rest it covers nothing and no row is half-painted.
-  const canvas = code(read("./learning-canvas.tsx"));
-  const top = Number(/overflow-y-auto[^"`]*pt-\[(\d+)px\]/.exec(canvas)?.[1]);
-  // 🔴 REPOINTED 2026-09-03: it is `right-0` with a width now, not `inset-x-0` — see the note in
-  // `canvas-shell.test.ts`. The rule it enforces, shorter than the resting offset, is unchanged.
-  const mast = Number(/absolute right-0 top-0 z-20 h-\[(\d+)px\]/.exec(code(read("./canvas-surface.tsx")))?.[1]);
-  assert.ok(Number.isFinite(top) && Number.isFinite(mast), "could not find the clearance or the masthead");
-  assert.ok(mast < top, `the masthead (${mast}px) reaches into the text's resting offset (${top}px)`);
+test("🔴 there is no masthead to reach into the text — the ground is on the controls", () => {
+  // The band this used to measure was removed on 2026-09-03 after the owner reported it twice; see
+  // the tombstone in `canvas-surface.tsx` and the full argument in `canvas-shell.test.ts`. The
+  // clearance itself still matters and is still checked by the test below: the first line must
+  // start below the floating controls.
+  assert.ok(!/top-0 z-20 h-\[\d+px\]/.test(code(read("./canvas-surface.tsx"))), "a masthead band is back, and it will paint over the conversation");
 });
 
 test("🔴 and the clearance still clears the controls, which are 12px in and 28px tall", () => {
