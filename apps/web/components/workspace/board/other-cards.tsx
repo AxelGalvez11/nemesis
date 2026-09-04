@@ -114,14 +114,20 @@ export const NoteCard = memo(NoteCardInner);
 function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData }) {
   const { cards, sources, selectedSourceIds, createBranchCard, deleteNode, makeDeliverable, setSourceCollapsed } = useBoard();
   const source = sources.find((item) => item.id === data.sourceId);
-  const [resizing, setResizing] = useState(false);
-  const start = useCallback(() => setResizing(true), []);
-  const end = useCallback(() => setResizing(false), []);
   if (!source) return null;
   const ready = source.status === "ready";
   const chosen = selectedSourceIds.includes(source.id);
   const Icon = source.type === "image" ? FileImage : FileText;
-  const fixed = source.height !== undefined || resizing;
+  /**
+   * 🔴🔴 THE CARD FILLS ITS NODE, ALWAYS, AND THIS WAS THE CLIPPING. Owner, 2026-09-04: *"it's sort
+   * of not contained within the box. It's sort of clipping out, and it's glitchy."* This used to
+   * read `source.height !== undefined`, so a source saved before sources carried a default height
+   * did not get `h-full` and grew to its content instead: measured at 1,579px of card inside a
+   * 560px node, spilling over everything under it while the board's hit-testing still used the
+   * node's box. `board-surface.tsx` now gives every open source a height, so the card can simply
+   * fill it, and a collapsed one is its title bar exactly as a collapsed thread is.
+   */
+  const fixed = !source.collapsed;
   const hasImage = source.type === "image" && Boolean(source.previewUrls[0]);
   return (
     <div
@@ -135,7 +141,9 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
         selected && "ring-2 ring-foreground",
       )}
     >
-      {!source.collapsed && <NodeResizeControls minHeight={hasImage ? IMAGE_SOURCE_MIN_HEIGHT : SOURCE_MIN_HEIGHT} onVerticalResizeEnd={end} onVerticalResizeStart={start} />}
+      {/* No resize-start/end handshake any more: the card is fixed-height whenever it is open, so
+          there is no moment where it has to be told to stop growing with its content. */}
+      {!source.collapsed && <NodeResizeControls minHeight={hasImage ? IMAGE_SOURCE_MIN_HEIGHT : SOURCE_MIN_HEIGHT} />}
       {/* 🔴🔴 THE FOUR PLUSES, AS ON A THREAD — owner, 2026-09-04: *"documents should have the four
           'create card' like chats"*, in the same message that cut the two buttons along this card's
           bottom edge: *"remove 'create lesson'"*, *"remove 'ask about this'"*. Pressing one opens an
@@ -197,7 +205,7 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
             that used to are the four pluses above. */}
         {ready && (
           <div className="flex min-h-[280px] flex-1 flex-col">
-            <SourceDocument source={source} />
+            <SourceDocument interactive={selected === true} source={source} />
           </div>
         )}
       </div>
