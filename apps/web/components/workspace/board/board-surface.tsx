@@ -32,15 +32,16 @@ import { cn } from "@/lib/utils";
 import { IconTooltip, isEditableTarget, measureBoardArea, sourceHandleId, targetHandleId } from "./board-chrome";
 import { useBoard } from "./board-provider";
 import { ConversationCard, type ConversationNodeData } from "./conversation-card";
-import { NoteCard, SourceCard, type NoteNodeData, type SourceNodeData } from "./other-cards";
+import { NoteCard, OutputCard, SourceCard, type NoteNodeData, type OutputNodeData, type SourceNodeData } from "./other-cards";
 import "./board.css";
 
 type BoardNode =
   | Node<ConversationNodeData, "conversation">
   | Node<NoteNodeData, "note">
-  | Node<SourceNodeData, "source">;
+  | Node<SourceNodeData, "source">
+  | Node<OutputNodeData, "output">;
 
-const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard };
+const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard, output: OutputCard };
 const PRO_OPTIONS = { hideAttribution: true };
 const EDGE_STROKE = "var(--board-edge)";
 const CONTROL_CLASS =
@@ -162,9 +163,11 @@ function CenterTarget({ nodeId, companionId, instant, maxZoom }: { nodeId: strin
 }
 
 function BoardInner() {
+  const { fitView } = useReactFlow();
   const {
     cards,
     sources,
+    outputs,
     lastAddedCardId,
     deleteNodes,
     updateCardPosition,
@@ -253,11 +256,17 @@ function BoardInner() {
           changed = true;
           return { id: source.id, type: "source", position: source.position, width: source.width, height: source.height, deletable: false, data: { sourceId: source.id } } as BoardNode;
         }),
+        ...outputs.map((output) => {
+          const existing = byId.get(output.id) as Node<OutputNodeData, "output"> | undefined;
+          if (existing) return reuse(output.id, existing, output.position, output.width, undefined, output.status !== "making");
+          changed = true;
+          return { id: output.id, type: "output", position: output.position, width: output.width, deletable: output.status !== "making", data: { outputId: output.id } } as BoardNode;
+        }),
       ];
       return changed ? rebuilt : was;
     });
     known.current = next;
-  }, [cards, sources]);
+  }, [cards, outputs, sources]);
 
   // The node being dragged floats above the rest.
   useEffect(() => {
@@ -291,7 +300,7 @@ function BoardInner() {
 
   const edges = useMemo<Edge[]>(() => {
     const rects = new Map(
-      [...cards, ...cards.flatMap((card) => card.notes), ...sources].map((item) => {
+      [...cards, ...cards.flatMap((card) => card.notes), ...sources, ...outputs].map((item) => {
         const measured = ready ? getInternalNode(item.id)?.measured : undefined;
         return [
           item.id,
@@ -343,8 +352,28 @@ function BoardInner() {
         ];
       }),
     );
-    return [...cardEdges, ...noteEdges];
-  }, [cards, getInternalNode, ready, sources]);
+    // A deliverable hangs off the thread it was made from, on the same line a branch uses.
+    const outputEdges = outputs.flatMap((output) => {
+      if (!output.cardId) return [];
+      const from = rects.get(output.cardId);
+      const to = rects.get(output.id);
+      if (!from || !to) return [];
+      const { sourceSide, targetSide } = connectionSides(from, to);
+      return [
+        {
+          id: `edge-${output.cardId}-${output.id}`,
+          source: output.cardId,
+          sourceHandle: sourceHandleId(sourceSide),
+          target: output.id,
+          targetHandle: targetHandleId(targetSide),
+          animated: output.status === "making",
+          style: { stroke: EDGE_STROKE, strokeWidth: 1.5 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_STROKE, width: 18, height: 18 },
+        } satisfies Edge,
+      ];
+    });
+    return [...cardEdges, ...noteEdges, ...outputEdges];
+  }, [cards, getInternalNode, outputs, ready, sources]);
 
   const onNodesChange = useCallback<OnNodesChange<BoardNode>>(
     (changes: NodeChange<BoardNode>[]) => {
@@ -414,6 +443,12 @@ function BoardInner() {
         onInit={onInit}
         onMoveEnd={(_event, next) => {
           if (total > 0) updateViewport(next);
+        }}
+        onNodeDoubleClick={(event, node) => {
+          // Owner 2026-09-03: "allow double click on individual canvas chat to fit to screen".
+          // A double-click that selected a word, or landed in a text box, is the learner's, not ours.
+          if (isEditableTarget(event.target) || window.getSelection()?.isCollapsed === false) return;
+          void fitView({ nodes: [{ id: node.id }], duration: 320, padding: 0.1, maxZoom: 1 });
         }}
         onNodeDragStart={(_event, node) => setPickedUp(node.id)}
         onNodeDragStop={() => setPickedUp(null)}

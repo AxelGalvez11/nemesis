@@ -38,7 +38,7 @@ import { KIND_MARKS } from "@/lib/learn/kind-mark";
  * that names it, and the glyph is still `KIND_MARKS.text`: the mark an attached .md draws, because
  * a note Nemesis wrote and a Markdown file the learner dropped in are the same object.
  */
-const KIND: Record<string, { extension: string; icon: string; label: string; tint: string }> = {
+export const OUTPUT_KIND_MARKS: Record<string, { extension: string; icon: string; label: string; tint: string }> = {
   document: { extension: "docx", ...KIND_MARKS.document },
   flashcards: { extension: "", icon: "layers", label: "Flashcards", tint: "--ui-kind-purple" },
   // 🔴 ITS OWN GLYPH AND ITS OWN WORD. A page is not a document with different bytes: the thing
@@ -53,7 +53,7 @@ const KIND: Record<string, { extension: string; icon: string; label: string; tin
 };
 
 export function ArtifactCard({ onOpen, output }: { onOpen: () => void; output: CanvasOutput }) {
-  const kind = KIND[output.kind] ?? { extension: "", icon: "file", label: output.kind, tint: "--ui-kind-blue" };
+  const kind = OUTPUT_KIND_MARKS[output.kind] ?? { extension: "", icon: "file", label: output.kind, tint: "--ui-kind-blue" };
   // 🔴 THE REAL FILENAME, BUILT BY THE FUNCTION THAT NAMES THE DOWNLOAD. Showing `title.pdf` here
   // while the saved file is called something else is a small lie that only surfaces in the
   // Downloads folder, which is the worst place to find out.

@@ -25,7 +25,9 @@ import remarkMath from "remark-math";
 
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
+import { ConceptPill } from "@/components/workspace/concept-pill";
 import { citationsToMarkdown, fileRefsToMarkdown, groupCitationRuns, groupFileRuns } from "@/lib/workspace/chat-citations";
+import { CONCEPT_HREF } from "@/lib/workspace/concept-terms";
 import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { escapeCurrencyDollars, normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
@@ -130,7 +132,7 @@ function headingText(children: React.ReactNode): string {
   return Children.toArray(children).map((child) => (typeof child === "string" || typeof child === "number" ? String(child) : "")).join("");
 }
 
-function markdownComponents(
+export function markdownComponents(
   onWikiLink?: (target: string) => void,
   isWikiLinkAvailable?: (target: string) => boolean,
   externalLinksInNewTab = true,
@@ -143,7 +145,11 @@ function markdownComponents(
   onOpenFile?: (file: FileCitation) => void,
 ): Components {
   return {
-    a: ({ children, href }) => {
+    a: ({ children, href, title }) => {
+      // A key term the model marked (lib/workspace/concept-terms.ts): a pill with its meaning.
+      if (href === CONCEPT_HREF || href?.startsWith(`${CONCEPT_HREF} `)) {
+        return <ConceptPill meaning={title ?? ""}>{children}</ConceptPill>;
+      }
       if (href === "#nemesis-highlight") {
         return <mark className="rounded-[0.2rem] bg-[color-mix(in_srgb,var(--theme-primary)_24%,transparent)] px-0.5 text-inherit">{children}</mark>;
       }

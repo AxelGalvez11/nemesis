@@ -9,12 +9,16 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 
 import { CARD_AUTO_MAX_HEIGHT, CARD_MIN_HEIGHT, CONTRACTED_CARD_MIN_HEIGHT } from "@/lib/board/board-layout";
 import { BOARD_MESSAGE_TOO_LONG_REPLY, isMessageTooLong, messageLimitNotice, type BoardCard } from "@/lib/board/board-model";
+import { boardCitableFiles, boardSourceForFile } from "@/lib/board/board-grounding";
 import { deriveCardSummary, firstImage } from "@/lib/board/board-protocol";
+import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { cn } from "@/lib/utils";
+import { ConceptPillContext, type ConceptPillActions } from "@/components/workspace/concept-pill";
 
 import { AutoResizingTextarea, BRANCH_BUTTONS, IconTooltip, NodeHandles, NodeResizeControls, StreamingDots, measureBoardArea } from "./board-chrome";
 import { useBoard, type RetryTarget } from "./board-provider";
-import { CardMessage, DiveDeeperSourceMatcherContext } from "./card-message";
+import { CardMessage } from "./card-message";
+import { MakeMenu } from "./make-menu";
 import { SelectionActions } from "./selection-actions";
 import { SelectionMenu, SELECTION_ICONS } from "./selection-menu";
 import {
@@ -40,6 +44,8 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     lastAddedCardId,
     noteFocusRequest,
     sendCardMessage,
+    sources,
+    makeDeliverable,
     createBranchCard,
     sendBranchQuestion,
     branchFromSelection,
@@ -73,7 +79,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
    *  zooms. Verified on production 2026-09-03: the card measured its ceiling while the camera
    *  was still on the parent, then the camera centred it and it ran on past the composer. */
   const cameraKey = useStore((state) => state.transform.join(","));
-  const { getInternalNode, getZoom } = useReactFlow();
+  const { fitView, getInternalNode, getZoom } = useReactFlow();
 
   const streaming = card?.status === "streaming";
   const messageCount = card?.messages.length ?? 0;
@@ -215,6 +221,16 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     },
     [branchFromSelection, data.cardId],
   );
+  // A citation pill names a dropped document; pressing it brings that source card into view.
+  const citableFiles = useMemo(() => boardCitableFiles(sources), [sources]);
+  const openCitedSource = useCallback(
+    (file: FileCitation) => {
+      const source = boardSourceForFile(sources, file.id);
+      if (source) void fitView({ nodes: [{ id: source.id }], duration: 320, padding: 0.2, maxZoom: 1 });
+    },
+    [fitView, sources],
+  );
+  const pillActions = useMemo<ConceptPillActions>(() => ({ onDiveDeeper: diveDeeper, isBranched: isBranchedTerm }), [diveDeeper, isBranchedTerm]);
 
   if (!card) return null;
 
@@ -438,7 +454,10 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
       <div className="contents">
         <div
           className={cn(
-            "min-h-0 space-y-[12px] overflow-y-auto overscroll-contain px-[16px] py-[12px]",
+            // 🔴 `nowheel` OR THE CARD CANNOT SCROLL. React Flow turns every wheel event on the pane
+            // into a pan; this class hands the wheel back to the card's own scroll box (owner,
+            // 2026-09-03: "i cant scroll in individual chats when i click on them").
+            "nowheel min-h-0 space-y-[12px] overflow-y-auto overscroll-contain px-[16px] py-[12px]",
             heightFixed && "flex-1",
             selected ? "nodrag nopan cursor-auto select-text" : "select-none",
           )}
@@ -448,7 +467,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
           ref={content}
           style={{ WebkitMaskImage: CONTENT_MASK, maskImage: CONTENT_MASK }}
         >
-          <DiveDeeperSourceMatcherContext.Provider value={isBranchedTerm}>
+          <ConceptPillContext.Provider value={pillActions}>
             {card.messages.map((message, index) => {
               const failedUser = message.isError ? card.messages[index - 1] : undefined;
               const retryable = failedUser?.role === "user";
@@ -456,10 +475,11 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
               return (
                 <CardMessage
                   errorNotice={notice}
+                  files={citableFiles}
+                  onOpenFile={openCitedSource}
                   hideContextExcerpt={index === 0 && message.contextExcerpt === (card.contextExcerpt ?? undefined)}
                   key={message.id}
                   message={message}
-                  onDiveDeeper={diveDeeper}
                   onRetry={
                     retryable
                       ? () => {
@@ -547,7 +567,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
                 })}
               </div>
             )}
-          </DiveDeeperSourceMatcherContext.Provider>
+          </ConceptPillContext.Provider>
         </div>
         {(card.savedImages.length > 0 || (!paints && card.highlights.length > 0)) && (
           <section aria-label="Saved items" className="min-h-0 overflow-y-auto overscroll-contain border-t border-(--ui-stroke-secondary) px-[16px] py-[12px]">
@@ -603,6 +623,13 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
         )}
       </div>
       <form className="mt-auto flex shrink-0 items-center gap-[8px] rounded-b-[16px] px-[12px] py-[10px]" onSubmit={submit}>
+        <MakeMenu
+          onPick={(kind) => {
+            makeDeliverable(kind, { cardId: card.id, topic: draft });
+            setDraft("");
+          }}
+          size={48}
+        />
         <div className="min-w-0 flex-1">
           <AutoResizingTextarea
             aria-describedby={limitNotice ? `board-card-${card.id}-limit` : undefined}

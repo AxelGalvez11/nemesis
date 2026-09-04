@@ -618,6 +618,8 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
 
   return (
     <main
+      // The Chat | Canvas switch fades this page's content around itself (front-door-toggle.tsx).
+      data-front-door-page=""
       className="relative h-full min-h-0 bg-(--ui-bg-editor)"
       onDragLeave={(event) => {
         // 🔴 GUARDED BY `currentTarget`. Dragging across a child fires dragleave on the parent, so

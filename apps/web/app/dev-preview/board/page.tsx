@@ -81,7 +81,7 @@ const STREAMING = card({
   ],
 });
 
-const SEED: BoardState = { cards: [ROOT, BRANCH, STREAMING], sources: [], selectedSourceIds: [], useWebSearch: true };
+const SEED: BoardState = { cards: [ROOT, BRANCH, STREAMING], sources: [], outputs: [], selectedSourceIds: [], useWebSearch: false };
 
 export default function BoardPreview() {
   const empty = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("empty") === "1";

@@ -4,11 +4,13 @@
 // is theirs; the tests pin them so a "tidy" later cannot move a card by a few pixels without
 // saying so.
 
-import type { BoardCard, BoardNote, BoardPosition, BoardSource, BoardViewport } from "./board-model";
+import type { BoardCard, BoardNote, BoardPosition, BoardSource, BoardViewport, BoardOutputCard } from "./board-model";
 
 export const CARD_WIDTH = 720;
 export const SOURCE_WIDTH = 640;
 export const NOTE_WIDTH = 260;
+/** A deliverable card: the width of the chat's artifact chip, standing on its own. */
+export const OUTPUT_WIDTH = 320;
 export const CARD_MIN_WIDTH = 300;
 export const CARD_MAX_WIDTH = 840;
 export const CARD_MIN_HEIGHT = 320;
@@ -189,10 +191,14 @@ export function centeredViewportForNode({
 }
 
 /** Every rectangle a new card must avoid: cards, their notes (fixed width), sources. */
-export function occupiedRects(cards: readonly BoardCard[], sources: readonly BoardSource[]): Placed[] {
+export function occupiedRects(cards: readonly BoardCard[], sources: readonly BoardSource[], outputs: readonly BoardOutputCard[] = []): Placed[] {
   return [
     ...cards,
     ...cards.flatMap((card) => card.notes.map((note: BoardNote) => ({ position: note.position, width: NOTE_WIDTH }))),
     ...sources,
+    ...outputs.map((output) => ({ position: output.position, width: output.width, height: output.height ?? OUTPUT_MIN_HEIGHT })),
   ];
 }
+
+/** An output card before it is measured: title row plus the open button. */
+export const OUTPUT_MIN_HEIGHT = 132;

@@ -86,10 +86,8 @@ export const PROTOCOL_INSTRUCTION =
 
 /** How key terms are marked: a markdown link to `#concept` whose title is the one-line meaning.
  *  Rendered as a pill with a popover; see concept-keyword.tsx. */
-export const CONCEPT_INSTRUCTION =
-  "Mark two to five key terms in the answer, at their first appearance only, as markdown links of exactly this form: " +
-  '[term](#concept "one plain sentence explaining the term"). Only terms a learner might want defined; never mark ordinary words, ' +
-  "and never mark a term more than once.";
+// The key-term rule is shared with the chat now (owner 2026-09-03).
+export { CONCEPT_INSTRUCTION } from "@/lib/workspace/concept-terms";
 
 const MARKDOWN_IMAGE_PARTS = /!\[([^\]]*)\]\(\s*<?([^\s)>]+)>?[^)]*\)/;
 

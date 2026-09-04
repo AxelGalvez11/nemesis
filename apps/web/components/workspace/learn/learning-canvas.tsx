@@ -81,6 +81,8 @@ import { nextExplanationState, type ExplanationEvent } from "./canvas-explanatio
 import { canvasPresentation } from "./canvas-presence";
 import { CanvasFade } from "./canvas-fade";
 import { CanvasThreadTurnView } from "./canvas-thread-turn";
+import { ConceptPillContext, type ConceptPillActions } from "@/components/workspace/concept-pill";
+import { diveDeeperMessage } from "@/lib/workspace/concept-terms";
 import { CanvasHistoryRail } from "./canvas-history-rail";
 import { CanvasHistoryView } from "./canvas-history-view";
 import { WHOLE_CANVAS } from "@/lib/learn/canvas-focus";
@@ -2573,6 +2575,7 @@ export function LearningCanvas({
    * something was said that no longer is.
    */
   const retryTurn = useCallback((said: string) => { void converse(said); }, [converse]);
+  const conceptPillActions = useMemo<ConceptPillActions>(() => ({ onDiveDeeper: (term) => { void converse(diveDeeperMessage(term)); } }), [converse]);
 
   /**
    * 🔴 A NEW TURN RETURNS THE LEARNER TO NOW. Leaving the canvas rewound while an answer arrives
@@ -3083,6 +3086,10 @@ export function LearningCanvas({
       </DocumentDockProvider>
       }
     >
+      {/* Owner 2026-09-03: the board's key-term pills, in the chat. "Dive deeper" on a pill asks a
+          follow-up in THIS thread through the same door a typed message takes. Inside the surface,
+          not around it: every branch of this component returns a CanvasSurface (learn-entry.test). */}
+      <ConceptPillContext.Provider value={conceptPillActions}>
       <ArrivalLabels from={arrival.from} />
       {/* 🔴 INSIDE THE SURFACE, NOT AROUND IT. Wrapping `LearningCanvas` in the provider made
           this branch return `<DocumentDockProvider>`, and `learn-entry.test.ts` requires every
@@ -4366,6 +4373,7 @@ export function LearningCanvas({
       )}
       </MindmapDoorProvider>
       </DocumentDockProvider>
+      </ConceptPillContext.Provider>
     </CanvasSurface>
   );
 }

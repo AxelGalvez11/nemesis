@@ -10,6 +10,9 @@
 // `board` so the ~120 `canvas-*` files of the chat cannot be confused with it; what a learner
 // reads says "Canvas".
 
+import type { DeliverableKind } from "@/lib/learn/canvas-deliverables";
+import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
+
 export const BOARD_DOCUMENT_VERSION = 1;
 
 export const MAX_BOARD_CARDS = 250;
@@ -130,8 +133,18 @@ export interface BoardSource {
   id: string;
   type: BoardSourceType;
   name: string;
-  /** The extracted text, pasted into the question that selects it. */
+  /** The extracted text: the card's preview, and the material for a source filed before grounding. */
   content: string;
+  /**
+   * The chat-shaped view of this document, so the board grounds and cites the way the chat does.
+   *
+   * 🔴 OWNER 2026-09-03: "i dont like that it makes up its own sources" and yes to "bring the chat's
+   * document grounding to the canvas". The board used to paste `content` into the question up to
+   * Wondering's limits; now `lib/board/board-grounding.ts` retrieves the passages the question
+   * needs from `library_chunks`, labels every excerpt `[s1:e4]`, and the answer cites those ids.
+   * Absent on a source dropped before this existed, which is built from `content` on the fly.
+   */
+  grounded?: CanvasSource;
   status: BoardSourceStatus;
   error?: string;
   /** Runtime only: object URLs for dropped images. Never serialised. */
@@ -145,14 +158,47 @@ export interface BoardDocument {
   version: number;
   cards: BoardCard[];
   sources: BoardSource[];
+  /** Absent on boards saved before deliverables joined; read as none. */
+  outputs?: BoardOutputCard[];
   selectedSourceIds: string[];
   useWebSearch: boolean;
   viewport?: BoardViewport;
 }
 
+export type BoardOutputStatus = "making" | "ready" | "error";
+
+/**
+ * A deliverable made on the board: flashcards, a note, a document, slides, a page, a report.
+ *
+ * Owner 2026-09-03, asked whether deliverables should join the canvas: "yes", to the shape "ask for
+ * one in plain words in any card's follow-up box, or from the composer's + menu. The result appears
+ * as its own card beside the thread it came from, joined by a line, and also lands in the Library
+ * exactly as chat deliverables do." The `output` is the chat's own `CanvasOutput`, made by the
+ * chat's own makers (lib/learn/canvas-deliverables.ts), so a deck is real study rows and a note is
+ * a real Library page. What is the board's is only where the card sits.
+ */
+export interface BoardOutputCard {
+  id: string;
+  /** The thread it was made from, or null when asked from the board composer. */
+  cardId: string | null;
+  kind: DeliverableKind;
+  status: BoardOutputStatus;
+  /** What was asked, so an errored card can say what it failed to make. */
+  topic: string;
+  error?: string;
+  /** Runtime only: the maker's current step ("Reading 3 of 8 pages…"). */
+  progress?: string;
+  output?: CanvasOutput;
+  createdAt: string;
+  position: BoardPosition;
+  width: number;
+  height?: number;
+}
+
 export interface BoardState {
   cards: BoardCard[];
   sources: BoardSource[];
+  outputs: BoardOutputCard[];
   selectedSourceIds: string[];
   useWebSearch: boolean;
   viewport?: BoardViewport;
@@ -249,6 +295,10 @@ export function serializeBoardState(state: BoardState, measured?: ReadonlyMap<st
         }),
     })),
     sources,
+    outputs: state.outputs.filter((output) => output.status !== "making").map((output) => {
+      const size = measured?.get(output.id);
+      return { ...output, ...(size ? { width: size.width, height: size.height } : {}) };
+    }),
     selectedSourceIds: state.selectedSourceIds.filter((id) => sourceIds.has(id)),
     useWebSearch: state.useWebSearch,
     ...(state.viewport ? { viewport: state.viewport } : {}),
@@ -268,7 +318,7 @@ function parseViewport(raw: unknown): BoardViewport | undefined {
 /** Read a stored document without trusting it: every array is defaulted, every reference checked. */
 export function parseBoardState(raw: unknown): BoardState {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { cards: [], sources: [], selectedSourceIds: [], useWebSearch: false };
+    return { cards: [], sources: [], outputs: [], selectedSourceIds: [], useWebSearch: false };
   }
   const value = raw as Record<string, unknown>;
   const cards: BoardCard[] = Array.isArray(value.cards)
@@ -291,6 +341,11 @@ export function parseBoardState(raw: unknown): BoardState {
     ? (value.sources as BoardSource[]).map((source) => ({ ...source, previewUrls: [] }))
     : [];
   const sourceIds = new Set(sources.map((source) => source.id));
+  // A deliverable still being made when the board was saved is gone on reload: the maker is a
+  // client call, and nothing would ever finish it. Same rule as a pending reply.
+  const outputs: BoardOutputCard[] = Array.isArray(value.outputs)
+    ? (value.outputs as BoardOutputCard[]).filter((output) => output && typeof output.id === "string" && output.status !== "making")
+    : [];
   const selectedSourceIds = Array.isArray(value.selectedSourceIds)
     ? (value.selectedSourceIds as unknown[]).filter((id): id is string => typeof id === "string" && sourceIds.has(id))
     : [];
@@ -298,6 +353,7 @@ export function parseBoardState(raw: unknown): BoardState {
   return {
     cards,
     sources,
+    outputs,
     selectedSourceIds,
     useWebSearch: value.useWebSearch === true,
     ...(viewport ? { viewport } : {}),
