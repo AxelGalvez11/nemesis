@@ -241,48 +241,34 @@ test("nothing offers a one-key reveal of the answer", () => {
   assert.ok(!/I don&rsquo;t know/.test(policy), "the admission is the composer's, not a button on the task");
 });
 
-test("🔴🔴 the masthead is solid and never overlaps the resting content", () => {
-  // REPOINTED, 2026-08-19. The old assertion demanded `to-transparent` — a gradient — on the
-  // grounds that a fade draws no edge. It draws no edge and it DOES fade whatever is under it:
-  // at 88px it reached 24px into a column that rests at `pt-[64px]`, so in dark mode the top of
-  // the learner's own question dissolved into black. "Draws no edge" was the wrong property to
-  // protect; "never paints over a letter" is the right one, and a solid band shorter than the
-  // resting offset gives both.
-  const shell = read("canvas-surface.tsx");
-  // 🔴🔴 REPOINTED AGAIN, 2026-09-03: THE MASTHEAD IS ANCHORED TO THE CONTROLS, NOT `inset-x-0`.
-  // Owner: *"there still seems to be a header block up top that's blocking the page."* Measured at
-  // [52, 0, 1388, 44]: a solid band over the WHOLE conversation for the benefit of a control
-  // cluster in the top right corner. At rest it covered nothing — the rule below still holds and is
-  // still checked — so this was only ever visible while scrolling, and then it hid a full line of
-  // the learner's own text behind a blank strip across the reading column.
+test("🔴🔴🔴 there is NO masthead band, and the ground is on the controls instead", () => {
+  // 🪦 THE BAND IS GONE, AND IT TOOK TWO REPORTS IN ONE AFTERNOON TO GET THERE (2026-09-03).
+  //   - full width:      *"there still seems to be a header block up top that's blocking the page."*
+  //   - anchored right:  reported AGAIN, circled in the top right corner.
   //
-  // The two properties that mattered are unchanged and both still asserted: it is SOLID (never a
-  // gradient, which fades letters rather than ground) and it is SHORTER than the resting offset.
-  // What changed is its width.
-  const band = /className="pointer-events-none absolute right-0 top-0 z-20 h-\[(\d+)px\] w-\[(\d+)px\] ([^"]+)"/.exec(shell);
-  assert.ok(band, "expected a masthead band anchored to the controls");
-  // 🔴 THE MASTHEAD'S OWN CLASS, NOT THE WHOLE FILE. My first version banned `inset-x-0` anywhere
-  // in `canvas-surface.tsx` and reddened on other elements that legitimately span it — the drop
-  // overlay for one. What must not come back is a full-width band at this position.
-  assert.ok(!/inset-x-0 top-0 z-20 h-\[\d+px\]/.test(shell), "the masthead spans the whole column again");
-  // 🔴 WIDE ENOUGH FOR THE CLUSTER AND NO WIDER. Two 36px buttons, their gaps and the 12px inset,
-  // with room for a third; a band that grew past the centred reading column would be the same bug
-  // with a different number.
-  assert.ok(Number(band[2]!) <= 320, `the masthead is ${band[2]}px wide and will reach the reading column`);
+  // 🔴 THE SECOND GEOMETRY WAS WORSE FOR A REASON THE FIRST FIX CREATED. The learner's bubbles are
+  // RIGHT-ALIGNED, so a right-anchored band sits exactly on top of them: a question scrolling up
+  // lost its right half to an opaque rectangle while its left half stayed. Full width hides a line
+  // of the conversation; right-anchored hides half a bubble. Neither geometry works, which is the
+  // argument for neither.
+  //
+  // The band existed so text would not run under the floating controls, so the ground belongs ON
+  // the controls — where it cannot cover anything that is not behind them. That is also what the
+  // owner asked for when the canvas title went the same day: *"remove that top block header because
+  // that's taken away from the reading of the chat."*
+  const shell = read("canvas-surface.tsx");
+  assert.ok(!/top-0 z-20 h-\[\d+px\]/.test(shell), "a masthead band is back at the top of the canvas");
+  assert.match(shell, /🪦 THE MASTHEAD BAND STOOD HERE AND IS GONE/, "the tombstone went, so the next pass will re-add the band");
 
-  const height = Number(band[1]!);
-  assert.ok(!/gradient/.test(band[3]!), "the masthead fades again, and a fade erases the top of the question");
+  // 🔴 AND THE GROUND IT PROVIDED HAS A HOME. Deleting the band without this leaves the glyphs
+  // sitting on whatever scrolls under them, which is the problem the band was solving.
+  const header = read("canvas-header.tsx");
+  assert.match(header, /shrink-0 items-center gap-1 rounded-\[10px\] bg-\(--ui-bg-editor\)/, "the controls have no ground, so text will scroll under them");
 
-  // The scroll container's own top padding — which lives in `learning-canvas.tsx`, a different
-  // file from the band. Read rather than hard-coded: the two numbers are only meaningful against
-  // each other, they are declared apart, and pinning one while the other moves is exactly how this
-  // came back the first time.
-  const resting = /overflow-y-auto[^"]*pt-\[(\d+)px\]/.exec(read("learning-canvas.tsx"));
-  assert.ok(resting, "expected the scrolling column to declare its top offset");
-  assert.ok(
-    height < Number(resting[1]!),
-    `the masthead (${height}px) reaches into the resting column (${resting[1]!}px) and will cover text`,
-  );
+  // 🔴 AND NO GRADIENT, EVER. The 2026-08-19 ruling stands wherever this ground lives: a vertical
+  // ramp fades the LETTERS rather than the background, and in dark mode it dissolved white text
+  // into black. Calibration: put `bg-gradient-to-b` on the row above and this reddens.
+  assert.ok(!/gradient/.test(header.slice(header.indexOf("shrink-0 items-center gap-1")).slice(0, 200)), "the controls' ground fades, and a fade erases letters");
 });
 
 test("a correction is prose, not a card", () => {

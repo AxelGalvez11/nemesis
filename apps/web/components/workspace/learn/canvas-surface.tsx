@@ -271,25 +271,25 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
           gives up is the soft hand-off — scrolled text now ends at a hard line instead of thinning
           out — which is what the reference does too, and is the price of text that is never
           half-erased. */}
-      {/* 🔴🔴 IT IS ANCHORED TO THE CONTROLS NOW, NOT DRAWN ACROSS THE COLUMN (2026-09-03). Owner:
-          *"there still seems to be a header block up top that's blocking the page."* He is right,
-          and the measurement says so: a solid 44px band at [52, 0, 1388, 44] over the whole
-          conversation, for the benefit of a control cluster that occupies the top RIGHT corner.
-          At rest it covered nothing (the scroller sits at `pt-[48px]`), so this was only ever
-          visible while scrolling — and then it hid a full line of the learner's own text behind a
-          blank strip with a hard edge, right across the reading column.
+      {/* 🪦 THE MASTHEAD BAND STOOD HERE AND IS GONE — owner, 2026-09-03, twice in one afternoon.
+          First as a full-width strip: *"there still seems to be a header block up top that's
+          blocking the page."* I anchored it to the controls instead (`right-0 w-[280px]`) and he
+          reported it AGAIN, with the block circled in the top right corner — and he was right the
+          second time for a reason the first fix created. **The learner's bubbles are
+          right-aligned.** A right-anchored band sits exactly on top of them, so a question
+          scrolling up lost its right half to an opaque rectangle while its left half stayed: a far
+          more obviously broken thing than the strip it replaced.
 
-          🔴 THE MASTHEAD'S JOB IS TO KEEP TEXT FROM RUNNING UNDER THE CONTROLS, and the controls
-          are 12px from the right edge. So the ground goes where they are. `w-[280px]` is the
-          cluster at its widest — two 36px buttons, their gaps and the 12px inset — plus room for a
-          third if one is ever added; the centred reading column ends well left of it on any window
-          wide enough for both, and on a narrow one the overlap is the controls' own footprint,
-          which is unavoidable and correct.
+          🔴 NEITHER GEOMETRY WORKS, WHICH IS THE ARGUMENT FOR NEITHER. Full width hides a line of
+          the conversation; right-anchored hides half a bubble. The band existed so text would not
+          run under the floating controls — so the ground belongs ON the controls, which is where
+          the reference puts it and where it can never cover anything that is not behind them.
+          `canvas-header.tsx` carries it now.
 
-          🔴 STILL SOLID, AND STILL THE PAGE'S OWN COLOUR. The 2026-08-19 ruling that replaced a
-          gradient with a flat masthead stands: a vertical ramp fades the LETTERS, not the ground,
-          and in dark mode it dissolved white text into black. Nothing here reintroduces one. */}
-      <div className="pointer-events-none absolute right-0 top-0 z-20 h-[44px] w-[280px] bg-(--ui-bg-editor)" />
+          🔴 AND HE HAD ALREADY ASKED FOR THIS, in the same words, when the canvas title went:
+          *"remove that top block header because that's taken away from the reading of the chat."*
+          The band was the rest of that block. */}
+
 
       {draggingOver && <FileDropOverlay note="Drop any file here to add it to this canvas" />}
 
