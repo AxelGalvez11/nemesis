@@ -1167,27 +1167,36 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
             Settings picker writes this token. A literal here would be the one button in the app
             that ignores the learner's chosen accent. The Projects page's "New" is this exact
             string, deliberately: the two pages are meant to be indistinguishable side by side. */}
-          {/* 🔴 THE REFERENCE'S "New" IS A MENU, NOT ONE VERB (measured 2026-08-30: its pill
-              opens Image / Note / Document / … / Folder / Upload files). Ours offers the two
-              things a learner can genuinely start from here — a project to file into, and a
-              canvas, which is where every OTHER thing this page lists actually gets made.
-              Rows for artifacts Nemesis makes on request (a deck, a note, slides) would be
-              §38/cards-are-output-only violations dressed as menu items. */}
+          {/* 🔴🔴 ONE VERB, AND IT IS "NEW FOLDER". Owner, 2026-09-03: *"in the library page, the
+              only thing I want in the library page is for user to create a new folder so that they
+              can organize the documents into the folder."*
+
+              This was a menu of two — "New project" and "New canvas" — and both were wrong HERE for
+              the same reason, which the owner's sentence names: this page is a shelf of things the
+              learner already has, so its one button should be about ORGANISING them. A canvas is
+              started from the front door, which is the whole point of the front door; a project is
+              made where projects live. Filing outputs into folders is something only this page can
+              do (`fileOutput`, and the `openFolder` filter below), and it had no door of its own.
+
+              🔴 THE ACTION IS UNCHANGED — `setNaming("")` already created a folder row; it was
+              LABELLED "New project" because folders and projects are one table. What changed is the
+              word and the fact that it is no longer buried under a chevron. The seam is the one
+              `sidebar-canvases.tsx` records: a learner reading this page is organising documents,
+              so the word here is folder.
+
+              🔴 STILL ONLY AT THE TOP LEVEL. Folders nest two deep in the database and the sidebar
+              already spends that second level; offering this from inside one would either hit the
+              trigger's refusal or quietly make a sibling, and neither is what the button says. */}
           {openFolder === null && naming === null && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                aria-label="New"
-                className="flex h-[36px] shrink-0 items-center gap-[6px] rounded-full bg-(--ui-action) px-[16px] text-[14px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-80"
-              >
-                <Plus size={16} strokeWidth={2} />
-                New
-                <ChevronDown size={14} strokeWidth={2} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setNaming("")}>New project</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push("/learn")}>New canvas</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <button
+              aria-label="New folder"
+              className="flex h-[36px] shrink-0 items-center gap-[6px] rounded-full bg-(--ui-action) px-[16px] text-[14px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-80"
+              onClick={() => setNaming("")}
+              type="button"
+            >
+              <Plus size={16} strokeWidth={2} />
+              New folder
+            </button>
           )}
         </div>
         {/* 🔴🔴 BOTH DOORS REMOVED — owner, 2026-08-24: "the library page has an import from Anki

@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { cn } from "@/lib/utils";
 import type { Folder } from "@/lib/learn/canvas-store";
+import { projectTint } from "@/lib/learn/project-look";
 import { APP_LOGO } from "@/lib/workspace/app-logos";
 import { beginConnect, type ConnectableApp } from "@/lib/workspace/composio-client";
 import { ProjectCreateDialog } from "@/components/workspace/shell/project-create-dialog";
@@ -271,12 +272,13 @@ function ConnectedApps({ apps, connected, onOpen }: { apps: readonly Connectable
           <div className="mx-[10px] my-[6px] h-px bg-(--ui-stroke-tertiary)" />
           <button className={cn(PANEL_ITEM, "mx-[6px] w-auto")} onClick={() => { setOpen(false); onOpen(); }} role="menuitem" type="button">
             {/* 🔴 THE ROW SAYS WHERE IT GOES. "Manage connections" opened Settings; it opens the
-                Plugins page now (owner 2026-08-30), and it is named in the destination's own word —
-                the rail row this leads to is labelled Plugins. The puzzle piece is that page's mark
+                apps page now (owner 2026-08-30), and it is named in the destination's own word —
+                the rail row this leads to is labelled Apps (owner, 2026-09-03: *"rename the plugins
+                into apps"*), so this row says the same. The puzzle piece is that page's mark
                 (#921); a settings gear promised Settings, which is exactly the wrong turn removed.
                 The plug stays retired (#915). */}
             <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="extensions" size="1rem" />
-            <span>Manage plugins</span>
+            <span>Manage apps</span>
             <Codicon className="ml-auto shrink-0 text-(--ui-text-tertiary)" name="chevron-right" size="0.875rem" />
           </button>
         </div>
@@ -310,6 +312,8 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", escape); };
   }, [open]);
+
+  const chosen = folders.find((folder) => folder.id === value) ?? null;
 
   // 🔴 THE ROW IS UNMOUNTED, NOT HIDDEN, so an open menu cannot outlive the reason it appeared —
   // clearing the composer while the list is open would otherwise leave it floating over nothing.
@@ -350,8 +354,25 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
           onClick={() => { setOpen((was) => !was); setNaming(false); setSearch(""); }}
           type="button"
         >
-          <Codicon className="shrink-0" name="folder" size="1rem" />
-          <span className="max-w-[220px] truncate">Choose project</span>
+          {/* 🔴🔴 THE CONTROL SHOWS WHAT IT SET. Owner, 2026-09-03: *"the project shows up in the
+              chat bar as if it's a mode. But I need it to be down there where it says choose project
+              instead."* For one day the chosen project was an inline token on the composer's own
+              line, copied from chatgpt.com — and in a composer whose line already carries the
+              CAPABILITY, a project sitting beside it reads as a second mode rather than as a filing.
+              The tombstone in canvas-home.tsx has the full reasoning.
+
+              🔴 A CONTROL THAT NAMES ITS OWN STATE CANNOT BE MISREAD. "Choose project" is the empty
+              state and the project's own name is the set state, which is what every picker in this
+              product already does.
+
+              🔴 AND IT WEARS THE PROJECT'S OWN GLYPH AND COLOUR — see `projectTint`. */}
+          <Codicon
+            className="shrink-0"
+            name={chosen?.icon ?? "folder"}
+            size="1rem"
+            style={projectTint(chosen)}
+          />
+          <span className="max-w-[220px] truncate">{chosen?.name ?? "Choose project"}</span>
         </button>
 
         {open && (
@@ -382,6 +403,27 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
                 {q ? "No matches." : "No projects yet."}
               </p>
             )}
+            {/* 🔴🔴 THE WAY BACK OUT, AND IT WAS MISSING FOR A DAY. The control used to carry a ✕;
+                that was removed on 2026-09-03 because Backspace on the inline composer token
+                cleared it instead — and when the owner sent the project back down to this control
+                (*"I need it to be down there where it says choose project instead"*), the token
+                went and the ONLY gesture for un-filing a chat went with it. A menu row is the right
+                home for it anyway: it sits with the other choices, it is discoverable, and it does
+                not put the state in two places the way a ✕ beside the name did.
+
+                🔴 ONLY WHEN THERE IS SOMETHING TO CLEAR. On an unfiled chat it would be a row that
+                says "leave it where it is". */}
+            {value !== null && (
+              <button
+                className={cn(PANEL_ITEM, "mx-[10px] w-auto whitespace-nowrap")}
+                onClick={() => { onChange(null); setOpen(false); }}
+                role="menuitem"
+                type="button"
+              >
+                <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="circle-slash" size="20px" />
+                <span className="min-w-0 truncate text-(--ui-text-secondary)">No project</span>
+              </button>
+            )}
             {listed.map((folder) => (
               <button
                 className={cn(PANEL_ITEM, "mx-[10px] w-auto whitespace-nowrap")}
@@ -390,15 +432,17 @@ export function ProjectPicker({ folders, value, onChange, onCreate, shown, apps,
                 role="menuitem"
                 type="button"
               >
-                {/* 🔴 THE PROJECT'S OWN ICON, AND NO LONGER ITS COLOUR. A project's glyph is still
-                    its own; the colour half of that feature was removed on 2026-09-03 with the rest
-                    of the accents, and `folders.color` reaching the screen here was the last place
-                    it did. 20px, the reference's size — "1rem" here is 18 because the root font is
-                    18, the rem trap this file already knows. */}
+                {/* 🔴 THE PROJECT'S OWN ICON AND ITS OWN COLOUR. The colour was removed with the
+                    accents on 2026-09-03 and restored the same day as a setting — see
+                    `lib/learn/project-look.ts` for why those two calls are not in conflict, and why
+                    the tint is a token rather than the hex the database stores. 20px, the
+                    reference's size — "1rem" here is 18 because the root font is 18, the rem trap
+                    this file already knows. */}
                 <Codicon
-                  className="shrink-0 text-(--ui-text-tertiary)"
+                  className={cn("shrink-0", !folder.color && "text-(--ui-text-tertiary)")}
                   name={folder.icon ?? "folder"}
                   size="20px"
+                  style={projectTint(folder)}
                 />
                 <span className="min-w-0 truncate">{folder.name}</span>
                 {/* 🔴 `--ui-text-primary`, NOT `--ui-action`. The accent reaches the mascot, the send

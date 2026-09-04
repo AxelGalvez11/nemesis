@@ -104,56 +104,19 @@ export function CapabilityChip({
  * `--ui-text-secondary` is what every capability tint resolves to now, so the two tokens that can
  * share this line share one ink rather than one of them re-introducing a hue.
  */
-export function ProjectToken({
-  name,
-  icon,
-  className,
-}: {
-  name: string;
-  /** The project's chosen glyph, or null for the default folder. */
-  icon?: string | null;
-  className?: string;
-}) {
-  return (
-    <ComposerToken
-      className={className}
-      data-project-token=""
-      icon={icon ?? "folder"}
-      label={name}
-      tint="--ui-text-secondary"
-    />
-  );
-}
+/* 🪦 `ProjectToken` STOOD HERE FOR ONE DAY. It put the chosen project inline at the head of the
+   composer's line, copied from chatgpt.com — and the owner read it as a mode the moment he used it
+   (2026-09-03: *"the project shows up in the chat bar as if it's a mode. But I need it to be down
+   there where it says choose project instead"*). The project is shown on the control that sets it
+   now; `project-picker.tsx` has the reasoning and `canvas-home.tsx` the tombstone.
 
-/**
- * Whether this keystroke should take the staged capability off the line.
- *
- * 🔴🔴 IT IS A FUNCTION SO BOTH COMPOSERS ASK THE SAME QUESTION. The rule reads as one line at each
- * call site and would be copied wrongly the first time somebody moved it: the reference deletes its
- * pill on a Backspace pressed AT THE HEAD OF THE TEXT, which is not the same as "the box is empty".
- * A learner who has typed a sentence and walked the caret back to the front is standing exactly
- * where the chip is, and Backspace there means the chip.
- *
- * 🔴 AND ONLY WITH NOTHING SELECTED. Backspace over a selection deletes the selection; taking the
- * capability away as well would be two deletions for one keypress.
- */
-/**
- * Which staged token a Backspace at the head of the line takes off, or null for none.
- *
- * 🔴 THE NEAREST ONE, WHICH IS THE LAST ONE BEFORE THE CARET. Two tokens can share this line now —
- * a project and a capability — and one keypress must remove one of them. They are drawn project
- * first, capability second, so the capability is the one the caret is standing next to, and it goes
- * first. Deleting both, or deleting the far one, would be a keypress doing something the learner
- * cannot see the reason for.
- */
-export function backspaceClearsToken(
-  event: { key: string; currentTarget: { selectionStart: number | null; selectionEnd: number | null } },
-  staged: { capability: unknown; project: unknown },
-): "capability" | "project" | null {
-  if (!backspaceClearsCapability(event)) return null;
-  if (staged.capability) return "capability";
-  return staged.project ? "project" : null;
-}
+   🔴 `ComposerToken` ABOVE IS UNTOUCHED AND IS STILL SHARED. It was extracted for this, and the
+   capability chip is still built from it — the measurement it carries came from the reference and
+   is right whatever else sits on that line. */
+
+/* 🪦 `backspaceClearsToken` WENT WITH THE TOKEN. It answered "which of the two things on this line
+   does Backspace take off", and there is only one thing on the line again. `backspaceClearsCapability`
+   below is the original and never stopped being the answer. */
 
 export function backspaceClearsCapability(
   event: { key: string; currentTarget: { selectionStart: number | null; selectionEnd: number | null } },

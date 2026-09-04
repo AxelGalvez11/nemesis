@@ -56,6 +56,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
+import { projectTint } from "@/lib/learn/project-look";
 import { ProjectCreateDialog } from "./project-create-dialog";
 import { ProjectCustomizeDialog } from "./project-customize-dialog";
 import { useAuth } from "@/components/AuthProvider";
@@ -546,14 +547,17 @@ export function SidebarCanvases({
               >
                 {/* 🔴 THE PROJECT'S OWN LOOK (owner 2026-08-30, the reference's model): a custom
                     glyph holds steady open or closed, at the reference's 20px.
-                    🔴 AND IT IS NO LONGER TINTED (owner 2026-09-03: "remove any color accents
-                    throughout the app"). A `style` prop here was the last place a stored
-                    `folders.color` reached the screen; see project-customize-dialog.tsx for why
-                    the picker went with it rather than the paint alone. */}
+                    🔴 THE TINT LEFT AND CAME BACK THE SAME DAY, both times by the owner. It went
+                    with the accent sweep (*"remove any color accents throughout the app"*) and
+                    returned as a setting a few hours later (*"allow projects to have color too. and
+                    allow user to choose that color in the project settings"*). `project-look.ts`
+                    carries why those two instructions are not in conflict, and why the tint is a
+                    token rather than the raw hex the database stores. */}
                 <Codicon
                   className="shrink-0"
                   name={folder.icon ?? (isOpen ? "folder-opened" : "folder")}
                   size="20px"
+                  style={projectTint(folder)}
                 />
                 <span className="min-w-0 flex-1 truncate">{folder.name}</span>
               </button>

@@ -43,7 +43,16 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   // 🔴 `extensions` (the puzzle piece), BY THE OWNER'S OWN PICK — 2026-08-30, from a fitting page
   // that drew four candidates on the real row; the plug was offered and passed over, the same day
   // it was retired from the composer's apps control (#915). Do not bring the plug back here.
-  { id: "plugins", label: "Plugins", codicon: "extensions", route: "/plugins" },
+  // 🔴 THE WORD IS "APPS" — owner, 2026-09-03: *"rename the plugins into apps."* It was always the
+  // more honest label: what this page lists is Gmail, Drive, Calendar and Canvas LMS, which nobody
+  // calls a plugin. The composer's own control beside it has said "Apps" since 2026-08-30, so the
+  // rail was the last surface using the other word for the same thing.
+  //
+  // 🔴 THE ROUTE STAYS `/plugins`, AND SO DOES EVERY FILE NAME. This is the same seam
+  // `sidebar-canvases.tsx` records for folder/project: everything a learner READS says Apps,
+  // everything the code CALLS ITSELF stays plugins. A route rename is a redirect, a directory move
+  // and a week of stale links to buy a word nobody sees.
+  { id: "plugins", label: "Apps", codicon: "extensions", route: "/plugins" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
 ];
 
