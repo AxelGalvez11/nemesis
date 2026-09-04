@@ -301,6 +301,16 @@ export interface Folder {
    *  name from PROJECT_ICONS and a preset hex; null means the plain folder. */
   icon?: string | null;
   color?: string | null;
+  /**
+   * Where the learner made it. `"library"` is the Library's own New folder button; null is
+   * everywhere else.
+   *
+   * 🔴 IT EXISTS SO AN EMPTY FOLDER CAN BE SHOWN ON THE ONE SURFACE THAT MADE IT. The Library
+   * hides folders holding nothing — the owner's report, *"I created a new project, but it's showed
+   * up in the library"* — and that rule ate its own New folder button, because a folder you have
+   * just made is empty by definition. See `20260904T20_folders_made_in.sql`.
+   */
+  madeIn?: "library" | null;
   /** Standing instructions that ride every turn of every canvas filed here. */
   instructions?: string | null;
   /** When the learner pinned this project (folders.pinned_at, 20260830T40). A pinned project
@@ -459,14 +469,15 @@ export async function setCanvasFolder(userId: string | null, id: string, folderI
 
 export async function listFolders(userId: string | null): Promise<Folder[]> {
   if (!userId) return [];
-  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at,icon,color,instructions,pinned_at").order("name");
+  const { data, error } = await supabase.from("folders").select("id,name,parent_id,created_at,icon,color,instructions,pinned_at,made_in").order("name");
   if (error || !data) return [];
-  return (data as { id: string; name: string; parent_id: string | null; created_at: string; icon: string | null; color: string | null; instructions: string | null; pinned_at: string | null }[]).map((row) => ({
+  return (data as { id: string; name: string; parent_id: string | null; created_at: string; icon: string | null; color: string | null; instructions: string | null; pinned_at: string | null; made_in: string | null }[]).map((row) => ({
     color: row.color,
     createdAt: row.created_at,
     icon: row.icon,
     id: row.id,
     instructions: row.instructions,
+    madeIn: row.made_in === "library" ? ("library" as const) : null,
     name: row.name,
     parentId: row.parent_id,
     pinnedAt: row.pinned_at,
@@ -566,6 +577,9 @@ export async function createFolder(
   /** The glyph chosen while the project was being made. Null is the default folder — see
    *  `project-customize-dialog.tsx` for why "no choice" and "chose the default" are one state. */
   icon?: string | null,
+  /** Pass `"library"` from the Library's own New folder button so the shelf can show it while it is
+   *  still empty. Everywhere else leaves this alone. */
+  madeIn?: "library" | null,
 ): Promise<Folder | null> {
   if (!userId) return null;
   // 🔴 THE ICON IS PART OF THE INSERT, NOT A SECOND WRITE AFTER IT. Creating and then customizing
@@ -573,8 +587,13 @@ export async function createFolder(
   // and no way for the caller to tell whether that is what the learner picked.
   const { data, error } = await supabase
     .from("folders")
-    .insert({ name: name.slice(0, 120), ...(parentId ? { parent_id: parentId } : {}), ...(icon ? { icon } : {}) })
-    .select("id,name,parent_id,icon")
+    .insert({
+      name: name.slice(0, 120),
+      ...(parentId ? { parent_id: parentId } : {}),
+      ...(icon ? { icon } : {}),
+      ...(madeIn ? { made_in: madeIn } : {}),
+    })
+    .select("id,name,parent_id,icon,made_in")
     .single();
   if (error || !data) {
     // The two-level trigger raises here rather than silently nesting deeper. Worth surfacing
@@ -582,9 +601,17 @@ export async function createFolder(
     console.warn("[learn] folder create failed", error?.message);
     return null;
   }
-  const row = data as { id: string; name: string; parent_id: string | null; icon?: string | null };
+  const row = data as { id: string; name: string; parent_id: string | null; icon?: string | null; made_in?: string | null };
   emitCanvasesChanged();
-  return { icon: row.icon ?? null, id: row.id, name: row.name, parentId: row.parent_id };
+  // 🔴 READ BACK FROM THE ROW, NOT ECHOED FROM THE ARGUMENT. The caller renders what this returns,
+  // and the database is the thing that decides what was stored.
+  return {
+    icon: row.icon ?? null,
+    id: row.id,
+    madeIn: row.made_in === "library" ? "library" : null,
+    name: row.name,
+    parentId: row.parent_id,
+  };
 }
 
 export async function loadCanvas(userId: string | null, id: string): Promise<LearningCanvas | null> {

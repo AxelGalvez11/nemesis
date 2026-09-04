@@ -376,6 +376,37 @@ export function foldersWithContent(folders: readonly Folder[], directCounts: Rea
  * behind a Supabase session, so nothing headless reaches a single row of it, and the row geometry
  * is most of what the owner is accepting.
  */
+/**
+ * The folders the Library's shelf draws.
+ *
+ * 🔴🔴 TWO OWNER RULINGS, BOTH LIVE, AND THEY PULL IN OPPOSITE DIRECTIONS UNTIL YOU KNOW WHERE A
+ * FOLDER CAME FROM.
+ *
+ *  1. *"I created a new project, but it's showed up in the library, and that's not where it should
+ *     go."* A project made on /projects is a bare `folders` row holding nothing, and this page
+ *     shows what Nemesis has MADE — so an empty one does not belong here. That is `withContent`,
+ *     which rolls up through ancestors so a parent whose child holds work is never hidden.
+ *  2. *"making a folder in library doesnt work like in chatgpt, fix it"* (2026-09-04). The Library
+ *     grew a New folder button on 2026-09-03 and it landed straight on rule 1: you name a folder,
+ *     it is created, and it never appears, because a folder you just made is empty by definition.
+ *     The only way to reveal it was to file something into it through another row's menu.
+ *
+ * `made_in` is what tells them apart, and it is written by exactly one caller — the button on this
+ * page. Everything else stays null and keeps rule 1.
+ *
+ * 🔴 A FOLDER THAT LATER FILLS UP SATISFIES BOTH CLAUSES, which is fine: this is an OR, not a
+ * mode. Nothing here needs to know which clause let a row through.
+ *
+ * PURE, so both halves are testable without a browser — an invisible row is exactly the kind of
+ * defect a screenshot cannot show.
+ */
+export function shelfFolders(
+  folders: readonly Folder[],
+  withContent: ReadonlySet<string>,
+): readonly Folder[] {
+  return folders.filter((folder) => withContent.has(folder.id) || folder.madeIn === "library");
+}
+
 export interface LibraryPreview {
   readonly decks: readonly DeckRow[];
   readonly notes: readonly NoteRow[];
@@ -648,7 +679,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     async (raw: string): Promise<boolean> => {
       const name = raw.trim();
       if (!name) return false;
-      const made = await createFolder(userId, name);
+      const made = await createFolder(userId, name, null, null, "library");
       // 🔴 A REFUSED CREATE LEAVES THE LIST ALONE. `createFolder` returns null when the database
       // refuses — the two-level depth trigger raises rather than nesting deeper — and pushing a
       // folder that does not exist would give the learner somewhere to file things that vanishes.
@@ -749,22 +780,64 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
     slides.forEach((row) => bump(row.folderId, row.createdAt));
     return latest;
   }, [decks, folders, notes, slides]);
+
+  /**
+   * What a folder's Modified cell says, and what the list sorts on.
+   *
+   * 🔴🔴 A FOLDER HOLDING NOTHING FALLS BACK TO ITS OWN `createdAt`, AND ONLY BECAUSE SUCH A FOLDER
+   * CAN NOW BE ON SCREEN. The rollup above deliberately leaves an empty folder out — "empty stays
+   * empty" — which was free advice while an empty folder never appeared here at all. Since
+   * 2026-09-04 one can: the folder you just made on this page. With no fallback it would print a
+   * blank cell and sort BELOW every folder with content, so the row you created a second ago would
+   * land at the bottom of the list.
+   *
+   * 🔴 IT IS ALSO THE TRUE ANSWER, WHICH IS WHY IT IS ALLOWED. The earlier note rejected
+   * `createdAt` as a SUBSTITUTE FOR THE ROLLUP — borrowing a creation date for a folder whose
+   * contents had changed since. For a folder with nothing inside, being created is the last thing
+   * that happened to it. The reference agrees: an empty folder made minutes ago prints its own
+   * clock ("11:45 PM") and sits at the top.
+   *
+   * 🔴 AND THE ROLLUP STILL MEANS WHAT IT MEANT. This reads it and falls back; it does not seed it.
+   * A folder WITH content is unaffected, so filing an old note into a new folder still prints the
+   * note's date rather than quietly promoting the folder.
+   */
+  const folderWhen = useCallback(
+    (folder: Folder): string => folderModified.get(folder.id) ?? folder.createdAt ?? "",
+    [folderModified],
+  );
+
   /** The rows the "Folders" section actually draws — see `nonEmptyFolders` just above. Every
    *  OTHER reader of `folders` (the move-to-folder menu, the open-folder breadcrumb) keeps the
    *  full list: a fresh, empty project has to be a legal place to file the first thing INTO. */
+  /**
+   * 🔴🔴 A FOLDER MADE HERE SHOWS HERE, EMPTY OR NOT — AND THAT IS NOT A RELAXATION OF THE RULE
+   * ABOVE, IT IS THE OTHER HALF OF IT. Owner, 2026-09-04: *"making a folder in library doesnt work
+   * like in chatgpt, fix it"*, pointing at chatgpt.com/library.
+   *
+   * Driven there the same day, his own account: an empty folder ("test3", made minutes earlier)
+   * sits at the top of their list with a Size of "—". Ours did not appear at all. The New folder
+   * button arrived on this page on 2026-09-03 (#1134) and landed straight on the emptiness filter
+   * that had been added for a completely different report — so the one action this page offers
+   * produced a row nobody could see, and the only way to reveal it was to file something into it
+   * through another row's menu.
+   *
+   * 🔴 THE OLD REPORT STILL HOLDS. *"I created a new project, but it's showed up in the library,
+   * and that's not where it should go."* A project made on /projects or in the sidebar is still
+   * hidden until it holds something; `folders.made_in` is what tells the two apart, and it is
+   * written by exactly one caller. See `20260904T20_folders_made_in.sql`.
+   */
   const visibleFolders = useMemo(
     () =>
-      folders
-        .filter((folder) => nonEmptyFolders.has(folder.id))
+      shelfFolders(folders, nonEmptyFolders)
+        .slice()
         // Most recently touched first — the ordering the Modified column implies, and the one
         // the reference uses. Ties (and the never-touched) fall back to name so the order is
         // still deterministic.
         .sort(
           (a, b) =>
-            (folderModified.get(b.id) ?? "").localeCompare(folderModified.get(a.id) ?? "") ||
-            a.name.localeCompare(b.name),
+            folderWhen(b).localeCompare(folderWhen(a)) || a.name.localeCompare(b.name),
         ),
-    [folderModified, folders, nonEmptyFolders],
+    [folderWhen, folders, nonEmptyFolders],
   );
 
   // 🔴 A SHELF SECTION RENDERS ONLY FOR ITS OWN PILL NOW (owner 2026-08-30: *"the library 'all'
@@ -876,7 +949,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   <span className={COL_TILE}><FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} /></span>
                   <span className={ROW_NAME}>{folder.name}</span>
                   <span className={cn(COL_MODIFIED, ROW_META)}>
-                    {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
+                    {when(folderWhen(folder))}
                   </span>
                   <span className={cn(COL_COUNT, ROW_META)}>{folderCounts.get(folder.id) ?? 0}</span>
                   <span aria-hidden className={COL_ACTIONS} />
@@ -1005,7 +1078,7 @@ export function LibraryOutputs({ preview, userId }: { preview?: LibraryPreview; 
                   <span className="flex items-center justify-between">
                     <FolderIcon className="text-(--ui-text-secondary)" size={20} strokeWidth={1.8} />
                     <span className="text-[12px] text-(--ui-text-secondary)">
-                      {folderModified.has(folder.id) ? when(folderModified.get(folder.id) ?? "") : ""}
+                      {when(folderWhen(folder))}
                     </span>
                   </span>
                 </button>
@@ -1608,14 +1681,19 @@ function RowMenu({
         {children}
         {children ? <DropdownMenuSeparator /> : null}
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger>Move to project</DropdownMenuSubTrigger>
+          {/* 🔴 "FOLDER", NOT "PROJECT", ON THIS PAGE. The button at the top says New folder and the
+              rows it makes are folders; this menu said "Move to project" for the same reason the
+              button once did — folders and projects are one table — and the two words sat four
+              inches apart describing one object. The reference calls it "Add to folder"; the seam
+              `sidebar-canvases.tsx` records is that what a learner READS follows the surface. */}
+          <DropdownMenuSubTrigger>Add to folder</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             {folders.length === 0 ? (
-              <DropdownMenuItem disabled>No projects yet</DropdownMenuItem>
+              <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
             ) : (
               <>
                 <DropdownMenuItem disabled={current === null} onClick={() => onFile(null)}>
-                  No project
+                  No folder
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {folders.map((folder) => (

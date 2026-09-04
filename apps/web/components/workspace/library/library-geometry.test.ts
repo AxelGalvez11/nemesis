@@ -253,7 +253,13 @@ test("🔴🔴 every behaviour the page had before the restyle still works", () 
   // while the in-panel view is an outline of the plan. What was wrong was the header, and that is
   // fixed where it lives — see artifact-chrome.test.ts for the one-band guard.
   assert.match(OUTPUTS, /\/deck\?c=/, "a slide deck no longer opens its own page");
-  assert.match(OUTPUTS, /<DropdownMenuSubTrigger>Move to project<\/DropdownMenuSubTrigger>/, "filing is gone from the row menu");
+  // 🔴 "ADD TO FOLDER", NOT "MOVE TO PROJECT". The button at the top of this page says New folder
+  // and the rows it makes are folders; the menu four inches below called the same object a project,
+  // because folders and projects are one table. The reference's own wording on this surface is
+  // "Add to folder" (chatgpt.com/library, measured 2026-09-04). What a learner READS follows the
+  // surface — the seam `sidebar-canvases.tsx` records.
+  assert.match(OUTPUTS, /<DropdownMenuSubTrigger>Add to folder<\/DropdownMenuSubTrigger>/, "filing is gone from the row menu");
+  assert.ok(!/Move to project|No projects yet|>\s*No project\s*</.test(OUTPUTS), "the Library is calling a folder a project again");
   assert.match(OUTPUTS, /<DeckShare\b/, "the share sheet is gone");
   assert.match(OUTPUTS, /<OutputPreview\b/, "a document no longer opens in place");
   // 🔴 REPOINTED 2026-09-03: the mount carries props now, so it wraps in parentheses.

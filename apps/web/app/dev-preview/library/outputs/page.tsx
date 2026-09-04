@@ -49,6 +49,14 @@ const PREVIEW: LibraryPreview = {
     },
   ],
   folders: [
+    // 🔴🔴 AN EMPTY FOLDER MADE ON THIS PAGE, WHICH IS THE ONE CASE THAT USED TO BE INVISIBLE. It
+    // holds nothing, so `foldersWithContent` excludes it and every other empty folder here stays
+    // excluded — `madeIn: "library"` is the whole reason this row draws. Without it in the fixture
+    // the fix is unpreviewable and the defect the owner reported (2026-09-04, "making a folder in
+    // library doesnt work like in chatgpt") has no seat on the harness. It is also the NEWEST row,
+    // so it exercises the `createdAt` fallback: with no content to roll up it must still print a
+    // date and sort to the top, the way an empty folder does on chatgpt.com/library.
+    { createdAt: "2026-08-30T18:45:00.000Z", id: "f-new", madeIn: "library" as const, name: "Week 5 reading", parentId: null },
     { createdAt: "2026-07-28T09:00:00.000Z", id: "f-fall", name: "Fall 2026", parentId: null },
     { createdAt: "2026-08-02T09:00:00.000Z", id: "f-torts", name: "Torts", parentId: "f-fall" },
     { createdAt: "2026-06-11T09:00:00.000Z", id: "f-thermo", name: "Thermodynamics", parentId: null },
