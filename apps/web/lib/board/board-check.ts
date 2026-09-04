@@ -111,18 +111,38 @@ export async function makeBoardCheck(uid: string, canvas: LearningCanvas, topic?
   const ask = subject
     ? `Write the test on this in particular: ${subject}`
     : "Write the test on what this thread has covered.";
-  const reply = await postChatCompletion(
+  const brief = [await canvasBriefFor(canvas, subject), ask].filter(Boolean).join("\n\n");
+  const messages = [
+    { content: CHECK_SYSTEM, role: "system" as const },
+    { content: brief, role: "user" as const },
+  ];
+  const reply = await postChatCompletion(uid, messages, { maxTokens: CHECK_MAX_TOKENS });
+  if (!reply.text) return { error: reply.errorText ?? "The model call failed. No test was made." };
+  const run = readBoardCheck(reply.text);
+  if (run) return { run };
+  // 🔴 ONE RETRY, SAYING WHAT WENT WRONG, BEFORE GIVING UP. Measured on production 2026-09-04: the
+  // same prompt and the same thread produced a clean pack twice and something unreadable once, and
+  // "The questions came back unusable" is a dead end for a learner who did nothing wrong. This is
+  // the pattern `board-turn.ts` already uses when the model drops its protocol blocks: one small
+  // call that asks for nothing else.
+  const second = await postChatCompletion(
     uid,
     [
-      { content: CHECK_SYSTEM, role: "system" },
-      { content: [await canvasBriefFor(canvas, subject), ask].filter(Boolean).join("\n\n"), role: "user" },
+      ...messages,
+      { content: reply.text.slice(0, 2000), role: "assistant" as const },
+      {
+        content:
+          "That reply could not be read. Answer again with ONLY the JSON object, starting with { and ending with }, "
+          + 'in exactly this shape: {"check": [{"prompt": "…", "options": [{"text": "…", "correct": true}, {"text": "…"}]}]}. '
+          + "No prose, no code fence, no commentary.",
+        role: "user" as const,
+      },
     ],
     { maxTokens: CHECK_MAX_TOKENS },
   );
-  if (!reply.text) return { error: reply.errorText ?? "The model call failed. No test was made." };
-  const run = readBoardCheck(reply.text);
-  if (!run) return { error: "The questions came back unusable, so nothing was shown. Try again." };
-  return { run };
+  const recovered = second.text ? readBoardCheck(second.text) : null;
+  if (recovered) return { run: recovered };
+  return { error: "The questions came back unusable, so nothing was shown. Try again." };
 }
 
 /**
@@ -137,9 +157,66 @@ export async function makeBoardCheck(uid: string, canvas: LearningCanvas, topic?
  * that turns out to be one question reads as a bug.
  */
 export function readBoardCheck(text: string): TestRun | null {
-  const parsed = readModelJson(text);
-  const list = Array.isArray(parsed) ? parsed : (parsed as { check?: unknown } | null)?.check;
-  const run = readChatCheck(list);
+  const run = readChatCheck(normalizedPack(readModelJson(text)));
   if (!run || run.questions.length < MIN_QUESTIONS) return null;
   return run.questions.length > MAX_QUESTIONS ? { questions: run.questions.slice(0, MAX_QUESTIONS) } : run;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The keys a model reaches for when asked for a list of questions. `check` is what the prompt
+ *  says; the others are what it writes anyway. */
+const PACK_KEYS = ["check", "questions", "test", "quiz", "items"] as const;
+const PROMPT_KEYS = ["prompt", "question", "stem", "text"] as const;
+const OPTIONS_KEYS = ["options", "choices", "answers"] as const;
+const ANSWER_KEYS = ["answer", "correct", "correctAnswer", "correct_answer"] as const;
+const INDEX_KEYS = ["correctIndex", "answerIndex", "correct_index", "answer_index"] as const;
+
+function firstString(source: Record<string, unknown>, keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+/**
+ * The pack, in the one shape `readChatCheck` validates.
+ *
+ * 🔴🔴 SHAPE TOLERANCE HERE, JUDGEMENT THERE. `readChatCheck` decides whether a question is fair to
+ * put in front of a learner (exactly one correct option, two to five of them, nothing empty) and
+ * that must stay in one place, shared with the chat. What it cannot do is guess at a wrapper: it
+ * takes an array of `{prompt, options: [{text, correct}]}` and refuses everything else, so a model
+ * that answered with `{"questions": [...]}`, or with plain strings for options and a separate
+ * "answer" field, produced a card reading "The questions came back unusable" over a perfectly good
+ * test. Measured on production 2026-09-04, twice out of three live turns.
+ *
+ * 🔴 A MISSING OR UNMATCHED ANSWER IS LEFT WRONG, NEVER GUESSED. Marking option one correct because
+ * the model forgot to say which one is a question that scores the learner against a coin toss;
+ * `readChatCheck` drops it, which is the right outcome.
+ */
+function normalizedPack(parsed: unknown): unknown {
+  const list = Array.isArray(parsed)
+    ? parsed
+    : record(parsed)
+      ? PACK_KEYS.map((key) => parsed[key]).find((value) => Array.isArray(value))
+      : null;
+  if (!Array.isArray(list)) return null;
+  return list.map((entry) => {
+    if (!record(entry)) return entry;
+    const prompt = firstString(entry, PROMPT_KEYS);
+    const raw = OPTIONS_KEYS.map((key) => entry[key]).find((value) => Array.isArray(value));
+    if (!Array.isArray(raw)) return entry;
+    const answer = firstString(entry, ANSWER_KEYS);
+    const index = INDEX_KEYS.map((key) => entry[key]).find((value) => typeof value === "number");
+    const options = raw.map((option, at) => {
+      const optionText = typeof option === "string" ? option.trim() : record(option) ? firstString(option, ["text", "option", "answer", "label"]) : "";
+      const marked = record(option) && (option.correct === true || option.isCorrect === true);
+      const named = Boolean(answer) && optionText.toLowerCase() === answer.toLowerCase();
+      return { correct: marked || named || index === at, text: optionText };
+    });
+    return { options, prompt };
+  });
 }

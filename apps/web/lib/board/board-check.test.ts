@@ -98,6 +98,36 @@ describe("a pack the model wrote is validated, never trusted", () => {
     assert.equal(readBoardCheck(JSON.stringify(twoCorrect)), null);
   });
 
+  // 🔴 MEASURED ON PRODUCTION, 2026-09-04: two of three live turns came back in a shape the chat's
+  // validator refuses outright, and the learner read "The questions came back unusable" over a
+  // perfectly good test. The judgement stays in `readChatCheck`; only the wrapper is forgiven.
+  it("reads the shapes models actually write, not only the one the prompt asked for", () => {
+    const asStrings = {
+      questions: [
+        { question: "Which chamber must a revenue bill start in?", choices: ["The House", "The Senate", "Either"], answer: "The House" },
+        { question: "What ends a filibuster?", choices: ["Cloture", "A pocket veto", "A conference committee"], answer: "Cloture" },
+        { question: "Who signs a bill into law?", choices: ["The President", "The Speaker", "The Chief Justice"], correctIndex: 0 },
+      ],
+    };
+    const run = readBoardCheck(JSON.stringify(asStrings));
+    assert.equal(run?.questions.length, 3, "a pack with string options and a named answer was refused");
+    assert.equal(run?.questions[0]?.options.filter((option) => option.correct).length, 1);
+    assert.equal(run?.questions[0]?.options.find((option) => option.correct)?.text, "The House");
+    assert.equal(run?.questions[2]?.options.find((option) => option.correct)?.text, "The President", "correctIndex was not read");
+  });
+
+  it("refuses a question whose answer names nothing, rather than guessing at one", () => {
+    const wrong = {
+      check: [
+        { prompt: "A?", options: ["one", "two"], answer: "three" },
+        { prompt: "B?", options: ["one", "two"], answer: "one" },
+        { prompt: "C?", options: ["one", "two"], answer: "two" },
+      ],
+    };
+    // The first question has no correct option, so it is dropped and the run falls under the floor.
+    assert.equal(readBoardCheck(JSON.stringify(wrong)), null);
+  });
+
   it("caps a runaway pack instead of putting forty questions on the board", () => {
     const run = readBoardCheck(JSON.stringify(pack(40)));
     assert.ok(run);
