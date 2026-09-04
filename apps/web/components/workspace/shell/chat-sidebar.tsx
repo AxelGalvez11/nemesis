@@ -199,7 +199,7 @@ export function ChatSidebar({ accountEmail, onCollapse, onNavigate }: ChatSideba
                         // Full strength, matching the label beside it (owner 2026-08-15: "icons need
                         // to be full white like chatgpt. its not cloning its just 100% that everyone
                         // uses"). The 72% mix made every destination read as slightly disabled.
-                        className="nav-icon-tilt leading-none shrink-0"
+                        className="leading-none shrink-0"
                         name={item.codicon}
                         size={`${NAV_ICON_PX}px`}
                       />

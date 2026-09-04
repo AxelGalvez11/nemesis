@@ -45,6 +45,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
+import { ProjectCreateDialog } from "@/components/workspace/shell/project-create-dialog";
 import { ProjectCustomizeDialog } from "@/components/workspace/shell/project-customize-dialog";
 import {
   CANVASES_CHANGED_EVENT,
@@ -232,7 +233,22 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
   const [filter, setFilter] = useState<ProjectFilter>("all");
   const [query, setQuery] = useState("");
   /** The draft name of a project being created, or null when none is. */
-  const [naming, setNaming] = useState<string | null>(null);
+  /**
+   * 🔴🔴 A DIALOG, AND THE OWNER NAMED THE REFERENCE. 2026-09-04: *"creating a new project in the
+   * project page should work like in chatgpt https://chatgpt.com/projects."* Driven there the same
+   * day: their "New" pill opens the SAME "Create project" modal the sidebar's row opens — 512 x 264,
+   * a named field with a glyph in its left inset, a line saying what a project is, and a primary
+   * button that stays disabled until the field has something in it.
+   *
+   * 🔴 SO THIS PAGE REUSES `ProjectCreateDialog` RATHER THAN GROWING A SECOND ONE. It was built
+   * against those measurements in #1107 for the sidebar; two doors to one object that look
+   * different is the exact split that dialog was created to end.
+   *
+   * 🔴 WHAT STOOD HERE WAS AN INPUT IN THE TABLE, with three exits meaning different things: Enter
+   * created, Escape cancelled, and clicking anywhere else ALSO created. The Library had the same
+   * row and lost it for the same reason (#1134).
+   */
+  const [creating, setCreating] = useState(false);
   /** The folder whose look/instructions dialog is open — the same dialog the sidebar opens. */
   const [customizing, setCustomizing] = useState<Folder | null>(null);
 
@@ -285,22 +301,22 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
   );
 
   /**
-   * 🔴 THE NAME IS AN ARGUMENT, NOT READ FROM STATE. Enter commits and blur commits, and Escape
-   * has to cancel the blur it causes itself — the Library learned this the hard way (see
-   * `addFolder` there): a handler that closes over `naming` still holds the text after Escape
-   * cleared it, and creates the folder anyway on the way out. Taking the value from the event
-   * means Escape can simply empty the input, and an empty name is already a no-op.
+   * 🔴 IT REPORTS THE NEW PROJECT'S ID, and the dialog stays open when there is none. The inline row
+   * this replaced could not: it had already removed itself by the time the database answered, so a
+   * refusal left the learner looking at a list with no new project in it and nothing said.
+   *
+   * A refused create leaves the list alone: `createFolder` returns null when the database says no
+   * (the two-level depth trigger raises rather than nesting deeper), and a row for a folder that
+   * does not exist is somewhere to file things that vanishes on the next reload.
    */
   const addProject = useCallback(
-    async (raw: string) => {
+    async (raw: string, icon: string | null): Promise<string | null> => {
       const name = raw.trim();
-      setNaming(null);
-      if (!name) return;
-      // A refused create leaves the list alone: `createFolder` returns null when the database says
-      // no (the two-level depth trigger raises rather than nesting deeper), and a row for a folder
-      // that does not exist is somewhere to file things that vanishes on the next reload.
-      const made = await createFolder(userId, name);
-      if (made) await refresh();
+      if (!name) return null;
+      const made = await createFolder(userId, name, null, icon);
+      if (!made) return null;
+      await refresh();
+      return made.id;
     },
     [refresh, userId],
   );
@@ -358,7 +374,7 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
                 app that ignores the learner's chosen accent. */}
             <button
               className="flex shrink-0 items-center gap-[6px] rounded-full bg-(--ui-action) px-[16px] text-[14px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-80"
-              onClick={() => setNaming("")}
+              onClick={() => setCreating(true)}
               style={{ height: CONTROL_H_PX }}
               type="button"
             >
@@ -412,41 +428,6 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
           </div>
 
           <ul className="flex flex-col">
-            {naming !== null && (
-              <li className={cn("flex items-center", DIVIDER)} style={rowBox(0)}>
-                <NameCells
-                  icon={
-                    <Codicon
-                      aria-hidden
-                      className="shrink-0 text-(--ui-text-secondary)"
-                      name="folder"
-                      size={`${ICON_PX}px`}
-                    />
-                  }
-                  indent={0}
-                >
-                  <input
-                    aria-label="Name the new project"
-                    autoFocus
-                    className={cn("min-w-0 flex-1 bg-transparent outline-none", NAME_TEXT)}
-                    maxLength={120}
-                    onBlur={(event) => void addProject(event.currentTarget.value)}
-                    onChange={(event) => setNaming(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void addProject(event.currentTarget.value);
-                      if (event.key === "Escape") {
-                        // Empty the DOM node, not the state: whatever blur follows reads the node.
-                        event.currentTarget.value = "";
-                        setNaming(null);
-                      }
-                    }}
-                    placeholder="Project name"
-                    value={naming}
-                  />
-                </NameCells>
-              </li>
-            )}
-
             {shown.map((project) => (
               <ProjectRow
                 key={project.id}
@@ -468,13 +449,14 @@ export function ProjectsPage({ preview, userId }: { preview?: ProjectsPreview; u
             ))}
           </ul>
 
-          {shown.length === 0 && naming === null && (
+          {shown.length === 0 && (
             <p className={cn("pt-[16px]", META_TEXT)} style={{ paddingRight: ROW_PAD_RIGHT_PX }}>
               {emptyMessage}
             </p>
           )}
         </div>
       </div>
+      <ProjectCreateDialog onCreate={addProject} onOpenChange={setCreating} open={creating} />
       <ProjectCustomizeDialog
         folder={customizing}
         onClose={() => setCustomizing(null)}

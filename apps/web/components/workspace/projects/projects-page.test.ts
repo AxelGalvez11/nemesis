@@ -172,10 +172,12 @@ test("🔴🔴 one 32, one meaning: the icon's lead IS the nesting indent", () =
 
 // 🔴 THIS USED TO CHECK THREE DEPTHS: `indent={0}`, `indent={indent}`, `indent={indent +
 // INDENT_PX}`, one per nesting level a row used to be able to open to. Nesting is gone from THIS
-// page (see the test above): every row `projects-page.tsx` still draws — the "naming" input and
-// `ProjectRow` — sits at the top level, so there is exactly one indent left to check. `NameCells`
-// itself is untouched and is still the one shared helper; only how many depths call into it
-// shrank, which is the point of the change, not a gap in this test.
+// page (see the test above), so there is one depth left to check. `NameCells` itself is untouched
+// and is still the one shared helper; only how many depths call into it shrank.
+//
+// 🔴 AND FROM 2026-09-04 THERE IS ONE CALLER RATHER THAN TWO. The second was the inline "naming"
+// input, which named a new project in the table; the name is taken in `ProjectCreateDialog` now,
+// the way chatgpt.com/projects does it. `ProjectRow` is the only row this page draws.
 test("🔴🔴 every row still draws its left side through the ONE shared Name-cells helper", () => {
   const at = page.indexOf("function NameCells(");
   assert.notEqual(at, -1, "the shared cells are gone and each row now sizes its own columns");
@@ -186,7 +188,7 @@ test("🔴🔴 every row still draws its left side through the ONE shared Name-c
   // being generally correct is cheaper than a second helper for "the un-nested case".
   assert.match(cells, /width: NAME_W_PX - indent/);
   const sites = [...page.matchAll(/indent=\{[^}]+\}/g)].map((m) => m[0]);
-  assert.deepEqual(sites, ["indent={0}", "indent={0}"], "a row on this page is indenting to a depth that can no longer exist");
+  assert.deepEqual(sites, ["indent={0}"], "a row on this page is indenting to a depth that can no longer exist");
   assert.ok(!/<NameCell\b/.test(page.replace(/<NameCells/g, "")), "a stale single-cell helper is still in use");
 });
 
@@ -266,9 +268,19 @@ test("🔴 the search field is the measured 240x36 pill, and it says what it sea
   assert.match(page, /rounded-full border border-black\/\[0\.10\][^"]*dark:border-white\/\[0\.15\]/);
 });
 
-test("🔴 the New button really makes a folder, and wears the product's accent", () => {
+test("🔴 the New button really makes a folder, in the reference's own dialog, and wears the product's accent", () => {
   assert.match(page, /import \{[\s\S]*?createFolder,[\s\S]*?\} from "@\/lib\/learn\/canvas-store";/);
-  assert.match(page, /await createFolder\(userId, name\)/);
+  // 🔴🔴 THE GLYPH RIDES ALONG NOW, because the door is the dialog rather than a bare row. Owner,
+  // 2026-09-04: *"creating a new project in the project page should work like in chatgpt
+  // https://chatgpt.com/projects."* Driven there the same day: their "New" pill opens the SAME
+  // "Create project" modal the sidebar's row opens, so this page opens `ProjectCreateDialog` — the
+  // component measured against it in #1107 — instead of writing an input into the table.
+  assert.match(page, /await createFolder\(userId, name, null, icon\)/);
+  assert.match(page, /<ProjectCreateDialog onCreate=\{addProject\}/, "the page stopped using the reference's dialog");
+  // 🔴 AND THE ROW IS GONE, NOT MERELY UNUSED. It committed on Enter AND on blur, so clicking
+  // anywhere else made a project; the Library lost the same row for the same reason (#1134).
+  assert.ok(!/Name the new project/.test(page), "the inline naming row is back");
+  assert.ok(!/onBlur=\{\(event\) => void addProject/.test(page), "a project is created by clicking away again");
   // `--ui-action` rather than the reference's #0d0d0d: three units apart on screen, but this is
   // the token the Settings accent picker writes, and the owner ruled the accent is one colour.
   assert.match(page, /bg-\(--ui-action\)[^"]*text-\(--ui-action-glyph\)/);

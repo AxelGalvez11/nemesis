@@ -42,7 +42,7 @@ import { PROJECT_ICONS } from "./project-customize-dialog";
  * 18px and every rem-named class renders 12.5% larger than its name. `docs/chatgpt-reference.md`
  * records four separate pages that were measured against the reference and then built in rem.
  */
-const PANEL = "max-w-[512px] gap-0 p-0";
+const PANEL = "max-w-[512px] gap-0 p-0 rounded-[16px]";
 
 export function ProjectCreateDialog({
   open,
@@ -88,7 +88,11 @@ export function ProjectCreateDialog({
           <DialogTitle className="text-[length:var(--canvas-text-lead)] font-normal">Create project</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-[12px] px-[16px]">
+        {/* 🔴 8px UNDER THE HEADING BAND, NOT 16 — measured again 2026-09-04 when the owner pointed
+            this page's New button at chatgpt.com/projects. Their body starts at y 310 (right under
+            the 52px band) and the label at 318; ours started 16 down, which is most of the 10px our
+            panel stood taller than the reference's 264. */}
+        <div className="-mt-[8px] flex flex-col gap-[12px] px-[16px]">
           <div>
             <label className="mb-[8px] block text-[length:var(--canvas-text-small)] text-(--ui-text-primary)" htmlFor="project-name">
               Project name

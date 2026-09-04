@@ -425,13 +425,15 @@ test("🔴🔴 the two rails are ONE family, pinned to each other rather than to
   }
 });
 
-test("🔴🔴 the panel is not a card, and it is not transparent either", () => {
-  // Owner, 2026-09-04, circling the open panel: *"remove that grayish outline there."* It was
-  // `bg-(--ui-bg-elevated)` with `shadow-lg` and a `ring-1` — a lifted grey rectangle down the
-  // right edge of a near-black page. Measured on production before the change: background
-  // `color(srgb 0.129412 …)` against a page painting `color(srgb 0 0 0)`, plus a 1px ring and a
-  // 36px shadow. After: background `color(srgb 0 0 0)`, `box-shadow: none`, and the same in light
-  // (`0.990824` panel on `0.990824` page).
+test("🔴🔴 the panel keeps its fill and refuses the outline", () => {
+  // 🔴🔴 TWO INSTRUCTIONS, ONE DAY, AND THE FIRST WAS OVER-READ. Owner, 2026-09-04, circling the
+  // open panel: *"remove that grayish outline there."* Everything went — the `ring-1`, the
+  // `shadow-lg` AND `bg-(--ui-bg-elevated)` — and the panel became three lines of text on a black
+  // page. His correction, same day: *"its now completely dark in dark mode, could you just add the
+  // light gray box?"*
+  //
+  // So the outline was the OUTLINE. This test holds both halves so neither half can be re-read as
+  // the other: the fill is required, the edge is forbidden.
   const at = RAIL_CODE.indexOf("data-canvas-history-panel");
   // 🔴 CLAMPED. `RAIL_CODE` is comment-stripped, so this attribute sits ~2000 chars in and a bare
   // subtraction goes negative — which `slice` reads as an offset from the END and returns nothing.
@@ -439,15 +441,13 @@ test("🔴🔴 the panel is not a card, and it is not transparent either", () =>
   const panel = at < 0 ? "" : RAIL_CODE.slice(Math.max(0, at - 2600), at);
   assert.ok(panel.length > 0, "the panel moved; re-point this check");
   const code = panel.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.ok(!/bg-\(--ui-bg-elevated\)/.test(code), "the panel is a lifted grey card again");
+  assert.match(code, /bg-\(--ui-bg-elevated\)/, "the panel lost the light grey box the owner asked to keep");
   assert.ok(!/shadow-lg/.test(code), "the panel grew a shadow again");
-  assert.ok(!/ring-1/.test(code), "the panel grew an outline again");
-  // 🔴 AND IT MUST STAY OPAQUE. The panel is 287px against the right edge and the reading column is
-  // centred: they clear each other at 1470px but overlap by ~93px at 1280, and more as the window
-  // narrows. Transparent would lay this list on top of the answer's own words. `--ui-bg-editor` is
-  // what the canvas paints, so it is invisible where there is nothing under it and still covers
-  // what there is. Measured both themes: panel and page report the identical colour.
-  assert.match(code, /bg-\(--ui-bg-editor\)/, "the panel stopped painting the page's own ground — it is now see-through over the answer");
+  assert.ok(!/ring-1/.test(code), "the panel grew the outline back");
+  // 🔴 AND IT MUST NEVER GO TRANSPARENT, whatever it paints. The panel is 287px against the right
+  // edge and the reading column is centred: they clear each other at 1470px but overlap by ~93px at
+  // 1280, and more as the window narrows. See-through would lay this list over the answer's words.
+  assert.ok(!/bg-transparent/.test(code), "the panel is see-through — it overlaps the answer at 1280");
 });
 
 test("🔴🔴 the rail shows the learner's own prompts and nothing else", () => {
