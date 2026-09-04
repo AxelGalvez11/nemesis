@@ -171,8 +171,28 @@ const VISUAL_RULE =
   // own search. Neither accepts a URL, an accession, or pixels — the same boundary "compound"
   // holds for chemistry, stated in the vocabulary so the capability is reachable (the §44 lesson:
   // a capability nobody is told about is indistinguishable from one that was never built).
-  '{"kind":"figure","subject":"mitosis stages labelled diagram"}: a REAL photograph or diagram retrieved from openly licensed repositories and shown with its licence and credit. Use it when the learner needs to see the actual thing, a micrograph, a labelled anatomical diagram, an organism, an apparatus, a historical photograph, and none of the drawable shapes above can show it. THIS IS THE ANATOMY SHAPE: for any bone, muscle, vessel, nerve, organ or body region, ask here for a labelled diagram of it by name. There is no separate anatomy visual. "subject" is a short noun phrase naming what must be visible, never a sentence and never a URL; if no licensed picture exists nothing is shown, so the prose must stand on its own; ' +
-  '{"kind":"macromolecule","molecule":"haemoglobin"}: an interactive 3D structure of a protein or nucleic acid, looked up in the worldwide Protein Data Bank by NAME and drawn by a trusted viewer from the database\'s own coordinates. Give the molecule\'s name; never write a PDB accession from memory, a remembered id draws the wrong structure with full confidence. Use it when the three-dimensional shape is itself the thing to understand (a binding site, a double helix, a folded domain), and prefer "structure" with SMILES for any molecule small enough to read flat; ' +
+  '{"kind":"figure","subject":"mitosis stages labelled diagram"}: a REAL photograph or diagram retrieved from openly licensed repositories and shown with its licence and credit. Use it when the learner needs to see the actual thing, a micrograph, a labelled anatomical diagram, an organism, an apparatus, a historical photograph, and none of the drawable shapes above can show it. THIS IS THE ANATOMY SHAPE: for any bone, muscle, vessel, nerve, organ or body region, ask here for a labelled diagram of it by name. There is no separate anatomy visual. THIS IS ALSO THE SHAPE FOR THREE-DIMENSIONAL FORM: when the shape of a thing in space is itself what has to be understood — a double helix, a folded protein, a crystal lattice, a machine part, a building — ask here for a real labelled picture of it. Nemesis has no rotatable 3D viewer and never offers one; say what the picture shows in the prose instead of telling the learner to spin, drag or rotate anything. "subject" is a short noun phrase naming what must be visible, never a sentence and never a URL; if no licensed picture exists nothing is shown, so the prose must stand on its own and must not refer to a picture that may not appear; ' +
+  // 🔴🔴 THE INTERACTIVE 3D SHAPES ARE NO LONGER OFFERED — owner, 2026-09-04, after watching a
+  // Gemini answer build one: *"let's just skip the interactive visual, honestly it's mostly fluff.
+  // It's more of a gimmick than anything … what matters most is that we have visuals, bottom line
+  // … it used an image visual for that. I think that's pretty much how we should do it."*
+  //
+  // 🔴 THIS PARAGRAPH IS WHY HE SAID IT. Asked "show me how a dna structure works in 3d" on
+  // production the same day, the model read the sentence that used to stand here — which named "a
+  // double helix" as the case for the 3D viewer — and did exactly as told. Mol* never loaded: no
+  // <canvas> on the page, the library never fetched, and the answer rendered an EMPTY BORDERED BOX
+  // with the prose either side of it saying "here is a rotatable model … drag it around" and then
+  // "try this: rotate it so you are looking straight down the axis". A promise, a blank frame, and
+  // two paragraphs discussing it.
+  //
+  // 🔴 AND THE RIGHT PICTURE WAS ALREADY OURS. `REFERENCE_SHELF` answers "DNA double helix" with
+  // the National Human Genome Research Institute's own labelled diagram, public domain, credited —
+  // measured the same day. The 3D viewer was chosen OVER a real figure we already hold.
+  //
+  // So `figure` below carries the case the macromolecule and surface shapes used to: when the
+  // three-dimensional shape is itself the point, ask for a real labelled picture of it. Neither
+  // `kind` is refused by the validator (a stored canvas may still hold one and must still open) —
+  // they are simply no longer in the vocabulary, so nothing new asks for one.
   '{"kind":"table","columns":[{"key":"c1","label":"…","numeric":true}],"rows":[{"cells":{"c1":100}}],"totals":[{"column":"c1","value":100}],"balance":{"left":"c1","right":"c2"},"hidden":{"column":"c1","row":0}}; ' +
   '{"kind":"timeline","unit":"years","events":[{"at":-49,"atLabel":"49 BCE","label":"…","until":-44,"lane":"…","uncertain":true}],"hidden":0}: "at" is a plain number on any scale you choose and "atLabel" is what a human reads, so eras, geological time and seconds all work without a date format; ' +
   '{"kind":"construction","points":[{"id":"A","x":0,"y":0,"label":"A"}],"segments":[{"from":"A","to":"B","label":"4"}],"circles":[{"centre":"A","through":"B"}],"angles":[{"at":"A","from":"B","to":"C","degrees":90}]}; ' +
@@ -183,7 +203,10 @@ const VISUAL_RULE =
   // layout arithmetic can always place; the surface is §45's computed channel with one more axis.
   '{"kind":"score","abc":"X:1\\nT:…\\nM:4/4\\nL:1/4\\nK:C\\nC D E F|G2 G2|"}: real staff notation engraved from ABC, for a melody, a rhythm, an interval or a chord voicing. Standard ABC with headers, K: required; no %%-directive or comment lines. Keep it an excerpt a learner reads at a glance, not a whole piece; ' +
   '{"kind":"circuit","supply":{"label":"12 V"},"elements":{"arrangement":"series","parts":[{"component":"resistor","label":"R1","value":"100 Ω","ohms":100},{"arrangement":"parallel","parts":[{"component":"resistor","label":"R2","value":"200 Ω","ohms":200},{"component":"lamp","label":"L1"}]}]},"equivalentOhms":…}: a schematic drawn from series/parallel structure alone, never coordinates. Components: resistor, capacitor, inductor, battery, switch, lamp, diode, ammeter, voltmeter. Give a resistor its "ohms" as a number whenever the lesson works with values; "equivalentOhms" is RECOMPUTED from the tree and verifies only when every part is a resistor with ohms, so state it only then and only after working it out; ' +
-  'or {"kind":"surface","expression":"x^2 - y^2","xFrom":-2,"xTo":2,"yFrom":-2,"yTo":2,"xLabel":"x","yLabel":"y","zLabel":"z"}: a rotatable 3D surface z = f(x,y), for a quantity that genuinely depends on TWO inputs you can name. Write the FORMULA in x and y with the domain, and label all three axes with what they measure; trusted code evaluates it on a grid and draws it, exactly as a series expression becomes a curve. Never write grid values yourself. ' +
+  // The rotatable 3D surface was withdrawn with the macromolecule, for the reason recorded above
+  // it. A quantity depending on two inputs is a `quantitative` plot per input, or a `table`; both
+  // are read at a glance and neither has to be dragged before it says anything.
+
   // 🔴🔴 THIS PARAGRAPH EXISTS BECAUSE A DRUG LESSON GREW A 3D BUMP. Owner, 2026-08-26, reading
   // about insulin secretagogues on production: *"it output a random math plot."* Under a paragraph
   // on sulfonylureas sat a rotatable surface of

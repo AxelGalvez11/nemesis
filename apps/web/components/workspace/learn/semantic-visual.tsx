@@ -1,18 +1,16 @@
 "use client";
 
 import katex from "katex";
-import { useId, useMemo } from "react";
+import { useId, useMemo, type ReactNode } from "react";
 
 import type { CanvasVisualRequest, FlowVisual, PlotVisual } from "@/lib/learn/canvas-visual";
 import { layoutFlow, VISUAL_FIGURE_CLASS, VISUAL_HEIGHT, VISUAL_WIDTH } from "@/lib/learn/visual-layout";
 
 import { ChemicalStructure } from "./chemical-structure";
 import { MechanismScheme } from "./mechanism-scheme";
-import { Macromolecule } from "./macromolecule-viewer";
 import { MusicScore } from "./music-score";
 import { ReferenceFigure } from "./reference-figure";
 import { Circuit, CodeTrace, Construction, DataTable, Timeline, VectorDiagram } from "./subject-visual";
-import { SurfacePlot } from "./surface-plot";
 
 const WIDTH = VISUAL_WIDTH;
 const PLOT_HEIGHT = VISUAL_HEIGHT;
@@ -38,6 +36,25 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
     if (!visual.asset) return null;
     return <ReferenceFigure asset={visual.asset} {...(visual.caption ? { caption: visual.caption } : {})} />;
   }
+
+  // 🔴🔴 THE DRAWING IS CHOSEN BEFORE THE FRAME IS DRAWN, AND THAT ORDERING IS THE FIX. These used
+  // to be sixteen sibling ternaries INSIDE the `<figure>`, so a `kind` no branch claimed produced
+  // the wrapper with no child: a bordered, empty, 38px box in the middle of an answer. That is
+  // exactly what the owner hit on production 2026-09-04 asking "show me how a dna structure works
+  // in 3d" — the model asked for a `macromolecule`, Mol* never loaded, and the frame rendered
+  // around nothing while the prose either side of it said "here is a rotatable model … drag it
+  // around". A promise and a blank box.
+  //
+  // 🔴 IT IS NOT ENOUGH TO ADD THE MISSING BRANCH, WHICH IS WHY THIS IS STRUCTURAL. `figure` was
+  // the missing kind in August and got its branch; `macromolecule` had a branch and still drew
+  // nothing, because the branch's own component returns null when its viewer cannot load. Any
+  // renderer may legitimately decline. So the rule is about the WRAPPER: no body, no frame.
+  //
+  // 🔴 THE CAPTION CANNOT HOLD THE FRAME UP EITHER. A caption under an absent drawing is a label
+  // for nothing, and reads as a picture that failed rather than as prose that stands alone.
+  const body = drawingFor(visual);
+  if (!body) return null;
+
   return (
     // 🔴 NO FILL, REPORTED 2026-08-20: *"why does it have a blue gray background instead of a
     // transparent background?"* It was `bg-(--ui-bg-secondary)`, which resolves to
@@ -69,23 +86,7 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
           : "my-4 overflow-hidden rounded-xl border border-(--ui-stroke-tertiary) p-4"
       }
     >
-      {visual.kind === "equation" ? <Equation visual={visual} /> : null}
-      {visual.kind === "relationship" ? <Relationship visual={visual} /> : null}
-      {visual.kind === "quantitative" ? <Quantitative visual={visual} /> : null}
-      {visual.kind === "structure" ? <ChemicalStructure visual={visual} /> : null}
-      {/* 🔴 THE LINK THAT KILLED `figure` FOR WEEKS: a capability that parses, routes and renders
-          nowhere. A mechanism is several structure frames joined by reaction arrows, and this is
-          the one place the scheme is mounted. */}
-      {visual.kind === "mechanism" ? <MechanismScheme visual={visual} /> : null}
-      {visual.kind === "macromolecule" ? <Macromolecule visual={visual} /> : null}
-      {visual.kind === "table" ? <DataTable visual={visual} /> : null}
-      {visual.kind === "timeline" ? <Timeline visual={visual} /> : null}
-      {visual.kind === "construction" ? <Construction visual={visual} /> : null}
-      {visual.kind === "vectors" ? <VectorDiagram visual={visual} /> : null}
-      {visual.kind === "code" ? <CodeTrace visual={visual} /> : null}
-      {visual.kind === "score" ? <MusicScore visual={visual} /> : null}
-      {visual.kind === "circuit" ? <Circuit visual={visual} /> : null}
-      {visual.kind === "surface" ? <SurfacePlot visual={visual} /> : null}
+      {body}
       {visual.caption && (
         <figcaption className="mt-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
           {visual.caption}
@@ -93,6 +94,48 @@ export function SemanticVisual({ visual }: { visual: CanvasVisualRequest }) {
       )}
     </figure>
   );
+}
+
+/**
+ * The drawing for a request, or null when this build has nothing to draw for it.
+ *
+ * 🔴 A `kind` WITH NO CASE RETURNS null RATHER THAN FALLING THROUGH TO A FRAME. `macromolecule` and
+ * `surface` were withdrawn from the model's vocabulary on 2026-09-04 (see `canvas-prompts.ts`), but
+ * canvases saved before that still hold them and still have to open. They render as prose-only now,
+ * which is what the ladder's own refusal path already does when no picture can be shown.
+ */
+function drawingFor(visual: CanvasVisualRequest): ReactNode {
+  switch (visual.kind) {
+    case "equation":
+      return <Equation visual={visual} />;
+    case "relationship":
+      return <Relationship visual={visual} />;
+    case "quantitative":
+      return <Quantitative visual={visual} />;
+    case "structure":
+      return <ChemicalStructure visual={visual} />;
+    // 🔴 THE LINK THAT KILLED `figure` FOR WEEKS: a capability that parses, routes and renders
+    // nowhere. A mechanism is several structure frames joined by reaction arrows, and this is the
+    // one place the scheme is mounted.
+    case "mechanism":
+      return <MechanismScheme visual={visual} />;
+    case "table":
+      return <DataTable visual={visual} />;
+    case "timeline":
+      return <Timeline visual={visual} />;
+    case "construction":
+      return <Construction visual={visual} />;
+    case "vectors":
+      return <VectorDiagram visual={visual} />;
+    case "code":
+      return <CodeTrace visual={visual} />;
+    case "score":
+      return <MusicScore visual={visual} />;
+    case "circuit":
+      return <Circuit visual={visual} />;
+    default:
+      return null;
+  }
 }
 
 function Equation({ visual }: { visual: Extract<CanvasVisualRequest, { kind: "equation" }> }) {

@@ -57,9 +57,19 @@ test("🔴 results stay addressed BY POSITION when the two sources are interleav
   // `applyResolvedFigures` pairs results to requests by index alone. Mixing a positional list
   // (the learner's own) with a compacted one (what the route was asked for) is exactly where an
   // off-by-one puts the wrong picture under the wrong figure — silently, and plausibly.
-  assert.match(LOOKUP, /const results: FigureResolution\[\] = subjects\.map\(\(subject, index\) => \{/,
+  // 🔴 THE PAIRING MOVED INTO `resolveSubjects` ON 2026-09-04 and is unchanged; it is shared with
+  // the chat lane now, so this guard covers BOTH surfaces rather than only the canvas one. The
+  // literal was `const results: FigureResolution[] = subjects.map(...)` while the walk lived
+  // inside `resolveFigures`.
+  assert.match(LOOKUP, /export async function resolveSubjects\(/,
+    "the shared per-position resolver is gone");
+  assert.match(LOOKUP, /return subjects\.map\(\(subject, index\) => \{/,
     "results are no longer built per request position");
-  assert.match(LOOKUP, /const routed = fetched\?\.\[next\];\n\s+next \+= 1;/,
+  // 🔴 `fetched` BECAME `judged` ON 2026-09-04 — the route's answers now pass through the relevance
+  // judge before they are re-interleaved — but the cursor and the compaction are the same, which is
+  // what this guard is actually about. Matching the cursor rather than the variable's name keeps it
+  // pointed at the hazard instead of at a spelling.
+  assert.match(LOOKUP, /const routed = judged\?\.\[next\];\n\s+next \+= 1;/,
     "the route's compacted answers are not walked with their own cursor");
 });
 

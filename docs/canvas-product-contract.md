@@ -1626,13 +1626,24 @@ the theme as an effect dependency and draws again. **Measured:** bonds render `#
 makes redrawing safe. Without this, switching to dark left a molecule in near-black strokes on a
 near-black ground: invisible, with nothing on screen to explain why.
 
-Macromolecules are **built** (2026-08-23), on exactly the boundary this paragraph reserved for them
-while they were not: a `macromolecule` representation carrying an accession, resolved by a provider
-module shaped like `chem-resolver.ts` (`macromolecule-resolver.ts` — RCSB search plus the entry's
-own title), drawn by an embedded viewer behind the same constrained interface
-(`macromolecule-viewer.tsx`, Mol* — its own engine, loaded in its own chunk only when a structure
-appears; of the §41 planned stack of graphing and diagram renderers, only Mermaid has since been
-adopted — 2026-08-30, as prose fences, not as a route).
+Macromolecules were built (2026-08-23) and are **withdrawn** (2026-09-04). The lane worked as this
+paragraph reserved it — a `macromolecule` representation carrying an accession, resolved by
+`macromolecule-resolver.ts` (RCSB search plus the entry's own title) and drawn by
+`macromolecule-viewer.tsx` (Mol*, its own engine in its own chunk). The rotatable 3D surface
+(`surface`) is withdrawn with it. Both are refused by `validateCanvasVisual` and named in
+`WITHDRAWN_VISUAL_KINDS`; the types remain so canvases written before today still parse.
+
+The owner withdrew them holding the production answer to *"show me how a dna structure works in
+3d"*: *"let's just skip the interactive visual, honestly it's mostly fluff. It's more of a gimmick
+than anything … what matters most is that we have visuals, bottom line."* That answer had asked for
+a `macromolecule` — the prompt named "a double helix" as the case for it — Mol* never loaded, and
+an empty bordered box rendered between two paragraphs instructing the learner to drag and rotate
+it. `REFERENCE_SHELF` answers "DNA double helix" with the National Human Genome Research
+Institute's own labelled diagram, public domain and credited. A 3D SHAPE IS A FIGURE now, exactly
+as anatomy became one when the atlas was retired (§42, 2026-09-01) — the same instinct, twice.
+
+Of the §41 planned stack of graphing and diagram renderers, only Mermaid has since been adopted
+(2026-08-30, as prose fences, not as a route).
 2D stays the default whenever it teaches the concept adequately — §41's 3D rule still holds: depth
 must be part of what has to be understood, not a way to look sophisticated, and the prompt tells
 the model to prefer `structure` for anything small enough to read flat. **Nothing is ever simulated
@@ -1846,7 +1857,7 @@ session type, not work that precedes it.
 
 # 44. 🔴 FIVE SHAPES, SEVEN SUBJECTS — and the arithmetic is checked before it is drawn (owner, 2026-08-19)
 
-## STATUS: ALL EIGHT REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED. NOTHING EXECUTES CODE.
+## STATUS: SEVEN OF THE EIGHT REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED. NOTHING EXECUTES CODE. THE EIGHTH, `surface`, IS WITHDRAWN (2026-09-04) WITH `macromolecule` — SEE §42.
 
 🔴 **"NO CANVAS LESSON EMITS ONE YET" WAS TRUE FOR THE FIRST DAY OF THIS SECTION'S LIFE AND IS RECORDED RATHER THAN ERASED.** Every renderer here was built, routed, verified and tested while the teaching prompt offered the model three shapes out of nine — so no lesson could produce one, and a capability nobody is told about is indistinguishable from one that was never built. The vocabulary in `canvas-prompts.ts` now names all nine. A guard in `visualization-roadmap.test.ts` went red the moment it did, which is why this line moved in the same commit, and a second guard now holds the offered vocabulary and the accepted vocabulary to being the same set in both directions.
 

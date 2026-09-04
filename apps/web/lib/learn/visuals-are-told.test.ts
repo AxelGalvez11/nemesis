@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { WITHDRAWN_VISUAL_KINDS } from "./canvas-visual";
 import { turnRouterMessages, type TurnContext } from "./turn-router";
 
 // ── a capability the model is not told about does not exist (workstream H) ───────────────────
@@ -38,7 +39,27 @@ const kindsIn = (file: string): readonly string[] => {
 };
 
 /** Every kind that a renderer can actually draw, read from the two files that define them. */
-const RENDERABLE = [...new Set([...kindsIn("./canvas-visual.ts"), ...kindsIn("./subject-visuals.ts")])].sort();
+const ALL_KINDS = [...new Set([...kindsIn("./canvas-visual.ts"), ...kindsIn("./subject-visuals.ts")])].sort();
+
+/**
+ * Kinds that still PARSE but are deliberately never offered and never drawn.
+ *
+ * 🔴🔴 THE INTERACTIVE 3D PAIR, WITHDRAWN BY THE OWNER ON 2026-09-04: *"let's just skip the
+ * interactive visual, honestly it's mostly fluff. It's more of a gimmick than anything … what
+ * matters most is that we have visuals, bottom line."* He said it holding the production answer to
+ * "show me how a dna structure works in 3d", which asked for a `macromolecule`, failed to load
+ * Mol*, and rendered an empty bordered box between two paragraphs telling him to drag it.
+ *
+ * 🔴 WITHDRAWN IS NOT DELETED, AND THE DIFFERENCE IS SAVED CANVASES. Canvases written before this
+ * hold these kinds, and a validator that started refusing them would fail to open a learner's own
+ * saved work. So the type keeps them, `semantic-visual.tsx` has no case for them (its `default`
+ * returns null, and a body-less visual now renders no frame at all), and this file asserts they
+ * are absent from the packet rather than present in it.
+ */
+const WITHDRAWN = new Set(WITHDRAWN_VISUAL_KINDS);
+
+/** Every kind the model may actually be told about. */
+const RENDERABLE = ALL_KINDS.filter((kind) => !WITHDRAWN.has(kind));
 
 /**
  * How the packet names each kind to the model.
@@ -54,13 +75,11 @@ const PHRASE_FOR_KIND: Record<string, RegExp> = {
   construction: /a geometric construction/,
   equation: /an equation/,
   figure: /a licensed textbook figure/,
-  macromolecule: /a protein/,
   mechanism: /a whole reaction mechanism/,
   quantitative: /a plot/,
   relationship: /a diagram/,
   score: /a bar of music/,
   structure: /a molecule/,
-  surface: /a 3D surface/,
   table: /a table/,
   timeline: /a timeline/,
   vectors: /a force diagram/,
@@ -94,7 +113,6 @@ const SHAPE_FOR_KIND: Record<string, RegExp> = {
   construction: /construction \{points:\[\{id,x,y\}\], segments/,
   equation: /equation \{latex\}/,
   figure: /"kind":"figure","subject"/,
-  macromolecule: /"kind":"macromolecule","accession"/,
   // 🔴 `arrows` BECAME `highlight` ON 2026-08-26, when the curly arrows were withdrawn. This guard
   // reddened the moment the router changed and this line did not, which is exactly what pinning the
   // literal string is for: a packet advertising a field the validator has stopped accepting is a
@@ -104,7 +122,6 @@ const SHAPE_FOR_KIND: Record<string, RegExp> = {
   relationship: /relationship \{nodes:\[\{id,label\}\], edges/,
   score: /score \{abc\}/,
   structure: /"kind":"structure","notation"/,
-  surface: /surface \{expression, xFrom, xTo/,
   table: /table \{columns:\[\{key,label\}\], rows/,
   timeline: /timeline \{unit, events/,
   vectors: /vectors \{bodyLabel, vectors/,
@@ -141,12 +158,12 @@ const PACKET = turnRouterMessages({ context: EMPTY, utterance: "explain how a se
 test("🔴 the renderable kinds are read from the renderers, not from a list in this file", () => {
   // If this ever reads a hardcoded array, the guard becomes a copy that drifts alongside the one
   // it is supposed to be checking.
-  assert.ok(RENDERABLE.length >= 15, `only ${RENDERABLE.length} kinds found — the source files moved or changed shape`);
+  assert.ok(ALL_KINDS.length >= 15, `only ${ALL_KINDS.length} kinds found — the source files moved or changed shape`);
   // 🔴 "anatomy" WAS IN THIS SAMPLE UNTIL THE LANE WAS RETIRED (2026-09-01). The sample proves the
   // READER still works against the renderer files; `figure`, which anatomy travels as now, is
   // checked by the whole-map tests below.
   for (const expected of ["figure", "circuit", "score", "macromolecule", "surface"]) {
-    assert.ok(RENDERABLE.includes(expected), `${expected} is no longer discoverable from the renderer files`);
+    assert.ok(ALL_KINDS.includes(expected), `${expected} is no longer discoverable from the renderer files`);
   }
 });
 
@@ -267,4 +284,52 @@ test("🔴 the packet's own claim about where it is guarded is true", () => {
   const claim = /`?visual-route\.test\.ts`? now fails the build/.test(router);
   assert.ok(!claim, "turn-router.ts still points at visual-route.test.ts, which does not read the packet");
   assert.match(router, /visuals-are-told\.test\.ts/, "turn-router.ts no longer names the guard that actually holds this");
+});
+
+test("🔴🔴 a withdrawn kind is not offered to the model, in either half of the packet", () => {
+  // 🔴 THE INVERSE OF EVERY OTHER TEST IN THIS FILE, AND IT IS NEEDED FOR THE SAME REASON THEY ARE.
+  // The others stop a built capability going unmentioned; this one stops a WITHDRAWN capability
+  // being mentioned again. Deleting the two lines from the capability sentence is a one-line edit
+  // that nothing else notices, and the failure it restores is not subtle: the model reaches for a
+  // rotatable 3D model, the viewer does not load, and the learner gets an empty box with prose on
+  // both sides telling them to drag it. That is the exact production defect of 2026-09-04.
+  //
+  // Calibration: put "a 3D surface" back in turn-router.ts's capability sentence and this reddens.
+  const offered = [...WITHDRAWN].filter((kind) => new RegExp(`"kind":"${kind}"`).test(PACKET));
+  assert.deepEqual(
+    offered,
+    [],
+    'a withdrawn visual kind is being advertised to the model again. These were removed on the ' +
+      "owner's instruction (2026-09-04): Nemesis shows a real 2D picture rather than an interactive " +
+      "3D one. If a kind is genuinely coming back, take it out of WITHDRAWN in this file and give it " +
+      "a case in semantic-visual.tsx's drawingFor — a kind that is offered but not drawn renders an " +
+      "empty frame.",
+  );
+  // The prose half too: naming "a protein" in the capability sentence is enough to make the model
+  // ask for one, even with the JSON shape gone.
+  for (const phrase of ["a 3D surface", "a protein"]) {
+    assert.ok(!PACKET.includes(phrase), `the capability sentence still offers "${phrase}"`);
+  }
+});
+
+test("🔴 a withdrawn kind has no renderer, so it can never draw an empty frame", () => {
+  // The other end of the same rule. `semantic-visual.tsx` returns null for a body it cannot draw
+  // and then draws no wrapper, but the cheapest way to be sure a withdrawn kind stays undrawn is
+  // to assert its renderer is not mounted at all.
+  const renderer = readFileSync(
+    new URL("../../components/workspace/learn/semantic-visual.tsx", import.meta.url),
+    "utf8",
+  ).replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const kind of WITHDRAWN) {
+    assert.ok(
+      !new RegExp(`case "${kind}"`).test(renderer),
+      `semantic-visual.tsx still draws "${kind}", which the owner withdrew on 2026-09-04`,
+    );
+  }
+  // And the guard that made the empty box impossible in the first place: no body, no frame.
+  assert.ok(
+    /const body = drawingFor\(visual\);\s*if \(!body\) return null;/.test(renderer),
+    "semantic-visual.tsx no longer refuses to draw a frame around nothing — that is what put an " +
+      "empty bordered box in the middle of a production answer on 2026-09-04",
+  );
 });

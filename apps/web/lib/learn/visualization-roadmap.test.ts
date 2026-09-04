@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
-import { validateCanvasVisual } from "./canvas-visual";
+import { validateCanvasVisual, WITHDRAWN_VISUAL_KINDS } from "./canvas-visual";
 import { searchCurated } from "./reference-images";
 import { REFERENCE_REGISTRY } from "./reference-registry";
 import { REFERENCE_SHELF } from "./reference-shelf";
@@ -246,24 +246,28 @@ test("🔴 §42's figure lane is reachable from a lesson, and the strip protects
   assert.match(renderer, /creditLineFor/, "the figure renderer no longer draws the credit line");
 });
 
-test("🔴 §42's macromolecule claims are tied to the viewer, the resolver and the vocabulary", () => {
-  assert.match(SECTION_42, /Macromolecules are \*\*built\*\*/);
-  const declared = JSON.parse(WEB_PACKAGE) as { dependencies?: Record<string, string> };
-  assert.ok((declared.dependencies ?? {}).molstar, "molstar is gone from dependencies — §42 still claims a viewer");
+test("🔴 §42's macromolecule claims match the withdrawal, in every direction", () => {
+  // 🔴 THE CLAIM FLIPPED ON 2026-09-04 AND SO DOES THIS GUARD. It used to assert the lane was
+  // BUILT and offered; the owner withdrew it (*"let's just skip the interactive visual … it's more
+  // of a gimmick than anything"*) after a production answer asked for a rotatable DNA model, failed
+  // to load Mol*, and drew an empty box with prose either side telling him to spin it.
+  //
+  // 🔴 THE ASSERTIONS ARE INVERTED, NOT DELETED. A withdrawal that only removes the guard leaves
+  // nothing stopping the lane coming back by accident, which is exactly how the vocabulary and the
+  // renderer drifted apart in the first place.
+  assert.match(SECTION_42, /Macromolecules were built \(2026-08-23\) and are \*\*withdrawn\*\*/);
   const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
-  assert.ok(prompts.includes('"kind":"macromolecule"'), "the prompt no longer offers the macromolecule request");
-  const seam = readFileSync(new URL("./answer-prepare.ts", import.meta.url), "utf8");
-  assert.match(seam, /resolveMacromolecules/, "the answer seam no longer runs the macromolecule pass");
+  assert.ok(!prompts.includes('"kind":"macromolecule"'), "the prompt offers the withdrawn macromolecule request again");
+  assert.ok(!prompts.includes('"kind":"surface"'), "the prompt offers the withdrawn surface request again");
+  // The validator is what actually stops one drawing, including from a canvas saved before today.
+  assert.match(VISUAL_CONTRACT, /WITHDRAWN_VISUAL_KINDS/, "canvas-visual.ts no longer names the withdrawn kinds");
+  assert.deepEqual([...WITHDRAWN_VISUAL_KINDS].sort(), ["macromolecule", "surface"]);
+  // 🔴 THE TYPES, THE VALIDATOR AND THE RESOLVERS STAY, AND THAT IS WHAT "withdrawn" MEANS HERE
+  // rather than "deleted": a canvas saved before today still opens, and the resolver's own tests
+  // still cover correct code. The withdrawal lives where a learner can feel it — nothing offers
+  // these and nothing draws them, both asserted in `visuals-are-told` and `every-kind-renders`.
   const resolver = readFileSync(new URL("./macromolecule-resolver.ts", import.meta.url), "utf8");
-  assert.match(resolver, /search\.rcsb\.org/, "the accession resolver no longer asks RCSB");
-  // A name resolves; a bare model-written accession dies. The two lines that make both true.
-  const resolve = readFileSync(new URL("./macromolecule-resolve.ts", import.meta.url), "utf8");
-  assert.match(resolve, /accession: _claimed/, "the model-accession strip has left the macromolecule pass");
-  const viewer = readFileSync(
-    new URL("../../components/workspace/learn/macromolecule-viewer.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(viewer, /import\("molstar\/lib\/mol-plugin\/context"\)/, "the viewer no longer lazy-loads its engine");
+  assert.match(resolver, /search\.rcsb\.org/, "the accession resolver was deleted rather than left dormant");
 });
 
 test("🔴🔴 the 3D anatomy lane is retired, everywhere, and anatomy is a figure instead", () => {
@@ -510,15 +514,22 @@ test("§44's status line matches whether a lesson emits these or anything execut
   assert.ok(SECTION_44.length > 0, "§44 has gone missing from the contract");
   assert.match(
     SECTION_44,
-    /STATUS: ALL EIGHT REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED\. NOTHING EXECUTES CODE\./,
+    /STATUS: SEVEN OF THE EIGHT REPRESENTATIONS SHIPPED, ROUTED AND OFFERED TO THE TEACHING PROMPT, WITH EVERY NUMERIC CLAIM VERIFIED\. NOTHING EXECUTES CODE\./,
     "§44 must say plainly what is reached",
   );
   // 🔴 THE CLAIM FLIPPED ON 2026-08-19 AND THIS GUARD IS WHY IT COULD NOT BE FORGOTTEN. It asserted
   // for months that no prompt asked for these; the day the vocabulary was extended it went red, and
   // moving the status line was part of the same commit. That is the entire mechanism.
   const prompts = readFileSync(new URL("./canvas-prompts.ts", import.meta.url), "utf8");
-  for (const kind of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"', '"score"', '"circuit"', '"surface"']) {
+  // 🔴 `"surface"` LEFT THIS LIST ON 2026-09-04 AND THE STATUS LINE ABOVE MOVED IN THE SAME COMMIT,
+  // which is the mechanism this guard's own note describes working in the other direction. It is
+  // asserted ABSENT below rather than simply dropped: a withdrawn shape creeping back into the
+  // vocabulary is the failure, and an unchecked name cannot catch it.
+  for (const kind of ['"table"', '"timeline"', '"construction"', '"vectors"', '"code"', '"score"', '"circuit"']) {
     assert.ok(prompts.includes(kind), `canvas-prompts stopped offering ${kind} — §44's status line is stale`);
+  }
+  for (const kind of WITHDRAWN_VISUAL_KINDS) {
+    assert.ok(!prompts.includes(`"kind":"${kind}"`), `canvas-prompts offers the withdrawn ${kind} again`);
   }
   // Nothing runs the code, and the label saying so is still on screen.
   assert.equal(prompts.includes("traceOrigin"), false, "the prompt now sets traceOrigin — that stamp is the validator's");
@@ -542,6 +553,13 @@ test("🔴 the vocabulary offered to the model and the vocabulary the validator 
   // The router's asset lanes are representations rather than request shapes — a model never asks for
   // a source figure, it asks for a concept and the router finds one.
   accepted.delete("source_figure");
+  // 🔴 A WITHDRAWN KIND IS ACCEPTED-BY-TYPE AND DELIBERATELY NOT OFFERED, which is the one case
+  // this invariant's reasoning did not cover. Both failure modes it names are ACCIDENTS: a shape
+  // nobody can reach, and a shape the model writes that is always refused. A withdrawal is neither
+  // — it is a decision, recorded in `WITHDRAWN_VISUAL_KINDS` and asserted from three sides (not
+  // offered, not drawn, no empty frame). The type survives so canvases saved before 2026-09-04
+  // still open. Subtracting it here keeps the invariant meaningful instead of switching it off.
+  for (const kind of WITHDRAWN_VISUAL_KINDS) accepted.delete(kind);
   assert.deepEqual([...offered].sort(), [...accepted].sort());
 });
 

@@ -15,7 +15,7 @@ import { searchShelf } from "@/lib/learn/figure-shelf-server";
 import { findReferenceImages } from "@/lib/learn/reference-images";
 import { REFERENCE_REGISTRY } from "@/lib/learn/reference-registry";
 import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
-import { chooseAsset } from "@/lib/learn/visual-provenance";
+import { chooseAsset, type CandidateAsset } from "@/lib/learn/visual-provenance";
 import { verifyBearer } from "@/lib/server";
 
 /**
@@ -30,6 +30,14 @@ export const maxDuration = 20;
 
 /** How many subjects one answer may look up. Matches `figure-resolve.ts`'s own bound. */
 const MAX_SUBJECTS = 4;
+
+/**
+ * How many runners-up ride back with the chosen asset, for the caller's relevance judge.
+ *
+ * One below `MAX_JUDGED` in `figure-relevance.ts`, because the chosen asset is the first of the
+ * five the judge sees. Sending more would be prompt tokens the judge is told to ignore.
+ */
+const MAX_ALTERNATIVES = 4;
 
 /** How long one repository query gets. A slow repository costs one picture, never the prose. */
 const TIMEOUT_MS = 8000;
@@ -94,12 +102,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // licence that lets us show it — nothing else, so nothing else travels.
       return choice.ok
         ? {
-            asset: {
-              assetPath: choice.asset.assetPath,
-              ...(choice.asset.caption ? { caption: choice.asset.caption } : {}),
-              licence: choice.asset.licence,
-              provenance: choice.asset.provenance,
-            },
+            asset: shown(choice.asset),
+            // 🔴 THE RUNNERS-UP TRAVEL TOO, BECAUSE `chooseAsset` RANKS TRUST AND NOTHING ELSE.
+            // Among candidates whose licences are equally fine it keeps arrival order, which for
+            // the live provider is Wikimedia's own full-text ranking — and that ranking is what
+            // answers "the doctrine of precedent" with a scan of Kant. The caller runs the
+            // relevance judge (`figure-relevance.ts`), and a judge given one option can only say
+            // yes or no: a perfectly good second candidate would be lost to the first one being
+            // irrelevant. Everything here has already passed the licence gate individually, so
+            // nothing unshowable is being offered — only more to choose between.
+            alternatives: candidates
+              .filter((candidate) => candidate.assetPath !== choice.asset.assetPath)
+              .filter((candidate) => chooseAsset({ accuracyBearing: false, candidates: [candidate] }).ok)
+              .slice(0, MAX_ALTERNATIVES)
+              .map(shown),
             ok: true as const,
           }
         : { detail: choice.detail, ok: false as const, reason: choice.reason };
@@ -107,4 +123,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   );
 
   return NextResponse.json({ results });
+}
+
+/** The wire shape of one showable picture — see the comment at the `asset` field above. */
+function shown(asset: CandidateAsset) {
+  return {
+    assetPath: asset.assetPath,
+    ...(asset.caption ? { caption: asset.caption } : {}),
+    licence: asset.licence,
+    provenance: asset.provenance,
+  };
 }

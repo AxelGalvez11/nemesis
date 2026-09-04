@@ -489,10 +489,41 @@ function isRefusal(value: VisualValidation | CanvasVisualBase): value is VisualV
  * reported, so the cheapest and most specific checks come first — a caller acting on
  * `dangling-edge` should not have been told `node-count` because both were true.
  */
+/**
+ * Shapes the model may no longer ask for, and that no renderer draws.
+ *
+ * 🔴🔴 THE INTERACTIVE 3D PAIR, WITHDRAWN BY THE OWNER ON 2026-09-04: *"let's just skip the
+ * interactive visual, honestly it's mostly fluff. It's more of a gimmick than anything … what
+ * matters most is that we have visuals, bottom line … it used an image visual for that. I think
+ * that's pretty much how we should do it."*
+ *
+ * He said it holding the production answer to "show me how a dna structure works in 3d". The
+ * prompt named "a double helix" as the case for the rotatable viewer, so the model asked for a
+ * `macromolecule`; Mol* never loaded — no <canvas> on the page, the library never fetched — and the
+ * answer rendered an EMPTY BORDERED BOX with the prose either side of it saying "here is a
+ * rotatable model … drag it around" and then "try this: rotate it so you are looking straight down
+ * the axis". Meanwhile `REFERENCE_SHELF` answers "DNA double helix" with the National Human Genome
+ * Research Institute's own labelled diagram, public domain, credited.
+ *
+ * 🔴 WITHDRAWN AT TWO PLACES, AND DELIBERATELY NOT AT THE VALIDATOR. A kind is gone when nothing
+ * OFFERS it (`turn-router.ts`, `canvas-prompts.ts`) and nothing DRAWS it (`drawingFor` in
+ * `semantic-visual.tsx` has no case, and a visual with no body now renders no frame at all). Both
+ * are asserted. Parsing is left alone on purpose: the type, the resolver and the computed-grid
+ * checks are correct code with their own tests, and a canvas saved before today still has to open.
+ * One that slips through anyway renders NOTHING, which is the safe degradation — the empty frame
+ * was the defect, not the kind.
+ *
+ * 🔴 ONE SOURCE OF TRUTH. `visuals-are-told.test.ts` and `every-kind-renders.test.ts` both import
+ * this rather than restating it, because a second copy is how the prompt half and the render half
+ * drift apart — which is the whole failure `every-kind-renders.test.ts` exists to catch.
+ */
+export const WITHDRAWN_VISUAL_KINDS: readonly string[] = ["macromolecule", "surface"];
+
 export function validateCanvasVisual(value: unknown): VisualValidation {
   if (!record(value)) return refuse("not-a-request", `expected an object, received ${typeof value}`);
   const common = base(value);
   if (isRefusal(common)) return common;
+
 
   if (value.kind === "equation") {
     const latex = boundedText(value.latex, 500);

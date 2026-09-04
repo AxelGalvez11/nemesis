@@ -135,7 +135,10 @@ test("🔴🔴🔴 link 5: IT RENDERS — the link that killed `figure` for week
   // `SemanticVisual` had no `figure` branch for weeks. The asset resolved, the marker parsed, and
   // the learner got an empty bordered box 38 pixels tall. Nothing failed, because nothing looked.
   assert.match(SEMANTIC, /<MechanismScheme/, "a mechanism renders nothing at all");
-  assert.match(SEMANTIC, /visual\.kind === "mechanism" \?/, "it draws unconditionally, or not from the visual");
+  // 🔴 `case "mechanism":` SINCE 2026-09-04. The sixteen sibling ternaries became a `switch` in
+  // `drawingFor`, so the body is chosen BEFORE the frame is drawn — a kind nothing claims now
+  // renders no frame at all, instead of the empty bordered box this test's own note describes.
+  assert.match(SEMANTIC, /case "mechanism":/, "it draws unconditionally, or not from the visual");
 });
 
 test("🔴🔴🔴 link 6: it is one SCHEME, and every frame is the SAME renderer", () => {

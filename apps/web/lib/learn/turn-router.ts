@@ -803,9 +803,14 @@ const NEMESIS_SYSTEM = [
   // the next person to add a renderer would read the sentence and trust it. The real guard reads the
   // kind literals out of `canvas-visual.ts` and `subject-visuals.ts` and fails when one of them is
   // not named in the sentence below.
+  // 🔴 THE TWO INTERACTIVE 3D KINDS LEFT THIS SENTENCE ON 2026-09-04 (owner: *"let's just skip the
+  // interactive visual … it's more of a gimmick than anything"*). "a 3D surface" and "a protein"
+  // used to sit here, and naming them is what made the model reach for a rotatable model of a DNA
+  // helix instead of the real credited diagram our own shelf already holds. `visuals-are-told.test.ts`
+  // now asserts they are ABSENT here, so re-adding either reddens the build.
   "For anything with structure, a plot, a diagram, a table, a timeline, a geometric construction, "
-  + "a force diagram, an equation, a traced snippet of code, a circuit, a bar of music, a 3D "
-  + "surface, a molecule, a whole reaction mechanism, a protein, an anatomical structure, a licensed "
+  + "a force diagram, an equation, a traced snippet of code, a circuit, a bar of music, "
+  + "a molecule, a whole reaction mechanism, an anatomical structure, a licensed "
   + "textbook figure, put the "
   + "figure in the \"visuals\" array and write [figure 1], [figure 2] inline where each one "
   + "belongs. Every kind takes \"kind\" and \"learningGoal\", plus its own fields. At most "
@@ -862,8 +867,15 @@ const NEMESIS_SYSTEM = [
   // and prefer the use of the corpus figures for anatomy"*). Anatomy is named inside `figure`
   // below, where the corpus already holds 844 rows of an anatomy and physiology textbook and 1,036
   // Blausen medical illustrations against the atlas's seventeen regions.
-  "Three of those take a NAME and nothing else, because the data is looked up rather than recalled: "
-  + "{\"kind\":\"macromolecule\",\"accession\":\"1HHO\"} shows a rotatable protein. "
+  // 🔴 TWO, NOT THREE — the rotatable protein went on 2026-09-04, for the same reason the atlas
+  // went above it and in the owner's own words: *"let's just skip the interactive visual, honestly
+  // it's mostly fluff … what matters most is that we have visuals, bottom line."* Asked "show me
+  // how a dna structure works in 3d" on production that morning, the model read this very line,
+  // asked for the rotatable model, and Mol* never loaded — an empty bordered box, with the prose
+  // either side of it telling the learner to drag and rotate it. The shelf answers "DNA double
+  // helix" with the National Human Genome Research Institute's own labelled diagram. A 3D MOLECULE
+  // IS A FIGURE now, exactly as anatomy is.
+  "Two of those take a NAME and nothing else, because the data is looked up rather than recalled: "
   + "{\"kind\":\"structure\",\"notation\":\"smiles\",\"value\":\"…\"} draws a molecule, and for a "
   + "NAMED compound prefer [compound: aspirin] so it is looked up instead. "
   + "{\"kind\":\"figure\",\"subject\":\"the stages of meiosis\"} finds a real licensed diagram or "

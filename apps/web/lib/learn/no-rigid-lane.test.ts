@@ -44,7 +44,11 @@ test("🔴 the conversation is offered EVERY kind the teaching prompt knows", ()
   const kinds = [...TEACHING.matchAll(/"kind":"([a-z_-]+)"/g)]
     .map((match) => match[1] ?? "")
     .filter((kind) => kind && kind !== "explain");
-  assert.ok(kinds.length >= 15, `only ${kinds.length} kinds found in the teaching prompt`);
+  // 🔴 WAS 15 UNTIL 2026-09-04, when `macromolecule` and `surface` — the two interactive 3D shapes
+  // — were withdrawn on the owner's instruction (*"let's just skip the interactive visual … it's
+  // more of a gimmick than anything"*). The floor moves with a real withdrawal; it must never be
+  // lowered to accommodate a kind that went missing by accident, which is what it is here to catch.
+  assert.ok(kinds.length >= 13, `only ${kinds.length} kinds found in the teaching prompt`);
   for (const kind of new Set(kinds)) {
     assert.ok(
       ROUTER.includes(kind),
