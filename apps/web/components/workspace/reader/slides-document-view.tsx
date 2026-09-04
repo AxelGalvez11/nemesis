@@ -47,6 +47,16 @@ export interface SlidesReadyPayload {
 
 interface SlidesDocumentViewProps {
   bytes: ArrayBuffer;
+  /**
+   * Drawn inside a board card, where there is no room to explain anything.
+   *
+   * 🔴 THE DECK'S DISCLAIMER IS FOR THE READER, NOT FOR A CARD. It is four lines of prose about
+   * what a rebuilt slide is and is not, which is worth saying on a full-screen deck and is a third
+   * of a 640px card. The owner cut the equivalent notice off a document card the same day
+   * (2026-09-04, of the reconstructed-text line: *"remove this line"*), and the standing rule
+   * behind both is his: a learner is never shown a running account of what is missing.
+   */
+  bare?: boolean;
   tab: SlideTab;
   query: string | null;
   zoom: ZoomMode;
@@ -65,7 +75,7 @@ const SLIDE_WIDTH = 880;
 const MAX_SLIDE_PICTURES = 3;
 
 export function SlidesDocumentView({
-  bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement,
+  bytes, tab, query, zoom, onScaleChange, onReady, onUnitChange, onError, registerElement, bare = false,
 }: SlidesDocumentViewProps) {
   const [slides, setSlides] = useState<ParsedSlide[] | null>(null);
   const [size, setSize] = useState<DeckSize>(DEFAULT_DECK_SIZE);
@@ -260,7 +270,7 @@ export function SlidesDocumentView({
     return (
       <div className="h-full min-h-0 overflow-auto overscroll-contain px-8 py-6" data-testid="reader-slides-outline">
         <div className="nemesis-reading-view mx-auto">
-          <Disclaimer />
+          {!bare && <Disclaimer />}
           {slides.map((slide) => (
             <section className="mt-7 first:mt-0" key={slide.index}>
               <button
@@ -330,7 +340,7 @@ export function SlidesDocumentView({
     <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-slides-scroll" ref={setScrollElement}>
       <div className="mx-auto flex w-fit flex-col items-center gap-5">
         <div className="w-full max-w-3xl">
-          <Disclaimer />
+          {!bare && <Disclaimer />}
         </div>
         {slides.map((slide) => (
           <SlideCanvas
