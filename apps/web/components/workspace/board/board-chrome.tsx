@@ -11,6 +11,50 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { CARD_MAX_HEIGHT, CARD_MAX_WIDTH, CARD_MIN_HEIGHT, CARD_MIN_WIDTH, type BranchSide } from "@/lib/board/board-layout";
 import { cn } from "@/lib/utils";
 
+/**
+ * One icon control on a card: the same size, the same hover, the same two React Flow opt-outs.
+ *
+ * 🔴 `nodrag nopan` AND A STOPPED `pointerdown` OR THE CLICK NEVER LANDS. React Flow reads a press
+ * on a node as the start of a drag, so every control inside one has to say it is not part of the
+ * card. Every icon on this board went through the same three lines before this existed.
+ */
+export function CardIcon({
+  label,
+  onClick,
+  children,
+  tone = "quiet",
+  count,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  tone?: "quiet" | "danger";
+  count?: number;
+}) {
+  return (
+    <IconTooltip label={label}>
+      <button
+        aria-label={label}
+        className={cn(
+          "nodrag nopan flex shrink-0 cursor-pointer items-center gap-[4px] rounded-[6px] p-[4px] transition-colors",
+          tone === "danger"
+            ? "text-(--board-error) hover:bg-(--board-error-bg)"
+            : "text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)",
+        )}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        type="button"
+      >
+        {children}
+        {count !== undefined && count > 0 && <span className="text-[12px] font-medium">{count}</span>}
+      </button>
+    </IconTooltip>
+  );
+}
+
 /** Instant, dark, small: the reference's own tooltip (bg text-primary, 12px medium, 4/8 padding). */
 export function IconTooltip({ label, children, side = "top" }: { label: string; children: ReactNode; side?: "top" | "right" | "bottom" | "left" }) {
   return (

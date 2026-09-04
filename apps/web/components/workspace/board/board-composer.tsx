@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 
 import { AutoResizingTextarea, IconTooltip } from "./board-chrome";
 import { useBoard } from "./board-provider";
-import { MakeMenu } from "./make-menu";
 
 export function BoardComposer() {
   const { cards, sources, selectedSourceIds, toggleSourceSelection, sendRootMessage, newThreadSuggestions, useWebSearch, setUseWebSearch, makeDeliverable } = useBoard();
@@ -116,12 +115,6 @@ export function BoardComposer() {
               </div>
               <div className={cn("flex shrink-0 items-center justify-between gap-[8px]", !compact && "px-[12px] pb-[12px]")}>
                 <div className="flex items-center gap-[4px]">
-                  <MakeMenu
-                    onPick={(kind) => {
-                      makeDeliverable(kind, { cardId: null, topic: text });
-                      setText("");
-                    }}
-                  />
                   {compact ? <IconTooltip label={`Web search ${useWebSearch ? "on" : "off"}`}>{search}</IconTooltip> : search}
                 </div>
                 <IconTooltip label="Send message">

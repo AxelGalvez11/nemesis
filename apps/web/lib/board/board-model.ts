@@ -133,6 +133,8 @@ export type BoardSourceType = "pdf" | "image" | "document";
 export type BoardSourceStatus = "processing" | "ready" | "error";
 
 export interface BoardSource {
+  /** Folded down to its title row. Same affordance the conversation card has had since #1141. */
+  collapsed?: true;
   id: string;
   type: BoardSourceType;
   name: string;
@@ -188,6 +190,11 @@ export interface BoardOutputCard {
   id: string;
   /** The thread it was made from, or null when asked from the board composer. */
   cardId: string | null;
+  /** The dropped document it was made from, when it was made from one rather than from a thread.
+   *  Owner 2026-09-04: *"users should be allowed to … make note, make flashcards, and make tests
+   *  from documents too that were dropped in"*. The line on the board is drawn from whichever of
+   *  the two this names. */
+  sourceId?: string | null;
   kind: BoardMakeKind;
   status: BoardOutputStatus;
   /** What was asked, so an errored card can say what it failed to make. */
@@ -206,6 +213,16 @@ export interface BoardOutputCard {
    * measurement of anything.
    */
   run?: TestRun;
+  /**
+   * What the learner picked, once they have finished a test.
+   *
+   * 🔴 THE RESULT LIVES IN THE CARD (owner 2026-09-04: *"tests should show results in their own
+   * card node not be sent to chat"*). The first version sent an account of the attempt into the
+   * thread and deleted the card, which is the chat's rule and the wrong one here: on a board the
+   * card IS the place, and a test that vanishes takes the score with it. Saved with the board, so
+   * reopening it shows what was scored.
+   */
+  picks?: (string | null)[];
   createdAt: string;
   position: BoardPosition;
   width: number;

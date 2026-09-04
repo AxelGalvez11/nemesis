@@ -50,25 +50,16 @@ export type { DeliverableKind };
 export type BoardMakeKind = DeliverableKind | "check";
 
 /**
- * The + menu on the board.
+ * 🔴🔴 THERE IS NO MENU ANY MORE, AND THAT IS THE OWNER'S SECOND RULING IN A DAY. It was the chat's
+ * whole list of eight; he cut it to three (*"the canvas shouldnt have deep research, pages, or
+ * other options here"*), and then cut the control itself: *"remove the + from chats in canvas,
+ * maybe add an icon to chats on top for making flashcards and tests"*, and *"i dont want any popups
+ * in canvas, everything should be seen and done within the cards"*. A dropdown IS a popup.
  *
- * 🔴🔴 THREE ENTRIES, BY OWNER'S ORDER, 2026-09-04: *"the canvas shouldnt have deep research, pages,
- * or other options here"*. It was the chat's whole menu of eight, which is right in a chat, where
- * the point of the surface is to take something away with you: a Word file, a PDF, a spreadsheet, a
- * slide deck, a research report. The board is a thinking surface. What belongs beside a thread is
- * what you go on USING there: a test on what the thread taught, cards to review, a note that keeps
- * it.
- *
- * 🔴 THE CAPABILITY IS NOT REMOVED, ONLY THE BUTTON. Asking for slides, a document, a PDF, a
- * spreadsheet or a page in plain words in any card still makes one (`readDeliverableAsk`), because
- * a learner who says what they want should get it. What is gone is the menu offering it unasked.
+ * So the makers are icons on the card's own row (conversation-card.tsx and other-cards.tsx), which
+ * is both fewer presses and one less thing that opens over the board. Every kind still exists and
+ * every kind is still reachable in plain words: "make me slides on this" builds slides.
  */
-export const BOARD_DELIVERABLE_MENU: ReadonlyArray<{ kind: BoardMakeKind; label: string; detail: string }> = [
-  { kind: "check", label: "Test", detail: "Questions you tap through" },
-  { kind: "flashcards", label: "Flashcards", detail: "A deck you can review" },
-  { kind: "note", label: "Note", detail: "A study note in the Library" },
-];
-
 /** The busy line on a card being made; the chat's own words. */
 export const MAKING_LABELS: Record<BoardMakeKind, string> = {
   check: "Writing your questions",

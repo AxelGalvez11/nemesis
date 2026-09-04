@@ -21,6 +21,19 @@ export interface ConceptPillActions {
   onDiveDeeper?: (term: string, element: HTMLElement) => void;
   /** Whether this term has already been dived into (the board turns such a pill purple). */
   isBranched?: (term: string, element: HTMLElement) => boolean;
+  /**
+   * Show the meaning somewhere the SURFACE owns, instead of in a popover over it.
+   *
+   * 🔴🔴 THE BOARD HAS NO POPUPS — owner, 2026-09-04: *"i dont want any popups in canvas, everything
+   * should be seen and done within the cards"*. A popover is a floating layer over the board, and
+   * on a surface where every object is a card that reads as something escaping its card. Given
+   * this, the pill stops being a popover trigger and becomes a plain button: the card shows the
+   * term and its meaning in a strip of its own, and "Dive deeper" lives there.
+   *
+   * The chat keeps the popover, because there the answer is a column of prose with no card to put
+   * a strip in, and the owner liked it exactly as it is.
+   */
+  onSelect?: (term: string, meaning: string, element: HTMLElement) => void;
 }
 
 export const ConceptPillContext = createContext<ConceptPillActions>({});
@@ -35,7 +48,7 @@ function nodeText(children: ReactNode): string {
 }
 
 export function ConceptPill({ meaning, children }: { meaning: string; children: ReactNode }) {
-  const { onDiveDeeper, isBranched } = useContext(ConceptPillContext);
+  const { onDiveDeeper, isBranched, onSelect } = useContext(ConceptPillContext);
   const anchor = useRef<HTMLSpanElement | null>(null);
   const action = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -45,10 +58,8 @@ export function ConceptPill({ meaning, children }: { meaning: string; children: 
     const element = anchor.current;
     setBranched(element && isBranched ? isBranched(term, element) : false);
   }, [isBranched, term]);
-  return (
-    <Popover onOpenChange={setOpen} open={open}>
-      <PopoverTrigger asChild>
-        <button
+  const pill = (
+    <button
           aria-label={`Key term: ${term}`}
           className={cn(
             // `nodrag nopan` matter only on the board, where a press must not start a drag.
@@ -57,15 +68,21 @@ export function ConceptPill({ meaning, children }: { meaning: string; children: 
               ? "border-(--board-branch-highlight) bg-(--board-branch-highlight)"
               : "border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) hover:border-(--ui-stroke-primary) hover:bg-(--ui-control-hover-background)",
           )}
-          data-concept-pill=""
-          onPointerDown={(event) => event.stopPropagation()}
-          type="button"
-        >
-          <span className="truncate" ref={anchor}>
-            {children}
-          </span>
-        </button>
-      </PopoverTrigger>
+      data-concept-pill=""
+      onClick={onSelect ? () => anchor.current && onSelect(term, meaning, anchor.current) : undefined}
+      onPointerDown={(event) => event.stopPropagation()}
+      type="button"
+    >
+      <span className="truncate" ref={anchor}>
+        {children}
+      </span>
+    </button>
+  );
+  // The surface takes it from here: no floating layer, nothing to dismiss.
+  if (onSelect) return pill;
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>{pill}</PopoverTrigger>
       <PopoverContent
         aria-label={`About ${term}`}
         className="board-menu-pop w-[288px] rounded-[12px] border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-[12px] shadow-xl [--popover-surface:var(--ui-bg-elevated)]"

@@ -36,6 +36,7 @@ import {
   CHECK_WIDTH,
   OUTPUT_MIN_HEIGHT,
   OUTPUT_WIDTH,
+  SOURCE_DEFAULT_HEIGHT,
   SOURCE_WIDTH,
   findFreeChildPosition,
   nextRootPosition,
@@ -147,10 +148,13 @@ export interface BoardContextValue {
   /** Deliverables made on this board (lib/board/board-deliverables.ts). */
   outputs: BoardOutputCard[];
   /** Make one beside a thread (or from the composer, `cardId` null), from what was typed. */
-  makeDeliverable: (kind: BoardMakeKind, options?: { cardId?: string | null; topic?: string }) => void;
-  /** They finished a test card: the account goes into the thread as their own turn, and the card
-   *  goes away. See board-check.ts. */
-  finishCheck: (outputId: string, account: string) => void;
+  makeDeliverable: (kind: BoardMakeKind, options?: { cardId?: string | null; sourceId?: string; topic?: string }) => void;
+  /** They finished a test card: the picks are kept and the card shows the result. */
+  finishCheck: (outputId: string, picks: readonly (string | null)[]) => void;
+  /** From a finished test card: hand the attempt to the thread so Nemesis explains the misses. */
+  explainCheck: (outputId: string, account: string) => void;
+  /** Fold a dropped document down to its title row, and back. */
+  setSourceCollapsed: (id: string, collapsed: boolean) => void;
   /** The output open in the reading panel, if any. */
   openedOutput: CanvasOutput | null;
   openOutput: (outputId: string) => void;
@@ -574,14 +578,19 @@ export function BoardProvider({
    * reply, because nothing would ever finish it.
    */
   const makeDeliverable = useCallback(
-    (kind: BoardMakeKind, options: { cardId?: string | null; topic?: string } = {}) => {
+    (kind: BoardMakeKind, options: { cardId?: string | null; sourceId?: string; topic?: string } = {}) => {
       const cardId = options.cardId ?? null;
       const topic = (options.topic ?? "").trim();
       if (!uid) {
         setLimitNotice("Sign in to make things on the canvas.");
         return;
       }
-      const parent = cardId ? cards.find((card) => card.id === cardId) : undefined;
+      // 🔴 EITHER PARENT, ONE PATH. A note made from a document and a note made from a thread are
+      // the same maker reading the same shape of canvas; only what is put in front of it differs,
+      // and which card the line is drawn from.
+      const sourceParent = options.sourceId ? sources.find((source) => source.id === options.sourceId && source.status === "ready") : undefined;
+      if (options.sourceId && !sourceParent) return;
+      const parent = cardId ? cards.find((card) => card.id === cardId) : sourceParent;
       if (cardId && !parent) return;
       const outputId = crypto.randomUUID();
       const width = kind === "check" ? CHECK_WIDTH : OUTPUT_WIDTH;
@@ -589,9 +598,28 @@ export function BoardProvider({
       const position = parent
         ? findFreeChildPosition({ parent: measuredRect(parent), occupied: occupied(cards, sources), side: "right", childWidth: width, childHeight: minHeight })
         : nextRootPosition([...cards, ...sources, ...outputs]);
-      const draft: BoardOutputCard = { id: outputId, cardId, kind, status: "making", topic, createdAt: new Date().toISOString(), position, width };
+      const draft: BoardOutputCard = {
+        id: outputId,
+        cardId,
+        ...(sourceParent ? { sourceId: sourceParent.id } : {}),
+        kind,
+        status: "making",
+        topic,
+        createdAt: new Date().toISOString(),
+        position,
+        width,
+      };
       setOutputs((all) => [...all, draft]);
-      const canvas = boardCanvasFor({ boardId: boardIdRef.current, title: deriveBoardTitle(cards, sources), cards, cardId, sources: groundedSources(sources) });
+      // 🔴 A DOCUMENT'S OWN MATERIAL WHEN IT WAS ASKED FROM A DOCUMENT, or a note "from this
+      // lecture" would be written from every other file on the board as well.
+      const material = sourceParent ? groundedSources([sourceParent]) : groundedSources(sources);
+      const canvas = boardCanvasFor({
+        boardId: boardIdRef.current,
+        title: sourceParent ? sourceParent.name : deriveBoardTitle(cards, sources),
+        cards: sourceParent ? [] : cards,
+        cardId,
+        sources: material,
+      });
       const patch = (change: (output: BoardOutputCard) => BoardOutputCard) => {
         if (!mounted.current) return;
         setOutputs((all) => all.map((output) => (output.id === outputId ? change(output) : output)));
@@ -799,21 +827,25 @@ export function BoardProvider({
   );
 
   /**
-   * The last tap on a test card.
+   * The last tap on a test card: the result stays in the card.
    *
-   * 🔴🔴 THE MARKING IS A REPLY, NOT A SCREEN — the owner's rule, inherited whole from the chat
-   * (canvas-check.tsx): *"at the end it shouldn't show anything… it's just up to DeepSeek to report
-   * the results in its own words."* `describeAttempt` writes what happened, it arrives in the
-   * thread as the learner's own turn, and Nemesis answers it where it can tie a miss back to what
-   * it taught two cards ago and be argued with.
+   * 🔴🔴 A REVERSAL, AND IT IS THE OWNER'S — 2026-09-04: *"tests should show results in their own
+   * card node not be sent to chat"*. This shipped the chat's way, which is to send an account of
+   * the attempt into the thread and let Nemesis mark it in words (his own rule, 2026-08-24), and
+   * delete the card. On a board that is wrong twice over: the card is a place the learner put
+   * somewhere, and a test that scores you and then disappears leaves nothing to look at.
    *
-   * 🔴 THE CARD GOES WHEN IT IS ANSWERED. A finished test left on the board is a button that
-   * restarts a test the learner just took; the record of it is the conversation.
+   * So the picks are kept, the card draws the score and every question, and asking Nemesis to
+   * explain the misses is a BUTTON on that card rather than something that happens to you.
    */
-  const finishCheck = useCallback(
+  const finishCheck = useCallback((outputId: string, picks: readonly (string | null)[]) => {
+    setOutputs((all) => all.map((output) => (output.id === outputId ? { ...output, picks: [...picks] } : output)));
+  }, []);
+
+  /** Ask the thread to explain what was missed. The account is the chat's own `describeAttempt`. */
+  const explainCheck = useCallback(
     (outputId: string, account: string) => {
       const check = outputs.find((output) => output.id === outputId);
-      setOutputs((all) => all.filter((output) => output.id !== outputId));
       const text = account.trim();
       if (!check || !text) return;
       if (check.cardId && cards.some((card) => card.id === check.cardId)) {
@@ -1221,6 +1253,7 @@ export function BoardProvider({
             previewUrls: draft.previewUrls,
             position: nextRootPosition([...cards, ...next]),
             width: SOURCE_WIDTH,
+            height: SOURCE_DEFAULT_HEIGHT,
           });
         }
         return next;
@@ -1276,6 +1309,10 @@ export function BoardProvider({
     [cards, claimSourceOrdinal, uid],
   );
 
+  const setSourceCollapsed = useCallback((id: string, collapsed: boolean) => {
+    setSources((all) => all.map((source) => (source.id === id ? { ...source, collapsed: collapsed || undefined } : source)));
+  }, []);
+
   const dismissLimitNotice = useCallback(() => setLimitNotice(null), []);
 
   const value = useMemo<BoardContextValue>(
@@ -1327,6 +1364,8 @@ export function BoardProvider({
       outputs,
       makeDeliverable,
       finishCheck,
+      explainCheck,
+      setSourceCollapsed,
       openedOutput,
       openOutput,
       closeOutput,
@@ -1377,6 +1416,8 @@ export function BoardProvider({
       outputs,
       makeDeliverable,
       finishCheck,
+      explainCheck,
+      setSourceCollapsed,
       openedOutput,
       openOutput,
       closeOutput,

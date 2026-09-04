@@ -4,7 +4,7 @@
 // branch from. Geometry and behaviour from docs/wondering-canvas-reference.md §4 and §5.
 
 import { useReactFlow, useStore, type NodeProps } from "@xyflow/react";
-import { ArrowUp, BookOpen, Bookmark, GitBranch, Highlighter, Image as ImageIcon, Maximize2, MessageCircle, Minimize2, Plus, Sparkles, StickyNote, Trash2, X } from "lucide-react";
+import { ArrowUp, BookOpen, Bookmark, GitBranch, Highlighter, Image as ImageIcon, Layers, ListChecks, Maximize2, MessageCircle, Minimize2, Plus, Sparkles, StickyNote, Trash2, X } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { CARD_AUTO_MAX_HEIGHT, CARD_MIN_HEIGHT, CONTRACTED_CARD_MIN_HEIGHT } from "@/lib/board/board-layout";
@@ -15,10 +15,9 @@ import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { cn } from "@/lib/utils";
 import { ConceptPillContext, type ConceptPillActions } from "@/components/workspace/concept-pill";
 
-import { AutoResizingTextarea, BRANCH_BUTTONS, IconTooltip, NodeHandles, NodeResizeControls, StreamingDots, measureBoardArea } from "./board-chrome";
+import { AutoResizingTextarea, BRANCH_BUTTONS, CardIcon, IconTooltip, NodeHandles, NodeResizeControls, StreamingDots, measureBoardArea } from "./board-chrome";
 import { useBoard, type RetryTarget } from "./board-provider";
 import { CardMessage } from "./card-message";
-import { MakeMenu } from "./make-menu";
 import { SelectionActions } from "./selection-actions";
 import { SelectionMenu, SELECTION_ICONS } from "./selection-menu";
 import {
@@ -230,7 +229,29 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     },
     [fitView, sources],
   );
-  const pillActions = useMemo<ConceptPillActions>(() => ({ onDiveDeeper: diveDeeper, isBranched: isBranchedTerm }), [diveDeeper, isBranchedTerm]);
+  /**
+   * The term the learner pressed, shown in a strip inside this card.
+   *
+   * 🔴 NOT A POPOVER (owner 2026-09-04: *"i dont want any popups in canvas"*). The meaning lands in
+   * the card, under the thread and above the composer, where it can be read next to the sentence it
+   * came from and cannot cover anything.
+   */
+  const [term, setTerm] = useState<{ meaning: string; term: string } | null>(null);
+  /** 🔴 THE PILL THAT WAS PRESSED, KEPT SO "Dive deeper" BRANCHES FROM THE RIGHT WORD. The branch
+   *  anchors to an OCCURRENCE of the term in this card's text, so any other pill with the same
+   *  name would open a branch pointing at the wrong sentence. A ref, because it is a handle for a
+   *  later click and nothing renders from it. */
+  const termElement = useRef<HTMLElement | null>(null);
+  const pillActions = useMemo<ConceptPillActions>(
+    () => ({
+      isBranched: isBranchedTerm,
+      onSelect: (name, meaning, element) => {
+        termElement.current = element;
+        setTerm({ meaning, term: name });
+      },
+    }),
+    [isBranchedTerm],
+  );
 
   if (!card) return null;
 
@@ -282,12 +303,17 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
 
   const branchButtons = BRANCH_BUTTONS.map(({ side, positionClassName }) => (
     <div
+      // 🔴 ALL FOUR, ON HOVER, ON EVERY CARD — owner 2026-09-04: *"making new chats does not show up
+      // in all four sides of each chat only until clicking on them, compare against wondering"*. He
+      // is right and the reference agrees: their buttons are opacity-0 and revealed by
+      // `group-hover/card` alone (measured in his own canvas, 2026-09-04). Ours also required the
+      // card to be SELECTED, and hid three of the four on a board holding a single card, so the
+      // first thing a learner meets is one lonely plus on the right.
       className={cn(
         "absolute z-10 transition-opacity",
-        selected || onlyCard
+        selected
           ? ""
           : "[@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/card:pointer-events-auto [@media(hover:hover)]:group-focus-within/card:opacity-100 [@media(hover:hover)]:group-hover/card:pointer-events-auto [@media(hover:hover)]:group-hover/card:opacity-100",
-        onlyCard && side !== "right" && "md:hidden",
         positionClassName,
       )}
       key={side}
@@ -352,18 +378,19 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
           </button>
         </IconTooltip>
       </span>
-      <IconTooltip label="Add note">
-        <button
-          aria-label="Add note"
-          className="flex shrink-0 cursor-pointer items-center gap-[4px] rounded-[6px] p-[4px] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
-          onClick={() => addCardNote(card.id)}
-          onPointerDown={(event) => event.stopPropagation()}
-          type="button"
-        >
-          <StickyNote className="size-[16px]" />
-          {card.notes.length > 0 && <span className="text-[12px] font-medium">{card.notes.length}</span>}
-        </button>
-      </IconTooltip>
+      <CardIcon count={card.notes.length} label="Add note" onClick={() => addCardNote(card.id)}>
+        <StickyNote className="size-[16px]" />
+      </CardIcon>
+      {/* 🔴🔴 THE MAKERS ARE ICONS ON THE CARD NOW, NOT A MENU INSIDE IT — owner 2026-09-04: *"remove
+          the + from chats in canvas, maybe add an icon to chats on top for making flashcards and
+          tests"*, and *"i dont want any popups in canvas, everything should be seen and done within
+          the cards"*. A dropdown is a popup; two icons on the card's own row are not. */}
+      <CardIcon label="Make flashcards from this" onClick={() => makeDeliverable("flashcards", { cardId: card.id })}>
+        <Layers className="size-[16px]" />
+      </CardIcon>
+      <CardIcon label="Make a test from this" onClick={() => makeDeliverable("check", { cardId: card.id })}>
+        <ListChecks className="size-[16px]" />
+      </CardIcon>
     </div>
   );
 
@@ -622,14 +649,36 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
           </section>
         )}
       </div>
+      {/* 🔴 THE MEANING, IN THE CARD. Pressing a key term fills this strip instead of opening a
+          popover over the board; pressing another replaces it, and "Dive deeper" opens the branch
+          the popover's button used to. */}
+      {term && (
+        <div className="mx-[12px] mb-[8px] shrink-0 rounded-[10px] bg-(--ui-bg-secondary) px-[12px] py-[10px]">
+          <div className="flex items-start gap-[8px]">
+            <div className="min-w-0 flex-1">
+              <p className="m-0 text-[14px] font-semibold leading-[20px] text-foreground">{term.term}</p>
+              {term.meaning && <p className="m-0 mt-[2px] text-[14px] leading-[1.5] text-(--ui-text-secondary)">{term.meaning}</p>}
+            </div>
+            <CardIcon label="Close" onClick={() => setTerm(null)}>
+              <X className="size-[14px]" />
+            </CardIcon>
+          </div>
+          <button
+            className="nodrag nopan mt-[8px] inline-flex items-center rounded-[8px] bg-(--ui-action) px-[10px] py-[6px] text-[12px] font-semibold text-(--ui-action-glyph) transition-opacity hover:opacity-90"
+            onClick={() => {
+              const element = termElement.current;
+              setTerm(null);
+              if (element) diveDeeper(term.term, element);
+              else branchFromSelection(card.id, term.term);
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            type="button"
+          >
+            Dive deeper
+          </button>
+        </div>
+      )}
       <form className="mt-auto flex shrink-0 items-center gap-[8px] rounded-b-[16px] px-[12px] py-[10px]" onSubmit={submit}>
-        <MakeMenu
-          onPick={(kind) => {
-            makeDeliverable(kind, { cardId: card.id, topic: draft });
-            setDraft("");
-          }}
-          size={48}
-        />
         <div className="min-w-0 flex-1">
           <AutoResizingTextarea
             aria-describedby={limitNotice ? `board-card-${card.id}-limit` : undefined}

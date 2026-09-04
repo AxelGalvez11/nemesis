@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { asksToBeTaughtToo, CHECK_SYSTEM, readBoardCheck, readCheckAsk } from "./board-check";
-import { BOARD_DELIVERABLE_MENU, readBoardMakeAsk } from "./board-deliverables";
+import { readBoardMakeAsk } from "./board-deliverables";
+import { readFileSync } from "node:fs";
 import { MIN_QUESTIONS } from "@/lib/learn/test-run";
 
 const QUESTION = {
@@ -135,16 +136,31 @@ describe("a pack the model wrote is validated, never trusted", () => {
   });
 });
 
-describe("the board's own menu", () => {
-  it("offers a test, and no longer offers research or a page", () => {
-    const kinds = BOARD_DELIVERABLE_MENU.map((item) => item.kind);
-    assert.deepEqual(kinds, ["check", "flashcards", "note"], "owner 2026-09-04: no deep research, no pages, no other options");
+describe("the board has no menus, and nothing opens over it", () => {
+  // 🔴🔴 OWNER, 2026-09-04, TWICE IN ONE MESSAGE: *"remove the + from chats in canvas"* and *"i
+  // dont want any popups in canvas, everything should be seen and done within the cards"*. The
+  // makers are icons on the card's own row now. This guard is what stops the menu coming back the
+  // next time a kind is added.
+  const board = ["board-composer", "conversation-card", "other-cards", "board-surface", "board-page", "selection-menu", "selection-actions"];
+  it("draws no dropdown, popover or dialog anywhere on the board", () => {
+    for (const file of board) {
+      const source = readFileSync(new URL(`../../components/workspace/board/${file}.tsx`, import.meta.url), "utf8");
+      assert.ok(!/DropdownMenu|PopoverTrigger|DialogTrigger/.test(source), `${file}.tsx opens something over the board`);
+    }
+  });
+
+  it("puts the makers on the card instead", () => {
+    const card = readFileSync(new URL("../../components/workspace/board/conversation-card.tsx", import.meta.url), "utf8");
+    assert.match(card, /Make flashcards from this/, "the flashcards icon is missing from a chat card");
+    assert.match(card, /Make a test from this/, "the test icon is missing from a chat card");
+    assert.ok(!card.includes("MakeMenu"), "the + menu is still on the card");
+    const source = readFileSync(new URL("../../components/workspace/board/other-cards.tsx", import.meta.url), "utf8");
+    for (const label of ["Make a note from this", "Make flashcards from this", "Make a test from this", "Collapse document", "Delete document"]) {
+      assert.ok(source.includes(label), `a dropped document cannot ${label.toLowerCase()}`);
+    }
   });
 
   it("writes its prompt without an em dash, like every other prompt in this product", () => {
-    assert.ok(!/—/.test(CHECK_SYSTEM), "the prompt bans em dashes and must not carry one");
-    for (const item of BOARD_DELIVERABLE_MENU) {
-      assert.ok(!/—/.test(`${item.label} ${item.detail}`), `${item.label} carries an em dash`);
-    }
+    assert.ok(!/\u2014/.test(CHECK_SYSTEM), "the prompt bans em dashes and must not carry one");
   });
 });

@@ -14,7 +14,16 @@ export const OUTPUT_WIDTH = 320;
 export const CARD_MIN_WIDTH = 300;
 export const CARD_MAX_WIDTH = 840;
 export const CARD_MIN_HEIGHT = 320;
-export const SOURCE_MIN_HEIGHT = 220;
+export const SOURCE_MIN_HEIGHT = 320;
+
+/**
+ * How tall a dropped document opens.
+ *
+ * 🔴 A DOCUMENT CARD IS A READER NOW (owner 2026-09-04), so it opens at a height a page can be read
+ * at rather than at the height of four lines of preview text. Resizable from every edge, and the
+ * size the learner leaves it at is saved with the board.
+ */
+export const SOURCE_DEFAULT_HEIGHT = 560;
 export const IMAGE_SOURCE_MIN_HEIGHT = 340;
 /** A streaming card grows to the composer's top edge, and never past this. */
 export const CARD_AUTO_MAX_HEIGHT = 900;
