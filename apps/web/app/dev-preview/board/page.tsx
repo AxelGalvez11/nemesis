@@ -214,6 +214,28 @@ const PDF_SOURCE: BoardSource = {
   width: 640,
 };
 
+// 🔴 A REAL WORD FILE, for the same reason the PDF is here: the card's reader draws a .docx as its
+// pages now (`docx-render.ts`), and a card is where the owner reads them (2026-09-04: *"make sure
+// any documents can be viewed too"*). Under the PDF, so both formats are in one screen.
+const DOCX_SOURCE: BoardSource = {
+  content: "Reading a document as a document. One table, no pictures.",
+  grounded: {
+    excerpts: [{ id: "s3:e1", label: null, text: "Reading a document as a document." }],
+    id: "s3",
+    kind: "document",
+    librarySourceId: "preview-src-brief",
+    title: "Reading a document as a document.docx",
+  },
+  height: 560,
+  id: "src-docx",
+  name: "Reading a document as a document.docx",
+  position: { x: 1600, y: 1150 },
+  previewUrls: [],
+  status: "ready",
+  type: "document",
+  width: 640,
+};
+
 // 🔴 THE OTHER DELIVERABLE HE NAMED. Owner, 2026-09-04: *"tests and notes retain a box outline
 // around them"*. Both are this one component, and the outline turned out to be React Flow styling
 // our node because it was registered under its own built-in type name (`board-surface.tsx`), so the
@@ -241,7 +263,7 @@ const SEED: BoardState = {
   cards: [ROOT, BRANCH, STREAMING],
   outputs: [CHECK, NOTE_OUTPUT],
   selectedSourceIds: [],
-  sources: [SOURCE, PDF_SOURCE],
+  sources: [SOURCE, PDF_SOURCE, DOCX_SOURCE],
   // 🔴 THE HARNESS OPENS ON EVERYTHING. Without a viewport the board lands at 0,0 and half the
   // fixture (the PDF card, the test) is off screen, so a review measures what happened to be
   // visible. Zoomed out enough to hold every card at once.
