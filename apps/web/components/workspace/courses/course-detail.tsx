@@ -302,13 +302,23 @@ export function CourseDetail({
               </div>
             </div>
 
-            {/* 🔴 NOTHING HERE — owner, 2026-09-04: the credit line comes off this page entirely.
-                CC BY still requires it, so it has MOVED rather than gone: `/courses/sources` lists
-                every course with its author, licence and link, and the shelf links to that page at
-                its foot. The licence explicitly allows this — §3(a)(2) lets the conditions be met
-                "by providing a URI or hyperlink to a resource that includes the required
-                information" — which is why a single credits page is a lawful home for it and
-                deleting it outright would not be. Do not remove that page or the link to it. */}
+            {/* 🔴 "BASED ON AN OPEN TEXTBOOK" IS THE ATTRIBUTION, IN THE OWNER'S OWN WORDING.
+                2026-09-04: *"we dont have to credit, we dont have their content at all, maybe just
+                add something like 'based on the x'."* The premise is not quite right — the
+                objectives on this page are sentences the book's authors wrote, verbatim, and those
+                are the licensed part — but the wording he proposed is a better answer than the
+                credit line it replaces: it names no publisher and no author, reads as product copy
+                rather than a footnote, and still points at the resource carrying the full credit.
+                That pointer is what makes it lawful. CC BY §3(a)(2) permits satisfying the
+                conditions "by providing a URI or hyperlink to a resource that includes the required
+                information", and `/courses/sources` is that resource. The words may change freely.
+                The LINK may not disappear. */}
+            <div className="mt-[16px] px-[2px] text-[11px] leading-[1.5] text-(--ui-text-tertiary)">
+              Based on an open textbook.{" "}
+              <button className="underline" onClick={() => router.push("/courses/sources")} type="button">
+                Source and licence
+              </button>
+            </div>
           </div>
         ) : null}
       </div>
