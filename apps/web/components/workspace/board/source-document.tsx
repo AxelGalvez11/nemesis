@@ -27,11 +27,12 @@
 // the document and simply stops drawing them; nothing was thrown away in the reversal.
 
 import { DocumentReader } from "@/components/workspace/reader/document-reader";
+import { cn } from "@/lib/utils";
 import type { BoardSource } from "@/lib/board/board-model";
 
 import { useBoardReader } from "./use-board-reader";
 
-export function SourceDocument({ source }: { source: BoardSource }) {
+export function SourceDocument({ source, interactive }: { source: BoardSource; interactive: boolean }) {
   const state = useBoardReader(source, source.status === "ready" && !source.collapsed);
 
   if (state.kind === "loading") {
@@ -55,8 +56,29 @@ export function SourceDocument({ source }: { source: BoardSource }) {
           not have (board-reader-source.ts). */}
       {/* 🔴 NO SECOND OUTLINE. The card is already a bordered box and the page inside is already a
           sheet with an edge of its own; a third rounded border between them is the *"box outline"*
-          the owner cut from tests and notes on 2026-09-04, in another shape. */}
-      <div className="nodrag nopan nowheel min-h-0 flex-1 overflow-hidden rounded-[10px]" onPointerDown={(event) => event.stopPropagation()}>
+          the owner cut from tests and notes on 2026-09-04, in another shape.
+
+          🔴🔴 INERT UNTIL THE CARD IS SELECTED, WHICH IS HOW A THREAD ALREADY BEHAVES. Owner,
+          2026-09-04: *"I can't really grab it. It's not functional like the other one, like the
+          chats. It's like I can't move it."* He is right, and measured: a drag from the middle of a
+          document card moved it 0px, because `nodrag nopan` is on the reader and the reader is
+          nearly the whole card. The conversation card solved this long ago (`selected ? "nodrag
+          nopan cursor-auto select-text" : "select-none"`, and the reference does the same): a card
+          you have not chosen is an OBJECT you move, and one you have chosen is a DOCUMENT you read.
+          One click switches between the two.
+
+          🔴 `pointer-events-none` RATHER THAN JUST DROPPING `nodrag`, because a reader is not
+          prose: unselected, a press must not land on a PDF's text layer, a link, or a scroll
+          region. The press has to reach the node, or the card still will not move. */}
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden rounded-[10px]",
+          interactive ? "nodrag nopan nowheel" : "pointer-events-none select-none",
+        )}
+        onPointerDown={(event) => {
+          if (interactive) event.stopPropagation();
+        }}
+      >
         <DocumentReader
           // 🔴 NO READER HEADER IN A CARD. The card's own bar above it already names the file and
           // carries its verbs; what was left in the reader's was one "…" that opens a dropdown, and

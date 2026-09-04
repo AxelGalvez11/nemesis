@@ -97,7 +97,7 @@ test("🔴🔴 a document opens IN ITS CARD: no sidebar, no cover, nothing over 
   // *"pdfs, docx, pptx, still cannot be seen in the canvas, they only render text"* and *"i dont
   // want any popups in canvas, everything should be seen and done within the cards"*. A canvas is
   // made of cards, so the document is drawn in the card it was dropped as.
-  assert.match(CARD, /<SourceDocument source=\{source\} \/>/, "the source card does not draw its document");
+  assert.match(CARD, /<SourceDocument interactive=/, "the source card does not draw its document");
   assert.ok(!CARD.includes("openInPanel"), "the source card still sends its document somewhere else");
   assert.match(DOC, /nodrag nopan nowheel/, "the reader in a card must opt out of React Flow's drag and wheel");
   // Nothing left for a document tab to open, and no width taken from the board.
@@ -153,6 +153,33 @@ test("🔴🔴 a document in a card fills the card, and says nothing above itsel
     const source = readFileSync(new URL(`../reader/${view}`, import.meta.url), "utf8");
     assert.ok(source.includes("nemesis-reader-room"), `${view}'s scroll room is not marked as one`);
   }
+});
+
+test("🔴🔴 a document card is a BOX you can move, not a page that grows out of one", () => {
+  // Owner, 2026-09-04, of a canvas made before sources carried a default height: *"it's sort of not
+  // contained within the box. It's sort of clipping out, and it's glitchy. I can't really grab it.
+  // It's not functional like the other one, like the chats. It's like I can't move it."* Three
+  // symptoms, two causes, both measured in a browser rather than reasoned about.
+  const SURFACE = read("./board-surface.tsx");
+
+  // 🔴 CAUSE ONE: a source saved before `SOURCE_DEFAULT_HEIGHT` existed has no height, so React
+  // Flow let its node grow to its content, and its content is a whole document. Measured: a
+  // 55-slide deck became a 1,581px node. Every open source gets a height now.
+  assert.match(SURFACE, /source\.collapsed \? undefined : \(source\.height \?\? SOURCE_DEFAULT_HEIGHT\)/, "a source with no stored height is unbounded again");
+  assert.ok(!/height: source\.height\b/.test(SURFACE), "a source node still takes its height raw");
+
+  // 🔴 CAUSE TWO: the CARD only filled its node when a height had been stored, so on those same
+  // boards a 1,579px card sat inside a 560px node, spilling over everything under it while the
+  // board's hit-testing still used the node's box. That is the whole of "clipping out" and
+  // "glitchy".
+  assert.match(CARD, /const fixed = !source\.collapsed;/, "the card stopped filling its own node");
+
+  // 🔴 AND THE DRAG: `nodrag nopan` covers nearly the whole card, so a press in the middle of a
+  // document moved it 0px. A thread solved this long ago — a card you have not chosen is an object
+  // you move, one you have chosen is a document you read — and a document card follows it now.
+  assert.match(CARD, /<SourceDocument interactive=\{selected === true\} source=\{source\} \/>/, "the document is not told whether its card is chosen");
+  assert.match(DOC, /interactive \? "nodrag nopan nowheel" : "pointer-events-none select-none"/, "the document is interactive before its card is chosen, so the card cannot be dragged");
+  assert.match(CHAT, /selected \? "nodrag nopan cursor-auto select-text" : "select-none"/, "the rule the document card copies is gone from the conversation card");
 });
 
 test("🔴🔴 no board node is registered under one of React Flow's own type names", () => {

@@ -25,7 +25,7 @@ import "@xyflow/react/dist/style.css";
 import { Maximize, Minus, Plus, Redo2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
-import { CARD_WIDTH, EMPTY_CARD_HEIGHT, INITIAL_CARD_ZOOM, MAX_ZOOM, MIN_ZOOM, NOTE_WIDTH, centeredViewportForNode, connectionSides } from "@/lib/board/board-layout";
+import { CARD_WIDTH, EMPTY_CARD_HEIGHT, INITIAL_CARD_ZOOM, MAX_ZOOM, MIN_ZOOM, NOTE_WIDTH, SOURCE_DEFAULT_HEIGHT, centeredViewportForNode, connectionSides } from "@/lib/board/board-layout";
 import type { BoardViewport } from "@/lib/board/board-model";
 import { cn } from "@/lib/utils";
 
@@ -230,12 +230,26 @@ function BoardInner() {
   // Model → nodes, reusing node objects whose geometry did not move so React Flow does not re-measure.
   useEffect(() => {
     const heightOf = (card: (typeof cards)[number]) => (card.collapsed ? undefined : card.height);
+    /**
+     * 🔴🔴 A DOCUMENT CARD IS ALWAYS A BOX, EVEN WHEN THE BOARD NEVER STORED ONE. Owner, 2026-09-04,
+     * of a canvas made before sources were given a default height: *"it's sort of not contained
+     * within the box. It's sort of clipping out."* He is describing a node with no height: React
+     * Flow lets it grow to its content, and its content is a whole document, so a 55-slide deck
+     * became a 1,581px card running off the canvas (measured). New sources have carried
+     * `SOURCE_DEFAULT_HEIGHT` since they were introduced; every source saved before that has
+     * nothing, and a board is a place people come back to.
+     *
+     * 🔴 COLLAPSED IS AUTO, exactly as it is for a thread: a collapsed card is its title bar, and
+     * holding 560px of empty box under it would be the same bug in the other direction.
+     */
+    const sourceHeightOf = (source: (typeof sources)[number]) =>
+      source.collapsed ? undefined : (source.height ?? SOURCE_DEFAULT_HEIGHT);
     const previous = known.current;
     const next = new Map(
       [
         ...cards.map((card) => ({ id: card.id, position: card.position, width: card.width, height: heightOf(card) })),
         ...cards.flatMap((card) => card.notes.map((note) => ({ id: note.id, position: note.position, width: NOTE_WIDTH, height: undefined }))),
-        ...sources.map((source) => ({ id: source.id, position: source.position, width: source.width, height: source.height })),
+        ...sources.map((source) => ({ id: source.id, position: source.position, width: source.width, height: sourceHeightOf(source) })),
       ].map((item) => [item.id, { position: item.position, width: item.width, height: item.height }] as const),
     );
     setNodes((was) => {
@@ -268,9 +282,9 @@ function BoardInner() {
         ),
         ...sources.map((source) => {
           const existing = byId.get(source.id) as Node<SourceNodeData, "source"> | undefined;
-          if (existing) return reuse(source.id, existing, source.position, source.width, source.height);
+          if (existing) return reuse(source.id, existing, source.position, source.width, sourceHeightOf(source));
           changed = true;
-          return { id: source.id, type: "source", position: source.position, width: source.width, height: source.height, deletable: false, data: { sourceId: source.id } } as BoardNode;
+          return { id: source.id, type: "source", position: source.position, width: source.width, height: sourceHeightOf(source), deletable: false, data: { sourceId: source.id } } as BoardNode;
         }),
         ...outputs.map((output) => {
           const existing = byId.get(output.id) as Node<OutputNodeData, "deliverable"> | undefined;
