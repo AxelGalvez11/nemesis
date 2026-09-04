@@ -48,6 +48,8 @@
 
 import type { DecodedCalendarEvent, ExternalProvider } from "./calendar-codec";
 import type { CalendarEvent, EventAttachment, EventAttendee, EventReminders } from "./calendar-model";
+import { CALENDAR_COLORS, calendarColorOf } from "./calendar-colors";
+import type { Calendar } from "./calendars";
 import { eventColorOf } from "./event-colors";
 
 // 🔴 THE LINK FIELDS LIVE IN `calendar-codec.ts`, NOT HERE, and that is this codebase's own
@@ -568,4 +570,58 @@ function minutesToClock(minutes: number): string {
   const capped = Math.min(minutes, 23 * 60 + 59);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(Math.floor(capped / 60))}:${pad(capped % 60)}`;
+}
+
+/**
+ * Google's calendar list → the calendars Nemesis knows about, with their colours.
+ *
+ * 🔴🔴 THIS IS WHAT MADE THE COLOURS REAL RATHER THAN A DEFAULT. `PRIMARY_CALENDAR` carries Google's
+ * Blueberry so nothing is grey (2026-09-03), but that is a stand-in: the owner's own primary is
+ * Grape, his Family calendar is Grape too and his Holidays one is Basil, and none of that could
+ * arrive because nothing read Google's calendar list. Owner: *"do the Google Calendar sync colours
+ * too."*
+ *
+ * 🔴 THE PAYLOAD SHAPE WAS OBSERVED, NOT GUESSED. Called live against the owner's account through
+ * `GOOGLECALENDAR_LIST_CALENDARS` on 2026-09-03; the entries carry `id`, `summary`, `colorId`,
+ * `backgroundColor`, `foregroundColor`, `primary`, `selected`, `accessRole` and `timeZone`. The
+ * colour ids came back as "23", "8" and "14" against backgrounds `#cd74e6`, `#16a765` and
+ * `#9fe1e7` — which are Grape, Basil and Peacock in `calendar-colors.ts`, byte for byte. Our
+ * palette IS Google's, so this is a pass-through and not a mapping table.
+ *
+ * 🔴 GOOGLE'S PRIMARY BECOMES OURS, WITH THE EMPTY ID. Nemesis files a local event under `""` and
+ * a synced one under nothing at all (see `fromGoogleEvent` — it records `externalCalendar` and
+ * leaves `calendarId` unset), so both resolve to the primary. Giving Google's primary that same id
+ * is what makes a synced event come out in the colour it has in Google, and it is why
+ * `calendarList` lets a stored `""` row replace the built-in one.
+ *
+ * 🔴 `backgroundColor` IS THE FALLBACK, NOT THE SOURCE. A colour id survives Google changing its
+ * hexes and is what a write back would have to send; the hex is only consulted when an entry has
+ * no id, which happens on calendars carrying a custom colour.
+ */
+export function fromGoogleCalendars(raw: unknown): Calendar[] {
+  const root = obj(raw);
+  const list = Array.isArray(root?.calendars) ? root.calendars : Array.isArray(root?.items) ? root.items : [];
+  const out: Calendar[] = [];
+  for (const entry of list) {
+    const row = obj(entry);
+    if (!row) continue;
+    const id = row.primary === true ? "" : text(row.id);
+    if (id === undefined) continue;
+    const name = text(row.summary) || "Calendar";
+    const calendar: Calendar = { id, name };
+    const colorId = text(row.colorId);
+    if (colorId && calendarColorOf(colorId)) calendar.colorId = colorId;
+    else {
+      const hex = text(row.backgroundColor)?.toLowerCase();
+      const match = hex ? CALENDAR_COLORS.find((colour) => colour.hex.toLowerCase() === hex) : undefined;
+      if (match) calendar.colorId = match.id;
+    }
+    const zone = text(row.timeZone);
+    if (zone) calendar.timeZone = zone;
+    // 🔴 `selected: false` IS "UNTICKED IN GOOGLE", WHICH IS THIS PRODUCT'S `hidden`. Not deleted —
+    // the row still arrives, so unticking it in Google and back again does not lose its colour.
+    if (row.selected === false) calendar.hidden = true;
+    out.push(calendar);
+  }
+  return out;
 }

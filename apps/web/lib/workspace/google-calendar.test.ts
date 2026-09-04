@@ -11,8 +11,10 @@ import {
   fromGoogleEvents,
   shiftDateKey,
   toGoogleCreateArgs,
+  fromGoogleCalendars,
   toGooglePatchArgs,
 } from "./google-calendar";
+import { calendarColorOf } from "./calendar-colors";
 
 // Guards the Google Calendar mapping (owner 2026-09-02: "be able to map events to Nemesis
 // Calendar and the Google Calendar").
@@ -411,4 +413,80 @@ test("every write this product sends is one the API actually accepts", () => {
       `patch: ${label}`,
     );
   }
+});
+
+// ── The calendar list, and the colours that ride on it ────────────────────────────────────────
+//
+// 🔴 THE FIXTURE IS THE REAL PAYLOAD. Called live through `GOOGLECALENDAR_LIST_CALENDARS` against
+// the owner's own account on 2026-09-03; these three entries are his, trimmed to the fields this
+// reads. An invented fixture here would be inventing the very shape the code has to survive.
+const CALENDAR_LIST = {
+  calendars: [
+    {
+      accessRole: "owner", backgroundColor: "#cd74e6", colorId: "23",
+      foregroundColor: "#000000", id: "family18281144437862189208@group.calendar.google.com",
+      kind: "calendar#calendarListEntry", selected: true, summary: "Family", timeZone: "UTC",
+    },
+    {
+      accessRole: "reader", backgroundColor: "#16a765", colorId: "8",
+      description: "Holidays and Observances in United States", foregroundColor: "#000000",
+      id: "en.usa#holiday@group.v.calendar.google.com", kind: "calendar#calendarListEntry",
+      selected: true, summary: "Holidays in United States", timeZone: "America/Chicago",
+    },
+    {
+      accessRole: "owner", backgroundColor: "#9fe1e7", colorId: "14", foregroundColor: "#000000",
+      id: "axelgalvez1121@gmail.com", kind: "calendar#calendarListEntry", primary: true,
+      selected: true, summary: "axelgalvez1121@gmail.com", timeZone: "America/Chicago",
+    },
+  ],
+};
+
+test("🔴🔴 a Google calendar arrives with the colour it has in Google", () => {
+  const read = fromGoogleCalendars(CALENDAR_LIST);
+  assert.equal(read.length, 3);
+  // 🔴 OUR PALETTE IS GOOGLE'S, BYTE FOR BYTE, so this is a pass-through and not a mapping table:
+  // 23 is Grape #cd74e6, 8 is Basil #16a765, 14 is Peacock #9fe1e7 in `calendar-colors.ts`.
+  assert.deepEqual(read.map((c) => c.colorId), ["23", "8", "14"]);
+  assert.equal(calendarColorOf(read[0]!.colorId)?.hex, "#cd74e6");
+  assert.equal(calendarColorOf(read[1]!.colorId)?.name, "Basil");
+  assert.equal(read[0]!.name, "Family");
+  assert.equal(read[1]!.timeZone, "America/Chicago");
+});
+
+test("🔴🔴 Google's PRIMARY becomes ours, under the empty id", () => {
+  // Nemesis files a local event under `""` and a synced one under nothing at all — `fromGoogleEvent`
+  // records `externalCalendar` and leaves `calendarId` unset, so both resolve to the primary.
+  // Giving Google's primary that same id is the whole reason a synced event comes out in the colour
+  // it has in Google.
+  const primary = fromGoogleCalendars(CALENDAR_LIST).find((c) => c.id === "");
+  assert.ok(primary, "Google's primary calendar did not map onto ours");
+  assert.equal(primary.colorId, "14", "the primary arrived without its colour");
+  assert.ok(!fromGoogleCalendars(CALENDAR_LIST).some((c) => c.id === "axelgalvez1121@gmail.com"), "the primary was also stored under its Google id, so it exists twice");
+});
+
+test("🔴 `selected: false` is hidden, not deleted", () => {
+  const off = fromGoogleCalendars({ calendars: [{ colorId: "8", id: "x", selected: false, summary: "Muted" }] });
+  assert.equal(off[0]?.hidden, true);
+  // The row still ARRIVES: unticking a calendar in Google and ticking it back must not lose its
+  // colour on the way through.
+  assert.equal(off[0]?.colorId, "8");
+});
+
+test("🔴 the hex is the fallback, and only when there is no id", () => {
+  // A colour id survives Google changing its hexes and is what a write back would send. The
+  // background is consulted only for an entry that has no id — a calendar carrying a custom colour.
+  const byHex = fromGoogleCalendars({ calendars: [{ backgroundColor: "#16A765", id: "y", summary: "Custom" }] });
+  assert.equal(byHex[0]?.colorId, "8", "an entry with only a background colour lost it");
+  const unknown = fromGoogleCalendars({ calendars: [{ backgroundColor: "#123456", id: "z", summary: "Odd" }] });
+  assert.equal(unknown[0]?.colorId, undefined, "a hex that is not Google's was forced onto the nearest swatch");
+  assert.equal(unknown[0]?.name, "Odd", "the calendar itself was dropped along with its unknown colour");
+});
+
+test("🔴 a payload that is not a list comes back empty rather than throwing", () => {
+  // This runs inside a sync that must not fail because a colour could not be read.
+  for (const junk of [null, undefined, {}, { calendars: "no" }, { calendars: [null, 7] }]) {
+    assert.deepEqual(fromGoogleCalendars(junk), [], `${JSON.stringify(junk)} did not come back empty`);
+  }
+  // Google's own REST shape uses `items`; Composio re-keys it to `calendars`. Both are read.
+  assert.equal(fromGoogleCalendars({ items: [{ colorId: "8", id: "a", summary: "A" }] }).length, 1);
 });
