@@ -118,8 +118,16 @@ export function boardWireMessages(input: {
   system.push(
     "Never put questions to the learner as a numbered list in your answer, never write out a quiz or its answers, and never announce one: "
     + "no \"here is your first question\", no \"I will ask you one at a time\", no describing what is about to be asked. "
-    + "When they ask to be tested, a test card is made beside this one and they tap through it, so teach the material in your reply and stop. "
-    + "A question inside your teaching is fine where it is part of the explanation, never as the opening of a quiz.",
+    + "When they ask to be tested, their questions are prepared for them separately, so teach the material in your reply and stop. "
+    + "A question inside your teaching is fine where it is part of the explanation, never as the opening of a quiz. "
+    // 🔴🔴 AND NEVER EXPLAIN THE ARRANGEMENT, which is `screen-positions.ts`'s rule ("NEVER SAY
+    // WHERE SOMETHING IS ON SCREEN") reaching a new surface. Measured on production 2026-09-04:
+    // told that a test card is made beside this one, the model told the learner so, in the answer,
+    // twice: "Instead of a test within this reply, I will teach, and a separate test card can be
+    // made beside this one." The learner can see the card. They cannot see it if it failed, which
+    // is the other half of why a sentence about it is never safe to write.
+    + "🔴 Never mention any card, panel or button, and never describe how the page is arranged or "
+    + "what will appear where. Say what you have to teach, and nothing about the screen.",
   );
   system.push(CONCEPT_INSTRUCTION);
   system.push(PROTOCOL_INSTRUCTION);

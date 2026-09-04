@@ -25,10 +25,14 @@ describe("a board turn goes out as one packet", () => {
   it("forbids a quiz written as prose, because the questions are a card now", () => {
     const [system] = boardWireMessages({ message: "Teach me this then quiz me", history: [] });
     assert.match(system?.content ?? "", /Never put questions to the learner as a numbered list/, "the prose-quiz rule is missing");
-    assert.match(system?.content ?? "", /test card is made beside this one/, "the model is not told where the questions go");
+    assert.match(system?.content ?? "", /prepared for them separately/, "the model is not told the questions are handled elsewhere");
     // 🔴 MEASURED: with only the no-list half, the model announced the quiz and asked question one
     // in prose, beside a card holding the same six questions.
     assert.match(system?.content ?? "", /never announce one/, "the no-announcing half of the rule is missing");
+    // 🔴 AND IT MUST NOT DESCRIBE THE PAGE EITHER (screen-positions.ts): told about the card, the
+    // model told the learner about the card.
+    assert.match(system?.content ?? "", /Never mention any card, panel or button/, "the no-describing-the-screen rule is missing");
+    assert.ok(!/test card is made beside this one/.test(system?.content ?? ""), "the prompt still hands the model a sentence to repeat");
   });
 
   it("tells the card it may draw, in the same words the chat uses", () => {
