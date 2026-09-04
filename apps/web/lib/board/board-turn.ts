@@ -90,12 +90,10 @@ export function boardWireMessages(input: {
   if (input.responseMode === "lesson") system.push(LESSON_MODE);
   if (input.cardTitle) system.push(`This card is titled "${input.cardTitle}".${input.cardSummary ? ` So far: ${input.cardSummary}` : ""}`);
   const material = input.materialContext?.trim() ?? "";
-  if (material) {
-    // 🔴 THE CHAT'S PACKET AND THE CHAT'S RULE, WORD FOR WORD. The excerpt ids in the packet are the
-    // ids the answer cites, and chat-markdown.tsx draws them as the same pills.
-    system.push(MATERIAL_CITATION_RULE);
-    system.push(`${MATERIAL_HEADER}\n\n${material}`);
-  }
+  // 🔴 THE CHAT'S PACKET AND THE CHAT'S RULE, WORD FOR WORD, IN THE CHAT'S SHAPE: the rule rides the
+  // main system line and the material is its OWN system message (turnRouterMessages does the same),
+  // so the two surfaces cannot drift the next time either prompt is edited.
+  if (material) system.push(MATERIAL_CITATION_RULE);
   if (input.webContext) {
     system.push("Live web results for this question. Use them for current facts and cite the relevant URLs as [n]:\n\n" + input.webContext);
   }
@@ -111,6 +109,7 @@ export function boardWireMessages(input: {
   const user = `${question}${TURN_TAIL}`;
   return [
     { role: "system", content: system.join("\n\n") },
+    ...(material ? [{ role: "system" as const, content: `${MATERIAL_HEADER}\n\n${material}` }] : []),
     ...input.history.map((turn) => ({ role: turn.role, content: turn.content }) as WireMsg),
     { role: "user", content: user },
   ];

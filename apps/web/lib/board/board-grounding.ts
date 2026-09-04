@@ -28,21 +28,38 @@ import type { FileCitation } from "@/lib/workspace/chat-citations";
 
 import type { BoardSource } from "./board-model";
 
-/** The chat-shaped view of a board source; built from its text when it was filed before grounding. */
-export function groundedSource(source: BoardSource, ordinal: number): CanvasSource | null {
-  if (source.grounded) return source.grounded;
-  if (source.status !== "ready" || !source.content.trim()) return null;
-  const id = `s${ordinal}`;
-  return { id, title: source.name, kind: source.type, excerpts: buildExcerpts(id, source.content), durability: "ephemeral" };
+/** The ordinal a source's stored id carries (`s7` → 7), or 0 when it has none yet. */
+export function sourceOrdinalOf(source: BoardSource): number {
+  const match = /^s(\d+)$/.exec(source.grounded?.id ?? "");
+  return match ? Number(match[1]) : 0;
 }
 
-/** Every ready source in the chat's shape, in board order, ids stable across turns. */
+/**
+ * Every ready source in the chat's shape, in board order, ids stable across turns.
+ *
+ * 🔴 A STORED ID IS NEVER REASSIGNED, AND A BUILT ONE NEVER COLLIDES WITH IT. A source filed before
+ * grounding existed has no id and is given the lowest free `sN`, skipping every id a stored source
+ * holds, so two documents never share an excerpt namespace and a `[s3:e2]` pill opens the right file.
+ */
 export function groundedSources(sources: readonly BoardSource[]): CanvasSource[] {
+  const taken = new Set(sources.map((source) => source.grounded?.id).filter((id): id is string => Boolean(id)));
+  let next = 1;
+  const free = () => {
+    while (taken.has(`s${next}`)) next += 1;
+    const id = `s${next}`;
+    taken.add(id);
+    return id;
+  };
   const out: CanvasSource[] = [];
-  sources.forEach((source, index) => {
-    const grounded = groundedSource(source, index + 1);
-    if (grounded) out.push(grounded);
-  });
+  for (const source of sources) {
+    if (source.grounded) {
+      out.push(source.grounded);
+      continue;
+    }
+    if (source.status !== "ready" || !source.content.trim()) continue;
+    const id = free();
+    out.push({ id, title: source.name, kind: source.type, excerpts: buildExcerpts(id, source.content), durability: "ephemeral" });
+  }
   return out;
 }
 
@@ -53,12 +70,14 @@ export function boardCitableFiles(sources: readonly BoardSource[]): FileCitation
 
 /** The board source a citation pill names, by its chat-side id. */
 export function boardSourceForFile(sources: readonly BoardSource[], fileId: string): BoardSource | null {
-  let ordinal = 0;
+  const grounded = groundedSources(sources);
+  const index = grounded.findIndex((source) => source.id === fileId);
+  if (index < 0) return null;
+  // `groundedSources` keeps board order and skips only unready sources, so walk the same way.
+  let seen = -1;
   for (const source of sources) {
-    const grounded = groundedSource(source, ordinal + 1);
-    if (!grounded) continue;
-    ordinal += 1;
-    if (grounded.id === fileId) return source;
+    if (source.grounded || (source.status === "ready" && source.content.trim())) seen += 1;
+    if (seen === index) return source;
   }
   return null;
 }
