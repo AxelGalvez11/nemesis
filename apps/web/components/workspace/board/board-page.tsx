@@ -62,14 +62,12 @@ export function BoardPage({
   boardId,
   seed,
   toggle = true,
-  openSourceId,
 }: {
   boardId: string | null;
   seed?: BoardState;
   toggle?: boolean;
   /** 🔴 DEV-PREVIEW SEAM: open this source in the reading panel on mount, so /dev-preview/board
    *  shows the panel. Nothing in the real product opens a document by itself. */
-  openSourceId?: string;
 }) {
   const onCreated = useCallback((id: string) => {
     // 🔴 `history.replaceState`, NOT `router.replace`. A router navigation from /canvas to
@@ -93,7 +91,7 @@ export function BoardPage({
             THE SAME PANEL. The dock has to wrap the board because the thing that opens a document is
             a source card drawn deep inside the surface, and it has to wrap the output panel because
             that panel now draws the dock's own tab strip. See board-panel.tsx. */}
-        <BoardDock openSourceId={openSourceId}>
+        <BoardDock>
           <BoardArea frontDoor={boardId === null && toggle}>
             <BoardSurface />
             <EmptyStateHint />

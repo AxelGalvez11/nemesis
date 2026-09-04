@@ -36,6 +36,7 @@ import {
   CHECK_WIDTH,
   OUTPUT_MIN_HEIGHT,
   OUTPUT_WIDTH,
+  SOURCE_DEFAULT_HEIGHT,
   SOURCE_WIDTH,
   findFreeChildPosition,
   nextRootPosition,
@@ -1252,6 +1253,7 @@ export function BoardProvider({
             previewUrls: draft.previewUrls,
             position: nextRootPosition([...cards, ...next]),
             width: SOURCE_WIDTH,
+            height: SOURCE_DEFAULT_HEIGHT,
           });
         }
         return next;

@@ -20,8 +20,8 @@ import { annotationCountLabel, openAnnotationCount } from "@/lib/board/board-ann
 import { cn } from "@/lib/utils";
 
 import { AutoResizingTextarea, CardIcon, IconTooltip, NodeHandles, NodeResizeControls } from "./board-chrome";
-import { useOpenBoardSource } from "./board-panel";
 import { useBoard } from "./board-provider";
+import { SourceDocument } from "./source-document";
 
 export interface NoteNodeData extends Record<string, unknown> {
   cardId: string;
@@ -104,7 +104,6 @@ export const NoteCard = memo(NoteCardInner);
 
 function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData }) {
   const { annotations, sources, selectedSourceIds, toggleSourceSelection, createLessonFromSource, deleteNode, makeDeliverable, setSourceCollapsed } = useBoard();
-  const openInPanel = useOpenBoardSource();
   const source = sources.find((item) => item.id === data.sourceId);
   const [resizing, setResizing] = useState(false);
   const start = useCallback(() => setResizing(true), []);
@@ -113,10 +112,6 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
   const marks = openAnnotationCount(annotations, source.id);
   const chosen = selectedSourceIds.includes(source.id);
   const Icon = source.type === "image" ? FileImage : FileText;
-  const preview = source.content
-    .replace(/[#*_`>[\]]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
   const fixed = source.height !== undefined || resizing;
   const hasImage = source.type === "image" && Boolean(source.previewUrls[0]);
   return (
@@ -137,16 +132,9 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
             name of the document opening the document is the gesture nobody has to be taught.
             🔴 `nodrag nopan` AND a stopped pointerdown, or React Flow takes the press as the start
             of a card drag and the click never lands. */}
-        <button
-          className="nodrag nopan min-w-0 flex-1 truncate text-left text-[14px] font-semibold text-foreground transition-colors hover:text-(--ui-action) disabled:cursor-default disabled:hover:text-foreground"
-          disabled={source.status !== "ready"}
-          onClick={() => openInPanel(source)}
-          onPointerDown={(event) => event.stopPropagation()}
-          title={source.status === "ready" ? `Open ${source.name} in the reading panel` : source.name}
-          type="button"
-        >
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground" title={source.name}>
           {source.name}
-        </button>
+        </span>
         {/* 🔴 THE SAME PHRASE THE CHAT'S CHIP USES, in full. A card has room for the word, and
             "3" alone on a document card reads as a page count. The TAB gets the number. */}
         {marks > 0 && (
@@ -183,14 +171,7 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
           <Trash2 className="size-[16px]" />
         </CardIcon>
       </div>
-      {hasImage && !source.collapsed && (
-        <div className="shrink-0 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-[12px]">
-          {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL of the dropped picture. */}
-          <img alt={source.name} className="h-[160px] w-full rounded-[8px] object-contain" src={source.previewUrls[0]} />
-          {source.previewUrls.length > 1 && <p className="mt-[8px] text-center text-[12px] text-(--ui-text-tertiary)">{source.previewUrls.length} images in this source</p>}
-        </div>
-      )}
-      <div className={cn("flex flex-col px-[16px] py-[12px]", fixed && "min-h-0 flex-1", source.collapsed && "hidden")}>
+      <div className={cn("flex min-h-0 flex-1 flex-col px-[16px] py-[12px]", source.collapsed && "hidden")}>
         {source.status === "processing" && (
           <div className="flex items-center gap-[8px] py-[16px] text-[14px] text-(--ui-text-secondary)">
             <LoaderCircle className="size-[16px] animate-spin" />
@@ -205,22 +186,13 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
         )}
         {source.status === "ready" && (
           <>
-            <p className={cn("text-[14px] leading-[1.625] text-(--ui-text-secondary)", fixed ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : "line-clamp-4")}>
-              {preview || "Source ready to explore."}
-            </p>
+            {/* 🔴🔴 THE DOCUMENT ITSELF, IN THE CARD (owner 2026-09-04: "pdfs, docx, pptx, still
+                cannot be seen in the canvas, they only render text"). Pages, slides and layout, not
+                a stripped preview and a button to somewhere else. */}
+            <div className="flex min-h-[280px] flex-1 flex-col">
+              <SourceDocument source={source} />
+            </div>
             <div className="mt-[12px] flex shrink-0 gap-[8px] border-t border-(--ui-stroke-secondary) pt-[12px]">
-              {/* 🔴 "Open" SAYS WHAT IT DOES AND NAMES THE THING IT OPENS. The panel is where a
-                  document is read and annotated; a control called "Preview" or a bare icon would
-                  leave the whole annotate lane behind a gesture nobody discovers. */}
-              <button
-                className="flex min-w-0 flex-1 items-center justify-center gap-[6px] rounded-[8px] bg-(--ui-bg-secondary) px-[12px] py-[8px] text-[12px] font-semibold text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground"
-                onClick={() => openInPanel(source)}
-                onPointerDown={(event) => event.stopPropagation()}
-                type="button"
-              >
-                <PanelRight className="size-[14px]" />
-                <span>Open</span>
-              </button>
               <button
                 aria-pressed={chosen}
                 className={cn(

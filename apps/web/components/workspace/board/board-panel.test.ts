@@ -25,6 +25,7 @@ import { documentKey, withClosed, withOpened, type DockItem, type DockState } fr
 
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8");
 const PANEL = read("./board-panel.tsx");
+const DOC = read("./source-document.tsx");
 const PAGE = read("./board-page.tsx");
 const CARD = read("./other-cards.tsx");
 const STORE = read("./board-annotation-store.ts");
@@ -76,60 +77,36 @@ test("🔴 opening a document already open brings it forward instead of listing 
 test("🔴🔴 the panel reuses the chat's reader, strip and chrome, and builds none of its own", () => {
   // Every one of these was already built and tested. A second copy of any of them is the failure
   // this repo has shipped twice (a second reading pane, a second study panel) and deleted twice.
-  for (const [what, needle] of [
-    ["the document reader", /import \{ DocumentReader \} from "@\/components\/workspace\/reader\/document-reader"/],
-    ["the tab strip", /import \{ DockTabs \} from "@\/components\/workspace\/learn\/dock-tabs"/],
-    ["the dock's state", /useDocumentDockState/],
-    ["the measured chrome", /import \{ CHROME \} from "@\/components\/workspace\/learn\/reader-chrome"/],
-  ] as const) {
-    assert.match(PANEL, needle, `the board panel no longer uses ${what}`);
-  }
+  assert.match(DOC, /import \{ DocumentReader \} from "@\/components\/workspace\/reader\/document-reader"/, "the card no longer uses the product's reader");
+  assert.match(PANEL, /useDocumentDockState/, "the deliverable dock lost its state");
   // 🔴 AND NO PER-TYPE RENDERING. `DocumentReader` dispatches to the pdf/docx/slides/sheet/image
-  // views; a board panel reaching for one of them directly is a second reader being born.
+  // views; a board component reaching for one of them directly is a second reader being born.
   for (const view of ["PdfDocumentView", "DocxDocumentView", "SlidesDocumentView", "SheetDocumentView", "ImageDocumentView"]) {
-    assert.ok(!PANEL.includes(view), `the board panel renders ${view} itself instead of through the reader`);
+    assert.ok(!DOC.includes(view) && !PANEL.includes(view), `the board renders ${view} itself instead of through the reader`);
   }
 });
 
-test("🔴🔴 nothing opens as a sidebar on the board: the reader covers the window and gives it back", () => {
-  // 🔴🔴 THIS GUARD IS THE REVERSE OF THE ONE IT REPLACES, AND THE REVERSAL IS THE OWNER'S. It
-  // shipped this morning asserting that the board is PUSHED by a docked panel, on the reasoning
-  // that a floating panel hides the cards the document was opened from. He read it the same day:
-  // *"i dont want a sidebar to open in canvas, that does not make sense"*. A chat is one column, so
-  // a panel beside it is the obvious place to read; a canvas is already the spatial surface, and a
-  // slice off its right edge squeezes every card on it.
-  //
-  // So: no width published, no width dragged, no way back to a drawer.
-  assert.match(PANEL, /useDeclareSidePanel\(0, false\);/, "the board's reader claims room from the board again");
-  assert.ok(!PANEL.includes("useDockWidth"), "the reader is draggable-wide again, which is a sidebar");
-  assert.match(PANEL, /className="reader-cover-in fixed inset-0/, "the reader no longer covers the window");
-  assert.ok(!/Full screen"/.test(PANEL), "a full-screen toggle is a way back to the sidebar");
-  // A deliverable opens the same way, or the board would have one of each.
-  assert.match(PAGE, /initialMode="full"/, "a deliverable still opens in a docked panel");
-  // The inset wrapper stays: it is how the board reads ANY panel's claim, and it now always reads 0.
-  assert.match(PAGE, /function BoardArea\(/, "the board's own inset wrapper is gone");
-  assert.match(PAGE, /const inset = useSidePanelInset\(\);/, "the board page does not read the panel's width");
-});
-
-test("🔴🔴 a deliverable and a document are tabs of ONE panel, not two rectangles on one edge", () => {
-  // Owner, of the chat's version of exactly this: *"i dont want this, documents, lectures, and
-  // everything should open in one sidebar"*. The board's deliverables shipped with a panel of their
-  // own, which was right while a made page was the only thing the board could open.
-  assert.match(PANEL, /if \(openedOutput\) openOutput\(openedOutput\);/, "a deliverable is no longer a tab of the dock");
-  assert.match(PAGE, /if \(active\?\.kind !== "output"\) return null;/, "the deliverable panel draws from a flag of its own again");
-  assert.match(PAGE, /items=\{dock\.items\}/, "the deliverable panel does not draw the dock's tab strip");
-  assert.match(PAGE, /activeKey=\{dock\.activeKey\}/, "the deliverable panel's strip cannot say what is in front");
-  // 🔴 AND THE DOCUMENT PANEL STANDS DOWN WHILE A DELIVERABLE IS IN FRONT. `activeId` is null then;
-  // reading `items.length` instead would draw both bodies over each other.
-  assert.match(PANEL, /const showing = activeId !== null;/, "the document panel draws while a deliverable is in front");
-  // 🔴 CLOSING THE OUTPUT'S TAB CLEARS THE PROVIDER, or the mirror above re-opens it next render
-  // and the tab cannot be closed at all.
-  assert.match(PANEL, /if \(openedOutput && key === outputKey\(openedOutput\.id\)\) closeOutput\(\);/, "closing a deliverable's tab leaves it open in the provider");
+test("🔴🔴 a document opens IN ITS CARD: no sidebar, no cover, nothing over the board", () => {
+  // 🔴🔴🔴 THE THIRD ARRANGEMENT IN ONE DAY, AND EVERY MOVE WAS THE OWNER'S. It shipped as a docked
+  // sidebar that narrowed the board; he read it the same morning (*"i dont want a sidebar to open in
+  // canvas, that does not make sense"*) so it became a cover over the window; and by the afternoon:
+  // *"pdfs, docx, pptx, still cannot be seen in the canvas, they only render text"* and *"i dont
+  // want any popups in canvas, everything should be seen and done within the cards"*. A canvas is
+  // made of cards, so the document is drawn in the card it was dropped as.
+  assert.match(CARD, /<SourceDocument source=\{source\} \/>/, "the source card does not draw its document");
+  assert.ok(!CARD.includes("openInPanel"), "the source card still sends its document somewhere else");
+  assert.match(DOC, /nodrag nopan nowheel/, "the reader in a card must opt out of React Flow's drag and wheel");
+  // Nothing left for a document tab to open, and no width taken from the board.
+  assert.match(PANEL, /useDocumentDockState\(\[\]\)/, "documents are back in the dock");
+  assert.ok(!PANEL.includes("reader-cover-in"), "the document panel is still drawn over the board");
+  // A deliverable is the one thing left with no card of its own, and it covers rather than docks.
+  assert.match(PAGE, /initialMode="full"/, "a deliverable opens in a docked panel again");
+  assert.match(PAGE, /const inset = useSidePanelInset\(\);/, "the board page stopped reading a panel's claim");
 });
 
 test("🔴🔴 an annotation opens ONE conversation, in the board's card language, through the one model door", () => {
   // Owner: *"an inline chat with the annotation ... preferably in the style of the canvas chats"*.
-  assert.match(PANEL, /annotationLook="card"/, "the board's annotations wear the margin's look");
+  assert.match(DOC, /annotationLook="card"/, "the board's annotations wear the margin's look");
   assert.match(READER, /annotationLook\?: "margin" \| "card";/, "the reader lost the look it draws annotations in");
   assert.match(LAYER, /look\?: "margin" \| "card";/, "the comment layer cannot be asked for the card look");
   // The card's own grammar: the learner's turn in the learner's bubble, Nemesis's in the chat's
@@ -157,19 +134,20 @@ test("🔴🔴 board annotations are kept in the BOARD, not in the comments tabl
   // A file dropped on a board is read for its text and need never be filed, so there is usually no
   // durable `library_sources.id` to key a row to. What the reader gets is a store over the board's
   // own document; nothing else about the annotate layer changes.
-  assert.match(PANEL, /store: storeFor\(source\.id\),/, "the panel stopped handing the reader its own store");
+  assert.match(DOC, /store,/, "the card stopped handing the reader its own store");
   assert.match(STORE, /export function boardAnnotationStore/, "the board's store is gone");
   assert.ok(!/supabase/i.test(STORE), "the board's annotation store reaches for the database");
   // 🔴 THE STORE READS THROUGH A FUNCTION, NEVER A CAPTURED ARRAY. Held as a value, the second note
   // of a session is written on top of the first.
-  assert.match(PANEL, /boardAnnotationStore\(sourceId, \(\) => annotationsRef\.current, updateAnnotations\)/, "the store captured the annotation list");
+  assert.match(DOC, /boardAnnotationStore\(source\.id, \(\) => annotationsRef\.current, updateAnnotations\)/, "the store captured the annotation list");
 });
 
-test("🔴 a source card opens its document and says how many notes are on it", () => {
-  assert.match(CARD, /onClick=\{\(\) => openInPanel\(source\)\}/, "the source card cannot open its document");
+test("🔴 a source card says how many notes are on its document, and can be worked on", () => {
   assert.match(CARD, /data-testid="source-card-annotations"/, "the source card lost its annotation chip");
   assert.match(CARD, /\{annotationCountLabel\(marks\)\}/, "the chip stopped using the shared phrase");
-  assert.match(PANEL, /badgeFor=\{badgeFor\}/, "the tab lost its count");
+  for (const label of ["Make a note from this", "Make flashcards from this", "Make a test from this", "Collapse document", "Delete document"]) {
+    assert.ok(CARD.includes(label), `a dropped document cannot ${label.toLowerCase()}`);
+  }
 });
 
 // ── The round trip ───────────────────────────────────────────────────────────

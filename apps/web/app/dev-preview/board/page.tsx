@@ -130,6 +130,7 @@ const SOURCE: BoardSource = {
   status: "ready",
   type: "document",
   width: 640,
+  height: 560,
 };
 
 // 🔴 A THREAD, NOT A LONE NOTE. What the owner asked for is the CONVERSATION inside the document,
@@ -243,7 +244,7 @@ export default function BoardPreview() {
   return (
     <WorkspacePreviewProvider value={{ email: "preview@nemesis.local" }}>
       <WorkspaceShell>
-        <BoardPage boardId={null} openSourceId={empty ? undefined : SOURCE.id} seed={empty ? undefined : SEED} toggle />
+        <BoardPage boardId={null} seed={empty ? undefined : SEED} toggle />
       </WorkspaceShell>
     </WorkspacePreviewProvider>
   );
