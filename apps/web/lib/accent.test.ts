@@ -2,7 +2,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { ACCENT_COLORS, ACCENT_LABELS, ACCENT_PREFERENCES, ACCENT_PROPERTIES, accentFill, accentGlyph, accentPrePaintScript, DEFAULT_ACCENT_SWATCH, isAccent, normalizeStoredAccent } from "./accent";
+import {
+  ACCENT_COLORS,
+  ACCENT_LABELS,
+  ACCENT_PREFERENCES,
+  ACCENT_PROPERTIES,
+  DEFAULT_ACCENT_SWATCH,
+  accentBubble,
+  accentFill,
+  accentGlyph,
+  accentPrePaintScript,
+  accentProperties,
+  isAccent,
+  normalizeStoredAccent,
+} from "./accent";
 import { characterInk } from "./accent";
 
 test("the palette is the owner's twelve, in the screenshot's order", () => {
@@ -283,3 +296,62 @@ test("🔴 and it is --ui-action, the token the send button carries", () => {
   assert.match(composer, /bg-\(--ui-action\)/, "the send button no longer carries --ui-action");
 });
 
+
+test("🔴🔴 the learner's bubble is lighter than the send button, on every accent and both themes", () => {
+  // Owner, 2026-09-03: *"make the chat bubble colours a little bit lighter, because they're a bit
+  // too harsh on the eye."* `accentFill` deepens a hue until a 4.5:1 GLYPH fits on it — right for a
+  // 40px button carrying one arrow, and what made a whole sentence on that ground feel loud.
+  const luminance = (hex: string): number => {
+    const channel = (offset: number): number => {
+      const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  };
+  const ratio = (a: string, b: string): number => {
+    const first = luminance(a);
+    const second = luminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  };
+
+  for (const [name, hue] of Object.entries(ACCENT_COLORS)) {
+    for (const dark of [false, true]) {
+      const bubble = accentBubble(hue, dark);
+      // 🔴 LIGHTER IN LIGHT MODE, DARKER IN DARK — "lighter" means "nearer the page", not "nearer
+      // white". A dark theme's page is black, so lifting toward it is a step down in luminance.
+      const fill = accentFill(hue, dark);
+      const towardGround = dark ? luminance(bubble) <= luminance(fill) : luminance(bubble) >= luminance(fill);
+      assert.ok(towardGround, `${name}/${dark ? "dark" : "light"}: the bubble did not move toward the page (fill ${fill}, bubble ${bubble})`);
+
+      // 🔴🔴 AND THE TEXT STILL CLEARS AA. This is the half that makes lightening safe: without it
+      // a pale accent ships a bubble nobody can read. Worst case across all twelve accents and both
+      // themes measured 4.50 — exactly the floor, by construction.
+      assert.ok(
+        ratio(bubble, accentGlyph(bubble)) >= 4.5,
+        `${name}/${dark ? "dark" : "light"}: ${bubble} carries no readable ink`,
+      );
+    }
+  }
+});
+
+test("🔴 the bubble starts from the authored hue, not from the already-deepened fill", () => {
+  // Lightening a colour that was darkened for a reason lands somewhere neither value chose. `red`
+  // is the owner's own accent and the clearest case: the fill is #e8483f and the bubble #ed7069 —
+  // a lift off the HUE, not a lift off the fill.
+  assert.equal(accentFill(ACCENT_COLORS.red, false), "#e8483f");
+  assert.equal(accentBubble(ACCENT_COLORS.red, false), "#ed7069");
+  // 🔴 AND ITS INK WAS ALREADY DARK, so nothing reverses the 2026-08-26 "the bubble font is white"
+  // ruling here: white on #e8483f is 3.4:1 and `accentGlyph` had already picked near-black. The
+  // rule is per-hue and unchanged; only the ground moved.
+  assert.equal(accentGlyph(accentFill(ACCENT_COLORS.red, false)), "#1a1a1a");
+  assert.equal(accentGlyph(accentBubble(ACCENT_COLORS.red, false)), "#1a1a1a");
+});
+
+test("🔴 every accent writes the bubble pair, or the CSS falls back to the button", () => {
+  const props = accentProperties("red");
+  for (const key of ["--accent-bubble-light", "--accent-bubble-dark", "--accent-bubble-glyph-light", "--accent-bubble-glyph-dark"]) {
+    assert.ok(props[key], `${key} is not written`);
+  }
+  // 🔴 AND "DEFAULT" HAS TO BE ABLE TO REMOVE THEM. `ACCENT_PROPERTIES` is what hands the CSS back.
+  for (const key of Object.keys(props)) assert.ok(ACCENT_PROPERTIES.includes(key), `${key} is never removed`);
+});

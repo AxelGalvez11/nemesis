@@ -249,11 +249,29 @@ test("🔴🔴 the masthead is solid and never overlaps the resting content", ()
   // protect; "never paints over a letter" is the right one, and a solid band shorter than the
   // resting offset gives both.
   const shell = read("canvas-surface.tsx");
-  const band = /className="pointer-events-none absolute inset-x-0 top-0 z-20 h-\[(\d+)px\] ([^"]+)"/.exec(shell);
-  assert.ok(band, "expected a masthead band at the top of the canvas");
+  // 🔴🔴 REPOINTED AGAIN, 2026-09-03: THE MASTHEAD IS ANCHORED TO THE CONTROLS, NOT `inset-x-0`.
+  // Owner: *"there still seems to be a header block up top that's blocking the page."* Measured at
+  // [52, 0, 1388, 44]: a solid band over the WHOLE conversation for the benefit of a control
+  // cluster in the top right corner. At rest it covered nothing — the rule below still holds and is
+  // still checked — so this was only ever visible while scrolling, and then it hid a full line of
+  // the learner's own text behind a blank strip across the reading column.
+  //
+  // The two properties that mattered are unchanged and both still asserted: it is SOLID (never a
+  // gradient, which fades letters rather than ground) and it is SHORTER than the resting offset.
+  // What changed is its width.
+  const band = /className="pointer-events-none absolute right-0 top-0 z-20 h-\[(\d+)px\] w-\[(\d+)px\] ([^"]+)"/.exec(shell);
+  assert.ok(band, "expected a masthead band anchored to the controls");
+  // 🔴 THE MASTHEAD'S OWN CLASS, NOT THE WHOLE FILE. My first version banned `inset-x-0` anywhere
+  // in `canvas-surface.tsx` and reddened on other elements that legitimately span it — the drop
+  // overlay for one. What must not come back is a full-width band at this position.
+  assert.ok(!/inset-x-0 top-0 z-20 h-\[\d+px\]/.test(shell), "the masthead spans the whole column again");
+  // 🔴 WIDE ENOUGH FOR THE CLUSTER AND NO WIDER. Two 36px buttons, their gaps and the 12px inset,
+  // with room for a third; a band that grew past the centred reading column would be the same bug
+  // with a different number.
+  assert.ok(Number(band[2]!) <= 320, `the masthead is ${band[2]}px wide and will reach the reading column`);
 
   const height = Number(band[1]!);
-  assert.ok(!/gradient/.test(band[2]!), "the masthead fades again — it will erase the top of the question");
+  assert.ok(!/gradient/.test(band[3]!), "the masthead fades again, and a fade erases the top of the question");
 
   // The scroll container's own top padding — which lives in `learning-canvas.tsx`, a different
   // file from the band. Read rather than hard-coded: the two numbers are only meaningful against

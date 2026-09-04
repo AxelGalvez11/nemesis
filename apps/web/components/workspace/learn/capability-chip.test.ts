@@ -128,7 +128,11 @@ test("🔴 one chip, both composers — the two hand-written copies had already 
   // disagreed about the gap. That is the setup `AddMenuRow` exists to prevent one file over, with
   // the styling in the place of the list.
   assert.match(HOME, /<CapabilityChip capability=\{capability\} \/>/, "the front door draws its own chip again");
-  assert.match(COMPOSER, /<CapabilityChip capability=\{capability\} className="ml-\[8px\]" \/>/, "the session composer draws its own chip again");
+  // 🔴 `mr-[8px]` JOINED IT ON 2026-09-03. Measured on /dev-preview/course: the chip's right edge
+  // and the textarea's left edge both sat at x=497.83 — a gap of exactly zero, so the mode and the
+  // placeholder ran together. Spacing is the caller's business (see the prop's own note); what
+  // this guards is that the composer does not restyle the chip itself.
+  assert.match(COMPOSER, /<CapabilityChip capability=\{capability\} className="ml-\[8px\] mr-\[8px\]" \/>/, "the session composer draws its own chip again");
   // The measured geometry, in the one place it can live.
   assert.match(CHIP, /gap-\[4px\]/, "the icon/label gap drifted from the reference's 4px");
   assert.match(CHIP, /px-\[4px\]/, "the chip lost the reference's 4px of side padding");

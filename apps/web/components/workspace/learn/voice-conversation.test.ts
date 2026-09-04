@@ -117,7 +117,10 @@ test("🔴 the bar shows the words being heard, and the sent bubble wears the sp
   assert.match(composer, />Listening…</, "the empty bar no longer says it is listening");
   assert.match(composer, /text-\[length:var\(--canvas-text-body\)\] italic leading-\[26px\] \[color:color-mix\(in_srgb,var\(--ui-text-primary\)_72%,transparent\)\]/, "the live words lost the spoken treatment");
   const bubble = read("./learner-utterance.tsx");
-  assert.match(bubble, /via === "spoken"\s*\? "italic \[color:color-mix\(in_srgb,var\(--ui-action-glyph\)_85%,transparent\)\]"/, "the spoken bubble lost its treatment");
+  // 🔴 REPOINTED 2026-09-03: the ink follows the bubble's own fill now (`--ui-learner-bubble-glyph`),
+  // which `accentGlyph` still picks by contrast — so a lighter ground gets whichever of white or
+  // near-black clears AA. The spoken treatment is unchanged: the same colour at 85%, italic.
+  assert.match(bubble, /via === "spoken"\s*\? "italic \[color:color-mix\(in_srgb,var\(--ui-learner-bubble-glyph\)_85%,transparent\)\]"/, "the spoken bubble lost its treatment");
 });
 
 test("🔴 spoken is remembered: filed with the turn, stored in the moment, seeded back on reopen", () => {

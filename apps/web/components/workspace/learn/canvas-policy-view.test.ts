@@ -258,19 +258,28 @@ test("🔴 §35.1: the learner's words are BLUE in every case — blue is author
   // §35.1 says what the learner's ground MEANS ("this came from you", never "correct"), not which
   // hue carries it or which property paints it. What must hold is that their words wear a distinct,
   // UNCONDITIONAL ground — and the two checks below are what stop it ever being keyed to a verdict.
+  // 🔴 REPOINTED 2026-09-03: THE BUBBLE HAS ITS OWN FILL NOW, and it is still the product accent —
+  // `accentBubble` lifts the SAME hue 22% toward the page and holds the ink to AA. Owner: *"make
+  // the chat bubble colours a little bit lighter, they're a bit too harsh on the eye."* What this
+  // guards is unchanged: the learner's words are painted by the accent, never by a grade.
   assert.match(
     utterance,
-    /bg-\(--ui-action\)/,
+    /bg-\(--ui-learner-bubble\)/,
     "LearnerUtterance stopped painting the learner's words with the product accent",
   );
+  assert.ok(!/bg-\(--ui-action\)/.test(utterance), "the bubble went back to the send button's own fill");
   // 🔴🔴 THE PAIRED FOREGROUND, AND A LITERAL WHITE HERE WOULD GO INVISIBLE. `--ui-action` is the
   // near-black ink in light mode and the near-WHITE one in dark; `accentGlyph()` computes the
   // partner per accent so the contrast holds for every accent a learner can choose. Calibration:
   // put `text-white` back and the bubble disappears in dark mode on the default accent.
+  // 🔴 REPOINTED 2026-09-03 WITH THE FILL. The rule is unchanged and is the important half of the
+  // lightening: the ink is COMPUTED from whatever ground the bubble ended up with, by the same
+  // `accentGlyph` the send button uses, so the contrast holds for every accent a learner can pick.
+  // Measured across all twelve accents and both themes after the change: worst case 4.50:1.
   assert.match(
     utterance,
-    /text-\(--ui-action-glyph\)/,
-    "the bubble's text is not the accent's own glyph colour — check it in dark mode before changing this",
+    /text-\(--ui-learner-bubble-glyph\)/,
+    "the bubble's text is not the accent's own glyph colour; check it in dark mode before changing this",
   );
   assert.ok(!/text-white/.test(utterance), "a literal white is back on a ground that is white in dark mode");
   assert.ok(

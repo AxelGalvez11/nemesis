@@ -58,7 +58,10 @@ test("🔴🔴 the arrival marker is a prop on the bubble, never an element arou
     !/<span data-learner-said>/.test(CANVAS),
     "the bubble is wrapped in an element again — a percentage max-width cannot resolve against an inline box",
   );
-  assert.match(CANVAS, /<LearnerUtterance live via=\{currentSaidVia\}>/, "the live bubble stopped being marked, so the arrival has nothing to fly");
+  // 🔴 REPOINTED 2026-09-03: the bubble also wears the mode it was sent with (owner: *"any sort of
+  // mode in chat should also show in the chat bubble as well"*), so `live` is no longer the first
+  // prop. The marker itself is what this guards and it is unchanged.
+  assert.match(CANVAS, /<LearnerUtterance capability=\{currentSaidCapability\} live via=\{currentSaidVia\}>/, "the live bubble stopped being marked, so the arrival has nothing to fly");
   // The reference's own numbers, re-measured 2026-09-02 in the owner's account: 70% of a 768px
   // column, radius 22, padding 10/16, 16px on 24. Ours already said all four; the wrapper is what
   // stopped them applying.

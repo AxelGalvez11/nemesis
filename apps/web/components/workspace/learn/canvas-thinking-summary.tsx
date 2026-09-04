@@ -46,7 +46,17 @@ export function CanvasThinkingSummary({ lines, seconds }: { lines: readonly stri
         />
       </button>
       {open ? (
-        <ul className="m-0 mt-1 flex list-none flex-col gap-[2px] p-0 text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-tertiary)">
+        // 🔴🔴 THE LINES BREATHE NOW, AND THEY DID NOT. Owner, 2026-09-03: *"I like the way it says
+        // worked for six seconds, but the thing under it just doesn't look well spaced like the
+        // other things."* It was `mt-1` and `gap-[2px]` — 4.5px above and 2px between, under a
+        // 16/24 row — so two steps read as one blob of grey stuck to the button. Everything else in
+        // this conversation is set on a 24 or 26px rhythm; these were on 20 with no air at all.
+        //
+        // 🔴 AND THEY LINE UP UNDER THE WORDS, NOT UNDER THE ARROW. The row above is text first and
+        // its chevron after, so the steps sit flush with "Worked for" — the same rule
+        // `canvas-thinking-preview.tsx` states for its own chips, applied to a row whose mark is on
+        // the other side.
+        <ul className="m-0 mt-[10px] flex list-none flex-col gap-[6px] p-0 text-[length:var(--canvas-text-small)] leading-[22px] text-(--ui-text-tertiary)">
           {lines.map((line) => (
             <li key={line}>{line}</li>
           ))}

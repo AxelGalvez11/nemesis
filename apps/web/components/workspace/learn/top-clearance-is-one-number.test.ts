@@ -32,7 +32,9 @@ test("🔴 the masthead stops short of the text, or it paints over a line", () =
   // resting offset, so at rest it covers nothing and no row is half-painted.
   const canvas = code(read("./learning-canvas.tsx"));
   const top = Number(/overflow-y-auto[^"`]*pt-\[(\d+)px\]/.exec(canvas)?.[1]);
-  const mast = Number(/absolute inset-x-0 top-0 z-20 h-\[(\d+)px\]/.exec(code(read("./canvas-surface.tsx")))?.[1]);
+  // 🔴 REPOINTED 2026-09-03: it is `right-0` with a width now, not `inset-x-0` — see the note in
+  // `canvas-shell.test.ts`. The rule it enforces, shorter than the resting offset, is unchanged.
+  const mast = Number(/absolute right-0 top-0 z-20 h-\[(\d+)px\]/.exec(code(read("./canvas-surface.tsx")))?.[1]);
   assert.ok(Number.isFinite(top) && Number.isFinite(mast), "could not find the clearance or the masthead");
   assert.ok(mast < top, `the masthead (${mast}px) reaches into the text's resting offset (${top}px)`);
 });

@@ -24,6 +24,8 @@
 // words retain the learner visual identity whether correct, partial, or wrong. Nemesis's judgement
 // is a separate annotation." The verdict renders BELOW this, in Nemesis's own voice.
 
+import { Codicon } from "@/components/desktop-ui/codicon";
+import { CAPABILITY_COPY, type ComposerCapability } from "@/lib/learn/composer-capability";
 import { cn } from "@/lib/utils";
 import type { LearnerInputModality } from "@/lib/learn/canvas-model";
 
@@ -62,9 +64,25 @@ export interface LearnerUtteranceProps {
    * never accidentally count a tap as one.
    */
   via?: LearnerInputModality | null;
+  /**
+   * The one-shot mode this sentence was sent with, or null.
+   *
+   * 🔴🔴 THE CHIP WAS IN THE COMPOSER AND NOWHERE ELSE. Owner, 2026-09-03: *"any sort of mode in
+   * chat should also show in the chat bubble as well."* A capability is consumed the moment it is
+   * submitted — that is §38's rule and it is right, a mode must not persist — but consuming it
+   * also erased the only record that this particular question was asked with Course, or Search, or
+   * Deep research attached. The learner is then looking at an answer shaped by a declaration they
+   * can no longer see they made.
+   *
+   * 🔴 IT IS A FACT ABOUT THE SENTENCE, NOT A CONTROL. There is nothing to press here and no way
+   * to change it after the fact: the same rule `via` follows, and the reason both live on this
+   * element rather than on a wrapper.
+   */
+  capability?: ComposerCapability | null;
 }
 
-export function LearnerUtterance({ children, className, live = false, via = "typed" }: LearnerUtteranceProps) {
+export function LearnerUtterance({ capability = null, children, className, live = false, via = "typed" }: LearnerUtteranceProps) {
+  const mode = capability ? CAPABILITY_COPY[capability] : null;
   return (
     <p
       className={cn(
@@ -108,16 +126,36 @@ export function LearnerUtterance({ children, className, live = false, via = "typ
         "text-[length:var(--canvas-text-body)] leading-[24px]",
         // 🔴 THE COLOUR IS ONE BRANCH, NOT A BASE PLUS AN OVERRIDE. Two text-colour utilities on
         // one element resolve by stylesheet order, not by which was written later here.
+        // 🔴 THE BUBBLE'S OWN FILL SINCE 2026-09-03, NOT THE SEND BUTTON'S. Owner: *"make the chat
+        // bubble colours a little bit lighter, they're a bit too harsh on the eye."* `accentFill`
+        // deepens a hue until a 4.5:1 GLYPH fits on it, which is right for a 40px button carrying
+        // one arrow and is what made a whole sentence on that ground feel loud. `accentBubble`
+        // lifts 22% toward the page and then gives it back only as far as the ink needs, so the
+        // 2026-08-26 ruling — *"make sure the user text bubble font is white"* — still holds
+        // wherever white wins, and a pale accent gets near-black rather than an unreadable white.
         via === "spoken"
-          ? "italic [color:color-mix(in_srgb,var(--ui-action-glyph)_85%,transparent)]"
-          : "text-(--ui-action-glyph)",
-        "bg-(--ui-action)",
+          ? "italic [color:color-mix(in_srgb,var(--ui-learner-bubble-glyph)_85%,transparent)]"
+          : "text-(--ui-learner-bubble-glyph)",
+        "bg-(--ui-learner-bubble)",
         className,
       )}
       data-learner-utterance=""
       {...(live ? { "data-learner-said": "" } : {})}
       {...(via ? { "data-via": via } : {})}
     >
+      {/* 🔴 ABOVE THE WORDS, NOT BESIDE THEM. The bubble is right-aligned and caps at 70% of the
+          column, so an inline mark would be pushed around by every line break; on its own line it
+          sits at a fixed place whatever the sentence does. Inherits the bubble's own ink at 72% —
+          a fact about the sentence, quieter than the sentence. */}
+      {mode ? (
+        // 🔴 `--canvas-text-meta` (12px), NOT A LITERAL. §46.3: the Canvas has one type scale and
+        // five steps, and a px size here would be a sixth. Meta is the right step by meaning as
+        // well as by size — this line is a fact ABOUT the sentence, not part of it.
+        <span className="mb-[2px] flex items-center gap-[4px] text-[length:var(--canvas-text-meta)] leading-[18px] opacity-[0.72]">
+          <Codicon className="shrink-0" name={mode.icon} size="14px" />
+          {mode.label}
+        </span>
+      ) : null}
       {children}
     </p>
   );

@@ -1025,7 +1025,13 @@ export function CanvasComposer({
                 padding puts the icon at the 12px the words start at, so the line begins in the same
                 place whether or not anything is staged. */}
             {capability && !listening && (
-              <CapabilityChip capability={capability} className="ml-[8px]" />
+              // 🔴 `mr-[8px]`, AND WITHOUT IT THE GAP WAS EXACTLY ZERO. Measured on
+              // /dev-preview/course, 2026-09-03: the chip's right edge and the textarea's left
+              // edge both sat at x=497.83, so "Course" and "What do you want to learn?" ran
+              // together with only the chip's own 4px inset between them. Owner the same day:
+              // *"there's also a problem with the spacing when it's supposed to be in the chat
+              // composer."* 8px each side matches the gap the chip already keeps from the +.
+              <CapabilityChip capability={capability} className="ml-[8px] mr-[8px]" />
             )}
 
             {listening ? (

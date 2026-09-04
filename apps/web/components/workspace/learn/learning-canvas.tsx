@@ -1124,6 +1124,10 @@ export function LearningCanvas({
    */
   const [currentSaid, setCurrentSaid] = useState<string | null>(null);
   const [currentSaidVia, setCurrentSaidVia] = useState<"spoken" | null>(null);
+  /** The mode this sentence was sent with. 🔴 IT LIVES BESIDE `currentSaidVia` FOR THE SAME REASON
+   *  the note above gives: it is a fact about that one sentence, and it dies with it. Owner
+   *  2026-09-03: *"any sort of mode in chat should also show in the chat bubble as well."* */
+  const [currentSaidCapability, setCurrentSaidCapability] = useState<ComposerCapability | null>(null);
   /** What the learner marked on a document for the turn being answered. Empty on every other turn.
    *  🔴 IT LIVES BESIDE `currentSaid` BECAUSE IT BELONGS TO THE SAME SENTENCE, and dies with it. */
   const [currentNotes, setCurrentNotes] = useState<readonly AnnotationNote[]>([]);
@@ -1160,7 +1164,10 @@ export function LearningCanvas({
     momentId: string | null;
     /** File names committed with this turn, so the thread keeps them when the turn is filed. */
     attached: readonly string[];
+    /** The mode the sentence was sent with, so the bubble can say so. See `currentSaidCapability`. */
+    capability: ComposerCapability | null;
   }>({
+    capability: null,
     aside: null,
     attached: [],
     momentId: null,
@@ -1228,8 +1235,12 @@ export function LearningCanvas({
       // single-use rule `takePending` states next door, for the same reason.
       const attachedNow = committedTitles.current;
       committedTitles.current = [];
-      onScreen.current = { aside: null, attached: attachedNow, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
+      onScreen.current = { aside: null, attached: attachedNow, capability, momentId: null, output: null, said: trimmed, saidVia: spokenNow };
       setCurrentSaid(trimmed);
+      // 🔴 READ BEFORE THE COMPOSER CLEARS IT. The chip is one-shot by §38, so by the time the turn
+      // resolves `capability` is already null; the bubble's copy has to be taken here, at the same
+      // moment the words are.
+      setCurrentSaidCapability(capability);
       // 🔴 EVERY ORDINARY SEND CLEARS THE MARKS. Without this the crop from an annotation would
       // hang above the NEXT question too, which is the same class of bug as a sticky attachment
       // chip: a picture claiming to be about a sentence it has nothing to do with.
@@ -2187,6 +2198,11 @@ export function LearningCanvas({
     // 🔴 `switching ||` FOR THE SAME REASON THE TWO LINES ABOVE CARRY IT (#1105): on a first seed
     // there is nothing to replace and assigning would wipe what `converse` has already put up.
     if (switching || held?.attached?.length) setCurrentAttached(held?.attached ?? []);
+    // 🔴 THE MODE IS NOT RESTORED, AND SAYING SO IS THE HONEST SHAPE. A reopened thread reads from
+    // the stored moments, which have never carried the capability: it is consumed at send by §38.
+    // Showing the last mode of THIS session over a sentence from a previous one would be a claim
+    // nothing established. Clearing it is what a reopened thread actually knows.
+    if (switching) setCurrentSaidCapability(null);
     // 🔴🔴 AND ITS MOMENT ID COMES WITH IT, WHICH IS THE HALF THAT WAS MISSING. Held back from the
     // thread, this exchange has no `[data-thread-turn]` of its own — so its marker, the newest one
     // on the rail and the one a learner is most likely to press, resolved to nothing and rewound.
@@ -3140,7 +3156,7 @@ export function LearningCanvas({
                     Then on a `<span>` wrapping the pill, which fixed the flight and broke the
                     bubble, because a percentage `max-width` cannot resolve against an inline box
                     (see learner-utterance.tsx). A prop puts it on the pill and adds no element. */}
-                <LearnerUtterance live via={currentSaidVia}>{currentSaid}</LearnerUtterance>
+                <LearnerUtterance capability={currentSaidCapability} live via={currentSaidVia}>{currentSaid}</LearnerUtterance>
                 {!turnInFlight && <EditSentPrompt onOpen={() => setEditingPrompt(true)} />}
               </>
             )}
