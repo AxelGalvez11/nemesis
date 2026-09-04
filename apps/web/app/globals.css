@@ -1363,6 +1363,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .canvas-thinking-word,
   /* Somebody who asked the system to stop moving still gets the docked reader, without the slide. */
   .reader-dock-in,
+  .reader-cover-in,
   [data-workspace] .animate-pulse {
     animation: none;
   }
@@ -1448,6 +1449,21 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 
 @keyframes reader-dock-in {
   from { transform: translateX(4%); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* The board's reader, which covers the window instead of docking beside it.
+ *
+ * Owner, 2026-09-04: *"i dont want a sidebar to open in canvas, that does not make sense"*. A panel
+ * that slides in from the right edge IS the sidebar gesture, whatever its final width, so the
+ * board's reader rises instead: it comes up a little and fades in, the way a thing opening in place
+ * does. Same 220ms and same ease as everything else on this surface. */
+.reader-cover-in {
+  animation: reader-cover-in var(--pane-slide);
+}
+
+@keyframes reader-cover-in {
+  from { transform: translateY(6px) scale(0.995); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
 

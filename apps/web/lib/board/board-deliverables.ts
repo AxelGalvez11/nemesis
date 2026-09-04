@@ -32,25 +32,46 @@ import { emptyCanvas, type CanvasSource, type LearningCanvas } from "@/lib/learn
 import type { CanvasMoment } from "@/lib/learn/canvas-moment";
 import { researchStepLabel } from "@/lib/research/research-progress";
 
+import { readCheckAsk } from "./board-check";
 import type { BoardCard } from "./board-model";
 
 export { readDeliverableAsk };
 export type { DeliverableKind };
 
-/** The + menu, in the chat's order: what changes the answer's shape first, then the files. */
-export const BOARD_DELIVERABLE_MENU: ReadonlyArray<{ kind: DeliverableKind; label: string; detail: string }> = [
-  { kind: "report", label: "Deep research", detail: "Get a detailed report" },
+/**
+ * What a board card can be made INTO.
+ *
+ * 🔴 A CHECK IS NOT A DELIVERABLE, AND THE UNION SAYS SO RATHER THAN THE TYPE BEING WIDENED. Every
+ * `DeliverableKind` ends up in the Library as a real row a learner keeps; a check is answered and
+ * then marked in the conversation, and the owner's rule is that a test never becomes an artifact.
+ * Adding "check" to `DeliverableKind` would also send it through `makeBoardDeliverable`'s switch,
+ * whose default arm writes a NOTE, so an unhandled kind would quietly file the wrong thing.
+ */
+export type BoardMakeKind = DeliverableKind | "check";
+
+/**
+ * The + menu on the board.
+ *
+ * 🔴🔴 THREE ENTRIES, BY OWNER'S ORDER, 2026-09-04: *"the canvas shouldnt have deep research, pages,
+ * or other options here"*. It was the chat's whole menu of eight, which is right in a chat, where
+ * the point of the surface is to take something away with you: a Word file, a PDF, a spreadsheet, a
+ * slide deck, a research report. The board is a thinking surface. What belongs beside a thread is
+ * what you go on USING there: a test on what the thread taught, cards to review, a note that keeps
+ * it.
+ *
+ * 🔴 THE CAPABILITY IS NOT REMOVED, ONLY THE BUTTON. Asking for slides, a document, a PDF, a
+ * spreadsheet or a page in plain words in any card still makes one (`readDeliverableAsk`), because
+ * a learner who says what they want should get it. What is gone is the menu offering it unasked.
+ */
+export const BOARD_DELIVERABLE_MENU: ReadonlyArray<{ kind: BoardMakeKind; label: string; detail: string }> = [
+  { kind: "check", label: "Test", detail: "Questions you tap through" },
   { kind: "flashcards", label: "Flashcards", detail: "A deck you can review" },
   { kind: "note", label: "Note", detail: "A study note in the Library" },
-  { kind: "document", label: "Document", detail: "Write and download a Word file" },
-  { kind: "pdf", label: "PDF", detail: "Write and download a PDF" },
-  { kind: "sheet", label: "Spreadsheet", detail: "Build a table you can open in Excel" },
-  { kind: "slides", label: "Slides", detail: "Build a slide deck" },
-  { kind: "html", label: "Page", detail: "Build an interactive page" },
 ];
 
 /** The busy line on a card being made; the chat's own words. */
-export const MAKING_LABELS: Record<DeliverableKind, string> = {
+export const MAKING_LABELS: Record<BoardMakeKind, string> = {
+  check: "Writing your questions",
   document: "Writing your document",
   flashcards: "Making your flashcards",
   html: "Building your page",
@@ -61,7 +82,8 @@ export const MAKING_LABELS: Record<DeliverableKind, string> = {
   slides: "Building your slides",
 };
 
-export const KIND_LABELS: Record<DeliverableKind, string> = {
+export const KIND_LABELS: Record<BoardMakeKind, string> = {
+  check: "Test",
   document: "Document",
   flashcards: "Flashcards",
   html: "Page",
@@ -71,6 +93,18 @@ export const KIND_LABELS: Record<DeliverableKind, string> = {
   sheet: "Spreadsheet",
   slides: "Slides",
 };
+
+/**
+ * What the learner asked for in plain words, if anything: a test first, then the chat's own reader.
+ *
+ * 🔴 THE CHECK IS ASKED FIRST BECAUSE THE TWO READERS OVERLAP. "make me a practice test" carries a
+ * make-verb, and `readDeliverableAsk`'s note arm is wide enough to read a "test" ask as a study
+ * note. A learner who asks to be tested gets questions.
+ */
+export function readBoardMakeAsk(text: string): BoardMakeKind | null {
+  if (readCheckAsk(text)) return "check";
+  return readDeliverableAsk(text);
+}
 
 function momentsOf(turns: ReadonlyArray<{ role: "user" | "assistant"; content: string }>, now: string): CanvasMoment[] {
   return turns

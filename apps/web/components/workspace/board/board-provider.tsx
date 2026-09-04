@@ -32,6 +32,8 @@ import {
   CARD_MIN_HEIGHT,
   CARD_WIDTH,
   NOTE_WIDTH,
+  CHECK_MIN_HEIGHT,
+  CHECK_WIDTH,
   OUTPUT_MIN_HEIGHT,
   OUTPUT_WIDTH,
   SOURCE_WIDTH,
@@ -69,7 +71,8 @@ import {
 } from "@/lib/board/board-model";
 import { BoardVersionConflict, createBoard, getBoard, updateBoard } from "@/lib/board/board-store";
 import { DIVE_DEEPER_MESSAGE, runBoardTurn, type BoardResponseMode } from "@/lib/board/board-turn";
-import { boardCanvasFor, makeBoardDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/board/board-deliverables";
+import { boardCanvasFor, makeBoardDeliverable, readBoardMakeAsk, type BoardMakeKind } from "@/lib/board/board-deliverables";
+import { asksToBeTaughtToo, makeBoardCheck, readCheckAsk } from "@/lib/board/board-check";
 import { groundedSources, sourceOrdinalOf } from "@/lib/board/board-grounding";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
@@ -144,7 +147,10 @@ export interface BoardContextValue {
   /** Deliverables made on this board (lib/board/board-deliverables.ts). */
   outputs: BoardOutputCard[];
   /** Make one beside a thread (or from the composer, `cardId` null), from what was typed. */
-  makeDeliverable: (kind: DeliverableKind, options?: { cardId?: string | null; topic?: string }) => void;
+  makeDeliverable: (kind: BoardMakeKind, options?: { cardId?: string | null; topic?: string }) => void;
+  /** They finished a test card: the account goes into the thread as their own turn, and the card
+   *  goes away. See board-check.ts. */
+  finishCheck: (outputId: string, account: string) => void;
   /** The output open in the reading panel, if any. */
   openedOutput: CanvasOutput | null;
   openOutput: (outputId: string) => void;
@@ -157,6 +163,18 @@ export function useBoard(): BoardContextValue {
   const value = useContext(BoardContext);
   if (!value) throw new Error("useBoard must be used inside <BoardProvider>");
   return value;
+}
+
+/**
+ * Is there anything on this board a test could be written from?
+ *
+ * An answer Nemesis gave, or a document that finished reading. Both are what `canvasHasMaterial`
+ * counts on the chat side; this is the same question asked of a board before the maker is called,
+ * so the refusal never becomes a card.
+ */
+function hasSomethingToTest(cards: readonly BoardCard[], sources: readonly BoardSource[]): boolean {
+  if (sources.some((source) => source.status === "ready")) return true;
+  return cards.some((card) => card.messages.some((message) => message.role === "assistant" && !message.isError && message.content.trim().length > 0));
 }
 
 interface SaveJob {
@@ -219,6 +237,10 @@ export function BoardProvider({
   const retryTimer = useRef<number | null>(null);
   const mounted = useRef(true);
   const turnAborts = useRef(new Map<string, AbortController>());
+  /** 🔴 A REF, BECAUSE `runTurn` IS DEFINED BEFORE `makeDeliverable` AND FINISHES AFTER IT. The turn
+   *  needs to make a test card when the learner asked to be taught and tested in one sentence, and
+   *  reordering the two callbacks would put the maker above the turn it depends on. */
+  const makeDeliverableRef = useRef<((kind: BoardMakeKind, options?: { cardId?: string | null; topic?: string }) => void) | null>(null);
 
   const reportNodeSize = useCallback((id: string, size: MeasuredSize, remeasure: boolean) => {
     const known = measured.current.get(id);
@@ -445,6 +467,9 @@ export function BoardProvider({
       updatesComposerSuggestions?: boolean;
       cardTitle?: string;
       cardSummary?: string;
+      /** The learner asked to be taught AND tested. The test is made from this thread once the
+       *  answer lands, so the questions are never asked about a lesson that was not given. */
+      thenCheck?: boolean;
     }) => {
       if (!uid) {
         patchMessage(input.cardId, input.assistantMessageId, (message) => ({
@@ -506,6 +531,9 @@ export function BoardProvider({
             setNewThreadSuggestions(result.error ? [] : result.suggestions.newThreads);
           }
           setCardStatus(input.cardId, "idle");
+          // 🔴 AFTER THE ANSWER, NEVER INSTEAD OF IT. See `asksToBeTaughtToo`. A failed turn taught
+          // nothing, so there is nothing to be tested on and no card is made.
+          if (input.thenCheck && !result.error) makeDeliverableRef.current?.("check", { cardId: input.cardId, topic: input.requestMessage });
         })
         .catch((error) => {
           if (!mounted.current) return;
@@ -536,7 +564,7 @@ export function BoardProvider({
    * reply, because nothing would ever finish it.
    */
   const makeDeliverable = useCallback(
-    (kind: DeliverableKind, options: { cardId?: string | null; topic?: string } = {}) => {
+    (kind: BoardMakeKind, options: { cardId?: string | null; topic?: string } = {}) => {
       const cardId = options.cardId ?? null;
       const topic = (options.topic ?? "").trim();
       if (!uid) {
@@ -546,19 +574,26 @@ export function BoardProvider({
       const parent = cardId ? cards.find((card) => card.id === cardId) : undefined;
       if (cardId && !parent) return;
       const outputId = crypto.randomUUID();
+      const width = kind === "check" ? CHECK_WIDTH : OUTPUT_WIDTH;
+      const minHeight = kind === "check" ? CHECK_MIN_HEIGHT : OUTPUT_MIN_HEIGHT;
       const position = parent
-        ? findFreeChildPosition({ parent: measuredRect(parent), occupied: occupied(cards, sources), side: "right", childWidth: OUTPUT_WIDTH, childHeight: OUTPUT_MIN_HEIGHT })
+        ? findFreeChildPosition({ parent: measuredRect(parent), occupied: occupied(cards, sources), side: "right", childWidth: width, childHeight: minHeight })
         : nextRootPosition([...cards, ...sources, ...outputs]);
-      const draft: BoardOutputCard = { id: outputId, cardId, kind, status: "making", topic, createdAt: new Date().toISOString(), position, width: OUTPUT_WIDTH };
+      const draft: BoardOutputCard = { id: outputId, cardId, kind, status: "making", topic, createdAt: new Date().toISOString(), position, width };
       setOutputs((all) => [...all, draft]);
       const canvas = boardCanvasFor({ boardId: boardIdRef.current, title: deriveBoardTitle(cards, sources), cards, cardId, sources: groundedSources(sources) });
       const patch = (change: (output: BoardOutputCard) => BoardOutputCard) => {
         if (!mounted.current) return;
         setOutputs((all) => all.map((output) => (output.id === outputId ? change(output) : output)));
       };
-      void makeBoardDeliverable(uid, canvas, kind, topic, (label) => patch((output) => ({ ...output, progress: label })))
+      // 🔴 A CHECK TAKES THE SAME ROUTE AND LANDS IN THE SAME CARD, because everything around it —
+      // where the card sits, the line back to its thread, being saved, being deleted — is identical.
+      // Only what arrives differs: a run of questions rather than a file in the Library.
+      const made = kind === "check" ? makeBoardCheck(uid, canvas, topic) : makeBoardDeliverable(uid, canvas, kind, topic, (label) => patch((output) => ({ ...output, progress: label })));
+      void made
         .then((result) => {
           if ("error" in result) patch((output) => ({ ...output, status: "error", error: result.error, progress: undefined }));
+          else if ("run" in result) patch((output) => ({ ...output, status: "ready", run: result.run, progress: undefined }));
           else patch((output) => ({ ...output, status: "ready", output: result.output, progress: undefined }));
         })
         .catch((error: unknown) => {
@@ -567,6 +602,7 @@ export function BoardProvider({
     },
     [cards, measuredRect, occupied, outputs, sources, uid],
   );
+  makeDeliverableRef.current = makeDeliverable;
 
   const openedOutput = useMemo(() => outputs.find((output) => output.id === openedOutputId)?.output ?? null, [outputs, openedOutputId]);
   const openOutput = useCallback((outputId: string) => setOpenedOutputId(outputId), []);
@@ -575,13 +611,21 @@ export function BoardProvider({
   const startCard = useCallback(
     (
       text: string,
-      options: { sourceIds?: string[]; kind?: BoardCard["kind"]; responseMode?: BoardResponseMode; updatesComposerSuggestions?: boolean } = {},
+      options: { sourceIds?: string[]; kind?: BoardCard["kind"]; responseMode?: BoardResponseMode; updatesComposerSuggestions?: boolean; readsAsk?: boolean } = {},
     ): boolean => {
       const message = text.trim();
       if (!message) return false;
       // "Make me flashcards on this" is an ask for a thing, not a question: the chat's own reader
-      // decides (readDeliverableAsk), and the thing lands on the board instead of an answer.
-      const asked = readDeliverableAsk(message);
+      // decides (readBoardMakeAsk), and the thing lands on the board instead of an answer.
+      let asked = options.readsAsk === false ? null : readBoardMakeAsk(message);
+      // 🔴 A TEST NEEDS SOMETHING TO TEST. "Teach me contract formation and then quiz me" is the
+      // first thing typed on an empty board: routing it to the test writer would answer a request
+      // to be taught with a card saying there is nothing here yet. With nothing on the board the
+      // ask is an ordinary question, taught in the reply; the learner asks to be tested after.
+      if (asked === "check" && !hasSomethingToTest(cards, sources)) asked = null;
+      // Asked for both: the answer is written first and the test is made from it (asksToBeTaughtToo).
+      const thenCheck = asked === "check" && asksToBeTaughtToo(message);
+      if (thenCheck) asked = null;
       if (asked) {
         makeDeliverable(asked, { cardId: null, topic: message });
         return true;
@@ -635,6 +679,7 @@ export function BoardProvider({
         sourceIds,
         responseMode: options.responseMode,
         updatesComposerSuggestions: options.updatesComposerSuggestions,
+        thenCheck,
       });
       return true;
     },
@@ -653,11 +698,18 @@ export function BoardProvider({
   );
 
   const sendCardMessage = useCallback(
-    (cardId: string, text: string, retry?: RetryTarget, contextExcerpt?: string, occurrence?: number): boolean => {
+    (cardId: string, text: string, retry?: RetryTarget, contextExcerpt?: string, occurrence?: number, options: { readsAsk?: boolean } = {}): boolean => {
       const message = text.trim();
       if (!message) return false;
-      if (!retry && !contextExcerpt) {
-        const asked = readDeliverableAsk(message);
+      // 🔴 `readsAsk: false` IS FOR TEXT THE PRODUCT WROTE, NOT THE LEARNER. A finished test's
+      // account quotes every question back ("I answered…, but the answer was…"), and a quoted
+      // question can easily contain a make-verb near the word "test" or "questions". Reading it
+      // would answer a learner's finished test by making them a second one.
+      // Asked for both: teach in the answer, then make the test from this thread. See
+      // `asksToBeTaughtToo` for why a test can never replace the lesson it is testing.
+      const thenCheck = !retry && !contextExcerpt && options.readsAsk !== false && readCheckAsk(message) && asksToBeTaughtToo(message);
+      if (!retry && !contextExcerpt && options.readsAsk !== false && !thenCheck) {
+        const asked = readBoardMakeAsk(message);
         if (asked) {
           makeDeliverable(asked, { cardId, topic: message });
           return true;
@@ -710,10 +762,38 @@ export function BoardProvider({
         updatesComposerSuggestions: updatesComposer,
         cardTitle: card.title.trim() || undefined,
         cardSummary: card.summary?.trim() || undefined,
+        thenCheck,
       });
       return true;
     },
     [cards, makeDeliverable, runTurn, updateCards],
+  );
+
+  /**
+   * The last tap on a test card.
+   *
+   * 🔴🔴 THE MARKING IS A REPLY, NOT A SCREEN — the owner's rule, inherited whole from the chat
+   * (canvas-check.tsx): *"at the end it shouldn't show anything… it's just up to DeepSeek to report
+   * the results in its own words."* `describeAttempt` writes what happened, it arrives in the
+   * thread as the learner's own turn, and Nemesis answers it where it can tie a miss back to what
+   * it taught two cards ago and be argued with.
+   *
+   * 🔴 THE CARD GOES WHEN IT IS ANSWERED. A finished test left on the board is a button that
+   * restarts a test the learner just took; the record of it is the conversation.
+   */
+  const finishCheck = useCallback(
+    (outputId: string, account: string) => {
+      const check = outputs.find((output) => output.id === outputId);
+      setOutputs((all) => all.filter((output) => output.id !== outputId));
+      const text = account.trim();
+      if (!check || !text) return;
+      if (check.cardId && cards.some((card) => card.id === check.cardId)) {
+        sendCardMessage(check.cardId, text, undefined, undefined, undefined, { readsAsk: false });
+        return;
+      }
+      startCard(text, { readsAsk: false });
+    },
+    [cards, outputs, sendCardMessage, startCard],
   );
 
   const createBranchCard = useCallback(
@@ -1217,6 +1297,7 @@ export function BoardProvider({
       createLessonFromSource,
       outputs,
       makeDeliverable,
+      finishCheck,
       openedOutput,
       openOutput,
       closeOutput,
@@ -1266,6 +1347,7 @@ export function BoardProvider({
       createLessonFromSource,
       outputs,
       makeDeliverable,
+      finishCheck,
       openedOutput,
       openOutput,
       closeOutput,

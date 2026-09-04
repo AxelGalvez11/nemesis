@@ -14,8 +14,8 @@
 //                              object the chat's panel uses, with the same rules about what closing
 //                              the front tab falls back to.
 //   the strip                  `DockTabs`, unchanged.
-//   the chrome and the width   `CHROME` + `useDockWidth` (learn/reader-chrome.ts) — the measured
-//                              header both of the chat's docked panels already wear.
+//   the chrome                 `CHROME` (learn/reader-chrome.ts) — the measured header both of the
+//                              chat's panels already wear.
 //   the document               `DocumentReader`, which opens every format the product supports.
 //                              There is no per-type rendering in this file and there must not be.
 //   the annotation             `CommentLayer`, through the reader, in its `card` look.
@@ -26,10 +26,11 @@
 // the board's own JSON document (`board-annotation-store.ts`), and reopening /canvas/<id> brings
 // the pins back because the board itself came back.
 //
-// 🔴🔴 THE BOARD IS PUSHED, NOT COVERED. `useDeclareSidePanel` publishes the width, `BoardPage`
-// narrows itself by it, and `[data-board]` narrows with it — so `measureBoardArea()` needs no
-// knowledge of this panel at all: it measures the board element, and the board element is smaller.
-// A floating panel would hide the cards the learner opened the document from.
+// 🔴🔴 THE BOARD IS COVERED, NOT PUSHED, AND THAT IS A REVERSAL. It shipped as a docked sidebar
+// that narrowed the board; the owner saw it the same day: *"i dont want a sidebar to open in
+// canvas, that does not make sense"*. A canvas is already spatial, so a slice off its right edge
+// squeezes the very cards the document was opened from. The reader now takes the window and gives
+// it straight back, and this panel claims a zero inset.
 //
 // 🔴 NO "SEND TO NEMESIS" BUTTON ON A BOARD ANNOTATION, DELIBERATELY. The reader offers it only
 // when it is given `onSendToChat`, and the board's `sendRootMessage` takes text and nothing else —
@@ -55,7 +56,6 @@ import {
   type DocumentDock,
 } from "@/components/workspace/learn/document-dock";
 import { CHROME } from "@/components/workspace/learn/reader-chrome";
-import { useDockWidth } from "@/components/workspace/learn/use-dock-width";
 import { DocumentReader } from "@/components/workspace/reader/document-reader";
 import { useDeclareSidePanel } from "@/components/workspace/shell/side-panel";
 import { openAnnotationCount, type BoardAnnotation } from "@/lib/board/board-annotations";
@@ -187,8 +187,17 @@ function BoardPanel({ dock }: { dock: DocumentDock }) {
   // preview signs a mock session, so `uid` is set, so a library lookup went to the database, found
   // nothing under a fixture id, and the one screen this panel is reviewed on showed an error.
   const preview = useWorkspacePreview() !== null;
-  const { dragging, onDragStart, width } = useDockWidth();
-  const [full, setFull] = useState(false);
+  /**
+   * 🔴🔴 ON THE BOARD A DOCUMENT OPENS OVER THE WHOLE WINDOW, NEVER AS A SIDEBAR — owner,
+   * 2026-09-04: *"i dont want a sidebar to open in canvas, that does not make sense"*. A chat is one
+   * column, so a panel beside it is the obvious place to read; a canvas is already a spatial
+   * surface, and taking a slice off its right edge squeezes the cards the learner opened the
+   * document FROM. Reading takes the window, closing gives the board back exactly as it was.
+   *
+   * There is no toggle and no width, on purpose: a control that turned this back into a sidebar
+   * would be the thing that was ruled out, one press away. Several documents still open at once, as
+   * tabs, which is what the width was never needed for.
+   */
   const [states, setStates] = useState<Readonly<Record<string, PanelState>>>({});
   /** Most recently looked at first. Only these are mounted. */
   const [recent, setRecent] = useState<readonly string[]>([]);
@@ -309,10 +318,9 @@ function BoardPanel({ dock }: { dock: DocumentDock }) {
    * would draw both bodies over each other, which is the stacking the one dock exists to end.
    */
   const showing = activeId !== null;
-  // 🔴 THE BOARD IS PUSHED, NOT COVERED — `BoardArea` reads this back through `useSidePanelInset`.
-  // Zero while closed and zero while full screen, which is what `useDeclareSidePanel` requires:
-  // a zero inset is a release, never a claim on nothing (its own comment says why at length).
-  useDeclareSidePanel(showing && !full ? width : 0, dragging);
+  // 🔴 NOTHING IS CLAIMED FROM THE BOARD: this panel covers, it never pushes.
+  // A zero inset is a release, which is exactly what `useDeclareSidePanel` wants to be told.
+  useDeclareSidePanel(0, false);
 
   const badgeFor = useCallback(
     (item: DockItem) =>
@@ -329,25 +337,11 @@ function BoardPanel({ dock }: { dock: DocumentDock }) {
     // 🔴 THE `data-workspace` STAMP TRAVELS WITH THE PORTAL. `globals.css` paints every button
     // outside that scope acid green, so a subtree moved to `document.body` loses its whole palette.
     <div
-      className={cn(
-        "reader-dock-in fixed z-50 flex flex-col bg-(--ui-bg-elevated)",
-        full ? "inset-0" : "inset-y-0 right-0 border-l border-(--ui-stroke-tertiary)",
-      )}
+      className="reader-cover-in fixed inset-0 z-50 flex flex-col bg-(--ui-bg-elevated)"
       data-board-panel=""
       data-workspace
       role="dialog"
-      style={full ? undefined : { width }}
     >
-      {/* The grip is on the left edge, which is the edge that moves. Only while docked. */}
-      {!full && (
-        <div
-          aria-label="Resize the panel"
-          className="absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-(--ui-action)/40"
-          onPointerDown={onDragStart}
-          role="separator"
-        />
-      )}
-
       {/* 🔴 TABS GET THEIR OWN ROW. Row one is nothing but what is open; row two carries the
           document's name and the controls. Sharing one row is the arrangement the owner reversed
           the same day it shipped — see dock-tabs.tsx for the whole story. */}
@@ -366,15 +360,6 @@ function BoardPanel({ dock }: { dock: DocumentDock }) {
         {/* The front reader draws its own controls here — the annotate toggle and its actions menu.
             Only the front one, or every mounted reader would stack a set in this row. */}
         <div className="flex shrink-0 items-center gap-[4px]" ref={toolbarSlot} />
-        <button
-          aria-label={full ? "Exit full screen" : "Full screen"}
-          className={CHROME.button}
-          onClick={() => setFull((current) => !current)}
-          title={full ? "Exit full screen" : "Full screen"}
-          type="button"
-        >
-          <Codicon name={full ? "screen-normal" : "screen-full"} size={CHROME.icon} />
-        </button>
         <button
           aria-label="Close the reading panel"
           className={cn(CHROME.button, "text-(--ui-text-quaternary) hover:text-(--ui-text-primary)")}

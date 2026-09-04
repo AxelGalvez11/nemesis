@@ -8,7 +8,8 @@ import { WorkspacePreviewProvider } from "@/components/workspace/preview-context
 import { BoardPage } from "@/components/workspace/board/board-page";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import type { BoardAnnotation } from "@/lib/board/board-annotations";
-import type { BoardCard, BoardSource, BoardState } from "@/lib/board/board-model";
+import type { BoardCard, BoardOutputCard, BoardSource, BoardState } from "@/lib/board/board-model";
+import { CHECK_WIDTH } from "@/lib/board/board-layout";
 
 const ANSWER =
   "Insulin analogues are engineered to change **how quickly** insulin is absorbed after an injection.\n\n" +
@@ -66,7 +67,17 @@ const BRANCH = card({
   height: 420,
   messages: [
     { id: "u2", role: "user", content: "Why?", contextExcerpt: "has no real peak", contextOccurrence: 0 },
-    { id: "a2", role: "assistant", content: "Glargine is soluble at the acidic pH of the vial and **precipitates** at the neutral pH under the skin, so it dissolves back slowly and evenly over the day.", suggestedQuestions: { followUps: ["What is the pH of the glargine vial?"], branches: [], newThreads: [] } },
+    {
+      id: "a2",
+      role: "assistant",
+      // 🔴 A DRAWING IN THE FIXTURE, BECAUSE THE BOARD CAN DRAW NOW (owner 2026-09-04). The card
+      // renders through `AssistantMarkdown`, so a ```mermaid fence is a diagram here exactly as it
+      // is in the chat. Measure it on this card.
+      content:
+        "Glargine is soluble at the acidic pH of the vial and **precipitates** at the neutral pH under the skin, so it dissolves back slowly and evenly over the day.\n\n" +
+        "```mermaid\nflowchart TD\n  A[\"Vial at pH 4\"] --> B[\"Injected under the skin\"]\n  B --> C[\"Neutral pH 7.4\"]\n  C --> D[\"Precipitates as a depot\"]\n  D --> E[\"Redissolves slowly, no peak\"]\n```",
+      suggestedQuestions: { followUps: ["What is the pH of the glargine vial?"], branches: [], newThreads: [] },
+    },
   ],
 });
 
@@ -173,10 +184,55 @@ const ANNOTATIONS: BoardAnnotation[] = [
   },
 ];
 
+// 🔴 A REAL TEST CARD, PLAYABLE IN THE PREVIEW. Owner 2026-09-04: *"it still cannot make tests (it
+// drops tests in chat)"*. The run is a fixture, so no model call is made; the card is the shipped
+// one and the taps behave exactly as they do on a real board.
+const CHECK: BoardOutputCard = {
+  cardId: ROOT.id,
+  createdAt: "2026-09-04T10:00:00.000Z",
+  id: "check-1",
+  kind: "check",
+  position: { x: 0, y: 700 },
+  run: {
+    questions: [
+      {
+        objectiveIdentityKey: "chat:0:onset",
+        prompt: "A learner injects insulin aspart and eats twenty minutes later. Why does that timing work?",
+        options: [
+          { text: "Aspart's hexamers come apart sooner, so absorption starts in 10 to 20 minutes", correct: true },
+          { text: "Aspart is absorbed through the stomach wall once food arrives", correct: false },
+          { text: "Aspart lasts beyond 42 hours, so the timing does not matter", correct: false },
+        ],
+      },
+      {
+        objectiveIdentityKey: "chat:1:glargine",
+        prompt: "Why does glargine have no real peak?",
+        options: [
+          { text: "It precipitates under the skin and redissolves slowly and evenly", correct: true },
+          { text: "It is given at a much lower dose than the other analogues", correct: false },
+          { text: "It binds to albumin and is released when the learner eats", correct: false },
+        ],
+      },
+      {
+        objectiveIdentityKey: "chat:2:degludec",
+        prompt: "What gives degludec its very long duration?",
+        options: [
+          { text: "It forms multi-hexamer chains that release single molecules one at a time", correct: true },
+          { text: "It is injected into muscle rather than fat", correct: false },
+          { text: "It is chemically identical to human insulin", correct: false },
+        ],
+      },
+    ],
+  },
+  status: "ready",
+  topic: "Test me on this",
+  width: CHECK_WIDTH,
+};
+
 const SEED: BoardState = {
   annotations: ANNOTATIONS,
   cards: [ROOT, BRANCH, STREAMING],
-  outputs: [],
+  outputs: [CHECK],
   selectedSourceIds: [],
   sources: [SOURCE],
   useWebSearch: false,

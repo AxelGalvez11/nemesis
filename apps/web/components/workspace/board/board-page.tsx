@@ -152,7 +152,10 @@ function BoardOutputPanel() {
       activeKey={dock.activeKey}
       canvasId={boardId ?? ""}
       comments={{ preview: false, uid: session?.user?.id ?? null }}
-      initialMode="docked"
+      // 🔴 FULL, LIKE THE DOCUMENT READER BESIDE IT (owner 2026-09-04: "i dont want a sidebar to
+      // open in canvas"). A note or a deck Nemesis made opens over the board and closes back to it;
+      // nothing narrows the cards it was made from.
+      initialMode="full"
       items={dock.items}
       onClose={dock.closeAll}
       onCloseKey={dock.close}

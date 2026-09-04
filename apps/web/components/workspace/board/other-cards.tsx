@@ -10,6 +10,7 @@ import { BookOpen, Check, CircleAlert, FileImage, FileText, LoaderCircle, Messag
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { OUTPUT_KIND_MARKS } from "@/components/workspace/learn/artifact-card";
 import { KIND_LABELS, MAKING_LABELS } from "@/lib/board/board-deliverables";
+import { CanvasCheck } from "@/components/workspace/learn/canvas-check";
 import { docFilename } from "@/lib/export/doc-file";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
@@ -238,10 +239,16 @@ export const SourceCard = memo(SourceCardInner, (a, b) => a.data.sourceId === b.
  * maker's own reason). What it shows is the chat's `ArtifactCard`, minus the sentence above it.
  */
 function OutputCardInner({ data, selected }: NodeProps & { data: OutputNodeData }) {
-  const { outputs, openOutput } = useBoard();
+  const { outputs, openOutput, finishCheck } = useBoard();
   const output = outputs.find((item) => item.id === data.outputId);
   if (!output) return null;
-  const mark = OUTPUT_KIND_MARKS[output.kind] ?? { extension: "", icon: "file", label: KIND_LABELS[output.kind], tint: "--ui-kind-blue" };
+  // 🔴 A CHECK HAS ITS OWN MARK HERE RATHER THAN JOINING `OUTPUT_KIND_MARKS`. That map is the
+  // chat's ARTIFACT marks: every entry names a file extension and a thing in the Library. A test is
+  // neither, and adding it there would put "Test" on the Library's own shelves.
+  const mark =
+    output.kind === "check"
+      ? { extension: "", icon: "checklist", label: KIND_LABELS.check, tint: "--ui-kind-green" }
+      : (OUTPUT_KIND_MARKS[output.kind] ?? { extension: "", icon: "file", label: KIND_LABELS[output.kind], tint: "--ui-kind-blue" });
   const title = output.output?.title ?? output.topic;
   const filename = output.output && mark.extension ? docFilename(output.output.title, mark.extension) : title;
   return (
@@ -256,7 +263,11 @@ function OutputCardInner({ data, selected }: NodeProps & { data: OutputNodeData 
       <div className="flex shrink-0 items-center gap-[8px] rounded-t-[16px] px-[16px] py-[10px]">
         <Codicon className="shrink-0" name={mark.icon} size="16px" style={{ color: `var(${mark.tint})` }} />
         <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">{mark.label}</span>
-        <span className="rounded-[6px] bg-(--ui-bg-secondary) px-[8px] py-[2px] text-[11px] font-medium uppercase text-(--ui-text-tertiary)">Made here</span>
+        {/* A test is not something the board KEEPS, so it wears no "made here" badge: it is
+            answered, marked in the thread, and gone. */}
+        {output.kind !== "check" && (
+          <span className="rounded-[6px] bg-(--ui-bg-secondary) px-[8px] py-[2px] text-[11px] font-medium uppercase text-(--ui-text-tertiary)">Made here</span>
+        )}
       </div>
       <div className="flex flex-col px-[16px] pb-[12px]">
         {output.status === "making" && (
@@ -269,6 +280,25 @@ function OutputCardInner({ data, selected }: NodeProps & { data: OutputNodeData 
           <div className="flex items-start gap-[8px] rounded-[8px] bg-(--board-error-bg) px-[12px] py-[10px] text-[14px] text-(--board-error-text)">
             <CircleAlert className="mt-[2px] size-[16px] shrink-0" />
             <span>{output.error || "This could not be made."}</span>
+          </div>
+        )}
+        {/* 🔴🔴 THE TEST IS PLAYED IN THE CARD, NOT OPENED FROM IT. Everything else here is a thing
+            you keep and read later, so it offers a button; a check is the thing itself, and the
+            owner's report was precisely that asking for one produced questions the learner could
+            not tap (2026-09-04: "it still cannot make tests"). `CanvasCheck` is the chat's own
+            card, unchanged: same chips, same deferred marking, same account at the end.
+
+            🔴 `nowheel` AND `nodrag`, OR THE BOARD EATS THE TEST. Without `nodrag` every tap on an
+            option starts dragging the node; without `nowheel` a scroll inside a long question pans
+            the board instead. Both are React Flow's own opt-outs, the same pair the conversation
+            card's thread wears. */}
+        {output.status === "ready" && output.run && (
+          <div className="nodrag nopan nowheel max-h-[420px] overflow-y-auto overscroll-contain" onPointerDown={(event) => event.stopPropagation()}>
+            <CanvasCheck
+              onDismiss={() => finishCheck(output.id, "")}
+              onFinished={(account) => finishCheck(output.id, account)}
+              run={output.run}
+            />
           </div>
         )}
         {output.status === "ready" && output.output && (

@@ -47,6 +47,7 @@ import type { WireMsg } from "@/lib/workspace/chat-api";
 import { EXAM_ITEM_RULES_SHORT } from "@/lib/workspace/item-writing";
 
 import { readChatCheck } from "./chat-check";
+import { DIAGRAM_INSTRUCTION } from "./diagram-instruction";
 import { readFigureSubject } from "./figure-subject";
 import { stripScreenPositions } from "./screen-positions";
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
@@ -1235,26 +1236,12 @@ const DECISION_CONTRACT = [
   // shapes of answer that want a drawing, so reaching for one unprompted is instructed rather
   // than permitted; the never-decorate sentence is the brake that keeps a definition from
   // arriving as art.
-  "The canvas also draws fenced mermaid blocks in your answer: flowchart TD for steps and "
-  + "decisions, mindmap for how a subject branches, sequenceDiagram for exchanges over time, "
-  + "stateDiagram-v2 for states, pie for shares of a whole. Judge for yourself when one would "
-  + "genuinely help, without being asked: an answer that IS a process with stages, a branching "
-  + "decision, a cycle, a hierarchy, or several parts relating to each other lands better drawn, "
-  + 'and if you find yourself writing "first... then... which leads to...", draw that answer '
-  + "beside the prose. Always use one when the learner asks for a flow chart, diagram, mind map "
-  + "or similar. Keep a diagram under about fifteen nodes, write labels as short plain "
-  + 'text in double quotes (no HTML, no LaTeX inside labels), and let the prose still carry the '
-  + "explanation. "
-  // 🔴🔴 THE MIND MAP IS THE EXCEPTION TO THE SIZE CAP, BECAUSE IT IS NOT A PICTURE ANY MORE. Since
-  // 2026-09-03 a `mindmap` fence draws as an interactive tree the learner opens branch by branch
-  // (owner: *"a hierarchical mind map... a ladder of things you need to know from shallow to
-  // deeply detailed"*), so depth costs nothing on screen and is the whole point of asking for one.
-  + "A mindmap is the exception to that cap: it draws as an interactive tree the learner opens "
-  + "one branch at a time, so when they ask for a mind map go deep, three to five levels and up "
-  + "to about sixty nodes, the big ideas nearest the root and the specifics at the leaves, one "
-  + "idea per node in a few words, every branch drawn from their material. "
-  + "Never decorate: a plain fact, a definition, or a feeling needs no diagram. The "
-  + 'typed "visuals" array is unchanged and still preferred for everything it '
+  // 🔴 THE DRAWING RULES ARE SHARED WITH THE BOARD NOW (diagram-instruction.ts). They were written
+  // here and the board's card turn had none of them, so the same model drew in the chat and wrote
+  // prose on the canvas. One constant, two surfaces; only the sentence about the typed `visuals`
+  // array stays here, because that array is this lane's and the board has no such field.
+  DIAGRAM_INSTRUCTION
+  + ' The typed "visuals" array is unchanged and still preferred for everything it '
   + "covers: plots and bar charts with real numbers, mechanisms, structures, anatomy, figures.",
   "",
   '"then" is what happens to the canvas:',

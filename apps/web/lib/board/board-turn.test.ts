@@ -4,6 +4,8 @@ import { describe, it } from "node:test";
 import { THINKING_STANCE } from "@nemesis/shared";
 
 import { boardWireMessages } from "./board-turn";
+import { visibleAnswer } from "./board-protocol";
+import { DIAGRAM_INSTRUCTION } from "@/lib/learn/diagram-instruction";
 import { boardCitableFiles, boardSourceForFile, groundedSources, sourceOrdinalOf } from "./board-grounding";
 import { MATERIAL_CITATION_RULE, MATERIAL_HEADER } from "@/lib/learn/turn-router";
 import { CONCEPT_INSTRUCTION, PROTOCOL_INSTRUCTION } from "./board-protocol";
@@ -16,6 +18,29 @@ describe("a board turn goes out as one packet", () => {
     assert.ok(system?.content.includes(CONCEPT_INSTRUCTION), "the key-term rule is missing");
     assert.ok(system?.content.includes(PROTOCOL_INSTRUCTION), "the [[SUGGEST]] protocol is missing");
     assert.ok(!/—/.test(system?.content ?? ""), "the prompt bans em dashes and must not carry one");
+  });
+
+  // Owner 2026-09-04, of wondering's pictures: "can we implement visuals similar?" The renderer was
+  // already under every card; the instruction was only in the chat, so the board wrote prose.
+  it("tells the card it may draw, in the same words the chat uses", () => {
+    const [system] = boardWireMessages({ message: "How does a bill become law?", history: [] });
+    assert.ok(system?.content.includes(DIAGRAM_INSTRUCTION), "the drawing rules are missing from the board");
+    assert.match(DIAGRAM_INSTRUCTION, /mermaid/, "the shared rule must name the notation the renderer draws");
+  });
+});
+
+describe("a diagram arriving one token at a time is not shown as syntax", () => {
+  it("masks an unfinished fence while streaming and leaves a finished one alone", () => {
+    const half = "Here is the process.\n\n```mermaid\nflowchart TD\n  A[\"Bill\"] --> B";
+    assert.equal(visibleAnswer(half, true), "Here is the process.\n\n_Drawing a diagram…_");
+    const whole = "Here is the process.\n\n```mermaid\nflowchart TD\n  A --> B\n```";
+    assert.equal(visibleAnswer(whole, true), whole, "a closed fence is a diagram and is left alone");
+    assert.equal(visibleAnswer(half, false), half, "once the stream ends the learner sees what arrived");
+  });
+
+  it("leaves ordinary code fences alone, because only mermaid draws", () => {
+    const code = "Try this:\n\n```ts\nconst a = 1;";
+    assert.equal(visibleAnswer(code, true), code);
   });
 
   it("quotes the selected passage ahead of a branch question, and plain questions ride bare", () => {
