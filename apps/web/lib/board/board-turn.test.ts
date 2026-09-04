@@ -22,6 +22,12 @@ describe("a board turn goes out as one packet", () => {
 
   // Owner 2026-09-04, of wondering's pictures: "can we implement visuals similar?" The renderer was
   // already under every card; the instruction was only in the chat, so the board wrote prose.
+  it("forbids a quiz written as prose, because the questions are a card now", () => {
+    const [system] = boardWireMessages({ message: "Teach me this then quiz me", history: [] });
+    assert.match(system?.content ?? "", /Never put questions to the learner as a numbered list/, "the prose-quiz rule is missing");
+    assert.match(system?.content ?? "", /test card is made beside this one/, "the model is not told where the questions go");
+  });
+
   it("tells the card it may draw, in the same words the chat uses", () => {
     const [system] = boardWireMessages({ message: "How does a bill become law?", history: [] });
     assert.ok(system?.content.includes(DIAGRAM_INSTRUCTION), "the drawing rules are missing from the board");

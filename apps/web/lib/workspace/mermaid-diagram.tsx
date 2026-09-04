@@ -142,12 +142,21 @@ export function MermaidDiagram({ chart }: { chart: string }) {
         // is what "takes away from the flow" means: the reader loses the thread to look at the
         // picture explaining the thread.
         //
-        // 🔴 THE CAP IS ON HEIGHT, WITH `w-auto`, SO THE SHAPE IS UNCHANGED. Constraining width
-        // instead would leave a tall diagram tall; both bounds with both dimensions on `auto` lets
-        // the SVG scale down inside the box and keep its proportions. Anything that still will not
-        // fit scrolls sideways, which this wrapper already allowed.
-        "my-[16px] flex justify-center overflow-x-auto",
-        "[&_svg]:h-auto [&_svg]:max-h-[340px] [&_svg]:w-auto [&_svg]:max-w-full",
+        // 🔴🔴 THE CAP IS ON THE BOX, NOT ON THE PICTURE, AND THAT MOVE IS A FIX MEASURED ON
+        // PRODUCTION (2026-09-04, the first diagram a Canvas card ever drew). It used to sit on the
+        // SVG as `max-h-[340px] w-auto`, which scales a diagram DOWN until its height fits. That is
+        // right for a wide chart and ruinous for a tall one: a `flowchart TD` of fourteen steps has
+        // an aspect around 1:2.7, so fitting 2,289 units of height into 340 pixels left the picture
+        // 127px wide in a 617px card. Every label was there and none of them could be read.
+        //
+        // So the figure still takes at most 340px of the reading flow, which is the whole of the
+        // owner's rule, and the diagram is drawn at the column's width where its text is legible.
+        // What does not fit scrolls inside the box rather than shrinking the drawing.
+        "my-[16px] max-h-[340px] overflow-auto",
+        // 🔴 `nowheel` IS FOR THE BOARD. React Flow pans the canvas on wheel unless the element
+        // opts out, so without it a scroll inside a tall diagram would slide the whole board.
+        "nowheel",
+        "[&_svg]:mx-auto [&_svg]:h-auto [&_svg]:w-full [&_svg]:max-w-full",
       )}
       // Sanitised by mermaid under securityLevel "strict" — see the header.
       dangerouslySetInnerHTML={{ __html: svg }}

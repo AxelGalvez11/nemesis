@@ -104,6 +104,18 @@ export function boardWireMessages(input: {
   // instruction, so the same model drew in the chat and wrote prose on the board. One constant,
   // two surfaces: lib/learn/diagram-instruction.ts.
   system.push(DIAGRAM_INSTRUCTION);
+  // 🔴🔴 QUESTIONS TO THE LEARNER ARE A CARD, NEVER A NUMBERED LIST IN THE ANSWER. Measured on
+  // production 2026-09-04, the first live turn after tests shipped: asked to explain a process and
+  // then quiz, the model wrote the lesson, then "Answers:" and four questions with their answers
+  // underneath. That is the chat's oldest test defect in a new surface, and turn-router.ts already
+  // names the cause: prose accepts anything, so a model with no channel for questions uses the one
+  // channel that never refuses. The board's channel is a card the learner taps, made beside this
+  // thread; saying so here is what stops the prose version.
+  system.push(
+    "Never put questions to the learner as a numbered list in your answer, and never write out a quiz or its answers. "
+    + "When they ask to be tested, a test card is made beside this one and they tap through it, so teach the material in your reply "
+    + "and stop. If a single question genuinely belongs in what you are saying, ask ONE, in a sentence, and wait for their reply.",
+  );
   system.push(CONCEPT_INSTRUCTION);
   system.push(PROTOCOL_INSTRUCTION);
   const question = input.contextExcerpt

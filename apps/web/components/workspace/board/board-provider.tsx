@@ -618,13 +618,19 @@ export function BoardProvider({
       // "Make me flashcards on this" is an ask for a thing, not a question: the chat's own reader
       // decides (readBoardMakeAsk), and the thing lands on the board instead of an answer.
       let asked = options.readsAsk === false ? null : readBoardMakeAsk(message);
-      // 🔴 A TEST NEEDS SOMETHING TO TEST. "Teach me contract formation and then quiz me" is the
-      // first thing typed on an empty board: routing it to the test writer would answer a request
-      // to be taught with a card saying there is nothing here yet. With nothing on the board the
-      // ask is an ordinary question, taught in the reply; the learner asks to be tested after.
-      if (asked === "check" && !hasSomethingToTest(cards, sources)) asked = null;
-      // Asked for both: the answer is written first and the test is made from it (asksToBeTaughtToo).
+      // 🔴🔴 ASKED FOR BOTH: THE ANSWER IS WRITTEN FIRST AND THE TEST IS MADE FROM IT. Read from the
+      // message itself rather than from `asked`, and that ordering was a real defect: the
+      // empty-board rule below cleared `asked` first, so "Explain how a bill becomes a law, then
+      // quiz me" as the FIRST thing typed produced a lesson and no test at all. Measured on
+      // production 2026-09-04, which is also where the model filled the hole by printing the quiz
+      // in prose.
       const thenCheck = asked === "check" && asksToBeTaughtToo(message);
+      // 🔴 A TEST NEEDS SOMETHING TO TEST. A bare "quiz me" as the first thing typed would route to
+      // the test writer and answer with a card saying there is nothing here yet. With nothing on the
+      // board that ask is an ordinary question; the learner asks to be tested once there is a
+      // thread. A turn that also asks to be taught is exempt, because by the time its test is
+      // written the lesson it tests is on the board.
+      if (asked === "check" && !thenCheck && !hasSomethingToTest(cards, sources)) asked = null;
       if (thenCheck) asked = null;
       if (asked) {
         makeDeliverable(asked, { cardId: null, topic: message });
