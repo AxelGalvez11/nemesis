@@ -22,7 +22,7 @@ import { createPortal } from "react-dom";
 import { DockTabs } from "./dock-tabs";
 import type { DockItem } from "./document-dock";
 import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
-import { sandboxedPage } from "@/lib/learn/html-output";
+import { pageHeightFrom, sandboxedPage } from "@/lib/learn/html-output";
 
 import { biggerThan, CHROME, type ReaderMode } from "./reader-chrome";
 import { useDockWidth } from "./use-dock-width";
@@ -401,6 +401,27 @@ export function OutputPreview({
       live = false;
     };
   }, [markdown, output.kind, output.title]);
+  /**
+   * How tall the page inside the frame says it is.
+   *
+   * 🔴🔴 THE FRAME HAD A FIXED 70vh AND ITS OWN SCROLLBAR, which put a second scroller inside a
+   * panel that already scrolls. Seen on production 2026-09-04, the day the kind shipped. An iframe
+   * has no content height of its own and this one is deliberately opaque, so the only honest way to
+   * size it is to let the page say. See `html-output.ts` for why it is a message and not a read.
+   */
+  const [pageHeight, setPageHeight] = useState<number | null>(null);
+  useEffect(() => {
+    if (output.kind !== "html") return;
+    const onMessage = (event: MessageEvent) => {
+      const height = pageHeightFrom(event.data);
+      if (height !== null) setPageHeight(height);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [output.kind]);
+  // A different page is a different height; keeping the old one leaves a gap or a clip.
+  useEffect(() => setPageHeight(null), [output.id]);
+
   const download = () => {
     // 🔴 THE DECK IS BUILT BY ITS OWN DOWNLOADER, which signs the learner's figures first — see
     // deck-download.ts. Rebuilding it here would be a second copy of that step, and the copy that
@@ -647,14 +668,20 @@ export function OutputPreview({
             // outright, so material a learner uploaded cannot talk the model into writing a page
             // that phones home with it.
             //
-            // 🔴 `h-[70vh]`, BECAUSE A FRAME HAS NO CONTENT HEIGHT. An iframe does not grow to fit
-            // what is inside it and cannot be measured across an opaque origin, so an unsized one
-            // collapses to the 150px default every browser gives it.
+            // 🔴 A FRAME HAS NO CONTENT HEIGHT OF ITS OWN. An iframe does not grow to fit what is
+            // inside it, and it cannot be measured across an opaque origin, so an unsized one
+            // collapses to the 150px default every browser gives it. The page reports its own
+            // height instead; see `pageHeight` above.
             <iframe
-              className="h-[70vh] w-full border-0 bg-white"
+              // 🔴 THE PANEL SCROLLS, NOT THE FRAME. Sized to what the page reported, so it flows in
+              // the reading column like every other output. 70vh is only the opening guess, for the
+              // moment before the first message arrives.
+              className="w-full border-0 bg-white"
               data-testid="output-html-frame"
               sandbox="allow-scripts"
+              scrolling="no"
               srcDoc={sandboxedPage(output.html)}
+              style={{ height: pageHeight === null ? "70vh" : `${pageHeight}px` }}
               title={output.title}
             />
           ) : output.sheet ? (

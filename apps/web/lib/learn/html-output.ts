@@ -47,6 +47,49 @@ export const OUTPUT_CSP =
 const META = `<meta http-equiv="Content-Security-Policy" content="${OUTPUT_CSP}">`;
 
 /**
+ * The channel name the page uses to tell the panel how tall it is.
+ *
+ * 🔴 A MESSAGE, BECAUSE THE FRAME IS OPAQUE AND THAT IS THE POINT. The panel cannot read
+ * `contentDocument.scrollHeight` across an opaque origin (it throws a SecurityError, verified on
+ * production 2026-09-04), and giving the frame `allow-same-origin` to make that reading possible
+ * would hand the page this app's storage and cookies. So the page reports its own height and the
+ * panel believes it, which costs nothing: the number only ever sizes a box.
+ */
+export const HEIGHT_MESSAGE = "nemesis:page-height";
+
+/**
+ * The reporter, injected at the end of every page.
+ *
+ * 🔴 IT MUST NOT NEED THE NETWORK OR THE PARENT'S ORIGIN. `postMessage` is not a fetch, so
+ * `default-src 'none'` does not touch it, and `"*"` as the target is correct here rather than lax:
+ * the frame does not know its parent's origin and the payload is one integer.
+ *
+ * 🔴 A ResizeObserver, NOT A ONE-SHOT ON LOAD. A page that expands a section on a click is
+ * exactly the kind of page worth asking for, and a height measured once would leave the rest of it
+ * clipped the moment it grew.
+ */
+const REPORTER =
+  "<script>(function(){var last=0;function tell(){var h=Math.max(document.body?document.body.scrollHeight:0," +
+  "document.documentElement?document.documentElement.scrollHeight:0);if(h&&Math.abs(h-last)>2){last=h;" +
+  `parent.postMessage({channel:"${HEIGHT_MESSAGE}",height:h},"*");}}` +
+  "if(document.readyState!=='loading')tell();document.addEventListener('DOMContentLoaded',tell);" +
+  "window.addEventListener('load',tell);setTimeout(tell,300);" +
+  "try{new ResizeObserver(tell).observe(document.documentElement);}catch(e){}" +
+  "})();<\/script>";
+
+/** The height a page reported, or null when the message was not one of ours. PURE. */
+export function pageHeightFrom(data: unknown): number | null {
+  if (data === null || typeof data !== "object") return null;
+  const message = data as { channel?: unknown; height?: unknown };
+  if (message.channel !== HEIGHT_MESSAGE) return null;
+  const height = message.height;
+  if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) return null;
+  // 🔴 CLAMPED. The number comes from inside the frame, which is the one place in this app
+  // whose content nobody vouches for; an absurd value would make a panel megapixels tall.
+  return Math.min(Math.max(Math.round(height), 120), 20000);
+}
+
+/**
  * The page as it goes into the frame. PURE.
  *
  * 🔴 IT DOES NOT VALIDATE THE HTML, and must not start. A half-written page is the browser's
@@ -56,11 +99,12 @@ const META = `<meta http-equiv="Content-Security-Policy" content="${OUTPUT_CSP}"
 export function sandboxedPage(html: string): string {
   const source = html.trim();
   const head = /<head\b[^>]*>/i.exec(source);
-  if (head) {
-    const at = head.index + head[0].length;
-    return `${source.slice(0, at)}${META}${source.slice(at)}`;
-  }
-  return `${META}${source}`;
+  const withPolicy = head
+    ? `${source.slice(0, head.index + head[0].length)}${META}${source.slice(head.index + head[0].length)}`
+    : `${META}${source}`;
+  // 🔴 THE REPORTER GOES LAST, so it measures a page the browser has finished parsing rather
+  // than one still arriving.
+  return `${withPolicy}${REPORTER}`;
 }
 
 /**

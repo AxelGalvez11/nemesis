@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { looksLikePage, OUTPUT_CSP, sandboxedPage, stripFence } from "@/lib/learn/html-output";
+import { HEIGHT_MESSAGE, looksLikePage, OUTPUT_CSP, pageHeightFrom, sandboxedPage, stripFence } from "@/lib/learn/html-output";
 import { htmlAskParagraph, readDeliverableAsk } from "@/lib/learn/canvas-deliverables";
 
 const PREVIEW = readFileSync(
@@ -119,4 +119,28 @@ test("🔴 the page is a kind everywhere a kind is named", () => {
   assert.match(CARD, /html: \{ extension: "html"/, "the chat card has no face for a page");
   assert.match(PREVIEW, /html: "Download \.html"/, "the download button has no label for a page");
   assert.match(PREVIEW, /output\.kind === "html" && output\.html\) return void downloadHtml/, "a page cannot be downloaded");
+});
+
+test("🔴 the page says how tall it is, because the panel is not allowed to look", () => {
+  // The frame is opaque on purpose, so `contentDocument.scrollHeight` throws. Reading it would
+  // mean `allow-same-origin`, which hands the page this app's cookies and storage. Verified on
+  // production 2026-09-04: a fixed 70vh frame put a second scrollbar inside a scrolling panel.
+  const page = sandboxedPage("<div>x</div>");
+  assert.match(page, /postMessage\(\{channel:"nemesis:page-height",height:h\},"\*"\)/, "the page no longer reports its height");
+  assert.match(page, /ResizeObserver/, "a page that grows on a click would stay clipped");
+  assert.ok(page.indexOf("Content-Security-Policy") < page.indexOf("postMessage"), "the reporter runs ahead of the policy");
+  assert.match(PREVIEW, /scrolling="no"/, "the frame scrolls itself again, inside a panel that scrolls");
+  assert.match(PREVIEW, /pageHeight === null \? "70vh" : `\$\{pageHeight\}px`/, "the frame is not sized to what the page reported");
+  assert.ok(!/h-\[70vh\]/.test(PREVIEW), "the fixed height is back on the frame");
+});
+
+test("🔴 a height from inside the frame is checked before it is believed", () => {
+  assert.equal(pageHeightFrom({ channel: HEIGHT_MESSAGE, height: 900 }), 900);
+  assert.equal(pageHeightFrom({ channel: HEIGHT_MESSAGE, height: 900.4 }), 900);
+  // The frame's content is the one thing in this app nobody vouches for.
+  assert.equal(pageHeightFrom({ channel: HEIGHT_MESSAGE, height: 9e9 }), 20000, "an absurd height was believed");
+  assert.equal(pageHeightFrom({ channel: HEIGHT_MESSAGE, height: 5 }), 120, "a collapsed height was believed");
+  for (const junk of [null, undefined, 7, "900", {}, { channel: "other", height: 900 }, { channel: HEIGHT_MESSAGE }, { channel: HEIGHT_MESSAGE, height: Number.NaN }, { channel: HEIGHT_MESSAGE, height: -3 }]) {
+    assert.equal(pageHeightFrom(junk), null, `a message that is not ours was accepted: ${JSON.stringify(junk)}`);
+  }
 });
