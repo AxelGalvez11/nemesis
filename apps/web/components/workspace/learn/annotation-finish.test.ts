@@ -62,3 +62,13 @@ test("🔴🔴 a crop is not a card: the reopened thread keeps the marked region
   assert.equal(isCropFileName("lecture (marked area).PNG"), true, "case must not matter: a file system may not keep it");
   assert.match(HISTORY, /\.filter\(\(title\) => !isCropFileName\(title\)\);/, "the crop comes back as a PNG card on reopen");
 });
+
+test("🔴🔴 the newest exchange, held back for the live region, draws its chip from the count too", () => {
+  // The thread holds the newest exchange back and the live region shows it; that region read
+  // `currentNotes`, which a reload leaves empty, so the one turn just made was the one without a chip.
+  assert.match(
+    CANVAS,
+    /if \(switching \|\| held\?\.annotations\) \{\n\s+setCurrentNotes\(held\?\.annotations \? Array\.from\(\{ length: held\.annotations \}, \(\) => \(\{ thumbnail: null, where: null \}\)\) : \[\]\);/,
+    "the held-back exchange does not get its count",
+  );
+});
