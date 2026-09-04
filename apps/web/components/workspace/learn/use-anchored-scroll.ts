@@ -28,7 +28,7 @@
 // "the last block, offset 0" is not the same instruction as "stay at the bottom" once the content
 // below it grows. Pinning is checked first for that reason.
 
-import { useEffect, type RefObject } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /** Within this many pixels of the end, the learner is reading the newest answer rather than a
  *  particular block, and the bottom is what should be preserved. */
@@ -133,15 +133,37 @@ function resolve(root: Element, path: readonly number[]): Element | null {
 }
 
 /**
- * Hold the reading position while `scroller` changes width.
+ * Hold the reading position while the conversation's column changes width.
  *
- * @param scroller the conversation's scrolling column.
- * @param enabled off while the surface is arriving, when there is no place to hold yet.
+ * @returns a ref callback to put on the scrolling column. Attach it in ADDITION to any ref the
+ *   caller already keeps — see `learning-canvas.tsx`.
+ *
+ * 🔴🔴 A CALLBACK REF, NOT A `RefObject`, AND THE FIRST TWO VERSIONS OF THIS HOOK NEVER RAN AT ALL.
+ * They took `RefObject<HTMLElement | null>` and read `.current` inside an effect whose dependencies
+ * were the ref object and a boolean — both stable for the life of the component. So the effect ran
+ * exactly once, at mount.
+ *
+ * And at mount the element does not exist: `learning-canvas.tsx` returns a loading surface while
+ * `session.ready` is false, and the scrolling column is not in that branch. `.current` was null,
+ * the effect returned early, and nothing ever caused it to run again. The observer was never
+ * attached on any canvas, which is why two rounds of fixing the ANCHOR changed nothing on screen:
+ * the anchoring was correct by the second round and was not running.
+ *
+ * Measured on production with that version live: opening the pane left `scrollTop` at 1313 exactly,
+ * unchanged — not restored to the wrong place, simply untouched.
+ *
+ * A callback ref is React telling us when the node appears, which is the only signal that is
+ * actually true. Holding it in state re-runs the effect at that moment and again if it is ever
+ * replaced.
  */
-export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabled = true): void {
+export function useAnchoredScroll(): (node: HTMLElement | null) => void {
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  // 🔴 STABLE, so React does not detach and reattach on every render — the "Maximum update depth"
+  // shape `docx-document-view.tsx` documents at length.
+  const attach = useCallback((next: HTMLElement | null) => setNode(next), []);
+
   useEffect(() => {
-    const node = scroller.current;
-    if (!node || !enabled) return;
+    if (!node) return;
 
     let anchor: Anchor | null = null;
     let pinned = false;
@@ -155,13 +177,15 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
     // keeps a fast scroll through a long conversation from doing that work dozens of times for a
     // value only the last of which is ever used.
     let queued = 0;
+    const take = () => {
+      pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
+      anchor = pinned ? null : anchorOf(node);
+    };
     const remember = () => {
       if (restoring || queued) return;
       queued = requestAnimationFrame(() => {
         queued = 0;
-        if (restoring) return;
-        pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
-        anchor = pinned ? null : anchorOf(node);
+        if (!restoring) take();
       });
     };
 
@@ -181,10 +205,9 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
       node.scrollTop += moved - anchor.offset;
     };
 
-    // 🔴 THE FIRST ONE IS SYNCHRONOUS, not queued: a panel opened in the same frame the hook mounts
-    // would otherwise resize against an anchor that does not exist yet.
-    pinned = node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_PX;
-    anchor = pinned ? null : anchorOf(node);
+    // 🔴 THE FIRST ONE IS SYNCHRONOUS, not queued: a panel opened in the same frame the node
+    // appears would otherwise resize against an anchor that does not exist yet.
+    take();
     node.addEventListener("scroll", remember, { passive: true });
 
     // 🔴🔴 A RESIZE OBSERVER, NOT A ONE-SHOT ON THE INSET. The column does not jump to its new
@@ -213,5 +236,7 @@ export function useAnchoredScroll(scroller: RefObject<HTMLElement | null>, enabl
       observer.disconnect();
       node.removeEventListener("scroll", remember);
     };
-  }, [enabled, scroller]);
+  }, [node]);
+
+  return attach;
 }
