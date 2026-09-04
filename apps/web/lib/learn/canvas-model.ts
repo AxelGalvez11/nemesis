@@ -694,6 +694,16 @@ export interface CanvasOutput {
   /** A spreadsheet output carries its table, for the same reason. */
   sheet?: import("../export/doc-file").SheetData;
   /**
+   * An HTML output carries its whole page, for the same reason a deck carries its plan: the file is
+   * the text, so it is rebuilt at click time and nothing is uploaded.
+   *
+   * \u{1f534} IT IS NOT FILED AS A LIBRARY NOTE, unlike `note`. A note's path is `.md` in the shared
+   * naming rules that the server's recording route also obeys, and teaching that path builder a
+   * second extension would move a rule two surfaces depend on for one kind's sake. A page is small,
+   * and outputs round-trip whole (`canvas-store.ts` stores the list, not field by field).
+   */
+  html?: string;
+  /**
    * The states this output held BEFORE each revision Nemesis applied, oldest first.
    *
    * 🔴 AN EDIT THAT CANNOT BE UNDONE IS AN EDIT A LEARNER RIGHTLY FEARS. Nemesis revises its own

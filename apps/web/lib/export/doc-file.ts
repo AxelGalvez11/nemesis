@@ -288,6 +288,18 @@ export async function downloadSheet(data: SheetData, title: string): Promise<voi
  * 🔴 SPLIT INTO BYTES AND SAVE, like the other three, so the bytes can be checked without a
  * download dialog.
  */
+/**
+ * A page Nemesis wrote, saved as the .html file it already is.
+ *
+ * 🔴 THE FILE IS THE SOURCE, NOT WHAT THE PANEL SHOWED. The panel injects a content policy before
+ * rendering (`html-output.ts`) so a model-written page cannot reach the network while it is inside
+ * the app. A file on the learner's own disk is theirs, opened in their own browser, and baking our
+ * sandbox rule into it would quietly break a page they later edit or host.
+ */
+export function downloadHtml(html: string, title: string): void {
+  saveBlob(new Blob([html], { type: "text/html;charset=utf-8" }), docFilename(title, "html"));
+}
+
 export function markdownBlob(markdown: string): Blob {
   return new Blob([markdown], { type: "text/markdown;charset=utf-8" });
 }

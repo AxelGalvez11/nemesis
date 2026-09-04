@@ -134,6 +134,7 @@ const stagedReadPool = createReadPool();
 const MADE_NOUN: Record<DeliverableKind, string> = {
   document: "document",
   flashcards: "flashcard deck",
+  html: "page",
   note: "note",
   pdf: "PDF",
   report: "research report",

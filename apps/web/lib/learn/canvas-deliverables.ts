@@ -45,6 +45,7 @@ import { findLabelledFigure } from "./figure-occlusion-api";
 import { dropCardsCoveredByFigure, pickCanvasFigure, labelCanvasFigure } from "./canvas-figure-occlusion";
 import { readFigureSubject } from "./figure-subject";
 import { occlusionCards } from "./occlusion-from-labels";
+import { looksLikePage, stripFence } from "./html-output";
 
 /**
  * What the canvas can make today.
@@ -55,7 +56,7 @@ import { occlusionCards } from "./occlusion-from-labels";
  * SAME Markdown with two file formats — one model call, two writers — because asking the model to
  * "write it again but as a PDF" would produce different prose for no reason.
  */
-export type DeliverableKind = "document" | "flashcards" | "note" | "pdf" | "report" | "sheet" | "slides";
+export type DeliverableKind = "document" | "flashcards" | "html" | "note" | "pdf" | "report" | "sheet" | "slides";
 
 export interface DeliverableResult {
   /** A line about what it cost, when the maker has one. Shown instead of the generic notice. */
@@ -696,6 +697,102 @@ export async function makeNoteDeliverable(
   };
 }
 
+// ------------------------------------------------------------------------- html
+
+/**
+ * The writer's instructions for a page.
+ *
+ * 🔴🔴 A PAGE, NOT A WEBSITE. Owner, 2026-09-04: *"yes it should be able to display html"*. What a
+ * learner wants from this kind is the thing a note cannot be: a table that sorts, a diagram that
+ * expands, a timeline you can step through, a formula with a slider. Everything else it could be
+ * (a styled essay, a list of headings) is a note, and a note is better at it.
+ *
+ * 🔴 SELF-CONTAINED, BECAUSE THE FRAME HAS NO NETWORK. `html-output.ts` serves the page under a
+ * policy that blocks every fetch, font, script and image that is not already inside the file. A
+ * page that links a stylesheet renders unstyled and a page that loads a chart library renders
+ * blank, so the instruction has to say so rather than leaving the model to discover it.
+ *
+ * 🔴 IT MUST SURVIVE BOTH THEMES. The frame sits on the canvas, which the learner may be reading
+ * in the dark. A page that sets colour on text and not on its own background is the classic
+ * unreadable result.
+ *
+ * 🔴 NO EM DASH, the same rule every prompt in this file lives under.
+ */
+const HTML_SYSTEM =
+  "You write one self-contained HTML page for a learner, and nothing else. Output the HTML only: " +
+  "no explanation before it, no explanation after it, no Markdown fence. " +
+  "THE PAGE MUST STAND ALONE. Everything it needs is inside the file: styles in a <style> tag, " +
+  "any behaviour in a <script> tag, any picture drawn in inline SVG or on a canvas element. There " +
+  "is no network, so a linked stylesheet, a web font, an external script or a remote image will " +
+  "simply not load. Do not reference any URL. " +
+  "MAKE IT WORTH BEING A PAGE RATHER THAN A NOTE. Use the things only a page can do: something " +
+  "that sorts, filters, expands, steps, reveals an answer, or is drawn rather than described. If " +
+  "the material would read better as flat prose, it is the wrong format and you should still " +
+  "produce the page but keep it simple and useful. " +
+  "READABLE IN BOTH THEMES. Set an explicit background colour and an explicit text colour on the " +
+  "body, and give a dark variant under a prefers-color-scheme media query. Never leave the " +
+  "background unset. Keep the layout to one column that fits a narrow panel, and let wide tables " +
+  "scroll inside their own box rather than the page scrolling sideways. " +
+  "Everything factual in the page comes from the material you are given and nothing is invented. " +
+  "Never use an em dash.";
+
+/**
+ * How much of the learner's own sentence the page writer is shown. Same reasoning and same cap as
+ * the note writer: a sentence decides the shape, a pasted page would crowd out the material.
+ */
+const HTML_ASK_LIMIT = 300;
+
+/** The learner's ask, as a paragraph for the writer. Exported for its test, like `noteAskParagraph`. */
+export function htmlAskParagraph(topic?: string): string {
+  const ask = (topic ?? "").trim().replace(/\s+/g, " ").slice(0, HTML_ASK_LIMIT);
+  if (!ask) return "";
+  return (
+    `The learner asked: "${ask}". Build the page around what they asked for. Cover what they ` +
+    "named, and the whole material when they named nothing narrower."
+  );
+}
+
+export async function makeHtmlDeliverable(
+  uid: string,
+  canvas: LearningCanvas,
+  topic?: string,
+): Promise<DeliverableResult | DeliverableFailure> {
+  // Generalist, for the reason the note maker states one section up: with material it is grounded
+  // in that, with a subject alone it writes from knowledge, and with neither it asks.
+  const subject = (topic ?? "").trim() || canvas.title.trim();
+  if (!canvasHasMaterial(canvas) && !subject) {
+    return { error: "Tell me what the page should show, and I'll build it." };
+  }
+  const brief = canvasHasMaterial(canvas)
+    ? await canvasBriefFor(canvas, topic)
+    : [`Build this page about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
+  const reply = await postChatCompletion(uid, [
+    { content: HTML_SYSTEM, role: "system" },
+    { content: [brief, htmlAskParagraph(topic)].filter(Boolean).join("\n\n"), role: "user" },
+  ]);
+  if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
+  const html = stripFence(reply.text);
+  // 🔴 THE SHAPE IS CHECKED, THE CONTENT IS NOT. A reply that came back as an apology in prose is a
+  // failure the learner must be told about; a page with a tag out of place is the browser's to
+  // render, exactly as it would be for a file on disk.
+  if (!looksLikePage(html)) return { error: "That came back as text rather than a page. Try asking again." };
+
+  const heading = /<title[^>]*>([^<]+)<\/title>/i.exec(html)?.[1]?.trim()
+    ?? /<h1[^>]*>([^<]+)<\/h1>/i.exec(html)?.[1]?.trim();
+  const title = (canvas.title.trim() || heading || subject || "Page").slice(0, 120);
+  const assetId = await recordLedger(canvas.id, title);
+  return {
+    output: {
+      ...(assetId ? { assetId } : {}),
+      createdAt: new Date().toISOString(),
+      html,
+      id: newId(),
+      kind: "html",
+      title,
+    },
+  };
+}
+
 // ---------------------------------------------------------------- what the model is working from
 
 /**
@@ -1048,13 +1145,14 @@ export function readDeliverableAsk(text: string): DeliverableKind | null {
   // reach. It stays a lookahead rather than becoming `.*`, because "build a document parser" must
   // still be an ordinary computer-science question.
   const match =
-    /\b(?:make(?!\s+sure\b)|create|build|generate|give|write)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(summary note|study note|notes|markdown(?: file)?|md file|cheat sheet|study guide|revision notes|recall (?:points|list|sheet)|key points|points to (?:recall|remember|memori[sz]e))|(documents?)(?=\s*(?:$|[.,;:!?—-]|\b(?:on|about|for|from|of|with|covering|summari[sz]ing)\b)))\b/i.exec(
+    /\b(?:make(?!\s+sure\b)|create|build|generate|give|write)\b[^.?!\n]{0,60}?\b(?:(slides?|slide deck|power\s?point|presentation|pptx|ppt)|(flash\s?cards?|study deck)|(html(?: page| file)?|web ?page|interactive (?:page|diagram|visual|widget|explainer)|explorable)|(summary note|study note|notes|markdown(?: file)?|md file|cheat sheet|study guide|revision notes|recall (?:points|list|sheet)|key points|points to (?:recall|remember|memori[sz]e))|(documents?)(?=\s*(?:$|[.,;:!?—-]|\b(?:on|about|for|from|of|with|covering|summari[sz]ing)\b)))\b/i.exec(
       said,
     );
   if (!match) return null;
   if (match[1]) return "slides";
   if (match[2]) return "flashcards";
-  if (match[4]) return "document";
+  if (match[3]) return "html";
+  if (match[5]) return "document";
   return "note";
 }
 
