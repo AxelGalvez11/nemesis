@@ -3232,7 +3232,7 @@ export function LearningCanvas({
           </div>
         )}
         {threadOpen && currentSaid?.trim() && (
-          <div className="mx-auto mb-4 flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
+          <div className="group/said relative mx-auto mb-[40px] flex w-full max-w-(--canvas-column) flex-col items-end gap-[4px] px-6">
             {/* 🔴🔴 THE REGION FIRST, THEN THE COUNT, THEN THE SENTENCE — the reference's order, and
                 the only one that reads. Owner, 2026-09-03, with screenshots: the cropped bit of the
                 chart sits above the message and a count chip sits between them.
@@ -3267,7 +3267,19 @@ export function LearningCanvas({
                     bubble, because a percentage `max-width` cannot resolve against an inline box
                     (see learner-utterance.tsx). A prop puts it on the pill and adds no element. */}
                 <LearnerUtterance capability={currentSaidCapability} live via={currentSaidVia}>{currentSaid}</LearnerUtterance>
-                {!turnInFlight && <EditSentPrompt onOpen={() => setEditingPrompt(true)} />}
+                {/* 🔴 IT COSTS NO HEIGHT, BECAUSE THE REFERENCE'S DOES NOT. Measured on
+                    chatgpt.com and claude.ai on 2026-09-04 (docs/chat-baseline-reference.md §2):
+                    both reveal this control on hover, over the space below the bubble, and both
+                    leave 40 to 52px between the question and the answer. Ours sat in the flow, so
+                    a 32px button plus its 4px gap pushed every answer down and the gap measured 90.
+                    Absolute keeps the control exactly where it was on screen and gives the height
+                    back. `group-focus-within` is not decoration: hover alone would put an edit
+                    control out of reach of a keyboard. */}
+                {!turnInFlight && (
+                  <div className="pointer-events-none absolute right-0 top-full z-[1] pt-[4px] opacity-0 transition-opacity group-hover/said:pointer-events-auto group-hover/said:opacity-100 group-focus-within/said:pointer-events-auto group-focus-within/said:opacity-100">
+                    <EditSentPrompt onOpen={() => setEditingPrompt(true)} />
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -3373,7 +3385,7 @@ export function LearningCanvas({
             citation pills, no action row, because the text is still moving and every one of those
             keys on text that has stopped. The finished reply replaces it in the same render. */}
         {turnInFlight && !session.aside && session.draft.trim() && (
-          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8" data-canvas-draft="">
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6" data-canvas-draft="">
             <div className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)">
               <AssistantMarkdown
                 className="text-[length:var(--canvas-text-body)] leading-relaxed text-(--ui-text-primary)"
@@ -3384,7 +3396,7 @@ export function LearningCanvas({
           </div>
         )}
         {regions.reply && session.aside && (
-          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pt-8" ref={replyRegionRef}>
+          <div className="mx-auto w-full max-w-(--canvas-column) px-6" ref={replyRegionRef}>
             {/* 🔴 AN ANSWER, NOT A QUOTATION — owner call, 2026-08-19. This carried a 2px left rule
                 and rendered at `--ui-text-secondary` (66%), which is the treatment this app gives
                 ASIDES: something attached to the document, subordinate to it, quoted off to one

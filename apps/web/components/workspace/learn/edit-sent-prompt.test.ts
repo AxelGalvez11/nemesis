@@ -48,7 +48,13 @@ test("🔴 the composer's own keys, not a second set", () => {
 
 test("🔴 no edit offered while an answer is still forming", () => {
   // Two turns racing for one surface is the state this feature could most easily create.
-  assert.match(CANVAS, /\{!turnInFlight && <EditSentPrompt/, "the edit control is offered mid-turn");
+  // 🔴 THE REGEX WAS LOOSENED ON 2026-09-04, NOT THE RULE. The control moved into an absolutely
+  // positioned, hover-revealed wrapper so it stops costing 36px of height on every turn: measured
+  // against ChatGPT and Claude, which both reveal it on hover over the gap
+  // (docs/chat-baseline-reference.md §2). What this guard is for is the `!turnInFlight` condition,
+  // so it now asserts that condition and the control it gates, without pinning the markup between.
+  assert.match(CANVAS, /\{!turnInFlight && \(/, "the edit control is offered mid-turn");
+  assert.match(CANVAS, /<EditSentPrompt onOpen=\{\(\) => setEditingPrompt\(true\)\} \/>/, "the edit control is gone");
   // And a new turn closes the editor: the sentence it was editing is no longer the current one.
   assert.match(CANVAS, /setSendSeq\(\(n\) => n \+ 1\);\s*setEditingPrompt\(false\);/, "a new turn leaves the editor open on a stale sentence");
 });
