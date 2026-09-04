@@ -72,9 +72,10 @@ function CourseCard({ course, onOpen }: { course: CourseSummary; onOpen: () => v
         {course.description ? (
           <div className="line-clamp-2 text-[13px] leading-[1.45] text-(--ui-text-secondary)">{course.description}</div>
         ) : null}
-        <div className="mt-auto pt-[6px] text-[12px] text-(--ui-text-tertiary) tabular-nums">
-          {course.sectionCount} sections · {course.objectiveCount} objectives
-        </div>
+        {/* 🔴 NO COUNTS ON THE CARD — owner, 2026-09-04. "169 sections · 606 objectives" is
+            inventory, and inventory is not what someone is deciding between when they scan a
+            shelf. The numbers still exist on the course's own page, where they answer a question
+            somebody is actually asking. */}
       </div>
     </button>
   );

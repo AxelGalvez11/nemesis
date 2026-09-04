@@ -86,8 +86,22 @@ export function KnowledgePage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
+  /**
+   * Where the learner has dragged a node, overriding the computed layout.
+   *
+   * 🔴 AN OVERRIDE, NOT A REPLACEMENT. The force layout still decides where everything starts and
+   * where anything new appears; this only remembers what a person moved by hand. Kept per node id
+   * so adding a concept never disturbs a position somebody chose. Session-lived for now — the
+   * schema keeps a column for it so it can persist without this component changing.
+   */
+  const [moved, setMoved] = useState<Map<string, { x: number; y: number }>>(new Map());
   const frame = useRef<HTMLDivElement | null>(null);
+  // 🔴 A REF BESIDE THE STATE, because a node drag must divide by the CURRENT scale and the
+  // handler would otherwise close over whatever the scale was when it was created.
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
   const drag = useRef<{ px: number; py: number; vx: number; vy: number; moved: boolean } | null>(null);
+  const nodeDrag = useRef<{ id: string; px: number; py: number; ox: number; oy: number; moved: boolean } | null>(null);
 
   useEffect(() => {
     if (given) return;
@@ -146,6 +160,17 @@ export function KnowledgePage({
   }, [view.x, view.y]);
 
   const onPointerMove = useCallback((event: React.PointerEvent) => {
+    const nd = nodeDrag.current;
+    if (nd) {
+      const dx = event.clientX - nd.px;
+      const dy = event.clientY - nd.py;
+      if (Math.abs(dx) + Math.abs(dy) > 3) nd.moved = true;
+      // Screen pixels are not graph units once zoomed, so divide by the scale.
+      const gx = nd.ox + dx / viewRef.current.k;
+      const gy = nd.oy + dy / viewRef.current.k;
+      setMoved((prev) => new Map(prev).set(nd.id, { x: gx, y: gy }));
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     const dx = event.clientX - d.px;
@@ -155,16 +180,28 @@ export function KnowledgePage({
   }, []);
 
   const onPointerUp = useCallback(() => {
+    if (nodeDrag.current) {
+      const wasMoved = nodeDrag.current.moved;
+      nodeDrag.current = null;
+      return wasMoved;
+    }
     // 🔴 A DRAG THAT ENDED ON A NODE IS NOT A CLICK ON IT. Without this, panning across the map
     // selects whatever happened to be under the finger when it lifted.
-    const moved = drag.current?.moved ?? false;
+    const panned = drag.current?.moved ?? false;
     drag.current = null;
-    return moved;
+    return panned;
   }, []);
+
+  /** The layout, with anything the learner dragged put where they left it. */
+  const placed = useMemo(
+    () => map.nodes.map((n) => { const at = moved.get(n.id); return at ? { ...n, x: at.x, y: at.y } : n; }),
+    [map.nodes, moved],
+  );
+  const byId = useMemo(() => new Map(placed.map((n) => [n.id, n])), [placed]);
 
   const lit = useMemo(() => neighboursOf(map.edges, hoverId), [map.edges, hoverId]);
   const dimming = hoverId !== null;
-  const selected = useMemo(() => map.nodes.find((n) => n.id === selectedId) ?? null, [map.nodes, selectedId]);
+  const selected = useMemo(() => placed.find((n) => n.id === selectedId) ?? null, [placed, selectedId]);
   const shown = hasDemonstrations(nodes);
 
   return (
@@ -178,18 +215,13 @@ export function KnowledgePage({
         ref={frame}
         style={{ cursor: drag.current ? "grabbing" : "grab" }}
       >
+        {/* 🔴 NO DOTTED GROUND — owner, 2026-09-04. The dots read as graph paper, which made
+            the map look like a diagramming tool rather than a picture of a person's knowledge. */}
         <svg className="block h-full w-full">
-          <defs>
-            <pattern height="26" id="knowledge-dots" patternUnits="userSpaceOnUse" width="26">
-              <circle cx="1.2" cy="1.2" fill="var(--ui-stroke-tertiary)" r="1.2" />
-            </pattern>
-          </defs>
-          <rect fill="url(#knowledge-dots)" height="100%" width="100%" />
-
           <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
             {map.edges.map((edge, i) => {
-              const a = map.nodes.find((n) => n.id === edge.a);
-              const b = map.nodes.find((n) => n.id === edge.b);
+              const a = byId.get(edge.a);
+              const b = byId.get(edge.b);
               if (!a || !b) return null;
               const on = !dimming || (lit.has(a.id) && lit.has(b.id));
               return (
@@ -206,7 +238,7 @@ export function KnowledgePage({
               );
             })}
 
-            {map.nodes.map((node) => {
+            {placed.map((node) => {
               const on = !dimming || lit.has(node.id);
               const isSelected = node.id === selectedId;
               return (
@@ -216,6 +248,38 @@ export function KnowledgePage({
                     if (drag.current?.moved) return;
                     setSelectedId((prev) => (prev === node.id ? null : node.id));
                   }}
+                  onPointerDown={(event) => {
+                    // 🔴 STOP THE CANVAS SEEING THIS. Without it, picking a node up pans the whole
+                    // map underneath it and the node appears not to move at all.
+                    event.stopPropagation();
+                    // 🔴 CAPTURE IS BEST-EFFORT AND MUST NOT BE ABLE TO ABORT THE DRAG.
+                    // `setPointerCapture` THROWS `NotFoundError` when the id is not an active
+                    // pointer, and an uncaught throw here runs before the line below — so the drag
+                    // was never recorded and nodes simply refused to move. Optional chaining does
+                    // not help: the method exists, it just rejects the argument.
+                    try {
+                      (event.currentTarget as unknown as Element).setPointerCapture(event.pointerId);
+                    } catch {
+                      // A pointer we cannot capture still drags; we just stop tracking it if it
+                      // leaves the element, which is the ordinary mouse behaviour anyway.
+                    }
+                    nodeDrag.current = {
+                      id: node.id, px: event.clientX, py: event.clientY,
+                      ox: node.x, oy: node.y, moved: false,
+                    };
+                  }}
+                  onPointerMove={(event) => {
+                    const nd = nodeDrag.current;
+                    if (!nd || nd.id !== node.id) return;
+                    const dx = event.clientX - nd.px;
+                    const dy = event.clientY - nd.py;
+                    if (Math.abs(dx) + Math.abs(dy) > 3) nd.moved = true;
+                    setMoved((prev) => new Map(prev).set(nd.id, {
+                      x: nd.ox + dx / viewRef.current.k,
+                      y: nd.oy + dy / viewRef.current.k,
+                    }));
+                  }}
+                  onPointerUp={() => { nodeDrag.current = null; }}
                   onPointerEnter={() => setHoverId(node.id)}
                   onPointerLeave={() => setHoverId((prev) => (prev === node.id ? null : prev))}
                   opacity={on ? 1 : 0.16}
@@ -327,7 +391,7 @@ export function KnowledgePage({
         </div>
       ) : null}
 
-      {nodes.length > 0 ? (
+      {placed.length > 0 ? (
         <>
           <div className="pointer-events-none absolute bottom-[20px] left-[24px] flex items-center gap-[14px] rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/90 px-[12px] py-[8px] backdrop-blur">
             {(["solid", "developing", "unshown"] as const).map((state) => (
