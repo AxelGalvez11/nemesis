@@ -138,8 +138,14 @@ test("🔴 the title row's New is a menu of real doors, and the view toggle pers
   // discipline the list row documents.
   assert.match(OUTPUTS, /grid-cols-3 gap-\[24px\]/, "the grid left the measured three-across layout");
   assert.match(OUTPUTS, /h-\[104px\]/, "folder cards left the measured 104px");
-  // Naming forces the list: a grid with an invisible inline input would eat the New-project click.
-  assert.match(OUTPUTS, /view === "grid" && naming === null/, "the naming flow can now land in a grid with no input");
+  // 🔴🔴 NAMING USED TO FORCE THE LIST, AND NOW IT CANNOT NEED TO. This asserted
+  // `view === "grid" && naming === null`, because the folder was named by an input written INTO
+  // the table — which only exists in list view, so opening it flipped the page out of grid and
+  // back. The name is taken in a dialog now (owner, 2026-09-03: *"Making a new folder in the
+  // library should work exactly like it does in ChatGPT"*), which is view-independent, so the
+  // condition it guarded is gone rather than broken. `folder-dialog-matches-chatgpt.test.ts` holds
+  // the replacement and refuses the inline row's return.
+  assert.ok(!/naming/.test(OUTPUTS.replace(/naming ChatGPT/g, "")), "the inline naming row came back");
 });
 
 test("🔴 a folder's Modified is a real rollup, and the folders order by it (2026-08-30)", () => {

@@ -369,3 +369,47 @@ The entries are the report's headings in order: the title, then Executive summar
 architecture and evaluation framework, Vendor landscape and detailed profiles, Comparative
 capabilities and compliance, Evidence base and market dynamics, Gaps and opportunities, Strategic
 options and recommendation.
+
+## The Library's "New folder" dialog (measured 2026-09-03, viewport 1470px)
+
+Owner: *"for the library in the folder button, I need you to actually compare that to ChatGPT.
+Because ChatGPT is the baseline… Making a new folder in the library should work exactly like it
+does in ChatGPT."*
+
+Reached at **chatgpt.com/library → the "New ⌄" pill at top right → "Folder"**. That menu holds
+Image · Note · Document · Spreadsheet · Presentation · Folder · — · Start from template · — ·
+Upload; Nemesis offers only the folder, by the owner's earlier ruling that the Library's one verb is
+organising what is already there.
+
+🔴 **IT IS A DIALOG, AND OURS WAS A ROW.** The Library named a folder inline in the table, which
+committed on Enter *and* on blur — so clicking anywhere else made a folder. Nothing about the
+reference's shape is decorative: one field, one Cancel, one Create, and no other way out.
+
+| thing | measured |
+| --- | --- |
+| dialog | **448 x 190**, radius **16px**, no close ✕ |
+| insets | **16px** sides, **12px** top, **16px** bottom (190 = 12+28+16+20+8+38+16+36+16) |
+| title | `New folder`, **18px on a 28px line**, regular weight |
+| label | `Folder name`, **14px on a 20px line**, **16px** under the title |
+| field | **416 x 38**, **fully rounded**, 16px side padding, 14px text, **autofocused**, **no placeholder**, 8px under the label |
+| footer | **16px** under the field, right-aligned |
+| Cancel | **71 x 36**, pill, transparent, 1px `rgba(255,255,255,0.15)` border, 14px/500 |
+| gap | **12px** |
+| Create | **70 x 36**, pill, solid, 14px/500, **disabled until the field has something in it** |
+
+🔴 **THE PROJECT DIALOG IS A DIFFERENT SIZE AND THAT IS DELIBERATE ON THEIR SIDE TOO** — 512 x 264,
+a 480 x 36 field at radius **8** with an emoji inset and an example placeholder, plus a tip strip
+saying what a project is. A folder needs no teaching, so it gets the smaller, plainer box. Do not
+collapse the two into one component.
+
+🔴 **WHAT WE DELIBERATELY DO NOT COPY.** Their Create button is near-white; ours is `--ui-action`,
+because the accent is the learner's and set in Settings (the same call the Library's own "New
+folder" button already records). And **Escape does not close their dialog** — verified twice, with
+text typed and with the box emptied. Ours closes, which is the standard every other Nemesis dialog
+already keeps.
+
+🔴 **THE 1px THAT MOVES EVERYTHING.** Every dialog in this app carries a `--stroke-nous` border the
+reference's does not, and the box is border-box: padding of 16 lands the content 17px from the
+visible edge and makes the panel 192 tall. `folder-create-dialog.tsx` pays for the border out of
+each inset (15/11/15), which puts the title, the label, the 416px field and the footer exactly where
+the table above says.
