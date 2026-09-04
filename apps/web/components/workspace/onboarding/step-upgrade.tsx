@@ -114,7 +114,7 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
       <div className="rounded-xl border border-border p-3">
         <p className="text-xs font-medium text-foreground">Your free plan is the whole product</p>
         <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">
-          Same Canvas, same teaching, same reasoning. Nemesis is the same thing with room for a full course load,
+          Same chat, same teaching, same reasoning. Nemesis is the same thing with room for a full course load,
           and the ability to talk to it out loud.
         </p>
       </div>

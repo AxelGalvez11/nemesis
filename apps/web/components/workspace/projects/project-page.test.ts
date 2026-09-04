@@ -82,8 +82,11 @@ test("🔴🔴 the composer is 52 tall and uses the shared --composer-* tokens, 
 });
 
 test("🔴 the composer's placeholder says our own word, in this project's name", () => {
-  assert.match(PAGE, /New canvas in \$\{project\.name\}/);
-  assert.ok(!/New chat in/.test(PAGE), "the reference's own word, \"chat\", leaked into the placeholder");
+  // 🔴 REVERSED 2026-09-03: the owner renamed the conversation surface to "chat" ("rename the
+  // current one to chat because I remember that accurately sums it up"), and "canvas" now names
+  // the spatial board. The guard flips: the OLD word is the one that must not leak.
+  assert.match(PAGE, /New chat in \$\{project\.name\}/);
+  assert.ok(!/New canvas in/.test(PAGE), "the old word, \"canvas\", is back in the placeholder");
 });
 
 // ── The tabs: 38px pills, our own words, the reference's exact measurements ────────────────────

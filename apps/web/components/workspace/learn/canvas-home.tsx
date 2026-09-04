@@ -53,6 +53,7 @@ import { pastedTextFile } from "@/lib/learn/composer-text";
 import { putPending, type PendingAttachment } from "./pending-attachment";
 import { RecordingRecoveryNotice } from "./recording-recovery-notice";
 import { useCanvasDictation } from "./use-canvas-dictation";
+import { FrontDoorToggle } from "@/components/workspace/board/front-door-toggle";
 
 /** One pool for the front door's reads; module-level for the same reason as the canvas's. */
 const frontDoorReadPool = createReadPool();
@@ -638,6 +639,11 @@ export function CanvasHome({ accessToken = null, userId }: { accessToken?: strin
       }}
       style={{ ["--canvas-column" as string]: "822px" }}
     >
+      {/* 🔴 CHAT | CANVAS, AT THE TOP, THE WAY THE REFERENCE'S "Chat | Work" SITS ON ITS START
+          SCREEN. Owner, 2026-09-03: "the landing page is going to have the chat and canvas toggle at
+          the top, similar to ChatGPT landing page where it has the chat and work toggle." It is a
+          navigation between two front doors, not a mode of this one; see front-door-toggle.tsx. */}
+      <FrontDoorToggle value="chat" />
       {/* 🔴 THE RING NOW COMES WITH A SENTENCE. It used to be the whole feedback — a 2px accent
           outline and nothing else, which says "this is a target" and never says what dropping
           does. `FileDropOverlay` keeps the ring and adds the answer. Not a modal: the page stays

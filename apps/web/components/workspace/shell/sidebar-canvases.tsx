@@ -83,6 +83,7 @@ import {
   SidebarGroup,
   SidebarSectionHeader,
 } from "./sidebar-primitives";
+import { SidebarBoards } from "./sidebar-boards";
 
 /** Coalesces the autosave storm: a streaming answer saves the canvas every few seconds and
  *  each save broadcasts; one trailing re-read covers a whole burst. */
@@ -277,7 +278,7 @@ export function SidebarCanvases({
 
   const removeCanvas = async (canvas: CanvasSummary) => {
     const sure = await confirm({
-      title: "Delete this canvas?",
+      title: "Delete this chat?",
       body: `“${canvas.title || "Untitled"}” and its work leave your list. This does not touch anything already in your library.`,
       confirmLabel: "Delete",
     });
@@ -289,7 +290,7 @@ export function SidebarCanvases({
   const removeFolder = async (folder: Folder) => {
     const sure = await confirm({
       title: "Delete this project?",
-      body: `Canvases inside “${folder.name}” are kept — they go back to your recents.`,
+      body: `Chats inside “${folder.name}” are kept — they go back to your recents.`,
       confirmLabel: "Delete project",
     });
     if (!sure) return;
@@ -424,10 +425,10 @@ export function SidebarCanvases({
             {/* The reference's chat-row hover pair: pin, then ⋯. The pin is the quick toggle the
                 menu also carries — one press for the common gesture, the menu for everything else. */}
             <button
-              aria-label={canvas.pinnedAt ? "Unpin canvas" : "Pin canvas"}
+              aria-label={canvas.pinnedAt ? "Unpin chat" : "Pin chat"}
               className="absolute right-[30px] grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
               onClick={() => void setCanvasPinned(userId, canvas.id, !canvas.pinnedAt).then(refresh)}
-              title={canvas.pinnedAt ? "Unpin canvas" : "Pin canvas"}
+              title={canvas.pinnedAt ? "Unpin chat" : "Pin chat"}
               type="button"
             >
               <Codicon name={canvas.pinnedAt ? "pinned" : "pin"} size="0.8rem" />
@@ -435,7 +436,7 @@ export function SidebarCanvases({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  aria-label="Canvas actions"
+                  aria-label="Chat actions"
                   className="absolute right-1 grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
                   type="button"
                 >
@@ -452,7 +453,7 @@ export function SidebarCanvases({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => void setCanvasPinned(userId, canvas.id, !canvas.pinnedAt).then(refresh)}>
-                  {canvas.pinnedAt ? "Unpin canvas" : "Pin canvas"}
+                  {canvas.pinnedAt ? "Unpin chat" : "Pin chat"}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void removeCanvas(canvas)} variant="destructive">
                   Delete
@@ -668,7 +669,7 @@ export function SidebarCanvases({
       <div className={cn("min-h-0 flex-1 pb-2", SCROLL_Y)}>
         {isEmpty ? (
           <div className="grid min-h-16 place-items-center rounded-lg px-2 text-center text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-            Your canvases will gather here.
+            Your chats will gather here.
           </div>
         ) : (
           <>
@@ -720,7 +721,7 @@ export function SidebarCanvases({
               <>
                 <SidebarSectionHeader
                   className="pt-4"
-                  label="Canvases"
+                  label="Chats"
                   onToggle={() => toggleSection("canvases")}
                   open={!closedSections.has("canvases")}
                 />
@@ -731,6 +732,11 @@ export function SidebarCanvases({
             ) : null}
           </>
         )}
+        {/* 🔴 CANVASES SIT UNDER THE CHATS, IN THE SAME SCROLLER. Owner, 2026-09-03: "the sidebar
+            will have chats and canvases together in the left sidebar." A second scroll region would
+            split one list into two, so the boards section rides the same column; it always shows,
+            because its header carries the only way to make a first board. */}
+        <SidebarBoards className={isEmpty ? undefined : "pt-4"} onNavigate={onNavigate} userId={userId} />
       </div>
       <ProjectCreateDialog onCreate={newFolder} onOpenChange={setCreatingProject} open={creatingProject} />
       <ProjectCustomizeDialog

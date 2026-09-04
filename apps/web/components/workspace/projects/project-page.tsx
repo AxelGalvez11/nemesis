@@ -410,10 +410,10 @@ export function ProjectPage({
                 style={{ marginTop: COMPOSER_GAP_PX, minHeight: COMPOSER_H_PX, maxWidth: "var(--composer-max-width)" }}
               >
                 <input
-                  aria-label={`New canvas in ${project.name}`}
+                  aria-label={`New chat in ${project.name}`}
                   className="min-w-0 flex-1 bg-transparent px-[20px] text-[16px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-secondary)"
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder={`New canvas in ${project.name}`}
+                  placeholder={`New chat in ${project.name}`}
                   type="text"
                   value={draft}
                 />
@@ -545,7 +545,7 @@ function MaterialRow({
         <Codicon className="shrink-0" name={mark.icon} size="20px" style={{ color: `var(${mark.tint})` }} />
         <span className="flex min-w-0 flex-1 flex-col justify-center">
           <span className={cn("truncate", ROW_NAME_TEXT)}>{title || "Untitled"}</span>
-          <span className={cn("truncate", ROW_META_TEXT)}>{canvasTitle || "Untitled canvas"}</span>
+          <span className={cn("truncate", ROW_META_TEXT)}>{canvasTitle || "Untitled chat"}</span>
         </span>
       </button>
     </li>

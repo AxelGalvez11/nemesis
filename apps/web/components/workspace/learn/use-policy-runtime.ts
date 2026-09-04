@@ -733,10 +733,10 @@ export function usePolicyRuntime(
         setStatus("unavailable");
         setError(
           deadline.signal.aborted
-            ? "Nemesis is taking too long to map this material. Your canvas is safe. Reload to try again."
+            ? "Nemesis is taking too long to map this material. Your chat is safe. Reload to try again."
             : cause instanceof Error && cause.message
               ? `Nemesis could not map this material: ${cause.message}`
-              : "Nemesis could not map this material. Your canvas is safe. Reload to try again.",
+              : "Nemesis could not map this material. Your chat is safe. Reload to try again.",
         );
         return;
       }

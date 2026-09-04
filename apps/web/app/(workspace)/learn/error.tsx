@@ -25,7 +25,7 @@
 // runs exactly as it would on any ordinary unmount, the claim releases, and the rail comes back on
 // its own. This file only has to supply the second half: something to press.
 //
-// 🔴 "Leave the canvas" IS A PLAIN `<a>`, NOT `router.push`. Whatever crashed the render may be
+// 🔴 "Leave the chat" IS A PLAIN `<a>`, NOT `router.push`. Whatever crashed the render may be
 // crashed application state rather than a merely-ugly screen, so a click handler that reads that
 // same state to decide where to go is exactly the kind of thing that could also fail. The same
 // reasoning is already in this codebase — `canvas-quiet.tsx`'s retry note explains why its own
@@ -77,7 +77,7 @@ export default function LearnError({
             className="rounded-full px-4 py-2 text-[length:var(--canvas-text-small)] text-(--ui-text-secondary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
             href="/learn"
           >
-            Leave the canvas
+            Leave the chat
           </a>
         </div>
       </div>

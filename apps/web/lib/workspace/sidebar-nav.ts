@@ -30,7 +30,11 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   // record and dictate — and the canvas is created automatically once the learner starts, landing
   // in `Unfiled` for them to file later. It is deliberately not a "new session" action: nothing is
   // created by pressing this, only by beginning.
-  { id: "new-canvas", label: "New canvas", codicon: "add", route: "/learn" },
+  // 🔴 THE WORD IS "CHAT" — owner, 2026-09-03: *"rename the current one to chat because I remember
+  // that accurately sums it up pretty much."* The conversation surface at /learn is a chat; the
+  // word "canvas" now names the spatial board at /canvas. The id, the route and every file name
+  // stay as they were, the same seam as folder/project and plugins/apps above and below.
+  { id: "new-canvas", label: "New chat", codicon: "add", route: "/learn" },
   { id: "library", label: "Library", codicon: "library", route: "/library" },
   // A project IS a folder holding canvases — the same `folders` row the sidebar groups under
   // "Projects" and the Library filters by. The page is a place to see them all at once; the

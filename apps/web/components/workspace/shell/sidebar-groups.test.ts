@@ -37,7 +37,7 @@ const at = (haystack: string, needle: string): number => {
 };
 
 test("🔴 the list is three named groups, not one run of rows", () => {
-  for (const label of ['label="Pinned"', 'label="Projects"', 'label="Canvases"']) {
+  for (const label of ['label="Pinned"', 'label="Projects"', 'label="Chats"']) {
     assert.ok(SIDEBAR.includes(label), `${label} is gone — the groups collapsed back into one list`);
   }
 });
@@ -100,7 +100,7 @@ test("🔴 Pinned and Canvases ARE conditional — no heading over nothing", () 
     at(SIDEBAR, "{pinned.length > 0 || pinnedFolders.length > 0 ? (") < at(SIDEBAR, 'label="Pinned"'),
     "an empty Pinned header can now render",
   );
-  assert.ok(at(SIDEBAR, "{unfiled.length > 0 ? (") < at(SIDEBAR, 'label="Canvases"'), "an empty Canvases header can now render");
+  assert.ok(at(SIDEBAR, "{unfiled.length > 0 ? (") < at(SIDEBAR, 'label="Chats"'), "an empty Chats header can now render");
 });
 
 test("🔴 every section header collapses, and the collapse persists (owner 2026-08-30)", () => {
@@ -135,13 +135,13 @@ test("🔴 a project row is icon + name — no leading chevron (measured 2026-08
 test("🔴 the groups keep the reference's order: pinned, then projects, then loose canvases", () => {
   const pinned = at(SIDEBAR, 'label="Pinned"');
   const folders = at(SIDEBAR, 'label="Projects"');
-  const canvases = at(SIDEBAR, 'label="Canvases"');
+  const canvases = at(SIDEBAR, 'label="Chats"');
   assert.ok(pinned < folders && folders < canvases, "the groups are out of order against the reference");
 });
 
 test("🔴 an account with nothing at all still gets one sentence, not three empty headings", () => {
   assert.match(SIDEBAR, /const isEmpty = canvases\.length === 0 && folders\.length === 0;/, "the all-empty case lost its own branch");
-  assert.ok(SIDEBAR.includes("Your canvases will gather here."), "the empty state sentence is gone");
+  assert.ok(SIDEBAR.includes("Your chats will gather here."), "the empty state sentence is gone");
 });
 
 test("🔴 the section label is 14px — the size measured off the reference, not a size below it", () => {
