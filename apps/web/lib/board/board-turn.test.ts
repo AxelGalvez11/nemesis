@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { THINKING_STANCE } from "@nemesis/shared";
 
 import { boardWireMessages } from "./board-turn";
-import { boardCitableFiles, groundedSources, sourceOrdinalOf } from "./board-grounding";
+import { boardCitableFiles, boardSourceForFile, groundedSources, sourceOrdinalOf } from "./board-grounding";
 import { MATERIAL_CITATION_RULE, MATERIAL_HEADER } from "@/lib/learn/turn-router";
 import { CONCEPT_INSTRUCTION, PROTOCOL_INSTRUCTION } from "./board-protocol";
 
@@ -66,5 +66,22 @@ describe("source ids are claimed, never counted", () => {
     assert.deepEqual(grounded.map((source) => source.id), ["s2", "s1"], "the built id skipped the stored s1");
     assert.equal(sourceOrdinalOf(sources[1]!), 1);
     assert.equal(sourceOrdinalOf(sources[0]!), 0);
+  });
+});
+
+describe("the three readers of the source list walk it the same way", () => {
+  it("a source still processing in the middle does not shift which file a pill opens", () => {
+    const base = { type: "pdf" as const, previewUrls: [], position: { x: 0, y: 0 }, width: 640 };
+    const sources = [
+      { ...base, id: "a", name: "A", content: "Consideration must move from the promisee.", status: "ready" as const },
+      { ...base, id: "busy", name: "Busy", content: "", status: "processing" as const },
+      { ...base, id: "c", name: "C", content: "Past consideration is no consideration.", status: "ready" as const },
+    ];
+    const grounded = groundedSources(sources);
+    assert.deepEqual(grounded.map((source) => source.id), ["s1", "s2"]);
+    assert.deepEqual(boardCitableFiles(sources).map((file) => file.title), ["A", "C"]);
+    assert.equal(boardSourceForFile(sources, "s2")?.id, "c", "the second pill opens C, not the processing source");
+    assert.equal(boardSourceForFile(sources, "s1")?.id, "a");
+    assert.equal(boardSourceForFile(sources, "s3"), null);
   });
 });
