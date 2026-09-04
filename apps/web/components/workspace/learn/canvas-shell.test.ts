@@ -94,7 +94,12 @@ test("the shell reserves clearance with padding rather than a header element", (
   // "more space for the text", there is no header element to delete, and the only honest saving was
   // the breathing room (24px where 8 does the job). What this line protects is that the offset
   // EXISTS — text starting under the floating controls is the bug it was written for.
-  assert.match(shell, /overflow-y-auto[^"]*pt-\[48px\]/, "the scrolling column lost its header offset");
+  // 🔴 48 -> 60 ON 2026-09-03, ON THE REFERENCE'S OWN NUMBER. Measured in the owner's signed-in
+  // ChatGPT: its header is 52px and the pinned prompt sits 12px below it. Ours' controls end at 48,
+  // so the like-for-like figure is 60. `top-clearance-is-one-number.test.ts` owns the value and its
+  // ceiling; this line protects only that the offset EXISTS — text starting under the floating
+  // controls is the bug it was written for.
+  assert.match(shell, /overflow-y-auto[^"]*pt-\[\d+px\]/, "the scrolling column lost its header offset");
   assert.match(shell, /overflow-y-auto[^"]*pb-\[160px\]/, "the scrolling column cannot scroll past the composer");
   // 🔴🔴 ONE MEASUREMENT NOW, NOT TWO. This used to read "the reading column is 680, the composer
   // pill is 768. Neither is a rounding of the other" — and it was wrong about the first. Measured

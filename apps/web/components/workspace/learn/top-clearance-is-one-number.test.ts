@@ -54,7 +54,15 @@ test("🔴 and the clearance still clears the controls, which are 12px in and 28
   const canvas = code(read("./learning-canvas.tsx"));
   const top = Number(/overflow-y-auto[^"`]*pt-\[(\d+)px\]/.exec(canvas)?.[1]);
   assert.ok(top >= 40, `${top}px puts the first line under the header controls`);
-  assert.ok(top <= 56, `${top}px is more breathing room than the gap needs`);
+  // 🔴🔴 CEILING RAISED TO 60 ON THE REFERENCE'S OWN NUMBER, 2026-09-03. It was 56, chosen when the
+  // owner asked for the space back — but chosen without measuring anything. Owner the same day:
+  // *"why don't you use ChatGPT for reference?"* Measured in his signed-in ChatGPT at 1470x779:
+  // its header is 52px and the pinned prompt sits at 64 from the window, i.e. **12px below the
+  // header**. Ours: controls at `top-[12px]`, 36px tall, bottom edge 48. 48 + 12 = 60.
+  //
+  // 🔴 THE CEILING STAYS TIGHT, which is the point of having one: 60 is four pixels of latitude,
+  // not a licence. Anything larger is the "top block" the owner has now objected to three times.
+  assert.ok(top <= 60, `${top}px is more breathing room than the gap needs`);
 });
 
 console.log("top-clearance-is-one-number.test.ts OK");

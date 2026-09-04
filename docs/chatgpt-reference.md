@@ -413,3 +413,38 @@ reference's does not, and the box is border-box: padding of 16 lands the content
 visible edge and makes the panel 192 tall. `folder-create-dialog.tsx` pays for the border out of
 each inset (15/11/15), which puts the title, the label, the 416px field and the footer exactly where
 the table above says.
+
+## The pinned prompt — measured 2026-09-03, signed in, viewport 1470x779
+
+Owner: *"why don't you use ChatGPT for reference?"* — after the number had been moved twice in one
+afternoon on reasoning rather than measurement. It changed the answer.
+
+| what | ChatGPT |
+|---|---|
+| header | **52px**, sticky at the top |
+| pinned user message | **64px from the top of the window** |
+| gap below the header | **12px** |
+| bubble height | 44px |
+| drift while the answer streamed | **none** — 14 samples over 9.1s, all 64 |
+| runway reserved below | **none** — overflow below the fold measured 48px, not a screenful |
+
+🔴 **THE TRANSFERABLE NUMBER IS THE 12px GAP, NOT THE 64.** Their header is 52 and ours is not:
+our floating controls sit at `top-[12px]` and are 36px tall, so their bottom edge is 48. The
+like-for-like figure is **48 + 12 = 60**, which is what `PIN_INSET_PX` and both scrollers' top
+padding now carry. Copying 64 straight across would have left 16px of gap against their 12.
+
+🔴 **THEY DO NOT RESERVE A SCREENFUL.** Nemesis adds a runway below the current turn so the prompt
+can physically reach the top; ChatGPT does not, and the prompt still never moves. Worth knowing
+before anyone "fixes" the runway: it is ours, not theirs, and it exists because our turn can be
+shorter than the viewport where theirs is anchored differently.
+
+🔴 **MEASURING AN ANIMATION HERE IS NOT POSSIBLE THROUGH THIS TOOL.** The tab reports
+`visibilityState: "hidden"` even while it renders and screenshots fine, and rAF delivers **0 frames
+in 300ms** — so the glide's easing and duration cannot be sampled. Resting positions,
+`getBoundingClientRect` and `setTimeout` polling all work. Front-loading a screenshot does not
+change it.
+
+🔴 **RE-FIND THE SCROLLER AFTER THE ANSWER ARRIVES.** A container cached before the reply exists is
+not the one that ends up scrolling — measured `scrollHeight === clientHeight` for nine straight
+seconds off a stale handle, which reads as "nothing scrolls" and is simply the wrong box. The same
+mistake cost a wrong reading on our own canvas an hour earlier.
