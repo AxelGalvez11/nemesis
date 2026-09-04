@@ -134,6 +134,27 @@ test("🔴 an annotated board still loads and saves, with nothing left to draw i
   assert.equal(kept.annotations?.length, 2, "an annotated board lost its notes on a save");
 });
 
+test("🔴🔴 a document in a card fills the card, and says nothing above itself", () => {
+  // Owner, 2026-09-04, twice in one message: *"remove this line"* (of the notice that used to sit
+  // above every reconstructed document) and *"also fit document width to size of the card node by
+  // default"*.
+  assert.ok(!DOC.includes("This is the text Nemesis read out of the file"), "the notice is back above the document");
+  assert.match(DOC, /\bbare\b/, "the card stopped asking for a bare reader");
+  assert.match(READER, /data-bare=\{bare \? "true" : undefined\}/, "the reader stopped saying which window it is in");
+  // 🔴 THE TRIM IS CSS ON AN ATTRIBUTE, NOT A MEDIA QUERY, and that distinction is the whole fix:
+  // `@media (max-width: 640px)` already halved the page margin and never fired here, because it
+  // asks the WINDOW (1800px) rather than the card (640px). Measured before and after: a .md file's
+  // text column went from 424px to 561px inside a 640px card.
+  const CSS = readFileSync(new URL("../../../app/styles/reader.css", import.meta.url), "utf8");
+  assert.match(CSS, /\.nemesis-reader\[data-bare="true"\] \.nemesis-reader-room/, "the room keeps its full-screen padding inside a card");
+  assert.match(CSS, /\.nemesis-reader\[data-bare="true"\] \.nemesis-reader-page/, "the sheet keeps its full-screen margin inside a card");
+  // 🔴 ALL FOUR VIEWS HAVE TO CARRY THE HOOK, or a PDF and a deck keep the padding a .md loses.
+  for (const view of ["pdf-document-view.tsx", "slides-document-view.tsx", "docx-document-view.tsx", "text-document-view.tsx"]) {
+    const source = readFileSync(new URL(`../reader/${view}`, import.meta.url), "utf8");
+    assert.ok(source.includes("nemesis-reader-room"), `${view}'s scroll room is not marked as one`);
+  }
+});
+
 test("🔴🔴 no board node is registered under one of React Flow's own type names", () => {
   // 🔴 THIS IS A REAL DEFECT THE OWNER REPORTED AND I FIRST MISREAD. *"tests and notes retain a box
   // outline around them"* (2026-09-04) was not our card's border and not the check's own ring: the

@@ -327,7 +327,7 @@ export function SlidesDocumentView({
   }
 
   return (
-    <div className="h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-slides-scroll" ref={setScrollElement}>
+    <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-slides-scroll" ref={setScrollElement}>
       <div className="mx-auto flex w-fit flex-col items-center gap-5">
         <div className="w-full max-w-3xl">
           <Disclaimer />

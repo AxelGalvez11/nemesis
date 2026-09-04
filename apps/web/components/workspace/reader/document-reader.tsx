@@ -876,6 +876,12 @@ export function DocumentReader({
     // difference between two completely different bugs.
     <div
       className="nemesis-reader relative flex h-full min-h-0 flex-col bg-(--reader-room)"
+      // 🔴 THE CARD IS THE WINDOW, SO THE PAGE FILLS IT — owner, 2026-09-04: *"fit document width to
+      // size of the card node by default"*. The room's 27px of air and the sheet's 63px margin are
+      // right on a full-screen reader and take a third of a 640px card; `reader.css` trims both when
+      // this is set. It could not be a media query: `@media (max-width: 640px)` already halves the
+      // page margin, and a media query asks the WINDOW, which is 1800px wide while the card is 640.
+      data-bare={bare ? "true" : undefined}
       data-load-state={loadState}
       data-variant={variant}
       data-testid="document-reader"

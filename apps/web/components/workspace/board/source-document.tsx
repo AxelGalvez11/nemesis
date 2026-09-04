@@ -42,14 +42,17 @@ export function SourceDocument({ source }: { source: BoardSource }) {
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 🔴 SAID OUT LOUD, NEVER LEFT TO BE INFERRED. When the original was not kept, what is on
-          screen is Nemesis's reading of the file, and a reconstruction never quietly stands in for
-          the document. */}
-      {state.extracted && (
-        <p className="shrink-0 px-[4px] pb-[8px] text-[12px] leading-[16px] text-(--ui-text-tertiary)">
-          This is the text Nemesis read out of the file. The original was not kept with the canvas.
-        </p>
-      )}
+      {/* 🔴 NO NOTICE ABOVE THE DOCUMENT — owner, 2026-09-04, pointing at the line: *"remove this
+          line"*. It told the learner that what was on screen was Nemesis's reading rather than the
+          file, and it appeared on every card with no filed original — including a dropped .md or
+          .txt, where the text IS the file and nothing was lost, so the sentence was noise at best
+          and wrong at worst.
+          🔴 THE WORDING IS PARAPHRASED HERE ON PURPOSE. `board-panel.test.ts` fails on the sentence
+          itself appearing anywhere in this file, and a guard that trips on its own explanation
+          teaches the next person to delete the explanation. The honest
+          signal survives where it belongs: `extractedTextFileName` names a reconstruction
+          "Lecture 9.md" rather than "Lecture 9.pdf", so nothing offers a download of a file we do
+          not have (board-reader-source.ts). */}
       {/* 🔴 NO SECOND OUTLINE. The card is already a bordered box and the page inside is already a
           sheet with an edge of its own; a third rounded border between them is the *"box outline"*
           the owner cut from tests and notes on 2026-09-04, in another shape. */}

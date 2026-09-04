@@ -255,7 +255,7 @@ export const PdfDocumentView = forwardRef<ReaderViewHandle, PdfDocumentViewProps
   const imageOnlyPages = useMemo(() => new Set(scan?.imageOnly ?? []), [scan]);
 
   return (
-    <div className="h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-pdf-scroll" ref={scrollRef}>
+    <div className="nemesis-reader-room h-full min-h-0 overflow-auto overscroll-contain px-6 py-6" data-testid="reader-pdf-scroll" ref={scrollRef}>
       <div className="mx-auto flex w-fit flex-col items-center gap-4">
         {pdf !== null &&
           Array.from({ length: pageCount }, (_unused, index) => index + 1).map((pageNumber) => (
