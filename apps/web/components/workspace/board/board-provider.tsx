@@ -69,7 +69,7 @@ import {
 import { BoardVersionConflict, createBoard, getBoard, updateBoard } from "@/lib/board/board-store";
 import { DIVE_DEEPER_MESSAGE, runBoardTurn, type BoardResponseMode } from "@/lib/board/board-turn";
 import { boardCanvasFor, makeBoardDeliverable, readDeliverableAsk, type DeliverableKind } from "@/lib/board/board-deliverables";
-import { groundedSources } from "@/lib/board/board-grounding";
+import { groundedSources, sourceOrdinalOf } from "@/lib/board/board-grounding";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
 import { CANVAS_FILING_FOLDER, coverageLabel, coverageNote, loadCanonicalSource, storedCoverage } from "@/lib/learn/canvas-sources";
@@ -449,7 +449,11 @@ export function BoardProvider({
       }
       const controller = new AbortController();
       turnAborts.current.set(input.assistantMessageId, controller);
-      const attached = (input.sourceIds ?? []).map((id) => sources.find((source) => source.id === id)).filter((s): s is BoardSource => Boolean(s));
+      // 🔴 NOTHING TICKED MEANS EVERYTHING, NEVER NOTHING. A learner who drops five lectures and just
+      // types must get an answer from the five, the way the chat grounds in everything attached.
+      // The chips narrow the pile when they are used; unused, they do not empty it.
+      const chosen = (input.sourceIds ?? []).map((id) => sources.find((source) => source.id === id)).filter((s): s is BoardSource => Boolean(s));
+      const attached = chosen.length ? chosen : sources.filter((source) => source.status === "ready");
       void runBoardTurn({
         uid,
         message: input.requestMessage,
@@ -1059,6 +1063,15 @@ export function BoardProvider({
     [sources],
   );
 
+  const sourceOrdinal = useRef(0);
+  const claimSourceOrdinal = useCallback(() => {
+    const held = Math.max(0, ...sourcesRef.current.map((source) => sourceOrdinalOf(source)));
+    sourceOrdinal.current = Math.max(sourceOrdinal.current, held) + 1;
+    return `s${sourceOrdinal.current}`;
+  }, []);
+  const sourcesRef = useRef<BoardSource[]>([]);
+  sourcesRef.current = sources;
+
   const addSourceFiles = useCallback(
     async (files: File[]) => {
       const pdfs = files.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
@@ -1092,16 +1105,19 @@ export function BoardProvider({
       // CROSS-SESSION LEARNING POSSIBLE"). `keep` files the document so it has a parsed row for
       // retrieval to search; the canonical parse gives the excerpts their headings and pages; the
       // coverage disclosure rides so the model never claims a page it could not read.
-      const firstOrdinal = sources.length + 1;
       await Promise.all(
-        drafts.map(async (draft, draftIndex) => {
+        drafts.map(async (draft) => {
           try {
             const read = await Promise.all(draft.files.map((file) => extractFile(file, uid, { folderPath: CANVAS_FILING_FOLDER, keep: true })));
             const content = read.map((item) => item.text).join("\n\n").trim();
             if (!content) throw new Error("Nothing readable was found in this file.");
             const name = read.length === 1 && read[0]?.title ? read[0].title : draft.name;
             const first = read[0];
-            const sourceId = `s${firstOrdinal + draftIndex}`;
+            // 🔴 CLAIMED, NOT COUNTED (use-canvas-session.ts, `claimSourceId`): two drops in flight
+            // both read the same length and both mint the same id, and a removed source leaves a gap a
+            // later id can reuse, so two documents share one excerpt namespace. The counter starts past
+            // every id the board already holds and only ever goes up.
+            const sourceId = claimSourceOrdinal();
             const canonical = read.length === 1 && first?.librarySourceId ? await loadCanonicalSource(first.librarySourceId) : { ok: false as const };
             const disclosure =
               read.length === 1 && first?.librarySourceId
@@ -1133,7 +1149,7 @@ export function BoardProvider({
         }),
       );
     },
-    [cards, sources.length, uid],
+    [cards, claimSourceOrdinal, uid],
   );
 
   const dismissLimitNotice = useCallback(() => setLimitNotice(null), []);
