@@ -16,7 +16,21 @@ const ANSWER =
   "- [Insulin aspart](#concept \"A rapid-acting analogue that starts working within about 15 minutes of a meal.\") starts in 10 to 20 minutes and peaks in 1 to 3 hours.\n" +
   "- [Insulin glargine](#concept \"A long-acting basal analogue with a nearly flat profile over 24 hours.\") starts in 1 to 2 hours and has no real peak.\n" +
   "- [Insulin degludec](#concept \"An ultra-long-acting basal analogue whose effect lasts beyond 42 hours.\") starts in 30 to 60 minutes and lasts beyond 42 hours.\n\n" +
-  "All three are injectable prescription medicines used to manage diabetes mellitus, and the choice between them turns on whether the learner needs mealtime cover or a steady background level.";
+  "All three are injectable prescription medicines used to manage diabetes mellitus, and the choice between them turns on whether the learner needs mealtime cover or a steady background level.\n\n" +
+  // 🔴 A DESIGNED FIGURE, WHICH IS WHAT A COMPARISON WANTS (owner 2026-09-04). Measure it here.
+  "```visual\n" +
+  JSON.stringify({
+    footer: { label: "All three", text: "Injected under the skin for diabetes mellitus" },
+    items: [
+      { label: "Insulin aspart", lines: ["Rapid acting", "10 to 20 minutes", "1 to 3 hours", "3 to 5 hours"] },
+      { label: "Insulin glargine", lines: ["Long acting", "1 to 2 hours", "None, flat profile", "24 hours"] },
+      { label: "Insulin degludec", lines: ["Ultra long acting", "30 to 60 minutes", "None", "Beyond 42 hours"] },
+    ],
+    kind: "comparison",
+    rows: ["Class", "Onset", "Peak", "Duration"],
+    title: "Onset, peak and duration",
+  }) +
+  "\n```";
 
 function card(partial: Partial<BoardCard> & Pick<BoardCard, "id" | "title" | "position" | "messages">): BoardCard {
   return {

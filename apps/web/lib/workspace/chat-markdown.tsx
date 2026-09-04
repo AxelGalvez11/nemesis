@@ -33,6 +33,9 @@ import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/lib
 import { escapeCurrencyDollars, normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 import { isMindmapChart, MindmapBlock } from "@/components/workspace/learn/mindmap-block";
 import { MermaidDiagram } from "@/lib/workspace/mermaid-diagram";
+import { VisualFigure } from "@/components/workspace/visual-figure";
+import { readVisualSpec } from "@/lib/workspace/visual-block";
+import { readModelJson } from "@/lib/model-json";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
   "aui-md prose w-full max-w-none overflow-hidden text-[length:var(--conversation-text-font-size)] " +
@@ -437,6 +440,15 @@ export function markdownComponents(
           // tree; every other mermaid shape still draws through the engine. See mindmap-block.tsx.
           if (isMindmapChart(chart)) return <MindmapBlock chart={chart} />;
           return <MermaidDiagram chart={chart} />;
+        }
+        // 🔴🔴 A ```visual FENCE IS A DESIGNED FIGURE (owner, 2026-09-04: "the diagrams are too big
+        // and also plain and boring unlike the wondering.app ones"). The model writes what the
+        // figure MEANS, `readVisualSpec` refuses anything it cannot draw honestly, and a refused
+        // spec falls through to the code block below rather than vanishing. See visual-block.ts.
+        if (/language-visual/.test(fence.className ?? "")) {
+          const raw = typeof fence.children === "string" ? fence.children : String(fence.children ?? "");
+          const spec = readVisualSpec(readModelJson(raw));
+          if (spec) return <VisualFigure spec={spec} />;
         }
       }
       // 🔴 THE FENCE'S LANGUAGE IS THE HEADER'S LABEL, and it is read from the same className the

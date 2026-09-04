@@ -23,6 +23,8 @@
 //
 // PURE. A string, nothing else.
 
+import { VISUAL_INSTRUCTION } from "@/lib/workspace/visual-block";
+
 /**
  * How to draw, shared by the chat's turn router and the board's card turn.
  *
@@ -39,8 +41,15 @@
  * branch by branch (owner: *"a ladder of things you need to know from shallow to deeply
  * detailed"*), so depth costs nothing on screen and is the whole point of asking for one.
  */
-export const DIAGRAM_INSTRUCTION =
-  "Nemesis draws fenced mermaid blocks in your answer: flowchart TD for steps and "
+export const DIAGRAM_INSTRUCTION: string =
+  // 🔴 THE DESIGNED FIGURE COMES FIRST, BECAUSE IT IS THE RIGHT ANSWER MORE OFTEN. Owner,
+  // 2026-09-04, comparing his wondering canvas with ours: *"the diagrams are too big and also plain
+  // and boring unlike the wondering.app ones"*. Theirs are typed figures rendered by a component
+  // (lib/workspace/visual-block.ts); a graph engine given "compare three things" draws boxes and
+  // arrows ABOUT a comparison, which is exactly what looked plain.
+  VISUAL_INSTRUCTION
+  + " "
+  + "For a real graph, where the point is the EDGES between things, Nemesis also draws fenced mermaid blocks in your answer: flowchart TD for steps and "
   + "decisions, mindmap for how a subject branches, sequenceDiagram for exchanges over time, "
   + "stateDiagram-v2 for states, pie for shares of a whole. Judge for yourself when one would "
   + "genuinely help, without being asked: an answer that IS a process with stages, a branching "
@@ -54,4 +63,5 @@ export const DIAGRAM_INSTRUCTION =
   + "one branch at a time, so when they ask for a mind map go deep, three to five levels and up "
   + "to about sixty nodes, the big ideas nearest the root and the specifics at the leaves, one "
   + "idea per node in a few words, every branch drawn from their material. "
-  + "Never decorate: a plain fact, a definition, or a feeling needs no diagram.";
+  + "Never decorate: a plain fact, a definition, or a feeling needs no diagram. "
+  + "Keep drawings small and few: at most one per answer unless the learner asked for more.";
