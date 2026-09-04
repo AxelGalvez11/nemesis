@@ -26,6 +26,9 @@ describe("a board turn goes out as one packet", () => {
     const [system] = boardWireMessages({ message: "Teach me this then quiz me", history: [] });
     assert.match(system?.content ?? "", /Never put questions to the learner as a numbered list/, "the prose-quiz rule is missing");
     assert.match(system?.content ?? "", /test card is made beside this one/, "the model is not told where the questions go");
+    // 🔴 MEASURED: with only the no-list half, the model announced the quiz and asked question one
+    // in prose, beside a card holding the same six questions.
+    assert.match(system?.content ?? "", /never announce one/, "the no-announcing half of the rule is missing");
   });
 
   it("tells the card it may draw, in the same words the chat uses", () => {
