@@ -1364,6 +1364,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   /* Somebody who asked the system to stop moving still gets the docked reader, without the slide. */
   .reader-dock-in,
   .reader-cover-in,
+  .dock-panel-in,
   [data-workspace] .animate-pulse {
     animation: none;
   }
@@ -1449,6 +1450,30 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
 
 @keyframes reader-dock-in {
   from { transform: translateX(4%); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* The docked panel arriving: Gemini's own motion, read off its Web Animations on 2026-09-04
+ * (`Element.prototype.animate` hooked in the owner's account, see reader-chrome.ts `DOCK_*`).
+ *
+ *   the panel    scale(.6) -> scale(1), 500ms, cubic-bezier(0.2, 0, 0, 1), from its centre
+ *   its opacity  0 -> 1 over the first 200ms
+ *
+ * 🔴 THE LAYOUT STILL MOVES ON `--pane-slide`. The conversation's push, the sidebar's fold and the
+ * nav column all settle on that one 220ms clock (panes-share-one-clock.test.ts), and a panel whose
+ * BOX took 500ms would leave the two edges of one seam apart for 280ms. What takes 500ms here is
+ * transform and opacity: the box is in place at once, and the panel grows into it.
+ *
+ * 🔴 ON MOUNT ONLY, which is what `animation` gives and `transition` does not. A drag mid-read
+ * cannot replay it. */
+.dock-panel-in {
+  animation: dock-panel-in 500ms cubic-bezier(0.2, 0, 0, 1);
+  transform-origin: center;
+}
+
+@keyframes dock-panel-in {
+  from { transform: scale(0.6); opacity: 0; }
+  40% { opacity: 1; }
   to { transform: none; opacity: 1; }
 }
 

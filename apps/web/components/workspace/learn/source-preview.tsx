@@ -18,6 +18,13 @@
 // 🔴 A SIDEBAR, NOT A POPUP (owner, same day). It docks right, pushes the canvas rather than
 // covering it, and its width is a drag the learner owns — see `use-dock-width.ts`.
 //
+// 🔴🔴 THE FRAME IS `DockPanel`'S SINCE 2026-09-04, NOT THIS FILE'S. Owner, with Gemini's canvas and
+// ChatGPT's Work pane on screen: *"i dont want the top bar or the outline comments … i want the
+// multiple tabs too with the annotation/comment feature"*. The rounded floating panel, the single
+// row of tabs-and-controls, the grip and the portal all live in dock-panel.tsx; this file decides
+// what is in the row (its tabs, the reader's own controls, download, size, close) and in the body.
+// The 36px name band that used to sit under the tabs is gone: the tab is the name.
+//
 // 🔴🔴 SEVERAL DOCUMENTS AT ONCE — owner, 2026-08-28: *"it'd be nice if it could have, like,
 // multiple tabs so that they could have different PowerPoints or documents open at the same time."*
 // ONLY THE FRONT ONE IS MOUNTED, and that is the whole design rather than an optimisation: a deck
@@ -34,7 +41,6 @@
 
 import type { AnnotationNote } from "@/lib/learn/annotation-note";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
@@ -47,6 +53,7 @@ import type { ReaderSource } from "@/lib/reader/reader-source";
 import { cn } from "@/lib/utils";
 import { loadLibrarySource } from "@/lib/workspace/library-sources";
 
+import { DockPanel } from "./dock-panel";
 import { DockTabs } from "./dock-tabs";
 import type { DockItem } from "./document-dock";
 import { CHROME } from "./reader-chrome";
@@ -137,7 +144,7 @@ export function SourcePreview({
     if (!activeId) return;
     setRecent((current) => [activeId, ...current.filter((id) => id !== activeId)].slice(0, MOUNT_LIMIT));
   }, [activeId]);
-  const { dragging, onDragStart, width } = useDockWidth();
+  const { column, dragging, onDragStart, width } = useDockWidth();
   // 🔴 THE HARNESS MAKES NO NETWORK CALLS — `preview-context.tsx` says so in as many words, and this
   // panel was quietly breaking it: the dev preview signs a mock session, so `uid` is set, so the row
   // lookup went to the database, found nothing under a fixture id, and the one place this panel's
@@ -260,129 +267,86 @@ export function SourcePreview({
 
   // 🔴 THE CANVAS IS PUSHED, NOT COVERED — see side-panel.tsx. It is what makes this a sidebar
   // rather than a popup wearing a sidebar's shape. Zero while closed, so nothing is inset.
+  // 🔴 BY THE COLUMN, NOT THE PANEL'S WIDTH: the column holds the 32px gap and the 24px margin
+  // around the floating panel (use-dock-width.ts). Pushing by the width alone would put the
+  // conversation's edge under the panel's.
   // 🔴 FULL SCREEN PUSHES NOTHING: it covers everything, so there is no room to make for it. Same
   // rule the artifact panel follows.
-  useDeclareSidePanel(active && !full ? width : 0, dragging);
+  useDeclareSidePanel(active && !full ? column : 0, dragging);
 
   if (!active) return null;
 
-  return createPortal(
-    <div
-      className={cn(
-        "fixed z-50 flex flex-col bg-(--ui-bg-elevated)",
-        full ? "inset-0" : "inset-y-0 right-0 border-l border-(--ui-stroke-tertiary)",
-        // 🔴 THE OPENING SLIDE — owner, 2026-08-27: *"make sure to add smooth animation to the
-        // sidebar when sources are open."* `.reader-dock-in` slides it in from the right edge when
-        // the element is created, on the shared `--pane-slide` clock, and never again.
-        // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
-        // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
-        // and putting it back is how you restart a CSS animation, so releasing the drag handle made
-        // the panel jump to `translateX(4%)` at opacity 0 and slide in again. Watched live on
-        // /dev-preview/exports: the class went true → false on pointerdown → true on pointerup.
-        // The gate was guarding against nothing: this keyframe moves `transform` and `opacity`, not
-        // width, and it has finished long before anybody can reach the handle.
-        "reader-dock-in",
-      )}
-      data-workspace
-      role="dialog"
-      style={full ? undefined : { width }}
+  return (
+    <DockPanel
+      controls={
+        <>
+          {/* 🔴🔴 THE READER'S OWN CONTROLS DRAW HERE, IN THE ROW. In dense mode the reader used to
+              render its own 47px bar under the tabs, carrying the comment toggle and the actions
+              menu — a second row of chrome above a document that has little enough height already.
+
+              🔴 A SLOT, NOT A HOIST, AND THE DIFFERENCE IS OWNERSHIP. Comment is a mode of the
+              DOCUMENT and the actions menu is built from the reader's own state — the file's folder
+              trail, its linked notes, its rotate handler. Lifting them here would move a dozen
+              values up two components and leave the reader unable to say what it is doing. Lending
+              it a place to draw keeps every decision where it was and costs one ref.
+
+              🔴 ONLY THE FRONT READER IS GIVEN THE SLOT. Every open document stays mounted, so
+              handing the slot to all of them would stack five sets of controls in one row. */}
+          <div className="flex shrink-0 items-center gap-[4px]" ref={toolbarSlot} />
+
+          {/* 🔴 THE SAME CONTROLS THE ARTIFACT PANEL CARRIES, IN THE SAME ORDER (owner, 2026-09-03:
+              they *"should be in the sidebar always"*). One sidebar showing two kinds of thing with
+              two different sets of buttons is the inconsistency that made it read as two panels even
+              after it became one.
+
+              🔴 COMMENT IS NOT HERE, AND ITS ABSENCE IS DELIBERATE RATHER THAN MISSED. A document's
+              comment mode belongs to the READER — it is a mode of the thing being read, owned by
+              `document-reader.tsx`, and it draws its own control into the slot above. Adding a
+              second here would be two buttons for one state, which is a worse fault than an uneven
+              row. An artifact's comment button is in ITS row because an artifact has no reader. */}
+          <button
+            aria-label={`Download ${activeFileName ?? "this document"}`}
+            className={cn(CHROME.button, "disabled:opacity-40")}
+            disabled={!canDownload}
+            onClick={() => void downloadActive()}
+            title="Download"
+            type="button"
+          >
+            {/* 🔴 `download`, NOT `desktop-download` — the latter is a MONITOR with an arrow. Same
+                glyph the artifact panel uses, for the same action. */}
+            <Codicon name="download" size={CHROME.icon} />
+          </button>
+          <button
+            aria-label={full ? "Exit full screen" : "Full screen"}
+            className={CHROME.button}
+            onClick={() => setFull((current) => !current)}
+            title={full ? "Exit full screen" : "Full screen"}
+            type="button"
+          >
+            <Codicon name={full ? "screen-normal" : "screen-full"} size={CHROME.icon} />
+          </button>
+          <button
+            aria-label="Close preview"
+            className={cn(CHROME.button, "text-(--ui-text-quaternary) hover:text-(--ui-text-primary)")}
+            onClick={onClose}
+            title="Close preview"
+            type="button"
+          >
+            <Codicon name="close" size={CHROME.icon} />
+          </button>
+        </>
+      }
+      dragging={dragging}
+      label={active.title}
+      mode={full ? "full" : "docked"}
+      onDragStart={onDragStart}
+      // 🔴 ONE STRIP WHETHER THERE IS ONE DOCUMENT OR SIX. A strip that appears only on the second
+      // document would move the name the learner is reading. The strip scrolls inside its own box;
+      // the controls are its siblings and never move.
+      tabs={items.length > 0 && <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />}
+      width={width}
     >
-      {/* 🔴 THE GRIP IS ON THE LEFT EDGE, WHICH IS THE EDGE THAT MOVES. 6px wide with a wider
-          invisible target either side of it, `col-resize`, and no paint until hover — the same
-          restraint every other control on this surface follows. Only while docked: full screen has
-          no edge to drag. */}
-      {!full && (
-      <div
-        aria-label="Resize the panel"
-        className="absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-(--ui-action)/40"
-        onPointerDown={onDragStart}
-        role="separator"
-      />
-      )}
-
-      {/* 🔴 ONE ROW WHETHER THERE IS ONE DOCUMENT OR SIX. A strip that appears only on the second
-          document would move the title the learner is reading, and the single-tab case is exactly
-          the header this panel already had.
-
-          🔴🔴 THE CLOSE BUTTON IS OUTSIDE THE SCROLLING STRIP, AND THE FIRST VERSION WAS NOT — found
-          on screen with two tabs on a narrowed panel: the tabs are `shrink-0` inside the scroller,
-          so they pushed the one control that closes the panel off the right edge and out of reach.
-          The strip scrolls inside its own box; the button is its sibling and never moves. */}
-      {/* 🔴🔴 TABS GET THEIR OWN ROW, WHICH REVERSES THIS MORNING'S INSTRUCTION AND THE REVERSAL IS
-          THE OWNER'S. On 2026-09-03 he asked for *"all the tabs and icons should be on the same
-          row"* and for a dropdown instead of a strip, both to buy space. Later the same day he sent
-          screenshots of ChatGPT's desktop pane and said *"i want it exactly like this"* — and that
-          pane puts tabs alone on top with the name and controls underneath. The earlier instruction
-          was about a strip that had to share a row; this is the arrangement that makes a strip work
-          at all. It costs 36px, which is the trade he made knowingly. See dock-tabs.tsx. */}
-      {items.length > 0 && (
-        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
-      )}
-      <div className={CHROME.header}>
-        {/* The front document's name. Row one already says what is open; this must not repeat it. */}
-        <span className={cn(CHROME.crumb, "min-w-0 flex-1 px-[6px]")} title={active?.title ?? ""}>{active?.title ?? ""}</span>
-
-        {/* 🔴🔴 THE READER'S OWN CONTROLS DRAW HERE, IN THIS ROW (owner, 2026-09-03: *"all the tabs
-            and icons should be on the same row"*). In dense mode the reader used to render its own
-            47px bar directly under this one, carrying the comment toggle and the actions menu — a
-            second row of chrome above a document that has little enough height already.
-
-            🔴 A SLOT, NOT A HOIST, AND THE DIFFERENCE IS OWNERSHIP. Comment is a mode of the
-            DOCUMENT and the actions menu is built from the reader's own state — the file's folder
-            trail, its linked notes, its rotate handler. Lifting them here would move a dozen
-            values up two components and leave the reader unable to say what it is doing. Lending
-            it a place to draw keeps every decision where it was and costs one ref.
-
-            🔴 ONLY THE FRONT READER IS GIVEN THE SLOT. Every open document stays mounted, so
-            handing the slot to all of them would stack five sets of controls in one row. */}
-        <div className="flex shrink-0 items-center gap-[4px]" ref={toolbarSlot} />
-
-        {/* 🔴 THE SAME CONTROLS THE ARTIFACT PANEL CARRIES, IN THE SAME ORDER (owner, 2026-09-03:
-            they *"should be in the sidebar always"*). One sidebar showing two kinds of thing with
-            two different sets of buttons is the inconsistency that made it read as two panels even
-            after it became one.
-
-            🔴 COMMENT IS NOT HERE, AND ITS ABSENCE IS DELIBERATE RATHER THAN MISSED. A document's
-            comment mode belongs to the READER — it is a mode of the thing being read, owned by
-            `document-reader.tsx`, and it already has a control one row below this. Adding a second
-            here would be two buttons for one state, which is a worse fault than an uneven header.
-            An artifact's comment button is in ITS header because an artifact has no reader row. */}
-        <button
-          aria-label={`Download ${activeFileName ?? "this document"}`}
-          className={cn(CHROME.button, "disabled:opacity-40")}
-          disabled={!canDownload}
-          onClick={() => void downloadActive()}
-          title="Download"
-          type="button"
-        >
-          {/* 🔴 `download`, NOT `desktop-download` — the latter is a MONITOR with an arrow. Same
-              glyph the artifact panel uses, for the same action. */}
-          <Codicon name="download" size={CHROME.icon} />
-        </button>
-        <button
-          aria-label={full ? "Exit full screen" : "Full screen"}
-          className={CHROME.button}
-          onClick={() => setFull((current) => !current)}
-          title={full ? "Exit full screen" : "Full screen"}
-          type="button"
-        >
-          <Codicon name={full ? "screen-normal" : "screen-full"} size={CHROME.icon} />
-        </button>
-        <button
-          aria-label="Close preview"
-          className={cn(
-            CHROME.button,
-            "text-(--ui-text-quaternary) hover:text-(--ui-text-primary)",
-          )}
-          onClick={onClose}
-          title="Close preview"
-          type="button"
-        >
-          <Codicon name="close" size={CHROME.icon} />
-        </button>
-      </div>
-
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 h-full overflow-hidden">
         {/* 🔴🔴 EVERY OPEN DOCUMENT IS MOUNTED; ONLY THE FRONT ONE IS SHOWN. The previous version
             rendered the active source alone, keyed by its id — a clean remount on every tab switch,
             which is exactly the cost the owner reported as *"it has to load each pdf continually"*.
@@ -450,7 +414,6 @@ export function SourcePreview({
           );
         })}
       </div>
-    </div>,
-    document.body,
+    </DockPanel>
   );
 }

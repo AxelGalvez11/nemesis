@@ -243,7 +243,8 @@ test("🔴 the docked panel collapses the sidebar without writing the preference
   // everything has nothing to push.
   // 🔴 AND SINCE 2026-09-01 IT ALSO HANDS OVER `dragging`, so the canvas can follow the drag rather
   // than easing 220ms behind it — see panes-share-one-clock.test.ts for the measured seam.
-  assert.match(preview, /useDeclareSidePanel\(mode === "docked" \? dock : 0, dragging\)/, "the panel does not declare itself");
+  // 🔴 BY THE COLUMN SINCE 2026-09-04 (dock-panel.tsx): the panel, its 32px gap and its 24px margin.
+  assert.match(preview, /useDeclareSidePanel\(mode === "docked" \? column : 0, dragging\)/, "the panel does not declare itself");
   // 🔴 WIDTH, NOT PADDING, AND THE COMPOSER IS WHY. Padding was the obvious choice and it moved the
   // document while leaving the composer under the panel: an absolutely positioned child is laid out
   // against its containing block's PADDING box, which includes the padding. Narrowing the element

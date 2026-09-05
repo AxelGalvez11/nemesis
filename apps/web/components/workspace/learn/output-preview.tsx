@@ -17,8 +17,8 @@
 // parser means what is on screen is what is in the file, including its limitations.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
+import { DockPanel } from "./dock-panel";
 import { DockTabs } from "./dock-tabs";
 import type { DockItem } from "./document-dock";
 import { ReaderAsk, ASK_CLEARANCE } from "./reader-ask";
@@ -158,7 +158,6 @@ export function OutputPreview({
    */
   onAsk?: (question: string, material: { name: string; text: string } | null) => void;
 }) {
-  const card = useRef<HTMLDivElement>(null);
   /**
    * How much of the window this panel takes.
    *
@@ -188,11 +187,12 @@ export function OutputPreview({
    * 🔴 THE FRACTION, NOT THE PIXELS, IS WHAT PERSISTS — see `use-dock-width.ts`. A panel dragged
    * wide on a large monitor would otherwise cover the whole canvas on a laptop.
    */
-  const { dragging, onDragStart, width: dock } = useDockWidth();
+  const { column, dragging, onDragStart, width: dock } = useDockWidth();
 
-  // Collapses the left sidebar to the rail while this is open, and pushes the surface by exactly
-  // the docked width — see side-panel.tsx. Full screen pushes nothing: it covers everything.
-  useDeclareSidePanel(mode === "docked" ? dock : 0, dragging);
+  // Collapses the left sidebar to the rail while this is open, and pushes the surface by the
+  // panel's COLUMN (the panel, its gap and its margin — use-dock-width.ts) — see side-panel.tsx.
+  // Full screen pushes nothing: it covers everything.
+  useDeclareSidePanel(mode === "docked" ? column : 0, dragging);
   /**
    * A note's body, fetched on open.
    *
@@ -457,78 +457,18 @@ export function OutputPreview({
    * ancestor happened to be the full width, so the bug was invisible and the layout was correct by
    * coincidence. Seen on screen; it is not the kind of thing a diff shows.
    */
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  useEffect(() => setHost(document.body), []);
-  if (!host) return null;
-
-  return createPortal(
-    // 🔴🔴 FLUSH, NOT FLOATING, AND SIZED BY MEASUREMENT. The first version was a rounded card with
-    // a shadow, inset by 12px, 38rem wide. The reference is none of those things: 980 of 1470 with
-    // no radius, no shadow and no inset, its right edge on the viewport's. A rounded card reads as
-    // something laid ON the page; this reads as part of it, which is what a document you are
-    // working against should be.
-    //
-    // 🔴 NO CATCHER, EITHER. The old outside-press-to-close came with the floating card. A panel
-    // that owns two thirds of the window and pushes the rest must not vanish because somebody
-    // clicked the conversation next to it — the close button is the way out, plus Escape.
-    <div
-      className={cn(
-        "fixed inset-y-0 right-0 z-50 flex flex-col bg-(--ui-bg-elevated)",
-        maximized ? "left-0 z-[60]" : full ? "left-[var(--nav-column,0px)]" : "border-l border-(--ui-stroke-tertiary)",
-        // The opening slide, on the shared `--pane-slide` clock.
-        // 🔴🔴 UNCONDITIONAL, AND IT USED TO BE `!dragging &&` — WHICH REPLAYED THE ENTRANCE ON
-        // EVERY RESIZE. Owner, 2026-09-01: *"there also seems to be flickering."* Removing a class
-        // and putting it back is how you restart a CSS animation, so releasing the drag handle made
-        // the panel jump to `translateX(4%)` at opacity 0 and slide in again. Watched live on
-        // /dev-preview/exports: the class went true → false on pointerdown → true on pointerup.
-        // The gate was guarding against nothing: this keyframe moves `transform` and `opacity`, not
-        // width, and it has finished long before anybody can reach the handle.
-        "reader-dock-in",
-      )}
-      // 🔴🔴 THE STAMP TRAVELS WITH THE PORTAL, AND WITHOUT IT EVERY BUTTON IN HERE GOES ACID GREEN.
-      // `globals.css` carries `button:where(:not([data-workspace] *)) { background: var(--acid) }`,
-      // so the moment this subtree moved to `document.body` it left the workspace scope and the
-      // global rule took the header controls: measured `rgb(64,64,64)` filled pills where the
-      // reference has transparent 36x36 squares. The dev-preview harnesses have hit this before;
-      // portalling is how it reaches real code.
-      data-workspace
-      role="dialog"
-      style={full ? undefined : { width: dock }}
-    >
-      {/* 🔴 THE GRIP IS ON THE LEFT EDGE, WHICH IS THE EDGE THAT MOVES, and only while docked —
-          full screen has no edge to drag. Same handle and same hook as the source reader. */}
-      {!full && (
-        <div
-          aria-label="Resize the panel"
-          className="absolute inset-y-0 -left-[3px] z-10 w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-(--ui-action)/40"
-          onPointerDown={onDragStart}
-          role="separator"
-        />
-      )}
-      {/* 🔴🔴 ROW ONE IS NOTHING BUT TABS, AND THAT SEPARATION IS THE WHOLE FIX. The strip and the
-          controls shared a row until 2026-09-03, which is what made six open documents unusable and
-          what the dropdown was asked for. Measured in ChatGPT's desktop app: tabs alone on top, the
-          document's name and its controls underneath. See dock-tabs.tsx. */}
-      {items && items.length > 0 && onSelectKey && onCloseKey && !full && (
-        <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
-      )}
-      <div className={CHROME.header} ref={card}>
-        {/* 🔴 FULL SCREEN PUTS THE CLOSE ON THE LEFT, DOCKED PUTS IT ON THE RIGHT, and that is the
-            reference's own arrangement rather than a preference: measured at x=193 beside the
-            breadcrumb in the Library reader, and at the far right in the conversation panel. The
-            control nearest the content is the one that dismisses it. */}
-        {full && (
-          <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
-            <Codicon name="close" size={CHROME.icon} />
-          </button>
-        )}
-        {/* 🔴 THE NAME, NEVER A SECOND SWITCHER. Row one already says what is open and what is in
-            front; repeating that here would be two controls answering one question, which is the
-            defect `dock-switcher.tsx` was written to remove and this must not reintroduce. */}
-        <span className={cn(CHROME.crumb, "min-w-0 flex-1")} title={output.title}>
-          <span className="text-(--ui-text-quaternary)">Library&nbsp;/&nbsp;</span>
-          {output.title}
-        </span>
+  /**
+   * The row's controls, close last.
+   *
+   * 🔴 CLOSE IS ON THE RIGHT AT EVERY SIZE NOW. Until 2026-09-04 full screen put it on the LEFT,
+   * beside a "Library / name" crumb, which was ChatGPT's Library reader measured on 2026-08-25. The
+   * owner then chose ChatGPT's Work pane (*"i dont want the top bar"*): one row, tabs left,
+   * controls right, and the name is the tab. With no name row there is no crumb to put a close
+   * beside, and a control that moves between two ends of the panel depending on its size is the
+   * kind of thing a learner has to look for twice.
+   */
+  const controls = (
+    <>
         {canComment && (
           <button
             aria-label={commenting ? "Stop commenting" : "Comment on this document"}
@@ -579,32 +519,50 @@ export function OutputPreview({
         >
           <Codicon name={mode === initialMode ? "screen-full" : "screen-normal"} size={CHROME.icon} />
         </button>
-        {/* 🔴 NOT DUPLICATED AT `maximized`, AND THE GUARD CAUGHT ME TRYING. Every big size already
-            carries a ✕ at the HEAD of the crumb — the reference's own placement, pinned by
-            artifact-chrome.test.ts — so adding one here on the reasoning "there is nothing behind
-            it to click" would have put two close buttons in one header. The way out of a maximized
-            reader is the same ✕ as the way out of a full one. */}
-        {!full && (
-          <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
-            <Codicon name="close" size={CHROME.icon} />
-          </button>
-        )}
-      </div>
+        {/* 🔴 ONE CLOSE, AT EVERY SIZE. It used to move to the head of the crumb when the panel
+            went big; there is no crumb now, so there is nowhere else for it to be. */}
+        <button aria-label="Close" className={CHROME.button} onClick={onClose} title="Close" type="button">
+          <Codicon name="close" size={CHROME.icon} />
+        </button>
+    </>
+  );
 
+  return (
+    <DockPanel
+      controls={controls}
+      dragging={dragging}
+      label={output.title}
+      mode={mode}
+      onDragStart={onDragStart}
+      // 🔴 THE NAME STANDS IN FOR THE STRIP WHEN THERE IS NO STRIP. From the Library an artifact
+      // opens on its own, full, with no dock behind it; a row with nothing on the left would leave
+      // the thing on screen unnamed.
+      tabs={
+        items && items.length > 0 && onSelectKey && onCloseKey ? (
+          <DockTabs activeKey={activeKey} items={items} onClose={onCloseKey} onSelect={onSelectKey} />
+        ) : (
+          <span className={cn(CHROME.crumb, "min-w-0 flex-1 pl-[6px]")} title={output.title}>
+            {output.title}
+          </span>
+        )
+      }
+      testId="output-preview"
+      width={dock}
+    >
       {commenting && !revising && (
-        <p className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-secondary) shadow-md" data-testid="output-comment-hint">
+        <p className="pointer-events-none absolute left-1/2 top-[12px] z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-secondary) shadow-md" data-testid="output-comment-hint">
           {deck ? "Click a slide to comment, drag to mark part of it" : "Click a paragraph to comment"}
         </p>
       )}
       {revising && (
         // 🔴 THE WAIT IS SAID, AND THE DOCUMENT UNDERNEATH IS THE OLD ONE UNTIL THE NEW ONE LANDS —
         // never a blank, never a spinner over nothing.
-        <p className="pointer-events-none absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-secondary) shadow-md" data-testid="output-revising">
+        <p className="pointer-events-none absolute left-1/2 top-[12px] z-40 -translate-x-1/2 rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-secondary) shadow-md" data-testid="output-revising">
           Nemesis is revising this document…
         </p>
       )}
       {reviseError && (
-        <p className="absolute left-1/2 top-14 z-40 -translate-x-1/2 rounded-full border border-(--ui-danger)/40 bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-danger) shadow-md">
+        <p className="absolute left-1/2 top-[12px] z-40 -translate-x-1/2 rounded-full border border-(--ui-danger)/40 bg-(--ui-bg-elevated) px-3 py-1 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-danger) shadow-md">
           {reviseError}
         </p>
       )}
@@ -734,8 +692,7 @@ export function OutputPreview({
           units={units}
         />
       )}
-    </div>,
-    host,
+    </DockPanel>
   );
 }
 
