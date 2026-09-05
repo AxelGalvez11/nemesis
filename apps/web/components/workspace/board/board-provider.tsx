@@ -20,11 +20,15 @@ import type { BoardAnnotation } from "@/lib/board/board-annotations";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import {
   buildDeleteTargets,
+  besideOf,
   canApplyOperation,
   createHistoryState,
+  hasBeside,
   historiesEqual,
   historyReducer,
   applyOperation,
+  restoreBeside,
+  type BesideItems,
   type DeleteTarget,
   type HistorySnapshot,
 } from "@/lib/board/board-history";
@@ -1076,7 +1080,7 @@ export function BoardProvider({
   );
 
   const applyHistory = useCallback(
-    (action: { type: "delete"; targets: DeleteTarget[] } | { type: "undo" } | { type: "redo" }) => {
+    (action: { type: "delete"; targets: DeleteTarget[]; beside?: BesideItems } | { type: "undo" } | { type: "redo" }) => {
       const entryId = crypto.randomUUID();
       const full = action.type === "delete" ? { ...action, entryId, cardSnapshots: history.cards.map((card) => ({ ...card, ...(measured.current.get(card.id) ?? {}) })) } : { ...action, entryId };
       const next = historyReducer(history, full);
@@ -1109,7 +1113,14 @@ export function BoardProvider({
         setSelectedSourceIds((all) => all.filter((id) => !sourceIds.includes(id)));
       }
       const targets = buildDeleteTargets(cards, ids);
-      if (targets.length) applyHistory({ type: "delete", targets });
+      // 🔴🔴 A DELETED DOCUMENT OR DELIVERABLE IS RECORDED WITH THE ENTRY, where it stood, so ⌘Z
+      // brings it back (board-history.ts, `beside`). Until 2026-09-04 only the cards were recorded
+      // and the trash on a dropped PDF left undo disabled: found on the board sweep, not reported.
+      const beside = besideOf(
+        sources.map((item, index) => ({ index, item })).filter(({ item }) => sourceIds.includes(item.id)),
+        outputs.map((item, index) => ({ index, item })).filter(({ item }) => outputIds.includes(item.id)),
+      );
+      if (targets.length || beside) applyHistory({ type: "delete", targets, ...(beside ? { beside } : {}) });
     },
     [applyHistory, cards, outputs, sources],
   );
@@ -1124,18 +1135,41 @@ export function BoardProvider({
       return;
     }
     const restored = applyOperation(cards, entry.operation).cards;
-    const document = serializeBoardState({ annotations, cards: restored, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
+    // The documents and deliverables that went with the delete come back where they stood; the
+    // reducer records the redo for them, the provider owns their lists (board-history.ts).
+    const beside = entry.operation.kind === "restore" && hasBeside(entry.operation.beside) ? entry.operation.beside : null;
+    const sourcesAfter = beside ? restoreBeside(sources, beside.sources) : sources;
+    const outputsAfter = beside ? restoreBeside(outputs, beside.outputs) : outputs;
+    const document = serializeBoardState({ annotations, cards: restored, sources: sourcesAfter, outputs: outputsAfter, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
     if (!documentFitsSizeLimit(document)) {
       setLimitNotice("This undo would exceed the canvas storage limit. Remove some content or sources and try again.");
       return;
+    }
+    if (beside) {
+      if (sourcesAfter !== sources) setSources(sourcesAfter);
+      if (outputsAfter !== outputs) setOutputs(outputsAfter);
     }
     applyHistory({ type: "undo" });
   }, [annotations, applyHistory, cards, history.past, outputs, selectedSourceIds, sources, useWebSearch, viewport]);
 
   const redo = useCallback(() => {
-    if (history.future.length === 0) return;
+    const entry = history.future.at(-1);
+    if (!entry) return;
+    if (entry.operation.kind === "remove" && hasBeside(entry.operation.beside)) {
+      const gone = entry.operation.beside;
+      const sourceIds = new Set(gone.sources.map(({ item }) => item.id));
+      const outputIds = new Set(gone.outputs.map(({ item }) => item.id));
+      if (sourceIds.size) {
+        setSources((all) => all.filter((source) => !sourceIds.has(source.id)));
+        setSelectedSourceIds((all) => all.filter((id) => !sourceIds.has(id)));
+      }
+      if (outputIds.size) {
+        setOutputs((all) => all.filter((output) => !outputIds.has(output.id)));
+        setOpenedOutputId((open) => (open && outputIds.has(open) ? null : open));
+      }
+    }
     applyHistory({ type: "redo" });
-  }, [applyHistory, history.future.length]);
+  }, [applyHistory, history.future]);
 
   const removeCardHighlight = useCallback((cardId: string, highlightId: string) => applyHistory({ type: "delete", targets: [{ cardId, highlightId }] }), [applyHistory]);
 

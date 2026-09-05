@@ -1,14 +1,23 @@
 // Undo and redo for the board, saved BESIDE the document so a reload does not lose it.
 //
-// Only deletion is undoable (cards, notes, highlights), which is what Wondering ships and what a
-// learner reaches for: the ⌘Z after a trash click. Every delete records its INVERSE (a restore
-// operation carrying the removed items and their positions in their lists); undo applies the
-// inverse and records the delete again for redo. 50 entries, 8 MB, oldest first out.
+// Only deletion is undoable (cards, notes, highlights, and since 2026-09-04 documents and
+// deliverables), which is what Wondering ships and what a learner reaches for: the ⌘Z after a
+// trash click. Every delete records its INVERSE (a restore operation carrying the removed items
+// and their positions in their lists); undo applies the inverse and records the delete again for
+// redo. 50 entries, 8 MB, oldest first out.
 //
 // 🔴 AN EDIT AFTER A DELETE CLEARS THE REDO STACK ONLY WHEN IT TOUCHES A CARD THE REDO WOULD —
 // moving an unrelated card keeps the redo alive. `operationTouchesChangedCard` is that rule.
+//
+// 🔴🔴 DOCUMENTS AND DELIVERABLES RIDE THE ENTRY, THE REDUCER NEVER TOUCHES THEM. Found on the
+// board sweep of 2026-09-04: pressing the trash on a dropped PDF left ⌘Z disabled, because this
+// reducer holds CARDS and a source is a separate list in the provider. Threading that list through
+// the reducer would have made every card operation know about documents; instead the removed
+// documents and deliverables travel on the operation as `beside`, in both directions, and the
+// provider (which owns those lists) reads them off the entry it is about to apply. The reducer's
+// job is unchanged: cards, and the record.
 
-import { MAX_BOARD_CARDS, type BoardCard, type BoardHighlight, type BoardNote } from "./board-model";
+import { MAX_BOARD_CARDS, type BoardCard, type BoardHighlight, type BoardNote, type BoardOutputCard, type BoardSource } from "./board-model";
 
 export const MAX_HISTORY_ENTRIES = 50;
 export const MAX_HISTORY_BYTES = 8 * 1024 * 1024;
@@ -21,9 +30,22 @@ export interface DeleteTarget {
   savedByUserOnly?: boolean;
 }
 
+/**
+ * The documents and deliverables that went with a delete, and come back with its undo.
+ *
+ * The same payload rides the remove and the restore: a remove needs the ids, a restore needs the
+ * items and where they stood, and a redo turns one into the other without any list to consult.
+ * Absent on every entry written before 2026-09-04, which reads as nothing beside the cards.
+ */
+export interface BesideItems {
+  sources: Array<{ item: BoardSource; index: number }>;
+  outputs: Array<{ item: BoardOutputCard; index: number }>;
+}
+
 export interface RemoveOperation {
   kind: "remove";
   targets: DeleteTarget[];
+  beside?: BesideItems;
 }
 
 export interface RestoreOperation {
@@ -32,6 +54,36 @@ export interface RestoreOperation {
   notes: Array<{ cardId: string; item: BoardNote; index: number; linkedHighlightIds: string[] }>;
   highlights: Array<{ cardId: string; item: BoardHighlight; index: number }>;
   detachedChildren: Array<{ cardId: string; parentId: string }>;
+  beside?: BesideItems;
+}
+
+/** Whether an entry carries anything beside its cards. */
+export function hasBeside(beside: BesideItems | undefined): beside is BesideItems {
+  return Boolean(beside && (beside.sources.length > 0 || beside.outputs.length > 0));
+}
+
+/** The items to record: runtime-only fields dropped, so a saved history never holds an object URL. */
+export function besideOf(sources: readonly { item: BoardSource; index: number }[], outputs: readonly { item: BoardOutputCard; index: number }[]): BesideItems | undefined {
+  if (sources.length === 0 && outputs.length === 0) return undefined;
+  return {
+    sources: sources.map(({ item, index }) => ({ index, item: { ...item, previewUrls: [] } })),
+    outputs: outputs.map(({ item, index }) => {
+      const { progress: _progress, ...kept } = item;
+      return { index, item: kept };
+    }),
+  };
+}
+
+/** A list with the recorded items put back where they stood; ones already present are left alone. */
+export function restoreBeside<T extends { id: string }>(list: readonly T[], entries: readonly { item: T; index: number }[]): T[] {
+  let next = [...list];
+  const present = new Set(list.map((item) => item.id));
+  for (const entry of [...entries].sort((a, b) => a.index - b.index)) {
+    if (present.has(entry.item.id)) continue;
+    next = insertAt(next, entry.index, entry.item);
+    present.add(entry.item.id);
+  }
+  return next;
 }
 
 export type HistoryOperation = RemoveOperation | RestoreOperation;
@@ -53,7 +105,7 @@ export interface HistoryState extends HistorySnapshot {
 export type HistoryAction =
   | { type: "replace"; cards: BoardCard[]; history: HistorySnapshot }
   | { type: "update"; update: BoardCard[] | ((cards: BoardCard[]) => BoardCard[]) }
-  | { type: "delete"; entryId: string; targets: DeleteTarget[]; cardSnapshots?: BoardCard[] }
+  | { type: "delete"; entryId: string; targets: DeleteTarget[]; cardSnapshots?: BoardCard[]; beside?: BesideItems }
   | { type: "undo"; entryId: string }
   | { type: "redo"; entryId: string };
 
@@ -356,7 +408,19 @@ export function applyOperation(
   operation: HistoryOperation,
   snapshots?: readonly BoardCard[],
 ): { cards: BoardCard[]; inverse: HistoryOperation | null } {
-  return operation.kind === "remove" ? removeTargets(cards, operation.targets, snapshots) : restoreTargets(cards, operation);
+  // 🔴 WHAT RODE BESIDE THE CARDS RIDES BESIDE THE INVERSE, so a delete of a document alone (no
+  // card targets at all) still records an entry, and undoing it still records the redo.
+  if (operation.kind === "remove") {
+    const result = removeTargets(cards, operation.targets, snapshots);
+    if (!hasBeside(operation.beside)) return result;
+    const inverse: RestoreOperation = result.inverse ?? { kind: "restore", cards: [], notes: [], highlights: [], detachedChildren: [] };
+    return { cards: result.cards, inverse: { ...inverse, beside: operation.beside } };
+  }
+  const result = restoreTargets(cards, operation);
+  if (!hasBeside(operation.beside)) return result;
+  if (!canApplyOperation(cards, operation)) return result;
+  const inverse: RemoveOperation = result.inverse ?? { kind: "remove", targets: [] };
+  return { cards: result.cards, inverse: { ...inverse, beside: operation.beside } };
 }
 
 function historyBytes(past: HistoryEntry[], future: HistoryEntry[]): number {
@@ -411,7 +475,7 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
     return { ...state, cards, future };
   }
   if (action.type === "delete") {
-    const result = applyOperation(state.cards, { kind: "remove", targets: action.targets }, action.cardSnapshots);
+    const result = applyOperation(state.cards, { kind: "remove", targets: action.targets, beside: action.beside }, action.cardSnapshots);
     if (!result.inverse) return state;
     return { cards: result.cards, ...normalizeHistory([...state.past, { id: action.entryId, operation: result.inverse }], []) };
   }
