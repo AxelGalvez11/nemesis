@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildDeleteTargets, createHistoryState, historyReducer, type HistoryState } from "./board-history";
-import type { BoardCard } from "./board-model";
+import { besideOf, buildDeleteTargets, createHistoryState, hasBeside, historyReducer, restoreBeside, type HistoryState } from "./board-history";
+import type { BoardCard, BoardOutputCard, BoardSource } from "./board-model";
 
 function card(id: string, extra: Partial<BoardCard> = {}): BoardCard {
   return {
@@ -90,5 +90,65 @@ describe("board history: delete, undo, redo", () => {
       state = historyReducer(state, { type: "delete", entryId: `e${index}`, targets: [{ cardId: `c${index}` }] });
     }
     assert.equal(state.past.length, 50);
+  });
+});
+
+// ── Documents and deliverables ride the entry ──────────────────────────────────────────────
+
+function source(id: string): BoardSource {
+  return { id, type: "pdf", name: `${id}.pdf`, content: "", status: "ready", previewUrls: ["blob:runtime-only"], position: { x: 0, y: 0 }, width: 640, height: 560 };
+}
+
+function output(id: string): BoardOutputCard {
+  return { id, cardId: null, kind: "note", status: "ready", topic: id, progress: "Reading…", createdAt: "2026-09-04T00:00:00Z", position: { x: 0, y: 0 }, width: 320 };
+}
+
+describe("board history: a deleted document or deliverable comes back with undo", () => {
+  // Found on the 2026-09-04 board sweep: the trash on a dropped PDF left ⌘Z disabled, because the
+  // reducer holds cards and a source is another list. The removed items ride the entry instead.
+  it("records a document deleted on its own, with no card in the delete at all", () => {
+    let state: HistoryState = createHistoryState([card("a")]);
+    const beside = besideOf([{ item: source("s2"), index: 1 }], []);
+    state = historyReducer(state, { type: "delete", entryId: "e1", targets: [], beside });
+    assert.equal(state.past.length, 1, "a delete with no card targets recorded nothing");
+    const inverse = state.past[0]!.operation;
+    assert.equal(inverse.kind, "restore");
+    assert.ok(hasBeside(inverse.beside), "the restore does not carry the document");
+    assert.equal(inverse.beside?.sources[0]?.item.id, "s2");
+    assert.equal(inverse.beside?.sources[0]?.index, 1, "the document forgot where it stood");
+    assert.deepEqual(inverse.beside?.sources[0]?.item.previewUrls, [], "a runtime object URL was written into the saved history");
+  });
+
+  it("undo hands the document back for the provider to re-insert, and redo carries it to the remove again", () => {
+    let state: HistoryState = createHistoryState([card("a"), card("b")]);
+    const beside = besideOf([{ item: source("s1"), index: 0 }], [{ item: output("o1"), index: 0 }]);
+    state = historyReducer(state, { type: "delete", entryId: "e1", targets: buildDeleteTargets(state.cards, ["b"]), beside });
+    assert.equal(state.cards.length, 1);
+    state = historyReducer(state, { type: "undo", entryId: "e2" });
+    assert.equal(state.cards.length, 2, "the card did not come back");
+    const redo = state.future[0]!.operation;
+    assert.equal(redo.kind, "remove");
+    assert.ok(hasBeside(redo.beside), "the redo lost the document and the deliverable");
+    assert.equal(redo.beside?.outputs[0]?.item.id, "o1");
+    assert.equal("progress" in (redo.beside?.outputs[0]?.item ?? {}), false, "a maker's live step was written into the saved history");
+    state = historyReducer(state, { type: "redo", entryId: "e3" });
+    assert.equal(state.cards.length, 1);
+    assert.ok(hasBeside((state.past[0]!.operation as { beside?: unknown }).beside as never), "the undo after a redo lost the document");
+  });
+
+  it("puts a document back where it stood, and never twice", () => {
+    const list = [source("s1"), source("s3")];
+    const back = restoreBeside(list, [{ item: source("s2"), index: 1 }]);
+    assert.deepEqual(back.map((item) => item.id), ["s1", "s2", "s3"]);
+    assert.deepEqual(restoreBeside(back, [{ item: source("s2"), index: 1 }]).map((item) => item.id), ["s1", "s2", "s3"], "a document already present was inserted again");
+    assert.deepEqual(restoreBeside(list, [{ item: source("s9"), index: 40 }]).map((item) => item.id), ["s1", "s3", "s9"], "an index past the end did not clamp");
+  });
+
+  it("an entry written before documents rode along still applies", () => {
+    let state: HistoryState = createHistoryState([card("a"), card("b")]);
+    state = historyReducer(state, { type: "delete", entryId: "e1", targets: buildDeleteTargets(state.cards, ["b"]) });
+    assert.equal(hasBeside(state.past[0]!.operation.beside), false);
+    state = historyReducer(state, { type: "undo", entryId: "e2" });
+    assert.equal(state.cards.length, 2);
   });
 });
