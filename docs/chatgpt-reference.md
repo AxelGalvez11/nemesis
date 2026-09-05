@@ -448,3 +448,81 @@ change it.
 not the one that ends up scrolling — measured `scrollHeight === clientHeight` for nine straight
 seconds off a stale handle, which reads as "nothing scrolls" and is simply the wrong box. The same
 mistake cost a wrong reading on our own canvas an hour earlier.
+
+
+## The desktop side panel — MEASURED LIVE over CDP in the owner's signed-in app, 2026-09-04
+
+> 🔴 WHY. Owner, with two screenshots of this pane on screen: *"i dont want the top bar or the
+> outline comments … i want the multiple tabs too with the annotation/comment feature"*, then:
+> *"actually just copy the ChatGPT side panel and just give it rounded corners … one for one … a
+> good baseline."* The WEB app has a different, older pane (a breadcrumb, no tabs), so every number
+> here comes from `/Applications/ChatGPT.app` launched with `--remote-debugging-port` and read with
+> `getBoundingClientRect` / `getComputedStyle`; the port was closed afterwards and the app quit.
+> The window runs at a 1.1 zoom; the rects below are divided by it, the computed styles are as read.
+
+### The panel
+
+`absolute top-0 bottom-0`, `bg-[var(--app-shell-panel-background, var(--color-surface))]` (white),
+`border-l border-default` = `1px solid rgba(26, 28, 31, 0.08)`, no radius, no shadow. 776 of a
+1466px window with the 303px sidebar open, so the conversation had 387.
+
+### The row (`h-toolbar`)
+
+46px tall, `ps-2 pe-2` (8px), white, no rule under it. Three children: an empty left group, the
+tab strip (`hide-scrollbar flex h-full min-w-0 flex-1 scroll-px-1 items-center overflow-x-auto`),
+and the right group (`my-auto flex shrink-0 items-center`).
+
+| tab | measured |
+| --- | --- |
+| pill | `h-7 w-full max-w-39 rounded-lg bg-surface px-2 py-1`: 28px, at most 156, corner 12.5px, 8px sides; pills 8px apart |
+| inner | `flex flex-1 items-center gap-2 text-sm`: a 16px mark, 8px, 13px on an 18.57px line at weight 430 |
+| selected | ink `text-default` rgb(26,28,31); `pe-5` (20px) so the name stops short of the close |
+| unselected | ink `text-secondary` = rgb(26,28,31) at 65%; `group-hover/tab:pe-3.5`; close at opacity 0 |
+| close | 20×20, corner 10px, 4px in from the pill's right edge and 4px from its top |
+
+The pill and the bar both computed to white in the measured theme, so what separates the front tab
+there is the ink and the close; the owner's own screenshot shows a grey pill on the front tab.
+
+| control | measured |
+| --- | --- |
+| Open in Preview ⌄ | a split pill: 72×28 + 22×28, corners 12.5 on the outer ends, `rgba(255,255,255,0.96)` |
+| Save (download) | 28×28, corner 12.5, a 20px glyph at 50% ink |
+| Enter full screen | 28×28, the same |
+| pitch | 28: the buttons touch (1356, 1387 at 1.1) |
+
+The window's own title bar carries the panel toggle (28×28) at the far right; the panel has no
+close of its own.
+
+### The comment pin (`app-primary-*.js`, the marker every annotation surface of theirs shares)
+
+A 30×30 box centred on the point (`-translate-x-1/2 -translate-y-1/2`), holding a 26×25 SVG
+speech bubble (the path is copied into `comment-layer.tsx`) filled `currentColor` =
+`var(--color-text-accent, var(--color-accent-blue))` with a white 1.65 stroke, and the number in
+10px bold white nudged a pixel up and left. Selected: `scale(1.05)`. A draft pin is the same shape
+with the next number; a hover pin is the shape with no number.
+
+### The comment bubble (`tab-content-*.js`, the image panel's composer)
+
+`flex min-w-0 gap-2 py-2 pe-2 items-center ps-4`; a bare field (`border-0 bg-transparent
+outline-none placeholder:text-tertiary`, "Add a comment…"), Enter submits, Escape closes; a round
+`composerSm` primary submit appears once there is text. No Cancel on the single-line bubble.
+
+### The image toolbar (image tabs only)
+
+`flex shrink-0 justify-center gap-2 px-4 pt-2` over the image: Comment, Remove BG, Remove, Resize,
+with a `[@container (max-width:630px)]:sr-only` label rule so the words drop before the icons do.
+In comment mode the pill reads "Click on the image to add comments" with Send and ×. Documents do
+not carry this toolbar; their annotate control lives in the row.
+
+### What Nemesis copies, and what it does not
+
+- **Copied:** the row (46px, 8px inset, tabs left, controls right, nothing under it), the tab pill
+  and its two inks, the close, the 28px controls at 12.5 touching, the pin, the bubble.
+- **Rounded corners, and the air they need:** the owner asked for corners; a panel flush to the
+  window's edge cannot show one, so the panel keeps the 24px inset and the 32px gap measured on
+  Gemini's canvas the same day (`docs/gemini-canvas-reference.md`), with a 24px corner.
+- **Two round buttons on the bubble where theirs has one.** Theirs adds the comment and a separate
+  toolbar "Send" hands everything to the chat; the owner asked for both destinations on the note
+  itself (2026-09-01), so the keep and the send stand side by side at the pill's end.
+- **No Open in Preview.** There is no outside app to open a document in.
+- **The close is in the row.** Ours has no title bar to carry the toggle.

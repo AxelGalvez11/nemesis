@@ -132,7 +132,9 @@ export function DockPanel({
           why it is 44px and why it starts 20px in. */}
       <div className={CHROME.row} data-testid="dock-panel-row">
         <div className="flex min-w-0 flex-1 items-center">{tabs}</div>
-        <div className="flex shrink-0 items-center gap-[4px]">{controls}</div>
+        {/* No gap between the controls: theirs touch (Save at 1356, full screen at 1387, a 28px
+            pitch at their 1.1 zoom). */}
+        <div className="flex shrink-0 items-center">{controls}</div>
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>

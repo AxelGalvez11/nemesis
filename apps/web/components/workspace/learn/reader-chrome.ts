@@ -34,9 +34,18 @@
 // among 28s. At their scale that reads as emphasis; at ours it reads as a mistake, and "minimalist"
 // was the instruction.
 export const CHROME = {
-  /** 28x28 at radius 8, holding an 18x18 glyph, on a 32px pitch: 28 + gap 4. */
-  button: "flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-(--ui-bg-tertiary)",
-  icon: "18px",
+  /**
+   * 28x28 at radius 12.5, holding a 20px glyph, adjacent on a 28px pitch.
+   *
+   * 🔴🔴 RE-MEASURED LIVE IN THE DESKTOP APP ON 2026-09-04 (owner: *"just copy the ChatGPT side
+   * panel … can you just copy one for one because to give us a good baseline"*), over CDP in his
+   * own signed-in app, window zoom 1.1 divided out: Save and full screen are 28x28 with a 22px
+   * (20 design) glyph at 50% ink, `rounded-lg` computing to 12.5px, and they touch: 1356 and
+   * 1387, no gap. The 8px radius this replaced was ChatGPT's WEB close button (2026-08-25) and
+   * the 18px glyph was their annotate toggle's `icon-sm`; the row's own controls are these.
+   */
+  button: "flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[12.5px] transition-colors hover:bg-(--ui-bg-tertiary)",
+  icon: "20px",
   /**
    * The panel's ONE row: the open things as tabs on the left, the controls on the right.
    *
@@ -46,10 +55,10 @@ export const CHROME = {
    * expand / close at the right, and nothing under it but the document: the tab IS the name. The
    * 36px name band this replaced said the name a second time under the tab that already said it.
    *
-   * 28px controls, 8px above and below: 44px. The left padding is 20px because the panel's corner
-   * is a 40px radius (`DOCK_RADIUS`), and at the tab's top edge that curve reaches 15px in.
+   * 🔴 THEIR `h-toolbar`, MEASURED: 46px tall, `ps-2 pe-2` (8px), white, no rule under it, the
+   * strip and the controls each `my-auto`. Nothing here is a taste call.
    */
-  row: "flex h-[44px] shrink-0 items-center gap-[8px] pb-[8px] pl-[20px] pr-[12px] pt-[8px]",
+  row: "flex h-[46px] shrink-0 items-center gap-[8px] px-[8px]",
   /**
    * The flush band a full PAGE wears (`deck-view.tsx`, which is a route and not a panel): 28 + 4
    * top + 4 bottom = 36px. The panels stopped using it on 2026-09-04 when their name row went; a
@@ -63,6 +72,16 @@ export const CHROME = {
 
 /**
  * The docked panel's geometry: a rounded panel floating beside the conversation.
+ *
+ * 🔴🔴 THE OWNER'S FINAL WORD, 2026-09-04, AFTER BOTH REFERENCES: *"actually just copy the ChatGPT
+ * side panel and just give it rounded corners … can you just copy one for one because to give us
+ * a good baseline."* So the ROW and everything in it is ChatGPT's desktop pane, measured live
+ * (`CHROME`, dock-tabs.tsx, comment-layer.tsx), and the corners and the air around the panel are
+ * what "give it rounded corners" needs: a panel flush to the window's edge cannot show a corner,
+ * so it keeps the inset and the gap Gemini's canvas was measured with below. The corner itself is
+ * 24px, the app's own large radius, and small enough that ChatGPT's 8px tab inset still clears
+ * the curve (at the tab's top edge a 24px corner reaches 5px in; the 40px corner this replaced
+ * reached 15 and needed a 20px inset that was not theirs).
  *
  * 🔴🔴 GEMINI'S CANVAS, MEASURED IN THE OWNER'S OWN ACCOUNT ON 2026-09-04 (viewport 1470x779,
  * `getBoundingClientRect` and `getComputedStyle`, never a screenshot). He sent the link and said:
@@ -90,7 +109,7 @@ export const CHROME = {
  */
 export const DOCK_MARGIN = 24;
 export const DOCK_GAP = 32;
-export const DOCK_RADIUS = 40;
+export const DOCK_RADIUS = 24;
 /** `--nav-rail-width` in globals.css. The sidebar folds to this when a panel opens (side-panel.tsx). */
 export const NAV_RAIL_WIDTH = 52;
 

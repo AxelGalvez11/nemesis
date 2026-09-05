@@ -313,8 +313,8 @@ function UnitSurface({
           anchor={draft.anchor}
           element={element}
           pin={
-            <span aria-hidden className={cn(PIN, "pointer-events-none")} data-testid="reader-comment-pin-draft">
-              {draft.ordinal}
+            <span aria-hidden className={cn(PIN, "pointer-events-none relative")} data-testid="reader-comment-pin-draft">
+              <PinFace label={draft.ordinal} />
             </span>
           }
         />
@@ -325,15 +325,30 @@ function UnitSurface({
 }
 
 /**
- * The numbered pin: a speech bubble, 24px, in the accent, its tail at the spot.
+ * The numbered pin: ChatGPT's own, one for one.
  *
- * 🔴 24px, UP FROM 18, AND WITH A TAIL — owner, 2026-09-04, pointing at ChatGPT's Work pane: the pin
- * there is a green speech bubble with its number inside, big enough to read as a marker on the
- * page rather than a dot on it. The tail is the one corner left square (`rounded-bl`), which is
- * the whole of what makes a circle read as "someone said something here".
+ * 🔴🔴 READ OUT OF THEIR DESKTOP BUNDLE ON 2026-09-04 (owner: *"just copy the ChatGPT side panel …
+ * one for one"*; `app-primary-*.js`, the marker every annotation surface of theirs shares): a
+ * 30x30 box centred on the point, a 26x25 speech-bubble path filled with the accent and stroked
+ * white at 1.65, the number in 10px bold white nudged a pixel up and left, and the whole thing
+ * scaled 1.05 while selected. The tail sits at the bottom left, which is what makes a circle read
+ * as "someone said something here".
  */
-const PIN =
-  "grid size-[24px] place-items-center rounded-[12px] rounded-bl-[3px] bg-(--ui-action) text-[0.6875rem] font-semibold leading-none text-(--ui-action-glyph) shadow-sm ring-2 ring-(--ui-bg-elevated)";
+const PIN_PATH =
+  "M12.6504 0.824799C6.21496 0.824799 0.825466 5.77554 0.825195 12.0885C0.825245 14.2375 1.46183 16.2421 2.55176 17.943L2.02148 20.235L1.99316 20.3756C1.77603 21.655 2.78945 22.7791 4.02832 22.7691L4.0791 22.8209L4.53418 22.7047L7.12305 22.0426C8.77593 22.8778 10.6577 23.3531 12.6504 23.3531C19.086 23.3531 24.4754 18.4014 24.4756 12.0885C24.4753 5.77554 19.0858 0.824799 12.6504 0.824799Z";
+
+function PinFace({ label }: { label: number | string }) {
+  return (
+    <>
+      <svg aria-hidden className="absolute inset-0 size-full" fill="none" height={25} viewBox="0 0 26 25" width={26} xmlns="http://www.w3.org/2000/svg">
+        <path d={PIN_PATH} fill="currentColor" stroke="white" strokeWidth={1.65} />
+      </svg>
+      <span className="pointer-events-none relative z-10 -translate-x-px -translate-y-px font-sans text-[10px] font-bold leading-none text-white">{label}</span>
+    </>
+  );
+}
+
+const PIN = "flex size-[30px] items-center justify-center border-0 bg-transparent p-0 text-(--ui-action)";
 
 /** A saved comment on the page: its box when it has one, and its numbered pin. */
 function SavedMark({
@@ -356,13 +371,13 @@ function SavedMark({
   const pin = (
     <button
       aria-label={`Comment ${ordinal}`}
-      className={cn(PIN, "pointer-events-auto transition-transform hover:scale-110")}
+      className={cn(PIN, "pointer-events-auto relative cursor-pointer transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-action)")}
       data-testid={`reader-comment-pin-${ordinal}`}
       onClick={open}
       onPointerDown={(event) => event.stopPropagation()}
       type="button"
     >
-      {ordinal}
+      <PinFace label={ordinal} />
     </button>
   );
 
@@ -378,7 +393,7 @@ function MarkAt({ anchor, element, pin }: { anchor: CommentAnchor; element: HTML
         className="pointer-events-none absolute z-30 rounded-[6px] border-2 border-(--ui-action) bg-(--ui-action)/10"
         style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }}
       >
-        <div className="absolute -right-3 -top-3">{pin}</div>
+        <div className="absolute -right-[15px] -top-[15px]">{pin}</div>
       </div>
     );
   }
@@ -390,15 +405,15 @@ function MarkAt({ anchor, element, pin }: { anchor: CommentAnchor; element: HTML
     // React flags it as a hydration hazard in the console, and it was found there, not here.
     const block = element.querySelector<HTMLElement>(`[data-comment-block="${anchor.block}"]`);
     if (!block) return null;
-    return createPortal(<span className="absolute -left-8 top-0 z-30 block">{pin}</span>, block);
+    return createPortal(<span className="absolute -left-[36px] -top-[3px] z-30 block">{pin}</span>, block);
   }
 
   const x = anchor.x;
   const y = anchor.y;
   if (x === undefined || y === undefined) return null;
-  // The TAIL is at the spot: the bubble stands up and to the right of the point it is about.
+  // Centred on the point, as theirs is (`-translate-x-1/2 -translate-y-1/2` on the 30px box).
   return (
-    <div className="absolute z-30 -translate-y-full" style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>
+    <div className="absolute z-30 -translate-x-1/2 -translate-y-1/2" style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>
       {pin}
     </div>
   );
@@ -418,7 +433,7 @@ function CommentNote({
   onCancel: () => void;
 }) {
   const [body, setBody] = useState("");
-  const boxRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLFormElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
   // Measured, then pulled back inside the window, because a comment on the right edge of the last
@@ -454,52 +469,72 @@ function CommentNote({
   const ready = body.trim().length > 0;
 
   return (
-    // 🔴 THE BUBBLE — owner, 2026-09-04, pointing at ChatGPT's Work pane: a rounded "Add a comment…"
-    // box beside the pin. Rounder than the card it was (18px, not 10) and worded as theirs is; the
-    // two destinations under it are the product's own (Claude Design's split) and stay.
-    <div
-      className="fixed z-[130] w-[334px] rounded-[18px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-3 shadow-xl"
+    // 🔴🔴 CHATGPT'S COMMENT BUBBLE, READ OUT OF THEIR DESKTOP BUNDLE ON 2026-09-04 (owner: *"just
+    // copy the ChatGPT side panel … one for one"*; `tab-content-*.js`, the image panel's `Bn`
+    // composer): one pill beside the pin, `ps-4 pe-2 py-2 gap-2 items-center`, a bare field with
+    // "Add a comment…" in tertiary ink, Enter submits, Escape closes, and a round `composerSm`
+    // submit that only appears once there is text. No Cancel button: theirs has none on the
+    // single-line bubble, and Escape is the way out.
+    //
+    // 🔴 TWO ROUND BUTTONS WHERE THEIRS HAS ONE, AND THAT IS THE PRODUCT'S OWN LINE. Theirs adds
+    // the comment; a separate "Send" in their toolbar hands every comment to the chat. Here the
+    // owner asked for both destinations on the note itself (2026-09-01: *"only comment like 'send
+    // to nemesis' or 'add comment'"*, after Claude Design), so the keep and the send stand side by
+    // side at the pill's end: the outlined one keeps, the filled one hands over. Same shape as
+    // theirs, one more choice in it.
+    <form
+      className="fixed z-[130] flex w-[334px] items-center gap-2 rounded-full bg-(--ui-bg-elevated) py-2 pe-2 ps-4 shadow-[0_8px_24px_rgba(0,0,0,0.14)] ring-1 ring-black/10"
       data-testid="reader-comment-note"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (ready) onKeep(body);
+      }}
       ref={boxRef}
       style={position ? position : { left: -9999, top: -9999 }}
     >
       <textarea
         autoFocus
-        className="min-h-[72px] w-full resize-none rounded-[12px] border border-(--ui-stroke-tertiary) bg-transparent px-3 py-2 text-[0.8125rem] leading-relaxed outline-none focus:border-(--ui-action)"
+        className="max-h-48 min-h-0 w-full flex-1 resize-none self-center overflow-y-auto border-0 bg-transparent p-0 text-[13px] leading-5 text-foreground outline-none [field-sizing:content] placeholder:text-(--ui-text-tertiary)"
         onChange={(event) => setBody(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            if (ready) onKeep(body);
+          }
+        }}
         placeholder="Add a comment…"
+        rows={1}
         value={body}
       />
-      <div className="mt-2 flex items-center justify-end gap-1.5">
+      {ready && (
         <button
-          className="rounded-[8px] px-2.5 py-1.5 text-[0.75rem] font-medium text-(--ui-text-tertiary) transition-colors hover:text-foreground"
-          onClick={onCancel}
-          type="button"
-        >
-          Cancel
-        </button>
-        <button
-          className="rounded-[8px] border border-(--ui-stroke-secondary) px-2.5 py-1.5 text-[0.75rem] font-medium text-foreground transition-colors hover:bg-(--ui-bg-tertiary) disabled:opacity-45"
+          aria-label="Add comment"
+          className="grid size-[28px] shrink-0 place-items-center rounded-full border border-(--ui-stroke-secondary) text-foreground transition-colors hover:bg-(--ui-bg-tertiary)"
           data-testid="reader-comment-keep"
+          title="Add comment"
+          type="submit"
+        >
+          <Codicon name="comment" size="16px" />
+        </button>
+      )}
+      {onSend && (
+        <button
+          aria-label="Send to Nemesis"
+          className={cn(
+            "grid size-[28px] shrink-0 place-items-center rounded-full bg-(--ui-action) text-(--ui-action-glyph) transition-opacity hover:opacity-90",
+            ready ? "" : "hidden",
+          )}
+          data-testid="reader-comment-send"
           disabled={!ready}
-          onClick={() => onKeep(body)}
+          onClick={() => onSend(body)}
+          title="Send to Nemesis"
           type="button"
         >
-          Add comment
+          <Codicon name="arrow-up" size="16px" />
         </button>
-        {onSend && (
-          <button
-            className="rounded-[8px] bg-(--ui-action) px-2.5 py-1.5 text-[0.75rem] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-90 disabled:opacity-45"
-            data-testid="reader-comment-send"
-            disabled={!ready}
-            onClick={() => onSend(body)}
-            type="button"
-          >
-            Send to Nemesis
-          </button>
-        )}
-      </div>
-    </div>
+      )}
+    </form>
   );
 }
 

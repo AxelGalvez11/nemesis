@@ -92,15 +92,17 @@ test("🔴🔴 the docked panel is two thirds of the viewport, measured — not 
   assert.ok(!/dragging && "dock-panel-in"/.test(FRAME), "the drag re-arms the entrance animation");
 });
 
-test("🔴🔴 floating: Gemini's 24px margins, 40px corner, hairline edge, no shadow, and one row on top", () => {
+test("🔴🔴 floating: ChatGPT's pane one for one, with corners, in Gemini's air", () => {
   // 🔴 THIS REVERSES "flush: no radius, no shadow, no inset" (2026-08-25, ChatGPT's pane). Owner,
-  // 2026-09-04, of Gemini's canvas: *"it has the rounded corners for the side panel … this is kind
-  // of how I want to envision the chat to be."* Measured in his account: the panel at top 24 with
-  // a 40px corner, `1px solid rgba(0,0,0,0.08)`, `box-shadow: none`, and the chat column one third
-  // of the space between the rail and the margin with a 32px gap to the panel.
-  assert.match(CHROME, /export const DOCK_MARGIN = 24;/, "the margin is not Gemini's 24");
+  // 2026-09-04, first of Gemini's canvas (*"it has the rounded corners for the side panel"*) and
+  // then, with the last word: *"just copy the ChatGPT side panel and just give it rounded corners
+  // … one for one … a good baseline."* So the row and its contents are ChatGPT's desktop pane,
+  // measured live; a panel flush to the edge cannot show a corner, so it keeps the 24px inset and
+  // the 32px gap Gemini's was measured with; and the corner is 24, small enough that ChatGPT's
+  // 8px tab inset clears the curve.
+  assert.match(CHROME, /export const DOCK_MARGIN = 24;/, "the margin is not 24");
   assert.match(CHROME, /export const DOCK_GAP = 32;/, "the gap to the conversation is not Gemini's 32");
-  assert.match(CHROME, /export const DOCK_RADIUS = 40;/, "the corner is not Gemini's 40");
+  assert.match(CHROME, /export const DOCK_RADIUS = 24;/, "the corner is not 24");
   assert.match(FRAME, /borderRadius: DOCK_RADIUS,\s*bottom: DOCK_MARGIN,\s*right: DOCK_MARGIN,\s*top: DOCK_MARGIN,/, "the docked frame is not the measured floating panel");
   assert.match(FRAME, /border border-\(--ui-stroke-tertiary\)/, "the hairline edge is gone");
   assert.ok(!/shadow-xl|shadow-lg|shadow-md/.test(FRAME), "the panel floats on a shadow, which Gemini's does not");
@@ -108,7 +110,8 @@ test("🔴🔴 floating: Gemini's 24px margins, 40px corner, hairline edge, no s
   // from the owner's own screenshots: no name bar (the tab is the name), no outline, no comments
   // rail.
   assert.match(FRAME, /<div className=\{CHROME\.row\} data-testid="dock-panel-row">/, "the row is not the shared one");
-  assert.match(CHROME, /row: "flex h-\[44px\] shrink-0 items-center gap-\[8px\] pb-\[8px\] pl-\[20px\] pr-\[12px\] pt-\[8px\]"/, "the row is not 44px starting 20px in");
+  // Their `h-toolbar`: 46px, `ps-2 pe-2`, no rule under it.
+  assert.match(CHROME, /row: "flex h-\[46px\] shrink-0 items-center gap-\[8px\] px-\[8px\]"/, "the row is not ChatGPT's 46px with 8px inset");
   for (const [name, source] of [["output-preview", PREVIEW], ["source-preview", SOURCE], ["study-panel", STUDY]] as const) {
     assert.ok(!/CHROME\.header/.test(source), `${name}: a name band is back under the tabs`);
     assert.ok(!/fixed inset-y-0 right-0/.test(source), `${name}: the panel writes its own flush shell again`);
@@ -135,9 +138,13 @@ test("🔴 the header is the measured one: 28x28 buttons, 8px radius, 18px glyph
   // each of those reads as correct in a screenshot.
   assert.ok(!/size-9|rounded-lg|gap-2\b|leading-5/.test(CHROME), "a rem utility is back in the shared chrome — every one lands 1.125x too big here");
   assert.match(CHROME, /button: "flex h-\[28px\] w-\[28px\]/, "the button is not 28x28");
-  assert.match(CHROME, /rounded-\[8px\]/, "the button radius is not the measured 8px");
-  assert.match(CHROME, /icon: "18px"/, "the header glyph is not 18px");
-  assert.match(CHROME, /header: "flex items-center gap-\[4px\] px-\[10px\] py-\[4px\]"/, "the header band is not 36px");
+  // 🔴 RE-MEASURED LIVE IN THE DESKTOP APP, 2026-09-04 (owner: *"copy the ChatGPT side panel …
+  // one for one"*): Save and full screen are 28x28 at `rounded-lg` = 12.5px with a 20px glyph and
+  // no gap between them. The 8px radius and 18px glyph this guard used to hold were their WEB
+  // close button and their annotate toggle, measured on other days.
+  assert.match(CHROME, /rounded-\[12\.5px\]/, "the button radius is not the measured 12.5px");
+  assert.match(CHROME, /icon: "20px"/, "the row glyph is not the measured 20px");
+  assert.match(CHROME, /header: "flex items-center gap-\[4px\] px-\[10px\] py-\[4px\]"/, "the deck page's band is not 36px");
   assert.match(CHROME, /leading-\[20px\] text-\(--ui-text-primary\)/, "the filename is not 14px on a 20px line");
   // 🔴 AND NEITHER READER MAY WRITE ITS OWN. A rem utility lands 1.125x too big here, and a second
   // hand-written copy of the header is how the two panels stop matching.

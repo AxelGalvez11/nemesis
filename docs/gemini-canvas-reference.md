@@ -80,6 +80,16 @@ Read off the Web Animations the open created:
 The panel grows from its own centre; the chat column slides in from the left by a fifth of its
 width as the grid re-lays it out.
 
+## 🔴 SUPERSEDED THE SAME AFTERNOON, IN PART
+
+After this was measured and built, the owner's last word was: *"actually just copy the ChatGPT side
+panel and just give it rounded corners … can you just copy one for one because to give us a good
+baseline."* So the ROW and everything in it is ChatGPT's desktop pane, measured live
+(`docs/chatgpt-reference.md`, "The desktop side panel"). What survives from Gemini is what
+"rounded corners" needs and Gemini alone had: the 24px inset, the 32px gap to the conversation, the
+one-third / two-thirds split, and the scale-in. The corner itself is 24px, not their 40, because
+ChatGPT's 8px tab inset has to clear the curve.
+
 ## What Nemesis copies, and what it does not
 
 **Copied** (`apps/web/components/workspace/learn/dock-panel.tsx`, `reader-chrome.ts` `DOCK_*`):

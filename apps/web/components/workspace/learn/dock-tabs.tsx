@@ -52,19 +52,25 @@ function face(item: DockItem): { title: string; icon: string } {
 /**
  * The strip.
  *
- * 🔴 IT SCROLLS SIDEWAYS RATHER THAN SHRINKING PAST LEGIBILITY. A tab has a floor
- * (`min-w-[120px]`) and a ceiling (`max-w-[220px]`); past the point where they fit, the row scrolls
- * instead of squeezing every label into an ellipsis. That is the reference's behaviour and it is
- * the honest one: a strip of eight unreadable stubs is a worse answer than a strip you push.
+ * 🔴🔴 CHATGPT'S DESKTOP TAB, ONE FOR ONE, MEASURED LIVE OVER CDP ON 2026-09-04 (owner: *"just copy
+ * the ChatGPT side panel … one for one"*). Their window runs at a 1.1 zoom, divided out here:
  *
- * 🔴 NO SCROLLBAR IS DRAWN. `scrollbar-none` keeps the row at its height whatever is in it; the
- * tabs themselves are the affordance, and a horizontal bar under them would eat the gap to row two.
+ *   pill        `h-7 w-full max-w-39 rounded-lg px-2 py-1`: 28px tall, at most 156 wide, a 12.5px
+ *               corner, 8px each side; pills 8px apart
+ *   inner       `flex flex-1 items-center gap-2` at their small text step: a 16px mark, 8px,
+ *               then 13px on an 18.57px line at weight 430
+ *   selected    ink `text-default`, `pe-5` (20px) so the name stops short of the close
+ *   unselected  ink `text-secondary` (65%), `group-hover/tab:pe-3.5`, the close at opacity 0
+ *   close       20x20 at a 10px corner, 4px in from the pill's right edge and top
  *
- * 🔴 32px, DOWN FROM 36, ON 2026-09-04 (owner: *"the sidebar headers containing the tabs and tools
- * feel too big"*). The tab itself is 26px, which is the reference's own closable-tab geometry read
- * out of their bundle (`tabs`, toolbar variant: `rounded-md px-2 py-1` at 13px over an 18px line,
- * gap 2px between tabs, a 20px-wide close hit box). This row and the 36px band under it come to
- * 68px of chrome, where the two rows used to come to 83px.
+ * 🔴 IT SCROLLS SIDEWAYS RATHER THAN SHRINKING PAST LEGIBILITY (`hide-scrollbar overflow-x-auto`
+ * on theirs): past the point where the pills fit, the row scrolls instead of squeezing every
+ * label into an ellipsis. No scrollbar is drawn; the tabs themselves are the affordance.
+ *
+ * 🔴 THE SELECTED FILL IS OURS. Their pill and their bar both computed to white in the measured
+ * theme, so what separates the front tab there is the ink and the close; the owner's own
+ * screenshot shows a grey pill, so the front tab keeps `--ui-bg-tertiary`, the fill every other
+ * chosen chip in this app wears.
  */
 export function DockTabs({
   items,
@@ -97,7 +103,7 @@ export function DockTabs({
     // 🔴 THE STRIP FILLS THE LEFT OF THE PANEL'S ONE ROW NOW (`dock-panel.tsx`, 2026-09-04): the
     // row owns the padding and the height, so the strip is the tabs and nothing around them.
     <div
-      className="scrollbar-none flex h-[28px] w-full items-center gap-[2px] overflow-x-auto"
+      className="scrollbar-none flex h-[28px] w-full items-center gap-[8px] overflow-x-auto"
       data-testid="dock-tabs"
       role="tablist"
     >
@@ -112,24 +118,29 @@ export function DockTabs({
           // The same reason `dock-switcher.tsx` gives for its menu rows.
           <div
             className={cn(
-              "group/tab flex h-[26px] min-w-[120px] max-w-[220px] shrink-0 items-center gap-[6px] rounded-[8px] pl-[8px] transition-colors",
+              "group/tab relative flex h-[28px] max-w-[156px] shrink-0 items-center overflow-hidden rounded-[12.5px] px-[8px] py-[4px] transition-colors",
               current
                 ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
                 : "text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)/60",
-              "pr-[4px]",
             )}
             key={item.key}
             role="tab"
             aria-selected={current}
             title={marks > 0 ? `${row.title} · ${marks} annotation${marks === 1 ? "" : "s"}` : row.title}
           >
+            {/* §46.3-exempt: ChatGPT's tab label, measured live at 13px on an 18.57px line at
+                weight 430 (2026-09-04), and the owner asked for their pane one for one. The scale's
+                nearest steps are 12 and 14, and a tab in either reads as a different tab. */}
             <button
-              className="flex min-w-0 flex-1 items-center gap-[6px] text-left"
+              className={cn(
+                "relative z-10 flex min-w-0 flex-1 items-center gap-[8px] text-left text-[13px] font-[430] leading-[18.57px] transition-[padding]",
+                current ? "pe-[20px]" : "group-hover/tab:pe-[14px] group-focus-within/tab:pe-[14px]",
+              )}
               onClick={() => onSelect(item.key)}
               type="button"
             >
-              <Codicon className="shrink-0" name={row.icon} size="14px" />
-              <span className="truncate text-[length:var(--canvas-text-small)] leading-[20px]">{row.title}</span>
+              <Codicon className="shrink-0" name={row.icon} size="16px" />
+              <span className="truncate">{row.title}</span>
               {/* 🔴 A NUMBER, NOT THE WHOLE PHRASE. The tab has 220px at most and the file's name is
                   what the learner is looking for; "3 annotations" is in the tab's own tooltip and on
                   the card the document was opened from, where there is room to say it. */}
@@ -150,8 +161,10 @@ export function DockTabs({
               // 🔴 ALWAYS RENDERED, REVEALED ON HOVER — never conditionally mounted. A control that
               // appears on hover by being added to the DOM shifts the label under the pointer, so
               // the thing you were about to click moves as you reach it. Opacity costs no layout.
+              // 🔴 ABSOLUTE, 4px IN FROM THE PILL'S RIGHT AND TOP, as theirs is: the name's own
+              // `pe-5` is what makes room for it, so the label never reflows when it appears.
               className={cn(
-                "grid size-[20px] shrink-0 place-items-center rounded-[5px] transition-opacity",
+                "absolute end-[4px] top-[4px] z-20 grid size-[20px] place-items-center rounded-[10px] transition-opacity",
                 "text-(--ui-text-quaternary) hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary)",
                 current ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100",
               )}
@@ -169,7 +182,7 @@ export function DockTabs({
       {onAdd && (
         <button
           aria-label="Open another document"
-          className="grid size-[26px] shrink-0 place-items-center rounded-[8px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+          className="grid size-[28px] shrink-0 place-items-center rounded-[12.5px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
           onClick={onAdd}
           title="Open another document"
           type="button"

@@ -350,7 +350,9 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
             // app sets `html { font-size: 112.5% }`, so it rendered 31.5px — a row of controls in
             // two sizes, and the taller one setting the band's height at 39.5px instead of 36.
             // The same trap `artifact-chrome.test.ts` was written for, one component over.
-            "ease-basic flex h-[28px] shrink-0 items-center overflow-hidden rounded-md",
+            // 🔴 12.5px, THE SAME CORNER AS THE ROW'S OTHER CONTROLS (reader-chrome.ts `CHROME.button`,
+            // measured live 2026-09-04); `rounded-md` was 11.25px here and read as a fifth shape.
+            "ease-basic flex h-[28px] shrink-0 items-center overflow-hidden rounded-[12.5px]",
             "transition-[max-width,padding,background-color,color] duration-300 motion-reduce:transition-none",
             // 🔴 A TINT, NOT A FILL, AND IT IS THEIRS. Read out of the reference's own bundle on
             // 2026-09-04: the on state is `color-mix(in srgb, surface 90%, blue 10%)` with the
@@ -392,7 +394,7 @@ export function ReaderTopBar(props: ReaderTopBarProps) {
           aria-label={commentListOpen ? "Hide the comments" : "Show the comments pinned on this document"}
           aria-pressed={commentListOpen}
           className={cn(
-            "flex h-[28px] shrink-0 items-center gap-[4px] rounded-md px-[6px] text-[length:var(--canvas-text-meta)] leading-[20px] tabular-nums",
+            "flex h-[28px] shrink-0 items-center gap-[4px] rounded-[12.5px] px-[6px] text-[length:var(--canvas-text-meta)] leading-[20px] tabular-nums",
             commentListOpen ? "bg-(--ui-bg-tertiary) text-foreground" : "text-(--ui-text-tertiary) hover:bg-(--ui-bg-tertiary) hover:text-foreground",
           )}
           data-testid="reader-comment-list-toggle"
