@@ -1,6 +1,21 @@
 "use client";
 
-// Plugins — the home of the apps a learner has connected to Nemesis.
+// Apps — the home of the apps a learner has connected to Nemesis.
+//
+// 🔴🔴 2026-09-04: THE PAGE WEARS THE SHARED FRAME (`shell/page-frame.tsx`). The owner's sequence
+// that day: the shelf pages "looked too much like ChatGPT"; then, pointing at
+// gemini.google.com/library, "maybe something similar to this"; then "make sure spacing is
+// consistent across projects, library, and apps pages". So the title row, the column, the round
+// buttons and the soft rows are the frame's, measured off Gemini and documented there.
+//
+// 🔴🔴 THE SECTIONS ARE THE LIST'S OWN GROUPS. Every app the route sends carries a `group`, and
+// `APP_GROUPS` names them in order (Coursework, Files, Mail and dates, Notes and documents,
+// Lectures). An earlier draft cut the list at its sixth entry and called the halves "Popular"
+// and "Study & productivity", which put Gmail in one and Outlook in the other. A heading has to
+// be true of what is under it.
+//
+// 🔴 THE DESCRIPTION IS THE WHOLE SENTENCE. On a 760px row it has room for two lines, so nothing
+// here truncates; the route writes those sentences to be read.
 //
 // The Composio door has existed since workstream E (`/api/composio`), but its only surface was a
 // small bordered list buried in Settings: no icons, settings type scale, four rows of text. This
@@ -45,18 +60,21 @@ import {
   type ConnectableApp,
   type ConnectionStatus,
 } from "@/lib/workspace/composio-client";
+import {
+  FRAME_BUTTON_FILL,
+  FRAME_ROW_GAP_PX,
+  FRAME_ROW_H_PX,
+  PageFrame,
+  PageTitle,
+  RoundButton,
+  RowText,
+  SOFT_ROW,
+  Section,
+} from "@/components/workspace/shell/page-frame";
 import { forgetToolCatalogue } from "@/lib/learn/canvas-tools";
+import { APP_GROUPS } from "@/lib/workspace/composio-apps";
+import { cn } from "@/lib/utils";
 import { PluginIcon } from "./plugin-icon";
-
-/**
- * The 4px inset that puts a non-grid block on the 768px reading column.
- *
- * The content box is 776px because that is what the reference's grid measures; everything that is
- * not the grid sits 4px inside it, which is the 768px column §2 measures. A row inside a 384px
- * grid cell carries the same 4px itself, so an app's icon lines up with the "Plugins" title above
- * it rather than sitting four pixels to its left.
- */
-const ALIGNED = "px-[4px]";
 
 /**
  * Does this app match what the learner typed?
@@ -72,17 +90,24 @@ function matches(app: ConnectableApp, query: string): boolean {
   return `${app.label} ${app.detail}`.toLowerCase().includes(needle);
 }
 
-export function PluginsPage({ userId }: { userId: string | null }) {
+export function PluginsPage({ preview, userId }: { preview?: ConnectionStatus; userId: string | null }) {
   const [status, setStatus] = useState<ConnectionStatus>(NOT_CONFIGURED);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Whether the round magnifier has opened into a field. Closes again when emptied and left. */
+  const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   // Set when a provider's consent tab has been opened, cleared once this page has re-read status
   // on the learner's return. See the focus effect below.
   const awaitingReturn = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (preview) {
+      setStatus(preview);
+      setLoaded(true);
+      return;
+    }
     // 🔴 THE CANVAS'S CACHED TOOL CATALOGUE GOES WITH EVERY REFRESH, exactly as it does in the
     // Settings card this page grew out of. That cache holds what a learner can ask Nemesis to do
     // for up to two minutes; connecting Gmail here and going straight to a canvas to ask about
@@ -90,7 +115,7 @@ export function PluginsPage({ userId }: { userId: string | null }) {
     forgetToolCatalogue();
     setStatus(await connectionStatus());
     setLoaded(true);
-  }, []);
+  }, [preview]);
 
   useEffect(() => {
     void refresh();
@@ -143,163 +168,120 @@ export function PluginsPage({ userId }: { userId: string | null }) {
 
   const connected = status.apps.filter((app) => status.connected.includes(app.key));
   const shown = status.apps.filter((app) => matches(app, query));
+  const sections = APP_GROUPS.map((group) => ({ apps: shown.filter((app) => app.group === group.id), label: group.label })).filter(
+    (section) => section.apps.length > 0,
+  );
+
+  const searchControl = searching ? (
+    <label className="relative flex h-[40px] w-[240px] items-center">
+      <Search aria-hidden className="pointer-events-none absolute left-[14px] text-(--ui-text-secondary)" size={16} strokeWidth={1.8} />
+      <input
+        aria-label="Search apps"
+        autoFocus
+        className={cn("h-full w-full rounded-full pr-[14px] pl-[40px] text-[14px] text-(--ui-text-primary) placeholder:text-(--ui-text-tertiary) focus:outline-none", FRAME_BUTTON_FILL)}
+        onBlur={() => { if (query === "") setSearching(false); }}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search apps"
+        type="text"
+        value={query}
+      />
+    </label>
+  ) : (
+    <RoundButton label="Search apps" onClick={() => setSearching(true)}>
+      <Search size={18} strokeWidth={1.8} />
+    </RoundButton>
+  );
 
   return (
-    // The shell hands every surface a box with `overflow-hidden`, so a page owns its own scroll.
-    <div className="scrollbar-dt h-full overflow-y-auto">
-      <div className="px-[24px] py-[40px]">
-        {/* 🔴 THE CONTENT BOX IS 776px AND THE READING COLUMN INSIDE IT IS 768px, WHICH IS THE
-            REFERENCE'S OWN ARITHMETIC RATHER THAN A ROUNDING SLIP. Reference §2 measures the
-            content column at 768px on all three pages; §4 measures the app grid at "2 columns of
-            384px, row-gap 16px, column-gap 8px (776px overall)". 776 is 8px WIDER than 768, so the
-            grid deliberately sits 4px proud of the reading column on each side, and each row's own
-            4px of padding brings its icon back into line with the title above it. Every block that
-            is not the grid therefore carries `ALIGNED` below.
+    <PageFrame>
+      <PageTitle controls={searchControl}>Apps</PageTitle>
 
-            🔴 THE FIRST DRAFT PUT `max-w-[768px] px-[24px]` ON ONE ELEMENT AND MEASURED 356px
-            COLUMNS. The page padding came out of the same box, so 768 minus 48 left 720 for a grid
-            that then shrank two 384px tracks to fit. The padding lives on a wrapper now, and the
-            tracks measure 384. This is exactly the failure a page of measured numbers invites:
-            nothing errored, nothing looked obviously wrong, and every number was off by 28px. */}
-        <main className="mx-auto w-full max-w-[776px]">
-          <header className={ALIGNED}>
-            <div className="flex items-start justify-between gap-[16px]">
-              <div className="min-w-0">
-                {/* Reference §4: the title at 28px / weight 500 / line-height 34px.
-                    🔴 THE WORD IS "APPS" — owner, 2026-09-03: *"rename the plugins into apps."* See
-                    the note on the rail's own row in `sidebar-nav.ts`: the copy changes, the route
-                    and the file names do not. */}
-                <h1 className="text-[28px] leading-[34px] font-medium text-(--ui-text-primary)">Apps</h1>
-                {/* Reference §4: subtitle 16px / weight 400 / secondary text.
+      {notice && (
+        <p
+          className="mt-[16px] rounded-[12px] bg-(--ui-bg-tertiary) px-[12px] py-[10px] text-[13px] leading-[18px] text-(--ui-text-secondary)"
+          role="status"
+        >
+          {notice}
+        </p>
+      )}
 
-                    🔴 ONE LINE, AND IT WAS TWO. The title block shares its row with a 240px search
-                    pill, so this sentence has about 510px to live in; the first draft ran to 74
-                    characters and wrapped, which pushed the strip below it out of the reference's
-                    rhythm. What it used to also say (that Nemesis reads from a connected app) is
-                    said properly at the foot of the page, where the rest of the promise is. */}
-                <p className="mt-[6px] text-[16px] leading-[22px] font-normal text-(--ui-text-secondary)">
-                  Work with Nemesis in the apps you already use.
-                </p>
-              </div>
-              {/* Reference §2: a 36px rounded-full search input, right-aligned on the title row,
-                  240px wide, 14px text, with a leading magnifier.
-
-                  🔴 IT FILTERS, IT DOES NOT SEARCH ANYWHERE. Four apps is a short list today, and a
-                  box that only reorders four rows would be decoration. It earns its place two ways:
-                  it reads the descriptions as well as the names (see `matches`), and the list it
-                  filters is the server's, which the owner grows without touching this file. */}
-              <label className="flex h-[36px] w-[240px] shrink-0 items-center gap-[8px] rounded-full bg-(--ui-bg-tertiary) px-[12px] ring-1 ring-(--ui-stroke-tertiary) ring-inset focus-within:ring-(--ui-stroke-secondary)">
-                <Search className="shrink-0 text-(--ui-text-tertiary)" size={16} strokeWidth={1.8} />
-                <input
-                  aria-label="Search apps"
-                  className="min-w-0 flex-1 bg-transparent text-[14px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-quaternary)"
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search apps"
-                  type="search"
-                  value={query}
-                />
-              </label>
-            </div>
-
-            {notice && (
-              <p
-                className="mt-[16px] rounded-[12px] bg-(--ui-bg-tertiary) px-[12px] py-[10px] text-[13px] leading-[18px] text-(--ui-text-secondary)"
-                role="status"
-              >
-                {notice}
-              </p>
-            )}
-          </header>
-
-          {!loaded ? (
-            <p className={`${ALIGNED} mt-[32px] text-[14px] text-(--ui-text-tertiary)`}>Loading…</p>
-          ) : (
-            <>
-              {!status.configured && (
-                <p className={`${ALIGNED} mt-[32px] text-[14px] leading-[20px] text-(--ui-text-secondary)`}>
-                  Connected apps are not set up on this server yet.{" "}
-                  {status.apps.length > 0
-                    ? "When they are, the apps below will be ready to connect."
-                    : "When they are, the apps you can connect will show up here."}{" "}
-                  There is nothing for you to do.
-                </p>
-              )}
-
-              {/* Reference §4: an "Installed" strip of ~40px rounded app icons above the grid.
-                  🔴 ONLY WHEN SOMETHING IS CONNECTED. An empty strip under a heading reading
-                  "Connected" is a shelf that looks broken rather than empty. */}
-              {connected.length > 0 && (
-                <section className={`${ALIGNED} mt-[32px]`}>
-                  <h2 className="text-[14px] font-medium text-(--ui-text-primary)">Connected</h2>
-                  <div className="mt-[12px] flex flex-wrap items-center gap-[8px]">
-                    {connected.map((app) => (
-                      <span key={app.key} title={app.label}>
-                        <PluginIcon appKey={app.key} label={app.label} />
-                        <span className="sr-only">{app.label}</span>
-                      </span>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {status.apps.length > 0 && (
-                <section className="mt-[32px]">
-                  {/* Reference §4: section headers at 14px / weight 500 / primary text. The
-                      reference splits its grid into "Featured" and "Productivity"; four apps do not
-                      make two categories, and inventing them would be a taxonomy with nothing in it. */}
-                  <h2 className={`${ALIGNED} text-[14px] font-medium text-(--ui-text-primary)`}>All apps</h2>
-
-                  {shown.length === 0 ? (
-                    <p className={`${ALIGNED} mt-[12px] text-[14px] text-(--ui-text-tertiary)`}>No app matches that.</p>
-                  ) : (
-                    // Reference §4: 2 columns of 384px, row-gap 16px, column-gap 8px, so the grid
-                    // measures 776px overall and sits 4px proud of the 768px column on each side.
-                    // One column below `lg`, because two 384px tracks plus a 237px sidebar do not fit a
-                    // narrower viewport, and a page that scrolls sideways is worse than one that stacks.
-                    // `minmax(0,384px)` rather than a fixed 384 so the tracks give way instead of
-                    // overflowing on the widths in between.
-                    <div className="mt-[12px] grid w-full grid-cols-1 gap-x-[8px] gap-y-[16px] lg:grid-cols-[repeat(2,minmax(0,384px))]">
-                      {shown.map((app) => (
-                        <PluginRow
-                          app={app}
-                          busy={busy === app.key}
-                          configured={status.configured}
-                          connected={status.connected.includes(app.key)}
-                          key={app.key}
-                          onConnect={() => void connect(app.key)}
-                          onDisconnect={() => void remove(app.key)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )}
-
-              {/* The safety line the owner set when this feature was built: reading is free, writing
-                  asks first. It was in the Settings card, and it has to survive the move, because a
-                  permissions surface that does not say what it permits is a consent screen in name. */}
-              <p className={`${ALIGNED} mt-[32px] max-w-[560px] text-[13px] leading-[18px] text-(--ui-text-tertiary)`}>
-                Once an app is connected, Nemesis can read from it. Before it sends, posts or deletes
-                anything, it shows you what it is about to do and waits for you to say yes.
-              </p>
-            </>
+      {!loaded ? (
+        <p className="mt-[24px] px-[20px] text-[14px] text-(--ui-text-tertiary)">Loading…</p>
+      ) : (
+        <>
+          {!status.configured && (
+            <p className="mt-[24px] px-[20px] text-[14px] leading-[20px] text-(--ui-text-secondary)">
+              Connected apps are not set up on this server yet.{" "}
+              {status.apps.length > 0
+                ? "When they are, the apps below will be ready to connect."
+                : "When they are, the apps you can connect will show up here."}{" "}
+              There is nothing for you to do.
+            </p>
           )}
-        </main>
-      </div>
-    </div>
+
+          {/* 🔴 ONLY WHEN SOMETHING IS CONNECTED. An empty strip under a heading reading
+              "Connected" is a shelf that looks broken rather than empty. And no round chevron on
+              this heading: there is nothing to view all OF, and a control that goes nowhere is
+              the dead control this codebase keeps rebuilding. */}
+          {connected.length > 0 && (
+            <Section title="Connected">
+              <div className="flex flex-wrap items-center gap-[8px] px-[20px]">
+                {connected.map((app) => (
+                  <span key={app.key} title={app.label}>
+                    <PluginIcon appKey={app.key} label={app.label} />
+                  </span>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {status.apps.length > 0 && (
+            sections.length === 0 ? (
+              <p className="mt-[24px] px-[20px] text-[14px] text-(--ui-text-tertiary)">No app matches that.</p>
+            ) : (
+              sections.map((section) => (
+            <Section key={section.label} title={section.label}>
+              <div className="flex flex-col" style={{ gap: FRAME_ROW_GAP_PX }}>
+                {section.apps.map((app) => (
+                  <PluginRow
+                    app={app}
+                    busy={busy === app.key}
+                    configured={status.configured}
+                    connected={status.connected.includes(app.key)}
+                    key={app.key}
+                    onConnect={() => void connect(app.key)}
+                    onDisconnect={() => void remove(app.key)}
+                  />
+                ))}
+              </div>
+            </Section>
+              ))
+            )
+          )}
+
+          {/* The safety line the owner set when this feature was built: reading is free, writing
+              asks first. It was in the Settings card, and it has to survive the move, because a
+              permissions surface that does not say what it permits is a consent screen in name. */}
+          <p className="mt-[32px] max-w-[560px] px-[20px] text-[13px] leading-[18px] text-(--ui-text-tertiary)">
+            Once an app is connected, Nemesis can read from it. Before it sends, posts or deletes
+            anything, it shows you what it is about to do and waits for you to say yes.
+          </p>
+        </>
+      )}
+    </PageFrame>
   );
 }
 
 /**
- * One app in the grid.
- *
- * Reference §4: the row is about 76px tall, with a 40x40 icon, a 14px/400 title, a one-line
- * 13px/400 description in tertiary text, and a trailing control on the right.
+ * One app: a soft row with its own tile on the left and its one control on the right.
  *
  * 🔴 THE ROW ITSELF IS NOT A BUTTON, AND SO IT DOES NOT LIGHT UP ON HOVER. The reference's rows
- * open an app detail page; we have no such page, and a row that fills on hover while doing nothing
- * when pressed is a promise the surface cannot keep. The trailing control is the only thing here
- * that does anything, and it is the only thing that reacts.
+ * open an app detail page; we have no such page, and a row that fills on hover while doing
+ * nothing on press is a promise the page cannot keep. The control on the right is the row's
+ * whole verb, so unlike the Library's ⋯ it is printed at rest.
+ *
+ * 🔴 THE TILE IS 40px, NOT THE FRAME'S 24px GLYPH. A vendor mark at 24px is a smudge; the
+ * Connected strip above draws the same 40px tile, so the two agree with each other.
  */
 function PluginRow({
   app,
@@ -317,33 +299,19 @@ function PluginRow({
   onDisconnect: () => void;
 }) {
   return (
-    <div className="flex h-[76px] items-center gap-[12px] rounded-[12px] px-[4px]">
+    <div className={cn(SOFT_ROW, "items-center hover:bg-black/[0.03] dark:hover:bg-white/[0.06]")} style={{ minHeight: FRAME_ROW_H_PX }}>
       <PluginIcon appKey={app.key} label={app.label} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[14px] leading-[20px] font-normal text-(--ui-text-primary)">{app.label}</p>
-        {/* One line, truncated, exactly as measured. The route writes these sentences. */}
-        {/* 🔴 `title` BECAUSE THIS LINE TRUNCATES BY DESIGN. A 384px cell leaves the description
-            about 292px, and the route's sentences are longer than that, so the reference's
-            one-truncated-line rule genuinely cuts them. Hovering gives the rest back rather than
-            leaving the learner with half a sentence and no way to read it. */}
-        <p
-          className="mt-[2px] truncate text-[13px] leading-[18px] font-normal text-(--ui-text-tertiary)"
-          title={app.detail}
-        >
-          {app.detail}
-        </p>
-      </div>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[length:var(--canvas-text-body)] leading-[24px] font-normal text-(--ui-text-primary)">{app.label}</span>
+        <span className="mt-[4px] line-clamp-2 text-[length:var(--canvas-text-small)] leading-[18px] text-(--ui-text-secondary)">{app.detail}</span>
+      </span>
       {/* 🔴 NO CONTROL AT ALL UNTIL THE SERVER IS CONFIGURED. See the header: a `+` that cannot
           connect anything is the dead control this codebase keeps rebuilding. */}
       {configured && (
-        <div className="shrink-0">
+        <span className="shrink-0">
           {busy ? (
-            <span
-              aria-label="Working"
-              className="flex h-[32px] w-[32px] items-center justify-center text-(--ui-text-tertiary)"
-              role="status"
-            >
-              <Loader2 className="animate-spin" size={16} />
+            <span aria-label="Working" className="flex size-[40px] items-center justify-center text-(--ui-text-tertiary)" role="status">
+              <Loader2 className="animate-spin" size={18} />
             </span>
           ) : connected ? (
             <DropdownMenu>
@@ -352,7 +320,7 @@ function PluginRow({
                   rows would be four dead controls where there was none. */}
               <DropdownMenuTrigger
                 aria-label={`Options for ${app.label}`}
-                className="flex h-[32px] w-[32px] items-center justify-center rounded-full text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-primary)"
+                className={cn("flex size-[40px] items-center justify-center rounded-full text-(--ui-text-primary) transition-colors", FRAME_BUTTON_FILL)}
               >
                 <MoreHorizontal size={18} strokeWidth={1.8} />
               </DropdownMenuTrigger>
@@ -363,16 +331,11 @@ function PluginRow({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <button
-              aria-label={`Connect ${app.label}`}
-              className="flex h-[32px] w-[32px] items-center justify-center rounded-full text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-primary)"
-              onClick={onConnect}
-              type="button"
-            >
-              <Plus size={18} strokeWidth={1.8} />
-            </button>
+            <RoundButton label={`Connect ${app.label}`} onClick={onConnect}>
+              <Plus size={20} strokeWidth={1.8} />
+            </RoundButton>
           )}
-        </div>
+        </span>
       )}
     </div>
   );

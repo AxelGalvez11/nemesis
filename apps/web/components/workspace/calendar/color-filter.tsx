@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/desktop-ui/button";
+import { FRAME_BUTTON_FILL } from "@/components/workspace/shell/page-frame";
 import { Check, RefreshCw, SlidersHorizontal } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 import { describeFilter, NO_COLOR, toggleColor } from "@/lib/workspace/calendar-filter";
@@ -66,21 +66,23 @@ export function ColorFilter({ colours, hidden, onChange }: ColorFilterProps) {
 
   return (
     <div className="relative" ref={wrapRef}>
-      <Button
+      {/* The frame's round button, with a dot when a filter is on. `RoundButton` cannot carry
+          the aria-expanded/haspopup pair, so the same classes are written here. */}
+      <button
         aria-expanded={open}
         aria-haspopup="true"
         aria-label={describeFilter(hidden, colorLabel)}
+        className={cn("relative flex size-[40px] shrink-0 items-center justify-center rounded-full text-(--ui-text-primary) transition-colors", FRAME_BUTTON_FILL)}
         onClick={() => setOpen((current) => !current)}
-        size="icon-sm"
         title="Show or hide colours"
-        variant={filtering ? "secondary" : "ghost"}
+        type="button"
       >
         <SlidersHorizontal size={16} />
         {/* A dot, because the icon alone cannot say that something is hidden. */}
         {filtering && (
-          <span aria-hidden className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-(--theme-primary)" />
+          <span aria-hidden className="absolute top-[8px] right-[8px] size-[6px] rounded-full bg-(--theme-primary)" />
         )}
-      </Button>
+      </button>
 
       {/* 🔴 THE NAME IS OFF THE SCREEN, NOT OUT OF THE CONTROL. Owner 2026-08-02:
           "remove the assignment, class, rotation etc names, it should only show

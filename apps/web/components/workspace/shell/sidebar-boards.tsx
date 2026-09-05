@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { BOARDS_CHANGED_EVENT, deleteBoard, listBoards, renameBoard, type BoardSummary } from "@/lib/board/board-store";
 import { UNTITLED_BOARD } from "@/lib/board/board-model";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ export function SidebarBoards({
   const router = useRouter();
   const pathname = usePathname();
   const confirm = useConfirm();
+  const preview = useWorkspacePreview() !== null;
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -59,6 +61,12 @@ export function SidebarBoards({
   const refresh = useCallback(async () => {
     if (seed) {
       setBoards(seed);
+      setLoaded(true);
+      return;
+    }
+    if (preview) {
+      setBoards([]);
+      setFailed(false);
       setLoaded(true);
       return;
     }
@@ -76,7 +84,7 @@ export function SidebarBoards({
     } finally {
       setLoaded(true);
     }
-  }, [seed, userId]);
+  }, [preview, seed, userId]);
 
   useEffect(() => {
     void refresh();

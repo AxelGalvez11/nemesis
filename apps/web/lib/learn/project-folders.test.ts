@@ -58,16 +58,14 @@ test("🔴🔴 every surface that offers a place to put a chat filters to projec
   }
 });
 
-test("🔴 the Library still shows both, which is the point of the split", () => {
-  // A project that holds outputs belongs on the shelf; so does a Library folder that is still
-  // empty. `shelfFolders` is an OR and this must not become a mode.
-  assert.match(SHELF, /withContent\.has\(folder\.id\) \|\| folder\.madeIn === "library"/, "the shelf stopped showing one of the two");
-});
-
-test("🔴 only the Library writes made_in, and the database agrees", () => {
-  // One writer is what makes NULL trustworthy as "made anywhere else".
+test("🔴 the Library draws no folders at all now, and makes none", () => {
+  // Later the same day (owner: "remove projects from library") the Library stopped drawing folder
+  // rows and lost its New folder button, so the shelf's OR and its `made_in` write went with them.
+  // `made_in` stays in the schema and the store: NULL still means "made anywhere but the
+  // Library", and the surfaces above still filter on it. Nothing writes "library" today.
+  assert.ok(!/shelfFolders|withContent\.has\(folder\.id\)/.test(SHELF), "the Library draws folder rows again");
+  assert.ok(!/createFolder\(/.test(SHELF), "the Library makes folders again — projects are made on /projects");
   const writes = STORE.match(/made_in: madeIn/g) ?? [];
   assert.equal(writes.length, 1, "made_in is written in more than one place");
-  assert.match(SHELF, /createFolder\(userId, name, null, null, "library"\)/, "the Library's button stopped marking what it makes");
   assert.match(MIGRATION, /check \(made_in is null or made_in = 'library'\)/, "the column accepts values nothing reads");
 });

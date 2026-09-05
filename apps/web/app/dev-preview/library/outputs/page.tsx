@@ -7,13 +7,12 @@
 // the component the shipped `/library` route mounts. Two different objects have carried the name
 // "Library" in this repo and both previews have to keep working.
 //
-// 🔴 IT EXISTS SO THE 1:1 CLAIM CAN BE MEASURED RATHER THAN ASSERTED. The owner accepted this page
-// on "pixel, sizing, spacing and colouring 1 to 1" with ChatGPT's Library, and MOST of what that
-// covers is the rows — 60px bands, a 5% hairline, 368/160/88 columns. The real route is behind a
-// Supabase session, so nothing headless reaches a single row of it, and a local dev server with no
-// credentials renders three empty shelves. Without this route the row geometry could only ever be
-// asserted from the source. `measure.mjs` runs the same getComputedStyle/getBoundingClientRect
-// probes against this URL that were run against the live ChatGPT, and prints a numeric diff.
+// 🔴 IT EXISTS SO THE FRAME CAN BE MEASURED RATHER THAN ASSERTED. Since 2026-09-04 the page wears
+// the shared frame (`shell/page-frame.tsx`, measured off Gemini's library): a 760 column, a 24px
+// title on y=22, 89px soft rows. The real route is behind a Supabase session, so nothing headless
+// reaches a single row of it, and a local dev server with no credentials renders empty sections.
+// Without this route the geometry could only ever be asserted from the source; this URL is what
+// the Playwright probes run against, beside /dev-preview/projects and /dev-preview/workspace/apps.
 //
 // 🔴 IT SUBSTITUTES THE ROWS, NOT THE COMPONENT — the rule `/dev-preview/library` set and
 // `/dev-preview/projects` follows, and the only thing that makes the measurement mean anything.

@@ -12,62 +12,29 @@ const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^
 const PAGE = strip(readFileSync(new URL("./project-page.tsx", import.meta.url), "utf8"));
 const ROUTE = strip(readFileSync(new URL("../../../app/(workspace)/projects/[id]/page.tsx", import.meta.url), "utf8"));
 
-function measured(name: string): number {
-  const found = new RegExp(`const ${name} = (\\d+);`).exec(PAGE);
-  assert.notEqual(found, null, `${name} is gone from the page`);
-  return Number(found?.[1]);
-}
 
 // ── The frame: 768px column, and every gap derived rather than hard-coded ──────────────────────
 
-test("🔴 the content column is 768px, the same one every page in this feature shares", () => {
-  assert.equal(measured("COLUMN_PX"), 768);
-  assert.ok(!/max-w-3xl/.test(PAGE), "the column went back to a Tailwind size that is not 768px");
+// ── The frame ────────────────────────────────────────────────────────────────────────────────
+//
+// 🔴🔴 2026-09-04: THE NUMBERS LEFT THIS FILE. Until this date the page pinned ChatGPT's project
+// page (title y=116, composer 176, tabs 260, rows 326). The owner then pointed at Gemini's library,
+// asked for consistent spacing across the workspace pages, and said "do the project page,
+// calendar, and settings too". The column, title row, pills and soft rows live in
+// `shell/page-frame.tsx` and are guarded once, in `page-frame.test.ts`. What this file guards is
+// that the page USES the frame, and what a row and the composer are made of.
+
+test("🔴🔴 the page is drawn on the shared frame, not on a private copy of it", () => {
+  assert.match(PAGE, /from "@\/components\/workspace\/shell\/page-frame"/, "the page stopped importing the frame");
+  assert.match(PAGE, /<PageFrame>/, "the scroller and column are not the frame's");
+  assert.match(PAGE, /<PageTitle\s/, "the title row is not the frame's");
+  assert.ok(!/<h1\b|COLUMN_PX|TITLE_TOP_PX|TITLE_TEXT|max-w-3xl/.test(PAGE), "a page-private title or column survived");
+  // The composer sits under the title at the frame's section gap, and the tabs under it at the
+  // same gap; the rows at the frame's heading gap. All three read the frame's constants.
+  assert.match(PAGE, /style=\{\{ marginTop: FRAME_SECTION_GAP_PX, minHeight: COMPOSER_H_PX, maxWidth: "var\(--composer-max-width\)" \}\}/, "the composer left the frame's rhythm");
+  assert.match(PAGE, /role="tablist" style=\{\{ marginTop: FRAME_SECTION_GAP_PX \}\}/, "the tabs left the frame's rhythm");
+  assert.match(PAGE, /style=\{\{ gap: FRAME_ROW_GAP_PX, marginTop: FRAME_HEAD_GAP_PX \}\}/, "the rows left the frame's gaps");
 });
-
-test("🔴🔴🔴 composer/tabs/rows land on y=176/260/326 BY ARITHMETIC, not by luck", () => {
-  // The four numbers the owner actually measured: the title at 116, and the composer, tabs and
-  // rows tops at 176 / 260 / 328... no — 326. Everything else on this page (the header row's own
-  // height, the three gaps, the composer and tab heights) is written as an expression over those
-  // anchors specifically so this test can recompute them, the same discipline
-  // `projects-page.test.ts` already applies to HEADER_TOP_PX and PILLS_GAP_PX.
-  const titleTop = measured("TITLE_TOP_PX");
-  const headerH = measured("HEADER_H_PX");
-  const composerGap = measured("COMPOSER_GAP_PX");
-  const composerH = measured("COMPOSER_H_PX");
-  const tabsGap = measured("TABS_GAP_PX");
-  const tabH = measured("TAB_H_PX");
-  const rowsGap = measured("ROWS_GAP_PX");
-
-  assert.equal(titleTop, 116);
-  assert.equal(composerGap, 24);
-  assert.equal(composerH, 52);
-  assert.equal(tabsGap, 32);
-  assert.equal(tabH, 38);
-  assert.equal(rowsGap, 28);
-
-  const composerTop = titleTop + headerH + composerGap;
-  const tabsTop = composerTop + composerH + tabsGap;
-  const rowsTop = tabsTop + tabH + rowsGap;
-  assert.equal(composerTop, 176, "the composer no longer lands on the measured y=176");
-  assert.equal(tabsTop, 260, "the tabs no longer land on the measured y=260");
-  assert.equal(rowsTop, 326, "the rows no longer land on the measured y=326");
-
-  assert.match(PAGE, /const COMPOSER_TOP_PX = TITLE_TOP_PX \+ HEADER_H_PX \+ COMPOSER_GAP_PX;/);
-  assert.match(PAGE, /const TABS_TOP_PX = COMPOSER_TOP_PX \+ COMPOSER_H_PX \+ TABS_GAP_PX;/);
-  assert.match(PAGE, /const ROWS_TOP_PX = TABS_TOP_PX \+ TAB_H_PX \+ ROWS_GAP_PX;/);
-  assert.match(PAGE, /paddingTop: TITLE_TOP_PX/, "the header offset is declared but not applied");
-  assert.match(PAGE, /marginTop: COMPOSER_GAP_PX/, "the composer's offset is declared but not applied");
-  assert.match(PAGE, /marginTop: TABS_GAP_PX/, "the tabs' offset is declared but not applied");
-  assert.match(PAGE, /marginTop: ROWS_GAP_PX/, "the rows' offset is declared but not applied");
-});
-
-test("🔴 the title is 28px/500 on a 34px line, same as the /projects list page", () => {
-  assert.match(PAGE, /const TITLE_TEXT = "text-\[28px\] font-medium text-\(--ui-text-primary\)";/);
-  assert.match(PAGE, /style=\{\{ lineHeight: "34px" \}\}/);
-});
-
-// ── The composer: the SAME object, by token, not a hand-rolled shadow ──────────────────────────
 
 test("🔴🔴 the composer is 52 tall and uses the shared --composer-* tokens, never a literal shadow", () => {
   assert.match(PAGE, /rounded-\[var\(--composer-radius\)\]/);
@@ -91,9 +58,9 @@ test("🔴 the composer's placeholder says our own word, in this project's name"
 
 // ── The tabs: 38px pills, our own words, the reference's exact measurements ────────────────────
 
-test("🔴🔴 a tab pill is 38px tall, `9px 16px`, fully rounded, 14px/500", () => {
-  assert.match(PAGE, /rounded-full text-\[14px\] leading-\[20px\] font-medium/);
-  assert.match(PAGE, /height: TAB_H_PX, padding: "9px 16px"/);
+test("🔴🔴 a tab is the frame's 40px pill, and the live one is the only one with a fill", () => {
+  assert.match(PAGE, /<Pill active=\{tab === option\.id\} key=\{option\.id\} onClick=\{\(\) => setTab\(option\.id\)\} pressed=\{tab === option\.id\}>/);
+  assert.ok(!/TAB_H_PX|padding: "9px 16px"/.test(PAGE), "the ChatGPT-era 38px tab came back");
 });
 
 test("🔴 the tabs read Canvases and Sources — not Chats, which a canvas is not", () => {
@@ -102,32 +69,20 @@ test("🔴 the tabs read Canvases and Sources — not Chats, which a canvas is n
   assert.ok(!/label: "Chats"/.test(PAGE), "the reference's own word, \"Chats\", leaked onto the tab");
 });
 
-test("🔴 selected/unselected tab colours match the measured rgba(0,0,0,.05) / rgb(143,143,143)", () => {
-  assert.match(PAGE, /bg-black\/\[0\.05\] text-\(--ui-text-primary\) dark:bg-white\/\[0\.10\]/);
-  assert.match(PAGE, /bg-transparent text-\(--ui-text-tertiary\)/);
+test("🔴🔴 a row is the frame's soft row, and the ⋯ is not inside a press", () => {
+  for (const name of ["CanvasRow", "MaterialRow"]) {
+    const at = PAGE.indexOf(`function ${name}(`);
+    assert.notEqual(at, -1, `${name} is gone`);
+    const row = PAGE.slice(at, PAGE.indexOf("\nfunction ", at + 1));
+    assert.match(row, /className=\{cn\(SOFT_ROW, "items-start"\)\}/, `${name} is not the frame's soft row`);
+    assert.match(row, /style=\{\{ minHeight: FRAME_ROW_H_PX \}\}/, `${name} is not the frame's 89px`);
+    assert.match(row, /<RowText meta=/, `${name} does not use the frame's two lines`);
+  }
+  assert.ok(!/ROW_H_PX = 40|ROW_PAD_Y_PX|border-b-black\/\[0\.05\]/.test(PAGE), "the ChatGPT-era hairline row came back");
 });
 
-// ── The rows: 40px, no divider, no fill, no radius ──────────────────────────────────────────────
-
-test("🔴🔴🔴 a row is 40px — exactly two 20px lines, which is why there is no gap between them", () => {
-  assert.equal(measured("ROW_H_PX"), 40);
-  assert.match(PAGE, /style=\{\{ height: ROW_H_PX \}\}/);
-});
-
-test("🔴 the divider is on the li, the hover on the row, and still no radius (re-measured 2026-08-30)", () => {
-  // The 2026-08-26 spec said "no divider" and it was true THEN — the reference changed under us:
-  // its project list now draws the same 5% hairline its Library table always had, with 13px of
-  // air each side of the 40px content box. The date on a measurement is part of the measurement.
-  const at = PAGE.indexOf("function CanvasRow(");
-  assert.notEqual(at, -1, "CanvasRow is gone");
-  const row = PAGE.slice(at, PAGE.indexOf("\n}\n", at));
-  assert.match(row, /border-b border-b-black\/\[0\.05\] dark:border-b-white\/\[0\.05\]/, "the re-measured hairline is gone");
-  assert.ok(!/rounded-(?!full)/.test(row.replace("rounded-full", "")), "a radius appeared on a row the spec says has none");
-});
-
-test("🔴 line one is the canvas title (14/500), line two is a REAL fact or a plain label, never invented content", () => {
-  assert.match(PAGE, /const ROW_NAME_TEXT = "text-\[14px\] leading-\[20px\] font-medium text-\(--ui-text-primary\)";/);
-  assert.match(PAGE, /const ROW_META_TEXT = "text-\[14px\] leading-\[20px\] font-normal text-\(--ui-text-secondary\)";/);
+test("🔴 line one is the canvas title, line two is a REAL fact or a plain label, never invented content", () => {
+  assert.match(PAGE, /<RowText meta=\{snippet\(canvas\)\} title=\{canvas\.title \|\| "Untitled"\} \/>/, "line one or two of a canvas row changed shape");
   // Line two is the conversation's REAL tail now — `CanvasSummary.preview`, extracted inside
   // listCanvases's own SELECT, flattened of markdown — with the old honest fallbacks behind it.
   assert.match(PAGE, /\{snippet\(canvas\)\}/, "line two stopped reading the snippet helper");
@@ -149,6 +104,7 @@ test("🔴🔴 only THIS project's own direct canvases are listed — no sub-pro
 test("🔴 no Share button — we have no sharing, and a dead control fails a 1:1 copy while matching it", () => {
   assert.ok(!/>\s*Share\s*</.test(PAGE), "a Share button appeared in a product with no sharing");
   assert.match(PAGE, />Rename</);
+  assert.match(PAGE, /className=\{cn\("flex size-\[40px\] shrink-0 items-center justify-center rounded-full text-\(--ui-text-primary\) transition-colors", FRAME_BUTTON_FILL\)\}/, "the ⋯ is not the frame's round button");
   assert.match(PAGE, />\s*Delete\s*</);
   // And the ⋯ carries what the reference's page ⋯ carries (measured 2026-08-30): Project
   // settings opens the same dialog the sidebar opens, Pin project writes folders.pinned_at.
@@ -157,11 +113,12 @@ test("🔴 no Share button — we have no sharing, and a dead control fails a 1:
   assert.match(PAGE, /ProjectCustomizeDialog/, "the settings dialog is not mounted on the page");
 });
 
-test("🔴 the header wears the project's OWN icon and colour at 32px (measured 2026-08-30)", () => {
+test("🔴 the header wears the project's OWN icon and colour, beside the frame's title", () => {
   // The reference paints "school" as its blue mortar-board on the page header, not a generic
   // folder. `buildProjects` carries icon/colour through ProjectNode for exactly this read.
   assert.match(PAGE, /name=\{project\.icon \?\? "folder"\}/, "the header fell back to a generic glyph for customized projects");
-  assert.match(PAGE, /size="32px"/, "the header icon left the measured 32px");
+  assert.match(PAGE, /size="28px"/, "the header icon is not the 28px the frame's 24px title takes beside it");
+  assert.match(PAGE, /<PageTitle\s+before=\{\s*<Codicon/, "the icon left the title row");
   // 🔴 THE COLOUR IS DRAWN THROUGH A TOKEN NOW, NOT AS THE STORED HEX. This page never lost its
   // tint during the 2026-09-03 accent sweep — only the sidebar and the dialog did — so it had been
   // painting a LIGHT-MODE hex in dark mode the whole time. `projectTint` maps the stored value onto
@@ -187,8 +144,8 @@ test("🔴 starting a canvas here is create-then-file, the same two writes every
   assert.match(PAGE, /await setCanvasFolder\(userId, canvas\.id, project\.id\);/);
 });
 
-test("🔴 the page sits on the reference's #fcfcfc ground, the same token every page here shares", () => {
-  assert.match(PAGE, /bg-\(--ui-bg-sidebar\)/);
+test("🔴 the page sits on the frame's ground, and does not repaint it", () => {
+  assert.ok(!/bg-\(--ui-bg-sidebar\)/.test(PAGE), "the page repaints the frame's ground on its own");
 });
 
 // ── The route ─────────────────────────────────────────────────────────────────────────────────
@@ -199,15 +156,3 @@ test("🔴 the route is thin, reads the id from the URL, and mounts the real pag
   assert.match(ROUTE, /<ProjectPage projectId=\{raw \?\? ""\} userId=\{session\?\.user\.id \?\? null\} \/>/);
 });
 
-test("🔴🔴 rows have the reference's rhythm, not just its row height", () => {
-  // Twice re-measured now. First (2026-08-26, two-chat project): 40px rows, 25px gap, no divider.
-  // Second (2026-08-30, six-chat project, the owner's own Chrome): the reference grew hairline
-  // dividers, and the air moved to 13px of li padding each side of the 40px box — title-to-title
-  // pitch 66-67 confirmed on screen. The 13s live on the li WITH the hairline so the divider
-  // spans the full column; the hover stays on the 40px content box, where dead hover cannot sit
-  // above the title.
-  assert.match(PAGE, /const ROW_PAD_Y_PX = 13;/, "the measured row padding is gone");
-  assert.match(PAGE, /paddingBottom: ROW_PAD_Y_PX, paddingTop: ROW_PAD_Y_PX/, "the li stopped carrying the air");
-  assert.match(PAGE, /marginTop: ROWS_GAP_PX - ROW_PAD_Y_PX/, "the first row's top no longer lands on the measured 326+13");
-  assert.match(PAGE, /const ROW_H_PX = 40;/, "the row stopped being the reference's 40px");
-});

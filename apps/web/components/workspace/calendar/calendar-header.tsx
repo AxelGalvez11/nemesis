@@ -8,15 +8,30 @@
 //
 // The palette stays monochrome — the owner confirmed 2026-07-31 that "copy it
 // entirely" is about layout, density and interaction, not Google's blue.
+//
+// 🔴🔴 2026-09-04: THE ROW WEARS THE SHARED FRAME (`shell/page-frame.tsx`). The owner asked for
+// consistent spacing across the workspace pages and then "do the project page, calendar, and
+// settings too". The ORDER is still Google's; the pieces are the frame's: the same 16px top and
+// 40px row every page title sits on, the same 24px title, round 40px buttons for the arrows and
+// the add, 40px pills for Today, Sync and the view menu. The grid under this row is untouched —
+// it is drawn to Google's own pixels (see google-one-to-one.test.ts) and stays full width, which
+// is why this file takes the frame's strings and buttons rather than its 760px column.
 
-import { Button } from "@/components/desktop-ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
+import {
+  FRAME_ROW_PX,
+  FRAME_TITLE_TEXT,
+  FRAME_TOP_PX,
+  Pill,
+  RoundButton,
+} from "@/components/workspace/shell/page-frame";
 import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus, RefreshCw } from "@/lib/workspace/icons";
+import { cn } from "@/lib/utils";
 import { dateKey } from "@/lib/workspace/calendar-model";
 
 
@@ -62,99 +77,55 @@ export function CalendarHeader({
   syncing,
 }: CalendarHeaderProps) {
   return (
-    // GOOGLE'S TOOLBAR ORDER, one row (owner 2026-07-31: "literally copy it").
-    // Today and the arrows come FIRST, then the date range, then the controls
-    // on the right — the opposite of what this had, which led with a large
-    // title and pushed navigation to the far side.
-    <header className="flex shrink-0 flex-wrap items-center gap-3 px-5 pb-3 pt-4 max-sm:gap-2 max-sm:px-3">
-      {/* 1.375rem, not 2rem (owner 2026-07-31, "the header text is too big",
-          pointing at Google Calendar).
-
-          MEASURED against Google Calendar side by side: its date heading is
-          22px on a 16px root — 1.375x the base text. Ours was 2rem on this
-          app's 20px root, so 40px: nearly DOUBLE Google's, on a page whose base
-          text is already a quarter larger. Kept in rem rather than pinned to a
-          pixel size, because the root font here is the student's own text-size
-          setting and the heading should still grow with it. */}
-      <Button className="rounded-full px-4" onClick={onToday} size="sm" variant="outline">
+    <header
+      className="flex shrink-0 flex-wrap items-center gap-[8px] px-[16px] pb-[12px] max-sm:px-[12px]"
+      style={{ minHeight: FRAME_TOP_PX + FRAME_ROW_PX + 12, paddingTop: FRAME_TOP_PX }}
+    >
+      {/* GOOGLE'S TOOLBAR ORDER, one row (owner 2026-07-31: "literally copy it"): Today and the
+          arrows FIRST, then the date range, then the controls pushed right. */}
+      <Pill active onClick={onToday}>
         Today
-      </Button>
-      <div className="flex items-center gap-0.5">
-        <Button
-          aria-label={`Previous ${VIEW_UNIT_LABEL[view]}`}
-          className="rounded-full"
-          onClick={() => onStep(-1)}
-          size="icon-sm"
-          variant="ghost"
-        >
+      </Pill>
+      <div className="flex items-center gap-[2px]">
+        <RoundButton label={`Previous ${VIEW_UNIT_LABEL[view]}`} onClick={() => onStep(-1)}>
           <ChevronLeft size={18} />
-        </Button>
-        <Button
-          aria-label={`Next ${VIEW_UNIT_LABEL[view]}`}
-          className="rounded-full"
-          onClick={() => onStep(1)}
-          size="icon-sm"
-          variant="ghost"
-        >
+        </RoundButton>
+        <RoundButton label={`Next ${VIEW_UNIT_LABEL[view]}`} onClick={() => onStep(1)}>
           <ChevronRight size={18} />
-        </Button>
+        </RoundButton>
       </div>
-      {/* Regular weight, not semibold: Google's date range is 22px/400. A bold
-          heading here reads as a page title; this is a position indicator. */}
-      {/* 🔴 GOOGLE'S 22px, NOT 22 CONVERTED. Measured on the live app 2026-09-03: 22px / 400 /
-          "Google Sans". `1.375rem` is 24.75 here, the same ninth over that section 13 of the
-          reference removed from the grid below it — and a title is the one piece of chrome big
-          enough for that ninth to read. */}
-      <h1 className="min-w-0 truncate text-[22px] font-normal tracking-[-0.01em] text-foreground">
-        {viewLabel(view, cursor)}
-      </h1>
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-        {/* Left of the view picker, so the two controls that CHANGE the calendar (sync, add) sit
-            at either end of the group rather than crowding one corner. */}
+      {/* The date range, at the frame's title type: this is where every other page prints its
+          name, and the month or week IS this page's name. */}
+      <h1 className={cn("min-w-0 truncate", FRAME_TITLE_TEXT)}>{viewLabel(view, cursor)}</h1>
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-[8px]">
+        {/* Sync only when the door exists (`onSync` optional is the gate — see sync-door.test.ts). */}
         {onSync ? (
-          <Button
-            aria-label="Sync with Google Calendar"
-            className="gap-1.5 rounded-full px-3"
-            disabled={syncing}
-            onClick={onSync}
-            size="sm"
-            variant="outline"
-          >
+          <Pill active label="Sync with Google Calendar" onClick={syncing ? undefined : onSync}>
             {syncing ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
             <span className="max-sm:sr-only">{syncing ? "Syncing" : "Sync"}</span>
-          </Button>
+          </Pill>
         ) : null}
         <ColorFilter colours={colours} hidden={hiddenColors} onChange={onChangeHiddenColors} />
-        {/* A dropdown on the right, where Google keeps it — the four-way
-            segmented control sat in the middle of the bar and took the space
-            the date range needs on a narrow window. */}
         <ViewMenu onChange={onChangeView} value={view} />
-        {/* THE IMPORT BUTTON IS GONE FROM HERE, NOT THE IMPORT (owner
-            2026-07-31: "instead of having the syllabus uploader into the
-            calendar page, can we have everything run through the chat
-            instead?"). The importer is the same component, opened from the
-            chat composer's Add menu — see sessions/composer.tsx. Removing the
-            control is the ask; removing the feature would not be. */}
-        <Button aria-label="Add event" onClick={() => onAddEvent(dateKey(today))} size="icon-sm">
-          <Plus size={16} />
-        </Button>
+        {/* Add event. The syllabus importer is NOT here (owner 2026-07-31: everything runs
+            through the chat instead); it opens from the composer's Add menu. */}
+        <RoundButton label="Add event" onClick={() => onAddEvent(dateKey(today))}>
+          <Plus size={18} />
+        </RoundButton>
       </div>
     </header>
   );
 }
 
-/** Day / Week / Month / Year as a dropdown, where Google keeps its view picker.
- *  The current view is the button's own label, so the bar says where you are
- *  without needing four visible options to compare against. */
 function ViewMenu({ onChange, value }: { onChange: (view: CalendarViewMode) => void; value: CalendarViewMode }) {
   const current = VIEW_OPTIONS.find((option) => option.id === value);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button aria-label="Change view" className="gap-1 rounded-full px-3" size="sm" variant="outline">
+        <Pill active label="Change view">
           {current?.label ?? "Week"}
           <ChevronDown size={14} />
-        </Button>
+        </Pill>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-32">
         {VIEW_OPTIONS.map((option) => (

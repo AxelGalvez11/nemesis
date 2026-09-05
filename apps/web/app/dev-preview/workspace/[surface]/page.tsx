@@ -18,7 +18,9 @@
 import { notFound, useParams } from "next/navigation";
 
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
+import { PluginsPage } from "@/components/workspace/plugins/plugins-page";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
+import { CONNECTABLE_APPS } from "@/lib/workspace/composio-apps";
 
 import CalendarPage from "../../../(workspace)/calendar/page";
 import LearnPage from "../../../(workspace)/learn/page";
@@ -27,7 +29,18 @@ import LibraryClassicPage from "../../../(workspace)/library/classic/page";
 import SettingsPage from "../../../(workspace)/settings/page";
 import StudyPage from "../../../(workspace)/study/page";
 
+const APPS_PREVIEW = {
+  apps: CONNECTABLE_APPS,
+  configured: true,
+  connected: ["googledrive", "gmail", "googlecalendar", "notion"],
+} as const;
+
+function AppsPreviewPage() {
+  return <PluginsPage preview={APPS_PREVIEW} userId="preview-user" />;
+}
+
 const SURFACES = {
+  apps: AppsPreviewPage,
   learn: LearnPage,
   library: LibraryPage,
   "library-classic": LibraryClassicPage,

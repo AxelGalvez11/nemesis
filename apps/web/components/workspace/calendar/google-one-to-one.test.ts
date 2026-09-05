@@ -146,13 +146,20 @@ test("🔴🔴 the colour lookup searches the list the PRIMARY calendar is actua
   assert.doesNotMatch(workspace, /calendars\.find\(\(entry\) => entry\.id === calendarId\)/, "the lookup went back to the stored-only list");
 });
 
-test("🔴 the view title is Google's 22px, not 22 converted", () => {
-  // Measured on the live app 2026-09-03: 22px / 400 / "Google Sans". Ours was `1.375rem`, which is
-  // 24.75 at this root — the same ninth section 13 of the reference took off the grid, and a title
-  // is the one piece of chrome big enough for it to read.
+test("🔴 the view title is the frame's title, in Google's toolbar order", () => {
+  // Until 2026-09-04 this pinned Google's 22px. That day the owner asked for consistent spacing
+  // across the workspace pages and named the calendar, so the date range now wears the ONE title
+  // string every page uses (`shell/page-frame.tsx`, 24px on the product's five-step scale). The
+  // ORDER is still Google's — Today, arrows, range, controls right — which is what "copy it
+  // entirely" was about; the type is Nemesis's own, which it always was (their blue never came).
   const header = readFileSync(new URL("./calendar-header.tsx", import.meta.url), "utf8");
-  assert.match(header, /truncate text-\[22px\] font-normal/, "the view title left Google's 22px");
-  assert.doesNotMatch(header, /text-\[1\.375rem\]/, "the ratio-converted title is back");
+  assert.match(header, /<h1 className=\{cn\("min-w-0 truncate", FRAME_TITLE_TEXT\)\}>\{viewLabel\(view, cursor\)\}<\/h1>/, "the view title left the frame's one title string");
+  assert.doesNotMatch(header, /text-\[22px\]|text-\[1\.375rem\]/, "a page-private title size is back");
+  // And the order: Today, then the arrows, then the range, then the right-hand group.
+  const order = ["Today", "Previous ${VIEW_UNIT_LABEL[view]}", "Next ${VIEW_UNIT_LABEL[view]}", "viewLabel(view, cursor)", "ml-auto"];
+  const positions = order.map((needle) => header.indexOf(needle));
+  assert.ok(positions.every((at) => at !== -1), `a toolbar piece is missing: ${order[positions.indexOf(-1)]}`);
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions, "the toolbar left Google's order");
 });
 
 test("midday is a number, the way Google writes it", () => {

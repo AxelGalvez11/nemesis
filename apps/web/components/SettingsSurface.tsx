@@ -14,6 +14,7 @@ import { ACCENT_COLORS, ACCENT_LABELS, ACCENT_PREFERENCES, DEFAULT_ACCENT_SWATCH
 import { NemesisAvatar } from "@/components/avatar/nemesis-avatar";
 import { CHARACTER_SILHOUETTE } from "@/lib/character/body";
 import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
+import { FRAME_COLUMN_PX, FRAME_HEADING_TEXT, FRAME_ROW_PX, FRAME_SECTION_GAP_PX, FRAME_TITLE_TEXT, FRAME_TOP_PX } from "@/components/workspace/shell/page-frame";
 import { cn } from "@/lib/utils";
 
 export type SettingsSection =
@@ -120,13 +121,13 @@ const ACCENT_OPTIONS: { id: AccentPreference; label: string; color: string }[] =
 // Pet/Nickname/Occupation as invisible boxes. A picker announces itself with a chevron and a value;
 // an empty text field has nothing to announce itself with, so it keeps its edge.
 //
-// 🔴 BOTH TAKE THE NAV ROW'S HEIGHT AND CORNER, NOT Tailwind's `h-9`/`rounded-lg`. Those two are
+// 🔴 BOTH TAKE THE NAV ROW'S HEIGHT AND CORNER, NOT Tailwind's `h-9`/`rounded-[8px]`. Those two are
 // rem-based, so under the app's own font-scale setting they resolved to 40.5px and 13.5px here —
 // a control taller and rounder than the 36px/10px rows sitting a few pixels to its left, inside
 // one panel. `--nav-row-height` and `--nav-row-radius` are fixed px and are what the shell rail
 // already uses, so every row-shaped thing in Settings now agrees at any scale.
-const SELECT_CLASS = "h-[var(--nav-row-height)] cursor-pointer rounded-[var(--nav-row-radius)] border border-transparent bg-transparent px-2 text-[length:var(--canvas-text-small)] text-foreground outline-none transition-colors hover:bg-(--ui-control-hover-background) focus:border-(--theme-primary)";
-const INPUT_CLASS = "h-[var(--nav-row-height)] min-w-44 rounded-[var(--nav-row-radius)] border border-(--ui-stroke-secondary) bg-background px-3 text-[length:var(--canvas-text-small)] text-foreground outline-none focus:border-(--theme-primary)";
+const SELECT_CLASS = "h-[var(--nav-row-height)] cursor-pointer rounded-[var(--nav-row-radius)] border border-transparent bg-transparent px-[8px] text-[length:var(--canvas-text-small)] text-foreground outline-none transition-colors hover:bg-(--ui-control-hover-background) focus:border-(--theme-primary)";
+const INPUT_CLASS = "h-[var(--nav-row-height)] min-w-[176px] rounded-[var(--nav-row-radius)] border border-(--ui-stroke-secondary) bg-background px-[12px] text-[length:var(--canvas-text-small)] text-foreground outline-none focus:border-(--theme-primary)";
 /** The rail scrolls on its own once the section list outgrows a short window; the content pane
  *  beside it already did. Without this the whole modal grew a single outer scrollbar and the
  *  section you were reading slid away with the list. */
@@ -200,23 +201,30 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[14rem_minmax(0,1fr)] bg-background max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(0,1fr)]">
-      <aside className="flex min-h-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) p-3 max-md:border-b max-md:border-r-0 max-md:p-2">
-        <h1 className="workspace-page-title mb-3 px-2 max-md:sr-only">Settings</h1>
+      <aside
+        className="flex min-h-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-[12px] pb-[12px] max-md:border-b max-md:border-r-0 max-md:p-[8px]"
+        style={{ paddingTop: FRAME_TOP_PX }}
+      >
+        {/* The rail's name is a HEADING, not a title: the pane beside it carries the 24px title
+            of whichever section is open, the way the Library's title sits over its sections. */}
+        <h1 className={cn("mb-[12px] flex items-center px-[8px] max-md:sr-only", FRAME_HEADING_TEXT)} style={{ height: FRAME_ROW_PX }}>
+          Settings
+        </h1>
         {/* The rail's own search, as ChatGPT's has. It filters the list rather than jumping, so
             an empty result is visible as an empty list instead of as a section that silently
             failed to open. */}
-        <label className="relative mb-2 block max-md:hidden">
-          <Codicon className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-(--ui-text-tertiary)" name="search" size="0.85rem" />
+        <label className="relative mb-[8px] block max-md:hidden">
+          <Codicon className="pointer-events-none absolute top-1/2 left-[10px] -translate-y-1/2 text-(--ui-text-tertiary)" name="search" size="14px" />
           <input
             aria-label="Search settings"
-            className="h-[var(--nav-row-height)] w-full rounded-[var(--nav-row-radius)] border border-(--ui-stroke-secondary) bg-background pr-2 pl-8 text-[length:var(--canvas-text-small)] text-foreground outline-none placeholder:text-(--ui-text-tertiary) focus:border-(--theme-primary)"
+            className="h-[var(--nav-row-height)] w-full rounded-[var(--nav-row-radius)] border border-(--ui-stroke-secondary) bg-background pr-[8px] pl-[32px] text-[length:var(--canvas-text-small)] text-foreground outline-none placeholder:text-(--ui-text-tertiary) focus:border-(--theme-primary)"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search settings"
             type="search"
             value={query}
           />
         </label>
-        <nav aria-label="Settings pages" className={cn("flex min-h-0 flex-col gap-0 max-md:flex-row max-md:overflow-x-auto max-md:pb-1", SCROLL_RAIL)}>
+        <nav aria-label="Settings pages" className={cn("flex min-h-0 flex-col gap-0 max-md:flex-row max-md:overflow-x-auto max-md:pb-[4px]", SCROLL_RAIL)}>
           {matchedSections.map((item) => (
             <button
               aria-current={section === item.id ? "page" : undefined}
@@ -224,7 +232,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                 // Row geometry is the shell sidebar's, which was already measured against the
                 // same reference: 36px tall, 10px radius, 14px label. It read a size smaller
                 // than every other list in the product for no reason anyone had chosen.
-                "flex h-[var(--nav-row-height)] shrink-0 items-center gap-2 rounded-[var(--nav-row-radius)] px-2.5 text-left text-[length:var(--canvas-text-small)] text-foreground transition-colors hover:bg-(--ui-control-hover-background) max-md:shrink-0",
+                "flex h-[var(--nav-row-height)] shrink-0 items-center gap-[8px] rounded-[var(--nav-row-radius)] px-[10px] text-left text-[length:var(--canvas-text-small)] text-foreground transition-colors hover:bg-(--ui-control-hover-background) max-md:shrink-0",
                 section === item.id && "bg-(--ui-control-active-background)",
               )}
               key={item.id}
@@ -235,17 +243,17 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                   selected row the loudest thing in a panel whose job is to be scaffolding, and
                   contradicted the same owner's ruling for the shell rail (2026-08-15: icons read
                   at full strength, matching their label, not as a second colour). */}
-              <Codicon className="shrink-0 text-(--ui-text-secondary)" name={item.icon} size="1rem" />
+              <Codicon className="shrink-0 text-(--ui-text-secondary)" name={item.icon} size="16px" />
               <span className="min-w-0 truncate">{item.label}</span>
             </button>
           ))}
           {matchedSections.length === 0 && (
-            <p className="px-2.5 py-2 text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">No setting matches “{query.trim()}”.</p>
+            <p className="px-[10px] py-[8px] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">No setting matches “{query.trim()}”.</p>
           )}
         </nav>
       </aside>
 
-      <main className="min-h-0 overflow-y-auto px-7 py-6 max-sm:px-4 max-sm:py-5">
+      <main className="min-h-0 overflow-y-auto px-[24px] pb-[24px] max-sm:px-[16px]" style={{ paddingTop: FRAME_TOP_PX }}>
         {section === "general" && (
           <SettingsPage title="General" description="Shape how Nemesis writes to you, addresses you, and lays itself out.">
             <SettingsCard>
@@ -289,9 +297,9 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 
         {section === "appearance" && (
           <SettingsPage title="Appearance" description="Saved on this device and applied immediately.">
-            <SettingsCard title="Theme"><div className="grid grid-cols-3 gap-2 max-sm:grid-cols-1">{THEME_OPTIONS.map((item) => <button aria-pressed={preference === item.id} className={cn("rounded-xl border border-(--ui-stroke-secondary) bg-background p-2 text-left text-xs font-medium hover:bg-(--ui-control-hover-background)", preference === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setTheme(item.id)} type="button"><span className="theme-swatch mb-2" data-theme-preview={item.id} aria-hidden="true"><span className="tp-rail" /><span className="tp-page"><span className="tp-line" /><span className="tp-line short" /><span className="tp-dot" /></span></span>{item.label}</button>)}</div></SettingsCard>
-            <SettingsCard title="Dark tone"><div className="flex flex-wrap gap-2">{DARK_TONE_OPTIONS.map((item) => <button aria-pressed={darkTone === item.id} className={cn("flex items-center gap-2 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-medium hover:bg-(--ui-control-hover-background)", darkTone === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setDarkTone(item.id)} type="button"><span aria-hidden className="size-4 rounded-full border border-(--ui-stroke-secondary)" style={{ backgroundColor: item.color }} />{item.label}</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">How surfaces look while the theme is dark: Black is pure black, Charcoal is a softer dark gray.</p></SettingsCard>
-            <SettingsCard title="Accent color"><div className="flex flex-wrap gap-2">{ACCENT_OPTIONS.map((item) => <button aria-label={item.label} aria-pressed={accent === item.id} className={cn("grid size-10 place-items-center rounded-full border border-(--ui-stroke-secondary)", accent === item.id && "ring-2 ring-offset-2 ring-offset-background")} key={item.id} onClick={() => setAccent(item.id)} style={{ color: item.color }} title={item.label} type="button"><span className="size-6 rounded-full" style={{ backgroundColor: item.color }} /></button>)}</div></SettingsCard>
+            <SettingsCard title="Theme"><div className="grid grid-cols-3 gap-[8px] max-sm:grid-cols-1">{THEME_OPTIONS.map((item) => <button aria-pressed={preference === item.id} className={cn("rounded-[12px] border border-(--ui-stroke-secondary) bg-background p-[8px] text-left text-[length:var(--canvas-text-small)] font-medium hover:bg-(--ui-control-hover-background)", preference === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setTheme(item.id)} type="button"><span className="theme-swatch mb-[8px]" data-theme-preview={item.id} aria-hidden="true"><span className="tp-rail" /><span className="tp-page"><span className="tp-line" /><span className="tp-line short" /><span className="tp-dot" /></span></span>{item.label}</button>)}</div></SettingsCard>
+            <SettingsCard title="Dark tone"><div className="flex flex-wrap gap-[8px]">{DARK_TONE_OPTIONS.map((item) => <button aria-pressed={darkTone === item.id} className={cn("flex items-center gap-[8px] rounded-[12px] border border-(--ui-stroke-secondary) bg-background px-[12px] py-[8px] text-[length:var(--canvas-text-small)] font-medium hover:bg-(--ui-control-hover-background)", darkTone === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setDarkTone(item.id)} type="button"><span aria-hidden className="size-[16px] rounded-full border border-(--ui-stroke-secondary)" style={{ backgroundColor: item.color }} />{item.label}</button>)}</div><p className="mt-[12px] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">How surfaces look while the theme is dark: Black is pure black, Charcoal is a softer dark gray.</p></SettingsCard>
+            <SettingsCard title="Accent color"><div className="flex flex-wrap gap-[8px]">{ACCENT_OPTIONS.map((item) => <button aria-label={item.label} aria-pressed={accent === item.id} className={cn("grid size-[40px] place-items-center rounded-full border border-(--ui-stroke-secondary)", accent === item.id && "ring-2 ring-offset-[2px] ring-offset-background")} key={item.id} onClick={() => setAccent(item.id)} style={{ color: item.color }} title={item.label} type="button"><span className="size-[24px] rounded-full" style={{ backgroundColor: item.color }} /></button>)}</div></SettingsCard>
             <SettingsCard title="Your character">
               {/* 🔴 NO SECOND PALETTE, AND NO SHAPE PICKER (owner 2026-08-20). The character used
                   to carry twelve colours and eight silhouettes of its own, right below the accent
@@ -300,11 +308,11 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                   above and rests as a circle; this card exists to SHOW that, not to re-ask it.
 
                   The preview is the real engine frozen, not a picture of it. */}
-              <div className="flex items-center gap-4">
-                <div className="grid size-[92px] shrink-0 place-items-center rounded-2xl border border-(--ui-stroke-secondary)">
+              <div className="flex items-center gap-[16px]">
+                <div className="grid size-[92px] shrink-0 place-items-center rounded-[16px] border border-(--ui-stroke-secondary)">
                   <NemesisAvatar accent={accent} animation="idle" frozenAt={900} silhouette={CHARACTER_SILHOUETTE} size={76} />
                 </div>
-                <p className="text-[0.7rem] leading-relaxed text-(--ui-text-tertiary)">
+                <p className="text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">
                   It sits above the composer while you work, comes forward to the middle of the page
                   while Nemesis is thinking, and follows your cursor. Click it and it reacts.
                   <br />
@@ -312,7 +320,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
                 </p>
               </div>
             </SettingsCard>
-            <SettingsCard title="Scaling"><div className="flex flex-wrap gap-2">{SCALE_PRESETS.map((preset) => <button aria-pressed={scale === preset} className={cn("min-w-16 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-semibold tabular-nums hover:bg-(--ui-control-hover-background)", scale === preset && "border-(--theme-primary) text-(--theme-primary) ring-1 ring-(--theme-primary)")} key={preset} onClick={() => setScale(preset)} type="button">{preset}%</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">Everything in the app grows or shrinks together. Currently {scale}%.</p></SettingsCard>
+            <SettingsCard title="Scaling"><div className="flex flex-wrap gap-[8px]">{SCALE_PRESETS.map((preset) => <button aria-pressed={scale === preset} className={cn("min-w-[64px] rounded-[12px] border border-(--ui-stroke-secondary) bg-background px-[12px] py-[8px] text-[length:var(--canvas-text-small)] font-semibold tabular-nums hover:bg-(--ui-control-hover-background)", scale === preset && "border-(--theme-primary) text-(--theme-primary) ring-1 ring-(--theme-primary)")} key={preset} onClick={() => setScale(preset)} type="button">{preset}%</button>)}</div><p className="mt-[12px] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">Everything in the app grows or shrinks together. Currently {scale}%.</p></SettingsCard>
           </SettingsPage>
         )}
 
@@ -356,7 +364,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 
         {section === "storage" && (
           <SettingsPage title="Storage" description="Browser storage used by offline preferences, previews, and cached study data.">
-            <SettingsCard><StorageMeter storage={storage} /><Button className="mt-4" onClick={() => router.refresh()} size="sm" variant="secondary"><Codicon name="refresh" size="0.8rem" /> Refresh estimate</Button></SettingsCard>
+            <SettingsCard><StorageMeter storage={storage} /><Button className="mt-[16px]" onClick={() => router.refresh()} size="sm" variant="secondary"><Codicon name="refresh" size="13px" /> Refresh estimate</Button></SettingsCard>
           </SettingsPage>
         )}
 
@@ -368,7 +376,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 
         {section === "keyboard" && (
           <SettingsPage title="Keyboard shortcuts" description="Move through Nemesis without leaving the keyboard.">
-            <SettingsCard>{KEYBOARD_SHORTCUTS.map(([label, shortcut]) => <SettingsRow key={label} label={label}><kbd className="rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-1 font-mono text-[0.7rem]">{shortcut}</kbd></SettingsRow>)}</SettingsCard>
+            <SettingsCard>{KEYBOARD_SHORTCUTS.map(([label, shortcut]) => <SettingsRow key={label} label={label}><kbd className="rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-[8px] py-[4px] font-mono text-[length:var(--canvas-text-meta)]">{shortcut}</kbd></SettingsRow>)}</SettingsCard>
           </SettingsPage>
         )}
       </main>
@@ -378,7 +386,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 
 // 🔴🔴 THE CARDS ARE GONE, AND THAT IS THE WHOLE REDESIGN (owner 2026-08-24: *"look at the ChatGPT
 // settings… so that you can implement that to Nemesis as well. The spacing, the color, and
-// etcetera."*). Every group used to be a `rounded-2xl` panel with a border AND a shadow, stacked
+// etcetera."*). Every group used to be a `rounded-[16px]` panel with a border AND a shadow, stacked
 // with gaps — so a page of six preferences drew six boxes, six borders and six shadows around
 // twelve words. Measured off the reference the same day, there is no box at all: a setting is one
 // 52px row (8px pad, 36px control, 8px pad) with a 1px hairline under it, and the ONLY separator
@@ -390,14 +398,13 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 // `rgba(0,0,0,.05)` would vanish against a black page. What diverged was never the colour; it was
 // the structure and the type scale.
 function SettingsPage({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  // 🔴 THE LAST ROW ON THE PAGE DROPS ITS HAIRLINE, AND IT HAS TO BE DECIDED HERE. Scoping it to
-  // `last:` inside a group put a gap in the middle of the list wherever two groups met — the rule
-  // is "no line under the final row of the PAGE", and only the page can see which row that is.
   return (
-    <div className="mx-auto grid w-full max-w-2xl gap-0 [&>section:last-of-type>*:last-child]:border-b-0">
-      <header className="pb-2">
-        <h2 className="workspace-page-title">{title}</h2>
-        <p className="mt-1 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">{description}</p>
+    <div className="mx-auto grid w-full gap-0 [&>section:last-of-type>*:last-child]:border-b-0" style={{ maxWidth: FRAME_COLUMN_PX }}>
+      {/* The frame's title row: the section's name at the 24px every page title uses, on the
+          40px line every page title sits on. The description is the one line under it. */}
+      <header>
+        <h2 className={cn("flex items-center truncate", FRAME_TITLE_TEXT)} style={{ height: FRAME_ROW_PX }}>{title}</h2>
+        <p className="mt-[4px] text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-tertiary)">{description}</p>
       </header>
       {children}
     </div>
@@ -405,24 +412,22 @@ function SettingsPage({ title, description, children }: { title: string; descrip
 }
 
 function SettingsCard({ title, children }: { title?: string; children: React.ReactNode }) {
-  // A group is now a label and nothing else. Where a group has no title its rows simply continue
-  // the list, which is what the reference's General page does.
   return (
-    <section className="flex flex-col">
-      {title && <h3 className="pt-5 pb-2 text-[length:var(--canvas-text-meta)] font-medium text-(--ui-text-tertiary)">{title}</h3>}
+    <section className="flex flex-col" style={{ marginTop: FRAME_SECTION_GAP_PX }}>
+      {/* A group's name is the frame's heading — the same 16px/500 the Library puts over a shelf —
+          on the frame's 40px row. No box, no fill: the hairline under each row is the separator. */}
+      {title && <h3 className={cn("flex items-center", FRAME_HEADING_TEXT)} style={{ height: FRAME_ROW_PX }}>{title}</h3>}
       {children}
     </section>
   );
 }
 
 function SettingsRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
-  // 52px = 8 + 36 + 8, the reference's row box exactly. Label 14px regular, description 12px/16
-  // in tertiary — it was 12px semibold over 11.2px, a size below everything else in the product.
   return (
-    <div className="flex min-h-[3.25rem] items-center justify-between gap-6 border-b border-(--ui-stroke-tertiary) py-2 max-sm:flex-col max-sm:items-start max-sm:gap-2">
+    <div className="flex min-h-[52px] items-center justify-between gap-[24px] border-b border-(--ui-stroke-tertiary) py-[8px] max-sm:flex-col max-sm:items-start max-sm:gap-[8px]">
       <div className="min-w-0">
         <p className="text-[length:var(--canvas-text-small)] text-foreground">{label}</p>
-        {description && <p className="mt-0.5 max-w-md text-[length:var(--canvas-text-meta)] leading-4 text-(--ui-text-tertiary)">{description}</p>}
+        {description && <p className="mt-[2px] max-w-[448px] text-[length:var(--canvas-text-meta)] leading-4 text-(--ui-text-tertiary)">{description}</p>}
       </div>
       <div className="shrink-0 max-sm:w-full">{children}</div>
     </div>
@@ -430,16 +435,16 @@ function SettingsRow({ label, description, children }: { label: string; descript
 }
 
 function FrequencyControl({ value, onChange }: { value: Frequency; onChange: (value: Frequency) => void }) {
-  return <div className="flex rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-0.5">{(["more", "default", "less"] as const).map((option) => <button aria-pressed={value === option} className={cn("rounded-md px-2.5 py-1 text-[0.7rem] capitalize text-(--ui-text-secondary)", value === option && "bg-background text-foreground shadow-sm")} key={option} onClick={() => onChange(option)} type="button">{option}</button>)}</div>;
+  return <div className="flex rounded-[8px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-[2px]">{(["more", "default", "less"] as const).map((option) => <button aria-pressed={value === option} className={cn("rounded-[6px] px-[10px] py-[4px] text-[length:var(--canvas-text-meta)] capitalize text-(--ui-text-secondary)", value === option && "bg-background text-foreground shadow-sm")} key={option} onClick={() => onChange(option)} type="button">{option}</button>)}</div>;
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
-  // Knob travel: 40px track − 2px borders − 16px knob − 2px gap = 20px (translate-x-5).
+  // Knob travel: 40px track − 2px borders − 16px knob − 2px gap = 20px (translate-x-[20px]).
   // The old translate-x-4 left the knob mid-track, so "on" and "off" looked alike.
   // Off-track rides --dt-input (a fixed elevated grey), not the accent-tinted
   // --ui-bg-quaternary: that tint is ~9% alpha, so against the pure-black page
   // it collapsed to near-black and the track read as part of the background.
-  return <button aria-checked={checked} className={cn("relative h-6 w-10 cursor-pointer rounded-full border transition-colors", checked ? "border-(--theme-primary) bg-(--theme-primary)" : "border-(--ui-stroke-secondary) bg-(--dt-input)")} onClick={() => onChange(!checked)} role="switch" type="button"><span className={cn("absolute top-0.5 left-0 size-4 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} /></button>;
+  return <button aria-checked={checked} className={cn("relative h-[24px] w-[40px] cursor-pointer rounded-full border transition-colors", checked ? "border-(--theme-primary) bg-(--theme-primary)" : "border-(--ui-stroke-secondary) bg-(--dt-input)")} onClick={() => onChange(!checked)} role="switch" type="button"><span className={cn("absolute top-[2px] left-0 size-[16px] rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-[20px]" : "translate-x-[2px]")} /></button>;
 }
 
 function UsageSettings({ bars }: { bars: UsageBar[] | null }) {
@@ -447,17 +452,17 @@ function UsageSettings({ bars }: { bars: UsageBar[] | null }) {
     <SettingsPage title="Usage" description="How much of this month's and today's allowance you have used.">
       <SettingsCard>
         {bars === null ? (
-          <p className="text-xs text-(--ui-text-tertiary)">Loading usage…</p>
+          <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">Loading usage…</p>
         ) : bars.length === 0 ? (
-          <p className="text-xs text-(--ui-text-tertiary)">No measured usage is available yet.</p>
+          <p className="text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary)">No measured usage is available yet.</p>
         ) : (
           bars.map((bar) => (
-            <div className="border-b border-(--ui-stroke-tertiary) py-3 first:pt-1 last:border-b-0 last:pb-1" key={bar.key}>
-              <div className="mb-2 flex items-center justify-between gap-4">
-                <span className="text-xs font-medium">{bar.label}</span>
-                <span className="text-sm font-semibold tabular-nums">{bar.unlimited ? "Unlimited" : `${bar.percent}%`}</span>
+            <div className="border-b border-(--ui-stroke-tertiary) py-[12px] first:pt-[4px] last:border-b-0 last:pb-[4px]" key={bar.key}>
+              <div className="mb-[8px] flex items-center justify-between gap-[16px]">
+                <span className="text-[length:var(--canvas-text-small)] font-medium">{bar.label}</span>
+                <span className="text-[length:var(--canvas-text-small)] font-semibold tabular-nums">{bar.unlimited ? "Unlimited" : `${bar.percent}%`}</span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-(--ui-bg-quaternary)">
+              <div className="h-[8px] overflow-hidden rounded-full bg-(--ui-bg-quaternary)">
                 <div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${bar.unlimited ? 100 : bar.percent}%`, opacity: bar.unlimited ? 0.25 : 1 }} />
               </div>
             </div>
@@ -471,5 +476,5 @@ function UsageSettings({ bars }: { bars: UsageBar[] | null }) {
 function StorageMeter({ storage }: { storage: { used: number; quota: number } | null }) {
   const percentage = storage?.quota ? Math.min(100, Math.round((storage.used / storage.quota) * 100)) : 0;
   const usedMb = storage ? storage.used / 1024 / 1024 : 0;
-  return <div><div className="mb-2 flex items-center justify-between"><span className="text-xs font-medium">Browser storage</span><span className="text-sm font-semibold tabular-nums">{percentage}%</span></div><div className="h-2 overflow-hidden rounded-full bg-(--ui-bg-quaternary)"><div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${percentage}%` }} /></div><p className="mt-2 text-[0.7rem] text-(--ui-text-tertiary)">{storage ? `${usedMb.toFixed(1)} MB currently used.` : "Calculating available storage…"}</p></div>;
+  return <div><div className="mb-[8px] flex items-center justify-between"><span className="text-[length:var(--canvas-text-small)] font-medium">Browser storage</span><span className="text-[length:var(--canvas-text-small)] font-semibold tabular-nums">{percentage}%</span></div><div className="h-[8px] overflow-hidden rounded-full bg-(--ui-bg-quaternary)"><div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${percentage}%` }} /></div><p className="mt-[8px] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">{storage ? `${usedMb.toFixed(1)} MB currently used.` : "Calculating available storage…"}</p></div>;
 }
