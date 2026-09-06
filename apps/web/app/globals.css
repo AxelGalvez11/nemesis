@@ -1,4 +1,7 @@
-@import url("https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* 2026-09-04: the Google Fonts @import that used to sit here is gone. It fetched Libre
+   Baskerville, which nothing in the app references, and JetBrains Mono, which is already
+   self-hosted from /public/fonts by desktop-ui.css. A CSS @import is a serial, render-blocking
+   round trip to a third party before any styled text can paint. */
 
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);

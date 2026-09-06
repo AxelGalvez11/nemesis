@@ -43,8 +43,10 @@ import { singleUnitCoverage } from "@/lib/notebooks/extract-coverage";
 import { fetchIngestSource } from "@/lib/notebooks/ingest-fetch";
 import { contentHashOf, persistParse, recordSummary } from "@/lib/notebooks/parse-record";
 import { reuseStoredParse } from "@/lib/notebooks/parse-reuse";
-import { kindFor, parseDocument, resolveKind, sniffKind } from "@/lib/notebooks/parse-document";
+import { kindFor, parseDocument, resolveKind, sniffKind, type ParsedDocument } from "@/lib/notebooks/parse-document";
 import { noTextMessage } from "@/lib/notebooks/parse-message";
+import { parseThreadPath, runParseOnThread } from "@/lib/notebooks/parse-run";
+import { DEADLINE_ABORT_MS } from "@/lib/notebooks/parse-worker";
 import { MAX_INLINE_UPLOAD_BYTES, MAX_SOURCE_BYTES, readIngestRef } from "@/lib/notebooks/ingest-ref";
 import { visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
 
@@ -61,6 +63,94 @@ export const maxDuration = 300;
  *  "25 MB max" survived for months against a real limit of 4.5. */
 function sizeMessage(): string {
   return `That file is too large (${Math.round(MAX_SOURCE_BYTES / (1024 * 1024))} MB max).`;
+}
+
+/** What the student reads when the parser itself broke on their file. The raw pdf.js or
+ *  fflate text stays in the log line, where it is useful, and never in the response. */
+const UNREADABLE_MESSAGE = "That file could not be read. It may be damaged or password protected.";
+/** What the student reads when the parse hit the deadline. */
+const TOO_SLOW_MESSAGE = "Reading this file took too long. Try a smaller file or split it.";
+/** What the student reads when the parse hit the memory ceiling. */
+const TOO_BIG_MESSAGE = "That file needs more memory than one read allows. Try a smaller file or split it.";
+
+/**
+ * What one parse on this lane can end as.
+ *
+ * Narrower than `ParseOutcome` on purpose: this route never stores figures, so the
+ * pixel array the parser hands back is dropped here rather than carried for nothing.
+ * `document` rides along on a `no-text` refusal for the same reason it does one layer
+ * down: a scan has structure worth recording even when it has no text to return.
+ */
+type LaneOutcome =
+  | { ok: true; document: ParsedDocument }
+  | { ok: false; reason: string; document?: ParsedDocument }
+  | { ok: false; reason: "deadline" | "memory" };
+
+/**
+ * Parse on a worker thread with the queued worker's deadline and memory guard.
+ *
+ * 🔴 THE SAME MECHANISM THE BACKGROUND WORKER USES, NOT A SECOND ONE. `runParseOnThread`
+ * owns the clock and the memory ceiling; this route only has to read the outcome. There is
+ * no lease to renew on an interactive request, so the heartbeat always says "still held".
+ *
+ * When the thread bundle is not on disk (a dev checkout that skipped `predev`), the parse
+ * runs in this process against a plain timer instead. That timer cannot stop the parse,
+ * only the wait for it, so the request still ends with a clear answer rather than a
+ * platform kill. Nothing can free the memory in that case, which is why the bundle is
+ * the production path and this is the fallback.
+ */
+async function parseWithDeadline(
+  bytes: Uint8Array,
+  fileName: string,
+  mimeType: string,
+  requestId: string,
+): Promise<LaneOutcome> {
+  if (parseThreadPath()) {
+    const run = await runParseOnThread(bytes, fileName, mimeType, {
+      heartbeat: async () => true,
+      // The student is waiting on this request. Up to 40 vision calls is latency they sit
+      // through; the background worker looks at figures later, off the request path.
+      lookAtFigures: false,
+    });
+    switch (run.status) {
+      case "parsed":
+        return { ok: true, document: run.parsed as ParsedDocument };
+      case "refused":
+        return {
+          ok: false,
+          reason: run.reason,
+          ...(run.parsed ? { document: run.parsed as ParsedDocument } : {}),
+        };
+      case "deadline":
+      case "memory":
+        return { ok: false, reason: run.status };
+      case "lease-lost":
+        // Unreachable: the heartbeat above never reports a lost lease. Named so a
+        // future change to that heartbeat cannot fall into the default silently.
+        throw new Error("parse lease lost on an interactive request");
+      case "no-worker-bundle":
+        console.warn(JSON.stringify({ event: "file_extract_no_worker_bundle", requestId }));
+        break;
+      default:
+        throw new Error(run.error);
+    }
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<LaneOutcome>((resolve) => {
+    timer = setTimeout(() => resolve({ ok: false, reason: "deadline" }), DEADLINE_ABORT_MS);
+  });
+  try {
+    const outcome = await Promise.race([parseDocument(bytes, fileName, mimeType), deadline]);
+    if (outcome.ok) return { ok: true, document: outcome.document };
+    return {
+      ok: false,
+      reason: outcome.reason,
+      ...("document" in outcome ? { document: outcome.document } : {}),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -196,6 +286,9 @@ export async function POST(req: Request): Promise<Response> {
   // spent to protect a code path a .pptx never enters. Measured: it was the
   // third of three copies that took the old route to 676 MiB of RSS.
   const original = kind === "pdf" ? new Uint8Array(bytes) : bytes;
+  // Hashed once, before the parse. pdf.js detaches the buffer it is handed, so a hash
+  // taken after the direct-call fallback would be a hash of nothing.
+  const contentHash = contentHashOf(original);
   if (kind === "image") {
     if (sourceSize > VISION_MAX_BYTES) {
       return NextResponse.json({ error: "That picture is too large (14 MB max)." }, { status: 413 });
@@ -224,7 +317,7 @@ export async function POST(req: Request): Promise<Response> {
     // `readStructureEnvelope` is what every other consumer of `parsed_documents` goes through, and
     // a row it cannot read is a row this lane declines to reuse — falling through to the parser,
     // which is what happened before this block existed.
-    const reusable = sourceId ? await reuseStoredParse(check.userId, sourceId, contentHashOf(original)) : null;
+    const reusable = sourceId ? await reuseStoredParse(check.userId, sourceId, contentHash) : null;
     if (reusable) {
       console.info(JSON.stringify({
         event: "file_extract_reused",
@@ -258,7 +351,24 @@ export async function POST(req: Request): Promise<Response> {
     //
     // The shared parser also returns the canonical model, which is what carries
     // Word's structure and a PDF's figures past this request.
-    const outcome = await parseDocument(original, sourceName, sourceType);
+    //
+    // Run on a thread with the worker's 240 s deadline and memory guard, so a file
+    // that cannot be finished ends with a sentence instead of a platform kill.
+    const outcome = await parseWithDeadline(original, sourceName, sourceType, requestId);
+    if (!outcome.ok && (outcome.reason === "deadline" || outcome.reason === "memory")) {
+      console.error(JSON.stringify({
+        event: "file_extract_failed",
+        requestId,
+        kind,
+        bytes: sourceSize,
+        mime: sourceType || "unknown",
+        durationMs: Date.now() - startedAt,
+        error: outcome.reason,
+      }));
+      return outcome.reason === "deadline"
+        ? NextResponse.json({ error: TOO_SLOW_MESSAGE }, { status: 504 })
+        : NextResponse.json({ error: TOO_BIG_MESSAGE }, { status: 413 });
+    }
     if (!outcome.ok && outcome.reason === "too-large-image") {
       return NextResponse.json({ error: "That picture is too large (14 MB max)." }, { status: 413 });
     }
@@ -283,7 +393,7 @@ export async function POST(req: Request): Promise<Response> {
     // 🔴 `no-text` IS A REFUSAL THAT STILL HAS A DOCUMENT. A scan has nothing to
     // return to the student and plenty to remember: units, figures, geometry.
     // Treating it as `null` here is what discarded that model before #486.
-    const parsed = outcome.ok || outcome.reason === "no-text" ? outcome.document : null;
+    const parsed = outcome.ok ? outcome.document : "document" in outcome ? outcome.document ?? null : null;
     const result = { text: parsed?.text ?? "", title: parsed?.title ?? null };
     const readBy = parsed?.readBy;
     const skippedFigures = parsed?.skippedFigures ?? 0;
@@ -311,7 +421,7 @@ export async function POST(req: Request): Promise<Response> {
     let parsedDocumentId: string | null = null;
     if (sourceId && parsed) {
       const saved = await persistParse({
-        contentHash: contentHashOf(original),
+        contentHash,
         coverage,
         docKind: kind,
         sourceId,
@@ -398,16 +508,17 @@ export async function POST(req: Request): Promise<Response> {
       ...(parsedDocumentId ? { parsedDocumentId } : {}),
     });
   } catch (err) {
+    // The raw parser text (pdf.js, fflate, a vendor) goes to the log with the file's
+    // kind and size, where someone can act on it. The student gets plain English.
     console.error(JSON.stringify({
       event: "file_extract_failed",
       requestId,
       kind,
+      bytes: sourceSize,
+      mime: sourceType || "unknown",
       durationMs: Date.now() - startedAt,
       error: err instanceof Error ? err.message.slice(0, 300) : "unknown",
     }));
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Couldn't read that file." },
-      { status: 422 },
-    );
+    return NextResponse.json({ error: UNREADABLE_MESSAGE }, { status: 422 });
   }
 }

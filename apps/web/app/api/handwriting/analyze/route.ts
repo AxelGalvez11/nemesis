@@ -28,6 +28,7 @@ import { NextResponse } from "next/server";
 import { analyzeHandwriting } from "@/lib/handwriting/vision";
 import { matchExpectedElements } from "@/lib/handwriting/match-elements";
 import { checkImageUpload } from "@/lib/handwriting/upload";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { adminClient, verifyBearer } from "@/lib/server";
 import { visionConfigured } from "@/lib/vision/read";
 
@@ -52,6 +53,14 @@ function parseExpectedElements(raw: FormDataEntryValue | null): string[] {
     .slice(0, MAX_EXPECTED_ELEMENTS);
 }
 
+// One user, one day, this many vision reads. A backstop behind sign-in so one account cannot run a
+// paid model in a loop. Counted in Postgres (lib/rate-limit.ts), fails open on a database blip.
+const DAILY_LIMIT = 60;
+const DAY_SECONDS = 24 * 60 * 60;
+const DAILY_LIMIT_REFUSAL = {
+  error: { code: "daily_limit", message: "You've reached today's limit for this. It resets tomorrow." },
+};
+
 export async function POST(req: Request) {
   const user = await verifyBearer(req);
   if (!user) return NextResponse.json({ error: "Sign in to use this." }, { status: 401 });
@@ -75,6 +84,9 @@ export async function POST(req: Request) {
   // is exactly the drift the composer's own accept list has already had once.
   const upload = checkImageUpload(form.get("file"));
   if (!upload.ok) return NextResponse.json({ error: upload.error }, { status: upload.status });
+
+  const rate = await consumeRateLimit("vision:handwriting", user.id, DAILY_LIMIT, DAY_SECONDS);
+  if (!rate.allowed) return NextResponse.json(DAILY_LIMIT_REFUSAL, { status: 429 });
 
   const bytes = new Uint8Array(await upload.file.arrayBuffer());
   const observation = await analyzeHandwriting(bytes, upload.mime, {

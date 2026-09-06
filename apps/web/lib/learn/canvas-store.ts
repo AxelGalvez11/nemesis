@@ -259,8 +259,22 @@ function localIndex(): string[] {
  *  sees the new truth. */
 export const CANVASES_CHANGED_EVENT = "nemesis:canvases-changed";
 
-function emitCanvasesChanged(): void {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(CANVASES_CHANGED_EVENT));
+/** What the broadcast carries. A plain SAVE names the row it touched so a list can patch that
+ *  one row in place instead of re-reading everything (the autosave fires every few seconds
+ *  during a streaming answer). Every other change (create, delete, move, pin, folder work)
+ *  carries no detail and means "re-read". */
+export type CanvasesChangedDetail =
+  | { kind: "save"; summary: Pick<CanvasSummary, "id" | "title" | "state" | "updatedAt" | "preview"> }
+  | { kind: "change" };
+
+function emitCanvasesChanged(detail: CanvasesChangedDetail = { kind: "change" }): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<CanvasesChangedDetail>(CANVASES_CHANGED_EVENT, { detail }));
+}
+
+/** The detail of a canvases-changed event, tolerant of a plain Event (older emitters). */
+export function readCanvasesChangedDetail(event: Event): CanvasesChangedDetail {
+  const detail = (event as CustomEvent<CanvasesChangedDetail>).detail;
+  return detail && (detail.kind === "save" || detail.kind === "change") ? detail : { kind: "change" };
 }
 
 export interface CanvasSummary {
@@ -648,7 +662,19 @@ export async function saveCanvas(userId: string | null, canvas: LearningCanvas):
   // findability; what it DOES must not, and the signed-out path never notified the lists.
   if (!userId) return local;
   const { error } = await supabase.from(TABLE).upsert(canvasToRow(canvas, userId), { onConflict: "id" });
-  emitCanvasesChanged();
+  // The row's own facts ride on the broadcast so the sidebar patches in place. `updatedAt` is
+  // the client's clock only for ordering the list; the table's trigger owns the stored stamp.
+  const lastMoment = canvas.moments[canvas.moments.length - 1];
+  emitCanvasesChanged({
+    kind: "save",
+    summary: {
+      id: canvas.id,
+      title: canvas.title.slice(0, 300),
+      state: canvas.state,
+      updatedAt: new Date().toISOString(),
+      preview: typeof lastMoment?.assistantText === "string" && lastMoment.assistantText ? lastMoment.assistantText : null,
+    },
+  });
   if (error && !isMissingTableError(error)) {
     // Local copy already succeeded; a cloud failure is worth knowing about but not worth
     // interrupting the learner for.

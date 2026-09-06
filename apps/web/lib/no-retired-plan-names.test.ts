@@ -27,7 +27,7 @@ import { planLabel } from "./billing-contract.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 const ROOTS = ["components", "app"];
-const RETIRED = ["Agent Pro", "Nemesis Student", "Nemesis Max", "Nemesis Pro", "PharmaOrb"];
+const RETIRED = ["Agent Pro", "Nemesis Student", "Nemesis Max", "Nemesis Pro", "PharmaOrb", "a Pro feature", "Pro feature", "Upgrade to Pro", "Upgrade to Plus"];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

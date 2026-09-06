@@ -39,7 +39,16 @@ export const ONBOARDING_MAX_COURSES = 24;
  *  enough to stay a usable folder name. */
 export const ONBOARDING_MAX_COURSE_NAME_CHARS = 80;
 
-export const STEPS = ["courses", "syllabi", "coursework"] as const;
+/** The order a new account walks through.
+ *
+ *  "material" replaced "coursework" on 2026-09-05. The coursework step asked a
+ *  brand-new student to install a browser extension before they had seen the
+ *  product do anything; the extension offer now lives in the workspace layout
+ *  (CourseworkImportGate) and appears later, once there is something to import
+ *  into. "material" is the core loop's first half (add something to read) and
+ *  "question" is its second half (ask about it). Neither step names a subject:
+ *  a case brief and a lab manual go through the same door. */
+export const STEPS = ["courses", "syllabi", "material", "question"] as const;
 
 export type OnboardingStep = (typeof STEPS)[number];
 

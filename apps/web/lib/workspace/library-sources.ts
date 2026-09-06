@@ -527,6 +527,45 @@ export async function setLibrarySourceFolder(uid: string, id: string, folderPath
   }
 }
 
+/** Delete ONE uploaded file on its own.
+ *
+ *  Until this existed a single file could only go when its whole folder went.
+ *  The row is flagged the same way the folder path flags it (`deleted: true`,
+ *  never a hard delete: every list already filters on it, and the chats and
+ *  parses that point at the id keep pointing at something). The bytes in
+ *  storage are removed too, best effort: a row that is gone from every list
+ *  with an orphan object behind it costs storage, not correctness, so a failed
+ *  remove is logged and the delete still counts.
+ *
+ *  Resolves true when the row was flagged, false when it was not (not the
+ *  caller's row, or the database refused). */
+export async function deleteLibrarySource(uid: string, id: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("library_sources")
+      .update({ deleted: true })
+      .eq("id", id)
+      .eq("user_id", uid)
+      .eq("deleted", false)
+      .select("id,storage_path")
+      .maybeSingle();
+    if (error || !data) return false;
+    const storagePath = (data as { storage_path: string | null }).storage_path;
+    // Fixture rows point at public sample files by an absolute path; those are
+    // not objects in the bucket and must not be sent to it.
+    if (storagePath && !storagePath.startsWith("/")) {
+      const removed = await supabase.storage.from("library-sources").remove([storagePath]);
+      if (removed.error) {
+        console.warn(JSON.stringify({ event: "library_source_object_not_removed", id, error: removed.error.message }));
+      }
+    }
+    return true;
+  } catch (cause) {
+    console.warn(JSON.stringify({ event: "library_source_delete_failed", id, error: cause instanceof Error ? cause.message : String(cause) }));
+    return false;
+  }
+}
+
 /** Folder maintenance: when the note tree renames/moves/deletes a folder, its
  *  source files must follow or they'd silently vanish from the tree (their
  *  folder_path would point at a folder that no longer exists). `remap` returns

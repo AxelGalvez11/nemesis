@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { phCapture } from "@/lib/posthog";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { loadCalendarEvents } from "@/lib/workspace/calendar-model";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
@@ -97,6 +98,8 @@ export function OnboardingGate() {
     <OnboardingFlow
       onDone={(outcome) => {
         writeMarker(outcome);
+        // The funnel's "onboarding complete" step, unrecorded until 2026-09-04.
+        phCapture(outcome === "finished" ? "onboarding_completed" : "onboarding_skipped");
         setShow(false);
       }}
     />

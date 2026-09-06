@@ -71,7 +71,7 @@ export function MissionSheet({ question, reportMode, onClose }: { question: stri
       <div className="ai-block-label"><Icon name="sparkle" size={14} /> Repeat this research</div>
       {proGated ? (
         <>
-          <p className="tmpl-note">Scheduled research is a Pro feature — reports re-run automatically and land in your library.</p>
+          <p className="tmpl-note">Scheduled research is part of Nemesis. Reports re-run automatically and land in your library.</p>
           <div className="scope-actions">
             <Link href="/app/billing" className="chip-action"><Icon name="card" size={14} />See Pro plans</Link>
             <button type="button" className="chip-action" onClick={onClose}>Close</button>

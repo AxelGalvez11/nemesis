@@ -100,6 +100,14 @@ export interface ParseThreadInput {
    * sends the answer. Absent means allowed, which is every test and the synchronous lane.
    */
   vendorAllowed?: boolean;
+  /**
+   * May this parse pay to describe the figures it finds?
+   *
+   * Absent means yes, which is the background worker: the student is not waiting and the
+   * document may cost minutes and money. The interactive upload route sends `false`, because
+   * up to 40 vision calls on a request path is latency the student sits through.
+   */
+  lookAtFigures?: boolean;
 }
 
 /**
@@ -257,7 +265,7 @@ export async function runParseThread(
         // student waits through, on the one primitive with no entitlement, no
         // counter and no cache. Here the student is not waiting.
         {
-          lookAtFigures: true,
+          lookAtFigures: input.lookAtFigures !== false,
           ...(input.vendorAllowed === undefined ? {} : { vendorAllowed: input.vendorAllowed }),
         },
       )),

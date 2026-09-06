@@ -205,7 +205,10 @@ export function NoteArticle({ note, notes, onContentChange, onOpenPath, onOpenWi
   // the notes within it?").
   const containerIndex = useMemo(() => folderIndexFor(note, notes), [note, notes]);
   const editable = isEditableNote(content);
-  const textArrived = draftRef.current?.id === note.id;
+  // The list holds a note by title only until its body is fetched
+  // (library-cloud-store.ts, contentLoaded); an editor mounted on that empty
+  // string would save "" over the real note at the first keystroke.
+  const textArrived = draftRef.current?.id === note.id && note.contentLoaded !== false;
   // The editor resolves and follows [[links]] itself; both callbacks read the
   // freshest notes list through refs inside the editor, so a note created a
   // moment ago counts as available on the next render of its node.

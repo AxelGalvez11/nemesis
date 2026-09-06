@@ -1,5 +1,6 @@
 import { appUrl } from "@/lib/env";
-import { adminClient, json, verifyBearer } from "@/lib/server";
+import { adminClient, json, verifyBearer, withRouteLog } from "@/lib/server";
+import { rememberStripeCustomer } from "@/lib/stripe-customer";
 import {
   assertStripeBillingWritesAllowed,
   nemesisPriceIdFor,
@@ -16,7 +17,7 @@ import {
   type CheckoutInterval,
 } from "@/lib/billing-contract";
 
-export async function POST(req: Request) {
+async function POSTHandler(req: Request) {
   try {
     const user = await verifyBearer(req);
     if (!user) return json({ error: "authentication required" }, 401);
@@ -130,20 +131,8 @@ export async function POST(req: Request) {
         metadata: { user_id: user.id },
       }, { idempotencyKey: customerIdempotencyKey(user.id, mode) });
       customerId = customer.id;
-      const { error: customerMirrorError } = await admin.from("subscriptions").upsert({
-        user_id: user.id,
-        plan: "free",
-        status: "active",
-        stripe_customer_id: customerId,
-        stripe_livemode: livemode,
-        stripe_subscription_id: null,
-        stripe_price_id: null,
-        stripe_status: null,
-        current_period_end: null,
-        trial_end: null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
-      if (customerMirrorError) throw customerMirrorError;
+      // Customer columns only: never the plan (see lib/stripe-customer.ts).
+      await rememberStripeCustomer(admin, user.id, customerId, livemode);
     }
 
     // Freemium: no trials — the subscription bills immediately on completion.
@@ -158,7 +147,7 @@ export async function POST(req: Request) {
       // /pricing renders both of these states already, and it is the page the student
       // was on when they started. /account/billing was retired 2026-08-01; it now
       // redirects here, which is what keeps already-open Stripe sessions working.
-      success_url: `${appUrl}/pricing?checkout=success`,
+      success_url: `${appUrl}/pricing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/pricing?checkout=cancelled`,
       subscription_data: {
         ...checkoutTerms.subscription_data,
@@ -185,3 +174,5 @@ export async function POST(req: Request) {
     }, 500);
   }
 }
+
+export const POST = withRouteLog(POSTHandler);

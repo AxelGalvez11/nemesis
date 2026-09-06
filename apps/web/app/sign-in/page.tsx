@@ -7,8 +7,9 @@ import { AuthFrame } from "@/components/AuthFrame";
 import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
-import { TurnstileWidget } from "@/components/TurnstileWidget";
-import { DEFAULT_LANDING_PATH, sanitizeNextPath } from "@/lib/auth-redirect";
+import { TurnstileWidget, useCaptcha } from "@/components/TurnstileWidget";
+import { DEFAULT_LANDING_PATH, resolveAuthRedirectUrl, sanitizeNextPath } from "@/lib/auth-redirect";
+import { friendlySignInError } from "@/lib/auth-errors";
 import { SIGN_IN_PREFILL_KEY } from "@/lib/auth-signup";
 import { captchaEnabled, isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
@@ -39,9 +40,10 @@ export default function SignInPage() {
   const [deleted, setDeleted] = useState(false);
   const [existing, setExisting] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState("");
-  // Bumped on any auth failure to remount the Turnstile widget (its tokens are single-use).
-  const [captchaKey, setCaptchaKey] = useState(0);
+  // The captcha runs silently (interaction-only); the button stays live and submit waits for it.
+  const captcha = useCaptcha();
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [resent, setResent] = useState(false);
   // Two-step verification: set when the password was right but the account
   // has a verified second factor — the code form replaces the redirect.
   const [mfa, setMfa] = useState<MfaStepUp | null>(null);
@@ -126,30 +128,56 @@ export default function SignInPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (captchaEnabled && !isPreviewMode && !captchaToken) {
-      setError("Please complete the verification check.");
-      return;
-    }
     setBusy(true);
     setError(null);
+    setUnconfirmed(false);
     try {
-      const err = await signIn(email.trim(), password, captchaToken || undefined);
+      const token = captchaEnabled && !isPreviewMode ? await captcha.waitForToken() : "";
+      if (captchaEnabled && !isPreviewMode && !token) {
+        setError("The security check did not finish. Reload the page and try again.");
+        captcha.reset();
+        return;
+      }
+      const err = await signIn(email.trim(), password, token || undefined);
       if (err) {
-        setError(err);
+        setError(friendlySignInError(err));
+        setUnconfirmed(/not confirmed/i.test(err));
         // Turnstile tokens are single-use: reset the widget so the next attempt gets a fresh challenge.
-        setCaptchaToken("");
-        setCaptchaKey((k) => k + 1);
+        captcha.reset();
         return;
       }
       // The signed-in effect above finishes the trip: it either redirects or,
       // when the account has two-step verification, shows the code form.
     } catch {
       setError("Nemesis could not reach the identity service. Check your connection and try again.");
-      setCaptchaToken("");
-      setCaptchaKey((k) => k + 1);
+      captcha.reset();
     } finally {
       setBusy(false);
     }
+  }
+
+  // The account exists but the confirmation link was never opened (or expired). Send a new one
+  // from right here instead of pointing the learner back at a sign-up form they already filled in.
+  async function resendConfirmation() {
+    setResent(false);
+    const cleanEmail = email.trim();
+    if (!cleanEmail) return;
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: cleanEmail,
+      options: { emailRedirectTo: resolveAuthRedirectUrl(`/auth/callback?next=${encodeURIComponent(nextPath())}`) },
+    });
+    if (resendError) {
+      setError(friendlySignInError(resendError.message));
+      return;
+    }
+    setError(null);
+    setResent(true);
+  }
+
+  function nextPath(): string {
+    const raw = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+    return sanitizeNextPath(raw, DEFAULT_LANDING_PATH);
   }
 
   if (mfa) {
@@ -182,7 +210,9 @@ export default function SignInPage() {
         {deleted ? <p className="nemesis-auth-success">Your account and its server-side records were deleted.</p> : null}
         {existing ? <p className="nemesis-auth-notice">That email already has a Nemesis account. Sign in below to continue.</p> : null}
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account credentials are required.</p> : null}
-        <OAuthButtons disabled={busy} onError={setError} showTermsNote />
+        {/* `next` is threaded through so a learner who came from the pricing page and signs in
+            with Google lands back on checkout, not on the front door. */}
+        <OAuthButtons disabled={busy} onError={setError} showTermsNote next={nextPath()} />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
             <input id="signin-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -192,10 +222,19 @@ export default function SignInPage() {
             <input id="signin-password" type="password" autoComplete="current-password" required={!isPreviewMode} placeholder=" " value={password} onChange={(e) => setPassword(e.target.value)} />
             <label htmlFor="signin-password">Password</label>
           </div>
-          <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
-          <button className="nemesis-auth-submit" disabled={busy || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Signing in…" : isPreviewMode ? "Enter preview" : "Sign in"}</button>
+          <p className="nemesis-auth-aside">
+            <Link className="nemesis-auth-link" href="/auth/forgot">Forgot your password?</Link>
+          </p>
+          <TurnstileWidget key={captcha.key} onToken={captcha.setToken} />
+          <button className="nemesis-auth-submit" disabled={busy} type="submit">{busy ? "Signing in…" : isPreviewMode ? "Enter preview" : "Sign in"}</button>
         </form>
         {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
+        {unconfirmed && !resent ? (
+          <p className="nemesis-auth-notice">
+            <button className="nemesis-auth-textbtn" onClick={() => void resendConfirmation()} type="button">Send me a new confirmation email</button>
+          </p>
+        ) : null}
+        {resent ? <p className="nemesis-auth-success">A new confirmation link is on its way to {email.trim()}.</p> : null}
     </AuthFrame>
   );
 }

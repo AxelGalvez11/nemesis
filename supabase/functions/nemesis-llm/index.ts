@@ -804,7 +804,24 @@ async function chatCompletions(req: Request): Promise<Response> {
   }
 
   if (!upstream) {
+    // 🔴 LOGGED. This used to return 502 silently, so an outage across every provider left no
+    // trace of who was affected or which model was asked for.
+    console.error('llm_upstream_unreachable', { user_id: ctx.userId, plan: ctx.plan, model, latency_ms: Date.now() - startedAt })
     return json({ error: 'model provider unreachable' }, 502)
+  }
+
+  if (!upstream.ok) {
+    // 🔴 A FAILED CALL IS NOT BILLED, AND IT IS LOGGED. The non-streaming path below used to run
+    // recordUsage before looking at the status: a 4xx/5xx from the provider carries no `usage`
+    // block, so `total_tokens || 1000` charged the learner a flat 1,000 tokens for an answer
+    // they never got, and nothing was written to the log. The raw provider body is still
+    // returned so the client's own error mapping keeps working.
+    const detail = (await upstream.text().catch(() => '')).slice(0, 300)
+    console.error('llm_upstream_failed', { user_id: ctx.userId, plan: ctx.plan, model, status: upstream.status, latency_ms: Date.now() - startedAt, detail })
+    return new Response(detail || JSON.stringify({ error: 'model provider error' }), {
+      status: upstream.status,
+      headers: { ...CORS, 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' },
+    })
   }
 
   if (!streaming) {

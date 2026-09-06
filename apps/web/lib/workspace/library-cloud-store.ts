@@ -145,7 +145,7 @@ function parseDocumentRows(data: unknown): { notes: CloudLibraryNote[]; folders:
     if (!isObj(row)) continue;
     if (row.kind === "note") {
       const note = libraryRowToNote(row);
-      if (note) notes.push(note);
+      if (note) notes.push({ ...note, contentLoaded: false });
     } else if (row.kind === "folder" && typeof row.id === "string" && typeof row.path === "string") {
       folders.set(row.id, normalizeLibraryFolder(row.path));
     }
@@ -176,12 +176,17 @@ function noteCandidate(title: string, folder: string, suffix: number) {
 /** Every note and folder row for `userId`, paged — a library past 1,000 rows
  *  would otherwise come back silently short (see supabase-paging.ts). `id` ends
  *  the sort because updated_at is not unique: an import stamps a whole folder
- *  of notes in one statement. */
+ *  of notes in one statement.
+ *
+ *  The LIST never carries `content`: a library of a few hundred notes was
+ *  downloading every body just to draw titles. Bodies load on demand, when a
+ *  note is selected (ensureNoteContent) or a consumer asks (loadNoteContent).
+ *  A note whose body has not arrived yet carries `contentLoaded: false`. */
 function fetchDocuments(userId: string) {
   return fetchAllRows((from, to) =>
     supabase
       .from("readable_library_documents")
-      .select("id,user_id,path,kind,title,content,created_at,updated_at,deleted,position")
+      .select("id,user_id,path,kind,title,created_at,updated_at,deleted,position")
       .eq("user_id", userId)
       .eq("deleted", false)
       .in("kind", ["note", "folder"])
@@ -191,14 +196,77 @@ function fetchDocuments(userId: string) {
   );
 }
 
+/** A fresh list has no bodies. Carry over every body this tab already holds
+ *  whose row has not moved since (same updated_at); a changed row drops its
+ *  stale body and is fetched again when it is next needed. */
+function keepLoadedBodies(fresh: CloudLibraryNote[], previous: readonly CloudLibraryNote[]): CloudLibraryNote[] {
+  if (previous.length === 0) return fresh;
+  const byId = new Map(previous.map((note) => [note.id, note]));
+  return fresh.map((note) => {
+    const known = byId.get(note.id);
+    if (!known || known.contentLoaded === false || known.updatedAt !== note.updatedAt) return note;
+    return { ...note, content: known.content, contentLoaded: true };
+  });
+}
+
+/** Fetch one note's body and patch it into the list. Single-flight per id; a
+ *  body that is already here is returned without a query. Resolves to "" for a
+ *  note that is gone (deleted elsewhere). */
+const bodyFetches = new Map<string, Promise<string>>();
+async function ensureNoteContent(id: string): Promise<string> {
+  const held = state.notes.find((note) => note.id === id);
+  if (!held) return "";
+  if (held.contentLoaded !== false) return held.content;
+  const inFlight = bodyFetches.get(id);
+  if (inFlight) return inFlight;
+  const userId = loadedForUserId;
+  if (!userId || userId === "__preview__") return held.content;
+  const run = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from("readable_library_documents")
+        .select("id,content,updated_at")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data || loadedForUserId !== userId) return "";
+      const content = typeof data.content === "string" ? data.content : "";
+      const updatedAt = typeof data.updated_at === "string" ? data.updated_at : "";
+      const current = state.notes.find((note) => note.id === id);
+      if (current && current.contentLoaded === false) {
+        const patched = { ...current, content, contentLoaded: true, updatedAt: updatedAt || current.updatedAt };
+        setState({ ...state, notes: state.notes.map((note) => (note.id === id ? patched : note)) });
+      }
+      return content;
+    } finally {
+      bodyFetches.delete(id);
+    }
+  })();
+  bodyFetches.set(id, run);
+  return run;
+}
+
+/** The selected note's body must be on screen; kick its fetch whenever the
+ *  selection lands on a note the list only knows by title. */
+function ensureSelectedContent() {
+  const path = state.selectedPath;
+  if (!path) return;
+  const note = state.notes.find((item) => item.path === path);
+  if (note && note.contentLoaded === false) void ensureNoteContent(note.id).catch(() => {});
+}
+
 async function loadDocuments(userId: string): Promise<void> {
   loadedForUserId = userId;
+  const previousNotes = state.notes;
   setState({ status: "loading", error: null, notes: [], folders: [], selectedPath: null });
   const generation = dataGeneration;
   try {
     const data = await fetchDocuments(userId); // throws on a failed page
     if (loadedForUserId !== userId) return; // the user switched mid-flight
-    const { notes, folders } = parseDocumentRows(data);
+    const parsed = parseDocumentRows(data);
+    const notes = keepLoadedBodies(parsed.notes, previousNotes);
+    const folders = parsed.folders;
     folderRows = folders;
     if (dataGeneration !== generation) {
       // Something else (a live merge or re-sync) applied while this load was in
@@ -210,9 +278,11 @@ async function loadDocuments(userId: string): Promise<void> {
         folders: folderPathsOf(folders),
         selectedPath: repairSelection(state.notes, notes, state.selectedPath),
       });
+      ensureSelectedContent();
       return;
     }
     setState({ status: "loaded", error: null, notes, folders: folderPathsOf(folders), selectedPath: notes[0]?.path ?? null });
+    ensureSelectedContent();
   } catch (error) {
     if (loadedForUserId !== userId) return;
     folderRows = new Map();
@@ -241,7 +311,9 @@ async function refreshDocuments(userId: string): Promise<void> {
       scheduleResync();
       return;
     }
-    const { notes, folders } = parseDocumentRows(data);
+    const parsed = parseDocumentRows(data);
+    const notes = keepLoadedBodies(parsed.notes, state.notes);
+    const folders = parsed.folders;
     folderRows = folders;
     setState({
       status: "loaded",
@@ -250,6 +322,7 @@ async function refreshDocuments(userId: string): Promise<void> {
       folders: folderPathsOf(folders),
       selectedPath: repairSelection(state.notes, notes, state.selectedPath),
     });
+    ensureSelectedContent();
   } catch {
     // Background re-sync only: keep showing the last good data instead of an
     // error flash — the next live event (or a manual reload) tries again.
@@ -418,6 +491,7 @@ function ensureLiveRefresh(userId: string) {
 
 function select(path: string | null) {
   setState({ ...state, selectedPath: path });
+  ensureSelectedContent();
 }
 
 function reset() {
@@ -441,6 +515,8 @@ export interface SaveNoteInput {
 
 export interface UseCloudLibraryApi extends StoreState {
   select: (path: string | null) => void;
+  /** The note's body, fetched on demand (the list carries titles only). */
+  loadNoteContent: (id: string) => Promise<string>;
   reload: () => void;
   createNote: (input: CreateNoteInput) => Promise<CloudLibraryNote>;
   createFolder: (path: string) => Promise<string>;
@@ -744,6 +820,7 @@ export function useCloudLibrary(): UseCloudLibraryApi {
   return {
     ...snap,
     select: useCallback((path: string | null) => select(path), []),
+    loadNoteContent: useCallback((id: string) => ensureNoteContent(id), []),
     reload,
     createNote,
     createFolder,

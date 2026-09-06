@@ -25,6 +25,7 @@ import {
   type ReadingVoice,
 } from "@/lib/speech/reading-voice";
 import { useCanvasSpeech, type CanvasSpeech, type SpokenVoice } from "./use-canvas-speech";
+import { showUpgradePrompt } from "@/lib/workspace/upgrade-prompt";
 import { useResponseAudio, type ResponseAudio } from "./use-response-audio";
 
 export interface CanvasVoice {
@@ -201,6 +202,15 @@ export function useCanvasVoice(reply: SpokenReply | null = null, alwaysSpeak = f
     }),
     [hushNarration, player],
   );
+
+  // The read-aloud allowance ran out (the speak function answered 402). Until now the speech lane
+  // recorded "voice-quota" and nobody read it, so the canvas simply went quiet with no word why.
+  // The upgrade dialog is the one place that explains a spent allowance, so it is told here. The
+  // failure is cleared at the start of every speak, so each fresh refusal shows the dialog again.
+  useEffect(() => {
+    if (speech.failure !== "voice-quota") return;
+    showUpgradePrompt("You've used this month's read-aloud time.", "monthly");
+  }, [speech.failure]);
 
   // Browser-only facts, corrected after the first paint. See the file header.
   useEffect(() => {

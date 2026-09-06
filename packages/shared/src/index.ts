@@ -297,3 +297,7 @@ export * from "./document-citations.ts";
 // a weld inspection, and the heading path carries whatever the document called
 // it. A keyword list here would be a hidden claim about who the student is.
 export * from "./document-facts.ts";
+// The Terms of Use, the Privacy Policy and the list of companies that receive user data, as plain
+// data. Shared because the app and the landing site used to hold two copies that drifted apart;
+// now both render these words, and the consent version stored on an account comes from here.
+export * from "./legal/index.ts";

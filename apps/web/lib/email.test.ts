@@ -1,6 +1,6 @@
 // npx tsx lib/email.test.ts
 import assert from "node:assert/strict";
-import { buildWelcomeEmail, escapeHtml } from "./email";
+import { buildCancellationEmail, buildPaymentFailedEmail, buildWelcomeEmail, escapeHtml } from "./email";
 
 assert.equal(escapeHtml(`<b>"x" & 'y'</b>`), "&lt;b&gt;&quot;x&quot; &amp; &#39;y&#39;&lt;/b&gt;");
 
@@ -23,5 +23,24 @@ assert.doesNotMatch(active.html, /trial/i);
 // Plan names are escaped into the HTML body.
 const weird = buildWelcomeEmail({ planName: "<script>", trialing: true, trialDays: 7 });
 assert.doesNotMatch(weird.html, /<script>/);
+
+// A bounced renewal: nothing changes today, fix the card at the link, access pauses if it keeps failing.
+const failed = buildPaymentFailedEmail({ planName: "Nemesis", portalUrl: "https://example.test/settings" });
+assert.equal(failed.subject, "Your Nemesis payment did not go through");
+assert.match(failed.text, /card was declined/i);
+assert.match(failed.text, /Nothing changes today/);
+assert.ok(failed.text.includes("https://example.test/settings"), "text carries the settings link");
+assert.ok(failed.html.includes('href="https://example.test/settings"'), "html links to settings");
+assert.match(failed.text, /access to your plan will pause/i);
+assert.doesNotMatch(failed.text, /credit|token/i, "never says credits or tokens to a user");
+
+// The plan ended: names the date when there is one, and says free plan when there is not.
+const ended = buildCancellationEmail({ planName: "Nemesis", accessUntil: "2026-10-01T00:00:00.000Z" });
+assert.equal(ended.subject, "Your Nemesis subscription has ended");
+assert.match(ended.text, /keep access until October 1, 2026/);
+assert.match(ended.html, /October 1, 2026/);
+const endedNow = buildCancellationEmail({ planName: "Nemesis", accessUntil: null });
+assert.match(endedNow.text, /now on the free plan/);
+assert.doesNotMatch(buildCancellationEmail({ planName: "<script>", accessUntil: null }).html, /<script>/);
 
 console.log("email.test.ts OK");

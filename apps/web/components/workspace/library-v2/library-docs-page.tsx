@@ -46,7 +46,7 @@ import { findFolderNote, folderNoteTitle, isFolderNote, parentFolderOf } from "@
 import { LIBRARY_HOME_SEED, pickLibraryLandingNote } from "@/lib/workspace/library-home";
 import { findLibraryNote, libraryRouteBase } from "@/lib/workspace/library-links";
 import { NO_ANCHOR, readerHrefFrom, type ReaderAnchor } from "@/lib/reader/reader-anchor";
-import { loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
+import { deleteLibrarySource, loadLibrarySources, type LibrarySource } from "@/lib/workspace/library-sources";
 import { extractNoteOutline } from "@/lib/workspace/note-outline";
 import { cn } from "@/lib/utils";
 import { libraryChrome } from "@/lib/workspace/library-sidebar-layout";
@@ -89,7 +89,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
   const preview = Boolean(useWorkspacePreview());
-  const { status, notes, select, createNote, saveNote, deleteNote } = useCloudLibrary();
+  const { status, notes, select, createNote, saveNote, deleteNote, loadNoteContent } = useCloudLibrary();
 
   const [articleContent, setArticleContent] = useState("");
   const [librarySources, setLibrarySources] = useState<LibrarySource[]>([]);
@@ -216,9 +216,10 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
   // phrased to trip the matching chat skill (teach → guided teaching with
   // understanding checks; flashcards/tests → the Auto-defaults craft skills).
   const startStudyAction = useCallback(
-    (action: NoteStudyAction) => {
+    async (action: NoteStudyAction) => {
       if (!note) return;
-      const attachment = new File([note.content], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" });
+      const body = note.contentLoaded === false ? await loadNoteContent(note.id) : note.content;
+      const attachment = new File([body], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" });
       const prompt =
         action === "teach"
           ? `Teach me "${note.title}" from my attached notes — step by step, checking my understanding as we go.`
@@ -229,7 +230,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
       const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
       router.push(`${navigationRoot}/sessions`);
     },
-    [note, pathname, router],
+    [loadNoteContent, note, pathname, router],
   );
 
   // ?source=<id> was where a file used to open, INSIDE this page. It is now a
@@ -244,6 +245,22 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
   }, [pathname, requestedSource, router, sourceId]);
 
   const bumpSources = useCallback(() => setSourcesVersion((version) => version + 1), []);
+
+  // Delete one stored file. The row leaves the list at once; the store call
+  // follows. If the store refuses, the row comes back with a reload and the
+  // rejection shows in the tree's error strip.
+  const deleteSource = useCallback(
+    async (source: LibrarySource) => {
+      if (!uid) throw new Error("Sign in to delete files.");
+      setLibrarySources((all) => all.filter((row) => row.id !== source.id));
+      const ok = await deleteLibrarySource(uid, source.id);
+      if (!ok) {
+        bumpSources();
+        throw new Error(`Couldn't delete ${source.fileName}.`);
+      }
+    },
+    [bumpSources, uid],
+  );
 
   // Source files: loaded per account (fixtures when signed out / previewing)
   // and re-loaded whenever an import stores an original or a folder operation
@@ -379,6 +396,7 @@ export function LibraryDocsPage({ sourceId = null }: { sourceId?: string | null 
               onOpenFolderNote={(path) => void openFolderPage(path)}
               onOpenNote={openPath}
               onOpenSource={openSource}
+              onDeleteSource={deleteSource}
               onSourcesChanged={bumpSources}
               openNotePath={note?.path ?? null}
               revealFolder={reveal}

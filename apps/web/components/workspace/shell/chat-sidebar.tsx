@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 // threads, and starting a chat is not something this product does any more. The component stays
 // in section-states.tsx — unused, not deleted — because the rail's own history section is one
 // constant away from coming back.
+import { ReportProblemDialog } from "./report-problem-dialog";
 import { SidebarNoMatchState, SidebarSessionsEmptyState } from "./section-states";
 import { useSettingsModal } from "./settings-modal";
 import {
@@ -242,6 +243,7 @@ function StudentSidebarFooter({
   // Renders nothing until the plan is known, because a placeholder here is
   // indistinguishable from a claim.
   const [plan, setPlan] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     void fetchEntitlements()
@@ -276,13 +278,14 @@ function StudentSidebarFooter({
               <DropdownMenuSubContent className="w-44" sideOffset={6}>
                 <DropdownMenuItem onSelect={() => router.push("/legal/terms")}><Codicon name="law" size="0.85rem" /> Terms of service</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => router.push("/legal/privacy")}><Codicon name="shield" size="0.85rem" /> Privacy policy</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => { window.location.href = "mailto:support@enternemesis.com?subject=Nemesis%20bug%20report"; }}><Codicon name="bug" size="0.85rem" /> Report a bug</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setReportOpen(true)}><Codicon name="bug" size="0.85rem" /> Report a problem</DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuItem onSelect={() => void signOut().then(() => router.replace("/sign-in"))}><Codicon name="sign-out" size="0.85rem" /> Log out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <ReportProblemDialog onOpenChange={setReportOpen} open={reportOpen} />
     </SidebarFooter>
   );
 }

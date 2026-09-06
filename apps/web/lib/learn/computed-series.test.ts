@@ -10,7 +10,7 @@ import { at, present } from "@/lib/test-support";
 import test from "node:test";
 
 import { curve, DEFAULT_SAMPLES, distributionCurve, sampledHistogram, SURFACE_SAMPLES, surfaceGrid } from "./computed-series";
-import { verifyEquivalence, verifyExpressionValue } from "./visual-verification";
+import { verifyEquivalence, verifyExpressionValue } from "./expression-verification";
 
 function segments(expression: string, from: number, to: number, samples?: number) {
   const result = curve({ expression, from, to, ...(samples ? { samples } : {}) });

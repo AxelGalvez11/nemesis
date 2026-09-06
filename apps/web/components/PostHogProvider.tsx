@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { initPosthog, phCapture } from "@/lib/posthog";
+import { installLastErrorCapture } from "@/lib/last-error";
 
 // Initializes PostHog once in the browser and captures a $pageview on every App Router navigation.
 // Next.js soft navigations don't reload the page, so pageviews must be sent explicitly on
@@ -11,6 +12,7 @@ import { initPosthog, phCapture } from "@/lib/posthog";
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     initPosthog();
+    installLastErrorCapture();
   }, []);
 
   return (

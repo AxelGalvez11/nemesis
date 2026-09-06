@@ -100,8 +100,9 @@ test("🔴 the Streamdown plugin loads the library inside `render`, so a message
   assert.match(plugin, /await loadEngine\(\)/, "the plugin no longer loads the engine lazily");
   assert.match(plugin, /type: "diagram"/, "the plugin no longer answers Streamdown's diagram contract");
 
-  // The one consumer of the plugin, pinned by name: if `message.tsx` goes back to the package
-  // plugin the sweep above catches it, but this says which file the replacement belongs to.
-  const message = readFileSync(new URL("../../components/ai-elements/message.tsx", import.meta.url), "utf8");
+  // The one consumer of the plugin, pinned by name: if `message-streamdown.tsx` (the on-demand
+  // half of MessageResponse) goes back to the package plugin the sweep above catches it, but
+  // this says which file the replacement belongs to.
+  const message = readFileSync(new URL("../../components/ai-elements/message-streamdown.tsx", import.meta.url), "utf8");
   assert.match(message, /mermaid: mermaidPlugin/, "MessageResponse is not using the lazy plugin");
 });

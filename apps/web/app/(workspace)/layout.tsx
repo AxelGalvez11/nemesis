@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { CourseworkImportGate } from "@/components/workspace/onboarding/coursework-import-gate";
 import { OnboardingGate } from "@/components/workspace/onboarding/onboarding-gate";
+import { TermsReconsentGate } from "@/components/workspace/onboarding/terms-reconsent-gate";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import { WorkspaceWaiting } from "@/components/workspace/shell/workspace-waiting";
 import { signInRedirect } from "@/lib/auth-redirect";
@@ -92,6 +93,8 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           than on one page so a student landing anywhere in the workspace gets
           the same welcome. */}
       <OnboardingGate />
+      {/* Asks once, anyone whose account carries an older Terms version than the one we publish. */}
+      <TermsReconsentGate />
       {/* And for everyone past their first day: if the extension is holding a
           reading of their school portal, offer to bring it in. Without this a
           scan had nowhere to go once onboarding was over. */}

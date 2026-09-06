@@ -405,7 +405,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
                 in the sidebar from the same `content`, and a blank page.
                 `draftRef` is set in that same effect, so this is the honest
                 test of "the text for THIS note has arrived". */}
-            {note && draftRef.current?.id === note.id && isEditableNote(content) ? (
+            {note && draftRef.current?.id === note.id && note.contentLoaded !== false && isEditableNote(content) ? (
               <NoteEditor
                 className="note-editor min-h-[28rem] bg-transparent p-1"
                 key={note.id}
@@ -415,7 +415,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
               />
             ) : (
               <>
-                {note && draftRef.current?.id === note.id && (
+                {note && draftRef.current?.id === note.id && note.contentLoaded !== false && (
                   <p className="mb-3 rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)">
                     This note contains formatting the editor cannot safely change yet, so it is shown as read-only.
                   </p>

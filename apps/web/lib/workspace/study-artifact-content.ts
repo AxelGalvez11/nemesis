@@ -194,6 +194,13 @@ export function parseTestContent(value: unknown): TestContent | null {
   return { attempts, questions };
 }
 
+/** Just the attempts of a test, from either the full payload or the bare
+ *  `content->attempts` array the study list fetch returns. */
+export function parseTestAttempts(value: unknown): TestAttempt[] {
+  const raw = Array.isArray(value) ? value : typeof value === "object" && value !== null ? (value as Record<string, unknown>).attempts : null;
+  return Array.isArray(raw) ? raw.map(toAttempt).filter((attempt): attempt is TestAttempt => attempt !== null) : [];
+}
+
 /** Validate a study_artifacts.content jsonb value as mindmap content. */
 export function parseMindmapContent(value: unknown): MindmapContent | null {
   if (typeof value !== "object" || value === null) return null;

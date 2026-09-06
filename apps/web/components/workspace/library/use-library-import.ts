@@ -29,6 +29,7 @@
 import { useState } from "react";
 
 import { supabase } from "@/lib/supabase";
+import { captureFirst } from "@/lib/first-events";
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import type { CloudLibraryNote } from "@/lib/workspace/library-cloud-store";
 import { describeCoverage, type ExtractionCoverage } from "@nemesis/shared";
@@ -61,6 +62,8 @@ interface UseLibraryImportArgs {
   folders: readonly string[];
   createNote: (input: { title: string; folder: string; content: string }) => Promise<CloudLibraryNote>;
   saveNote: (input: { id: string; title: string; content: string }) => Promise<unknown>;
+  /** The list carries titles only; a body is fetched on demand through this. */
+  loadNoteContent: (id: string) => Promise<string>;
   /** Called with the last successfully imported note's path, to open it. */
   onImported: (lastPath: string) => void;
   /** Called once per batch that stored at least one original file, so the
@@ -68,7 +71,7 @@ interface UseLibraryImportArgs {
   onSourcesChanged?: () => void;
 }
 
-export function useLibraryImport({ uid, notes, folders, createNote, saveNote, onImported, onSourcesChanged }: UseLibraryImportArgs) {
+export function useLibraryImport({ uid, notes, folders, createNote, saveNote, loadNoteContent, onImported, onSourcesChanged }: UseLibraryImportArgs) {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   /** What imported successfully but INCOMPLETELY — one line per file, and empty
@@ -121,12 +124,18 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
       // the row is filed, which is a metadata update, not a second upload.
       const stored = filed ? { ...filed, folderPath: plan.folder } : null;
       if (filed) await setLibrarySourceFolder(uid, filed.id, plan.folder);
+      // The related-link pass appends to EXISTING notes, so their bodies must
+      // be real before it runs (the list holds titles only).
+      const related = new Map<string, { content: string; id: string; title: string }>();
+      for (const relation of plan.related) {
+        const found = notes.find((note) => note.path.toLocaleLowerCase() === relation.path.toLocaleLowerCase());
+        if (!found) continue;
+        const content = found.contentLoaded === false ? await loadNoteContent(found.id) : found.content;
+        related.set(found.path.toLocaleLowerCase(), { content, id: found.id, title: found.title });
+      }
       const firstPath = await applyLibrarianPlan(plan, {
         createNote,
-        findNote: (path) => {
-          const found = notes.find((note) => note.path.toLocaleLowerCase() === path.toLocaleLowerCase());
-          return found ? { content: found.content, id: found.id, title: found.title } : null;
-        },
+        findNote: (path) => related.get(path.toLocaleLowerCase()) ?? null,
         recordSource: (noteId, location) => recordProvenance(noteId, file.name, stored?.id ?? null, location),
         saveNote,
       });
@@ -160,6 +169,7 @@ export function useLibraryImport({ uid, notes, folders, createNote, saveNote, on
           // the extractor takes as its reference, so the bytes leave the device
           // exactly once and every later operation names the same object.
           const filed = uid ? await uploadLibrarySource(uid, file, "Imported") : null;
+          if (filed) captureFirst("first_source_added", { surface: "library" });
           const { coverage, text, title } = await extractFile(file, uid, {
             folderPath: "Imported",
             sourceId: filed?.id,

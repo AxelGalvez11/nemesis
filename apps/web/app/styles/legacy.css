@@ -68,6 +68,9 @@ button.danger-button { background: var(--surface); border: 1px solid rgba(255, 9
 .legal-content section { border-top: 1px solid var(--line); padding: 22px 0; }
 .legal-content h2 { font-size: 18px; margin: 0 0 8px; }
 .legal-content p { color: var(--text-2); line-height: 1.65; margin: 0; max-width: 760px; }
+.legal-content p + p { margin-top: 10px; }
+.legal-content ul { color: var(--text-2); line-height: 1.65; margin: 10px 0 0; padding-left: 20px; max-width: 760px; }
+.legal-content li + li { margin-top: 6px; }
 
 /* explore */
 .explore-layout { display: grid; grid-template-columns: 204px minmax(0, 1fr); min-height: 100%; }

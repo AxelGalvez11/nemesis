@@ -45,6 +45,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { COMPOSER_PREFILL_EVENT, takeComposerPrefill } from "@/lib/workspace/composer-prefill";
+
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { DEFAULT_ANSWER_MODALITY, nextAnswerModality } from "@/lib/learn/answer-modality";
 import type { CanvasBlock, LearnerInputModality } from "@/lib/learn/canvas-model";
@@ -392,6 +394,22 @@ export function CanvasComposer({
     // missing `inSession` above. The page to work on used to be deliberately NOT closed here; that
     // rationale now lives with the page, in written-work-sheet.tsx.
   }, [taskId]);
+
+  // A prompt handed over by onboarding's "ask your first question" screen. Read once on mount
+  // (the composer mounted after the hand-off) and again on the event (it was already mounted).
+  // Sits AFTER the prompt-changed effect above so that effect's `setText("")` cannot wipe it.
+  useEffect(() => {
+    const take = (event?: Event) => {
+      const stashed = takeComposerPrefill() ?? ((event as CustomEvent<string> | undefined)?.detail ?? null);
+      if (!stashed) return;
+      setText(stashed);
+      typedBefore.current = stashed;
+      input.current?.focus();
+    };
+    take();
+    window.addEventListener(COMPOSER_PREFILL_EVENT, take);
+    return () => window.removeEventListener(COMPOSER_PREFILL_EVENT, take);
+  }, []);
 
   useEffect(() => {
     if (!dictation.listening && !dictation.transcript) return;

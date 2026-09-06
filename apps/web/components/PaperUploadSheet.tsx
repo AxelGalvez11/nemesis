@@ -38,7 +38,7 @@ export function PaperUploadSheet({ onClose, onLaunch }: { onClose: () => void; o
       setPhase("idle");
       // Surface the quota gate distinctly so a free user understands why it stopped.
       const msg = e instanceof Error ? e.message : "Something went wrong.";
-      setError(msg === "quota_exceeded" ? "Journal-club appraisal is a Pro feature (or you've hit today's limit)." : msg);
+      setError(msg === "quota_exceeded" ? "You've reached today's limit for appraisals. It resets tomorrow, or Nemesis gives you more." : msg);
     }
   }
 

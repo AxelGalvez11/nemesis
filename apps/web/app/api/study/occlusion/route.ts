@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 
 import { bearerFrom, verifyDeviceKey } from "@/lib/device-key";
 import { readImage, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { adminClient } from "@/lib/server";
 import {
   jsonFrom,
@@ -24,6 +25,14 @@ import {
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+// One user, one day, this many vision reads. A backstop behind sign-in so one account cannot run a
+// paid model in a loop. Counted in Postgres (lib/rate-limit.ts), fails open on a database blip.
+const DAILY_LIMIT = 60;
+const DAY_SECONDS = 24 * 60 * 60;
+const DAILY_LIMIT_REFUSAL = {
+  error: { code: "daily_limit", message: "You've reached today's limit for this. It resets tomorrow." },
+};
 
 export async function POST(req: Request) {
   // Same gate as the extract route, and for the same reason: this route forwards
@@ -60,6 +69,9 @@ export async function POST(req: Request) {
   if (file.size > VISION_MAX_BYTES) {
     return NextResponse.json({ error: "That image is too large to read. Try a smaller one." }, { status: 413 });
   }
+
+  const rate = await consumeRateLimit("vision:occlusion", check.userId, DAILY_LIMIT, DAY_SECONDS);
+  if (!rate.allowed) return NextResponse.json(DAILY_LIMIT_REFUSAL, { status: 429 });
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const seen = await readImage(bytes, mime, {

@@ -37,12 +37,14 @@ import {
   noteMaterial,
   outlineToMermaidMindmap,
   parseMindmapContent,
+  parseTestAttempts,
   parseTestContent,
   scoreAttempt,
   scoreTone,
   typedAnswerMatches,
   type MissKind,
   type ScoreTone,
+  type TestAttempt,
   type TestContent,
   type TestGenOpts,
 } from "@/lib/workspace/study-artifact-content";
@@ -50,17 +52,25 @@ import { generateStudyArtifact } from "@/lib/workspace/study-generate";
 import { useCloudStudy, type StudyArtifact } from "@/lib/workspace/study-cloud-store";
 import { cn } from "@/lib/utils";
 
+/** A test's attempts whether or not its payload has been loaded: the study
+ *  list carries only `attempts` until the artifact is opened. */
+export function artifactAttempts(artifact: StudyArtifact): TestAttempt[] | null {
+  if (artifact.kind !== "test") return null;
+  if (artifact.contentLoaded === false) return parseTestAttempts(artifact.attempts);
+  const content = parseTestContent(artifact.content);
+  return content ? content.attempts : null;
+}
+
 export function artifactScoreLabel(artifact: StudyArtifact): string {
-  const content = artifact.kind === "test" ? parseTestContent(artifact.content) : null;
-  if (!content) return artifact.kind === "test" ? "—" : "";
-  const best = bestAttempt(content.attempts);
+  const attempts = artifactAttempts(artifact);
+  if (!attempts) return artifact.kind === "test" ? "—" : "";
+  const best = bestAttempt(attempts);
   return best ? `${Math.round((best.score / best.total) * 100)}%` : "Not taken";
 }
 
 /** Colour band to pair with artifactScoreLabel in the tests table. */
 export function artifactScoreTone(artifact: StudyArtifact): ScoreTone {
-  const content = artifact.kind === "test" ? parseTestContent(artifact.content) : null;
-  return scoreTone(content?.attempts ?? []);
+  return scoreTone(artifactAttempts(artifact) ?? []);
 }
 
 /* ------------------------------------------------------------------ */
@@ -69,7 +79,7 @@ export function artifactScoreTone(artifact: StudyArtifact): ScoreTone {
 
 export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" | "mindmap"; open: boolean; onClose: () => void }) {
   const study = useCloudStudy();
-  const { notes } = useCloudLibrary();
+  const { notes, loadNoteContent } = useCloudLibrary();
   const [sourceType, setSourceType] = useState<"deck" | "note" | "mixed">("deck");
   const [deckId, setDeckId] = useState("");
   const [notePath, setNotePath] = useState("");
@@ -104,18 +114,20 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
           .map((deck) => ({ cards: study.cards.filter((card) => card.deckId === deck.id && !card.suspended), deck }))
           .filter((entry) => entry.cards.length > 0)
           .map((entry) => deckMaterial(entry.deck.name, entry.cards)),
-        ...notes.map((note) => noteMaterial(note.title, note.content)),
+        ...(await Promise.all(
+          notes.map(async (note) => noteMaterial(note.title, note.contentLoaded === false ? await loadNoteContent(note.id) : note.content)),
+        )),
       ];
       if (parts.length === 0) {
         setError("Nothing to review yet — add cards to a deck or write a note first.");
         return;
       }
-      const missed = study.artifacts
-        .filter((artifact) => artifact.kind === "test")
-        .flatMap((artifact) => {
-          const content = parseTestContent(artifact.content);
-          return content ? missedFacts(content.questions, content.attempts) : [];
-        });
+      const tests = study.artifacts.filter((artifact) => artifact.kind === "test");
+      const payloads = await Promise.all(tests.map((artifact) => (artifact.contentLoaded === false ? study.loadArtifactContent(artifact.id) : Promise.resolve(artifact.content))));
+      const missed = payloads.flatMap((payload) => {
+        const content = parseTestContent(payload);
+        return content ? missedFacts(content.questions, content.attempts) : [];
+      });
       material = mixedReviewMaterial(parts, missed);
       sourceTitle = "Mixed review";
       // The situation in sentences, not directives — the examiner charter in
@@ -146,7 +158,7 @@ export function GenerateArtifactDialog({ kind, open, onClose }: { kind: "test" |
         setError("No library notes yet — write one first, or generate from a deck.");
         return;
       }
-      material = noteMaterial(note.title, note.content);
+      material = noteMaterial(note.title, note.contentLoaded === false ? await loadNoteContent(note.id) : note.content);
       sourceTitle = note.title;
     }
     setBusy(true);
@@ -300,6 +312,12 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
   // truthful until the store round-trips.
   const [contentOverride, setContentOverride] = useState<TestContent | null>(null);
   const content = useMemo(() => contentOverride ?? parseTestContent(artifact.content), [artifact.content, contentOverride]);
+  // The list holds the artifact without its payload; open fetches it.
+  const payloadPending = artifact.contentLoaded === false;
+  const loadArtifactContent = study.loadArtifactContent;
+  useEffect(() => {
+    if (payloadPending) void loadArtifactContent(artifact.id).catch(() => {});
+  }, [artifact.id, loadArtifactContent, payloadPending]);
   // A pick is an option INDEX on a choice question and the TYPED TEXT on a
   // typed one — the same distinction TestMiss.picked stores.
   const [picks, setPicks] = useState<Array<number | string>>([]);
@@ -348,7 +366,7 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{artifact.title}</DialogTitle>
-            <DialogDescription>This test has no questions yet — generate it with AI from the Tests tab.</DialogDescription>
+            <DialogDescription>{payloadPending ? "Loading…" : "This test has no questions yet. Generate it with AI from the Tests tab."}</DialogDescription>
           </DialogHeader>
           <DialogFooter><Button onClick={onClose} type="button" variant="secondary">Close</Button></DialogFooter>
         </DialogContent>
@@ -871,6 +889,11 @@ export function TakeTestDialog({ artifact, onClose }: { artifact: StudyArtifact;
 /* ------------------------------------------------------------------ */
 
 export function MindmapDialog({ artifact, onClose }: { artifact: StudyArtifact; onClose: () => void }) {
+  const { loadArtifactContent } = useCloudStudy();
+  const payloadPending = artifact.contentLoaded === false;
+  useEffect(() => {
+    if (payloadPending) void loadArtifactContent(artifact.id).catch(() => {});
+  }, [artifact.id, loadArtifactContent, payloadPending]);
   const content = useMemo(() => parseMindmapContent(artifact.content), [artifact.content]);
   const mermaid = useMemo(() => (content ? outlineToMermaidMindmap(content.outline) : null), [content]);
   return (
@@ -878,7 +901,7 @@ export function MindmapDialog({ artifact, onClose }: { artifact: StudyArtifact; 
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-sm">{artifact.title}</DialogTitle>
-          <DialogDescription>{content ? "Generated mind map — the outline is below the diagram." : "This mind map has no content yet — generate it with AI from the Mindmaps tab."}</DialogDescription>
+          <DialogDescription>{content ? "Generated mind map. The outline is below the diagram." : payloadPending ? "Loading…" : "This mind map has no content yet. Generate it with AI from the Mindmaps tab."}</DialogDescription>
         </DialogHeader>
         {content && mermaid ? (
           <div className="max-h-[65vh] overflow-y-auto" data-testid="mindmap-body">

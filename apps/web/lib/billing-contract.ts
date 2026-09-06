@@ -89,6 +89,16 @@ export function subscriptionCheckoutTerms() {
 
 export type SubscriptionWebhookAction = "created" | "updated" | "deleted" | "trial_will_end";
 
+/** Stripe's "the charge for this renewal bounced" event. Handled beside, not inside, the
+ *  subscription switch: the payload is an Invoice, not a Subscription, so it must not be
+ *  reconciled through the same path. The subscription itself stays entitled through Stripe's
+ *  retry window (`past_due` grants access, see subscriptionGrantsAccess). */
+export const INVOICE_PAYMENT_FAILED_EVENT = "invoice.payment_failed";
+
+export function isInvoicePaymentFailed(eventType: string): boolean {
+  return eventType === INVOICE_PAYMENT_FAILED_EVENT;
+}
+
 export function subscriptionWebhookAction(eventType: string): SubscriptionWebhookAction | null {
   switch (eventType) {
     case "customer.subscription.created":

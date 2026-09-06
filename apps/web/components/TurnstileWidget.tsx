@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { turnstileSiteKey } from "@/lib/env";
 
 // Minimal, dependency-free Cloudflare Turnstile (explicit-render mode). Renders nothing when no site
@@ -14,6 +14,11 @@ interface TurnstileOptions {
   "expired-callback"?: () => void;
   "error-callback"?: () => void;
   theme?: "auto" | "light" | "dark";
+  /** "interaction-only" keeps the box hidden unless Cloudflare actually needs the visitor to
+   *  click something; most people never see it. "always" is the old permanent Verifying… panel. */
+  appearance?: "always" | "execute" | "interaction-only";
+  /** "flexible" lets the box match the width of the form column instead of a fixed 300px. */
+  size?: "normal" | "flexible" | "compact";
 }
 
 declare global {
@@ -89,6 +94,11 @@ export function TurnstileWidget({ onToken }: TurnstileWidgetProps) {
         widgetId = window.turnstile.render(containerRef.current, {
           sitekey: turnstileSiteKey,
           theme: "auto",
+          // Owner 2026-09-04: the permanent "Verifying…" panel sat in the middle of the sign-in
+          // form on every visit and made the page look broken. Interaction-only runs the check
+          // silently and only draws the box when a human really has to click.
+          appearance: "interaction-only",
+          size: "flexible",
           callback: (token) => onTokenRef.current(token),
           "expired-callback": () => onTokenRef.current(""),
           "error-callback": () => onTokenRef.current(""),
@@ -109,5 +119,45 @@ export function TurnstileWidget({ onToken }: TurnstileWidgetProps) {
   }, []);
 
   if (!turnstileSiteKey) return null;
-  return <div ref={containerRef} style={{ display: "flex", justifyContent: "center", margin: "2px 0" }} />;
+  // No margin of its own: when Cloudflare stays silent the box is 0px tall and must not leave a
+  // gap in the form. When it does draw, it fills the column (size: flexible) like the fields above.
+  return <div ref={containerRef} className="nemesis-auth-captcha" />;
+}
+
+/** How long a submit waits for a silent Turnstile check before giving up. Cloudflare's
+ *  interaction-only run usually finishes in under a second; eight covers a slow phone. */
+const CAPTCHA_WAIT_MS = 8_000;
+
+/**
+ * Everything an auth form needs to run the captcha WITHOUT showing it.
+ *
+ * The old forms disabled their submit button until a token arrived, which meant every visitor
+ * stared at a greyed-out button and a Cloudflare panel for a second or two. With the widget in
+ * interaction-only mode the button stays live; `waitForToken` is called inside submit and only
+ * makes the visitor wait when the check has genuinely not finished yet.
+ *
+ * `reset()` remounts the widget (tokens are single-use) after any failed attempt.
+ */
+export function useCaptcha() {
+  const [token, setTokenState] = useState("");
+  const [key, setKey] = useState(0);
+  const tokenRef = useRef("");
+  const setToken = useCallback((next: string) => {
+    tokenRef.current = next;
+    setTokenState(next);
+  }, []);
+  const reset = useCallback(() => {
+    tokenRef.current = "";
+    setTokenState("");
+    setKey((k) => k + 1);
+  }, []);
+  const waitForToken = useCallback(async (): Promise<string> => {
+    if (!turnstileSiteKey) return "";
+    const start = Date.now();
+    while (!tokenRef.current && Date.now() - start < CAPTCHA_WAIT_MS) {
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+    return tokenRef.current;
+  }, []);
+  return { token, key, setToken, reset, waitForToken };
 }

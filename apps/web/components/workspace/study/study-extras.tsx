@@ -18,7 +18,7 @@
 
 import { useCallback, useMemo } from "react";
 
-import { parseTestContent } from "@/lib/workspace/study-artifact-content";
+import { artifactAttempts } from "./study-artifact-dialogs";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import type { AttemptedTest } from "@/lib/workspace/study-stats";
 
@@ -50,7 +50,7 @@ export function LibraryProgress({ onClose }: { onClose: () => void }) {
     () =>
       artifacts
         .filter((item) => item.kind === "test")
-        .map((item) => ({ attempts: parseTestContent(item.content)?.attempts ?? [], title: item.title })),
+        .map((item) => ({ attempts: artifactAttempts(item) ?? [], title: item.title })),
     [artifacts],
   );
   // 🔴 "Go to cards" CLOSES THIS RATHER THAN NAVIGATING. Its old destination was the Study tab's

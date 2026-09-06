@@ -18,7 +18,7 @@ import { synthesise } from "@/lib/speech/azure/tts";
 import { fetchVoiceCatalogue } from "@/lib/speech/azure/voice-catalog";
 import { selectVoice } from "@/lib/speech/voice-selection";
 import { SPEECH_CHAR_LIMIT } from "@/lib/learn/canvas-speech";
-import { json, verifyBearer } from "@/lib/server";
+import { json, verifyBearer, withRouteLog } from "@/lib/server";
 import { chargeVoice, quotaResponse, secondsForCharacters } from "@/lib/speech/meter";
 
 export const runtime = "nodejs";
@@ -43,7 +43,7 @@ function clampRate(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.min(1.2, Math.max(0.7, value)) : 1;
 }
 
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   const user = await verifyBearer(request);
   if (!user) return json({ error: "Sign in to use speech." }, 401);
 
@@ -191,3 +191,5 @@ export async function POST(request: Request) {
     },
   });
 }
+
+export const POST = withRouteLog(POSTHandler);

@@ -22,7 +22,7 @@ import { NextRequest } from "next/server";
 
 import { FALLBACK_FOLDERS } from "@nemesis/shared";
 import { supabaseUrl, serviceRoleKey } from "@/lib/env";
-import { adminClient, json, verifyBearer } from "@/lib/server";
+import { adminClient, json, verifyBearer, withRouteLog } from "@/lib/server";
 import {
   isUniqueViolation,
   MAX_NOTE_NAME_ATTEMPTS,
@@ -56,7 +56,7 @@ function datedTitle(): string {
   return `Recording · ${new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`;
 }
 
-export async function POST(req: NextRequest) {
+async function POSTHandler(req: NextRequest) {
   const auth = await verifyBearer(req);
   if (!auth) return json({ error: "Sign in to save this recording." }, 401);
   if (!supabaseUrl || !serviceRoleKey) return json({ error: "Recording processing is not configured yet." }, 503);
@@ -236,3 +236,5 @@ async function kickWorker(jobId: string): Promise<void> {
     console.error("recording worker kick failed", (caught as Error)?.message);
   }
 }
+
+export const POST = withRouteLog(POSTHandler);

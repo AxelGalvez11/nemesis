@@ -1,9 +1,10 @@
 import { appUrl } from "@/lib/env";
-import { adminClient, json, verifyBearer } from "@/lib/server";
+import { adminClient, json, verifyBearer, withRouteLog } from "@/lib/server";
+import { rememberStripeCustomer } from "@/lib/stripe-customer";
 import { customerIdempotencyKey } from "@/lib/billing-contract";
 import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
 
-export async function POST(req: Request) {
+async function POSTHandler(req: Request) {
   try {
     const user = await verifyBearer(req);
     if (!user) return json({ error: "authentication required" }, 401);
@@ -28,20 +29,8 @@ export async function POST(req: Request) {
         metadata: { user_id: user.id },
       }, { idempotencyKey: customerIdempotencyKey(user.id, mode) });
       customerId = customer.id;
-      const { error: customerMirrorError } = await admin.from("subscriptions").upsert({
-        user_id: user.id,
-        plan: "free",
-        status: "active",
-        stripe_customer_id: customerId,
-        stripe_livemode: livemode,
-        stripe_subscription_id: null,
-        stripe_price_id: null,
-        stripe_status: null,
-        current_period_end: null,
-        trial_end: null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
-      if (customerMirrorError) throw customerMirrorError;
+      // Customer columns only: never the plan (see lib/stripe-customer.ts).
+      await rememberStripeCustomer(admin, user.id, customerId, livemode);
     }
 
     const session = await stripeClient.billingPortal.sessions.create({
@@ -61,3 +50,5 @@ export async function POST(req: Request) {
     }, 500);
   }
 }
+
+export const POST = withRouteLog(POSTHandler);

@@ -19,6 +19,9 @@ export interface SignUpResult {
  *  version the user accepted; the account's server-side created_at is the authoritative time. */
 export interface SignUpConsent {
   tosVersion: string;
+  /** Where the confirmation link should land the learner. Defaults to the front door; the pricing
+   *  funnel passes `/pricing?interval=…` so checkout resumes after they confirm their email. */
+  next?: string;
 }
 
 interface AuthContextValue {
@@ -148,8 +151,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // "/sessions" cannot see. This is where someone lands when they click the link in their
         // confirmation email: their genuine first screen. Built from the constant so it cannot drift
         // away from the other four again.
+        // 🔴 AND IT NOW CARRIES `next`. It was pinned to the front door, so a learner who chose a
+        // plan, signed up, and confirmed their email landed on /learn with checkout forgotten.
         emailRedirectTo: resolveAuthRedirectUrl(
-          `/auth/callback?next=${encodeURIComponent(DEFAULT_LANDING_PATH)}`,
+          `/auth/callback?next=${encodeURIComponent(consent?.next ?? DEFAULT_LANDING_PATH)}`,
         ),
         // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
         ...(captchaToken ? { captchaToken } : {}),

@@ -66,10 +66,12 @@ interface StepUpgradeProps {
    *  their semester rather than a generic pitch. */
   courseCount: number;
   eventCount: number;
+  /** Files that landed in the Library on the material step. */
+  materialCount?: number;
   onDone: () => void;
 }
 
-export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProps) {
+export function StepUpgrade({ courseCount, eventCount, materialCount = 0, onDone }: StepUpgradeProps) {
   const { session } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +100,7 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
   const built = [
     courseCount > 0 ? `${courseCount} ${courseCount === 1 ? "course" : "courses"}` : null,
     eventCount > 0 ? `${eventCount} ${eventCount === 1 ? "date" : "dates"}` : null,
+    materialCount > 0 ? `${materialCount} ${materialCount === 1 ? "file" : "files"}` : null,
   ].filter(Boolean);
 
   return (
@@ -106,7 +109,7 @@ export function StepUpgrade({ courseCount, eventCount, onDone }: StepUpgradeProp
         <h2 className="text-base font-semibold text-foreground">You&rsquo;re set up</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           {built.length > 0
-            ? `${built.join(" and ")} are ready. Everything below is optional — you can start using Nemesis right now.`
+            ? `${built.join(", ")} are ready. Everything below is optional. You can start using Nemesis right now.`
             : "You can start using Nemesis right now. Everything below is optional."}
         </p>
       </div>

@@ -93,6 +93,14 @@ export interface StudyArtifact {
   /** Raw jsonb payload — parse with study-artifact-content.ts (test
    *  questions/attempts or a mindmap outline). Null for legacy shells. */
   content: unknown;
+  /** False while the list holds this artifact WITHOUT its payload (the list
+   *  fetch skips `content`; loadArtifactContent brings it in on open). Absent
+   *  or true once `content` is real. */
+  contentLoaded?: boolean;
+  /** The test's `content->attempts` array as the list fetch returns it, so the
+   *  shelf can show a score without the whole payload. Absent once `content`
+   *  is loaded (read attempts from it instead). */
+  attempts?: unknown;
   createdAt: string;
   updatedAt: string;
 }
@@ -510,7 +518,44 @@ function toReview(raw: unknown): StudyReview | null {
 function toArtifact(raw: unknown): StudyArtifact | null {
   if (!isObject(raw) || typeof raw.id !== "string" || (raw.kind !== "test" && raw.kind !== "mindmap") || typeof raw.title !== "string") return null;
   const status = raw.status === "ready" || raw.status === "archived" ? raw.status : "draft";
-  return { id: raw.id, kind: raw.kind, groupName: text(raw.group_name), title: raw.title, status, content: "content" in raw ? raw.content : null, createdAt: text(raw.created_at), updatedAt: text(raw.updated_at) };
+  const artifact: StudyArtifact = { id: raw.id, kind: raw.kind, groupName: text(raw.group_name), title: raw.title, status, content: "content" in raw ? raw.content : null, createdAt: text(raw.created_at), updatedAt: text(raw.updated_at) };
+  if (!("content" in raw)) {
+    artifact.contentLoaded = false;
+    artifact.attempts = Array.isArray(raw.attempts) ? raw.attempts : [];
+  }
+  return artifact;
+}
+
+/** Fetch one artifact's payload and patch it into the list. Single-flight per
+ *  id; a payload already here is returned without a query. */
+const artifactFetches = new Map<string, Promise<unknown>>();
+async function ensureArtifactContent(id: string): Promise<unknown> {
+  const held = state.artifacts.find((artifact) => artifact.id === id);
+  if (!held) return null;
+  if (held.contentLoaded !== false) return held.content;
+  const inFlight = artifactFetches.get(id);
+  if (inFlight) return inFlight;
+  const userId = loadedForUserId;
+  if (!userId) return null;
+  const run = (async () => {
+    try {
+      const { data, error } = await supabase.from("study_artifacts").select("id,content").eq("id", id).eq("user_id", userId).maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data || loadedForUserId !== userId) return null;
+      const content = "content" in data ? data.content : null;
+      const current = state.artifacts.find((artifact) => artifact.id === id);
+      if (current && current.contentLoaded === false) {
+        const patched: StudyArtifact = { ...current, content, contentLoaded: true };
+        delete patched.attempts;
+        setState({ ...state, artifacts: state.artifacts.map((artifact) => (artifact.id === id ? patched : artifact)) });
+      }
+      return content;
+    } finally {
+      artifactFetches.delete(id);
+    }
+  })();
+  artifactFetches.set(id, run);
+  return run;
 }
 
 async function loadStudy(userId: string) {
@@ -545,9 +590,12 @@ async function loadStudy(userId: string) {
         .order("reviewed_at", { ascending: false })
         .order("id")
         .range(from, to)),
+      // No `content` on the list: a test payload carries every question body.
+      // Only the attempts array rides along (the shelf shows a score); the
+      // payload loads when an artifact is opened (ensureArtifactContent).
       fetchAllRows((from, to) => supabase
         .from("study_artifacts")
-        .select("id,kind,group_name,title,status,content,created_at,updated_at")
+        .select("id,kind,group_name,title,status,created_at,updated_at,attempts:content->attempts")
         .eq("user_id", userId)
         .order("updated_at", { ascending: false })
         .order("id")
@@ -737,6 +785,8 @@ export interface UseCloudStudyApi extends StoreState {
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   updateArtifact: (artifactId: string, patch: UpdateArtifactPatch) => Promise<void>;
   deleteArtifact: (artifactId: string) => Promise<void>;
+  /** The artifact's payload, fetched on demand (the list carries none). */
+  loadArtifactContent: (artifactId: string) => Promise<unknown>;
   gradeCard: (cardId: string, grade: StudyGrade, durationMs?: number) => Promise<StudyCard>;
   undoGrade: (cardId: string, snapshot: StudyScheduleSnapshot) => Promise<StudyCard>;
   setCardSuspended: (cardId: string, suspended: boolean) => Promise<StudyCard>;
@@ -1500,6 +1550,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     createArtifact,
     updateArtifact,
     deleteArtifact,
+    loadArtifactContent: useCallback((artifactId: string) => ensureArtifactContent(artifactId), []),
     deleteCard,
     userId,
     gradeCard,

@@ -8,6 +8,10 @@ export interface CloudLibraryNote {
   path: string;
   title: string;
   content: string;
+  /** False while the list holds this note by title only (its body has not been
+   *  fetched yet); absent or true once `content` is real. See fetchDocuments in
+   *  library-cloud-store.ts. */
+  contentLoaded?: boolean;
   updatedAt: string;
   createdAt: string;
   /** Hand-arranged slot within this note's folder, or null/absent if it has

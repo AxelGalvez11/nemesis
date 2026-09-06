@@ -88,6 +88,13 @@ const nextConfig: NextConfig = {
       "./workers/**",
       ...PDF_WORKER_FILES,
     ],
+    // The interactive upload route spawns the same parse thread, so it needs the
+    // same bundle shipped with it. Without this entry the file is simply absent
+    // in production and every upload falls back to the direct, unguarded call.
+    "/api/notebooks/extract/file": [
+      "./workers/**",
+      ...PDF_WORKER_FILES,
+    ],
     /**
      * 🔴 EXTERNALISING pdfjs-dist WAS NECESSARY AND NOT SUFFICIENT — THE WORKER
      * FILE STILL HAS TO BE UPLOADED. With `serverExternalPackages` alone the
@@ -104,7 +111,27 @@ const nextConfig: NextConfig = {
      * be declared, or it is silently absent in production and perfectly present
      * on a laptop.
      */
-    "/api/notebooks/extract/file": PDF_WORKER_FILES,
+  },
+  /**
+   * Cache-Control for the things in /public that never change between deploys.
+   *
+   * 🔴 NONE OF THESE WERE CACHED. Vercel serves /public with `max-age=0, must-revalidate`, so
+   * every open of a PDF re-validated the 1.2 MB pdf.js worker, every page re-checked the four
+   * font files, and the SQL wasm and brand SVGs were re-fetched on each visit. Next's own
+   * /_next/static output is already immutable; this brings the hand-placed assets in line.
+   * Fonts, the worker and the wasm are versioned by upgrade (a new pdfjs ships a new worker and
+   * a new deploy), so a year is safe. The starter decks change with content and get a day.
+   */
+  async headers() {
+    const immutable = [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }];
+    return [
+      { source: "/fonts/:path*", headers: immutable },
+      { source: "/pdf/:path*", headers: immutable },
+      { source: "/brand/:path*", headers: immutable },
+      { source: "/sql-wasm.wasm", headers: immutable },
+      { source: "/nemesis/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] },
+      { source: "/starter-decks/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] },
+    ];
   },
   // /app was the old pre-Nemesis shell and no longer exists; the workspace at "/"
   // (→ /sessions) replaced it. Redirect instead of 404 so stale links keep working.

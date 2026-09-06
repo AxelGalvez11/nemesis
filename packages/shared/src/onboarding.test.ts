@@ -27,15 +27,17 @@ import {
 
 // ── Step order ───────────────────────────────────────────────────────────────
 
-test("steps run courses → syllabi → coursework and then stop", () => {
-  assert.deepEqual([...STEPS], ["courses", "syllabi", "coursework"]);
+test("steps run courses, syllabi, material, question and then stop", () => {
+  assert.deepEqual([...STEPS], ["courses", "syllabi", "material", "question"]);
   assert.equal(nextStep("courses"), "syllabi");
-  assert.equal(nextStep("syllabi"), "coursework");
-  assert.equal(nextStep("coursework"), null);
+  assert.equal(nextStep("syllabi"), "material");
+  assert.equal(nextStep("material"), "question");
+  assert.equal(nextStep("question"), null);
 });
 
 test("going back stops at the first step", () => {
-  assert.equal(previousStep("coursework"), "syllabi");
+  assert.equal(previousStep("material"), "syllabi");
+  assert.equal(previousStep("question"), "material");
   assert.equal(previousStep("syllabi"), "courses");
   assert.equal(previousStep("courses"), null);
 });
