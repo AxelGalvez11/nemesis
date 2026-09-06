@@ -62,6 +62,7 @@ import { ProjectCustomizeDialog } from "./project-customize-dialog";
 import { useAuth } from "@/components/AuthProvider";
 import {
   CANVASES_CHANGED_EVENT,
+  readCanvasesChangedDetail,
   createFolder,
   deleteCanvas,
   deleteFolder,
@@ -89,6 +90,22 @@ import { SidebarBoards } from "./sidebar-boards";
 /** Coalesces the autosave storm: a streaming answer saves the canvas every few seconds and
  *  each save broadcasts; one trailing re-read covers a whole burst. */
 const REFRESH_DEBOUNCE_MS = 1200;
+/** A window focus re-reads the list only when the last read is older than this. */
+const FOCUS_STALE_MS = 60_000;
+
+/** The order listCanvases returns: pinned first (latest pin first), then most recently updated. */
+function sortCanvasSummaries(rows: CanvasSummary[]): CanvasSummary[] {
+  return rows.slice().sort((a, b) => {
+    const pinA = a.pinnedAt ?? "";
+    const pinB = b.pinnedAt ?? "";
+    if (pinA !== pinB) {
+      if (!pinA) return 1;
+      if (!pinB) return -1;
+      return pinB.localeCompare(pinA);
+    }
+    return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+  });
+}
 
 const OPEN_FOLDERS_KEY = "nemesis.sidebar.canvases.v1.openFolders";
 const CLOSED_SECTIONS_KEY = "nemesis.sidebar.canvases.v1.closedSections";
@@ -187,6 +204,11 @@ export function SidebarCanvases({
   /** The project whose look and instructions are being edited, or null. */
   const [customizing, setCustomizing] = useState<Folder | null>(null);
   const debounceRef = useRef<number | null>(null);
+  /** When the list was last read from the cloud; a window focus re-reads only past FOCUS_STALE_MS. */
+  const lastFetchRef = useRef(0);
+  /** The listed rows, readable from the event handler without re-subscribing on every change. */
+  const canvasesRef = useRef<CanvasSummary[]>([]);
+  canvasesRef.current = canvases;
 
   const refresh = useCallback(async () => {
     if (seed) {
@@ -195,6 +217,7 @@ export function SidebarCanvases({
       return;
     }
     const [nextCanvases, nextFolders] = await Promise.all([listCanvases(userId), listFolders(userId)]);
+    lastFetchRef.current = Date.now();
     setCanvases(nextCanvases);
     // 🔴 PROJECTS ONLY, for the same reason the Projects page filters: the sidebar's Projects
     //    section must not list a folder the learner made in the Library.
@@ -210,12 +233,28 @@ export function SidebarCanvases({
         void refresh();
       }, REFRESH_DEBOUNCE_MS);
     };
-    const onFocus = () => void refresh();
-    window.addEventListener(CANVASES_CHANGED_EVENT, debounced);
+    const onChanged = (event: Event) => {
+      const detail = readCanvasesChangedDetail(event);
+      if (detail.kind !== "save" || seed) {
+        debounced();
+        return;
+      }
+      // A save of a row already listed: patch it in place and keep the server's order
+      // (pinned first, then most recent). A save of an unknown id is a first save, so re-read.
+      if (!canvasesRef.current.some((row) => row.id === detail.summary.id)) {
+        debounced();
+        return;
+      }
+      setCanvases((rows) => sortCanvasSummaries(rows.map((row) => (row.id === detail.summary.id ? { ...row, ...detail.summary } : row))));
+    };
+    const onFocus = () => {
+      if (Date.now() - lastFetchRef.current > FOCUS_STALE_MS) void refresh();
+    };
+    window.addEventListener(CANVASES_CHANGED_EVENT, onChanged);
     window.addEventListener("focus", onFocus);
     return () => {
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
-      window.removeEventListener(CANVASES_CHANGED_EVENT, debounced);
+      window.removeEventListener(CANVASES_CHANGED_EVENT, onChanged);
       window.removeEventListener("focus", onFocus);
     };
   }, [refresh]);

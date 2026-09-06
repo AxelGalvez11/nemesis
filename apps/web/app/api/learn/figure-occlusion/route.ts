@@ -26,6 +26,7 @@ import { REFERENCE_SHELF } from "@/lib/learn/reference-shelf";
 import { chooseAsset } from "@/lib/learn/visual-provenance";
 import { imageSize } from "@/lib/notebooks/image-dimensions";
 import { labelQuality, smallerThumbnail } from "@/lib/learn/occlusion-source";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { adminClient } from "@/lib/server";
 import { readImage, visionConfigured, visionMime, VISION_MAX_BYTES } from "@/lib/vision/read";
 import { jsonFrom, looksNormalized, OCCLUSION_VISION_PROMPT, parseSuggestedBoxes } from "@nemesis/shared";
@@ -83,6 +84,14 @@ async function repositoryFetch(url: string) {
   return { json: () => response.json() as Promise<unknown>, ok: response.ok, status: response.status };
 }
 
+// One user, one day, this many vision reads. A backstop behind sign-in so one account cannot run a
+// paid model in a loop. Counted in Postgres (lib/rate-limit.ts), fails open on a database blip.
+const DAILY_LIMIT = 120;
+const DAY_SECONDS = 24 * 60 * 60;
+const DAILY_LIMIT_REFUSAL = {
+  error: { code: "daily_limit", message: "You've reached today's limit for this. It resets tomorrow." },
+};
+
 export async function POST(request: Request): Promise<NextResponse> {
   // 🔴 THE ONLY THING BETWEEN A MADE-UP STRING AND A VISION BILL ON OUR KEY.
   const check = await verifyDeviceKey(bearerFrom(request.headers.get("authorization")));
@@ -115,6 +124,11 @@ export async function POST(request: Request): Promise<NextResponse> {
   const key = cacheKey(subject);
   const hit = await readCache(admin, key);
   if (hit) return NextResponse.json(hit);
+
+  // Counted per REQUEST, after the cache: a cache hit costs nothing and should not spend a read.
+  // The loop below may try more than one picture, and that is still one request against the cap.
+  const rate = await consumeRateLimit("vision:figure-occlusion", check.userId, DAILY_LIMIT, DAY_SECONDS);
+  if (!rate.allowed) return NextResponse.json(DAILY_LIMIT_REFUSAL, { status: 429 });
 
   const found = await findReferenceImages(
     { concept: subject.trim(), limit: MAX_PICTURES + 2 },

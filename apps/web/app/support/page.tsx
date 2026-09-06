@@ -45,10 +45,17 @@ export default function SupportPage() {
         <section>
           <h2>Getting in touch</h2>
           <p>
-            Write to <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> about anything —
-            a bug, a question, a refund, or an account you cannot get back into. Telling us
-            which device you were on and roughly when it happened makes it far quicker to
-            find. Replies usually take a day or two.
+            The fastest way is inside Nemesis: open the account menu at the bottom of the
+            sidebar, choose Help, then Report a problem. It sends us your message along with
+            your account email, the page you were on and the last error your browser saw, so
+            you do not have to describe any of that yourself. You get a short reference number
+            and we reply by email.
+          </p>
+          <p>
+            Email also works. Write to <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> about
+            anything: a bug, a question, a refund, or an account you cannot get back into.
+            Telling us which device you were on and roughly when it happened makes it far
+            quicker to find. Replies usually take a day or two.
           </p>
         </section>
 

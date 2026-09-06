@@ -52,6 +52,9 @@ const BAKEOFF = readFileSync(new URL("./tts-bakeoff.ts", import.meta.url), "utf8
 
 const SUBJECTS = readFileSync(new URL("./subject-visuals.ts", import.meta.url), "utf8");
 const VERIFICATION = readFileSync(new URL("./visual-verification.ts", import.meta.url), "utf8");
+// The algebra half (a formula's stated value, two formulas' equivalence) lives in its own file so
+// the client-reachable verifiers never pull mathjs into a page's bundle.
+const EXPRESSION_VERIFICATION = readFileSync(new URL("./expression-verification.ts", import.meta.url), "utf8");
 const SUBJECT_RENDERER = readFileSync(
   new URL("../../components/workspace/learn/subject-visual.tsx", import.meta.url),
   "utf8",
@@ -738,8 +741,8 @@ test("🔴 a pole still splits the curve", () => {
 
 test("🔴 the algebra check still says it is sampled rather than proved", () => {
   assert.match(SECTION_45, /SAMPLED, NOT PROVED/);
-  assert.match(VERIFICATION, /SAMPLED, NOT PROVED/);
-  assert.match(VERIFICATION, /reason: "not-equivalent"|fail\(\s*"not-equivalent"/s);
+  assert.match(EXPRESSION_VERIFICATION, /SAMPLED, NOT PROVED/);
+  assert.match(EXPRESSION_VERIFICATION, /reason: "not-equivalent"|fail\(\s*"not-equivalent"/s);
 });
 
 test("🔴 §46 — the renderers place what they are handed and compute nothing", () => {

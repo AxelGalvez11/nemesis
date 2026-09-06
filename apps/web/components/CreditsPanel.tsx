@@ -32,7 +32,7 @@ export function CreditsBreakdown({ summary }: { summary: CreditsSummary }) {
               <div className="credits-row" key={row.key}>
                 <span className="credits-row-label">
                   {row.label}
-                  {gated ? <span className="credits-row-note">Pro feature</span> : null}
+                  {gated ? <span className="credits-row-note">Nemesis plan</span> : null}
                 </span>
                 <span className="credits-row-count">{row.used}/{row.limit}</span>
                 <span className="credits-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>

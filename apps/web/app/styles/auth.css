@@ -228,7 +228,9 @@
   letter-spacing: -0.02em;
   margin: 0 0 7px;
 }
-.nemesis-auth-card-in.is-minimal .nemesis-auth-description { margin-bottom: 14px; }
+/* The full card's description pulls itself up 18px into the 26px the headline leaves; the
+   minimal headline leaves 7px, so the same pull put the sentence ON TOP of the title. */
+.nemesis-auth-card-in.is-minimal .nemesis-auth-description { margin: 0 auto 14px; }
 .nemesis-auth-card-in.is-minimal .nemesis-auth-footer { border: 0; margin-top: 14px; padding-top: 0; }
 /* The notice pill is the last box on the page once the card's own frame is gone,
    and a grey tablet floating in white space reads as a component rather than a
@@ -517,3 +519,37 @@
   /* Mark ends at ~50px here (top 22 + 28 high); 56px clears it symmetrically. */
   .nemesis-auth-panel-wrap { align-items: center; padding: 56px 24px; }
 }
+
+/* ── 2026-09-04: forgot password, resend, and a captcha that stays out of the way ── */
+
+/* "Forgot your password?" sits under the password field, right-aligned and small, the way
+   every sign-in form a student has ever used places it. */
+.nemesis-auth-aside {
+  color: var(--auth-muted);
+  font-size: 13px;
+  margin: -4px 0 0;
+  text-align: right;
+}
+.nemesis-auth-aside .nemesis-auth-link { color: var(--auth-muted); text-decoration-color: var(--auth-line); }
+.nemesis-auth-aside .nemesis-auth-link:hover { color: var(--auth-ink); }
+
+/* A link-shaped button for actions that send something (resend the confirmation email). */
+.nemesis-auth-textbtn {
+  background: none;
+  border: 0;
+  color: var(--auth-ink);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: #c8c9c4;
+  text-underline-offset: 3px;
+}
+.nemesis-auth-textbtn:disabled { cursor: default; opacity: 0.6; }
+
+/* Turnstile in interaction-only mode is 0px tall until Cloudflare needs a click; when it does
+   draw, `size: flexible` makes it as wide as the fields above it. An empty container must not
+   open a gap in the form, so the wrapper itself carries no margin. */
+.nemesis-auth-captcha { display: flex; justify-content: center; width: 100%; }
+.nemesis-auth-captcha:empty { display: none; }
+.nemesis-auth-captcha iframe { border-radius: 14px; }

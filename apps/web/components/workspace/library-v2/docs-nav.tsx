@@ -36,6 +36,7 @@ import {
 import { SearchField } from "@/components/desktop-ui/search-field";
 import { Skeleton } from "@/components/desktop-ui/skeleton";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
 import { useAuth } from "@/components/AuthProvider";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { isFolderNote } from "@/lib/workspace/library-folder-note";
@@ -60,6 +61,10 @@ interface DocsNavProps {
   onOpenSource: (id: string) => void;
   /** Fired when imports/folder ops changed stored files — parent re-loads. */
   onSourcesChanged?: () => void;
+  /** Delete one stored file. The parent owns the list, so it drops the row and
+   *  does the store call; the rejection lands in the same error strip as every
+   *  other tree operation. */
+  onDeleteSource?: (source: LibrarySource) => Promise<void>;
   /** Breadcrumb reveal request from the center pane. */
   revealFolder?: LibraryTreeReveal | null;
   onOpenNote: (path: string) => void;
@@ -83,13 +88,13 @@ interface DocsNavProps {
   onHoldOpenChange?: (held: boolean) => void;
 }
 
-export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onNavigate, showBack = false, autoHide, onAutoHideChange, onHoldOpenChange }: DocsNavProps) {
+export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged, onDeleteSource, revealFolder, onOpenNote, onOpenFolderNote, selectedFolderPath = null, onNavigate, showBack = false, autoHide, onAutoHideChange, onHoldOpenChange }: DocsNavProps) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
-  const { status, notes, folders, error, reload, createNote, saveNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
+  const { status, notes, folders, error, reload, createNote, saveNote, loadNoteContent, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<LibrarySortMode>("az");
@@ -140,12 +145,14 @@ export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged,
     onNavigate?.();
   };
 
-  const { importError, importFiles, importNotices, importing } = useLibraryImport({ createNote, folders, notes, onImported: open, onSourcesChanged, saveNote, uid });
+  const { importError, importFiles, importNotices, importing } = useLibraryImport({ createNote, folders, loadNoteContent, notes, onImported: open, onSourcesChanged, saveNote, uid });
 
-  const attachNotesToChat = (noteIds: string[]) => {
+  const attachNotesToChat = async (noteIds: string[]) => {
     const chosen = notes.filter((note) => noteIds.includes(note.id));
     if (chosen.length === 0) return;
-    seedComposerFiles(chosen.map((note) => new File([note.content], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" })));
+    // Bodies load on demand (the list holds titles only).
+    const bodies = await Promise.all(chosen.map((note) => (note.contentLoaded === false ? loadNoteContent(note.id) : Promise.resolve(note.content))));
+    seedComposerFiles(chosen.map((note, index) => new File([bodies[index] ?? ""], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" })));
     router.push(`${navigationRoot}/sessions`);
     onNavigate?.();
   };
@@ -293,6 +300,7 @@ export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged,
                 return (
                   <SourcesGroup
                     depth={depth}
+                    onDeleteSource={onDeleteSource ? (source) => guarded("delete that file", onDeleteSource(source)) : undefined}
                     onNavigate={onNavigate}
                     onOpenSource={onOpenSource}
                     sources={folderSources}
@@ -318,13 +326,15 @@ export function DocsNav({ openNotePath, sources, onOpenSource, onSourcesChanged,
 /** Source FILES under one folder. Clicking one LEAVES this page: a file opens
  *  in the reader at /library/source/<id>, which owns a whole surface. So no row
  *  here is ever the "open" one, and the group cannot auto-expand around it. */
-function SourcesGroup({ sources, depth, onOpenSource, onNavigate }: {
+function SourcesGroup({ sources, depth, onOpenSource, onNavigate, onDeleteSource }: {
   sources: readonly LibrarySource[];
   depth: number;
   onOpenSource: (id: string) => void;
   onNavigate?: () => void;
+  onDeleteSource?: (source: LibrarySource) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const confirm = useConfirm();
   // Source FILES had no right-click at all while every note and folder around
   // them did, so the gesture looked broken on exactly the rows a student is
   // most likely to want the original of (owner 2026-08-04).
@@ -336,6 +346,20 @@ function SourcesGroup({ sources, depth, onOpenSource, onNavigate }: {
     // A missing URL means the file is gone from storage; silence would look
     // like a dead menu item, and there is nothing here to retry.
     if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  // One file on its own. Until this existed a file could only go with its
+  // whole folder. The confirm names the file, and says what the delete costs.
+  async function deleteOne(source: LibrarySource) {
+    setMenu(null);
+    if (!onDeleteSource) return;
+    const yes = await confirm({
+      body: "It will be removed from your library and from any chats that used it.",
+      confirmLabel: "Delete",
+      title: `Delete ${source.fileName}?`,
+    });
+    if (!yes) return;
+    onDeleteSource(source);
   }
 
   return (
@@ -376,7 +400,7 @@ function SourcesGroup({ sources, depth, onOpenSource, onNavigate }: {
           <div
             className="fixed z-[51] min-w-44 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-1 text-xs shadow-xl"
             role="menu"
-            style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 110) }}
+            style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 150) }}
           >
             <button
               className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-(--ui-control-hover-background)"
@@ -394,6 +418,16 @@ function SourcesGroup({ sources, depth, onOpenSource, onNavigate }: {
             >
               Open the original file
             </button>
+            {onDeleteSource && (
+              <button
+                className="block w-full rounded-lg px-2.5 py-2 text-left text-destructive hover:bg-destructive/10"
+                onClick={() => void deleteOne(menu.source)}
+                role="menuitem"
+                type="button"
+              >
+                Delete
+              </button>
+            )}
           </div>
         </>
       )}

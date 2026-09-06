@@ -29,7 +29,9 @@ test("every canvas-store mutation broadcasts, so the sidebar can never go stale"
     assert.ok(start >= 0, `${name} is gone — update this list with its replacement`);
     const next = STORE.indexOf("\nexport", start + 1);
     const body = STORE.slice(start, next === -1 ? undefined : next);
-    assert.ok(body.includes("emitCanvasesChanged()"), `${name} mutates without broadcasting`);
+    // A save broadcasts its summary (`emitCanvasesChanged({ kind: "save", ... })`) so the
+    // sidebar can patch the row in place; every other mutation broadcasts the bare change.
+    assert.ok(/emitCanvasesChanged\(/.test(body), `${name} mutates without broadcasting`);
   }
 });
 

@@ -23,6 +23,8 @@ import {
 } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
 import { useAuth } from "@/components/AuthProvider";
+import { deleteMyAccount, exportMyData } from "@/lib/api";
+import { friendlySignInError } from "@/lib/auth-errors";
 import { isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import { useConfirm } from "@/components/desktop-ui/confirm-dialog";
@@ -31,12 +33,22 @@ function friendlyMfaError(cause: unknown, kind: "phone" | "webauthn" | "totp"): 
   const message = cause instanceof Error ? cause.message : String(cause ?? "");
   const lowered = message.toLowerCase();
   if (kind === "phone" && /(sms|provider|disabled|not enabled|unsupported)/.test(lowered)) {
-    return "Text-message codes aren't available on Nemesis yet — we have to switch them on with our identity service first.";
+    return "Text-message codes aren't available on Nemesis yet. We have to switch them on with our identity service first.";
   }
   if (kind === "webauthn" && /(webauthn|disabled|not enabled|unsupported|factor type)/.test(lowered)) {
-    return "Passkeys and security keys aren't available on Nemesis yet — coming soon.";
+    return "Passkeys and security keys aren't available on Nemesis yet. Coming soon.";
   }
-  return message || "That didn't work — try again.";
+  return message || "That didn't work. Try again.";
+}
+
+// The name a learner sees on their account. Google sign-in fills full_name or name; a name typed
+// here is saved as display_name and wins over both.
+function currentDisplayName(metadata: Record<string, unknown> | undefined): string {
+  for (const key of ["display_name", "full_name", "name"]) {
+    const value = metadata?.[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
 }
 
 function qrImageSource(qr: string): string {
@@ -69,6 +81,16 @@ export function SecuritySettings() {
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
 
+  const savedDisplayName = currentDisplayName(session?.user.user_metadata);
+  const [displayName, setDisplayName] = useState(savedDisplayName);
+  const [savingName, setSavingName] = useState(false);
+  useEffect(() => {
+    setDisplayName(savedDisplayName);
+  }, [savedDisplayName]);
+
+  const [newEmail, setNewEmail] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
   const [totp, setTotp] = useState<TotpEnrollment | null>(null);
   const [totpCode, setTotpCode] = useState("");
   const [phoneDialogOpen, setPhoneDialogOpen] = useState(false);
@@ -93,6 +115,98 @@ export function SecuritySettings() {
   }, [loadFactors]);
 
   const verifiedFactors = factors.filter((factor) => factor.status === "verified");
+
+  // Delete account: a typed DELETE inside a dialog, then the route that cancels billing, clears
+  // files and removes the login. Export: the export_my_data RPC saved as a JSON file.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTyped, setDeleteTyped] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function downloadMyData() {
+    setError(null);
+    setExporting(true);
+    try {
+      const payload = await exportMyData();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nemesis-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't prepare the export.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (deleteTyped !== "DELETE") return;
+    setError(null);
+    setDeleting(true);
+    try {
+      await deleteMyAccount();
+      window.location.assign("/sign-in?deleted=1");
+    } catch (cause) {
+      setDeleting(false);
+      setDeleteOpen(false);
+      setError(cause instanceof Error ? cause.message : "Couldn't delete the account. Try again or email support.");
+    }
+  }
+
+  async function saveDisplayName(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    const trimmed = displayName.trim();
+    if (!trimmed) {
+      setError("Type a name first.");
+      return;
+    }
+    if (trimmed.length > 80) {
+      setError("Keep the name under 80 characters.");
+      return;
+    }
+    setSavingName(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ data: { display_name: trimmed } });
+      if (updateError) throw updateError;
+      setDisplayName(trimmed);
+      setNotice("Name saved.");
+    } catch (cause) {
+      setError(friendlySignInError(cause instanceof Error ? cause.message : "Couldn't save the name."));
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function changeEmail(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    const target = newEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      setError("That doesn't look like a valid email address.");
+      return;
+    }
+    if (target === (session?.user.email ?? "").toLowerCase()) {
+      setError("That is already the email on this account.");
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ email: target });
+      if (updateError) throw updateError;
+      setNewEmail("");
+      setNotice(`Check ${target} for a confirmation link. Your email changes once you open it.`);
+    } catch (cause) {
+      setError(friendlySignInError(cause instanceof Error ? cause.message : "Couldn't send the confirmation."));
+    } finally {
+      setSendingEmail(false);
+    }
+  }
 
   async function changePassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -154,7 +268,7 @@ export function SecuritySettings() {
       setNotice("Authenticator app connected. Sign-in now asks for a 6-digit code.");
       await loadFactors();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "That code didn't match — try the newest one.");
+      setError(cause instanceof Error ? cause.message : "That code didn't match. Try the newest one.");
     } finally {
       setWorkingFactor(null);
     }
@@ -257,8 +371,21 @@ export function SecuritySettings() {
       <section className="rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm">
         <h3 className="mb-1 text-[length:var(--canvas-text-meta)] font-semibold">Account</h3>
         <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">Signed in as <span className="text-foreground">{session?.user.email ?? "Preview account"}</span></p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => router.push("/account")} size="sm" variant="secondary">Manage account</Button>
+
+        <form className="mt-3 grid max-w-sm gap-2" onSubmit={saveDisplayName}>
+          <label className="text-[length:var(--canvas-text-meta)] font-medium" htmlFor="account-display-name">Display name</label>
+          <Input autoComplete="name" disabled={!canManage} id="account-display-name" maxLength={80} onChange={(event) => setDisplayName(event.target.value)} placeholder="Your name" value={displayName} />
+          <div><Button disabled={!canManage || savingName || !displayName.trim() || displayName.trim() === savedDisplayName} size="sm" type="submit" variant="secondary">{savingName ? "Saving…" : "Save name"}</Button></div>
+        </form>
+
+        <form className="mt-4 grid max-w-sm gap-2" onSubmit={changeEmail}>
+          <label className="text-[length:var(--canvas-text-meta)] font-medium" htmlFor="account-new-email">Change email</label>
+          <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">We send a confirmation link to the new address. Nothing changes until you open it.</p>
+          <Input autoComplete="email" disabled={!canManage} id="account-new-email" inputMode="email" onChange={(event) => setNewEmail(event.target.value)} placeholder="new@example.com" type="email" value={newEmail} />
+          <div><Button disabled={!canManage || sendingEmail || !newEmail.trim()} size="sm" type="submit" variant="secondary">{sendingEmail ? "Sending…" : "Send confirmation"}</Button></div>
+        </form>
+
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => void signOut().then(() => router.replace("/sign-in"))} size="sm" variant="ghost">Log out</Button>
         </div>
       </section>
@@ -295,7 +422,7 @@ export function SecuritySettings() {
           <div className="flex items-center justify-between gap-3 rounded-xl border border-(--ui-stroke-tertiary) px-3 py-2.5">
             <div>
               <p className="text-[length:var(--canvas-text-meta)] font-medium">Authenticator app</p>
-              <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Google Authenticator, 1Password, Apple Passwords — scan a code once, then enter 6-digit codes.</p>
+              <p className="text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Google Authenticator, 1Password, Apple Passwords: scan a code once, then enter 6-digit codes.</p>
             </div>
             <Button disabled={!canManage || workingFactor === "totp"} onClick={() => void startTotp()} size="sm" variant="secondary">{workingFactor === "totp" ? "Preparing…" : "Add"}</Button>
           </div>
@@ -316,6 +443,29 @@ export function SecuritySettings() {
         </div>
         {!canManage && <p className="mt-3 text-[length:var(--canvas-text-meta)] text-(--ui-text-quaternary)">Sign in on the real app to manage security settings.</p>}
       </section>
+
+      <section className="rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm">
+        <h3 className="mb-1 text-[length:var(--canvas-text-meta)] font-semibold">Your data</h3>
+        <p className="mb-3 text-[length:var(--canvas-text-meta)] leading-relaxed text-(--ui-text-tertiary)">Download a copy of everything Nemesis holds for you, or delete the account. Deleting cancels any subscription, removes your uploads, and cannot be undone.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={!canManage || exporting} onClick={() => void downloadMyData()} size="sm" variant="secondary">{exporting ? "Preparing…" : "Download my data"}</Button>
+          <Button disabled={!canManage} onClick={() => { setDeleteTyped(""); setDeleteOpen(true); }} size="sm" variant="ghost">Delete account</Button>
+        </div>
+      </section>
+
+      <Dialog onOpenChange={(open) => { if (!deleting) setDeleteOpen(open); }} open={deleteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete your Nemesis account?</DialogTitle>
+            <DialogDescription>Your chats, canvases, uploads, study sets and settings will be removed, and any subscription cancelled. This cannot be undone. Type DELETE to confirm.</DialogDescription>
+          </DialogHeader>
+          <Input aria-label="Type DELETE to confirm" autoFocus onChange={(event) => setDeleteTyped(event.target.value.toUpperCase())} placeholder="DELETE" value={deleteTyped} />
+          <DialogFooter>
+            <Button disabled={deleting} onClick={() => setDeleteOpen(false)} size="sm" variant="ghost">Keep my account</Button>
+            <Button disabled={deleting || deleteTyped !== "DELETE"} onClick={() => void deleteAccount()} size="sm" variant="destructive">{deleting ? "Deleting…" : "Delete everything"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog onOpenChange={(open) => { if (!open) void cancelTotp(); }} open={totp !== null}>
         <DialogContent className="max-w-md">

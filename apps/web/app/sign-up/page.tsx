@@ -7,11 +7,13 @@ import { AuthFrame } from "@/components/AuthFrame";
 import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
-import { TurnstileWidget } from "@/components/TurnstileWidget";
-import { DEFAULT_LANDING_PATH, sanitizeNextPath } from "@/lib/auth-redirect";
+import { TurnstileWidget, useCaptcha } from "@/components/TurnstileWidget";
+import { DEFAULT_LANDING_PATH, resolveAuthRedirectUrl, sanitizeNextPath } from "@/lib/auth-redirect";
+import { friendlySignInError } from "@/lib/auth-errors";
 import { SIGN_IN_PREFILL_KEY } from "@/lib/auth-signup";
 import { captchaEnabled, isPreviewMode } from "@/lib/env";
 import { TOS_VERSION } from "@/lib/legal";
+import { supabase } from "@/lib/supabase";
 
 const CONSENT_REQUIRED_MESSAGE = "Please agree to the Terms and Privacy Policy to continue.";
 
@@ -24,9 +26,9 @@ export default function SignUpPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [agreed, setAgreed] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState("");
-  // Bumped on any auth failure to remount the Turnstile widget (its tokens are single-use).
-  const [captchaKey, setCaptchaKey] = useState(0);
+  // The captcha runs silently (interaction-only); the button stays live and submit waits for it.
+  const captcha = useCaptcha();
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
   // Post-auth destination from ?next= (same-site paths only) — the enternemesis.com
   // pricing funnel routes strangers through here and resumes Stripe checkout on return.
@@ -69,24 +71,25 @@ export default function SignUpPage() {
       setError(CONSENT_REQUIRED_MESSAGE);
       return;
     }
-    if (captchaEnabled && !isPreviewMode && !captchaToken) {
-      setError("Please complete the verification check.");
-      return;
-    }
     setBusy(true);
     setError(null);
     const cleanEmail = email.trim();
     try {
-      const result = await signUp(cleanEmail, password, { tosVersion: TOS_VERSION }, captchaToken || undefined);
+      const token = captchaEnabled && !isPreviewMode ? await captcha.waitForToken() : "";
+      if (captchaEnabled && !isPreviewMode && !token) {
+        setError("The security check did not finish. Reload the page and try again.");
+        captcha.reset();
+        return;
+      }
+      const result = await signUp(cleanEmail, password, { tosVersion: TOS_VERSION, next: nextPath() }, token || undefined);
       if (result.alreadyRegistered) {
         routeToSignIn(cleanEmail);
         return;
       }
       if (result.error) {
-        setError(result.error);
+        setError(friendlySignInError(result.error));
         // Turnstile tokens are single-use: reset the widget so the next attempt gets a fresh challenge.
-        setCaptchaToken("");
-        setCaptchaKey((k) => k + 1);
+        captcha.reset();
         return;
       }
       if (result.needsEmailConfirmation) {
@@ -96,11 +99,22 @@ export default function SignUpPage() {
       router.replace(nextPath());
     } catch {
       setError("Nemesis could not reach the identity service. Check your connection and try again.");
-      setCaptchaToken("");
-      setCaptchaKey((k) => k + 1);
+      captcha.reset();
     } finally {
       setBusy(false);
     }
+  }
+
+  // Confirmation links expire and inboxes lose things. One button, a minute apart at most
+  // (Supabase rate-limits the resend itself), instead of "fill the form in again".
+  async function resendConfirmation() {
+    setResendState("sending");
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: submittedEmail,
+      options: { emailRedirectTo: resolveAuthRedirectUrl(`/auth/callback?next=${encodeURIComponent(nextPath())}`) },
+    });
+    setResendState(resendError ? "failed" : "sent");
   }
 
   if (submittedEmail) {
@@ -112,6 +126,13 @@ export default function SignUpPage() {
         footer={<p><Link className="nemesis-auth-link" href="/sign-in">Back to sign in.</Link></p>}
       >
         <p className="nemesis-auth-success">Waiting for you to open the link. You can close this tab afterward.</p>
+        <p className="nemesis-auth-notice">
+          {resendState === "sent"
+            ? "A fresh link is on its way. Check spam if it does not show up."
+            : resendState === "failed"
+              ? "Couldn't send another link just now. Wait a minute and try again."
+              : <>Nothing arrived? <button className="nemesis-auth-textbtn" disabled={resendState === "sending"} onClick={() => void resendConfirmation()} type="button">{resendState === "sending" ? "Sending…" : "Send it again"}</button></>}
+        </p>
       </AuthFrame>
     );
   }
@@ -130,7 +151,7 @@ export default function SignUpPage() {
             sentence on this page twice (owner, 2026-07-31). Sign-in keeps the note
             because it has no checkbox — OAuth there can create an account with nothing
             else on the page saying so. */}
-        <OAuthButtons disabled={busy} onError={setError} />
+        <OAuthButtons disabled={busy} onError={setError} next={nextPath()} />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
             <input id="signup-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -149,8 +170,8 @@ export default function SignUpPage() {
                 legal weight. That commitment still holds and is stated in the Terms. */}
             <span>I agree to the <Link className="nemesis-auth-link" href="/legal/terms">Terms</Link> and <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>.</span>
           </label>
-          <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
-          <button className="nemesis-auth-submit" disabled={busy || (!agreed && !isPreviewMode) || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Creating account…" : isPreviewMode ? "Enter preview" : "Create account"}</button>
+          <TurnstileWidget key={captcha.key} onToken={captcha.setToken} />
+          <button className="nemesis-auth-submit" disabled={busy || (!agreed && !isPreviewMode)} type="submit">{busy ? "Creating account…" : isPreviewMode ? "Enter preview" : "Create account"}</button>
         </form>
         {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
     </AuthFrame>

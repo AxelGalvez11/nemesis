@@ -109,6 +109,11 @@ export interface ParseRunOptions {
   figureCache?: FigureDescriptionStore;
   /** Whether this parse may reach a paid document parser. See `ParseOptions.vendorAllowed`. */
   vendorAllowed?: boolean;
+  /**
+   * Whether this parse may pay to describe figures. Absent means yes (the background worker).
+   * The interactive upload lane passes `false`: the student is waiting on the request.
+   */
+  lookAtFigures?: boolean;
 }
 
 /** Every lookup misses and every write is dropped. The default, and today's behaviour. */
@@ -202,6 +207,7 @@ export async function runParseOnThread(
       mimeType,
       ...(options.visionUnitBudget === undefined ? {} : { visionUnitBudget: options.visionUnitBudget }),
       ...(options.vendorAllowed === undefined ? {} : { vendorAllowed: options.vendorAllowed }),
+      ...(options.lookAtFigures === undefined ? {} : { lookAtFigures: options.lookAtFigures }),
     },
     transferList: [transfer],
     // A parse must not be able to read the environment it did not need. The

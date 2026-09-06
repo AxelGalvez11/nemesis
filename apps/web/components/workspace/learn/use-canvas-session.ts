@@ -27,6 +27,7 @@ import { rememberLine } from "@/lib/learn/learner-memory";
 import type { TurnStage } from "@/lib/learn/turn-preview";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
+import { captureFirst } from "@/lib/first-events";
 import {
   explainBlock,
   generateRelearn,
@@ -1462,6 +1463,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
             // whose material is attached and readable must not lose the attachment because the
             // knowledge layer had a bad day. §13 — "semantic extraction failed" must never be
             // reported as "file upload failed". What fails here costs adaptation, not the lesson.
+            captureFirst("first_source_added", { surface: "canvas", kind: source.kind });
             canvasCapture("source_attached", latest.current, {
               kind: source.kind,
               excerpts: source.excerpts.length,
@@ -2015,6 +2017,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       const arrived = arrivals.current;
       arrivals.current = 0;
       if (!said && !resumed && arrived === 0) return null;
+      captureFirst("first_turn_sent", { surface: "canvas", with_material: arrived > 0 });
 
       // 🔴 THE NAME STARTS AT SEND, NOT AT RESOLVE. The old namer could only run once the reply
       // had landed and been recorded, which put the whole answer's round trip plus its own

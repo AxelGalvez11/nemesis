@@ -630,20 +630,18 @@ export async function deleteMyAccount(): Promise<void> {
   const token = data.session?.access_token;
   if (!token) throw new Error("Sign in to delete your account");
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/account-delete`, {
+  // The Next route (not the edge function) so the delete can also cancel the Stripe
+  // subscription and clear uploaded files — see app/api/account/delete/route.ts.
+  const res = await fetch("/api/account/delete", {
     method: "POST",
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ confirm: true }),
   });
-  const body = await res.json().catch(() => null);
   if (!res.ok) {
-    const message = isObj(body) && typeof body.error === "string" ? body.error : `delete failed (${res.status})`;
-    throw new Error(message);
+    const detail = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(detail.error ?? `Account deletion failed (${res.status})`);
   }
+  await supabase.auth.signOut().catch(() => {});
 }
 
 // ── Conversations (saved chat history) ──────────────────────────────────────

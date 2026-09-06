@@ -76,8 +76,8 @@ function redirectCheck(path, destination) {
 // the actual contract: if the h1 is missing the page did not render.
 htmlCheck("/sign-in", ["NEMESIS", "Sign in to Nemesis"]);
 htmlCheck("/sign-up", ["NEMESIS", "Create your account"]);
-// Signed out, /account is only its loading shell — there is no stable copy beyond it.
-htmlCheck("/account", ["Loading"]);
+// /account was retired 2026-09-05 and now hands off to /settings; its only copy is the handoff line.
+htmlCheck("/account", ["Taking you to settings"]);
 // /account/billing was retired 2026-08-01 and 307s to /pricing, so it has no HTML of
 // its own. /pricing took over as the one subscription surface, and it had no smoke
 // check at all, so it gets one here rather than losing coverage in the swap.

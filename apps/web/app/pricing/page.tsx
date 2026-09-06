@@ -114,6 +114,11 @@ function PricingInner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const checkoutStatus = params.get("checkout");
+  const checkoutSessionId = params.get("session_id");
+  // What the success banner actually knows. "checking" until /api/stripe/checkout-status has
+  // confirmed the plan is on the account; "pending" if Stripe says the session finished but the
+  // mirror has not caught up; "active" once the app will enforce the paid plan.
+  const [verified, setVerified] = useState<"checking" | "active" | "pending" | "failed">("checking");
   const intentInterval = params.get("interval");
   // 🔴 THE CHOICE ARRIVES IN THE URL, AND IT HAS TO SURVIVE BEING SIGNED OUT.
   // The marketing site's yearly button links here as ?interval=annual. Reading
@@ -169,6 +174,44 @@ function PricingInner() {
     [router, session],
   );
 
+  // 🔴 THE SUCCESS BANNER USED TO BELIEVE THE URL. Now it asks the server, which also mirrors the
+  // subscription on the spot if the webhook has not landed yet. Polls a few times because the
+  // mirror can lag the redirect by a second or two.
+  useEffect(() => {
+    if (checkoutStatus !== "success" || !session?.access_token) return;
+    if (!checkoutSessionId) {
+      setVerified("pending");
+      return;
+    }
+    let alive = true;
+    let attempts = 0;
+    const check = async () => {
+      attempts += 1;
+      try {
+        const res = await fetch(`/api/stripe/checkout-status?session_id=${encodeURIComponent(checkoutSessionId)}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const body = await res.json().catch(() => ({})) as { state?: string };
+        if (!alive) return;
+        if (res.ok && body.state === "active") {
+          setVerified("active");
+          return;
+        }
+        if (!res.ok && res.status !== 500) {
+          setVerified("failed");
+          return;
+        }
+      } catch {
+        // network blip: keep polling
+      }
+      if (!alive) return;
+      if (attempts < 6) window.setTimeout(() => void check(), 1500);
+      else setVerified("pending");
+    };
+    void check();
+    return () => { alive = false; };
+  }, [checkoutStatus, checkoutSessionId, session?.access_token]);
+
   // Resume checkout after the sign-up round trip: once we are signed in and a
   // choice is pending (via ?interval= or the stashed intent), open Stripe.
   useEffect(() => {
@@ -217,11 +260,23 @@ function PricingInner() {
       </section>
 
       {checkoutStatus === "success" ? (
-        <p className="nm-banner nm-banner-ok">
-          Payment received. Your plan is live on this account — open the app and you&apos;re set.
-        </p>
+        verified === "active" ? (
+          <p className="nm-banner nm-banner-ok">
+            Payment received. Nemesis is live on this account. <Link className="nm-banner-link" href="/learn">Open the app.</Link>
+          </p>
+        ) : verified === "checking" ? (
+          <p className="nm-banner">Payment received. Switching your account over…</p>
+        ) : verified === "failed" ? (
+          <p className="nm-banner nm-banner-err">
+            We could not match that payment to this account. If you paid, email support@enternemesis.com and we will sort it out.
+          </p>
+        ) : (
+          <p className="nm-banner">
+            Payment received. Your plan is being activated and will show in the app within a few minutes. If it has not after that, email support@enternemesis.com.
+          </p>
+        )
       ) : checkoutStatus === "cancelled" ? (
-        <p className="nm-banner">Checkout cancelled — no charge was made.</p>
+        <p className="nm-banner">Checkout cancelled. No charge was made.</p>
       ) : null}
       {error ? <p className="nm-banner nm-banner-err">{error}</p> : null}
 
@@ -357,6 +412,7 @@ const PRICING_CSS = `
    pretending to signal something. */
 .nm-banner { max-width:760px; margin:0 auto 24px; padding:13px 16px; border-radius:2px; font-size:14px; background:var(--nm-wash); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
 .nm-banner-ok { background:var(--nm-text); border-color:var(--nm-text); color:var(--nm-bg); font-weight:600; }
+.nm-banner-link { color:inherit; text-decoration:underline; text-underline-offset:3px; }
 .nm-banner-err { border-color:var(--nm-line-2); border-width:2px; padding:12px 15px; color:var(--nm-text); font-weight:600; }
 /* Two columns: Free and Nemesis. */
 .nm-tiers { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; max-width:760px; margin:0 auto; align-items:stretch; }

@@ -49,7 +49,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
   const importInputRef = useRef<HTMLInputElement>(null);
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
-  const { status, notes, folders, error, selectedPath, select, reload, createNote, saveNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
+  const { status, notes, folders, error, selectedPath, select, reload, createNote, saveNote, loadNoteContent, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const tree = useMemo(() => buildLibraryTree(notes, folders, sortMode), [folders, notes, sortMode]);
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
@@ -86,16 +86,18 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
   // "Attach to AI chat": selected notes become virtual .md attachment files
   // seeded into the Sessions composer, which reads their text into the turn
   // via the ordinary prepareChatAttachments path.
-  const attachNotesToChat = (noteIds: string[]) => {
+  const attachNotesToChat = async (noteIds: string[]) => {
     const chosen = notes.filter((note) => noteIds.includes(note.id));
     if (chosen.length === 0) return;
-    seedComposerFiles(chosen.map((note) => new File([note.content], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" })));
+    // Bodies load on demand (the list holds titles only).
+    const bodies = await Promise.all(chosen.map((note) => (note.contentLoaded === false ? loadNoteContent(note.id) : Promise.resolve(note.content))));
+    seedComposerFiles(chosen.map((note, index) => new File([bodies[index] ?? ""], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" })));
     router.push(`${navigationRoot}/sessions`);
     onNavigate?.();
   };
 
   // Import pipeline shared with the docs-nav — see use-library-import.ts.
-  const { importError, importFiles, importNotices, importing } = useLibraryImport({ createNote, folders, notes, onImported: openPath, saveNote, uid });
+  const { importError, importFiles, importNotices, importing } = useLibraryImport({ createNote, folders, loadNoteContent, notes, onImported: openPath, saveNote, uid });
 
   const importNotes = async (files: File[]) => {
     await importFiles(files);

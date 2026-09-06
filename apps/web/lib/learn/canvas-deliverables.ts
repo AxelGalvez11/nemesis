@@ -19,7 +19,6 @@
 // still has the deck or the note; if the CONTENT write fails, the whole deliverable failed
 // and says so.
 
-import { REFERENCE_SHELF } from "./reference-shelf";
 import { searchCurated } from "./reference-images";
 import { resolveStructures } from "./structure-lookup";
 import { readModelJson } from "../model-json";
@@ -958,7 +957,12 @@ export async function makeSheetDeliverable(
  * its licence read through the repository API; a figure printed without its credit is the one way
  * this lane could turn a correctly licensed image into an incorrectly used one.
  */
-function illustrate(plan: DeckPlan): void {
+async function illustrate(plan: DeckPlan): Promise<void> {
+  // 🔴 LOADED ONLY WHEN A DECK IS BUILT. The shelf is a 4.2 MB constant of 5,829 rows; imported at
+  // the top of this file it rode into the /learn entry bundle (3.9 MB raw, 387 KB gzipped) for
+  // every learner on every visit, to serve the one in a hundred who asks for slides.
+  if (!plan.slides.some((slide) => slide.illustration?.trim())) return;
+  const { REFERENCE_SHELF } = await import("./reference-shelf");
   for (const slide of plan.slides) {
     const concept = slide.illustration?.trim();
     if (!concept) continue;
@@ -1052,7 +1056,7 @@ export async function makeSlidesDeliverable(
   //
   // 🔴 APPENDED AFTER THE LEARNER'S OWN, for the reason the figure clamp above exists: the model
   // chose its `figure` numbers against the list it was shown.
-  illustrate(plan);
+  await illustrate(plan);
   // References only from what the canvas really holds — never from the model.
   plan.references = grounded
     ? canvas.sources.slice(0, 10).map((source) => ({

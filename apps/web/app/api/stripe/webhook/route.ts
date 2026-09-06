@@ -1,22 +1,98 @@
 import type Stripe from "stripe";
-import { effectivePlanCode, intervalFromStripe } from "@nemesis/shared";
-import { NEMESIS_TRIAL_PERIOD_DAYS, planLabel, subscriptionWebhookAction } from "@/lib/billing-contract";
-import { buildWelcomeEmail, sendEmail } from "@/lib/email";
-import { stripeWebhookSecret } from "@/lib/env";
-import { adminClient, json } from "@/lib/server";
 import {
-  assertStripeBillingWritesAllowed,
-  intervalForPriceId,
-  planForPriceId,
-  planFromStripeStatus,
-  stripe,
-  stripeFailureDetail,
-} from "@/lib/stripe";
+  NEMESIS_TRIAL_PERIOD_DAYS,
+  isInvoicePaymentFailed,
+  planLabel,
+  subscriptionWebhookAction,
+} from "@/lib/billing-contract";
+import { buildCancellationEmail, buildPaymentFailedEmail, buildWelcomeEmail, sendEmail } from "@/lib/email";
+import { appUrl, stripeWebhookSecret } from "@/lib/env";
+import { adminClient, json, withRouteLog } from "@/lib/server";
+import { assertStripeBillingWritesAllowed, planForPriceId, stripe, stripeFailureDetail } from "@/lib/stripe";
+import { lookupUserIdByCustomer, reconcileCustomerSubscriptions } from "@/lib/stripe-mirror";
 import { phServerCapture } from "@/lib/posthog-server";
 
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+/** The signed-in email for a user id, or null. Best-effort: a lookup failure is logged, never thrown. */
+async function emailForUser(userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await adminClient().auth.admin.getUserById(userId);
+    if (error) {
+      console.error("stripe_webhook_user_lookup_failed", { user_id: userId, message: error.message });
+      return null;
+    }
+    return data.user?.email ?? null;
+  } catch (error) {
+    console.error("stripe_webhook_user_lookup_failed", {
+      user_id: userId,
+      message: error instanceof Error ? error.message : undefined,
+    });
+    return null;
+  }
+}
+
+/**
+ * A renewal charge bounced. Stripe keeps the subscription alive as `past_due` and retries on its
+ * own schedule, so nothing is mirrored here: the only job is to tell the person, once, that the
+ * card needs updating. Best-effort end to end, so a mail hiccup can never 500 the webhook.
+ */
+async function notifyPaymentFailed(invoice: Stripe.Invoice): Promise<string | null> {
+  const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id ?? null;
+  if (!customerId) return null;
+  try {
+    const userId = await lookupUserIdByCustomer(customerId, invoice.livemode);
+    if (!userId) {
+      console.warn("stripe_webhook_payment_failed_no_user", { customer_id: customerId });
+      return null;
+    }
+    const recipient = invoice.customer_email ?? await emailForUser(userId);
+    if (!recipient) return userId;
+    const { data: row } = await adminClient()
+      .from("subscriptions")
+      .select("stripe_plan")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const { subject, html, text } = buildPaymentFailedEmail({
+      planName: planLabel(row?.stripe_plan ?? "nemesis"),
+      portalUrl: `${appUrl}/settings`,
+    });
+    await sendEmail({ to: recipient, subject, html, text });
+    return userId;
+  } catch (error) {
+    console.error("stripe_webhook_payment_failed_notice_failed", {
+      customer_id: customerId,
+      message: error instanceof Error ? error.message : undefined,
+    });
+    return null;
+  }
+}
+
+/** The plan has ended. Tell the person, best-effort, with the date their access runs out. */
+async function notifyCancellation(userId: string, plan: string, subscription: Stripe.Subscription): Promise<void> {
+  try {
+    const recipient = await emailForUser(userId);
+    if (!recipient) return;
+    const item = subscription.items.data[0];
+    const legacyPeriodEnd = (subscription as Stripe.Subscription & { current_period_end?: number }).current_period_end;
+    const periodEnd = typeof item?.current_period_end === "number" ? item.current_period_end : legacyPeriodEnd;
+    const endsAt = typeof subscription.ended_at === "number" ? subscription.ended_at : periodEnd;
+    const { subject, html, text } = buildCancellationEmail({
+      planName: planLabel(plan),
+      accessUntil: typeof endsAt === "number" && endsAt * 1000 > Date.now()
+        ? new Date(endsAt * 1000).toISOString()
+        : null,
+    });
+    await sendEmail({ to: recipient, subject, html, text });
+  } catch (error) {
+    console.error("stripe_webhook_cancellation_notice_failed", {
+      user_id: userId,
+      message: error instanceof Error ? error.message : undefined,
+    });
+  }
+}
+
+async function POSTHandler(req: Request) {
   if (!stripeWebhookSecret) return json({ error: "STRIPE_WEBHOOK_SECRET missing" }, 500);
 
   const signature = req.headers.get("stripe-signature");
@@ -41,6 +117,25 @@ export async function POST(req: Request) {
     return json({ error: "webhook_mode_mismatch" }, 400);
   }
 
+  // Idempotency. Stripe retries any event it did not get a 2xx for, and can deliver the same
+  // event twice regardless. The mirror below is safe to repeat (it re-reads Stripe), but the
+  // welcome email and the analytics events are not. Claim the event id first; a second delivery
+  // finds the row and stops here.
+  const admin = adminClient();
+  const { error: claimError } = await admin
+    .from("stripe_events")
+    .insert({ id: event.id, type: event.type, livemode: event.livemode });
+  if (claimError) {
+    if (claimError.code === "23505") {
+      console.info("stripe_webhook_duplicate", { event_id: event.id, event_type: event.type });
+      return json({ received: true, duplicate: true });
+    }
+    // The table is missing or unreachable: process anyway rather than drop billing events, but
+    // say so, because from here on a retry could double-send the welcome email.
+    console.error("stripe_webhook_claim_failed", { event_id: event.id, message: claimError.message });
+  }
+
+  let processedUserId: string | null = null;
   try {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -54,6 +149,7 @@ export async function POST(req: Request) {
           session.client_reference_id ?? session.metadata?.user_id ?? null,
           subscription,
         );
+        processedUserId = result.userId;
         // Welcome/confirmation note for the buyer. Strictly best-effort: sendEmail never throws,
         // so a mail hiccup cannot 500 the webhook and make Stripe re-deliver the event.
         const recipient = session.customer_details?.email;
@@ -66,6 +162,10 @@ export async function POST(req: Request) {
           await sendEmail({ to: recipient, subject, html, text });
         }
       }
+    }
+
+    if (isInvoicePaymentFailed(event.type)) {
+      processedUserId = await notifyPaymentFailed(event.data.object as Stripe.Invoice);
     }
 
     const subscriptionAction = subscriptionWebhookAction(event.type);
@@ -82,6 +182,7 @@ export async function POST(req: Request) {
         eventSubscription.metadata.user_id ?? null,
         eventSubscription,
       );
+      processedUserId = result.userId;
       if (subscriptionAction === "created") {
         await phServerCapture(result.userId, "subscription_started", {
           billing_interval: result.interval,
@@ -94,6 +195,12 @@ export async function POST(req: Request) {
           plan: result.plan,
           price_id: result.priceId,
         });
+        // Only when the deleted subscription is the one the mirror now holds: a stale cancellation
+        // for an older subscription, while a newer one still pays, is not a goodbye.
+        // The mirror now says "free"; the email should name the plan that ENDED, read from the
+        // deleted subscription's own price.
+        const endedPlan = planForPriceId(eventSubscription.items.data[0]?.price.id ?? null);
+        await notifyCancellation(result.userId, endedPlan === "free" ? "nemesis" : endedPlan, eventSubscription);
       } else if (subscriptionAction === "trial_will_end") {
         await phServerCapture(result.userId, "subscription_trial_ending", {
           billing_interval: result.interval,
@@ -112,119 +219,14 @@ export async function POST(req: Request) {
       ...stripeFailureDetail(error),
       message: error instanceof Error ? error.message : undefined,
     });
+    // Release the claim so Stripe's retry gets a real second attempt.
+    await admin.from("stripe_events").delete().eq("id", event.id);
     return json({ error: "webhook_processing_failed" }, 500);
   }
 
+  // The audit line the owner can search for: which event did what, for whom.
+  console.info("stripe_webhook_processed", { event_id: event.id, event_type: event.type, user_id: processedUserId });
   return json({ received: true });
 }
 
-function subscriptionItem(subscription: Stripe.Subscription) {
-  return subscription.items.data.find((candidate) => planForPriceId(candidate.price.id) !== "free")
-    ?? subscription.items.data[0];
-}
-
-function subscriptionPeriodEndSeconds(subscription: Stripe.Subscription): number | null {
-  const item = subscriptionItem(subscription);
-  const legacyPeriodEnd = (subscription as Stripe.Subscription & { current_period_end?: number }).current_period_end;
-  if (typeof item?.current_period_end === "number") return item.current_period_end;
-  return typeof legacyPeriodEnd === "number" ? legacyPeriodEnd : null;
-}
-
-function entitledPlan(subscription: Stripe.Subscription) {
-  const item = subscriptionItem(subscription);
-  const plan = planFromStripeStatus(subscription.status, item?.price.id ?? null);
-  const periodEnd = subscriptionPeriodEndSeconds(subscription);
-  return plan !== "free" && periodEnd != null && periodEnd * 1000 > Date.now() ? plan : "free";
-}
-
-async function reconcileCustomerSubscriptions(
-  customerId: string,
-  fallbackUserId: string | null,
-  fallbackSubscription: Stripe.Subscription,
-) {
-  const subscriptions: Stripe.Subscription[] = [];
-  for await (const subscription of stripe().subscriptions.list({ customer: customerId, status: "all", limit: 100 })) {
-    subscriptions.push(subscription);
-  }
-
-  // 🔴 THE TIE-BREAK USED TO RANK pro ABOVE plus. With one paid product there is
-  // nothing to rank: every entitled subscription grants the same Nemesis. What
-  // still matters is picking the one that runs LONGEST, so a cancellation
-  // arriving out of order cannot mirror a subscription that has already lapsed
-  // over one that is still paying.
-  const entitled = subscriptions
-    .filter((subscription) => entitledPlan(subscription) !== "free")
-    .sort((a, b) => (subscriptionPeriodEndSeconds(b) ?? 0) - (subscriptionPeriodEndSeconds(a) ?? 0));
-  const newest = subscriptions.sort((a, b) => b.created - a.created)[0];
-  return mirrorSubscription(entitled[0] ?? newest ?? fallbackSubscription, fallbackUserId);
-}
-
-async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUserId: string | null) {
-  const admin = adminClient();
-  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-  const userId = subscription.metadata.user_id
-    || fallbackUserId
-    || await lookupUserIdByCustomer(customerId, subscription.livemode);
-  if (!userId) throw new Error(`No user_id for Stripe customer ${customerId}`);
-
-  const item = subscriptionItem(subscription);
-  const priceId = item?.price.id ?? null;
-  // Resolve the plan from the actual price id — not "any recognized price is paid".
-  const plan = planFromStripeStatus(subscription.status, priceId);
-  // How often they pay, recorded next to the entitlement and never consulted to
-  // decide one. Read from the configured Price ID first (that is the definitive
-  // answer for a price we sell) and fall back to what Stripe says the price
-  // recurs at, which is what a replayed LEGACY price will carry.
-  const interval = intervalForPriceId(priceId)
-    ?? intervalFromStripe(item?.price.recurring?.interval ?? null);
-  // Dual-store rule: Stripe owns stripe_plan; the effective `plan` is the best
-  // of both stores, so a Stripe cancellation cannot downgrade someone whose
-  // Apple subscription (apple_plan, written by the RevenueCat webhook) still pays.
-  const { data: existingRow, error: existingRowError } = await admin
-    .from("subscriptions")
-    .select("apple_plan")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (existingRowError) throw existingRowError;
-  const currentPeriodEndSeconds = subscriptionPeriodEndSeconds(subscription);
-  const currentPeriodEnd = typeof currentPeriodEndSeconds === "number"
-    ? new Date(currentPeriodEndSeconds * 1000).toISOString()
-    : null;
-  const trialEnd = typeof subscription.trial_end === "number"
-    ? new Date(subscription.trial_end * 1000).toISOString()
-    : null;
-
-  const { error: subscriptionMirrorError } = await admin.from("subscriptions").upsert({
-    user_id: userId,
-    // 🔴 effectivePlanCode, NOT effectivePlan. The plain version returns the
-    // canonical `nemesis`, which would flatten a comped `enterprise` account to
-    // a subscriber's allowance the first time any webhook fired for it.
-    plan: effectivePlanCode(plan, existingRow?.apple_plan),
-    stripe_plan: plan,
-    billing_interval: interval,
-    billing_provider: "stripe",
-    status: subscription.status,
-    stripe_customer_id: customerId,
-    stripe_livemode: subscription.livemode,
-    stripe_subscription_id: subscription.id,
-    stripe_price_id: priceId,
-    stripe_status: subscription.status,
-    current_period_end: currentPeriodEnd,
-    trial_end: trialEnd,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "user_id" });
-  if (subscriptionMirrorError) throw subscriptionMirrorError;
-
-  return { interval, userId, plan, priceId, subscriptionId: subscription.id };
-}
-
-async function lookupUserIdByCustomer(customerId: string, livemode: boolean): Promise<string | null> {
-  const { data, error } = await adminClient()
-    .from("subscriptions")
-    .select("user_id")
-    .eq("stripe_customer_id", customerId)
-    .eq("stripe_livemode", livemode)
-    .maybeSingle();
-  if (error) throw error;
-  return typeof data?.user_id === "string" ? data.user_id : null;
-}
+export const POST = withRouteLog(POSTHandler);

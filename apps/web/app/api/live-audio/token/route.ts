@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { assemblyAiApiKey, assemblyAiSpeechModel } from "@/lib/env";
-import { adminClient, json, verifyBearer } from "@/lib/server";
+import { adminClient, json, verifyBearer, withRouteLog } from "@/lib/server";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,7 @@ function appOrigin(request: Request): string {
   return new URL(request.url).origin;
 }
 
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   const user = await verifyBearer(request);
   if (!user) return json({ error: "Sign in to start live transcription." }, 401);
   if (!assemblyAiApiKey) return json({ error: "Live transcription is not configured yet." }, 503);
@@ -113,3 +113,5 @@ export async function POST(request: Request) {
     },
   });
 }
+
+export const POST = withRouteLog(POSTHandler);
