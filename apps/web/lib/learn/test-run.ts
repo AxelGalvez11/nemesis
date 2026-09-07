@@ -81,6 +81,25 @@ export interface TestQuestion {
    * picture they meet in the deck afterwards are drawn by one component from one shape.
    */
   readonly figure?: OcclusionPayload;
+  /**
+   * One nudge, shown only if the learner asks for it.
+   *
+   * 🔴🔴 A HINT POINTS AT WHERE TO THINK, IT NEVER NARROWS THE OPTIONS. Owner, 2026-09-06: *"tests
+   * should also work like in gemini/notebookllm with hints"*. The failure mode is a hint that says
+   * "remember, only one of these is a beta blocker" — which is not help, it is the answer with an
+   * extra step, and a learner who takes it has practised nothing. The rule is in `CHECK_SYSTEM`
+   * and it is the only thing about a hint that is hard.
+   *
+   * 🔴 WRITTEN WITH THE QUESTION, NOT FETCHED ON THE PRESS. Asking a model for a hint when the
+   * button is clicked costs a round trip and a call, mid-test, for one sentence — and it would be
+   * written without the other questions in view, so two hints could give the same thing away.
+   * Written together they cost nothing at the moment of use and are instant.
+   *
+   * 🔴 OPTIONAL, AND ITS ABSENCE IS ORDINARY. Every test written before 2026-09-07 has none, and a
+   * question that genuinely cannot be hinted without giving itself away should not have one. The
+   * card simply does not offer the control.
+   */
+  readonly hint?: string;
 }
 
 export interface TestRun {

@@ -58,6 +58,7 @@
 // every `button` and `li` outside `[data-workspace]` a blue marketing fill and a disc bullet.
 // Same reason `canvas-clarification.tsx` states them.
 
+import { Lightbulb } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 // 🔴 `groundedMiss` MOVED TO `test-run.ts` AS `groundNote` WHEN THE RESULTS SCREEN WENT. It named
@@ -132,6 +133,16 @@ export function CanvasCheck({
   const [mode, setMode] = useState<"quiz" | "cards">(offer === "cards" ? "cards" : "quiz");
   /** Flashcards only: whether this card is face up. Reset by the same effect that resets the run. */
   const [faceUp, setFaceUp] = useState(false);
+  /**
+   * Which questions the learner has asked for a hint on.
+   *
+   * 🔴 PER QUESTION, AND IT DOES NOT RESET WHEN THEY GO BACK. A learner who took a hint on question
+   * three, moved on, and returned to change their answer should not have to ask twice; and a single
+   * boolean would either hide a hint they had already read or show every later question's hint
+   * unasked. This card already lets an answer be changed (see the note on a mis-tap), so revisiting
+   * is an ordinary thing to do here rather than an edge case.
+   */
+  const [hints, setHints] = useState<ReadonlySet<number>>(() => new Set());
 
   // A different run is a different test. Without this, opening a second test after a first would
   // resume halfway through the old one's answers.
@@ -362,6 +373,40 @@ export function CanvasCheck({
         <h2 className="mt-[18px] text-[22px] font-medium leading-[28px] text-(--ui-text-primary)">
           {question.prompt}
         </h2>
+
+        {/* 🔴🔴 A HINT IS ASKED FOR, NEVER SHOWN. Owner, 2026-09-06: *"tests should also work like in
+            gemini/notebookllm with hints"*. Printing it beside the question would remove the moment
+            of trying, which is the only part of a test that teaches anything; the value is entirely
+            in the learner deciding they are stuck.
+
+            🔴 GONE ONCE ANSWERED. A hint after the fact is not help, it is a second explanation
+            competing with the account this card gives at the end, and it would be read as feedback
+            on the answer just given.
+
+            🔴 NO CONTROL AT ALL WHEN THERE IS NO HINT. Every test written before 2026-09-07 has
+            none, and a question that cannot be hinted without answering itself is written without
+            one on purpose (lib/board/board-check.ts). A disabled button would say "there is help
+            here and you may not have it", which is untrue. */}
+        {mode !== "cards" && question.hint && picked === null && (
+          <div className="mt-[10px]">
+            {hints.has(index) ? (
+              <p className="flex items-start gap-[8px] rounded-[8px] bg-(--ui-bg-tertiary) px-[12px] py-[10px] text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-secondary)" data-check-hint="">
+                <Lightbulb aria-hidden className="mt-[2px] size-[14px] shrink-0 text-(--ui-kind-amber)" />
+                {question.hint}
+              </p>
+            ) : (
+              <button
+                className="flex items-center gap-[6px] rounded-full px-[10px] py-[4px] text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-primary)"
+                data-check-hint-ask=""
+                onClick={() => setHints((was) => new Set(was).add(index))}
+                type="button"
+              >
+                <Lightbulb aria-hidden className="size-[14px]" />
+                Hint
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ── flashcards ────────────────────────────────────────────────────────────────────
             🔴🔴 THE SAME PROMPT, WITHOUT THE DISTRACTORS. A flashcard and a question are the same

@@ -37,6 +37,8 @@ export const MAX_OPTIONS = 5;
 /** The fewest. Two is a real discrimination; one is a statement with a button under it. */
 export const MIN_OPTIONS = 2;
 
+/** A hint is one sentence. Anything longer is a paragraph of teaching in the middle of a test. */
+const MAX_HINT = 240;
 const MAX_PROMPT = 300;
 const MAX_OPTION_TEXT = 200;
 
@@ -84,12 +86,23 @@ function readQuestion(value: unknown, index: number): TestQuestion | null {
   }
   if (correct !== 1) return null;
 
+  /**
+   * 🔴 A HINT THAT NAMES AN OPTION IS DROPPED, NOT SHOWN. Owner, 2026-09-06: *"tests should also
+   * work like in gemini/notebookllm with hints"*, and the whole craft of a hint is that it points
+   * at the idea rather than at the answer. `CHECK_SYSTEM` says so, but a prompt is a request and
+   * this is the check: a model that writes "it is not the beta blocker" has written the answer, so
+   * the question keeps its hint button off rather than handing the learner a free pass.
+   */
+  const written = text(value.hint, MAX_HINT);
+  const hint = written && !options.some((option) => written.toLowerCase().includes(option.text.toLowerCase())) ? written : "";
+
   return {
     // 🔴 NAMESPACED, SO A CHAT CHECK CAN NEVER BE READ AS AN OBJECTIVE. The index keeps two
     // identically-worded questions apart, which matters only for `cardsFromMisses`'s dedup.
     objectiveIdentityKey: `chat:${index}:${prompt.toLowerCase().replace(/\s+/g, " ")}`,
     options,
     prompt,
+    ...(hint ? { hint } : {}),
   };
 }
 

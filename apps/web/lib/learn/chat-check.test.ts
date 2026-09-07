@@ -227,3 +227,43 @@ test("🔴 the account the card hands over carries the two things the reply has 
   assert.match(account, /the answer was "right"/, "a wrong answer no longer carries what the right one was");
   assert.match(account, /I skipped this one/, "a skipped question is no longer distinguishable from a wrong one");
 });
+
+test("🔴🔴 a hint that names an option is dropped, because that is the answer with an extra step", () => {
+  // Owner, 2026-09-06: *"tests should also work like in gemini/notebookllm with hints"*. The whole
+  // craft of a hint is that it points at the idea and not at the answer, and the failure mode is
+  // the one a model reaches for by default. `CHECK_SYSTEM` asks for the right shape; this is the
+  // check, because a prompt is a request.
+  const question = (hint: string) => ({
+    options: [
+      { correct: true, text: "Metoprolol" },
+      { text: "Lisinopril" },
+      { text: "Amlodipine" },
+    ],
+    prompt: "Which of these is a beta blocker?",
+    hint,
+  });
+  assert.equal(readChatCheck([question("It is not lisinopril.")])?.questions[0]?.hint, undefined, "a hint ruling an option out was shown");
+  assert.equal(readChatCheck([question("Metoprolol acts on beta receptors.")])?.questions[0]?.hint, undefined, "a hint naming the answer was shown");
+  assert.equal(readChatCheck([question("METOPROLOL is the one.")])?.questions[0]?.hint, undefined, "the check is case sensitive");
+  // A real hint names the idea and survives.
+  assert.equal(
+    readChatCheck([question("Think about which receptor family each drug class acts on.")])?.questions[0]?.hint,
+    "Think about which receptor family each drug class acts on.",
+  );
+  // Absent, empty and whitespace all mean no hint, and the question is otherwise untouched.
+  const bare = readChatCheck([{ options: question("").options, prompt: question("").prompt }]);
+  assert.equal(bare?.questions[0]?.hint, undefined);
+  assert.equal(bare?.questions[0]?.prompt, "Which of these is a beta blocker?");
+  assert.equal(readChatCheck([question("   ")])?.questions[0]?.hint, undefined);
+});
+
+test("🔴 the card asks for a hint rather than printing one, and stops offering after an answer", () => {
+  // Printing it beside the question removes the moment of trying, which is the only part of a test
+  // that teaches anything. Showing it after the answer competes with the account the card gives at
+  // the end and reads as feedback on the answer just given.
+  const card = readFileSync(new URL("../../components/workspace/learn/canvas-check.tsx", import.meta.url), "utf8");
+  assert.match(card, /data-check-hint-ask=""/, "the Hint button is gone");
+  assert.match(card, /question\.hint && picked === null/, "the hint no longer disappears once the question is answered");
+  assert.match(card, /hints\.has\(index\)/, "the hint is not per question, so one press reveals them all");
+  assert.ok(!/question\.hint\}\s*<\/p>/.test(card.replace(/\s+/g, " ")) || card.includes("data-check-hint-ask"), "the hint is printed unasked");
+});

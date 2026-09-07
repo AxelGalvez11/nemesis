@@ -39,7 +39,16 @@ const ASK_FOR = 6;
 export const CHECK_SYSTEM = [
   "You write one short test for a learner, as JSON and nothing else.",
   "",
-  'Answer with exactly this shape: {"check": [{"prompt": "…", "options": [{"text": "…", "correct": true}, {"text": "…"}]}]}',
+  'Answer with exactly this shape: {"check": [{"prompt": "…", "hint": "…", "options": [{"text": "…", "correct": true}, {"text": "…"}]}]}',
+  // 🔴🔴 A HINT POINTS AT WHERE TO THINK AND NEVER NARROWS THE OPTIONS. Owner, 2026-09-06: "tests
+  // should also work like in gemini/notebookllm with hints". The failure mode is the one a model
+  // reaches for by default: "remember, only one of these is a beta blocker", which is the answer
+  // with an extra step. A learner who takes that hint has practised nothing, and the question is
+  // spent. So the instruction names the shape of a good one rather than asking for "a hint".
+  '"hint" is optional and is one short sentence naming the idea to think about, never the answer. ' +
+    "Point at the principle, the definition or the step that decides it. Never mention any option, never say how many are wrong, " +
+    "never rule anything out, and never give away which seat the answer is in. " +
+    "Leave it out entirely for a question that cannot be hinted without answering itself.",
   `Write ${MIN_QUESTIONS} to ${ASK_FOR} questions, each with two to five options and EXACTLY ONE marked correct.`,
   // 🔴 THE SAME CRAFT THE REST OF THE PRODUCT WRITES QUESTIONS TO. `item-writing.ts` exists so the
   // app's test writers cannot drift apart; the chat's check prompt already carries this line.
@@ -217,6 +226,12 @@ function normalizedPack(parsed: unknown): unknown {
       const named = Boolean(answer) && optionText.toLowerCase() === answer.toLowerCase();
       return { correct: marked || named || index === at, text: optionText };
     });
-    return { options, prompt };
+    /**
+     * 🔴 THE HINT IS CARRIED THROUGH ONLY IF IT IS REAL. A model that answers with `"hint": ""`, or
+     * with a hint on a question whose options did not parse, must not produce a Hint button that
+     * opens onto nothing. Trimmed, capped, and dropped when empty.
+     */
+    const hint = firstString(entry, ["hint", "clue", "nudge"]).trim().slice(0, 240);
+    return hint ? { hint, options, prompt } : { options, prompt };
   });
 }
