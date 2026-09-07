@@ -23,6 +23,7 @@
 //
 // PURE. A string, nothing else.
 
+import { SVG_FIGURE_INSTRUCTION } from "@/lib/workspace/svg-figure";
 import { VISUAL_INSTRUCTION } from "@/lib/workspace/visual-block";
 
 /**
@@ -52,6 +53,14 @@ export const DIAGRAM_INSTRUCTION: string =
   // (lib/workspace/visual-block.ts); a graph engine given "compare three things" draws boxes and
   // arrows ABOUT a comparison, which is exactly what looked plain.
   VISUAL_INSTRUCTION
+  + " "
+  // 🔴🔴 THE MECHANISM LANE, ADDED 2026-09-07. Owner: *"go into wondering because our mermaid
+  // diagrams and visuals arent as good as theres one for one"*. Driven in his own Wondering account
+  // that day: their mechanism diagrams are raw SVG on one fixed canvas with a house style, not
+  // mermaid and not a typed spec (docs/canvas-workspace-reference.md §10). It sits BETWEEN the
+  // designed figure and the graph, because that is the order the three should be reached for: a
+  // comparison is a figure, a mechanism is a drawing, and a plain web of relationships is a graph.
+  + SVG_FIGURE_INSTRUCTION
   + " "
   + "For a real graph, where the point is the EDGES between things, Nemesis also draws fenced mermaid blocks in your answer: flowchart TD for steps and "
   + "decisions, mindmap for how a subject branches, sequenceDiagram for exchanges over time, "
