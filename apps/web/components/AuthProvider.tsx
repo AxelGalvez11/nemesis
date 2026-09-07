@@ -121,6 +121,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  /**
+   * 🔴🔴 A DEAD SESSION USED TO LOOK LIKE A LIVE ONE, AND THAT IS THE WHOLE OF THE OWNER'S
+   * 2026-09-06 REPORT *"i currently cannot sign into nemesis webapp"*. Measured on production
+   * before this existed: one tab asked Postgres for `recording_jobs` every 21 seconds for more
+   * than five hours and was refused every single time ("permission denied for table
+   * recording_jobs", 28-29 per 10 minutes, 16:30 to 21:57), and then `learning_canvases` and
+   * `folders` were refused too.
+   *
+   * "permission denied for table" is not an expiry message. It is what PostgREST answers when a
+   * request carried no usable user token at all and fell back to the `anon` role, which holds no
+   * grant on those tables. So the refresh token was gone — revoked (the auth log records
+   * `token_revoked` twice that evening) or handed to the native app by /auth/desktop, which drops
+   * the browser's copy on purpose.
+   *
+   * supabase-js keeps the last session object in memory when a refresh fails, and emits no
+   * SIGNED_OUT for it. `session` therefore stayed non-null, every auth gate passed, the workspace
+   * rendered, and every request inside it was refused. Signing in again does not visibly fix that,
+   * because the stale tab is what the person is looking at — which is why four Google sign-ins in
+   * twenty seconds all succeeded at Supabase and none of them appeared to help.
+   *
+   * So: once the access token is past its expiry, ask for the session again. If it cannot be
+   * renewed, drop it here. Every gate already knows what to do with a null session — send the
+   * learner to /sign-in — and none of them could act while this lied to them.
+   */
+  useEffect(() => {
+    if (isPreviewMode || !hasSupabaseConfig || !session) return;
+    let alive = true;
+
+    async function check() {
+      // A little slack, so a token merely seconds from expiry is left to the
+      // library's own scheduled refresh rather than raced with it.
+      const expiresAt = (session?.expires_at ?? 0) * 1000;
+      if (!expiresAt || expiresAt > Date.now() + 30_000) return;
+      let renewed: Session | null = null;
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        renewed = error ? null : (data.session ?? null);
+      } catch {
+        renewed = null;
+      }
+      if (!alive) return;
+      if (renewed && (renewed.expires_at ?? 0) * 1000 > Date.now()) return;
+      // 🔴 CLEARED HERE RATHER THAN THROUGH `signOut()`. In supabase-js v2 even
+      // `signOut({ scope: "local" })` POSTs /logout — pointless against a token the
+      // server has already rejected, and if that call fails the dead session stays in
+      // storage for the next page load to pick up again. Same reason /auth/desktop
+      // clears these keys by hand.
+      try {
+        for (const key of Object.keys(window.localStorage)) {
+          if (key.startsWith("sb-") && key.endsWith("-auth-token")) window.localStorage.removeItem(key);
+        }
+      } catch {
+        // Storage unavailable; dropping the in-memory session below is still the fix.
+      }
+      setSession(null);
+    }
+
+    // On a timer AND when the tab comes back, because the common shape of this is a
+    // workspace left open overnight: nothing runs while it is hidden, and the moment
+    // it is looked at again it must not pretend to be signed in.
+    const timer = window.setInterval(() => void check(), 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    void check();
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [session]);
+
   const signIn = useCallback(async (email: string, password: string, captchaToken?: string) => {
     if (isPreviewMode) {
       setSession(previewSession);
