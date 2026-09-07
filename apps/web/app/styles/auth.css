@@ -12,18 +12,12 @@
      because the floating labels below punch a hole in a border and must paint
      the EXACT page colour to do it. */
   --auth-ground: #ffffff;
-  --auth-grid: rgba(20, 20, 20, 0.035);
   background: var(--auth-ground);
   color: var(--auth-ink);
-  /* Owner 2026-07-28: "the sign in should be centered like chatgpt, keep the
-     grid background of aesthetics." The grid stays — ChatGPT has no grid, but
-     that instruction was explicit and nothing about copying their SHAPE
-     requires dropping it. */
-  background:
-    linear-gradient(var(--auth-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--auth-grid) 1px, transparent 1px),
-    var(--auth-ground);
-  background-size: 56px 56px;
+  /* 🔴 NO GRID. Owner 2026-07-28 asked to keep the graph-paper background ("keep
+     the grid background of aesthetics"); owner 2026-09-06 reversed it in the same
+     breath as the split layout: *"remove the grid in sign in"*. It read as texture
+     on a full-width white page and as clutter beside the gradient. */
   display: grid;
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif);
   grid-template-columns: minmax(0, 1fr);
@@ -44,7 +38,6 @@
   --auth-soft: rgba(255, 255, 255, 0.06);
   --auth-accent: #d0d0d0;
   --auth-ground: #212121;
-  --auth-grid: rgba(255, 255, 255, 0.035);
 }
 
 /* The soft wash the left column used to carry, moved onto the shell. Light
@@ -88,76 +81,88 @@
    with `currentColor` now, so it simply takes the colour of the text beside it in both themes. */
 .nemesis-auth-brand span { font-size: 11px; font-weight: 700; letter-spacing: 0.3em; }
 
-/* HIDDEN, not deleted. The marketing copy and its three-step strip are intact in
-   the markup, so restoring the two-column layout is this `display` plus
-   grid-template-columns on the shell. The grid background moved UP to the shell
-   so it survives this. `display` must stay HERE rather than in an earlier rule:
-   same specificity means the later declaration wins, and an earlier one was
-   silently overridden by this block. */
+/* THE GRADIENT HALF — owner, 2026-09-06: "i want splitscreen so sign in is on left
+   and gradient background on right".
+   Hidden by default and switched on at 901px by the media query at the foot of this
+   file, so the narrow case needs no override: a phone keeps the centred form it has
+   had since July, untouched. */
 .nemesis-auth-field {
   align-items: flex-end;
-  border-right: 1px solid var(--auth-line);
   display: none;
   min-height: 100svh;
+  overflow: hidden;
   padding: clamp(120px, 15vh, 180px) clamp(42px, 7vw, 104px) clamp(54px, 8vh, 84px);
   position: relative;
 }
-.nemesis-auth-field::after {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25), #fff 72%);
+
+/* The wash, in the product's own colours (landing page + launch film): DEEP #062E86,
+   COBALT #0B60B4, AZURE #2A8CCD, CYAN #54D4ED, SKY #73B8FA. Four radial pools over a
+   diagonal base, which is what keeps it from reading as the two-stop CSS gradient
+   every other sign-in page has. Identical in light and dark: this panel is its own
+   world, and a "dark mode gradient" would be a second palette to keep honest for no
+   gain. */
+.nemesis-auth-field-wash {
+  background:
+    radial-gradient(78% 62% at 12% 8%, rgba(84, 212, 237, 0.92) 0%, rgba(84, 212, 237, 0) 62%),
+    radial-gradient(70% 58% at 88% 18%, rgba(115, 184, 250, 0.85) 0%, rgba(115, 184, 250, 0) 60%),
+    radial-gradient(90% 72% at 78% 92%, rgba(42, 140, 205, 0.9) 0%, rgba(42, 140, 205, 0) 66%),
+    radial-gradient(85% 70% at 22% 88%, rgba(11, 96, 180, 0.95) 0%, rgba(11, 96, 180, 0) 64%),
+    linear-gradient(148deg, #0b60b4 0%, #062e86 52%, #0a4ea0 100%);
+  inset: -12%;
+  position: absolute;
+  /* Slow enough to be felt rather than watched. A sign-in page is looked at for
+     seconds, so this is atmosphere, not an animation anyone should notice. */
+  animation: nemesis-auth-drift 34s ease-in-out infinite alternate;
+  will-change: transform;
+}
+/* The light shaft the landing wash carries, so the panel has a direction rather than
+   being an even fog. */
+.nemesis-auth-field::before {
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0) 34%, rgba(255, 255, 255, 0.26) 50%, rgba(255, 255, 255, 0) 66%);
   content: "";
   inset: 0;
   pointer-events: none;
   position: absolute;
+  z-index: 1;
+}
+/* And a floor of deeper blue, so white type at the bottom always has something to sit
+   on wherever the pools happen to have drifted. */
+.nemesis-auth-field::after {
+  background: linear-gradient(180deg, rgba(6, 46, 134, 0) 42%, rgba(6, 27, 78, 0.55) 100%);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+@keyframes nemesis-auth-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-3.5%, 2.5%, 0) scale(1.08); }
+}
+/* 🔴 STILL, NOT SLOWER. A drifting background is exactly the ambient motion this
+   setting exists to stop, and the panel loses nothing by holding. */
+@media (prefers-reduced-motion: reduce) {
+  .nemesis-auth-field-wash { animation: none; }
 }
 .nemesis-auth-field-copy {
   max-width: 580px;
   position: relative;
-  z-index: 1;
+  /* Above the shaft and the floor, both of which are z-index 1. */
+  z-index: 2;
 }
-.nemesis-auth-status {
-  color: var(--auth-accent);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.19em;
-  margin: 0 0 20px;
-  text-transform: uppercase;
-}
+/* The one line on the gradient. White in both themes, because the panel is deep blue
+   in both — the --auth-* tokens follow the theme and would be wrong half the time.
+   The eyebrow, the paragraph and the 01/02/03 strip that used to live here went with
+   the copy; see AuthFrame. */
 .nemesis-auth-field-copy h2 {
-  color: var(--auth-ink);
-  font-size: clamp(42px, 5.2vw, 72px);
+  color: #ffffff;
+  font-size: clamp(42px, 4.6vw, 64px);
   font-weight: 600;
-  letter-spacing: -0.055em;
-  line-height: 0.98;
-  margin: 0 0 24px;
-  max-width: 9em;
-}
-.nemesis-auth-field-copy > p:not(.nemesis-auth-status) {
-  color: var(--auth-muted);
-  font-size: 15px;
-  line-height: 1.7;
+  letter-spacing: -0.05em;
+  line-height: 1.02;
   margin: 0;
-  max-width: 37em;
-}
-.nemesis-auth-capabilities {
-  border-top: 1px solid var(--auth-line);
-  display: grid;
-  gap: 0;
-  grid-template-columns: repeat(3, 1fr);
-  margin-top: 38px;
-  padding-top: 17px;
-}
-.nemesis-auth-capabilities span {
-  color: var(--auth-ink);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-.nemesis-auth-capabilities b {
-  color: var(--auth-faint);
-  font-size: 8px;
-  font-weight: 500;
-  margin-right: 8px;
+  max-width: 8em;
+  text-shadow: 0 2px 28px rgba(4, 22, 66, 0.3);
 }
 
 /* Owner 2026-07-28: "the sign in should not be scrollable it should be centered."
@@ -268,7 +273,15 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.2;
-  margin: 0 0 26px;
+  /* 🔴 8px, AND THE DESCRIPTION BELOW NO LONGER PULLS ITSELF UP INTO IT. This was 26px
+     against a `margin-top: -18px` on .nemesis-auth-description — the same 8px gap,
+     expressed as two numbers that only agree while both stay put. They did not: the
+     minimal variant overrides this margin to 7px and inherited the -18px, so on
+     /auth/callback and /auth/desktop the description sat 11px ON TOP OF the title,
+     measured (owner, 2026-09-06: "why is text here not spaced right?"). A negative
+     margin tuned against a specific neighbour is a spacing bug waiting for that
+     neighbour to change. */
+  margin: 0 0 8px;
   text-align: center;
 }
 /* Their page carries a heading and nothing else above the buttons. Ours keeps
@@ -278,7 +291,9 @@
   color: var(--auth-muted);
   font-size: 14px;
   line-height: 1.5;
-  margin: -18px auto 26px;
+  /* The gap above belongs to the heading (see its margin-bottom); this owns only the
+     space under itself. */
+  margin: 0 auto 26px;
   text-align: center;
 }
 
@@ -494,6 +509,28 @@
 .nemesis-auth-brand:focus-visible {
   outline: 2px solid var(--auth-accent);
   outline-offset: 3px;
+}
+
+/* THE SPLIT, and only from 901px up.
+ *
+ * 🔴 THE FORM COLUMN IS THE WIDER HALF ON PURPOSE. A 50/50 split puts a 360px card in
+ * the middle of a 760px column on a laptop, which reads as a form that lost an argument
+ * with the decoration beside it. 1.08fr against 1fr is barely visible as a difference
+ * and settles which side the page is about.
+ *
+ * 🔴 AND ONLY ON /sign-in AND /sign-up (`.is-split`). The hand-off pages — /auth/callback,
+ * /auth/desktop — are corridors somebody is on for about a second, and a full-height
+ * gradient beside a one-line status message would make a doorway look like a room, which
+ * is the exact thing `minimal` exists to prevent. They render no second column at all, so
+ * this must not reserve one. */
+@media (min-width: 901px) {
+  .nemesis-auth-shell.is-split {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  }
+  .nemesis-auth-shell.is-split .nemesis-auth-field { display: flex; }
+  /* The radial vignette that softens the centred layout would wash out the left column's
+     inner edge here, where the two halves meet. */
+  .nemesis-auth-shell.is-split::before { display: none; }
 }
 
 /* Single column below 900px, so here the brand mark DOES sit over the panel and

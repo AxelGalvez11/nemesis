@@ -100,12 +100,28 @@ export function refreshRecordingJobs(): void {
   schedule(0);
 }
 
+/**
+ * Refused because there is no signed-in user, rather than because the network wobbled.
+ *
+ * 🔴 THE DIFFERENCE IS THE WHOLE POINT OF THIS FUNCTION. PostgREST answers a request carrying no
+ * usable token as the `anon` role, which holds no grant on this table, so Postgres raises 42501
+ * "permission denied for table recording_jobs". That is a permanent condition for this poll: it
+ * will be refused identically every 21 seconds until somebody signs in again.
+ */
+function isSignedOutError(error: { code?: string | null; message?: string | null } | null): boolean {
+  if (!error) return false;
+  if (error.code === "42501" || error.code === "PGRST301") return true;
+  const message = (error.message ?? "").toLowerCase();
+  return message.includes("permission denied") || message.includes("jwt");
+}
+
 async function refresh(): Promise<void> {
   if (!userId || inFlight) return;
   inFlight = true;
+  let signedOut = false;
   try {
     const since = new Date(Date.now() - FAILURE_SHELF_LIFE_MS).toISOString();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("recording_jobs")
       .select(RECORDING_JOB_COLUMNS)
       // Everything unfinished. Failures are included deliberately: requirement
@@ -115,6 +131,14 @@ async function refresh(): Promise<void> {
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(MAX_WATCHED);
+    // 🔴🔴 STOP, DO NOT KEEP ASKING. Measured in production on 2026-09-06: this poll ran against a
+    // dead session for more than five hours — 29 refusals per ten minutes, from 16:30 until the tab
+    // was closed at 21:57 — because the read below discarded `error` and the `finally` rescheduled
+    // unconditionally. Nothing was learned from any of those requests and the learner saw an empty
+    // workspace the whole time. `AuthProvider` now drops a session it cannot renew, so leaving the
+    // watch stopped here is enough: signing in starts it again through `startRecordingJobsWatch`.
+    signedOut = isSignedOutError(error);
+    if (signedOut) return;
     replace((data ?? []).flatMap((row) => {
       const job = toRecordingJob(row);
       return job ? [job] : [];
@@ -125,7 +149,14 @@ async function refresh(): Promise<void> {
     // from the screen and then come back.
   } finally {
     inFlight = false;
-    schedule(state.jobs.some((job) => job.status === "processing") ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+    if (signedOut) {
+      userId = null;
+      if (timer !== null) window.clearTimeout(timer);
+      timer = null;
+      replace([], false);
+    } else {
+      schedule(state.jobs.some((job) => job.status === "processing") ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+    }
   }
 }
 
