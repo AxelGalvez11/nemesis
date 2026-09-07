@@ -13,9 +13,11 @@
  * washes did, in a new family. A full-bleed orange-on-black ground would look like the reference and
  * make the page it sits under unreadable.
  *
- * 🔴 REPLACES scripts/art-wash.py, WHICH SAID "not the grainy ones". That was the owner's
- * instruction on 2026-08-25, and it is reversed: grain is now the point, because the references he
- * sent are grainy and the smooth version reads as a stock CSS gradient beside them.
+ * 🔴 REPLACES scripts/art-wash.py, AND KEEPS ITS ONE RULE. That file was written for "integrate
+ * some smooth gradients (not the grainy ones)" (2026-08-25). The grainy references the owner sent
+ * on 2026-09-06 looked like a reversal and were not — asked directly, he said "dont do the grainy
+ * gradient, just give me smooth gradient please". What changed is the HUE and the SHAPE: orange
+ * rather than blue, and a domain-warped fold rather than composited radial blobs.
  *
  * 🔴 THE SAME MATHS AS THE LAUNCH FILM'S BACKDROP (nemesis-reel/landing.html): a domain-warped fbm
  * mapped through one palette ramp, plus per-pixel grain. Two generators drawing "the Nemesis
@@ -79,7 +81,7 @@ const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[
  * `cx`/`cy` place that core, because the CSS mask only ever shows one edge of these images
  * (art.css pushes an ellipse off-frame), and a core in the middle would be a core nobody sees.
  */
-function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0, grain = 0.055 }) {
+function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0 }) {
   const buf = Buffer.alloc(w * h * 3);
   const ar = w / h;
   for (let j = 0; j < h; j++) {
@@ -127,13 +129,20 @@ function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0, grain =
         // one cool edge, so the warmth has something to be warm against
         col = mix(col, VIOLET, smoothstep((along - 0.45) / 0.5) * violet);
       }
-      // 🔴 THE GRAIN IS THE ASSIGNMENT. Fine, per-pixel, and stronger where there is colour to
-      // carry it — grain on flat white is dirt, grain in a gradient is film.
-      const g = (hash2(i * 1.7, j * 1.3, seed + 9.1) - 0.5) * grain * 255 * (0.3 + t);
+      /**
+       * 🔴 NO GRAIN. Owner, 2026-09-06: "dont do the grainy gradient, just give me smooth gradient
+       * please". This is the second time the answer has been smooth — `scripts/art-wash.py` carried
+       * "integrate some smooth gradients (not the grainy ones)" from 2026-08-25, and the grainy
+       * references he sent this morning looked like a reversal. They were not: he wanted the shape
+       * and the colour of them, not the noise.
+       *
+       * The fold and the flow still come from the domain-warped fbm above, which is what keeps this
+       * from being a two-stop CSS ramp. Nothing is added per pixel.
+       */
       const k = (j * w + i) * 3;
-      buf[k] = Math.max(0, Math.min(255, col[0] + g));
-      buf[k + 1] = Math.max(0, Math.min(255, col[1] + g));
-      buf[k + 2] = Math.max(0, Math.min(255, col[2] + g));
+      buf[k] = Math.max(0, Math.min(255, col[0]));
+      buf[k + 1] = Math.max(0, Math.min(255, col[1]));
+      buf[k + 2] = Math.max(0, Math.min(255, col[2]));
     }
   }
   return { buf, w, h };
@@ -155,7 +164,7 @@ const out = process.argv[2] ?? ".";
  *   learn           band[data-art="left"]    -> mask at  -4% -> hot left
  *   close-wash      no ellipse, object-position center bottom -> hot along the bottom
  */
-writePPM(`${out}/hero.ppm`, render(1200, 686, { seed: 3.1, heat: 1.0, ox: 0.34, oy: 0.56, dir: [1.0, -0.38], span: 1.05, violet: 0.28, grain: 0.06 }));
+writePPM(`${out}/hero.ppm`, render(1200, 686, { seed: 3.1, heat: 1.0, ox: 0.34, oy: 0.56, dir: [1.0, -0.38], span: 1.05, violet: 0.28 }));
 writePPM(`${out}/learn.ppm`, render(550, 550, { seed: 7.4, heat: 1.0, ox: 0.66, oy: 0.5, dir: [-1.0, -0.22], span: 1.0 }));
 writePPM(`${out}/see-wash.ppm`, render(550, 550, { seed: 12.9, heat: 1.05, ox: 0.34, oy: 0.5, dir: [1.0, -0.24], span: 1.0 }));
 writePPM(`${out}/evidence-wash.ppm`, render(550, 550, { seed: 21.3, heat: 1.05, ox: 0.34, oy: 0.5, dir: [1.0, 0.26], span: 1.0, violet: 0.2 }));
