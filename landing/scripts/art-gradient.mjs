@@ -48,13 +48,25 @@ function noise(x, y, seed) {
   const c = hash2(ix, iy + 1, seed), d = hash2(ix + 1, iy + 1, seed);
   return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
 }
+/**
+ * 🔴 THREE OCTAVES, NOT FIVE, AND THAT IS THE DIFFERENCE BETWEEN "SMOOTH" AND "NO GRAIN".
+ *
+ * Taking the grain out was only half of what the owner asked for. His reference is one enormous
+ * soft shape with a falloff that spans the whole frame — no wisps, no flame edges, nothing at a
+ * small scale at all. Five octaves put detail at 1/16th of the frame, which reads as smoke however
+ * clean each pixel is, and that is what he was still looking at when he said "i told you to make
+ * smooth and slow gradient like this".
+ *
+ * The top two octaves are where all of that lived. Three octaves at a low base frequency give an
+ * undulation measured in half-frames, which is the scale the reference works at.
+ */
 function fbm(x, y, seed) {
   let v = 0, a = 0.5, px = x, py = y;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 3; i++) {
     v += a * noise(px, py, seed);
     px *= 2.02; py *= 2.02; a *= 0.5;
   }
-  return v;
+  return v / 0.875;
 }
 
 // ── the palette: white through amber and ember into a deep ember core ────────
@@ -88,11 +100,10 @@ function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0 }) {
     const v = (j + 0.5) / h;
     for (let i = 0; i < w; i++) {
       const u = ((i + 0.5) / w) * ar;
-      // two warp layers, so the colour reads as light moving through silk rather than a ramp
-      const qx = fbm(u * 1.35, v * 1.35, seed), qy = fbm(u * 1.35 + 3.1, v * 1.35 + 3.1, seed);
-      const rx = fbm(u * 1.35 + 2.1 * qx + 1.7, v * 1.35 + 2.1 * qy + 1.7, seed);
-      const ry = fbm(u * 1.35 + 2.1 * qx + 8.3, v * 1.35 + 2.1 * qy + 8.3, seed);
-      const f = fbm(u * 1.35 + 2.3 * rx, v * 1.35 + 2.3 * ry, seed);
+      /* ONE gentle warp at half a cycle across the frame. Two stacked warps at 1.35 was what turned
+         a fold into a plume: each one multiplies the detail of the one under it. */
+      const qx = fbm(u * 0.55, v * 0.55, seed), qy = fbm(u * 0.55 + 3.1, v * 0.55 + 3.1, seed);
+      const f = fbm(u * 0.55 + 1.35 * qx, v * 0.55 + 1.35 * qy, seed);
       /**
        * 🔴 `dir` POINTS FROM COLD TO HOT, AND GETTING THAT BACKWARDS COST A ROUND. The first two
        * cuts measured distance from a point: one produced a fireball with a dark bruise in it, the
@@ -101,7 +112,13 @@ function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0 }) {
        * one edge of every image is ever on screen. Colour anywhere else is colour nobody sees, and
        * the page came out pale.
        */
-      const along = (u - ox * ar) * dir[0] + (v - oy) * dir[1] + (f - 0.5) * 0.9;
+      /**
+       * 🔴 THE FIELD HAS TO OUTWEIGH THE DIRECTION, OR THIS IS A CSS GRADIENT. Cutting the warp to
+       * 0.42 while flattening the noise left the straight `dir` term in charge and produced a plain
+       * left-to-right ramp — smooth, yes, and completely dead. The reference is smooth AND curved:
+       * one big arc bending across the frame. Large amplitude at LOW frequency is what that is.
+       */
+      const along = (u - ox * ar) * dir[0] + (v - oy) * dir[1] + (f - 0.5) * 1.25;
       /**
        * 🔴 THE GAMMA LIFT IS NOT A TWEAK, IT IS THE MASK'S DOING. Every ground is multiplied by a
        * soft radial mask before anyone sees it, and a mask takes the SHOULDER of the ramp, never
@@ -109,8 +126,11 @@ function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0 }) {
        * pale peach. Raising t to a power below 1 spends the range on the shoulder, which is the
        * only part that survives.
        */
-      const raw = Math.max(0, Math.min(1, smoothstep((along + 0.55) / span) * heat));
-      const t = Math.pow(raw, 0.55);
+      /* `span` is how much of the frame the transition takes. Under about 1.4 the ramp reaches full
+         colour a third of the way in and the rest of the image is a flat slab, which floods the
+         page once the mask widens. */
+      const raw = Math.max(0, Math.min(1, smoothstep((along + 0.85) / span) * heat));
+      const t = Math.pow(raw, 0.7);
       let col = WHITE;
       /**
        * 🔴 THE RAMP REACHES REAL COLOUR EARLY, BECAUSE THE MASK ONLY EVER SHOWS ITS FOOT. Two
@@ -119,12 +139,14 @@ function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0 }) {
        * tint of white, and a warm tint of white is peach. Amber by t = 0.28 is what puts actual
        * orange in the part of the image the page renders.
        */
-      col = mix(col, CREAM, smoothstep(t / 0.06));
-      col = mix(col, AMBER, smoothstep((t - 0.02) / 0.14));
-      col = mix(col, EMBER, smoothstep((t - 0.16) / 0.22));
+      /* Wide overlapping stops. Narrow ones put a visible ring where each hands over, which on a
+         field this large is the only edge in the picture and therefore the only thing you see. */
+      col = mix(col, CREAM, smoothstep(t / 0.20));
+      col = mix(col, AMBER, smoothstep((t - 0.06) / 0.42));
+      col = mix(col, EMBER, smoothstep((t - 0.30) / 0.46));
       // 🔴 CORAL IS AS DARK AS IT GOES. The deep ember that used to sit under it collapsed into a
       // near-black core that read as a hole punched in the page.
-      col = mix(col, BURNT, smoothstep((t - 0.46) / 0.32) * 0.9);
+      col = mix(col, BURNT, smoothstep((t - 0.60) / 0.40) * 0.85);
       if (violet > 0) {
         // one cool edge, so the warmth has something to be warm against
         col = mix(col, VIOLET, smoothstep((along - 0.45) / 0.5) * violet);
@@ -164,12 +186,12 @@ const out = process.argv[2] ?? ".";
  *   learn           band[data-art="left"]    -> mask at  -4% -> hot left
  *   close-wash      no ellipse, object-position center bottom -> hot along the bottom
  */
-writePPM(`${out}/hero.ppm`, render(1200, 686, { seed: 3.1, heat: 1.0, ox: 0.34, oy: 0.56, dir: [1.0, -0.38], span: 1.05, violet: 0.28 }));
-writePPM(`${out}/learn.ppm`, render(550, 550, { seed: 7.4, heat: 1.0, ox: 0.66, oy: 0.5, dir: [-1.0, -0.22], span: 1.0 }));
-writePPM(`${out}/see-wash.ppm`, render(550, 550, { seed: 12.9, heat: 1.05, ox: 0.34, oy: 0.5, dir: [1.0, -0.24], span: 1.0 }));
-writePPM(`${out}/evidence-wash.ppm`, render(550, 550, { seed: 21.3, heat: 1.05, ox: 0.34, oy: 0.5, dir: [1.0, 0.26], span: 1.0, violet: 0.2 }));
-writePPM(`${out}/close-wash.ppm`, render(1000, 550, { seed: 33.8, heat: 1.0, ox: 0.5, oy: 0.32, dir: [0.18, 1.0], span: 1.0, violet: 0.22 }));
-writePPM(`${out}/pricing.ppm`, render(550, 550, { seed: 41.2, heat: 0.92, ox: 0.36, oy: 0.56, dir: [1.0, -0.42], span: 1.0 }));
+writePPM(`${out}/hero.ppm`, render(1200, 686, { seed: 3.1, heat: 1.0, ox: 0.34, oy: 0.56, dir: [1.0, -0.38], span: 1.75, violet: 0.16 }));
+writePPM(`${out}/learn.ppm`, render(550, 550, { seed: 7.4, heat: 0.9, ox: 0.66, oy: 0.5, dir: [-1.0, -0.22], span: 1.7 }));
+writePPM(`${out}/see-wash.ppm`, render(550, 550, { seed: 12.9, heat: 0.92, ox: 0.34, oy: 0.5, dir: [1.0, -0.24], span: 1.7 }));
+writePPM(`${out}/evidence-wash.ppm`, render(550, 550, { seed: 21.3, heat: 0.9, ox: 0.34, oy: 0.5, dir: [1.0, 0.26], span: 1.7, violet: 0.14 }));
+writePPM(`${out}/close-wash.ppm`, render(1000, 550, { seed: 33.8, heat: 0.95, ox: 0.5, oy: 0.30, dir: [0.18, 1.0], span: 1.6, violet: 0.16 }));
+writePPM(`${out}/pricing.ppm`, render(550, 550, { seed: 41.2, heat: 0.9, ox: 0.36, oy: 0.56, dir: [1.0, -0.42], span: 1.7 }));
 
 // Encode (from this directory, writing into public/nemesis/art):
 //   node scripts/art-gradient.mjs .
