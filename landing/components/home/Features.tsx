@@ -4,7 +4,7 @@ import Image from "next/image";
 
 import { useParallax } from "@/components/use-parallax";
 import { FigureCarousel, type CarouselItem } from "@/components/home/FigureCarousel";
-import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR, VOICE_WASH_BLUR } from "./art-blur";
+import { EVIDENCE_WASH_BLUR, SEE_WASH_BLUR } from "./art-blur";
 
 /**
  * The things the page claims, one band each.
@@ -22,19 +22,23 @@ import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR,
  * masked to nothing before it crosses under the words — which is what lets the
  * type stay pure `--text` on pure `--bg` and never become white-on-a-gradient.
  *
- * ── WHY EACH BAND STILL GETS ITS OWN FILE ─────────────────────────────────────
+ * ── WHY EACH BAND STILL GETS ITS OWN GROUND ───────────────────────────────────
  *
- * One ground per idea. One image tiled four times would read as wallpaper, so no two
- * bands repeat, and they share a palette (indigo → azure → cyan → white) so the page
- * still holds together.
+ * One ground per idea. One image tiled twice would read as wallpaper, so no two bands repeat, and
+ * they share a palette so the page still holds together.
  *
- * Two of them are RENDERS (`learn`, `calendar`) and two are COMPUTED (`see-wash`,
- * `evidence-wash`, out of scripts/art-wash.py). The owner asked for smooth gradients
- * on 2026-08-25 — "not the grainy ones" — and a generated render carries the
- * generator's speckle by construction. `see` was bokeh and `evidence` was horizontal
- * strata, and moving the evidence wash across to its own edge put those strata on
- * show. Computing the two of them is what made them smooth; nothing else changed,
- * they are still WebPs behind a mask.
+ * 🔴 THE PALETTE IS ORANGE NOW, AND EVERY GROUND IS COMPUTED. Owner, 2026-09-06: "redesign the
+ * landing page with these new gradients", the gradients being two grainy orange references he sent.
+ * All of them come out of `scripts/art-gradient.mjs`, which draws the same domain-warped field the
+ * launch film's backdrop draws, so the video on this page and the page under it are one thing.
+ *
+ * 🔴 GRAIN IS DELIBERATE, REVERSING 2026-08-25 ("not the grainy ones"). That instruction was about
+ * a generator's speckle showing up in art nobody chose it for. Here it is the subject: the
+ * references are grainy, and a smooth version of them reads as a stock CSS gradient.
+ *
+ * 🔴 SATURATION IS CAPPED AND THE FAR EDGE IS WHITE, because this page is white top to bottom. The
+ * owner's rule when asked whether orange replaces the brand blue: "nemesis can use any color for
+ * gradient, the main thing is to use them appropriately with the white and black backgrounds."
  *
  * ── WHAT IS NOT CLAIMED HERE, DELIBERATELY ────────────────────────────────────
  *
@@ -45,14 +49,10 @@ import { CALENDAR_BLUR, EVIDENCE_FIGURE_BLUR, EVIDENCE_WASH_BLUR, SEE_WASH_BLUR,
  * blocks because the owner does not count them as differentiators; retrieval
  * practice survives inside `evidence`, where it is doing real work.
  *
- * 🔴 VOICE WAS CUT WITH THEM AND CAME BACK BY OWNER ORDER (2026-08-31: *"the
- * voice mode is not on the landing page"*). The cut predates the feature: when
- * it was made, "voice" meant read-aloud and dictation. That night the voice
- * CONVERSATION shipped (bars in the send slot, live transcript, auto-send on
- * silence, spoken replies, the glow), and the owner asked for it here. The band
- * follows the calendar band's shape: a computed wash and a REAL product shot —
- * captured from /dev-preview/learn with the product's own components running
- * (see scripts/voiceshot.mjs for the recapture recipe).
+ * 🔴 VOICE IS OUT AGAIN, AND THIS TIME WITH THE CALENDAR. It was cut once, brought back by owner
+ * order on 2026-08-31 ("the voice mode is not on the landing page"), and cut again on 2026-09-06:
+ * "remove the 'voice' and calendar section". A band that has been in and out twice is worth saying
+ * out loud so the third person to touch this file knows it is a decision, not an oversight.
  */
 
 interface Band {
@@ -65,12 +65,6 @@ interface Band {
   readonly figures?: readonly CarouselItem[];
   /** A product shot to sit opposite the copy, light/dark pair by basename. */
   readonly shot?: { readonly name: string; readonly alt: string; readonly w: number; readonly h: number };
-  /**
-   * An engraved figure laid OVER the wash, not instead of it — two grounds, one behind the other.
-   * It takes its own opacity, mask and parallax rate: a face cannot survive the treatment a
-   * gradient can, because a gradient has no subject to lose. See the note in art.css.
-   */
-  readonly figure?: { readonly src: string; readonly blur: string };
   /**
    * Which edge the WASH burns on, when that is not the edge `data-side` would put it on.
    *
@@ -152,45 +146,33 @@ const BANDS: readonly Band[] = [
     id: "evidence",
     art: "/nemesis/art/evidence-wash.webp",
     blur: EVIDENCE_WASH_BLUR,
-    artSide: "right",
-    figure: { blur: EVIDENCE_FIGURE_BLUR, src: "/nemesis/art/evidence-figure.webp" },
+    /* 🔴 `artSide: "right"` IS GONE WITH THE STATUE IT WAS AVOIDING. It existed for one reason —
+       owner, 2026-08-25: "make the gradients be on the opposite side of the contrast images" — and
+       the contrast image was the seated figure that sat on this band's left. With the engraving cut
+       and the wash now at full strength, sending it right put a solid orange field directly behind
+       this band's copy. `data-side` alone puts the wash opposite the words, which is the rule. */
     head: "Built on evidence",
     body: "Scaffolding, worked examples, retrieval practice and spaced review. Four methods with real research behind them, running under every session.",
   },
-  {
-    id: "calendar",
-    art: "/nemesis/art/calendar.webp",
-    blur: CALENDAR_BLUR,
-    head: "Calendar",
-    body: "Your plan becomes scheduled blocks and reminders, timed to when you are likely to forget.",
-    shot: {
-      name: "calendar",
-      alt: "A month of the Nemesis calendar: two courses, their assignments and exam, and the review blocks Nemesis scheduled between them.",
-      w: 2400,
-      h: 1509,
-    },
-  },
-  {
-    id: "voice",
-    art: "/nemesis/art/voice-wash.webp",
-    blur: VOICE_WASH_BLUR,
-    head: "Voice",
-    body: "Talk instead of typing. Your words appear as Nemesis hears them, send themselves when you pause, and the answer comes back read aloud, short enough to listen to.",
-    shot: {
-      name: "voice",
-      alt: "The Nemesis composer mid voice conversation: the learner's words shown live in the bar in italics, a stop control in the send slot, and a soft glow around the pill.",
-      w: 1824,
-      h: 360,
-    },
-  },
 ];
+
+/* ── WHAT CAME OUT, 2026-09-06 ────────────────────────────────────────────────
+ *
+ * `calendar` and `voice`, both at the owner's instruction in one message: "remove the 'voice' and
+ * calendar section". Their art and their product shots are deleted rather than left on disk — the
+ * page has a long history of sections coming back, but a wash in the old blue family would not
+ * survive this redesign anyway, so there is nothing here worth keeping warm.
+ *
+ * The engraving that sat beside `Built on evidence` went in the same message: "remove the images of
+ * statues". It was a seated classical figure, and the hands from the Sistine ceiling did the same
+ * job on `Learn anything`. Both are gone, along with `Band.figure` and the second parallax layer
+ * that positioned them — a field nothing sets is a field the next person has to read and dismiss.
+ */
 
 function Feature({ band, index }: { band: Band; index: number }) {
   // Alternating depth so neighbouring bands never drift in lockstep — two grounds
   // moving identically read as one sheet sliding behind the whole page.
   const art = useParallax<HTMLDivElement>(index % 2 === 0 ? 0.16 : 0.21);
-  // Its own, slower rate: two grounds moving identically read as one sheet.
-  const figure = useParallax<HTMLDivElement>(0.1);
 
   return (
     <section
@@ -214,21 +196,6 @@ function Feature({ band, index }: { band: Band; index: number }) {
           quality={82}
         />
       </div>
-
-      {band.figure ? (
-        <div className="band-figure" ref={figure} aria-hidden="true">
-          <Image
-            src={band.figure.src}
-            alt=""
-            width={1100}
-            height={1100}
-            sizes="(max-width: 900px) 100vw, 40vw"
-            placeholder="blur"
-            blurDataURL={band.figure.blur}
-            quality={84}
-          />
-        </div>
-      ) : null}
 
       <div className="wrap band-in" data-reveal="up">
         {/* The measure and the side live on this wrapper, not on the heading. `ch`
