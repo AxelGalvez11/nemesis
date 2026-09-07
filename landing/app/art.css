@@ -86,23 +86,23 @@
        while the art was a pale blue nothing; with real colour in it, it cut across the
        lede on a phone. 52% from 48% lands the fade at 3.3% and 92.7%, inside the box
        at both ends. Change these two numbers together or the edge comes back. */
-    ellipse 62% 52% at 68% 48%,
+    ellipse 66% 58% at 70% 47%,
     #000 0%,
-    #000 46%,
-    rgba(0, 0, 0, 0.55) 70%,
-    transparent 86%
+    #000 52%,
+    rgba(0, 0, 0, 0.5) 74%,
+    transparent 90%
   );
   mask-image: radial-gradient(
-    ellipse 62% 52% at 68% 48%,
+    ellipse 66% 58% at 70% 47%,
     #000 0%,
-    #000 46%,
-    rgba(0, 0, 0, 0.55) 70%,
-    transparent 86%
+    #000 52%,
+    rgba(0, 0, 0, 0.5) 74%,
+    transparent 90%
   );
   /* Light mode is a white page: the art has to sit far back or it shouts. Dark
      mode is a black page, where the same opacity reads as almost nothing, so it
      gets more — see the media query at the foot of this block. */
-  opacity: 0.5;
+  opacity: 0.9;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .nhero-glow img { opacity: 0.72; }
@@ -363,17 +363,26 @@
    measurement pointed here. The plateau now holds to 40% and the falloff starts from 80%, which is
    what puts real colour on the page. The text column is on the OPPOSITE side of every band
    (`data-side` / `data-art`), so a wider wash still never runs under a sentence. */
+/* 🔴 A HALF, NOT A HAZE — owner, 2026-09-07: "the landing page seems to blur them", and then, asked
+   how far to go, "keep white, stop the fade". These were ellipses pushed off-frame, so the ground
+   never reached full strength anywhere on screen: the page showed the soft outside of a shape and
+   the form inside it was thrown away. That is the blur, and it was in the CSS, not the art.
+
+   A LINEAR mask instead. The art side is fully opaque out to 44% and gone by 90%, so one half of
+   every band is a real surface with a real edge in it and the other half is the white page the copy
+   is set on. The images no longer fade out on their own either (scripts/art-gradient.mjs is
+   full-bleed now) — one job each, or the same fade happens twice and neither half is committed. */
 /* THE TWO MASKS ARE THE LAYOUT. Everything else about a band is padding. The
    ellipse is pushed off the frame so only its soft shoulder is ever on screen —
    centring it would put the bright core behind the middle of the band, which is
    exactly where the sentence is. */
 .band[data-side="right"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
-  mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to left, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
+  mask-image: linear-gradient(to left, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
 }
 .band[data-side="left"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
-  mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
+  mask-image: linear-gradient(to right, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
 }
 
 /* ── WHEN THE WASH CROSSES SIDES ──────────────────────────────────────────────
@@ -387,12 +396,12 @@
    same, so source order is what decides, and at 900px the mask must still go to the
    top edge for every band. */
 .band[data-art="left"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
-  mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
+  mask-image: linear-gradient(to right, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
 }
 .band[data-art="right"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
-  mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to left, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
+  mask-image: linear-gradient(to left, #000 0%, #000 44%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.24) 76%, transparent 90%);
 }
 
 /* 🔴 A CORNER, NOT A SIDE, WHEN THE WASH LANDS ON THE COPY'S OWN SIDE. `Built on
@@ -412,18 +421,47 @@
    edge nothing else wants, and there the generous mask above is right — the corner
    variant made it so faint the band looked unlit on that side. */
 .band[data-side="left"][data-art="right"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 62% 88% at 110% 16%, #000 0%, rgba(0,0,0,0.7) 26%, rgba(0,0,0,0.26) 58%, transparent 82%);
-  mask-image: radial-gradient(ellipse 62% 88% at 110% 16%, #000 0%, rgba(0,0,0,0.7) 26%, rgba(0,0,0,0.26) 58%, transparent 82%);
+  /* 🔴 THE ONE BAND THAT KEPT ITS OWN MASK, AND IT WAS THE LAST THING STILL FADING. Every other
+     ground moved to a linear half; this corner variant still fell to 26% opacity by 58% across,
+     so `Built on evidence` was the one band with no visible form in it. Same shape as the others
+     now, biased up so it clears the copy. */
+  -webkit-mask-image: linear-gradient(to left, #000 0%, #000 42%, rgba(0,0,0,0.7) 58%, rgba(0,0,0,0.22) 74%, transparent 88%);
+  mask-image: linear-gradient(to left, #000 0%, #000 42%, rgba(0,0,0,0.7) 58%, rgba(0,0,0,0.22) 74%, transparent 88%);
 }
 
 /* Same reasoning as the hero light: a white page needs the art held back, a black
    page needs it brought forward, or the identical file reads as garish on one and
    absent on the other. */
-.band-art img { opacity: 0.52; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .band-art img { opacity: 0.74; }
+/* 🔴🔴 THIS OPACITY WAS THE "BLUR", AND IT COST FOUR PASSES ON THE ART TO FIND. Owner, 2026-09-07:
+   "the landing page seems to blur them". Measured in the browser: `.band-art img` was compositing
+   at 0.52 over a white page, so every ground arrived at roughly half strength — and half of any
+   colour over white is a pale tint of it. Nothing done to the images could survive that, which is
+   why "make it more orange" kept coming back as peach three times running.
+
+   It was the right number for the old art: those grounds were pale blue washes that filled their
+   whole frame, and they needed holding back. These have a form in them and a mask that already
+   decides where they stop (see below), so they are shown as drawn. When a ground looks weak, read
+   the composited opacity in the browser before touching the palette. */
+.band-art img { opacity: 0.96; }
+
+/* 🔴 THE RING BAND CANNOT HAVE A HALF, BECAUSE ITS COPY IS IN THE MIDDLE. Every other band sets its
+   words against one edge, so a wash on the other edge never meets them. `Learn anything` is a
+   centred sentence inside a ring of twelve subjects — there is no far side to put colour on. So it
+   keeps a wash rather than a surface: the same art, held back and stopped well before the centre. */
+.ring-band .band-art img {
+  opacity: 0.62;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, rgba(0,0,0,0.82) 22%, rgba(0,0,0,0.34) 44%, transparent 62%);
+  mask-image: linear-gradient(to right, #000 0%, rgba(0,0,0,0.82) 22%, rgba(0,0,0,0.34) 44%, transparent 62%);
 }
-:root[data-theme="dark"] .band-art img { opacity: 0.74; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ring-band .band-art img { opacity: 0.7; }
+}
+:root[data-theme="dark"] .ring-band .band-art img { opacity: 0.7; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .band-art img { opacity: 0.88; }
+}
+:root[data-theme="dark"] .band-art img { opacity: 0.88; }
 
 /* The corner mask above hands back roughly a fifth of the wash's area, so this band
    gets a fifth of it back in strength — otherwise the change the owner asked for is
@@ -431,11 +469,11 @@
    away". It buys real colour where it counts (the corner goes rgb(194,213,234) →
    rgb(182,205,231)) and costs almost nothing where it must not (the background behind
    the copy's longest line goes rgb(243,248,252) → rgb(241,247,251), contrast 5.6:1). */
-.band[data-side="left"][data-art="right"] .band-art img { opacity: 0.62; }
+.band[data-side="left"][data-art="right"] .band-art img { opacity: 0.96; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .band[data-side="left"][data-art="right"] .band-art img { opacity: 0.84; }
+  :root:not([data-theme="light"]) .band[data-side="left"][data-art="right"] .band-art img { opacity: 0.88; }
 }
-:root[data-theme="dark"] .band[data-side="left"][data-art="right"] .band-art img { opacity: 0.84; }
+:root[data-theme="dark"] .band[data-side="left"][data-art="right"] .band-art img { opacity: 0.88; }
 
 /* ── THE TWO BANDS WITH A FIGURE OVER THE WASH ────────────────────────────────
    `Learn anything` and `Built on evidence` carry an engraved classical sculpture —
@@ -1016,7 +1054,7 @@
      looks like it is rising out of the edge rather than being cut off by it. */
   -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0.5) 0%, #000 11%, rgba(0,0,0,0.68) 24%, rgba(0,0,0,0.22) 34%, transparent 44%);
   mask-image: linear-gradient(to top, rgba(0,0,0,0.5) 0%, #000 11%, rgba(0,0,0,0.68) 24%, rgba(0,0,0,0.22) 34%, transparent 44%);
-  opacity: 0.5;
+  opacity: 0.88;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .nclose-art img { opacity: 0.6; }

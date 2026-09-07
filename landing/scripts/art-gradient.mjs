@@ -81,6 +81,9 @@ const EMBER = [255, 106, 26];
  * tints above it to.
  */
 const BURNT = [226, 80, 10];
+/* The front mass. Deep enough to sit clearly IN FRONT of everything behind it, still orange rather
+   than brown, so the lit rim where it meets the ground reads as light and not as a stain. */
+const SHADOW = [138, 40, 6];
 const VIOLET = [107, 75, 232];
 
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -93,78 +96,62 @@ const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[
  * `cx`/`cy` place that core, because the CSS mask only ever shows one edge of these images
  * (art.css pushes an ellipse off-frame), and a core in the middle would be a core nobody sees.
  */
-function render(w, h, { seed, heat, ox, oy, dir, span = 1.0, violet = 0 }) {
+/**
+ * One ground: full-bleed colour with a form standing in it.
+ *
+ * 🔴 STACKED MASSES, NOT A RAMP, AND THAT IS WHERE THE DEPTH COMES FROM. Owner, 2026-09-07, sending
+ * two references: *"i want gradients like this, do you see the style? theres like depth"*. Look at
+ * what is actually in them: a dark mass clearly in FRONT, a lighter ground behind it, and a lit rim
+ * along the edge where the two meet. Light falls AROUND a shape. Every earlier pass here was one
+ * field ramping in one direction, and a single ramp can only ever be a wash — smooth, correct, flat.
+ *
+ * 🔴 AND IT NO LONGER FADES TO WHITE INSIDE THE IMAGE. The references are colour to every edge. The
+ * page's own mask decides where the gradient stops and the white page begins (art.css), so an image
+ * that also faded out was fading twice — which is exactly the "the landing page seems to blur them"
+ * in the same message. One job each: this file makes a surface, the mask places it.
+ */
+function render(w, h, { seed, base, back, front, violet = 0, grain = 0.018 }) {
   const buf = Buffer.alloc(w * h * 3);
   const ar = w / h;
+  // a soft mass: a large ellipse whose edge is pushed about by the field, so it is a form and not
+  // a circle. `soft` is how much of its own radius the falloff takes.
+  const lobe = (u, v, m, warp) => {
+    const du = (u - m.cx * ar) / m.rx, dv = (v - m.cy) / m.ry;
+    const d = Math.sqrt(du * du + dv * dv) + warp * m.wob;
+    return smoothstep((1 - d) / m.soft);
+  };
   for (let j = 0; j < h; j++) {
     const v = (j + 0.5) / h;
     for (let i = 0; i < w; i++) {
       const u = ((i + 0.5) / w) * ar;
-      /* ONE gentle warp at half a cycle across the frame. Two stacked warps at 1.35 was what turned
-         a fold into a plume: each one multiplies the detail of the one under it. */
+      // ONE gentle warp at half a cycle across the frame, so every edge below bends
       const qx = fbm(u * 0.55, v * 0.55, seed), qy = fbm(u * 0.55 + 3.1, v * 0.55 + 3.1, seed);
-      const f = fbm(u * 0.55 + 1.35 * qx, v * 0.55 + 1.35 * qy, seed);
+      const f = fbm(u * 0.55 + 1.35 * qx, v * 0.55 + 1.35 * qy, seed) - 0.5;
+
+      let col = base;
+      // the ground behind: broad, lighter, no edge of its own
+      col = mix(col, back.col, lobe(u, v, back, f) * back.amt);
+      // the form in front, and the light along its shoulder. The rim is drawn from the DIFFERENCE
+      // between the mass and a slightly larger copy of itself — which is what an edge lit from
+      // behind actually is, and the one detail that makes the whole thing read as depth.
+      const mFront = lobe(u, v, front, f);
+      const mHalo = lobe(u, v, { ...front, rx: front.rx * 1.05, ry: front.ry * 1.05 }, f);
+      col = mix(col, front.rim, Math.max(0, mHalo - mFront) * front.rimAmt);
+      col = mix(col, front.col, mFront * front.amt);
+      if (violet > 0) col = mix(col, VIOLET, smoothstep((f + 0.24) / 0.4) * violet);
+
       /**
-       * 🔴 `dir` POINTS FROM COLD TO HOT, AND GETTING THAT BACKWARDS COST A ROUND. The first two
-       * cuts measured distance from a point: one produced a fireball with a dark bruise in it, the
-       * next produced a sweep whose hot side landed on the OPPOSITE edge to the one the CSS shows.
-       * art.css masks each ground to an ellipse pushed off-frame (`at 104%` / `at -4%`), so exactly
-       * one edge of every image is ever on screen. Colour anywhere else is colour nobody sees, and
-       * the page came out pale.
+       * 🔴 THE GRAIN IS BACK, AND SMALLER. "dont do the grainy gradient" was about the last one:
+       * coarse, and scaled by brightness so it disappeared in the pale areas and piled up in the
+       * dark ones — which reads as dirt. The references carry an even, very fine speckle across
+       * the WHOLE frame including the flat parts, at the scale of a print screen. Uniform, ±4 or
+       * so, no brightness term. It is what makes these look like a material rather than a fill.
        */
-      /**
-       * 🔴 THE FIELD HAS TO OUTWEIGH THE DIRECTION, OR THIS IS A CSS GRADIENT. Cutting the warp to
-       * 0.42 while flattening the noise left the straight `dir` term in charge and produced a plain
-       * left-to-right ramp — smooth, yes, and completely dead. The reference is smooth AND curved:
-       * one big arc bending across the frame. Large amplitude at LOW frequency is what that is.
-       */
-      const along = (u - ox * ar) * dir[0] + (v - oy) * dir[1] + (f - 0.5) * 1.25;
-      /**
-       * 🔴 THE GAMMA LIFT IS NOT A TWEAK, IT IS THE MASK'S DOING. Every ground is multiplied by a
-       * soft radial mask before anyone sees it, and a mask takes the SHOULDER of the ramp, never
-       * the core — so a linear ramp that looked saturated as a flat image arrived on the page as
-       * pale peach. Raising t to a power below 1 spends the range on the shoulder, which is the
-       * only part that survives.
-       */
-      /* `span` is how much of the frame the transition takes. Under about 1.4 the ramp reaches full
-         colour a third of the way in and the rest of the image is a flat slab, which floods the
-         page once the mask widens. */
-      const raw = Math.max(0, Math.min(1, smoothstep((along + 0.85) / span) * heat));
-      const t = Math.pow(raw, 0.7);
-      let col = WHITE;
-      /**
-       * 🔴 THE RAMP REACHES REAL COLOUR EARLY, BECAUSE THE MASK ONLY EVER SHOWS ITS FOOT. Two
-       * passes came back reading pink rather than orange, and neither was the palette's fault: a
-       * ramp that spends its first third going white -> cream is a ramp whose visible part is a
-       * tint of white, and a warm tint of white is peach. Amber by t = 0.28 is what puts actual
-       * orange in the part of the image the page renders.
-       */
-      /* Wide overlapping stops. Narrow ones put a visible ring where each hands over, which on a
-         field this large is the only edge in the picture and therefore the only thing you see. */
-      col = mix(col, CREAM, smoothstep(t / 0.20));
-      col = mix(col, AMBER, smoothstep((t - 0.06) / 0.42));
-      col = mix(col, EMBER, smoothstep((t - 0.30) / 0.46));
-      // 🔴 CORAL IS AS DARK AS IT GOES. The deep ember that used to sit under it collapsed into a
-      // near-black core that read as a hole punched in the page.
-      col = mix(col, BURNT, smoothstep((t - 0.60) / 0.40) * 0.85);
-      if (violet > 0) {
-        // one cool edge, so the warmth has something to be warm against
-        col = mix(col, VIOLET, smoothstep((along - 0.45) / 0.5) * violet);
-      }
-      /**
-       * 🔴 NO GRAIN. Owner, 2026-09-06: "dont do the grainy gradient, just give me smooth gradient
-       * please". This is the second time the answer has been smooth — `scripts/art-wash.py` carried
-       * "integrate some smooth gradients (not the grainy ones)" from 2026-08-25, and the grainy
-       * references he sent this morning looked like a reversal. They were not: he wanted the shape
-       * and the colour of them, not the noise.
-       *
-       * The fold and the flow still come from the domain-warped fbm above, which is what keeps this
-       * from being a two-stop CSS ramp. Nothing is added per pixel.
-       */
+      const g = (hash2(i * 1.7, j * 1.3, seed + 9.1) - 0.5) * grain * 255;
       const k = (j * w + i) * 3;
-      buf[k] = Math.max(0, Math.min(255, col[0]));
-      buf[k + 1] = Math.max(0, Math.min(255, col[1]));
-      buf[k + 2] = Math.max(0, Math.min(255, col[2]));
+      buf[k] = Math.max(0, Math.min(255, col[0] + g));
+      buf[k + 1] = Math.max(0, Math.min(255, col[1] + g));
+      buf[k + 2] = Math.max(0, Math.min(255, col[2] + g));
     }
   }
   return { buf, w, h };
@@ -179,19 +166,67 @@ const out = process.argv[2] ?? ".";
 // The hero is the only one seen whole and with nothing set over it, so it gets the most heat and
 // the violet edge from the reference. The rest are shoulders under a white page.
 /**
- * Which edge each ground is hot on is dictated by art.css, not by taste:
- *   hero            the ellipse sits at 68% across, so the heat goes right and a little up
- *   see-wash        band[data-side="right"]  -> mask at 104% -> hot right
- *   evidence-wash   band[data-art="right"]   -> mask at 104% -> hot right
- *   learn           band[data-art="left"]    -> mask at  -4% -> hot left
- *   close-wash      no ellipse, object-position center bottom -> hot along the bottom
+ * Which edge each ground shows is dictated by art.css, not by taste: every one is masked to its own
+ * half of the band, so the FORM has to sit on that half or the page shows the empty part of it.
+ *   hero            the mask sits right of centre
+ *   see-wash        band[data-side="right"] -> right half
+ *   evidence-wash   band[data-art="right"]  -> right half
+ *   learn           band[data-art="left"]   -> left half
+ *   close-wash      no side mask; the form sits low, under the closing line
  */
-writePPM(`${out}/hero.ppm`, render(1200, 686, { seed: 3.1, heat: 1.0, ox: 0.34, oy: 0.56, dir: [1.0, -0.38], span: 1.75, violet: 0.16 }));
-writePPM(`${out}/learn.ppm`, render(550, 550, { seed: 7.4, heat: 0.9, ox: 0.66, oy: 0.5, dir: [-1.0, -0.22], span: 1.7 }));
-writePPM(`${out}/see-wash.ppm`, render(550, 550, { seed: 12.9, heat: 0.92, ox: 0.34, oy: 0.5, dir: [1.0, -0.24], span: 1.7 }));
-writePPM(`${out}/evidence-wash.ppm`, render(550, 550, { seed: 21.3, heat: 0.9, ox: 0.34, oy: 0.5, dir: [1.0, 0.26], span: 1.7, violet: 0.14 }));
-writePPM(`${out}/close-wash.ppm`, render(1000, 550, { seed: 33.8, heat: 0.95, ox: 0.5, oy: 0.30, dir: [0.18, 1.0], span: 1.6, violet: 0.16 }));
-writePPM(`${out}/pricing.ppm`, render(550, 550, { seed: 41.2, heat: 0.9, ox: 0.36, oy: 0.56, dir: [1.0, -0.42], span: 1.7 }));
+const mass = (cx, cy, rx, ry, soft, wob) => ({ cx, cy, rx, ry, soft, wob });
+
+/**
+ * 🔴 EVERY MASS IS BIGGER THAN THE FRAME AND CENTRED OFF IT. A form small enough to fit is a blob,
+ * and a blob is what the first pass produced: a dark disc floating in orange. In the reference the
+ * mass has no centre on screen at all — only its EDGE crosses, as one long gentle arc, which is why
+ * it reads as something large and close rather than an object in the middle.
+ *
+ * 🔴 AND ITS EDGE IS DEFINED, NOT DISSOLVED. `soft` is the falloff as a fraction of the mass's own
+ * radius: at 0.7 the boundary spans the frame and the mass melts back into a plain ramp. The
+ * reference's dark form has a clear soft boundary about a tenth of the frame wide — near 0.18 here.
+ * Big shape, short edge.
+ *
+ * 🔴 THE ARC RUNS VERTICALLY, THROUGH THE MIDDLE, AND THAT IS A LAYOUT FACT NOT A TASTE. `.band-art`
+ * is `object-fit: cover` at `scale: 1.28`, and these are square images in a band twice as wide as it
+ * is tall. So the page shows a horizontal SLICE through the centre and throws both corners away —
+ * which is where the first version put every mass, and why the depth was in the file and not on the
+ * screen. Centres sit off the left or right edge at mid-height, so the edge crossing the frame is a
+ * near-vertical arc that survives any vertical crop.
+ */
+writePPM(`${out}/hero.ppm`, render(1200, 686, {
+  seed: 3.1, base: EMBER,
+  back: { ...mass(-0.35, 0.42, 1.35, 1.5, 0.55, 0.5), col: CREAM, amt: 0.95 },
+  front: { ...mass(1.62, 0.60, 1.20, 1.45, 0.17, 0.42), col: SHADOW, amt: 0.9, rim: AMBER, rimAmt: 0.6 },
+  violet: 0.14,
+}));
+writePPM(`${out}/learn.ppm`, render(550, 550, {
+  seed: 7.4, base: EMBER,
+  back: { ...mass(1.35, 0.5, 1.25, 1.4, 0.6, 0.5), col: CREAM, amt: 0.85 },
+  front: { ...mass(-0.58, 0.46, 1.18, 1.4, 0.18, 0.42), col: BURNT, amt: 0.9, rim: AMBER, rimAmt: 0.58 },
+}));
+writePPM(`${out}/see-wash.ppm`, render(550, 550, {
+  seed: 12.9, base: EMBER,
+  back: { ...mass(-0.35, 0.5, 1.25, 1.4, 0.6, 0.5), col: CREAM, amt: 0.85 },
+  front: { ...mass(1.58, 0.54, 1.18, 1.4, 0.18, 0.42), col: SHADOW, amt: 0.88, rim: AMBER, rimAmt: 0.6 },
+}));
+writePPM(`${out}/evidence-wash.ppm`, render(550, 550, {
+  seed: 21.3, base: EMBER,
+  back: { ...mass(-0.35, 0.46, 1.25, 1.4, 0.6, 0.5), col: CREAM, amt: 0.85 },
+  front: { ...mass(1.55, 0.44, 1.18, 1.4, 0.18, 0.42), col: BURNT, amt: 0.9, rim: AMBER, rimAmt: 0.55 },
+  violet: 0.12,
+}));
+writePPM(`${out}/close-wash.ppm`, render(1000, 550, {
+  seed: 33.8, base: EMBER,
+  back: { ...mass(0.25, -0.45, 1.6, 1.35, 0.6, 0.45), col: CREAM, amt: 0.85 },
+  front: { ...mass(0.72, 1.72, 1.5, 1.25, 0.18, 0.4), col: SHADOW, amt: 0.88, rim: AMBER, rimAmt: 0.6 },
+  violet: 0.12,
+}));
+writePPM(`${out}/pricing.ppm`, render(550, 550, {
+  seed: 41.2, base: EMBER,
+  back: { ...mass(-0.35, 0.55, 1.25, 1.4, 0.6, 0.5), col: CREAM, amt: 0.85 },
+  front: { ...mass(1.55, 0.48, 1.18, 1.4, 0.18, 0.42), col: BURNT, amt: 0.88, rim: AMBER, rimAmt: 0.5 },
+}));
 
 // Encode (from this directory, writing into public/nemesis/art):
 //   node scripts/art-gradient.mjs .

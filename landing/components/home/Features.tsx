@@ -146,7 +146,11 @@ const BANDS: readonly Band[] = [
     id: "evidence",
     art: "/nemesis/art/evidence-wash.webp",
     blur: EVIDENCE_WASH_BLUR,
-    artSide: "right",
+    /* 🔴 `artSide: "right"` IS GONE WITH THE STATUE IT WAS AVOIDING. It existed for one reason —
+       owner, 2026-08-25: "make the gradients be on the opposite side of the contrast images" — and
+       the contrast image was the seated figure that sat on this band's left. With the engraving cut
+       and the wash now at full strength, sending it right put a solid orange field directly behind
+       this band's copy. `data-side` alone puts the wash opposite the words, which is the rule. */
     head: "Built on evidence",
     body: "Scaffolding, worked examples, retrieval practice and spaced review. Four methods with real research behind them, running under every session.",
   },
