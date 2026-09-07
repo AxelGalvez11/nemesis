@@ -149,11 +149,19 @@ describe("the board has no menus, and nothing opens over it", () => {
     }
   });
 
-  it("puts the makers on the card instead", () => {
+  it("puts the makers on a DOCUMENT card, and no longer on a chat card", () => {
     const card = readFileSync(new URL("../../components/workspace/board/conversation-card.tsx", import.meta.url), "utf8");
-    assert.match(card, /Make flashcards from this/, "the flashcards icon is missing from a chat card");
-    assert.match(card, /Make a test from this/, "the test icon is missing from a chat card");
+    // 🔴🔴 THE CHAT HALF REVERSED ON 2026-09-07: *"remove the create 'flashcard, tests' icons from
+    // top of chats"*, the day after making moved inside the conversation entirely (*"hide the
+    // 'create' button in the canvas, create should happen within chats"*). Going INTO a chat is the
+    // gesture now, and Create is waiting there with all six kinds. The claim this guard makes is
+    // unchanged and is the one that matters: NO MENU OPENS OVER THE BOARD.
+    assert.ok(!/Make flashcards from this|Make a test from this/.test(card), "the maker icons are back on the chat card");
     assert.ok(!card.includes("MakeMenu"), "the + menu is still on the card");
+    // A DOCUMENT keeps its makers, and that is a separate owner ruling (2026-09-04: *"users should
+    // be allowed to … make note, make flashcards, and make tests from documents too that were
+    // dropped in"*). A dropped file has no conversation to step into, so taking these away would
+    // leave no way at all to make something from it.
     const source = readFileSync(new URL("../../components/workspace/board/other-cards.tsx", import.meta.url), "utf8");
     for (const label of ["Make a note from this", "Make flashcards from this", "Make a test from this", "Collapse document", "Delete document"]) {
       assert.ok(source.includes(label), `a dropped document cannot ${label.toLowerCase()}`);

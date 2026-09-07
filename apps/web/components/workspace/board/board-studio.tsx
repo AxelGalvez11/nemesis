@@ -46,7 +46,7 @@
 // back as it was.
 
 import { useReactFlow } from "@xyflow/react";
-import { ArrowLeft, Check, ChevronRight, CircleAlert, FilePlus2, Files, FolderPlus, LoaderCircle, Redo2, Sparkles, Undo2, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, CircleAlert, Files, FolderPlus, LoaderCircle, Plus, Redo2, Sparkles, Undo2, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -54,6 +54,7 @@ import { OUTPUT_KIND_MARKS } from "@/components/workspace/learn/artifact-card";
 import { useDocumentDock } from "@/components/workspace/learn/document-dock";
 import { KIND_LABELS, MAKING_LABELS, type BoardMakeKind } from "@/lib/board/board-deliverables";
 import { groundedSourceFor } from "@/lib/board/board-grounding";
+import { relativeTime } from "@/lib/watch-format";
 import type { BoardOutputCard, BoardSource } from "@/lib/board/board-model";
 import { groupHoldingExactly } from "@/lib/board/board-scope";
 import { STUDIO_LENGTHS, STUDIO_LEVELS, STUDIO_TILES, boardHasMaterial, studioInstruction, type StudioLength, type StudioLevel, type StudioTile } from "@/lib/board/board-studio";
@@ -63,8 +64,21 @@ import { IconTooltip, isEditableTarget } from "./board-chrome";
 import { LANDING_ACCEPT } from "./board-landing";
 import { useBoard } from "./board-provider";
 
-/** The panel's width: 320, so two of NotebookLM's tiles sit across it with the grid's 8px between. */
-export const STUDIO_WIDTH = 320;
+/**
+ * The panel's width.
+ *
+ * 🔴 360, SO A TILE IS THE REFERENCE'S 160. Owner, 2026-09-07: *"copy the sources panel from
+ * notebookllm into the nemesis app"* and *"notice how the right studio panel has the buttons for
+ * creating and has the list under it, copy that into the app"*. Measured in his own notebook
+ * (docs/canvas-workspace-reference.md §9): their panel is 359 and their tiles are 161 x 56 in two
+ * columns with 8 between. At our old 320 the same grid gave 140-wide tiles, and "Video Overview"
+ * wrapped. 360 − 32 of inset − 8 of gap = 160 each, which is theirs to a pixel.
+ *
+ * 🔴 ONE PANEL, NOT THEIR THREE. They put Sources left, Chat centre and Studio right; the owner
+ * ruled that out by name (2026-09-06, *"having double side panels isn't too good … only one side
+ * panel"*) and read a standing panel as too big twice. What is copied is the CONTENTS.
+ */
+export const STUDIO_WIDTH = 360;
 
 type PanelId = "sources" | "create";
 
@@ -103,11 +117,32 @@ function markOf(kind: BoardMakeKind): { icon: string; tint: string } {
   return mark ? { icon: mark.icon, tint: mark.tint } : { icon: "file", tint: "--ui-kind-blue" };
 }
 
+/**
+ * A tile's ground: its own colour, washed almost out.
+ *
+ * 🔴🔴 A MIX AGAINST THE PANEL, NOT A LITERAL COLOUR. NotebookLM's tiles are flat light fills
+ * (`rgb(237,239,250)` under a blue label, `rgb(247,237,235)` under a red one — §9), which are those
+ * hues at roughly a tenth over white. Writing their hex values here would look identical in the
+ * light theme and be six pale bricks on a dark canvas in the other. Mixing the kind token we
+ * already own against the panel's own ground gives the same picture in both, and follows the theme
+ * if it ever moves.
+ *
+ * 🔴 12%, MEASURED RATHER THAN GUESSED. Their blue tile is 5% of the way from white to their blue;
+ * ours has to carry a little more because our kind tokens are less saturated than theirs, and below
+ * about 10% the tint stops being visible against `--ui-bg-elevated` at all.
+ */
+const tileTint = (tint: string) => `color-mix(in srgb, var(${tint}) 12%, var(--ui-bg-elevated))`;
+
 function sourceIcon(source: BoardSource): string {
   if (source.type === "pdf") return "file-pdf";
   if (source.type === "image") return "file-media";
   return "file";
 }
+
+/** 🔴 THE GLYPH IS COLOURED BY FILE TYPE, as the reference's is (§9: their PDF is `rgb(219,55,45)`).
+ *  Ours were all one accent, so a list of ten files was ten identical blue marks and the name was
+ *  the only thing separating them. */
+const sourceTint = (source: BoardSource) => (source.type === "pdf" ? "--ui-kind-red" : source.type === "image" ? "--ui-kind-purple" : "--ui-kind-blue");
 
 /** A 16px tick box, drawn by us so it reads the same in both themes; the real checkbox is beneath it for the keyboard. */
 function Tick({ checked, disabled, label, onChange }: { checked: boolean; disabled?: boolean; label: string; onChange: () => void }) {
@@ -143,6 +178,20 @@ function Tick({ checked, disabled, label, onChange }: { checked: boolean; disabl
  * that changed nothing. A disabled box would say "you may not", which is also untrue; the answer is
  * that there is nothing to choose.
  */
+/**
+ * A row in the Sources list, in NotebookLM's own grammar (§9, measured 2026-09-07).
+ *
+ * 🔴🔴 THE TICK MOVED TO THE RIGHT, AND THAT IS THE COPY. Theirs: 52 tall, radius 8, padding 0 8,
+ * a 24px file glyph in its type's colour on the LEFT, the name at 14px/24, and the checkbox at the
+ * far right. Ours put the tick first, so the glyph and the name both started at a different x
+ * depending on whether the row could be ticked at all — inside a chat there are no ticks, and the
+ * whole list shifted 26px left against the same list on the board.
+ *
+ * 🔴 NO `onTick` MEANS NO TICK BOX AT ALL, which is the shape inside a chat: what that chat reads
+ * is decided by the frame it stands in (lib/board/board-scope.ts), so a box here would be a control
+ * that changed nothing. A disabled box would say "you may not", which is also untrue; the answer is
+ * that there is nothing to choose.
+ */
 function SourceRow({ source, ticked, onOpen, onTick }: { source: BoardSource; ticked: boolean; onOpen?: () => void; onTick?: () => void }) {
   const processing = source.status === "processing";
   const failed = source.status === "error";
@@ -151,45 +200,60 @@ function SourceRow({ source, ticked, onOpen, onTick }: { source: BoardSource; ti
     <li>
       <label
         {...(openable ? { onClick: onOpen, role: "button", tabIndex: 0, onKeyDown: (event: ReactKeyboardEvent<HTMLLabelElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen?.(); } } } : {})}
-        className={cn("flex h-[40px] items-center gap-[10px] rounded-[8px] px-[8px] transition-colors hover:bg-(--ui-control-hover-background)", (onTick && !processing) || openable ? "cursor-pointer" : "cursor-default")}
+        className={cn("flex h-[52px] items-center gap-[10px] rounded-[8px] px-[8px] transition-colors hover:bg-(--ui-control-hover-background)", (onTick && !processing) || openable ? "cursor-pointer" : "cursor-default")}
         title={failed ? source.error || "This file could not be read." : source.name}
       >
-        {onTick && <Tick checked={ticked && !processing && !failed} disabled={processing || failed} label={`Use ${source.name}`} onChange={onTick} />}
         {processing ? (
-          <LoaderCircle aria-hidden className="size-[16px] shrink-0 animate-spin text-(--ui-text-tertiary)" />
+          <LoaderCircle aria-hidden className="size-[24px] shrink-0 animate-spin text-(--ui-text-tertiary)" />
         ) : failed ? (
-          <CircleAlert aria-hidden className="size-[16px] shrink-0 text-(--board-error)" />
+          <CircleAlert aria-hidden className="size-[24px] shrink-0 text-(--board-error)" />
         ) : (
-          <Codicon aria-hidden className="shrink-0 text-(--ui-action)" name={sourceIcon(source)} size="16px" />
+          <Codicon aria-hidden className="shrink-0" name={sourceIcon(source)} size="24px" style={{ color: `var(${sourceTint(source)})` }} />
         )}
-        <span className={cn("min-w-0 flex-1 truncate text-[14px] leading-[20px]", failed ? "text-(--ui-text-tertiary)" : "text-foreground")}>{source.name}</span>
+        <span className={cn("min-w-0 flex-1 truncate text-[14px] leading-[24px]", failed ? "text-(--ui-text-tertiary)" : "text-foreground")}>{source.name}</span>
         {processing && <span className="shrink-0 text-[12px] text-(--ui-text-tertiary)">Reading…</span>}
+        {onTick && <Tick checked={ticked && !processing && !failed} disabled={processing || failed} label={`Use ${source.name}`} onChange={onTick} />}
       </label>
     </li>
   );
 }
 
-function MadeRow({ output, onOpen }: { output: BoardOutputCard; onOpen: () => void }) {
+/**
+ * One thing this canvas has made, as NotebookLM lists it.
+ *
+ * 🔴🔴 THE SECOND LINE IS THREE FACTS, NOT ONE, and that is the copy. Measured in his notebook
+ * (§9): rows 331 x 64, radius 16, padding 8, a 24px glyph in the kind's colour, the title at
+ * 14px/16 weight 500, and under it `Study Guide · 10 sources · 1d ago`. Ours printed the kind and
+ * stopped, so the list said what each row WAS and nothing about where it came from or when — which
+ * is the difference between a list and a receipt, and the reason theirs is worth scrolling.
+ */
+function MadeRow({ output, onOpen, sources }: { output: BoardOutputCard; onOpen: () => void; sources: number }) {
   const mark = markOf(output.kind);
   const title = output.output?.title || output.topic || KIND_LABELS[output.kind];
+  const when = relativeTime(output.createdAt, Date.now());
+  // 🔴 ONLY THE FACTS THAT EXIST. A deliverable made from a thread rather than from ticked
+  // documents has no source count, and printing "0 sources" would be a claim that it read nothing.
+  const meta = [KIND_LABELS[output.kind], sources > 0 ? (sources === 1 ? "1 source" : `${sources} sources`) : null, when].filter(Boolean).join("  ·  ");
   return (
     <li>
       <button
-        className="flex h-[40px] w-full items-center gap-[10px] rounded-[8px] px-[8px] text-left transition-colors hover:bg-(--ui-control-hover-background)"
+        className="flex h-[64px] w-full items-center gap-[12px] rounded-[16px] p-[8px] text-left transition-colors hover:bg-(--ui-control-hover-background)"
         onClick={onOpen}
         title={`Show ${title} on the canvas`}
         type="button"
       >
         {output.status === "making" ? (
-          <LoaderCircle aria-hidden className="size-[16px] shrink-0 animate-spin text-(--ui-text-tertiary)" />
+          <LoaderCircle aria-hidden className="size-[24px] shrink-0 animate-spin text-(--ui-text-tertiary)" />
         ) : output.status === "error" ? (
-          <CircleAlert aria-hidden className="size-[16px] shrink-0 text-(--board-error)" />
+          <CircleAlert aria-hidden className="size-[24px] shrink-0 text-(--board-error)" />
         ) : (
-          <Codicon aria-hidden className="shrink-0" name={mark.icon} size="16px" style={{ color: `var(${mark.tint})` }} />
+          <Codicon aria-hidden className="shrink-0" name={mark.icon} size="24px" style={{ color: `var(${mark.tint})` }} />
         )}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px] leading-[20px] text-foreground">{output.status === "making" ? `${MAKING_LABELS[output.kind]}…` : title}</span>
-          <span className="block truncate text-[12px] leading-[16px] text-(--ui-text-tertiary)">{output.status === "error" ? output.error || "Could not be made" : KIND_LABELS[output.kind]}</span>
+          <span className="block truncate text-[14px] font-medium leading-[16px] text-foreground">{output.status === "making" ? `${MAKING_LABELS[output.kind]}…` : title}</span>
+          <span className="mt-[2px] block truncate text-[12px] leading-[16px] text-(--ui-text-tertiary)">
+            {output.status === "error" ? output.error || "Could not be made" : meta}
+          </span>
         </span>
       </button>
     </li>
@@ -556,13 +620,19 @@ export function BoardStudio() {
         <PanelFrame id="sources" leaving={leaving} onClose={close}>
           <div className="scrollbar-dt min-h-0 flex-1 overflow-y-auto px-[8px] pb-[12px]">
             {/* Stitch's panel opens with its actions as rows ("+ Create new"); ours are add and Select all. */}
+            {/* 🔴 THEIR PILL, NOT A ROW. Measured (§9): 327 x 32, radius 96, a 1px hairline, no
+                fill, `+` then the label at 14px/20 weight 500, centred. Ours was a left-aligned
+                40px row that read as the first item of the list rather than as the way to add to
+                it. The distinction matters most on an empty canvas, where it is the only thing
+                in the panel. */}
             <button
               aria-label="Add sources"
-              className="flex h-[40px] w-full items-center gap-[10px] rounded-[8px] px-[8px] text-left text-[14px] leading-[20px] text-foreground transition-colors hover:bg-(--ui-control-hover-background)"
+              className="mx-[8px] mb-[8px] flex h-[32px] items-center justify-center gap-[8px] rounded-full border border-(--ui-stroke-primary) px-[12px] text-[14px] font-medium leading-[20px] text-foreground transition-colors hover:bg-(--ui-control-hover-background)"
               onClick={() => picker.current?.click()}
+              style={{ width: "calc(100% - 16px)" }}
               type="button"
             >
-              <FilePlus2 aria-hidden className="size-[16px] shrink-0 text-(--ui-text-secondary)" />
+              <Plus aria-hidden className="size-[16px] shrink-0" />
               Add sources
             </button>
             <input
@@ -664,19 +734,32 @@ export function BoardStudio() {
                 const mark = markOf(tile.kind);
                 return (
                   <IconTooltip key={tile.kind} label={material ? tile.hint : "Add a source or ask something first"}>
+                    {/* 🔴🔴 EACH TILE WEARS ITS OWN KIND'S COLOUR, which is the whole of what the
+                        reference's grid does that ours did not. Measured in his notebook (§9):
+                        161 x 56, radius 12, padding `8px 8px 8px 12px`, icon top-left, label
+                        bottom-left at 12px/16 weight 500, chevron right — every one of which ours
+                        already matched. What was different is that ours were six identical grey
+                        bricks. Theirs are six colours, and at a glance you find Flashcards by its
+                        red rather than by reading four labels.
+
+                        🔴 THE LABEL TAKES THE KIND'S COLOUR TOO, as theirs does — a dark blue word
+                        on a pale blue ground, not black on a tint. */}
                     <button
                       aria-label={`Make ${tile.label.toLowerCase()}`}
-                      className="flex h-[56px] flex-col justify-between rounded-[12px] bg-(--ui-bg-secondary) p-[10px] text-left transition-colors hover:bg-(--ui-control-hover-background) disabled:cursor-default disabled:opacity-40 disabled:hover:bg-(--ui-bg-secondary)"
+                      className="flex h-[56px] flex-col justify-between rounded-[12px] py-[8px] pl-[12px] pr-[8px] text-left transition-opacity hover:opacity-80 disabled:cursor-default disabled:opacity-40 disabled:hover:opacity-40"
                       data-studio-tile={tile.kind}
                       disabled={!material}
                       onClick={() => setAsking(tile)}
+                      style={{ backgroundColor: tileTint(mark.tint) }}
                       type="button"
                     >
                       <span className="flex w-full items-center justify-between">
                         <Codicon aria-hidden name={mark.icon} size="16px" style={{ color: `var(${mark.tint})` }} />
-                        <ChevronRight aria-hidden className="size-[14px] text-(--ui-text-quaternary)" />
+                        <ChevronRight aria-hidden className="size-[14px]" style={{ color: `var(${mark.tint})`, opacity: 0.7 }} />
                       </span>
-                      <span className="truncate text-[12px] font-medium leading-[16px] text-foreground">{tile.label}</span>
+                      <span className="truncate text-[12px] font-medium leading-[16px]" style={{ color: `var(${mark.tint})` }}>
+                        {tile.label}
+                      </span>
                     </button>
                   </IconTooltip>
                 );
@@ -686,8 +769,19 @@ export function BoardStudio() {
               <>
                 <h3 className="flex h-[32px] items-center px-[16px] text-[12px] font-medium uppercase tracking-[0.04em] text-(--ui-text-tertiary)">Made here</h3>
                 <ul className="m-0 list-none px-[8px]">
+                  {/* 🔴 THE COUNT IS ASKED OF THE BOARD, NOT STORED ON THE ROW. A deliverable
+                      carries the chat or the document it came from, never a list of sources — and
+                      since 2026-09-07 what a chat reads is decided by where it stands
+                      (lib/board/board-scope.ts), so a number written down when it was made could
+                      already be wrong. One document is one source; a thread is however many its
+                      frame holds right now. */}
                   {made.map((output) => (
-                    <MadeRow key={output.id} onOpen={() => show(output.id)} output={output} />
+                    <MadeRow
+                      key={output.id}
+                      onOpen={() => show(output.id)}
+                      output={output}
+                      sources={output.sourceId ? 1 : output.cardId ? scopeFor(output.cardId).sourceIds.length : 0}
+                    />
                   ))}
                 </ul>
               </>
