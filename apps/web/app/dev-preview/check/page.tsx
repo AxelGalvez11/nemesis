@@ -23,6 +23,10 @@ const RUN: TestRun = {
     {
       objectiveIdentityKey: "k1:recall",
       prompt: "Which insulin has essentially no pronounced peak, giving a relatively flat 24-hour profile?",
+      // 🔴 A HINT THAT NAMES THE IDEA, NOT THE ANSWER. Any hint mentioning one of the options is
+      // dropped by `readChatCheck` and the button never appears, so this fixture is also the shape
+      // check: change it to "it is not NPH" and the control disappears here.
+      hint: "Think about onset and duration: which of these is designed to hold a steady background level rather than cover a meal?",
       options: [
         { text: "NPH (isophane)" },
         { text: "Insulin lispro" },
@@ -33,6 +37,7 @@ const RUN: TestRun = {
     {
       objectiveIdentityKey: "k2:explain",
       prompt: "A patient on metformin alone has a blood sugar of 70 mg/dL. Why is severe hypoglycaemia unlikely?",
+      hint: "Ask what metformin actually does to insulin, rather than what it does to glucose.",
       options: [
         { text: "It does not stimulate insulin release", correct: true },
         { text: "It is cleared renally" },
