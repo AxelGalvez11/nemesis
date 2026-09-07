@@ -94,6 +94,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let alive = true;
+    /**
+     * 🔴🔴 "NOT KNOWN YET" IS NOT "SIGNED OUT", AND CONFLATING THEM IS A REDIRECT STRAIGHT BACK TO
+     * /sign-in AFTER A SUCCESSFUL SIGN-IN.
+     *
+     * supabase-js fires `INITIAL_SESSION` the moment the listener is attached, and it can carry
+     * `null` while the stored session is still being read. The listener below used to take that at
+     * face value: `setSession(null)` and `setLoading(false)` in the same tick. Both auth gates read
+     * exactly that pair as "signed out, leave", so `/learn` sent the learner to
+     * `/sign-in?next=%2Flearn` a few milliseconds before `getSession()` came back holding a
+     * perfectly good session.
+     *
+     * That is the owner's 2026-09-06 report — Google sign-in "doesn't work" while Supabase records
+     * the login succeeding, because /auth/callback finishes with `window.location.replace`, so the
+     * arrival at the front door is a FULL page load and has to win this race every single time.
+     *
+     * So the flag: until the first read has actually answered, a null from the listener is ignored.
+     * A real `SIGNED_OUT` is still obeyed immediately — that one is a fact, not a gap.
+     */
+    let firstReadDone = false;
     void supabase.auth.getSession()
       .then(({ data }) => {
         if (!alive) return;
@@ -104,9 +123,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (alive) setSession(null);
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (!alive) return;
+        firstReadDone = true;
+        setLoading(false);
       });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
+      if (!alive) return;
+      if (!next && !firstReadDone && event !== "SIGNED_OUT") return;
       setSession(next);
       if (next?.user) phIdentify(next.user.id, { email: next.user.email });
       else if (event === "SIGNED_OUT") {
