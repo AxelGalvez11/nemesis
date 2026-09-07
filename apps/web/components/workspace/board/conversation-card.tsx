@@ -398,16 +398,16 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
       <CardIcon count={card.notes.length} label="Add note" onClick={() => addCardNote(card.id)}>
         <StickyNote className="size-[16px]" />
       </CardIcon>
-      {/* 🔴🔴 THE MAKERS ARE ICONS ON THE CARD NOW, NOT A MENU INSIDE IT — owner 2026-09-04: *"remove
-          the + from chats in canvas, maybe add an icon to chats on top for making flashcards and
-          tests"*, and *"i dont want any popups in canvas, everything should be seen and done within
-          the cards"*. A dropdown is a popup; two icons on the card's own row are not. */}
-      <CardIcon label="Make flashcards from this" onClick={() => makeDeliverable("flashcards", { cardId: card.id })}>
-        <Layers className="size-[16px]" />
-      </CardIcon>
-      <CardIcon label="Make a test from this" onClick={() => makeDeliverable("check", { cardId: card.id })}>
-        <ListChecks className="size-[16px]" />
-      </CardIcon>
+      {/* 🔴🔴 THE TWO MAKER ICONS CAME OFF THIS ROW ON 2026-09-07. Owner: *"remove the create
+          'flashcard, tests' icons from top of chats"*, one day after moving making inside the chat
+          entirely (*"hide the 'create' button in the canvas, create should happen within chats"*).
+          They had been here since 2026-09-04, when the answer to "no popups in canvas" was to put
+          the makers on the card's own row rather than in a menu. That reasoning was right for a
+          canvas that made things; this one does not. Going INTO the chat is now the gesture, and
+          Create is waiting there with all six kinds and the question each one asks first.
+
+          Nothing was lost with them: the composer still reads "make me flashcards on chapter 3"
+          (board-provider.tsx `readBoardMakeAsk`), which is how most of these were ever asked for. */}
       <CardIcon label={card.collapsed ? "Expand card" : "Collapse card"} onClick={() => setCardCollapsed(card.id, !card.collapsed)}>
         {card.collapsed ? <Maximize2 className="size-[16px]" /> : <Minimize2 className="size-[16px]" />}
       </CardIcon>

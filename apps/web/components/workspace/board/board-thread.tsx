@@ -226,8 +226,18 @@ export function BoardThread() {
         </div>
       </div>
 
-      {/* The board's own composer shape, sending to this thread rather than opening a new one. */}
-      <div className="shrink-0 px-[16px] pb-[24px]" style={{ paddingRight: TOOLBAR_RESERVE }}>
+      {/* 🔴🔴 ONE ROW, NOT TWO. Owner, 2026-09-07: *"make the chat composer smaller in fullscreen
+          chats"*. Measured at rest before the change: 114px tall, from a 56px text area stacked over
+          a 51px row that held one button. The button had a row of its own because the board's
+          composer carries attachments, a microphone and a web-search toggle beside it; this one
+          never had any of those, so the second row was 51px of air under a single-line prompt.
+          Now the button sits IN the row, and the box is the height of the button plus its padding.
+
+          🔴 `items-end`, SO IT STILL GROWS. Type three lines and the text area takes them and the
+          send button stays on the last one, which is ChatGPT's behaviour and the reason this is not
+          simply a fixed-height input. The cap is 200px, after which it scrolls rather than eating
+          the conversation. */}
+      <div className="shrink-0 px-[16px] pb-[16px]" style={{ paddingRight: TOOLBAR_RESERVE }}>
         <form
           className="mx-auto overflow-hidden rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated)/75 backdrop-blur-xl"
           onSubmit={(event) => {
@@ -236,24 +246,25 @@ export function BoardThread() {
           }}
           style={{ width: COLUMN, maxWidth: "100%" }}
         >
-          <AutoResizingTextarea
-            aria-invalid={tooLong || undefined}
-            className="min-h-[56px] w-full resize-none bg-transparent px-[16px] pb-[8px] pt-[12px] text-[16px] leading-[24px] text-foreground outline-none placeholder:text-(--ui-text-tertiary) focus:shadow-none focus:ring-0"
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={`Ask about ${card.title}…`}
-            value={text}
-          />
-          {notice && <p className="px-[16px] pb-[8px] text-[12px] text-(--board-error-text)" role="alert">{notice}</p>}
-          <div className="flex items-center justify-end px-[12px] pb-[12px]">
+          {notice && <p className="px-[16px] pt-[10px] text-[12px] text-(--board-error-text)" role="alert">{notice}</p>}
+          <div className="flex items-end gap-[8px] px-[12px] py-[10px]">
+            <AutoResizingTextarea
+              aria-invalid={tooLong || undefined}
+              maxHeight={200}
+              className="min-h-[24px] flex-1 resize-none bg-transparent px-[4px] py-[6px] text-[16px] leading-[24px] text-foreground outline-none placeholder:text-(--ui-text-tertiary) focus:shadow-none focus:ring-0"
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={`Ask about ${card.title}…`}
+              value={text}
+            />
             <IconTooltip label="Send message">
               <button
                 aria-label="Send message"
-                className={cn("flex size-[40px] shrink-0 items-center justify-center rounded-[12px] bg-(--ui-action) text-(--ui-action-glyph) transition-all enabled:hover:opacity-90 disabled:opacity-40")}
+                className={cn("flex size-[36px] shrink-0 items-center justify-center rounded-[10px] bg-(--ui-action) text-(--ui-action-glyph) transition-all enabled:hover:opacity-90 disabled:opacity-40")}
                 disabled={!text.trim() || tooLong || busy}
                 type="submit"
               >
-                <ArrowUp className="size-[20px]" />
+                <ArrowUp className="size-[18px]" />
               </button>
             </IconTooltip>
           </div>

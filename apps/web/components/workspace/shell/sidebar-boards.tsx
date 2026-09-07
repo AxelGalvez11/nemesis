@@ -7,9 +7,16 @@
 // collapsible header, and the header carries a `+` that opens a new board — the reference's own
 // section (docs/wondering-canvas-reference.md §9): "Canvas ▾  +", rows, "No canvases yet".
 //
+// 🔴🔴 THIS IS THE WHOLE LIST NOW, 2026-09-07. Owner: *"remove 'chats' from the left sidebar"*,
+// after ruling that the canvas is the front door and *"chats only live on boards"*. The chat list
+// this used to sit under is gone (sidebar-canvases.tsx records what went), so a canvas is the only
+// kind of work the rail shows, in one flat list, newest first.
+//
 // 🔴 A BOARD IS NOT A CHAT. It reads `canvas_boards` through board-store, not `learning_canvases`
-// through canvas-store, and it is never pinned or filed into a project: those are the chat list's
-// features and a board has neither table column. Adding either later means adding the column.
+// through canvas-store, and it is never pinned or filed into a project — those were the chat
+// list's features and a board has neither table column. Asked what the list should look like once
+// projects were gone, the owner said *"One flat list, newest first"*, so adding either back means
+// adding a column AND reversing that.
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";

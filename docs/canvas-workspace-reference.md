@@ -217,3 +217,60 @@ anti-aliasing spent most of that alpha; dark mode is 28% now and light is unchan
 card, positioned from two custom properties written by one rAF loop (measured contribution at its
 centre: rgb(0,0,0) → rgb(26,26,26)). No React state: a pointer emits over a hundred moves a second
 and re-rendering a board of cards that often would drop frames on every drag.
+
+## §9 NotebookLM's Sources and Studio panels, measured 2026-09-07
+
+Owner: *"copy the sources panel from notebookllm into the nemesis app"* and *"notice how the right
+studio panel has the buttons for creating and has the list under it, copy that into the app"*, with
+his own notebook linked. Driven in his Chrome at **1470 x 779, light**. This supersedes the
+2026-09-05 reading in memory: their Sources panel now groups sources under collapsible topics, which
+it did not then.
+
+**Frame.** Page ground `rgb(237,239,250)`. Three white panels, radius 16, top 64, height 693:
+Sources 359 at x16, Chat 689 at x391, Studio 359 at x1095. Gaps 16 throughout.
+
+🔴 WE DO NOT COPY THE FRAME, AND THAT IS AN OWNER RULING, NOT A SHORTCUT. *"having double side
+panels isn't too good … only one side panel"* (2026-09-06), and the two panels that stood open were
+read as too big twice. What is copied is the CONTENTS of their two panels into our one.
+
+**Panel header.** 52 tall, label 16px/52 weight 400 `rgb(27,27,28)`, padding-left 16, a collapse
+icon at the right.
+
+### Sources, top to bottom
+
+| Part | Measurement |
+| --- | --- |
+| "Add sources" | pill 327 x 32 at x32, radius 96, 1px `rgb(221,225,235)`, transparent fill, `+` 18px then label 14px/20 w500, centred |
+| Web search | box 309 x 71 at x41: an input ("Search the web for new sources") over two dropdown pills (globe + "Web" + chevron, and "Fast Research") and a round search button |
+| Control row | 32 tall: refresh and sort icons left; "Select all" 14px/24 + a 32 x 32 checkbox right |
+| Topic group | 32 tall: chevron 24px + name 14px/24 w400 `rgb(31,31,31)`, ⋮ on hover, checkbox right |
+| Source row | 311 x 52 at x48 (indented under its group), radius 8, padding 0 8: 24px coloured file glyph (PDF `rgb(219,55,45)`), name 14px/24 `rgb(27,27,28)`, ⋮ 18px, checkbox right |
+
+🔴 THE CHECKBOX IS ON THE RIGHT, ours was on the left. The glyph carries the left edge, so the
+name starts at the same x on every row whether or not its file type is known.
+
+### Studio
+
+Nine tiles, two columns: **161 x 56, radius 12, gap 8** (x 1111 and 1281, y step 64), padding
+`8px 8px 8px 12px`. Icon top-left, label bottom-left 12px/16 w500, chevron right. Each tile is
+tinted with its kind's own colour, and the label is a darker tone of the same:
+
+| Kind | Fill | Label |
+| --- | --- | --- |
+| Audio Overview, Data Table | `rgb(237,239,250)` | `rgb(34,68,132)` |
+| Slide Deck, Reports | `rgb(242,242,232)` | `rgb(121,103,49)` |
+| Video Overview | `rgb(225,241,229)` | `rgb(15,82,35)` |
+| Mind Map, Infographic | `rgb(240,233,239)` | `rgb(128,34,114)` |
+| Flashcards | `rgb(247,237,235)` | `rgb(140,46,42)` |
+| Quiz | `rgb(222,241,247)` | `rgb(5,106,149)` |
+
+Under the grid: a divider at y457 spanning the panel, then the list of made things. Rows
+**331 x 64 at x1111, radius 16, padding 8**: a 24px glyph in the kind's colour, title 14px/16 w500
+`rgb(48,48,48)`, meta 12px/16 w400 `rgb(94,94,94)` reading `Study Guide · 10 sources · 1d ago`,
+⋮ at the right.
+
+🔴 THE META LINE IS THREE FACTS, NOT ONE. Ours printed only the kind. Theirs says what it is, how
+much it was made from and when — which is the difference between a list and a receipt.
+
+**Composer**, for the record: placeholder "Ask a question or create something", with a "13 sources"
+count inside the box at the right.
