@@ -33,8 +33,10 @@ import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/lib
 import { escapeCurrencyDollars, normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 import { isMindmapChart, MindmapBlock } from "@/components/workspace/learn/mindmap-block";
 import { MermaidDiagram } from "@/lib/workspace/mermaid-diagram";
+import { SvgFigureBlock } from "@/components/workspace/svg-figure";
 import { VisualFigure } from "@/components/workspace/visual-figure";
 import { readVisualSpec } from "@/lib/workspace/visual-block";
+import { sanitizeSvgFigure } from "@/lib/workspace/svg-figure";
 import { readModelJson } from "@/lib/model-json";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
@@ -449,6 +451,25 @@ export function markdownComponents(
         // and also plain and boring unlike the wondering.app ones"). The model writes what the
         // figure MEANS, `readVisualSpec` refuses anything it cannot draw honestly, and a refused
         // spec falls through to the code block below rather than vanishing. See visual-block.ts.
+        /**
+         * 🔴🔴 A MECHANISM THE MODEL DREW ITSELF. Owner, 2026-09-07: *"go into wondering because our
+         * mermaid diagrams and visuals arent as good as theres one for one"*. Theirs are raw SVG on
+         * a fixed canvas, not mermaid and not a typed spec (docs/canvas-workspace-reference.md §10).
+         *
+         * 🔴 `sanitizeSvgFigure` IS THE ONLY THING BETWEEN A MODEL AND `innerHTML`, and it refuses
+         * rather than repairs: a figure it cannot vouch for renders as its own code block, exactly
+         * as a mermaid fence that will not parse does. See lib/workspace/svg-figure.ts.
+         *
+         * 🔴 IDS ARE MADE UNIQUE PER DRAWING inside the sanitiser, from a hash of the markup —
+         * two figures in one answer both naming their arrow marker `arrow` would otherwise leave
+         * the second one's arrows pointing at the first one's, because ids leak out of an SVG into
+         * the whole document.
+         */
+        if (/language-figure/.test(fence.className ?? "")) {
+          const raw = typeof fence.children === "string" ? fence.children : Array.isArray(fence.children) ? fence.children.join("") : "";
+          const figure = sanitizeSvgFigure(raw);
+          if (figure) return <SvgFigureBlock figure={figure} />;
+        }
         if (/language-visual/.test(fence.className ?? "")) {
           const raw = typeof fence.children === "string" ? fence.children : String(fence.children ?? "");
           const spec = readVisualSpec(readModelJson(raw));

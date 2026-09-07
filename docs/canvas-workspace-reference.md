@@ -274,3 +274,60 @@ much it was made from and when — which is the difference between a list and a 
 
 **Composer**, for the record: placeholder "Ask a question or create something", with a "13 sources"
 count inside the box at the right.
+
+## §10 Wondering's mechanism diagrams, measured 2026-09-07
+
+Owner: *"go into wondering because our mermaid diagrams and visuals arent as good as theres one for
+one"*. Driven in his own Wondering account, lesson "Blood Pressure".
+
+🔴🔴 **THEY ARE NOT MERMAID, AND THEY ARE NOT A TYPED SPEC.** The 2026-09-04 teardown found their
+comparison and timeline visuals to be React components rendering a small spec, and that is still
+true of those. A MECHANISM diagram is a third thing: raw SVG, written into the lesson, on one fixed
+canvas with a house style. Pulled out of their page:
+
+```
+viewBox="0 0 800 600"                                     one canvas, always
+<rect width="800" height="600" fill="#FFFCF0"/>           a ground filling it
+<rect rx="8" stroke="#3C2A28" stroke-width="3"/>          heavy ink outline on every box
+<line stroke="#3C2A28" stroke-width="3" marker-end=…/>    flow
+<line stroke="#879A39" stroke-width="4" marker-end=…/>    a "blocks" relation, its own marker
+<text text-anchor="middle" font-size="32|28|26"/>         title / lead box / everything else
+```
+
+Fills: `#7BCAFF` blue, `#5ABDAC` teal, `#DFB431` amber, `#879A39` olive. Text `#261312` on light
+fills, `#FFFCF0` on the olive. Font Public Sans. Two markers only, both 12 x 10. Multi-line labels
+are separate `<text>` elements, never tspans. Every coordinate is absolute.
+
+**Why this is the gap.** Nemesis already draws three ways: typed figures for a comparison, a
+sequence or a set; real charts and typeset equations; and mermaid for graphs. The RAAS diagram is
+none of those. It is a bespoke ARRANGEMENT, two branches converging on an outcome with two blockers
+arrowing back up into it from below, and its meaning is carried by where things sit. A graph engine
+lays those nodes out its own way and the arrangement is lost. No theme closes that, because the
+difference is not colour.
+
+**Diagrams are occasional.** Blood Pressure has one; Beta Blockers has none.
+
+**Their palette is Flexoki**, a published open colour system: `#FFFCF0` is its paper, `#5ABDAC` its
+cyan-400, `#879A39` green-400, `#DFB431` yellow-400.
+
+### What we copied, and the two places we did not
+
+`lib/workspace/svg-figure.ts` holds the sanitiser and the house style; `components/workspace/
+svg-figure.tsx` draws it; a ```figure fence renders it. `/dev-preview/svg-figure` shows the RAAS
+diagram in our style beside the same drawing with six attacks buried in it.
+
+🔴 **The ink is `currentColor`, not their brown, and there is no background rect.** Copying their
+cream paper literally would put a bright rectangle in the middle of a dark chat. Outlines, arrows
+and labels follow the theme; the four fills stay fixed because on a mechanism the colour carries
+meaning (what starts it, what it does, the outcome, what blocks it) and re-tinting by position would
+say the wrong thing. Verified on screen in both themes: ink resolves to near-black on paper and to
+white on a dark ground, with the four fills unchanged.
+
+🔴 **The sanitiser is an allow-list, and it is the point of the feature.** "Render markup a language
+model wrote" is a script-injection surface with a friendly name. SVG can carry `<script>`,
+`<foreignObject>` holding arbitrary HTML, `on*` handlers, `href` to `javascript:`, `<use>` and
+`<image>` reaching another document, and `<animate>` writing attributes after load. Elements and
+attributes are both allow-listed, an unknown element takes its contents with it, ids are rewritten
+per drawing so two figures in one answer cannot collide, and a figure with no viewBox is refused
+rather than repaired. Thirteen tests, calibrated by widening the allow-list and confirming exactly
+the security guards redden.
