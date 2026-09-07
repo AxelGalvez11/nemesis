@@ -131,9 +131,16 @@ test("🔴 and the Sources panel is still where they are drawn", () => {
   // the reference's shape splits what Nemesis went and read (Sources) from what the learner handed
   // it (Inputs), and this file already computed that split. Both must draw, or half the sources
   // vanished and this guard would have watched it happen.
-  assert.match(controls, /websites\.map\(/, "the Sources shelf no longer lists what Nemesis read");
-  assert.match(controls, /documents\.map\(/, "the Inputs shelf no longer lists what the learner attached");
-  assert.match(controls, /faviconUrl\(host\)/, "the panel stopped showing where a source came from");
+  // 🔴 REPOINTED 2026-09-06 (owner: the chat is ChatGPT Work one for one; Sources lists "Files +
+  // Web search"). The card lists what the learner attached; what Nemesis went and read is drawn
+  // under the answer as its source cards, favicon and all, which is where ChatGPT draws them too.
+  const panel = readFileSync(new URL("./work-panel.tsx", import.meta.url), "utf8");
+  const turn = readFileSync(new URL("./canvas-thread-turn.tsx", import.meta.url), "utf8");
+  const cards = readFileSync(new URL("./canvas-source-cards.tsx", import.meta.url), "utf8");
+  assert.match(panel, /documents\.map\(/, "the Sources card no longer lists what the learner attached");
+  assert.match(controls, /documents=\{documents\}/, "the card is never handed the files");
+  assert.match(turn, /<CanvasSourceCards/, "the answer no longer draws what Nemesis read");
+  assert.match(cards, /faviconUrl\(/, "the source cards stopped showing where a page came from");
 });
 
 // ── The precedence has not been reordered back ──────────────────────────────
@@ -189,7 +196,8 @@ test("🔴🔴 a pending clarification labels the composer as its answer surface
       prompt: "How deep should this course go?",
     },
   });
-  assert.ok(html.includes("Pick one above"), "the composer is not wired to the pending question");
+  // 2026-09-06: the question sits in the composer and its field reads as ChatGPT Work's last row.
+  assert.ok(html.includes("Or describe something else"), "the composer is not wired to the pending question");
   assert.ok(!html.includes(ASK_PLACEHOLDER), "it still reads as an ordinary question box");
   // 🔴 AND IT IS NOT AN EVIDENCE SURFACE. `answering` drives the answer chrome, and a preference
   // dressed as a cognitive answer is the confusion this whole path exists to avoid.

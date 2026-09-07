@@ -91,7 +91,9 @@ export function DockPanel({
             // conditional on `dragging`: taking a class off and putting it back is how a CSS
             // animation is restarted, and a panel that replays its entrance on every release of the
             // grip is the flicker the owner reported on 2026-09-01.
-            "dock-panel-in overflow-hidden border border-(--ui-stroke-tertiary)"
+            // 🔴 A LEFT EDGE ONLY, WHICH IS THEIRS: `border-l border-default` on a pane that runs
+            // from the top of the window to the bottom. Four borders belonged to the floating card.
+            "dock-panel-in overflow-hidden border-l border-(--ui-stroke-tertiary)"
           : mode === "maximized"
             ? "inset-0 z-[60]"
             : "inset-y-0 right-0 left-[var(--nav-column,0px)]",
@@ -104,6 +106,9 @@ export function DockPanel({
         display: hidden ? "none" : undefined,
         ...(docked
           ? {
+              // Flush: the constants are 0 since 2026-09-06 (reader-chrome.ts). Written out rather
+              // than dropped, so the panel has ONE geometry and turning the corner back on is one
+              // number in one file.
               borderRadius: DOCK_RADIUS,
               bottom: DOCK_MARGIN,
               right: DOCK_MARGIN,

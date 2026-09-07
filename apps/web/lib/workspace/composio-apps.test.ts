@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { APP_GROUPS, CONNECTABLE_APPS, groupApps, hasCalendar, isOffered, labelFor } from "./composio-apps";
+import { APP_GROUPS, CONNECTABLE_APPS, OFFERED_APPS, OFFERED_APP_KEYS, groupApps, hasCalendar, isOffered, labelFor } from "./composio-apps";
 
 // ── the list of apps a learner may hand Nemesis their accounts for ────────────────────────────
 //
@@ -74,17 +74,36 @@ test("🔴 the calendar answer is forgiving about casing, because the slug comes
   assert.ok(hasCalendar(["GoogleCalendar"]));
 });
 
-test("🔴🔴 the offered list is closed", () => {
+test("🔴🔴 the offered list is closed, and it is one app", () => {
   // Composio brokers 1,431 toolkits. `connectTo` refuses anything this returns false for, so an
   // arbitrary slug cannot be turned into an OAuth redirect.
-  assert.ok(isOffered("gmail"));
-  assert.ok(isOffered("one_drive"));
-  assert.ok(isOffered("canvas") && isOffered("google_classroom"));
+  //
+  // 🔴 IT SHRANK TO ONE ON 2026-09-07 (owner: *"should only really have google calendar as a
+  // connector for now"*). This used to read `isOffered("gmail")`, `isOffered("one_drive")`,
+  // `isOffered("canvas") && isOffered("google_classroom")` — those four now assert the opposite,
+  // which is the point of repointing rather than deleting: the gate is narrower, not absent.
+  assert.deepEqual([...OFFERED_APP_KEYS], ["googlecalendar"]);
+  assert.ok(isOffered("googlecalendar"));
+  for (const withdrawn of ["gmail", "one_drive", "canvas", "google_classroom", "googledrive", "outlook", "googledocs", "googlesheets", "notion", "zoom"]) {
+    assert.ok(!isOffered(withdrawn), `${withdrawn} is offered again — check that was intended`);
+  }
   assert.ok(!isOffered("stripe"), "an unoffered app can now be connected");
   assert.ok(!isOffered(""), "an empty slug is offered");
   // 🔴 STRICT ABOUT CASE, DELIBERATELY, AND UNLIKE `hasCalendar`. This one authorises; the other
   // describes. See the note on `hasCalendar`.
-  assert.ok(!isOffered("GMAIL"), "the authorising gate went case-insensitive");
+  assert.ok(!isOffered("GOOGLECALENDAR"), "the authorising gate went case-insensitive");
+});
+
+test("🔴🔴 an app that is no longer offered can still be NAMED, or a learner cannot disconnect it", () => {
+  // The whole reason the shortlist sits over the catalogue instead of replacing it. Someone who
+  // connected Gmail before 2026-09-07 still has that connection; if the catalogue had shrunk,
+  // `labelFor` would hand back the raw slug and /api/composio would filter the row out of their
+  // own connected list, leaving an active grant with no row and no way to revoke it.
+  assert.equal(labelFor("gmail"), "Gmail");
+  assert.equal(labelFor("one_drive"), "OneDrive");
+  assert.ok(hasCalendar(["outlook"]), "an existing Outlook connection stopped counting as a calendar");
+  assert.ok(CONNECTABLE_APPS.length > OFFERED_APPS.length, "the catalogue collapsed into the shortlist");
+  assert.deepEqual(OFFERED_APPS.map((app) => app.key), [...OFFERED_APP_KEYS]);
 });
 
 test("🔴 every app says what it is for, and belongs to a heading that exists", () => {

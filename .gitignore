@@ -67,3 +67,9 @@ apps/web/gallery.html
 # `@nemesis.test` account on one developer's machine.
 apps/web/.lab/
 package-lock.json
+
+# 🔴 THE OWNER'S OWN COURSE MATERIAL, COPIED IN SO THE CANVAS HARNESS CAN BE REVIEWED ON REAL FILES
+# (owner 2026-09-06: "use actual school pdf, pptx, docx, from my desktop for the canvas"). It is his
+# university's copyrighted material and this repository is PUBLIC, so the files stay on his machine
+# and only the fixture rows that name them are committed.
+apps/web/public/dev-fixtures/

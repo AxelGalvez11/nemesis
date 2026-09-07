@@ -95,7 +95,8 @@ test("the deck is a route, and both shelves open it rather than downloading", ()
   const deckPreview = readFileSync(new URL("../../components/workspace/learn/deck-preview.tsx", import.meta.url), "utf8");
   assert.match(deckPreview, /\/deck\?c=/, "the deck panel no longer links out to the full deck");
   const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
-  assert.match(controls, /output\.kind === "slides" && output\.deck/, "the canvas outputs panel no longer opens the deck");
+  // 2026-09-06: the outputs rows live in the Outputs/Sources card (work-panel.tsx).
+  assert.match(readFileSync(new URL("../../components/workspace/learn/work-panel.tsx", import.meta.url), "utf8"), /output\.kind === "slides" && output\.deck/, "the canvas outputs panel no longer opens the deck");
   const library = readFileSync(new URL("../../components/workspace/library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /\/deck\?c=/, "the Library's Slides shelf no longer opens the deck");
 });

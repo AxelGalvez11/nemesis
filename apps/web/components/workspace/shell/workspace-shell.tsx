@@ -17,7 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
-import { ImmersiveSurfaceProvider, useImmersiveClaimed } from "./immersive-surface";
+import { ImmersiveSurfaceProvider, useImmersiveClaimed, useFullBleedClaimed } from "./immersive-surface";
 import { NavRail } from "./nav-rail";
 import { ProcessingIndicator } from "./processing-indicator";
 import { SettingsModalProvider } from "./settings-modal";
@@ -142,6 +142,9 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
   // rail rather than taking navigation away. See shell-navigation.ts for the owner's reversal of
   // §38.1 and ChatGPT's measured tiny bar, which is never absent.
   const canvasRunning = useImmersiveClaimed();
+  // A full-size chat opened out of a canvas owns the whole window, rail included (§38.1, narrowed
+  // to that one surface — see shell-navigation.ts).
+  const surfaceFullBleed = useFullBleedClaimed();
   /**
    * 🔴🔴 A CANVAS COLLAPSES THE SIDEBAR; IT DOES NOT LOCK IT SHUT. Owner, 2026-09-01: *"the left
    * sidebar does not open in chat sessions please fix."* `sidebarVisible` read `sidebarOpen &&
@@ -179,6 +182,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
     pathname,
     sidebarOpen,
     sidePanelOpen,
+    surfaceFullBleed,
   });
 
   // 🔴🔴 THE TRANSITION IS OFF UNTIL AFTER THE FIRST PAINT, AND THAT IS NOT BELT AND BRACES.

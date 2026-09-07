@@ -4,13 +4,14 @@
 // branch from. Geometry and behaviour from docs/wondering-canvas-reference.md §4 and §5.
 
 import { useReactFlow, useStore, type NodeProps } from "@xyflow/react";
-import { ArrowUp, BookOpen, Bookmark, GitBranch, Highlighter, Image as ImageIcon, Layers, ListChecks, Maximize2, MessageCircle, Minimize2, Sparkles, StickyNote, Trash2, X } from "lucide-react";
+import { ArrowUp, BookOpen, Bookmark, GitBranch, Highlighter, Image as ImageIcon, Layers, ListChecks, Maximize2, MessageCircle, Minimize2, Sparkles, StickyNote, Trash2, X, Expand } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { CARD_AUTO_MAX_HEIGHT, CARD_MIN_HEIGHT, CONTRACTED_CARD_MIN_HEIGHT } from "@/lib/board/board-layout";
 import { BOARD_MESSAGE_TOO_LONG_REPLY, isMessageTooLong, messageLimitNotice, type BoardCard } from "@/lib/board/board-model";
 import { boardCitableFiles, boardSourceForFile } from "@/lib/board/board-grounding";
 import { deriveCardSummary, firstImage } from "@/lib/board/board-protocol";
+import { scopeLabel } from "@/lib/board/board-scope";
 import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { cn } from "@/lib/utils";
 import { ConceptPillContext, type ConceptPillActions } from "@/components/workspace/concept-pill";
@@ -43,6 +44,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     lastAddedCardId,
     noteFocusRequest,
     sendCardMessage,
+    enterCard,
     sources,
     makeDeliverable,
     createBranchCard,
@@ -53,6 +55,11 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     addCardNote,
     setCardCollapsed,
     deleteNode,
+    scopeFor,
+    groups,
+    outputs,
+    fannedCardId,
+    toggleFan,
   } = useBoard();
   const card = cards.find((item) => item.id === data.cardId);
   const shell = useRef<HTMLDivElement | null>(null);
@@ -309,11 +316,85 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     />
   );
 
+  /**
+   * What this chat reads, worked out from where it stands, on every render.
+   *
+   * 🔴🔴 `groups` AND `cameraKey` ARE BOTH REAL DEPENDENCIES OF THE ANSWER even though neither
+   * appears in the call. `scopeFor` closes over the board's groups and its measured rectangles, so
+   * a card that did not re-render when a frame moved would print a stale scope — and a stale scope
+   * here is exactly the silent wrong answer this line exists to prevent. Naming `groups` keeps the
+   * memo honest; the card already re-renders on card and source changes.
+   */
+  const scope = useMemo(() => scopeFor(data.cardId), [scopeFor, data.cardId, groups]);
+  const scopeText = useMemo(() => scopeLabel(scope, (id) => sources.find((source) => source.id === id)?.name), [scope, sources]);
+
+  /**
+   * The things this chat has made, drawn as paper stacked UNDER it rather than as cards on the board.
+   *
+   * 🔴🔴 THE CANVAS DOES NOT HOLD DELIVERABLES ANY MORE. Owner, 2026-09-07: *"any deliverables
+   * created by chats should not show on canvas and instead should be able to be seen behind the
+   * chat to indicate that it has deliverables in it"*, and, asked what a press should do,
+   * *"They fan out on the board around the chat"*. This is the whole of the clutter answer he had
+   * been circling for two days: a term of flashcard decks is one chat with a thicker edge.
+   *
+   * 🔴 THE SHEETS SIT ENTIRELY BELOW THE CARD'S BOTTOM EDGE, and that is not a style choice. Drawing
+   * them behind the card would need a negative z-index inside a box that becomes a stacking context
+   * the moment the card is picked up (`-translate-y-[4px]`), and a negative-z child of a stacking
+   * context paints ON TOP of its parent's background — the stack would have covered the answer.
+   * Peeking out from under the bottom is the same picture with no paint order to lose.
+   */
+  const made = useMemo(() => outputs.filter((output) => output.cardId === data.cardId), [outputs, data.cardId]);
+  const fanned = fannedCardId === data.cardId;
+  const stack =
+    made.length === 0 || fanned ? null : (
+      <button
+        aria-label={made.length === 1 ? "Show the 1 thing this chat made" : `Show the ${made.length} things this chat made`}
+        className="nodrag nopan absolute inset-x-0 -bottom-[20px] z-0 flex flex-col items-center"
+        data-card-stack={made.length}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleFan(data.cardId);
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        type="button"
+      >
+        <span aria-hidden className="h-[10px] w-[calc(100%-24px)] rounded-b-[12px] border border-t-0 border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) shadow-sm transition-transform duration-150 ease-out group-hover/card:translate-y-[2px] motion-reduce:transition-none" />
+        {made.length > 1 && (
+          <span aria-hidden className="h-[10px] w-[calc(100%-48px)] rounded-b-[12px] border border-t-0 border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) shadow-sm transition-transform duration-150 ease-out group-hover/card:translate-y-[4px] motion-reduce:transition-none" />
+        )}
+      </button>
+    );
+
   // 🔴 ONE ROW, ONE ORDER, ON EVERY CARD KIND: make (note, flashcards, test), then collapse, then
   // delete. This row used to run collapse, delete, note, flashcards, test, so the destructive
   // control sat in the middle of the makers and in a different place from the document card's.
   const titleBar = (
-    <CardTitleBar icon={card.kind === "lesson" ? <BookOpen className="size-[16px] shrink-0 text-(--ui-action)" /> : undefined} title={card.title}>
+    <CardTitleBar
+      icon={card.kind === "lesson" ? <BookOpen className="size-[16px] shrink-0 text-(--ui-action)" /> : undefined}
+      meta={
+        <IconTooltip label={scope.global ? "This chat reads every source on the canvas" : "This chat reads only what is inside its frame"}>
+          <span
+            className="shrink-0 truncate rounded-full bg-(--ui-bg-secondary) px-[8px] text-[11px] leading-[18px] text-(--ui-text-tertiary)"
+            data-card-scope=""
+          >
+            {scopeText}
+          </span>
+        </IconTooltip>
+      }
+      title={card.title}
+    >
+      {/* 🔴🔴 THE WAY INTO THE THREAD (owner 2026-09-06: *"allow users to enter individual chats in the
+          canvas … canvas be the top layer, and chat be inner layer"*). First on the row, because it
+          is the one control here that changes what you are looking at rather than what the card
+          holds. The board stays behind it; see board-thread.tsx. */}
+      <CardIcon label="Open this chat" onClick={() => enterCard(card.id)}>
+        <Expand className="size-[16px]" />
+      </CardIcon>
+      {made.length > 0 && (
+        <CardIcon count={made.length} label={fanned ? "Put these away" : `Show what this chat made (${made.length})`} onClick={() => toggleFan(card.id)}>
+          <Layers className="size-[16px]" />
+        </CardIcon>
+      )}
       <CardIcon count={card.notes.length} label="Add note" onClick={() => addCardNote(card.id)}>
         <StickyNote className="size-[16px]" />
       </CardIcon>
@@ -350,6 +431,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
         ref={shell}
         style={{ minHeight: CONTRACTED_CARD_MIN_HEIGHT }}
       >
+        {stack}
         {branchButtons}
         {titleBar}
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[12px] overflow-hidden px-[20px] py-[20px] text-center">
@@ -418,6 +500,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
           setResizing(true);
         }}
       />
+      {stack}
       {branchButtons}
       {titleBar}
       <div className="contents">

@@ -28,7 +28,7 @@
 import type { NextRequest } from "next/server";
 
 import { heldForApproval, pendingActionResult, riskOf, summarise } from "@/lib/workspace/composio-actions";
-import { CONNECTABLE_APPS as APPS, isOffered, labelFor } from "@/lib/workspace/composio-apps";
+import { CONNECTABLE_APPS, OFFERED_APPS as APPS, isOffered, labelFor } from "@/lib/workspace/composio-apps";
 import { verifyBearer } from "@/lib/server";
 
 const COMPOSIO_BASE = "https://backend.composio.dev/api/v3";
@@ -152,7 +152,10 @@ async function toolsFor(uid: string): Promise<Response> {
     const connected = (accounts.items ?? [])
       .filter((item) => item.status === "ACTIVE")
       .map((item) => item.toolkit?.slug ?? "")
-      .filter((slug) => APPS.some((app) => app.key === slug));
+      // 🔴 THE FULL CATALOGUE HERE, NOT THE OFFERED SHORTLIST. This filters what the learner has
+      // ALREADY connected; reading the shortlist would erase an account's existing Gmail or Drive
+      // connection from its own list and leave no way to disconnect it. See `OFFERED_APP_KEYS`.
+      .filter((slug) => CONNECTABLE_APPS.some((app) => app.key === slug));
 
     // 🔴 IN PARALLEL, AND EACH ONE CATCHES ITS OWN FAILURE. Sequentially this was one round trip
     // per connected app in front of the first model call of every canvas turn, which is a latency

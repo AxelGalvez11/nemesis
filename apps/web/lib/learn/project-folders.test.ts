@@ -49,13 +49,18 @@ test("🔴🔴 every surface that offers a place to put a chat filters to projec
   // unfiltered is exactly how this defect reached production.
   for (const [name, source] of [
     ["the Projects page", PROJECTS],
-    ["the sidebar's Projects section", SIDEBAR],
     ["the front door's project row", HOME],
     ["the move-this-chat menu", MANAGER],
   ] as const) {
     assert.match(source, /projectFolders\(/, `${name} lists folders without filtering out Library folders`);
     assert.match(source, /from "@\/lib\/learn\/project-folders"/, `${name} does not import the filter`);
   }
+  // 🔴 THE SIDEBAR LEFT THIS LIST ON 2026-09-07, because it stopped offering a place to put a chat
+  // at all (owner: *"pretty much no more projects"*). It still READS folders — a chat carries its
+  // `folderId` and the rows are untouched — but it draws no project section and its ⋯ has no
+  // Move-to menu, so there is nothing left to filter. If a filing control ever returns to the rail
+  // it must come back with `projectFolders(`, which is what this asserts.
+  assert.ok(!/Move to project|const folderRow/.test(SIDEBAR), "the sidebar offers filing again and must filter — put it back in the loop above");
 });
 
 test("🔴 the Library draws no folders at all now, and makes none", () => {

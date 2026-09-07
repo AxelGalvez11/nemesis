@@ -239,8 +239,9 @@ test("🔴🔴 there is ONE document reader, and the citation chip opens it", ()
     !existsSync(new URL("./source-tab-viewer.tsx", import.meta.url)),
     "a second reading pane is back; a citation chip and the header must open the same one",
   );
-  assert.match(CONTROLS, /<SourceRow key=\{source\.id\} onPreview=\{openDocument\} source=\{source\} \/>/,
-    "the Sources list stopped opening documents, which leaves no door at all");
+  // Repointed 2026-09-06: the Sources list is the Outputs/Sources card (work-panel.tsx).
+  assert.match(CONTROLS, /onOpenDocument=\{openDocument\}/, "the Sources list stopped opening documents, which leaves no door at all");
+  assert.match(read("./work-panel.tsx"), /<FileRow key=\{source\.id\} onOpen=\{onOpenDocument\} source=\{source\} \/>/, "the file row has no way to open");
   // And the chip's route into it: one dock, shared, with no reader of its own.
   const dock = read("./document-dock.tsx");
   assert.match(dock, /export function useOpenSource\(\)/, "the pills lost their way into the dock");

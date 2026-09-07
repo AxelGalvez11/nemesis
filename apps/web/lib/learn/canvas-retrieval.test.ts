@@ -273,7 +273,7 @@ test("a canvas where everything read cleanly carries no warning paragraph", () =
 test("the panel and the model apply the SAME test", () => {
   // Two owners of one judgement is how a panel comes to say "partly read" beside an answer that
   // claims full coverage. Both read parseQuality and count usable excerpts, the same way.
-  const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
+  const controls = readFileSync(new URL("../../components/workspace/learn/work-panel.tsx", import.meta.url), "utf8");
   assert.match(controls, /function sourceReadWarning/, "the source row no longer says when a file did not read");
   assert.match(controls, /parseQuality === "degraded"/, "the panel stopped reading the recorded parse quality");
   const retrieval = readFileSync(new URL("./canvas-retrieval.ts", import.meta.url), "utf8");
@@ -286,7 +286,7 @@ test("🔴 the sources panel speaks to the learner, not to the model", () => {
   // question depends on what is missing, say so plainly rather than answering as though you read
   // the whole document." An instruction, written for the model, referring to the reader in the
   // third person. The function that builds it is literally called `coverageNoticeForModel`.
-  const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
+  const controls = readFileSync(new URL("../../components/workspace/learn/work-panel.tsx", import.meta.url), "utf8");
   assert.match(controls, /\{source\.coverageLabel && \(/, "the panel's disclosure left the learner's copy");
   // 🔴🔴 AND THE FALLBACK IS GONE, WHICH IS A REVERSAL OF THE LINE THAT STOOD HERE. It read: *"THE
   // FALLBACK STAYS. A canvas written before the label existed has only the model's sentence, and a

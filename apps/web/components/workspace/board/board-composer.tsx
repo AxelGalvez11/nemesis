@@ -5,25 +5,27 @@
 // once cards exist (576 wide, one row). Above it, the new-thread chips the last root answer
 // suggested.
 
-import { ArrowUp, Earth, X } from "lucide-react";
+import { ArrowUp, Earth } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
 import { isMessageTooLong, messageLimitNotice } from "@/lib/board/board-model";
+import { tickedReadySources } from "@/lib/board/board-studio";
 import { cn } from "@/lib/utils";
 
 import { AutoResizingTextarea, IconTooltip } from "./board-chrome";
 import { useBoard } from "./board-provider";
 
 export function BoardComposer() {
-  const { cards, sources, selectedSourceIds, toggleSourceSelection, sendRootMessage, newThreadSuggestions, useWebSearch, setUseWebSearch, makeDeliverable } = useBoard();
+  const { cards, sources, selectedSourceIds, sendRootMessage, newThreadSuggestions, useWebSearch, setUseWebSearch, makeDeliverable } = useBoard();
   const [text, setText] = useState("");
   const notice = messageLimitNotice(text);
   const tooLong = isMessageTooLong(text);
   const compact = cards.length > 0;
-  const chosen = selectedSourceIds.flatMap((id) => {
-    const source = sources.find((item) => item.id === id);
-    return source ? [source] : [];
-  });
+  // 🔴 NO CHIPS FOR THE TICKED SOURCES ANY MORE. They used to ride the composer as removable chips
+  // because a tick was a one-question attachment (Wondering's). A tick is the board's standing
+  // scope now, shown and changed in the Sources panel beside the board (board-studio.tsx); the
+  // composer only says, in its placeholder, that the question will be answered from what is ticked.
+  const ticked = tickedReadySources(sources, selectedSourceIds);
 
   const submit = () => {
     if (!text.trim() || tooLong) return;
@@ -79,20 +81,6 @@ export function BoardComposer() {
               submit();
             }}
           >
-            {chosen.length > 0 && (
-              <div className="flex flex-wrap gap-[6px] border-b border-(--ui-stroke-secondary) px-[12px] py-[8px]">
-                {chosen.map((source) => (
-                  <span className="inline-flex max-w-[208px] items-center gap-[4px] rounded-[6px] bg-(--ui-bg-secondary) px-[8px] py-[4px] text-[12px] font-medium text-foreground" key={source.id}>
-                    <span className="truncate">{source.name}</span>
-                    <IconTooltip label={`Remove ${source.name} from question`}>
-                      <button aria-label={`Remove ${source.name} from question`} className="shrink-0 rounded p-[2px] hover:bg-(--ui-control-hover-background)" onClick={() => toggleSourceSelection(source.id)} type="button">
-                        <X className="size-[12px]" />
-                      </button>
-                    </IconTooltip>
-                  </span>
-                ))}
-              </div>
-            )}
             <div className={compact ? "flex items-center gap-[4px] p-[6px]" : "block"}>
               <div className="min-w-0 flex-1">
                 <AutoResizingTextarea
@@ -104,7 +92,7 @@ export function BoardComposer() {
                   )}
                   onChange={(event) => setText(event.target.value)}
                   onKeyDown={onKeyDown}
-                  placeholder={chosen.length > 0 ? "Ask about the selected source…" : compact ? "Start another thread…" : "What do you want to understand?"}
+                  placeholder={ticked.length === 1 ? `Ask about ${ticked[0]?.name ?? "the ticked source"}…` : ticked.length > 1 ? "Ask across the ticked sources…" : compact ? "Start another thread…" : "What do you want to understand?"}
                   value={text}
                 />
                 {notice && (

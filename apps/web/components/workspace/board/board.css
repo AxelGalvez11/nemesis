@@ -13,6 +13,21 @@
   --board-error: hsl(7 100% 55%);
   --board-error-bg: hsl(13 100% 90%);
   --board-error-text: hsl(7 100% 30%);
+  /* The light under the pointer (Stitch's canvas). On a near-white ground a "glow" can only be a
+     soft shading, so light mode gets a whisper and dark mode carries the effect. */
+  --board-glow: color-mix(in srgb, var(--ui-base) 3%, transparent);
+  /* The sheen that crosses a document while it is being read. */
+  --board-shimmer: color-mix(in srgb, var(--ui-base) 7%, transparent);
+  /* 🔴 OBSIDIAN'S OWN SIX, READ OUT OF THEIR STYLESHEET (`--canvas-color-1` … `-6` resolve to
+     `--color-red` … `--color-purple`): light values here, their dark set below. Copied rather than
+     approximated because the owner asked for their way of colouring a group, and a palette drawn by
+     eye is the thing this repo has had to redraw three times. */
+  --board-group-1: #e93147;
+  --board-group-2: #ec7500;
+  --board-group-3: #e0ac00;
+  --board-group-4: #08b94e;
+  --board-group-5: #00bfbc;
+  --board-group-6: #7852ee;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,13 +36,41 @@
     --board-text-highlight: hsl(54 80% 40%);
     --board-error-bg: hsl(7 60% 22%);
     --board-error-text: hsl(13 100% 86%);
+    /* 🔴 THE DOTS ARE NOT ONE COLOUR IN BOTH THEMES, AND 12% WAS THE OWNER'S REPORT ("darkmode
+       makes it hard to see the background dots", 2026-09-06). Measured on /dev-preview/board:
+       the ground is #000, the dot was `color(srgb 1 1 1 / 0.12)` — rgb(31,31,31) — and at the
+       board's own 0.55 zoom each dot is barely one device pixel wide, so anti-aliasing spends
+       most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
+    --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
+    --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
+    --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
+    --board-group-1: #fb464c;
+    --board-group-2: #e9973f;
+    --board-group-3: #e0de71;
+    --board-group-4: #44cf6e;
+    --board-group-5: #53dfdd;
+    --board-group-6: #a882ff;
   }
 }
 [data-workspace][data-theme="dark"] {
-  --board-branch-highlight: hsl(262 60% 38%);
-  --board-text-highlight: hsl(54 80% 40%);
-  --board-error-bg: hsl(7 60% 22%);
-  --board-error-text: hsl(13 100% 86%);
+    --board-branch-highlight: hsl(262 60% 38%);
+    --board-text-highlight: hsl(54 80% 40%);
+    --board-error-bg: hsl(7 60% 22%);
+    --board-error-text: hsl(13 100% 86%);
+    /* 🔴 THE DOTS ARE NOT ONE COLOUR IN BOTH THEMES, AND 12% WAS THE OWNER'S REPORT ("darkmode
+       makes it hard to see the background dots", 2026-09-06). Measured on /dev-preview/board:
+       the ground is #000, the dot was `color(srgb 1 1 1 / 0.12)` — rgb(31,31,31) — and at the
+       board's own 0.55 zoom each dot is barely one device pixel wide, so anti-aliasing spends
+       most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
+    --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
+    --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
+    --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
+    --board-group-1: #fb464c;
+    --board-group-2: #e9973f;
+    --board-group-3: #e0de71;
+    --board-group-4: #44cf6e;
+    --board-group-5: #53dfdd;
+    --board-group-6: #a882ff;
 }
 
 /* The ::highlight() rules live in text-ranges.ts (`ensureHighlightStyles`): Next's CSS parser
@@ -46,9 +89,129 @@
 .board-menu-pop {
   animation: board-menu-pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
+/* 🔴🔴 THE LIGHT UNDER THE POINTER, AND WHY IT MOVES BY `transform` AND NOTHING ELSE. Owner,
+   2026-09-06: *"copy the glow that follows the mouse in canvas"* (Stitch), then, of the first
+   build: *"the dot glow is delayed"* and *"the canvas feels slow and laggy"*.
+
+   Both of those were one mistake. The first version was a full-bleed pseudo-element whose
+   background was `radial-gradient(… at var(--x) var(--y))`, and moving a gradient's origin REPAINTS
+   the whole element — every frame, across the entire board, behind every card. That is paint work
+   on the main thread at pointer speed, which is exactly what "laggy" feels like. This is a
+   FIXED-SIZE layer that never repaints: 920 square, its gradient drawn once, moved with
+   `translate3d`, which the compositor does on its own.
+
+   🔴 AND IT DOES NOT EASE. The first version lerped 16% toward the pointer each frame, which reads
+   as the light trailing behind the cursor rather than being under it. Stitch's does not lag.
+
+   It has to sit ABOVE the page's ground and BELOW both the dot lattice and every card. `[data-board]`
+   is transparent and the ground is painted by the `<main>` above it, so a first child lands exactly
+   in that gap: React Flow's own container makes a stacking context (position: relative, z-index: 0)
+   and takes its background SVG (z-index: -1) in with it, so everything React Flow draws stays on
+   top. */
+.board-glow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  width: 920px;
+  height: 920px;
+  margin: -460px 0 0 -460px;
+  pointer-events: none;
+  background: radial-gradient(circle closest-side, var(--board-glow), transparent 72%);
+  opacity: 0;
+  transition: opacity 320ms ease-out;
+  will-change: transform;
+}
+[data-board][data-glow="on"] .board-glow {
+  opacity: 1;
+}
+
+/* The Sources / Create panel arriving and leaving (owner 2026-09-06: "the create and sources panel
+   need opening and closing animation"). It grows out of the toolbar button that opened it, so the
+   origin is the right edge; leaving is faster than arriving, as every panel in this app is. */
+@keyframes board-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes board-panel-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(10px) scale(0.96);
+  }
+}
+.board-panel-in {
+  transform-origin: right center;
+  animation: board-panel-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.board-panel-out {
+  transform-origin: right center;
+  animation: board-panel-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+/* 🔴 A DROPPED FILE SHIMMERS WHILE IT IS BEING READ (owner 2026-09-06: "when dropping in documents
+   there should be a shimmering effect as they load in the canvas"). A sheen crossing the card, not
+   a spinner: reading a lecture takes tens of seconds and a spinner that long reads as a hang. */
+@keyframes board-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.board-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.board-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, var(--board-shimmer) 45%, var(--board-shimmer) 55%, transparent 100%);
+  animation: board-shimmer 1.6s linear infinite;
+}
+
+/* A chat's made things opening out from under it (owner 2026-09-07: "They fan out on the board
+   around the chat"). Scale and opacity only, so it composites and never lays the board out again. */
+@keyframes board-fan-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.board-fan-in {
+  animation: board-fan-in 220ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .board-menu-pop {
+  .board-fan-in,
+  .board-menu-pop,
+  .board-panel-in,
+  .board-panel-out {
     animation: none;
+  }
+  .board-shimmer::after {
+    animation: none;
+    opacity: 0.5;
+  }
+  .board-glow {
+    transition: none;
   }
 }
 

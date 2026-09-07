@@ -110,6 +110,12 @@ test("🔴 the offered set is capped, and reads come first", () => {
 test("🔴 only connected, offered apps contribute tools", () => {
   // A toolkit slug the account has connected but this product does not offer must not smuggle its
   // actions into the model's list.
-  assert.match(ROUTE, /\.filter\(\(slug\) => APPS\.some\(\(app\) => app\.key === slug\)\)/, "an unoffered app can now contribute tools");
+  // 🔴 THE CATALOGUE, NOT THE OFFERED SHORTLIST, AND THAT IS THE POINT SINCE 2026-09-07. The offered
+  // list shrank to Google Calendar alone that day (owner: *"should only really have google calendar
+  // as a connector for now"*), but an account that connected Gmail the week before still has a live
+  // grant and expects it to work. Filtering here against the shortlist would silently stop a
+  // working setup mid-term. The claim this guard makes is unchanged: a slug this product has never
+  // heard of cannot smuggle its actions into the model's list.
+  assert.match(ROUTE, /\.filter\(\(slug\) => CONNECTABLE_APPS\.some\(\(app\) => app\.key === slug\)\)/, "an unknown app can now contribute tools");
   assert.match(ROUTE, /item\.status === "ACTIVE"/, "a half-finished connection can now contribute tools");
 });

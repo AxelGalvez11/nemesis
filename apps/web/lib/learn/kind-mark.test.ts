@@ -97,7 +97,7 @@ test("🔴🔴 the shelf and the artifact card draw from ONE record, not two", (
 test("🔴 both source surfaces draw the mark, or one of them is still a wall of identical rows", () => {
   // The shelf the owner reported, and the reading pane's tab strip, where six documents truncate
   // to 220px each and the glyph is most of what distinguishes them.
-  const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
+  const controls = readFileSync(new URL("../../components/workspace/learn/work-panel.tsx", import.meta.url), "utf8");
   // 🔴 THE STRIP MOVED TO `dock-switcher.tsx` when documents and artifacts became one sidebar
   // (owner, 2026-09-03), and became a dropdown a few hours later when the owner asked for the tabs
   // and the icons on one row. The mark moved with it both times. Reading `source-preview.tsx` for
@@ -117,7 +117,7 @@ test("🔴🔴 a coverage note may not evict the file name from its own row", ()
   // glyph and "Incomplete source: 14 pictures were not read. If the student…" running off the edge.
   // The note is written for the MODEL (`coverageNoticeForModel`) and is a sentence, so an
   // unshrinkable one took the whole row and the truncating name beside it collapsed to zero.
-  const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
+  const controls = readFileSync(new URL("../../components/workspace/learn/work-panel.tsx", import.meta.url), "utf8");
   // 🔴 REPOINTED TWICE ON 2026-09-03, AND THE SECOND TIME IS WHY THIS NOW MATCHES ONLY THE FIELD
   // NAME. The condition first gained the learner's spelling beside the model's
   // (`coverageLabel ?? coverageNote`), then lost the model's half entirely when that fallback was

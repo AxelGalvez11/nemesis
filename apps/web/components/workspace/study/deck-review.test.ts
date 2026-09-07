@@ -140,7 +140,36 @@ test("🔴 a canvas linking to a deck means 'go study this'", () => {
   // the press calls the prop and the panel supplies the setter. Both halves are asserted: a prop
   // that nothing passes is a row that opens nothing, and that is the failure this guards.
   // The row opens the deck as a tab of the one pane now (2026-09-03), naming it for the strip.
-  assert.match(CANVAS_CONTROLS, /onClick=\{\(\) => onReviewDeck\(deckId, output\.title\)\}/, "the canvas output row stopped opening the review");
-  assert.match(CANVAS_CONTROLS, /onReviewDeck=\{dock\.openDeck\}/, "the output row is never given a way to open the review");
+  // Repointed 2026-09-06: the row lives in the Outputs/Sources card; the control routes a deck to the dock.
+  assert.match(CANVAS_CONTROLS, /if \(chosen\.kind === "flashcards" && chosen\.deckId\) dock\.openDeck\(chosen\.deckId, chosen\.title\);/, "the canvas output row stopped opening the review");
   assert.ok(!CANVAS_CONTROLS.includes("/library?deck="), "the canvas navigates away to review a deck it just made");
+});
+
+test("🔴🔴 the canvas plays Gemini's deck: one Track learning switch, two buttons, and browsing never grades", () => {
+  // Owner, 2026-09-07: "simplify the options to two buttons for flashcard rather than 4 ... Gemini
+  // allows users to do learn mode and also a mode to just scroll thru cards", then "one for one".
+  // Driven in his own deck: the player carries a single Track learning switch; off, it is a card,
+  // "1 of 24" and a next arrow with nothing recorded; on, the footer is Undo, a red cross and a
+  // green tick, with two tallies over the card.
+  const SESSION = readFileSync(new URL("./review-session.tsx", import.meta.url), "utf8");
+  const SHELL = readFileSync(new URL("./deck-review.tsx", import.meta.url), "utf8");
+  assert.match(SHELL, /\n          simple\n/, "the canvas opens Anki's four-grade review again");
+  assert.match(SESSION, /data-testid="track-learning"/, "there is no Track learning switch");
+  assert.match(SESSION, /data-testid="mark-missed"/);
+  assert.match(SESSION, /data-testid="mark-got"/);
+  assert.match(SESSION, /data-testid="browse-position"/, "browsing does not say where you are in the deck");
+
+  // 🔴🔴 THE SCHEDULER IS THE SAME ONE. Two buttons are two of the four grades, not a second system.
+  assert.match(SESSION, /await grade\(knewIt \? "good" : "again"\)/, "the two buttons no longer write real grades");
+
+  // 🔴🔴 BROWSING NEVER WRITES A GRADE, INCLUDING FROM THE KEYBOARD — the half that is invisible.
+  const keys = SESSION.slice(SESSION.indexOf("const onKey = (event: KeyboardEvent)"));
+  assert.match(keys, /if \(browsing\) \{/, "the key handler does not know about browsing");
+  assert.ok(keys.indexOf("if (browsing) {") < keys.indexOf('if (event.key === " "'), "the grading keys are read before the browsing check");
+  assert.match(SESSION, /byDigit && revealed && !simple/, "1-4 still grade in the simple player");
+
+  // 🔴 THE STUDY TAB IS UNTOUCHED: four grades, and the real interval under each.
+  assert.match(SESSION, /\{GRADES\.map\(/, "the four grades are gone");
+  assert.match(SESSION, /previews \? describeDelay\(previews\[value\]\) : ""/, "the Study tab stopped printing the real interval");
+  assert.match(readFileSync(new URL("./cards-tab.tsx", import.meta.url), "utf8"), /<ReviewSession cards=\{cards\} deck=\{selectedDeck\}/, "the Study tab now opens the simple player too");
 });

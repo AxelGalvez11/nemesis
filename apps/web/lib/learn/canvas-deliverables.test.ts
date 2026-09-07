@@ -61,8 +61,10 @@ test("a deck lands in BOTH places the owner named: the library's tables and the 
 
   const controls = readFileSync(new URL("../../components/workspace/learn/canvas-controls.tsx", import.meta.url), "utf8");
   assert.ok(controls.includes("onMakeDeliverable"), "the Outputs tab lost its make actions");
-  assert.match(controls, /library\/classic\?note=/, "a note output no longer opens the reader");
-  assert.match(controls, /library\?deck=/, "a deck output no longer opens the Library");
+  // 2026-09-06: a note and a deck open in the docked pane from the Outputs/Sources card (work-panel.tsx).
+  const panel = readFileSync(new URL("../../components/workspace/learn/work-panel.tsx", import.meta.url), "utf8");
+  assert.match(panel, /if \(output\.notePath\) return true;/, "a note output no longer opens the reader");
+  assert.match(controls, /dock\.openDeck\(chosen\.deckId, chosen\.title\)/, "a deck output no longer opens for review");
 
   const page = readFileSync(new URL("../../app/(workspace)/library/page.tsx", import.meta.url), "utf8");
   assert.ok(page.includes("LibraryOutputs"), "/library stopped being the outputs home");

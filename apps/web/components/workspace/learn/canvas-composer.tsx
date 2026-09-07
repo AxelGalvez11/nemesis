@@ -84,6 +84,7 @@ export const IDLE_REPLY_AUDIO = {
 } as const;
 import { AddMenuRow, ADD_MENU, useMenuSide } from "./add-menu-row";
 import { backspaceClearsCapability, CapabilityChip } from "./capability-chip";
+import { CanvasClarification, QuestionNumber } from "./canvas-clarification";
 import { AttachmentCard, AttachmentRow, type AttachmentState } from "./attachment-card";
 import { ComposerSend } from "./composer-controls";
 
@@ -164,6 +165,10 @@ interface CanvasComposerProps {
    * `onStart`); this is required so the compiler asks every caller where a clarification goes.
    */
   onClarify: (text: string) => void;
+  /** The question's X: close it without answering (the turn is dropped, never guessed at). */
+  onDismissClarify?: () => void;
+  /** The question's Skip: the learner tells Nemesis to use its own judgment. */
+  onSkipClarify?: () => void;
   busy: boolean;
   /* 🔴 `listenSignal` WAS HERE AND IS GONE, 2026-08-25. It was a nonce the voice hook bumped once
      Nemesis stopped speaking, so the microphone opened by itself after a question. The owner
@@ -284,6 +289,8 @@ const MAX_COMPOSER_HEIGHT = 160;
 
 export function CanvasComposer({
   onClarify,
+  onDismissClarify,
+  onSkipClarify,
   selected,
   onClearSelection,
   onAsk,
@@ -874,6 +881,14 @@ export function CanvasComposer({
             row of source chips it carried inside it; the chips are gone (see above), so the only
             thing that changes its height now is the text the learner is typing, and a growing
             textarea does not want a different corner. */}
+        {/* ChatGPT's line over its composer (measured 2026-09-06): 12px tertiary, centred, 8px above the
+            card. Same words with our name; it is the one sentence on the page that is not the model's.
+            Not on the front door: a box with no conversation under it has nothing to be wrong about. */}
+        {intent.kind !== "start" && (
+          <p className="mb-[8px] text-center text-[length:var(--canvas-text-meta)] leading-[16px] text-(--ui-text-tertiary)" data-canvas-disclaimer="">
+            Nemesis can make mistakes. Check important info.
+          </p>
+        )}
         <div
           className={cn(
             "relative flex flex-col bg-(--composer-fill)",
@@ -918,6 +933,11 @@ export function CanvasComposer({
               ))}
             </AttachmentRow>
           )}
+          {/* 🔴 THE QUESTION, WHEN THERE IS ONE, IS THE TOP OF THIS CARD (canvas-clarification.tsx);
+              the row beneath becomes its last option, "Or describe something else". */}
+          {intent.kind === "clarify" && (
+            <CanvasClarification onAnswer={onClarify} onDismiss={onDismissClarify ?? (() => undefined)} question={intent.question} />
+          )}
           {/* The input row, on the same tokens the front door's composer uses. */}
           {/* 🔴🔴 `items-end`, NOT `items-center` — THE CONTROLS STAY ON THE FLOOR OF THE BOX
               (owner 2026-08-31: *"when the chat composer expands because of the lot of text… the
@@ -959,7 +979,12 @@ export function CanvasComposer({
               type="file"
             />
 
-            {(
+            {intent.kind === "clarify" ? (
+              // The question's last row carries the next number, where the `+` would be.
+              <span className="flex h-[36px] items-center pl-[12px] pr-[8px]">
+                <QuestionNumber n={intent.question.options.length + 1} />
+              </span>
+            ) : (
             // 🔴🔴 NOT `relative` — THE MENU HANGS OFF THE COMPOSER, NOT OFF THIS BUTTON. A fixed
             // offset from the `+` was measured when this box was one 52px row, and the box grows: at
             // three lines of typing, `bottom-[46px]` put the menu straight over the learner's own
@@ -1229,7 +1254,7 @@ export function CanvasComposer({
                   value={text}
                 />
 
-                {dictation.supported && (
+                {dictation.supported && intent.kind !== "clarify" && (
                   <button
                     aria-label="Dictate"
                     className="flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-full text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
@@ -1266,7 +1291,16 @@ export function CanvasComposer({
                     circle, same accent, so the pill keeps its shape on the first keystroke — the
                     rule the comment above this slot has always stated. While the conversation
                     runs, the slot is its stop. */}
-                {voiceLoop.active ? (
+                {intent.kind === "clarify" ? (
+                  <button
+                    className="ml-[8px] flex h-[36px] shrink-0 items-center justify-center rounded-full bg-(--ui-bg-elevated) px-[16px] text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-primary) ring-1 ring-(--ui-stroke-secondary) transition-colors hover:bg-(--ui-bg-tertiary)"
+                    data-question-skip=""
+                    onClick={onSkipClarify}
+                    type="button"
+                  >
+                    Skip
+                  </button>
+                ) : voiceLoop.active ? (
                   <VoiceStopButton className="ml-[8px]" onClick={voiceLoop.end} />
                 ) : !showSend && !busy && voiceLoop.offered ? (
                   <button

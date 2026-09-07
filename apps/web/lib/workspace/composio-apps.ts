@@ -108,8 +108,30 @@ export const APP_GROUPS: readonly { id: AppGroup; label: string }[] = [
 ];
 
 /** Whether an offered app may be connected at all. The route's closed-list check. */
+/**
+ * The apps a learner may connect TODAY.
+ *
+ * 🔴🔴 A SHORTLIST OVER THE CATALOGUE, NOT A SMALLER CATALOGUE, AND THE DIFFERENCE IS A LEARNER'S
+ * EXISTING CONNECTIONS. Owner, 2026-09-07: *"should only really have google calendar as a connector
+ * for now"* — in the same message that cut Projects, and "for now" is his word, so this is a
+ * shortlist rather than a deletion.
+ *
+ * Deleting the other ten rows from `CONNECTABLE_APPS` would have looked like the same change and
+ * broken something quietly: `labelFor` would stop naming Gmail, so an account that connected it
+ * last week would see a raw slug and, in `/api/composio`, be filtered out of its own connected
+ * list — no name, no row, no way to disconnect. Every reason each row was chosen, and its paid-for
+ * Composio auth config, is still in this file above. Offering one back is adding a key here.
+ *
+ * 🔴 THIS IS THE AUTHORISING GATE. `isOffered` reads it, and `/api/composio` refuses to start a
+ * connection to anything it does not name, so an app cannot be reached by typing its slug.
+ */
+export const OFFERED_APP_KEYS: readonly string[] = ["googlecalendar"];
+
+/** The offered rows themselves, for the screen that lists them. */
+export const OFFERED_APPS: readonly ConnectableApp[] = CONNECTABLE_APPS.filter((app) => OFFERED_APP_KEYS.includes(app.key));
+
 export function isOffered(key: string): boolean {
-  return CONNECTABLE_APPS.some((app) => app.key === key);
+  return OFFERED_APP_KEYS.includes(key);
 }
 
 /** The learner's own name for an app, for a confirmation card. Falls back to the raw slug. */

@@ -14,34 +14,63 @@ import { useCallback, type ReactNode } from "react";
 import type { BoardState } from "@/lib/board/board-model";
 
 import { BoardComposer } from "./board-composer";
+import { BoardLanding } from "./board-landing";
 import { BoardDock } from "./board-panel";
 import { BoardProvider, useBoard } from "./board-provider";
 import { BoardSurface } from "./board-surface";
-import { FrontDoorToggle } from "./front-door-toggle";
 import { useAuth } from "@/components/AuthProvider";
-import { useDocumentDock } from "@/components/workspace/learn/document-dock";
+import { documentKey, useDocumentDock } from "@/components/workspace/learn/document-dock";
+import { SourcePreview } from "@/components/workspace/learn/source-preview";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
 import { useSidePanelInset, useSidePanelLive } from "@/components/workspace/shell/side-panel";
 
-/** The Chat | Canvas switch belongs to the front door only: an empty, unsaved board. Once a card
- *  exists the board is a place of its own (the same way a chat in progress shows no switch), and
- *  the switch would otherwise sit on top of the first card's title. */
-function FrontDoorSwitch() {
-  const { cards, sources } = useBoard();
-  if (cards.length > 0 || sources.length > 0) return null;
-  return <FrontDoorToggle value="canvas" />;
+/**
+ * What the board shows besides its cards.
+ *
+ * 🔴🔴 AN EMPTY BOARD IS THE LANDING, NOT A HINT AND A COMPOSER (owner 2026-09-06, "make new landing
+ * ... where users are invited to drop in material"). The landing (board-landing.tsx) IS the front
+ * door's composer; the moment anything is on the board, a source, a thread or a thing being made,
+ * it gives way to Wondering's compact composer at the bottom and the frame around the board
+ * (board-surface.tsx draws the rail and the panel for the same non-empty board).
+ *
+ * The Chat | Canvas switch belongs to the front door only: an empty, unsaved board. Once a card
+ * exists the board is a place of its own (the same way a chat in progress shows no switch), and
+ * the switch would otherwise sit on top of the first card's title.
+ */
+function BoardChrome() {
+  const { cards, sources, outputs, enteredCardId } = useBoard();
+  const empty = cards.length === 0 && sources.length === 0 && outputs.length === 0;
+  // 🔴 THE BOARD'S COMPOSER STANDS DOWN INSIDE A THREAD. That box opens a NEW thread; the one in
+  // front already has its own, and two composers on one screen is the defect the canvas's own
+  // clarification card was rewritten to avoid.
+  if (enteredCardId) return null;
+  if (!empty) return <BoardComposer />;
+  /**
+   * 🔴🔴 NO Chat | Canvas SWITCH ANY MORE. Owner, 2026-09-07: *"get rid of the chat as landing page
+   * in webapp, the canvas should be landing page"*, and, asked directly whether a plain full-screen
+   * chat should still exist on its own, *"No, chats only live on boards"*. A switch between two
+   * front doors needs two front doors; there is one. A conversation is a card here, and entering it
+   * makes it full screen, which is what the other door was for.
+   *
+   * `front-door-toggle.tsx` is left standing and unused on purpose: /learn still opens every chat
+   * made before today, and the switch is the only way back from one of them.
+   */
+  return <BoardLanding />;
 }
 
-function EmptyStateHint() {
-  const { cards, sources } = useBoard();
-  if (cards.length > 0 || sources.length > 0) return null;
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-[8px] px-[24px] text-center">
-      <h1 className="text-[24px] font-semibold leading-[32px] text-foreground">Canvas</h1>
-      <p className="max-w-[448px] text-[16px] leading-[24px] text-(--ui-text-secondary)">A visual way to understand things in parallel</p>
-    </div>
-  );
-}
+/**
+ * 🔴 THE CANVAS DOES NOT TOUCH THE SIDEBAR, AND THAT IS A CORRECTION. On 2026-09-06 the board was
+ * made to claim the immersive registry, so opening a canvas folded the learner's sidebar to the
+ * rail the way a chat does. The owner corrected the reading the same evening: *"I said to remove
+ * the left sidebar with the chat library and projects, WHEN INSIDE FULLSCREEN CHAT"*. So the claim
+ * lives where he asked for it — `board-thread.tsx`, which takes the whole window including the
+ * rail — and a canvas leaves the learner's own preference alone, exactly as it did before.
+ *
+ * Reinstating it is one component if he ever wants it: a child that declares the immersive claim and
+ * renders only when the board has something on it. The name is deliberately not spelled here —
+ * `board-panel.test.ts` fails on that call appearing in this file, and a guard that trips on its own
+ * explanation teaches the next person to delete the explanation.
+ */
 
 function LimitNotice() {
   const { limitNotice, dismissLimitNotice } = useBoard();
@@ -94,12 +123,11 @@ export function BoardPage({
         <BoardDock>
           <BoardArea frontDoor={boardId === null && toggle}>
             <BoardSurface />
-            <EmptyStateHint />
             <LimitNotice />
-            <BoardComposer />
-            {boardId === null && toggle && <FrontDoorSwitch />}
+            <BoardChrome />
           </BoardArea>
           <BoardOutputPanel />
+          <BoardSourcePanel />
         </BoardDock>
       </BoardProvider>
     </main>
@@ -140,7 +168,7 @@ function BoardArea({ children, frontDoor }: { children: ReactNode; frontDoor: bo
  * so this cannot disagree with the document panel about which of them is on screen.
  */
 function BoardOutputPanel() {
-  const { boardId } = useBoard();
+  const { boardId, enteredCardId } = useBoard();
   const { session } = useAuth();
   const dock = useDocumentDock();
   const active = dock.active;
@@ -150,15 +178,72 @@ function BoardOutputPanel() {
       activeKey={dock.activeKey}
       canvasId={boardId ?? ""}
       comments={{ preview: false, uid: session?.user?.id ?? null }}
-      // 🔴 FULL, LIKE THE DOCUMENT READER BESIDE IT (owner 2026-09-04: "i dont want a sidebar to
-      // open in canvas"). A note or a deck Nemesis made opens over the board and closes back to it;
-      // nothing narrows the cards it was made from.
-      initialMode="full"
+      // 🔴🔴 FULL ON THE BOARD, DOCKED INSIDE A FULL-SIZE CHAT, AND BOTH ARE THE OWNER'S.
+      //
+      // On the board: *"i dont want a sidebar to open in canvas"* (2026-09-04). A note or a deck
+      // opens over the board and closes back to it; nothing narrows the cards it was made from,
+      // because the cards ARE the canvas and a panel beside them would squeeze the thing you are
+      // arranging.
+      //
+      // Inside a full-size chat there are no cards to squeeze, and he asked for the other shape by
+      // name (2026-09-06, of the Gemini thread he linked): *"i like the fullscreen chat with right
+      // side panel … you basically have a chat and you prompt it to create flashcard"*. Measured in
+      // that thread at 1470 wide: the chat keeps a narrow column on the left and the made thing
+      // takes 865 on the right. So the chat narrows and the thing it made stands beside it.
+      initialMode={enteredCardId ? "docked" : "full"}
       items={dock.items}
       onClose={dock.closeAll}
       onCloseKey={dock.close}
       onSelectKey={dock.select}
       output={active.output}
+    />
+  );
+}
+
+
+/**
+ * A dropped document, opened beside a full-size chat.
+ *
+ * 🔴🔴 INSIDE A THREAD ONLY, AND THAT IS NOT A HEDGE. On the board a document is drawn inside its
+ * own card, by the owner's own ruling (*"i dont want any popups in canvas, everything should be
+ * seen and done within the cards"*, 2026-09-04), and board-panel.tsx records how much was cut to
+ * honour it. A full-size chat covers the board, so from inside one that card is the single thing
+ * the learner cannot reach — which is why he asked for exactly this and no more, 2026-09-07:
+ * *"chats in fullscreen view can open a right sidepanel to view sources"*.
+ *
+ * 🔴 THE READER'S ACTIONS SEND INTO THIS THREAD. *"users can dropp annotations to ask questions"*,
+ * and *"if you select a certain amount of text it only answers from those"*. `onSendToChat` is the
+ * reader's existing channel for a highlighted passage; pointing it at `sendCardMessage` with the
+ * passage as the question's context is what makes the answer come back from that passage rather
+ * than from the whole document.
+ */
+function BoardSourcePanel() {
+  const { enteredCardId, sendCardMessage } = useBoard();
+  const { session } = useAuth();
+  const dock = useDocumentDock();
+  const onSendToChat = useCallback(
+    (prompt: string, _files: File[], _notes?: unknown, said?: string) => {
+      if (!enteredCardId) return;
+      // `said` is the passage the learner marked. Passing it as the turn's context excerpt is what
+      // narrows the answer to it: the same field a selection on a card fills (board-provider.tsx).
+      sendCardMessage(enteredCardId, prompt, undefined, said);
+    },
+    [enteredCardId, sendCardMessage],
+  );
+  if (!enteredCardId) return null;
+  return (
+    <SourcePreview
+      activeId={dock.activeId}
+      activeKey={dock.activeKey}
+      items={dock.items}
+      onClose={dock.closeAll}
+      onCloseKey={dock.close}
+      onCloseTab={(id) => dock.close(documentKey(id))}
+      onSelect={(id) => dock.select(documentKey(id))}
+      onSelectKey={dock.select}
+      onSendToChat={onSendToChat}
+      open={dock.open}
+      uid={session?.user?.id ?? null}
     />
   );
 }

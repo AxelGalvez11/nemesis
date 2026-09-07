@@ -103,8 +103,12 @@ test("🔴🔴 a document opens IN ITS CARD: no sidebar, no cover, nothing over 
   // Nothing left for a document tab to open, and no width taken from the board.
   assert.match(PANEL, /useDocumentDockState\(\[\]\)/, "documents are back in the dock");
   assert.ok(!PANEL.includes("reader-cover-in"), "the document panel is still drawn over the board");
-  // A deliverable is the one thing left with no card of its own, and it covers rather than docks.
-  assert.match(PAGE, /initialMode="full"/, "a deliverable opens in a docked panel again");
+  // A deliverable is the one thing left with no card of its own. ON THE BOARD it covers rather than
+  // docks, which is the rule quoted above and unchanged. INSIDE A FULL-SIZE CHAT it docks, because
+  // there are no cards to squeeze and the owner asked for that shape by name on 2026-09-06: *"i like
+  // the fullscreen chat with right side panel"*, of the Gemini thread he linked. One expression, so
+  // the two cannot drift into two opinions about where a made thing goes.
+  assert.match(PAGE, /initialMode=\{enteredCardId \? "docked" : "full"\}/, "a deliverable opens in a docked panel over the board again, or stopped docking inside a chat");
   assert.match(PAGE, /const inset = useSidePanelInset\(\);/, "the board page stopped reading a panel's claim");
 });
 
@@ -359,3 +363,27 @@ test("🔴 a stored annotation is read defensively, because it is learner data i
   assert.equal(row.anchor.y, 0);
   assert.equal(row.anchor.box, undefined, "a half-built box was kept");
 });
+
+test("🔴🔴 a made thing folds like every other card, and the canvas does not touch the sidebar", () => {
+  // Owner, 2026-09-06: "having flashcards and artifacts in canvas ... can clutter the canvas".
+  // Measured on the board: a made thing is 320 x 132 and a test 420 x 300, against a thread at 720
+  // wide and a document at 640 x 560 — the smallest card there is. What piles up is a term of them,
+  // and every other kind could already be folded away while these alone could not.
+  const CARDS = read("./other-cards.tsx");
+  const MODEL = read("../../../lib/board/board-model.ts");
+  const LAYOUT = read("../../../lib/board/board-layout.ts");
+  const outputShape = MODEL.slice(MODEL.indexOf("export interface BoardOutputCard {"), MODEL.indexOf("export interface BoardState {"));
+  assert.match(outputShape, /\n  collapsed\?: true;/, "a made card cannot be folded");
+  assert.match(CARDS, /setOutputCollapsed\(output\.id, !collapsed\)/, "there is no control to fold one");
+  // 🔴 A FOLDED CARD IS STILL A BOX: every title bar here is drawn above its card, so a card whose
+  // body is hidden has nothing left to give it height.
+  assert.match(CARDS, /collapsed && "h-\[48px\]"/, "a folded made card collapses to a hairline");
+  assert.match(LAYOUT, /output\.collapsed \? COLLAPSED_HEIGHT/, "the layout still reserves the open height for a folded card");
+
+  // 🔴 AND THE CANVAS LEAVES THE SIDEBAR ALONE. The board briefly claimed the immersive registry;
+  // the owner corrected the reading the same evening ("I said to remove the left sidebar with the
+  // chat library and projects, when inside fullscreen chat"), so the claim lives in board-thread.tsx
+  // alone. See board-thread.test.ts for the surface that does take the window.
+  assert.ok(!/useDeclareImmersiveSurface\(\)/.test(PAGE), "opening a canvas folds the learner's sidebar again");
+});
+

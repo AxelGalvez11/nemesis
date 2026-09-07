@@ -21,7 +21,8 @@ import test from "node:test";
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-const PANEL = strip(read("./canvas-controls.tsx"));
+// 2026-09-06: the Sources list is the Outputs/Sources card (work-panel.tsx).
+const PANEL = strip(read("./work-panel.tsx"));
 const CANVAS = strip(read("./learning-canvas.tsx"));
 
 test("🔴🔴🔴 no learner-facing surface falls back to the model's copy", () => {

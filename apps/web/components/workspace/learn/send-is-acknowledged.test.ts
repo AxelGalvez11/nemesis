@@ -764,7 +764,8 @@ test("a PowerPoint ask in chat becomes a deck, not a lesson about decks", () => 
   // 2026-08-25 (third turn on this line, same invariant): the row now opens the SIDE PANEL rather
   // than carrying the href itself, and the panel links out to the full deck. A slides output must
   // still be reachable from the outputs shelf; where it goes has changed twice and may again.
-  assert.match(controls, /output\.kind === "slides" && output\.deck/, "a slides output can no longer be opened");
+  // 2026-09-06: the outputs rows live in the Outputs/Sources card (work-panel.tsx).
+  assert.match(readFileSync(new URL("./work-panel.tsx", import.meta.url), "utf8"), /output\.kind === "slides" && output\.deck/, "a slides output can no longer be opened");
   const library = readFileSync(new URL("../library/library-outputs.tsx", import.meta.url), "utf8");
   assert.match(library, /generated_slides/, "the Library no longer lists slide decks");
 });

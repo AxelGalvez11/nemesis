@@ -9,7 +9,7 @@
 import type { AnnotationNote } from "@/lib/learn/annotation-note";
 import { AnnotationNoteView } from "./annotation-note-view";
 import { advance as advanceRead } from "@/lib/workspace/read-progress";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -21,7 +21,6 @@ import { readDeliverableAsk, type DeliverableKind } from "@/lib/learn/canvas-del
 import { type MindmapNode, parseMermaidMindmap, withoutCitationMarks } from "@/lib/learn/mindmap-tree";
 import { actionKey, answerSink, materialOwnsAttention } from "@/lib/learn/canvas-hosting";
 import { composerIntent } from "@/lib/learn/composer-intent";
-import { CanvasClarification } from "./canvas-clarification";
 import { DeckReview } from "@/components/workspace/study/deck-review";
 import { ArtifactCard } from "./artifact-card";
 import { OutputPreview } from "./output-preview";
@@ -61,6 +60,8 @@ import { CANVAS_FILING_FOLDER } from "@/lib/learn/canvas-sources";
 import { extractFile, type ExtractedFile } from "@/lib/workspace/chat-attachments";
 import { CanvasComposer } from "./canvas-composer";
 import { COMPOSER_CAPABILITIES, type ComposerCapability, isMakerCapability } from "@/lib/learn/composer-capability";
+import { readWorkPanelOpen, WORK_PANEL_INSET, writeWorkPanelOpen } from "./work-panel";
+import { dateSeparator } from "@/lib/learn/thread-dates";
 import { planTerritories } from "@/lib/learn/curriculum-plan";
 
 /**
@@ -117,7 +118,7 @@ import { continueBelongsTo, continueOwner, readingRequirementOf } from "@/lib/le
 import { routeRewrite } from "@/lib/learn/canvas-phrases";
 import { unreadChunk } from "@/lib/learn/canvas-reading";
 import { selectableRegion, useCanvasSelection } from "./use-canvas-selection";
-import { CanvasThinkingPreview } from "./canvas-thinking-preview";
+import { CanvasQuestionRows, CanvasThinkingPreview } from "./canvas-thinking-preview";
 import { useCanvasSession } from "./use-canvas-session";
 import { usePolicyRuntime } from "./use-policy-runtime";
 import { DocumentDockProvider, useDocumentDockState, CHECK_KEY } from "./document-dock";
@@ -481,6 +482,33 @@ export function LearningCanvas({
       anchorThread(node);
     },
     [anchorThread],
+  );
+  // 🔴 CHATGPT'S "SCROLL TO BOTTOM" (measured 2026-09-06): a 34px round button at the column's centre
+  // above the composer, only while the thread is scrolled up from its end.
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const unwatchScroller = useRef<(() => void) | null>(null);
+  // 🔴 THE LISTENERS RIDE THE REF, NOT AN EFFECT. The thread's column mounts after the canvas has
+  // loaded, so an effect keyed on the canvas ran once against nothing and never again; a callback
+  // ref is handed the node the moment it exists and null the moment it goes.
+  const attachScroller = useCallback(
+    (node: HTMLDivElement | null) => {
+      attachThread(node);
+      unwatchScroller.current?.();
+      unwatchScroller.current = null;
+      scroller.current = node;
+      if (!node) return;
+      const read = () => setAwayFromEnd(node.scrollHeight - node.scrollTop - node.clientHeight > 120);
+      read();
+      node.addEventListener("scroll", read, { passive: true });
+      const sizes = new ResizeObserver(read);
+      sizes.observe(node);
+      unwatchScroller.current = () => {
+        node.removeEventListener("scroll", read);
+        sizes.disconnect();
+      };
+    },
+    [attachThread],
   );
   /** The turn being answered right now: the learner's sentence, the thinking line, the answer. */
   const currentTurnRef = useRef<HTMLDivElement | null>(null);
@@ -1004,6 +1032,17 @@ export function LearningCanvas({
    * same pipeline as the text, never a second path.
    */
   const [capability, setCapability] = useState<ComposerCapability | null>(null);
+  // The Outputs/Sources card (work-panel.tsx): open by default, remembered per browser, standing
+  // down while the reader is docked. Held here because the header presses it and the surface
+  // narrows the thread for it, and neither is the other's child.
+  const [workPanelOpen, setWorkPanelOpen] = useState(true);
+  useEffect(() => setWorkPanelOpen(readWorkPanelOpen()), []);
+  const toggleWorkPanel = useCallback(() => {
+    setWorkPanelOpen((current) => {
+      writeWorkPanelOpen(!current);
+      return !current;
+    });
+  }, []);
 
   /** The course's Minimap projection, or null on the ordinary canvas. Resolution runs against the
    *  policy's own resolved objectives, so "no material yet" is computed where it can change —
@@ -2997,6 +3036,7 @@ export function LearningCanvas({
     // the sheet, its scrim, the floating strip and the `×` all come from `CanvasSurface`, which
     // owns them so that no render branch can omit the exit. See the note at the top of that file.
     <CanvasSurface
+      workInset={workPanelOpen && dock.items.length === 0 ? WORK_PANEL_INSET : 0}
       // 🔴 THE WHOLE CANVAS IS THE DROP TARGET, not the composer. A 52px pill is a target you have
       // to aim at, and nobody aims at a text box when they are dragging a PDF — they drop it on the
       // page. Same door a picked file takes, so a dropped lecture and a chosen one are one path.
@@ -3032,6 +3072,10 @@ export function LearningCanvas({
         modelKnowledge={modelKnowledgeDisclosed(policy.claims)}
         onMakeDeliverable={(kind) => void session.makeDeliverable(kind)}
         onSendToChat={askFromReader}
+        onWebSearch={() => setCapability(capability === "search" ? null : "search")}
+        webSearchArmed={capability === "search"}
+        onToggleWorkPanel={toggleWorkPanel}
+        workPanelOpen={workPanelOpen}
         outputTools={{ onRevise: reviseOutput, onUndo: undoOutput, uid }}
         replyAudio={voice.replyAudio}
         transcript={transcript}
@@ -3166,7 +3210,7 @@ export function LearningCanvas({
           chip, the thinking caption and the thread all used to land on the same frame as the route
           swap, which is what made the arrival read as a cut. See `.canvas-enter` in globals.css for
           the frame-by-frame trace and for why the composer is deliberately NOT in this. */}
-      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[60px]`} ref={attachThread}>
+      <div className={`${arriving} relative h-full overflow-y-auto pb-[160px] pt-[60px]`} data-canvas-scroller="" ref={attachScroller}>
         {/* ── the thread ─────────────────────────────────────────────────────────────────────
             🔴🔴 IT IS IN THE SAME SCROLLER AS THE LIVE ANSWER, NOT AN OVERLAY OVER IT, AND THAT IS
             THE WHOLE DESIGN. The version this replaces floated a separate surface on top and
@@ -3180,10 +3224,20 @@ export function LearningCanvas({
             all the modes as well."* There is no second surface for them to be missing from.
 
             🔴 EACH TURN KEEPS ITS OWN KEY so a streamed answer never remounts the turns above it. */}
+        {/* 🔴 24 BETWEEN TURNS, NOT 40 (2026-09-06): ChatGPT's answer row (36 net) plus its 12px above
+            the next bubble is 58 from answer text to bubble; our row is the same 36, so 22-24 is
+            the gap that lands there. A date line stands in the gap when time has passed. */}
         {threadOpen && thread.length > 0 && (
-          <div className="flex flex-col gap-10 pb-10" data-canvas-thread="">
-            {thread.map((turn) => (
-              <CanvasThreadTurnView files={citableFiles} key={turn.id} onOpenFile={openCitedFile} onOpenOutput={dock.openOutput} onRetry={retryTurn} turn={turn} />
+          <div className="flex flex-col gap-6 pb-10" data-canvas-thread="">
+            {thread.map((turn, index) => (
+              <Fragment key={turn.id}>
+                {dateSeparator(thread[index - 1]?.at ?? null, turn.at) && (
+                  <p className="m-0 text-center text-[length:var(--canvas-text-small)] leading-[20px] text-(--ui-text-tertiary)" data-canvas-date="">
+                    {dateSeparator(thread[index - 1]?.at ?? null, turn.at)}
+                  </p>
+                )}
+              <CanvasThreadTurnView files={citableFiles} onOpenFile={openCitedFile} onOpenOutput={dock.openOutput} onRetry={retryTurn} turn={turn} />
+              </Fragment>
             ))}
           </div>
         )}
@@ -3316,7 +3370,7 @@ export function LearningCanvas({
             🔴 IT STILL COVERS WHAT IT WAS WRITTEN FOR: a brand-new canvas waiting on its first
             answer has an empty thread, so `preparing` still speaks there. */}
         {threadOpen && (turnInFlight || (presence === "preparing" && thread.length === 0)) && !liveText.trim() && (
-          <CanvasThinkingPreview app={session.workApp} domains={session.searchedDomains} label={preparingLabel} web={session.searchedDomains.length > 0} />
+          <CanvasThinkingPreview app={session.workApp} domains={session.searchedDomains} label={preparingLabel} lines={session.milestones} startedAt={session.turnClock} web={session.searchedDomains.length > 0} />
         )}
         {/* 🔴 THE SLOT THE CAPTION HELD, ONCE THE ANSWER IS IN: how long the turn worked and the
             lines it showed, one row above the answer, opening on a press. Only for a turn that
@@ -3665,23 +3719,9 @@ export function LearningCanvas({
             taken a complete turn — and nesting the card inside `regions.reply && session.aside`
             would make the whole feature disappear on exactly that turn, silently. The card is what
             the turn IS; the sentence above it is optional. */}
-        {session.clarifying && presence !== "preparing" && (
-          // 🔴 `pb-40` IS THE COMPOSER'S HEIGHT, THE SAME NUMBER `canvas-document.tsx` USES. The
-          // composer is absolutely positioned over the bottom of this scroll container, so a card
-          // with no bottom padding has its last control sitting underneath it — and on a short
-          // canvas there is nothing to scroll, so the Submit button is simply unreachable.
-          <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-40">
-            <CanvasClarification
-              onDismiss={session.dismissClarification}
-              // 🔴 THE LABEL, NOT THE ID — because tapping must be indistinguishable from typing
-              // it, and `readClarifyAnswer` resolves a label back to its option. One route in, one
-              // meaning, and no branch that only the mouse exercises. The card's own Other box
-              // sends its prose through this same prop for the same reason.
-              onAnswer={(text) => void answerClarification(text)}
-              question={session.clarifying}
-            />
-          </div>
-        )}
+        {/* 🔴 THE QUESTION ITSELF IS IN THE COMPOSER NOW (canvas-clarification.tsx, 2026-09-06). What
+            the thread shows while it waits is what ChatGPT Work shows: two tool rows. */}
+        {session.clarifying && presence !== "preparing" && <CanvasQuestionRows />}
 
         {/* 🔴🔴 THE PLAN, BEFORE ANY OF IT IS PAID FOR. A Deep research run is about a minute and
             several metered searches from a budget shared with ordinary chat search, so the learner
@@ -4248,6 +4288,20 @@ export function LearningCanvas({
           is being captured there is exactly one thing to do, and leaving the text box live beneath a
           recording panel offers a second one. Same position, same width — the surface transforms,
           it does not gain a layer. */}
+      {/* 🔴 CHATGPT'S "SCROLL TO BOTTOM" (measured 2026-09-06): a 34px round button, white at 65% with a
+          hairline and a soft shadow, at the column's centre above the composer, only while the thread
+          is scrolled up from its end. */}
+      {showComposer && awayFromEnd && (
+        <button
+          aria-label="Scroll to bottom"
+          className="absolute bottom-[121px] left-1/2 z-30 flex size-[34px] -translate-x-1/2 items-center justify-center rounded-full border border-(--ui-stroke-primary) bg-(--ui-bg-elevated)/65 text-(--ui-text-primary) shadow-md backdrop-blur transition-colors hover:bg-(--ui-bg-elevated)"
+          data-canvas-scroll-to-end=""
+          onClick={() => scroller.current?.scrollTo({ behavior: "smooth", top: scroller.current.scrollHeight })}
+          type="button"
+        >
+          <Codicon name="arrow-down" size="20px" />
+        </button>
+      )}
       {showComposer && recording && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[24px] pt-14 bg-gradient-to-t from-(--ui-bg-editor) via-(--ui-bg-editor)/85 to-transparent">
           <div className="pointer-events-auto w-full">
@@ -4307,6 +4361,8 @@ export function LearningCanvas({
           // working. `session.answerClarification` is that handler; the card below calls it too.
           // 🔴 THE SAME ROUTE THE CARD'S BUTTONS TAKE. Typing "academic" under the card and tapping
           // the Academic option must reach one handler, or the two drift and only one keeps working.
+          onDismissClarify={session.dismissClarification}
+          onSkipClarify={() => void answerClarification("Use your judgment")}
           onClarify={(text) => {
             acknowledgeAttachments();
             // Nemesis stops talking the moment the learner responds, exactly as `onAnswer` does.

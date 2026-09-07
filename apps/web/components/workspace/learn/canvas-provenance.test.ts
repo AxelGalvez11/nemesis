@@ -80,7 +80,8 @@ test("🔴 a claim with NO way of knowing at all is not announced as model knowl
 // ------------------------------------------------------------------ the surface
 
 test("the Sources panel discloses model origin instead of only 'Nothing attached yet'", () => {
-  const source = read("canvas-controls.tsx");
+  // Repointed 2026-09-06: the Sources list is the Outputs/Sources card (work-panel.tsx).
+  const source = read("work-panel.tsx");
 
   // 🔴 THE FAILING STATE THIS CAPTURES: before the fix this file's ONLY empty-state branch was
   // the bare sentence, with no mention of model provenance anywhere in the panel.
@@ -114,16 +115,11 @@ test("the Sources panel discloses model origin instead of only 'Nothing attached
   //
   // What survives untouched is the half that matters: the disclosure exists, and it cannot be
   // overwritten by an empty state. Calibration: make `empty` unconditional and this reddens.
-  assert.match(
-    source,
-    /empty=\{\s*modelKnowledge\s*\?/,
-    "the empty sentence stopped depending on whether the canvas holds model knowledge",
-  );
+  //   v5  2026-09-06: the Sources list is ChatGPT Work's card (work-panel.tsx); the sentence sits
+  //       in the place a file would be, and it changes with `modelKnowledge` in ONE expression.
+  assert.match(source, /\{modelKnowledge \? "Nothing attached yet\. This was answered from Nemesis's own knowledge\." : "Nothing attached yet"\}/, "the empty sentence stopped depending on whether the canvas holds model knowledge");
   assert.ok(!/filled/.test(source), "the `filled` workaround is back, so there are two answers for one state again");
-  // 🔴 AND THE SHELF HOLDING THE DISCLOSURE MUST BE THE ONE THAT ALWAYS RENDERS. If Sources ever
-  // became conditional like the other two, a canvas taught entirely from model knowledge would
-  // disclose nothing at all — N10's original failure, arriving by a new route.
-  assert.match(source, /"Nothing read from the web yet\."/, "the Sources shelf can now vanish, taking the disclosure with it");
+  assert.match(source, /documents\.length === 0 && \(/, "the disclosure can now print beside a listed file");
 });
 
 test("no per-sentence provenance badge is introduced inline", () => {

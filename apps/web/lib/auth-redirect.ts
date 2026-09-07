@@ -37,7 +37,13 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
  * saw it. Preserving the query at the consumer is worthless if the producer never sends one. See
  * `signInRedirect`.
  */
-export const DEFAULT_LANDING_PATH = "/learn";
+/**
+ * 🔴🔴 THE CANVAS IS THE LANDING PAGE. Owner, 2026-09-07: *"get rid of the chat as landing page in
+ * webapp, the canvas should be landing page"*. `/canvas` opens the board you last worked on, or an
+ * empty one on a brand-new account (app/(workspace)/canvas/page.tsx). `/learn` is still a real
+ * route and every chat made before today still opens there; nothing new arrives at it.
+ */
+export const DEFAULT_LANDING_PATH = "/canvas";
 
 /**
  * Where the auth gate sends a signed-out visitor, so that signing in returns them to the page they

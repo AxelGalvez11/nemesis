@@ -17,6 +17,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 
 import { useAuth } from "@/components/AuthProvider";
 import type { BoardAnnotation } from "@/lib/board/board-annotations";
+import { GROUP_HEADER, GROUP_MIN_HEIGHT, GROUP_MIN_WIDTH, GROUP_PADDING, gatherIntoBlock, groupFromSelection, growGroupFor, nodesInsideGroup, type BoardGroup, type GroupColor, type GroupRect } from "@/lib/board/board-groups";
+import { groupHoldingExactly, scopeForCard, type BoardScope } from "@/lib/board/board-scope";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import {
   buildDeleteTargets,
@@ -41,6 +43,7 @@ import {
   OUTPUT_MIN_HEIGHT,
   OUTPUT_WIDTH,
   SOURCE_DEFAULT_HEIGHT,
+  defaultSourceHeight,
   SOURCE_WIDTH,
   findFreeChildPosition,
   makeRoomForDocuments,
@@ -48,6 +51,7 @@ import {
   notePosition,
   occupiedRects,
   type BranchSide,
+  PLACEMENT_GAP,
 } from "@/lib/board/board-layout";
 import {
   BOARD_REPLY_ERROR_FALLBACK,
@@ -69,6 +73,7 @@ import {
   type BoardCard,
   type BoardHighlightKind,
   type BoardMessage,
+  type BoardPosition,
   type BoardSource,
   type BoardState,
   type BoardViewport,
@@ -155,20 +160,90 @@ export interface BoardContextValue {
 
   addSourceFiles: (files: File[]) => Promise<void>;
   toggleSourceSelection: (sourceId: string) => void;
+  /**
+   * Tick exactly these sources: the panel's "Select all" and its opposite (board-studio.tsx).
+   *
+   * 🔴 TICKS ARE THE SCOPE, AND THEY PERSIST. Owner 2026-09-06: *"ability to choose which sources
+   * to make from like in notebook llm"*. A tick is what a question is answered from and what a
+   * thing is made from, on every turn, until the learner unticks it. It used to be a per-question
+   * attachment that cleared itself after one send (Wondering's chips), which reads as the ticks
+   * vanishing the moment they are used. Every source is ticked when it arrives.
+   */
+  setSourceSelection: (sourceIds: readonly string[]) => void;
   /** Deliverables made on this board (lib/board/board-deliverables.ts). */
   outputs: BoardOutputCard[];
-  /** Make one beside a thread (or from the composer, `cardId` null), from what was typed. */
-  makeDeliverable: (kind: BoardMakeKind, options?: { cardId?: string | null; sourceId?: string; topic?: string }) => void;
+  /**
+   * Make one beside a thread (or from the composer, `cardId` null), from what was typed; or from
+   * the panel, `sourceIds` being the ticked sources it is made from.
+   */
+  makeDeliverable: (kind: BoardMakeKind, options?: { cardId?: string | null; sourceId?: string; sourceIds?: readonly string[]; topic?: string }) => void;
   /** They finished a test card: the picks are kept and the card shows the result. */
   finishCheck: (outputId: string, picks: readonly (string | null)[]) => void;
   /** From a finished test card: hand the attempt to the thread so Nemesis explains the misses. */
   explainCheck: (outputId: string, account: string) => void;
   /** Fold a dropped document down to its title row, and back. */
   setSourceCollapsed: (id: string, collapsed: boolean) => void;
+  /** The same, for a thing Nemesis made. See `BoardOutputCard.collapsed`. */
+  setOutputCollapsed: (id: string, collapsed: boolean) => void;
   /** The output open in the reading panel, if any. */
   openedOutput: CanvasOutput | null;
   openOutput: (outputId: string) => void;
+  /**
+   * The thread the learner has stepped INTO, or null while they are on the board.
+   *
+   * 🔴🔴 A LAYER, NOT A ROUTE (owner 2026-09-06: *"having canvas be the top layer, and chat be inner
+   * layer with sidebar functionality"*). The board stays mounted and keeps its camera; entering only
+   * decides which of the two is in front. A route would remount this provider, drop a streaming
+   * answer and give the exit a way to fail with a blank screen, which this canvas has paid for once.
+   */
+  enteredCardId: string | null;
+  enterCard: (cardId: string) => void;
+  leaveCard: () => void;
   closeOutput: () => void;
+  /**
+   * Labelled frames around parts of the board (`lib/board/board-groups.ts`).
+   *
+   * 🔴 NO MEMBER LISTS ANYWHERE IN HERE. A group is a rectangle; what is inside it is asked of the
+   * geometry whenever the answer is needed. `nodeRects` is that question's input.
+   */
+  groups: BoardGroup[];
+  /** The rectangle of every node on the board, measured where it has been measured. */
+  nodeRects: () => GroupRect[];
+  /** Draw a frame around these, Obsidian's bounding box padded by 20. Returns its id, or null. */
+  createGroup: (nodeIds: readonly string[]) => string | null;
+  /**
+   * What this chat reads, worked out from where it is standing right now.
+   *
+   * 🔴 ASKED ON EVERY RENDER, NEVER STORED. Owner 2026-09-07: *"A frame, and whatever sits in it is
+   * what chats read"*. A cached answer would go stale the instant anything moved, which is the one
+   * failure this design cannot afford — see lib/board/board-scope.ts.
+   */
+  scopeFor: (cardId: string) => BoardScope;
+  /** Gather the ticked sources together and draw a named frame round them. Returns the frame's id. */
+  groupTickedSources: () => string | null;
+  /**
+   * The one chat whose made things are showing on the board, or null while they are all put away.
+   *
+   * 🔴🔴 A DELIVERABLE MADE BY A CHAT IS NOT ON THE CANVAS. Owner, 2026-09-07: *"any deliverables
+   * created by chats should not show on canvas and instead should be able to be seen behind the
+   * chat to indicate that it has deliverables in it"*, and asked what a click on that stack should
+   * do he chose *"They fan out on the board around the chat"*. So they are hidden nodes standing at
+   * the positions they were made at; fanning reveals them where they already are, and clicking the
+   * board puts them back. Nothing is moved and nothing is deleted, so undo, the Library and the
+   * saved document all see exactly what they saw before.
+   *
+   * A thing made from the composer or from a document has no chat to hide behind and is always
+   * drawn, which is the same rule read the other way round.
+   */
+  fannedCardId: string | null;
+  toggleFan: (cardId: string) => void;
+  closeFan: () => void;
+  renameGroup: (groupId: string, label: string) => void;
+  setGroupColor: (groupId: string, color: GroupColor) => void;
+  setGroupCollapsed: (groupId: string, collapsed: boolean) => void;
+  moveGroup: (groupId: string, position: { x: number; y: number }) => void;
+  resizeGroup: (groupId: string, size: { width: number; height: number }) => void;
+  deleteGroup: (groupId: string) => void;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -197,6 +272,20 @@ interface SaveJob {
   history: HistorySnapshot | null;
 }
 
+
+/**
+ * The ticks a stored board loads with.
+ *
+ * 🔴 A BOARD SAVED WITH NOTHING TICKED LOADS WITH EVERYTHING TICKED. Every board saved before
+ * 2026-09-06 has an empty list, because a tick used to be a one-question attachment that cleared
+ * itself. Nothing ticked has always MEANT everything (`runTurn`), so ticking every ready source
+ * on load changes no answer; it only makes the panel say what the board was already doing.
+ */
+function ticksOf(state: Pick<BoardState, "selectedSourceIds" | "sources">): string[] {
+  if (state.selectedSourceIds.length > 0) return state.selectedSourceIds;
+  return state.sources.filter((source) => source.status === "ready").map((source) => source.id);
+}
+
 export function BoardProvider({
   boardId: initialBoardId,
   onBoardCreated,
@@ -220,8 +309,11 @@ export function BoardProvider({
   const [sources, setSources] = useState<BoardSource[]>([]);
   const [outputs, setOutputs] = useState<BoardOutputCard[]>([]);
   const [openedOutputId, setOpenedOutputId] = useState<string | null>(null);
+  const [enteredCardId, setEnteredCardId] = useState<string | null>(null);
+  const [fannedCardId, setFannedCardId] = useState<string | null>(null);
   /** Notes pinned inside a source in the reading panel. Saved with the board. See board-panel.tsx. */
   const [annotations, setAnnotations] = useState<BoardAnnotation[]>([]);
+  const [groups, setGroups] = useState<BoardGroup[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   // 🔴 OFF BY DEFAULT (owner 2026-09-03: "websearch on in canvas, off by default"). On by default,
   // every board answer went to the web unasked and came back wearing [n] marks that read as
@@ -287,6 +379,100 @@ export function BoardProvider({
     [measuredRect, outputs],
   );
 
+  /**
+   * Every node's rectangle, as measured.
+   *
+   * 🔴 MEASURED, NOT DECLARED. A card's saved height is what it was when it was last measured and a
+   * note has no saved height at all, so asking "is this inside the frame" from the model's numbers
+   * alone would put a card in a group it visibly overflows. `measuredRect` prefers what the browser
+   * reported.
+   */
+  const nodeRects = useCallback((): GroupRect[] => {
+    const rects: GroupRect[] = [];
+    for (const card of cards) {
+      const rect = measuredRect(card);
+      rects.push({ id: card.id, position: rect.position, width: rect.width ?? card.width, height: rect.height ?? 0 });
+      for (const note of card.notes) {
+        const noteRect = measuredRect({ id: note.id, position: note.position });
+        rects.push({ id: note.id, position: note.position, width: noteRect.width ?? NOTE_WIDTH, height: noteRect.height ?? 0 });
+      }
+    }
+    for (const source of sources) {
+      const rect = measuredRect(source);
+      rects.push({ id: source.id, position: rect.position, width: rect.width ?? source.width, height: rect.height ?? 0 });
+    }
+    for (const output of outputs) {
+      const rect = measuredRect(output);
+      rects.push({ id: output.id, position: rect.position, width: rect.width ?? output.width, height: rect.height ?? 0 });
+    }
+    return rects;
+  }, [cards, measuredRect, outputs, sources]);
+
+  /**
+   * What a chat reads: the sources inside the frame it stands in, the document it hangs off, or
+   * everything. See lib/board/board-scope.ts for why this is a question and never a stored field.
+   */
+  const scopeFor = useCallback(
+    (cardId: string): BoardScope => {
+      const card = cards.find((item) => item.id === cardId);
+      const attachedSourceId = card?.parentId && sources.some((source) => source.id === card.parentId) ? card.parentId : null;
+      return scopeForCard(cardId, {
+        groups,
+        rects: nodeRects(),
+        sourceIds: sources.filter((source) => source.status === "ready").map((source) => source.id),
+        attachedSourceId,
+      });
+    },
+    [cards, groups, nodeRects, sources],
+  );
+
+  /**
+   * Bring the ticked sources together and draw a frame round exactly them, reusing one that already
+   * holds exactly those.
+   *
+   * 🔴🔴 THE GATHER IS THE POINT. Owner, 2026-09-07: *"user can select what sources chats receive by
+   * selecting them in the source panel and that should becomes its own group automatically"*. Under
+   * his frame rule the group's contents ARE the scope, so a frame drawn around three scattered
+   * cards would also enclose — and therefore read — every unticked card standing between them. The
+   * three are moved into a block first, and only then framed, so the picture and the scope agree.
+   */
+  const ensureTickGroup = useCallback(
+    (ticked: readonly string[], added?: { width: number; height: number }): { groupId: string; position: BoardPosition } | null => {
+      const rects = nodeRects();
+      const readyIds = sources.filter((source) => source.status === "ready").map((source) => source.id);
+      let group = groupHoldingExactly(ticked, { groups, rects, sourceIds: readyIds });
+      if (!group) {
+        const chosen = rects.filter((rect) => ticked.includes(rect.id));
+        if (chosen.length === 0) return null;
+        /**
+         * 🔴🔴 CLEAR GROUND, BELOW EVERYTHING. The frame decides what its chats read, so it must
+         * hold exactly what was ticked and nothing that happened to be standing nearby. Gathering
+         * the cards where they already were left the frame overlapping whatever was between them;
+         * measured on the harness, one unticked document missed being enclosed by five pixels.
+         */
+        const bottom = rects.length > 0 ? Math.max(...rects.map((rect) => rect.position.y + rect.height)) : 0;
+        const left = rects.length > 0 ? Math.min(...rects.map((rect) => rect.position.x)) : 0;
+        const moved = gatherIntoBlock(chosen, { x: left, y: bottom + PLACEMENT_GAP });
+        setSources((all) => all.map((source) => (moved.has(source.id) ? { ...source, position: moved.get(source.id)! } : source)));
+        const gathered = chosen.map((rect) => ({ ...rect, position: moved.get(rect.id) ?? rect.position }));
+        const made = groupFromSelection(gathered, crypto.randomUUID());
+        if (!made) return null;
+        group = made;
+        setGroups((all) => [...all, made]);
+      }
+      if (!added) return { groupId: group.id, position: group.position };
+      const grown = growGroupFor(group, added);
+      setGroups((all) => all.map((item) => (item.id === grown.group.id ? grown.group : item)));
+      return { groupId: grown.group.id, position: grown.position };
+    },
+    [groups, nodeRects, sources],
+  );
+
+  const groupTickedSources = useCallback(() => ensureTickGroup(selectedSourceIds)?.groupId ?? null, [ensureTickGroup, selectedSourceIds]);
+
+  const toggleFan = useCallback((cardId: string) => setFannedCardId((was) => (was === cardId ? null : cardId)), []);
+  const closeFan = useCallback(() => setFannedCardId(null), []);
+
   // ----------------------------------------------------------------- load
   useEffect(() => {
     mounted.current = true;
@@ -299,7 +485,8 @@ export function BoardProvider({
       setSources(opened.sources);
       setOutputs(opened.outputs);
       setAnnotations(seed.annotations ?? []);
-      setSelectedSourceIds(seed.selectedSourceIds);
+      setGroups(seed.groups ?? []);
+      setSelectedSourceIds(ticksOf(seed));
       setUseWebSearch(seed.useWebSearch);
       setViewport(seed.viewport ?? null);
       setHasSavedViewport(seed.viewport !== undefined);
@@ -334,7 +521,8 @@ export function BoardProvider({
         setSources(state.sources);
         setOutputs(state.outputs);
         setAnnotations(state.annotations ?? []);
-        setSelectedSourceIds(state.selectedSourceIds);
+        setGroups(state.groups ?? []);
+        setSelectedSourceIds(ticksOf(state));
         setUseWebSearch(state.useWebSearch);
         setViewport(state.viewport ?? null);
         setHasSavedViewport(state.viewport !== undefined);
@@ -405,7 +593,7 @@ export function BoardProvider({
                 dispatch({ type: "replace", cards: state.cards, history: latest.history });
                 setSources(state.sources);
                 setOutputs(state.outputs);
-                setSelectedSourceIds(state.selectedSourceIds);
+                setSelectedSourceIds(ticksOf(state));
                 setUseWebSearch(state.useWebSearch);
                 setViewport(state.viewport ?? null);
                 setHasSavedViewport(state.viewport !== undefined);
@@ -460,10 +648,10 @@ export function BoardProvider({
       skipNextSave.current = false;
       return;
     }
-    const snapshot: BoardState = { annotations, cards, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined };
+    const snapshot: BoardState = { annotations, groups, cards, sources, outputs, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined };
     const timer = window.setTimeout(() => schedule(snapshot, historyForSave()), SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [annotations, cards, sources, outputs, selectedSourceIds, useWebSearch, viewport, loaded, schedule, historyForSave, seed]);
+  }, [annotations, groups, cards, sources, outputs, selectedSourceIds, useWebSearch, viewport, loaded, schedule, historyForSave, seed]);
 
   // ----------------------------------------------------------------- turns
   const setCardStatus = useCallback(
@@ -591,7 +779,7 @@ export function BoardProvider({
    * reply, because nothing would ever finish it.
    */
   const makeDeliverable = useCallback(
-    (kind: BoardMakeKind, options: { cardId?: string | null; sourceId?: string; topic?: string } = {}) => {
+    (kind: BoardMakeKind, options: { cardId?: string | null; sourceId?: string; sourceIds?: readonly string[]; topic?: string } = {}) => {
       const cardId = options.cardId ?? null;
       const topic = (options.topic ?? "").trim();
       if (!uid) {
@@ -625,7 +813,11 @@ export function BoardProvider({
       setOutputs((all) => [...all, draft]);
       // 🔴 A DOCUMENT'S OWN MATERIAL WHEN IT WAS ASKED FROM A DOCUMENT, or a note "from this
       // lecture" would be written from every other file on the board as well.
-      const material = sourceParent ? groundedSources([sourceParent]) : groundedSources(sources);
+      // 🔴 THE TICKED SOURCES WHEN IT WAS ASKED FROM THE PANEL (board-studio.tsx), which is the
+      // NotebookLM rule the owner asked for by name: what is ticked is what it is made from. Nothing
+      // ticked means everything, the same rule a question follows (`runTurn`), never nothing.
+      const ticked = options.sourceIds ? sources.filter((source) => options.sourceIds?.includes(source.id) && source.status === "ready") : [];
+      const material = sourceParent ? groundedSources([sourceParent]) : ticked.length > 0 ? groundedSources(ticked) : groundedSources(sources);
       const canvas = boardCanvasFor({
         boardId: boardIdRef.current,
         title: sourceParent ? sourceParent.name : deriveBoardTitle(cards, sources),
@@ -669,6 +861,15 @@ export function BoardProvider({
   }, [cards, makeDeliverable, pendingCheck]);
 
   const openedOutput = useMemo(() => outputs.find((output) => output.id === openedOutputId)?.output ?? null, [outputs, openedOutputId]);
+  // 🔴 A THREAD DELETED WHILE YOU ARE STANDING IN IT PUTS YOU BACK ON THE BOARD, rather than leaving
+  // the layer up over nothing.
+  useEffect(() => {
+    if (enteredCardId && !cards.some((card) => card.id === enteredCardId)) setEnteredCardId(null);
+  }, [cards, enteredCardId]);
+
+  const enterCard = useCallback((cardId: string) => setEnteredCardId(cardId), []);
+  const leaveCard = useCallback(() => setEnteredCardId(null), []);
+
   const openOutput = useCallback((outputId: string) => setOpenedOutputId(outputId), []);
   const closeOutput = useCallback(() => setOpenedOutputId(null), []);
 
@@ -709,7 +910,27 @@ export function BoardProvider({
         return false;
       }
       const sourceIds = (options.sourceIds ?? selectedSourceIds).filter((id) => sources.some((source) => source.id === id && source.status === "ready"));
-      const parentSource = sources.find((source) => source.id === sourceIds[0]);
+      // 🔴 A THREAD HANGS OFF A DOCUMENT ONLY WHEN IT IS ABOUT THAT ONE DOCUMENT. Every source is
+      // ticked by default now (see `setSourceSelection`), so "the first ticked source" would make
+      // every new thread a child of whichever file arrived first. One tick is a question about a
+      // document and sits beside it; several ticks are a question across the pile and stand alone.
+      const parentSource = sourceIds.length === 1 ? sources.find((source) => source.id === sourceIds[0]) : undefined;
+      /**
+       * 🔴🔴 TICKING SEVERAL SOURCES MAKES A GROUP, AND THE NEW CHAT LANDS IN IT. Owner, 2026-09-07:
+       * *"user can select what sources chats receive by selecting them in the source panel and that
+       * should becomes its own group automatically and user can name the group, chats will all
+       * sources selected should be 'global' chats"*. So the three cases are the three he named:
+       *
+       *   every source ticked (or none)  →  no frame, the chat stands on open board and is GLOBAL
+       *   exactly one ticked             →  the chat hangs off that document, joined by a line
+       *   some but not all               →  a frame around exactly those, and the chat inside it
+       *
+       * The frame is what the chat reads from then on (board-scope.ts), which is why the sources
+       * are gathered into a block before it is drawn: a frame stretched across where they happened
+       * to be sitting would enclose, and therefore read, everything in between.
+       */
+      const readyCount = sources.filter((source) => source.status === "ready").length;
+      const framed = sourceIds.length >= 2 && sourceIds.length < readyCount ? ensureTickGroup(sourceIds, { width: CARD_WIDTH, height: CARD_MIN_HEIGHT }) : null;
       const cardId = crypto.randomUUID();
       const assistantId = crypto.randomUUID();
       const card: BoardCard = {
@@ -724,9 +945,11 @@ export function BoardProvider({
         savedImages: [],
         notes: [],
         status: "streaming",
-        position: parentSource
-          ? findFreeChildPosition({ parent: measuredRect(parentSource), occupied: occupied(cards, sources), childHeight: CARD_MIN_HEIGHT })
-          : nextRootPosition([...cards, ...sources]),
+        position: framed
+          ? framed.position
+          : parentSource
+            ? findFreeChildPosition({ parent: measuredRect(parentSource), occupied: occupied(cards, sources), childHeight: CARD_MIN_HEIGHT })
+            : nextRootPosition([...cards, ...sources]),
         width: CARD_WIDTH,
         messages: [
           { id: crypto.randomUUID(), role: "user", content: message },
@@ -740,7 +963,7 @@ export function BoardProvider({
         composerMessageId.current = assistantId;
         setNewThreadSuggestions([]);
       }
-      if (sourceIds.length > 0) setSelectedSourceIds([]);
+      // The ticks stay ticked: they are the board's scope, not this question's attachment.
       runTurn({
         cardId,
         assistantMessageId: assistantId,
@@ -753,7 +976,7 @@ export function BoardProvider({
       });
       return true;
     },
-    [cards, makeDeliverable, measuredRect, occupied, runTurn, selectedSourceIds, sources, updateCards],
+    [cards, ensureTickGroup, makeDeliverable, measuredRect, occupied, runTurn, selectedSourceIds, sources, updateCards],
   );
 
   const sendRootMessage = useCallback((text: string) => startCard(text, { updatesComposerSuggestions: true }), [startCard]);
@@ -823,7 +1046,11 @@ export function BoardProvider({
         requestMessage: message,
         history: context,
         contextExcerpt: excerpt,
-        sourceIds: card.sourceIds,
+        // 🔴🔴 WHERE IT STANDS NOW, NOT WHAT IT WAS MADE WITH. `card.sourceIds` is the tick list
+        // frozen at the moment the chat was started; since 2026-09-07 the frame a chat is standing
+        // in is what it reads (board-scope.ts, the owner's own choice), so a follow-up asked after
+        // dragging a document into the group has to see that document.
+        sourceIds: scopeFor(cardId).sourceIds,
         responseMode,
         updatesComposerSuggestions: updatesComposer,
         cardTitle: card.title.trim() || undefined,
@@ -832,7 +1059,7 @@ export function BoardProvider({
       });
       return true;
     },
-    [cards, makeDeliverable, runTurn, updateCards],
+    [cards, makeDeliverable, runTurn, scopeFor, updateCards],
   );
 
   /**
@@ -901,6 +1128,15 @@ export function BoardProvider({
       };
       updateCards((all) => [...all, card]);
       setLastAddedCardId(id);
+      /**
+       * 🔴🔴 BRANCHING FROM A FULL-SIZE CHAT STEPS BACK OUT TO THE BOARD. Owner, 2026-09-07: *"when
+       * user wants to branch off in fullscreen view the chat escapes fullscreen view and shows the
+       * newly branched chat"*. A branch is a second card joined to the first by a line, and the
+       * line IS the thing worth seeing — staying full screen would show the learner one
+       * conversation and leave the fact that it forked entirely off screen. `lastAddedCardId`
+       * above is what flies the camera to it (board-surface.tsx).
+       */
+      setEnteredCardId(null);
     },
     [cards, measuredRect, occupied, sources, updateCards],
   );
@@ -990,6 +1226,8 @@ export function BoardProvider({
       };
       updateCards((all) => [...all, card]);
       setLastAddedCardId(id);
+      // Out to the board, so the fork is visible. See `createBranchCard`.
+      setEnteredCardId(null);
       runTurn({ cardId: id, assistantMessageId: assistantId, requestMessage: message, history: context, contextExcerpt: excerpt, sourceIds: parent.sourceIds });
       if (excerpt) setHighlight(cardId, excerpt, "branch", { occurrence: excerptOccurrence });
       return true;
@@ -1024,6 +1262,8 @@ export function BoardProvider({
       };
       updateCards((all) => [...all, card]);
       setLastAddedCardId(id);
+      // Out to the board, so the fork is visible. See `createBranchCard`.
+      setEnteredCardId(null);
       runTurn({ cardId: id, assistantMessageId: assistantId, requestMessage: DIVE_DEEPER_MESSAGE, history: context, contextExcerpt: flat, sourceIds: parent.sourceIds });
       setHighlight(cardId, flat, "branch", { occurrence });
     },
@@ -1140,7 +1380,7 @@ export function BoardProvider({
     const beside = entry.operation.kind === "restore" && hasBeside(entry.operation.beside) ? entry.operation.beside : null;
     const sourcesAfter = beside ? restoreBeside(sources, beside.sources) : sources;
     const outputsAfter = beside ? restoreBeside(outputs, beside.outputs) : outputs;
-    const document = serializeBoardState({ annotations, cards: restored, sources: sourcesAfter, outputs: outputsAfter, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
+    const document = serializeBoardState({ annotations, groups, cards: restored, sources: sourcesAfter, outputs: outputsAfter, selectedSourceIds, useWebSearch, viewport: viewport ?? undefined }, measured.current);
     if (!documentFitsSizeLimit(document)) {
       setLimitNotice("This undo would exceed the canvas storage limit. Remove some content or sources and try again.");
       return;
@@ -1150,7 +1390,7 @@ export function BoardProvider({
       if (outputsAfter !== outputs) setOutputs(outputsAfter);
     }
     applyHistory({ type: "undo" });
-  }, [annotations, applyHistory, cards, history.past, outputs, selectedSourceIds, sources, useWebSearch, viewport]);
+  }, [annotations, applyHistory, cards, groups, history.past, outputs, selectedSourceIds, sources, useWebSearch, viewport]);
 
   const redo = useCallback(() => {
     const entry = history.future.at(-1);
@@ -1265,6 +1505,13 @@ export function BoardProvider({
     [sources],
   );
 
+  const setSourceSelection = useCallback(
+    (sourceIds: readonly string[]) => {
+      setSelectedSourceIds(sourceIds.filter((id) => sources.some((source) => source.id === id)));
+    },
+    [sources],
+  );
+
   const sourceOrdinal = useRef(0);
   const claimSourceOrdinal = useCallback(() => {
     const held = Math.max(0, ...sourcesRef.current.map((source) => sourceOrdinalOf(source)));
@@ -1287,6 +1534,27 @@ export function BoardProvider({
           : []),
       ];
       for (const draft of drafts) for (const url of draft.previewUrls) previewUrls.current.add(url);
+      /**
+       * 🔴🔴 A FILE DROPPED WHILE YOU ARE INSIDE A CHAT LANDS IN THAT CHAT'S FRAME. Owner,
+       * 2026-09-07: *"entering a chat makes it fullscreen size, and the sources panel then shows
+       * only the sources attached to the chat"* — and adding to that list has to mean something.
+       * Under the frame rule (board-scope.ts) a source is read by a chat only if it stands inside
+       * the same rectangle, so a drop made from inside a framed chat that landed on open board
+       * would appear in the panel and be read by nobody. The frame grows to take it. A chat with no
+       * frame is global and already reads everything, so there is nothing to place it in.
+       */
+      const frame = enteredCardId ? scopeFor(enteredCardId).group : null;
+      const placed = new Map<string, BoardPosition>();
+      if (frame) {
+        let y = frame.position.y + frame.height + GROUP_PADDING;
+        for (const draft of drafts) {
+          placed.set(draft.id, { x: frame.position.x + GROUP_PADDING, y });
+          y += defaultSourceHeight(draft.name) + GROUP_PADDING;
+        }
+        const height = y - frame.position.y + GROUP_PADDING;
+        const width = Math.max(frame.width, SOURCE_WIDTH + GROUP_PADDING * 2);
+        setGroups((all) => all.map((group) => (group.id === frame.id ? { ...group, height, width } : group)));
+      }
       setSources((all) => {
         const next = [...all];
         for (const draft of drafts) {
@@ -1297,9 +1565,11 @@ export function BoardProvider({
             content: "",
             status: "processing",
             previewUrls: draft.previewUrls,
-            position: nextRootPosition([...cards, ...next]),
+            position: placed.get(draft.id) ?? nextRootPosition([...cards, ...next]),
             width: SOURCE_WIDTH,
-            height: SOURCE_DEFAULT_HEIGHT,
+            // 🔴 THE CARD TAKES THE DOCUMENT'S SHAPE (board-layout.ts `defaultSourceHeight`): a deck
+            // opened at a page's height left 200px of empty card under every slide.
+            height: defaultSourceHeight(draft.name),
           });
         }
         return next;
@@ -1352,11 +1622,62 @@ export function BoardProvider({
         }),
       );
     },
-    [cards, claimSourceOrdinal, uid],
+    [cards, claimSourceOrdinal, enteredCardId, scopeFor, uid],
   );
+
+  // ------------------------------------------------------------- groups
+
+  const createGroup = useCallback(
+    (nodeIds: readonly string[]): string | null => {
+      const chosen = nodeRects().filter((rect) => nodeIds.includes(rect.id));
+      const group = groupFromSelection(chosen, crypto.randomUUID());
+      if (!group) return null;
+      setGroups((all) => [...all, group]);
+      return group.id;
+    },
+    [nodeRects],
+  );
+
+  const patchGroup = useCallback((groupId: string, change: (group: BoardGroup) => BoardGroup) => {
+    setGroups((all) => all.map((group) => (group.id === groupId ? change(group) : group)));
+  }, []);
+
+  const renameGroup = useCallback((groupId: string, label: string) => patchGroup(groupId, (group) => ({ ...group, label })), [patchGroup]);
+  const setGroupColor = useCallback(
+    (groupId: string, color: GroupColor) =>
+      patchGroup(groupId, (group) => {
+        const { color: _was, ...rest } = group;
+        return color === "none" ? rest : { ...rest, color };
+      }),
+    [patchGroup],
+  );
+  const setGroupCollapsed = useCallback(
+    (groupId: string, collapsed: boolean) =>
+      patchGroup(groupId, (group) => {
+        const { collapsed: _was, ...rest } = group;
+        return collapsed ? { ...rest, collapsed: true as const } : rest;
+      }),
+    [patchGroup],
+  );
+  const moveGroup = useCallback((groupId: string, position: { x: number; y: number }) => patchGroup(groupId, (group) => ({ ...group, position })), [patchGroup]);
+  const resizeGroup = useCallback(
+    (groupId: string, size: { width: number; height: number }) =>
+      patchGroup(groupId, (group) => ({ ...group, width: Math.max(GROUP_MIN_WIDTH, size.width), height: Math.max(GROUP_MIN_HEIGHT, size.height) })),
+    [patchGroup],
+  );
+  /**
+   * 🔴 DELETING THE FRAME KEEPS WHAT WAS INSIDE IT. The group holds nothing — it only draws a line
+   * around a region — so removing it can only ever remove a line. Obsidian asks whether to take the
+   * contents too; here there is nothing to ask, because a card was never a child of anything.
+   */
+  const deleteGroup = useCallback((groupId: string) => setGroups((all) => all.filter((group) => group.id !== groupId)), []);
 
   const setSourceCollapsed = useCallback((id: string, collapsed: boolean) => {
     setSources((all) => all.map((source) => (source.id === id ? { ...source, collapsed: collapsed || undefined } : source)));
+  }, []);
+
+  const setOutputCollapsed = useCallback((id: string, collapsed: boolean) => {
+    setOutputs((all) => all.map((output) => (output.id === id ? { ...output, collapsed: collapsed || undefined } : output)));
   }, []);
 
   const dismissLimitNotice = useCallback(() => setLimitNotice(null), []);
@@ -1365,6 +1686,20 @@ export function BoardProvider({
     () => ({
       boardId: boardIdRef.current,
       loaded,
+      groups,
+      nodeRects,
+      createGroup,
+      scopeFor,
+      groupTickedSources,
+      fannedCardId,
+      toggleFan,
+      closeFan,
+      renameGroup,
+      setGroupColor,
+      setGroupCollapsed,
+      moveGroup,
+      resizeGroup,
+      deleteGroup,
       cards,
       sources,
       selectedSourceIds,
@@ -1405,18 +1740,37 @@ export function BoardProvider({
       annotations,
       addSourceFiles,
       toggleSourceSelection,
+      setSourceSelection,
       outputs,
       makeDeliverable,
       finishCheck,
       explainCheck,
       setSourceCollapsed,
+      setOutputCollapsed,
       openedOutput,
       openOutput,
+      enteredCardId,
+      enterCard,
+      leaveCard,
       closeOutput,
     }),
     [
       annotations,
       loaded,
+      groups,
+      nodeRects,
+      createGroup,
+      scopeFor,
+      groupTickedSources,
+      fannedCardId,
+      toggleFan,
+      closeFan,
+      renameGroup,
+      setGroupColor,
+      setGroupCollapsed,
+      moveGroup,
+      resizeGroup,
+      deleteGroup,
       cards,
       sources,
       selectedSourceIds,
@@ -1455,13 +1809,18 @@ export function BoardProvider({
       focusNoteExcerpt,
       addSourceFiles,
       toggleSourceSelection,
+      setSourceSelection,
       outputs,
       makeDeliverable,
       finishCheck,
       explainCheck,
       setSourceCollapsed,
+      setOutputCollapsed,
       openedOutput,
       openOutput,
+      enteredCardId,
+      enterCard,
+      leaveCard,
       closeOutput,
     ],
   );

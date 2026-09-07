@@ -34,7 +34,11 @@
 
 
 import { DomainChips } from "@/components/DomainChips";
+
 import { Icon } from "@/components/icons";
+import { workingForLabel } from "@/lib/learn/worked-for";
+
+import { useTurnClock } from "./use-turn-clock";
 import { logoFor } from "@/lib/workspace/app-logos";
 
 /** Set to the leading of the text that replaces them, so nothing shifts on the swap. */
@@ -43,6 +47,8 @@ export function CanvasThinkingPreview({
   app = null,
   domains = [],
   label = null,
+  lines = [],
+  startedAt = null,
   web = false,
 }: {
   /**
@@ -94,6 +100,10 @@ export function CanvasThinkingPreview({
    */
   app?: string | null;
   label?: string | null;
+  /** Every learner-facing line this turn has shown so far, oldest first (`session.milestones`). */
+  lines?: readonly string[];
+  /** When the turn started (performance.now()); null draws no clock. */
+  startedAt?: number | null;
   /** Kept for callers mid-migration; the visible split it used to select is gone. */
   mascot?: boolean;
 }) {
@@ -126,8 +136,29 @@ export function CanvasThinkingPreview({
   // transparent between sweeps, which is the same trap `thinking-marks.test.ts` records two
   // sessions independently finding with the domain chips.
   const appLogo = app ? logoFor(app) : null;
+  const seconds = useTurnClock(startedAt);
+  const current = label ? label.replace(/…$/, "") : "Thinking";
+  // 🔴 THE LINES ALREADY SHOWN STAY ON SCREEN, SETTLED, ABOVE THE ONE STILL RUNNING. ChatGPT Work,
+  // measured 2026-09-06 (docs/chatgpt-work-chat-reference.md §3): under a "Working for 1m 38s"
+  // clock with a hairline, every line the turn has written stands in tertiary ink, and only the
+  // step still running shimmers. Ours used to replace the sentence each time, so the learner saw
+  // one line and lost the ones before it.
+  const settled = lines.map((line) => line.replace(/…$/, "")).filter((line) => line !== current);
   return (
     <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-2" data-canvas-thinking-line="">
+      {seconds !== null ? (
+        <div
+          className="mb-[16px] border-b border-(--ui-stroke-secondary) pb-[8px] text-[length:var(--canvas-text-body)] leading-[20px] text-(--ui-text-tertiary)"
+          data-canvas-working-for=""
+        >
+          {workingForLabel(seconds)}
+        </div>
+      ) : null}
+      {settled.map((line) => (
+        <p className="mb-[16px] text-[length:var(--canvas-text-body)] leading-[24px] text-(--ui-text-tertiary)" key={line}>
+          {line}
+        </p>
+      ))}
       <p
         aria-live="polite"
         className="flex items-center gap-[8px] text-[length:var(--canvas-text-body)] leading-[24px] text-(--ui-text-secondary)"
@@ -161,6 +192,26 @@ export function CanvasThinkingPreview({
 }
 
 /** The announcement only, for callers that draw their own line. */
+/**
+ * What the thread shows while a question waits in the composer: ChatGPT Work's two tool rows,
+ * "Asking question" and "Waiting for your answer" (measured 2026-09-06: a 20px tertiary mark, 8px,
+ * 16px/24 tertiary text, 16px apart). Neither shimmers: nothing is running, the learner is.
+ */
+export function CanvasQuestionRows() {
+  return (
+    <div className="mx-auto w-full max-w-(--canvas-column) px-6 pb-2" data-canvas-question-rows="">
+      <p className="flex items-center gap-[8px] text-[length:var(--canvas-text-body)] leading-[24px] text-(--ui-text-tertiary)">
+        <Icon aria-hidden className="shrink-0" name="question" size={20} />
+        Asking question
+      </p>
+      <p className="mt-[16px] flex items-center gap-[8px] text-[length:var(--canvas-text-body)] leading-[24px] text-(--ui-text-tertiary)">
+        <Icon aria-hidden className="shrink-0" name="list-unordered" size={20} />
+        Waiting for your answer
+      </p>
+    </div>
+  );
+}
+
 export function CanvasThinkingAnnouncement({ label = null }: { label?: string | null }) {
   // 🔴 THE ANNOUNCEMENT ON ITS OWN. The character is `aria-hidden` decoration, so wherever the
   // step's name is drawn it also has to be SAID; this is that half, for a caller that already

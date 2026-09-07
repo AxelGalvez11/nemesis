@@ -50,25 +50,24 @@ test("🔴 an option with no description gets no empty line under it", async () 
   assert.ok(html.includes("Academic"));
 });
 
-test("🔴 the Other row is there, so writing an answer is visibly an option", async () => {
+test("🔴 the options are numbered, and the write-in is the composer's own row (2026-09-06)", async () => {
+  // ChatGPT Work's question (docs/chatgpt-work-chat-reference.md §4): numbered rows, and the last
+  // row is the composer's field, "Or describe something else". So the block draws no Other box
+  // of its own; canvas-composer.tsx draws the number, the field and the Skip pill.
   const html = await render(DEPTH);
-  assert.ok(html.includes("Other"), "there is no way to answer outside the options");
-  assert.ok(html.includes("Type your own answer here"), "the write-in box has no prompt");
+  assert.ok(html.includes('data-question-number=""'), "the options carry no number");
+  assert.ok(!html.includes("Other"), "the old Other row is back inside the block");
+  assert.ok(!html.includes("Type your own answer here"), "a second text box is back inside the block");
 });
 
-test("🔴🔴 Submit is ABSENT until something is written, never greyed out", async () => {
-  // Tapping an option IS the submission, so a card that always shows Submit makes every choice two
-  // clicks and makes the button read as the only way to answer. And a disabled control asks the
-  // learner to work out what would switch it on — this codebase's most-repeated defect is a button
-  // that does nothing.
+test("🔴🔴 Submit is ABSENT, never greyed out: tapping an option is the submission", async () => {
   const html = await render(DEPTH);
   assert.ok(!html.includes("Submit"), "Submit is on screen with nothing to submit");
   assert.ok(!html.includes("disabled"), "a dead control is on screen");
 });
 
-test("🔴 allowOther:false takes the row away and leaves the options standing", async () => {
+test("🔴 invitesWritten:false leaves the options standing", async () => {
   const html = await render({ ...DEPTH, invitesWritten: false });
-  assert.ok(!html.includes("Type your own answer here"));
   assert.ok(html.includes("Overview"), "the options went with it");
 });
 

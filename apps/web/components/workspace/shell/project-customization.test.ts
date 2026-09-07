@@ -34,7 +34,10 @@ test("🔴🔴 a project's colour exists in ONE piece: a picker, a palette, and 
   assert.match(code(dialog), /PROJECT_COLORS/u, "the swatch palette is gone and the colour cannot be chosen");
   assert.match(code(dialog), /setColor/u, "the dialog holds no colour to save");
   assert.match(code(dialog), /color,/u, "the chosen colour is not written back");
-  assert.match(code(sidebar), /projectTint\(folder\)/u, "the sidebar glyph stopped reading the colour");
+  // 🔴 THE SIDEBAR HALF RETIRED WITH THE FEATURE, 2026-09-07 (owner: *"pretty much no more
+  // projects"*). No project row is drawn there any more, so there is no glyph to tint; the colour
+  // still round-trips through the dialog and the store, which is what the rest of this guard reads.
+  assert.ok(!code(sidebar).includes("projectTint("), "projects are back in the sidebar — see sidebar-groups.test.ts");
   // And the halves that never left are still reachable.
   assert.match(code(dialog), /PROJECT_ICONS/u, "the icon grid went with the colours");
   assert.match(code(dialog), /setInstructions/u, "the instructions box went with the colours");

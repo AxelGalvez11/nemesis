@@ -97,7 +97,7 @@ test("🔴🔴 the step wears a mark only when it has a source to name", () => {
   // on the first unrelated step that borrowed the verb.
   assert.match(
     CANVAS,
-    /<CanvasThinkingPreview app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\} web=\{session\.searchedDomains\.length > 0\} \/>/,
+    /<CanvasThinkingPreview app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\} lines=\{session\.milestones\} startedAt=\{session\.turnClock\} web=\{session\.searchedDomains\.length > 0\} \/>/,
     "the globe is no longer driven by real sites, so it can appear over a step with no source behind it",
   );
   assert.ok(

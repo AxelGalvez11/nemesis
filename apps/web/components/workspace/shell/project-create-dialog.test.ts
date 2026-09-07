@@ -36,14 +36,19 @@ test("🔴🔴 no project row exists until the learner confirms one", () => {
     !/createFolder\([^)]*["']New project["']/.test(SIDEBAR),
     "the sidebar is inserting a placeholder project again, which survives a cancelled rename",
   );
-  // And the create call it does make is fed a name from the dialog, not a constant.
-  assert.match(SIDEBAR, /const newFolder = async \(name: string, icon: string \| null\)/, "the sidebar's create no longer takes a name");
+  // 🔴 THE SIDEBAR HALF OF THIS GUARD RETIRED WITH THE FEATURE, 2026-09-07. Projects left the
+  // sidebar entirely (owner: *"pretty much no more projects"*), so there is no `newFolder` there to
+  // check; `sidebar-groups.test.ts` now asserts the ABSENCE, which is the live risk. What is
+  // protected here is the DIALOG, which still exists and is still the only way a project is made
+  // if the concept ever comes back.
+  assert.ok(!SIDEBAR.includes("const newFolder = async"), "projects are back in the sidebar — see sidebar-groups.test.ts");
 });
 
 test("both doors open the SAME dialog", () => {
   // Two doors to one action that look nothing alike is exactly what the owner flagged. One
   // component is what stops them drifting apart again.
-  assert.match(SIDEBAR, /<ProjectCreateDialog[\s\S]{0,160}open=\{creatingProject\}/, "the sidebar stopped mounting the create dialog");
+  // Same retirement as above: the sidebar no longer mounts it, and that is the point.
+  assert.ok(!SIDEBAR.includes("<ProjectCreateDialog"), "projects are back in the sidebar — see sidebar-groups.test.ts");
   assert.match(PICKER, /<ProjectCreateDialog[\s\S]{0,160}open=\{naming\}/, "the composer's picker stopped mounting the create dialog");
   // 🔴 EVERY door in the sidebar, not just the menu row: the section's `+` button reaches the same
   // state. It called `newFolder()` directly and was the second copy of the old behaviour.

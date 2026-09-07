@@ -66,6 +66,12 @@ interface CanvasHeaderProps {
    *  attached material — disclosed in the Sources panel so a sourceless canvas does not report
    *  "Nothing attached yet" while it teaches from model knowledge (N10). */
   modelKnowledge?: boolean;
+  /** Declare Web search for the next send (the card's Web search row). */
+  onWebSearch?: () => void;
+  webSearchArmed?: boolean;
+  /** The Outputs/Sources card's state and its toggle (work-panel.tsx). */
+  workPanelOpen?: boolean;
+  onToggleWorkPanel?: () => void;
   /** The session record, read from the append-only evidence log. Empty means the control is
    *  disabled rather than absent: "nothing has happened yet" is a real state worth being able to
    *  see, and a control that vanishes reads as a feature that broke. */
@@ -92,6 +98,10 @@ export function CanvasHeader({
   onDelete,
   activeTaskId,
   modelKnowledge = false,
+  onWebSearch,
+  webSearchArmed = false,
+  workPanelOpen = false,
+  onToggleWorkPanel,
   minimap,
   transcript = [],
   replyAudio,
@@ -174,7 +184,7 @@ export function CanvasHeader({
               shows a bare title and no glyphs at all, and controls ARRIVE AND STAY as the session
               earns them — what the owner banned on 2026-08-19 was chrome that comes AND GOES. */}
           {(canvas.sources.length > 0 || (canvas.outputs ?? []).length > 0 || modelKnowledge) && (
-            <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onSendToChat={onSendToChat} outputTools={outputTools} />
+            <SourcesControl canvas={canvas} making={making} modelKnowledge={modelKnowledge} onFiles={onFiles} onMakeDeliverable={onMakeDeliverable} onSendToChat={onSendToChat} onToggleWorkPanel={onToggleWorkPanel} onWebSearch={onWebSearch} outputTools={outputTools} webSearchArmed={webSearchArmed} workPanelOpen={workPanelOpen} />
           )}
           {/* 🔴🔴 THE ONE COURSE PANEL — `MinimapControl` ("Progress") was cut beside it, owner
               2026-08-30: *"remove the 'progress' map since the course map is pretty much the same
@@ -201,7 +211,10 @@ export function CanvasHeader({
               comes out of. Sources and the map open panels that float over the conversation; this
               one opens the docked reader beside it, so it sits closest to where that reader lands.
               Owner, 2026-09-03: *"the sidebar icon … should be on the right side."* */}
-          <ReaderToggle sources={canvas.sources} />
+          {/* 🪦 THE READING-PANE DOOR (`ReaderToggle`) WENT ON 2026-09-06 with the one-for-one order:
+              ChatGPT's header holds only the Files and sources toggle (Share and ⋯ excluded by the
+              owner), and a document opens from its row in the card or its card in the thread, which
+              is where theirs opens from. `dock.reopen` is still reachable through those rows. */}
           {/* 🔴 NO `⋯` ANY MORE. The options menu and every row in it died on 2026-08-30 — the
               tombstone in canvas-controls.tsx carries the owner's words and where each row's
               feature went. A brand-new canvas still shows a bare title and nothing else. */}
@@ -230,36 +243,3 @@ export function CanvasHeader({
  * document-dock.tsx), so glancing the pane away and back returns to the same document at the same
  * place. Reopening the FIRST source every time would silently punish anyone reading lecture nine.
  */
-function ReaderToggle({ sources }: { sources: LearningCanvas["sources"] }) {
-  const dock = useDocumentDock();
-  const open = dock.items.length > 0;
-  const first = sources[0] ?? null;
-  // Nothing open, nothing set aside, and no documents at all: there is no pane to talk about.
-  if (!open && !dock.canReopen && !first) return null;
-
-  return (
-    <button
-      aria-label={open ? "Close the reading pane" : "Open the reading pane"}
-      aria-pressed={open}
-      // 🔴 THE ROW'S OWN RECIPE, NOT A LOOKALIKE. `CONTROL` is exported from canvas-controls.tsx
-      // precisely so a second file drawing one of these boxes cannot drift from it — the note there
-      // records that happening twice already. Standing next to Sources and the map, a button that
-      // is 36px and `rounded-lg` instead of 36px and `rounded-[8px]` reads as a misalignment
-      // nobody can name.
-      className={cn(CONTROL, "shrink-0", open && "bg-(--ui-bg-tertiary) text-(--ui-text-primary)")}
-      data-testid="canvas-reader-toggle"
-      onClick={() => {
-        if (open) dock.closeAll();
-        else if (dock.canReopen) dock.reopen();
-        // 🔴 THE FIRST TIME, THERE IS NOTHING TO PUT BACK. The door still has to open something,
-        // and the first attached document is the only defensible choice before the learner has
-        // expressed one.
-        else if (first) dock.openDocument(first);
-      }}
-      title={open ? "Close the reading pane" : "Open the reading pane"}
-      type="button"
-    >
-      <Codicon name="layout-sidebar-right" size="20px" />
-    </button>
-  );
-}

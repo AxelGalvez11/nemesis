@@ -124,12 +124,20 @@ interface CanvasSurfaceProps {
    *  used to render no exit either. */
   chrome?: React.ReactNode;
   children: React.ReactNode;
+  /**
+   * How much of the window the Outputs/Sources card takes (work-panel.tsx), 0 when it is closed.
+   * 🔴 THE THREAD AND THE COMPOSER RE-CENTRE; THE HEADER DOES NOT. Measured on ChatGPT 2026-09-06:
+   * their header spans the window and only the conversation column moves left of the card. The
+   * docked reader's `inset` narrows the whole surface, header included, because the reader takes
+   * the edge; the card floats over it, so only the children move.
+   */
+  workInset?: number;
   /** Files dropped anywhere on the canvas. Absent while the session is still loading, because
    *  there is nothing yet to attach them to. */
   onDropFiles?: (files: FileList) => void;
 }
 
-export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfaceProps) {
+export function CanvasSurface({ chrome, children, onDropFiles, workInset = 0 }: CanvasSurfaceProps) {
   // §38.1 — "Side bar should also not be visible when inside canvas." The whole rail, not the
   // toggle. This is what makes the exit below load-bearing rather than decorative, which is why
   // the two live in the same component: you cannot take the claim without taking the `×` with it.
@@ -364,7 +372,13 @@ export function CanvasSurface({ chrome, children, onDropFiles }: CanvasSurfacePr
         {chrome}
       </header>
 
-      {children}
+      <div
+        className="relative h-full"
+        data-canvas-work-inset={workInset > 0 ? "" : undefined}
+        style={{ transition: draggingPanel ? "none" : "width var(--pane-slide)", width: `calc(100% - ${workInset}px)` }}
+      >
+        {children}
+      </div>
     </main>
   );
 }

@@ -222,13 +222,20 @@ export const BRANCH_BUTTONS: ReadonlyArray<{ side: BranchSide; positionClassName
  * test), then collapse, then delete. Destructive last is why delete moved off the middle of the
  * conversation card's row, where it used to sit between collapse and the note count.
  */
-export function CardTitleBar({ children, icon, title }: { children?: ReactNode; icon?: ReactNode; title: string }) {
+export function CardTitleBar({ children, icon, meta, title }: { children?: ReactNode; icon?: ReactNode; meta?: ReactNode; title: string }) {
   return (
     <div className="absolute bottom-full left-[4px] right-[4px] mb-[6px] flex items-center gap-[6px]">
       {icon}
-      <span className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-[20px] text-foreground" title={title}>
+      <span className="min-w-0 max-w-[60%] truncate text-[14px] font-semibold leading-[20px] text-foreground" title={title}>
         {title}
       </span>
+      {/* 🔴 WHAT THE CARD READS, AND IT IS NOT DECORATION. Since 2026-09-07 a chat is answered from
+          the frame it is standing in (lib/board/board-scope.ts), which means a drag changes an
+          answer. The owner chose that rule after being told the cost, and this line is the whole
+          defence: the scope is recomputed on every render, so the drag that changes the answer
+          changes this text at the same moment. board-scope.test.ts fails if it disappears. */}
+      {meta}
+      <span aria-hidden className="min-w-0 flex-1" />
       {children}
     </div>
   );
@@ -308,17 +315,27 @@ export function BranchButtons({
 }
 
 
-/** How much of the board a card may take: the composer's top edge, the board's top, its width. */
+/**
+ * How much of the board a card may take: the composer's top edge, the board's top, its width, and,
+ * since 2026-09-06, minus the sources-and-create column when a panel of it is open.
+ *
+ * 🔴 `viewportWidth` IS THE FREE WIDTH, FROM THE LEFT EDGE. The column (board-studio.tsx) floats
+ * over the board's right 336px; a card centred in the whole width lands half under it, and "fit
+ * view" would hide the rightmost card behind it. The free area still starts at x 0, so no caller
+ * offsets the camera it computes.
+ */
 export function measureBoardArea(): { top: number; composerTop: number; viewportWidth: number; availableHeight: number } | null {
   const board = document.querySelector("[data-board]");
   if (!board) return null;
   const composer = document.querySelector("[data-board-composer]");
+  const studio = document.querySelector('[data-board-studio="open"]');
   const rect = board.getBoundingClientRect();
   const composerTop = composer?.getBoundingClientRect().top ?? rect.bottom;
+  const covered = studio ? Math.max(0, rect.right - studio.getBoundingClientRect().left + 16) : 0;
   return {
     top: rect.top,
     composerTop,
-    viewportWidth: rect.width,
+    viewportWidth: Math.max(rect.width - covered, 0),
     availableHeight: Math.max(composerTop - rect.top - (composer ? 24 : 0), 0),
   };
 }

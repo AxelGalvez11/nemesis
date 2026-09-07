@@ -2,6 +2,12 @@
 
 // Retired surfaces: send people to the Canvas home, without breaking what still points here.
 //
+// 🔴🔴 PROJECTS JOINED THIS LIST ON 2026-09-07, and the destination changed under it on the same
+// day. Owner: *"pretty much no more projects … each canvas is supposed to grow"*, and the canvas
+// became the front door in the same session, so this now redirects to `/canvas` rather than
+// `/learn`. `canvas_folders` is untouched and every folder row still exists; only the two pages
+// that drew them are unreachable.
+//
 // Study and Chill are no longer navigable — the product is Canvas plus Calendar, and everything
 // those pages did is a capability inside a Canvas session now. But "not navigable" and "not
 // reachable" are different things, and the audit found live callers that would break if they
@@ -50,7 +56,7 @@ export function RetiredSurfaceGuard({
   const isDeepLink = allowDeepLinks && params.toString().length > 0;
 
   useEffect(() => {
-    if (!isDeepLink) router.replace("/learn");
+    if (!isDeepLink) router.replace("/canvas");
   }, [isDeepLink, router]);
 
   // 🔴 Render nothing while the redirect is in flight. Rendering the retired page first would

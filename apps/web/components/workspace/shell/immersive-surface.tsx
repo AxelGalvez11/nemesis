@@ -36,6 +36,21 @@ interface ImmersiveRegistry {
   readonly claimed: boolean;
   claim(id: string): void;
   release(id: string): void;
+  /**
+   * 🔴🔴 THE SECOND, STRONGER CLAIM, AND WHY THERE ARE TWO. The claim above used to take the rail
+   * away; since the §38.1 reversal it only COLLAPSES the sidebar to the 52px rail, which is right
+   * for a chat and for the board. A full-size chat opened out of a canvas is a different case:
+   * owner, 2026-09-06, of the board's entered thread, *"the left rail sidebar still shows in full
+   * size view"*. That surface fills the window and carries its own "Canvas" control, so the rail is
+   * the only thing left on screen that does not belong to it.
+   *
+   * Making the first claim mean "gone" again would take the rail away from every chat as well, and
+   * that is the reversal the owner made in August. So the two states are named separately, and
+   * `navigationReachable` still refuses either one from a surface with no exit of its own.
+   */
+  readonly fullBleed: boolean;
+  claimFullBleed(id: string): void;
+  releaseFullBleed(id: string): void;
 }
 
 const ImmersiveSurfaceContext = createContext<ImmersiveRegistry | null>(null);
@@ -86,9 +101,22 @@ export function ImmersiveSurfaceProvider({ children }: { children: React.ReactNo
     release(URL_SEED);
   }, [release]);
 
+  const [full, setFull] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const claimFullBleed = useCallback((id: string) => {
+    setFull((current) => (current.has(id) ? current : new Set(current).add(id)));
+  }, []);
+  const releaseFullBleed = useCallback((id: string) => {
+    setFull((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
   const value = useMemo<ImmersiveRegistry>(
-    () => ({ claim, claimed: claims.size > 0, release }),
-    [claim, claims, release],
+    () => ({ claim, claimed: claims.size > 0, release, claimFullBleed, fullBleed: full.size > 0, releaseFullBleed }),
+    [claim, claimFullBleed, claims, full, release, releaseFullBleed],
   );
 
   return <ImmersiveSurfaceContext.Provider value={value}>{children}</ImmersiveSurfaceContext.Provider>;
@@ -97,6 +125,31 @@ export function ImmersiveSurfaceProvider({ children }: { children: React.ReactNo
 /** Read by the shell. `false` outside a provider, so nothing can accidentally hide the rail. */
 export function useImmersiveClaimed(): boolean {
   return useContext(ImmersiveSurfaceContext)?.claimed ?? false;
+}
+
+/** Read by the shell: a surface that owns the whole window, rail included. */
+export function useFullBleedClaimed(): boolean {
+  return useContext(ImmersiveSurfaceContext)?.fullBleed ?? false;
+}
+
+/**
+ * Declare this surface FULL BLEED for as long as it is mounted: no sidebar, no rail, nothing but
+ * the surface.
+ *
+ * 🔴 ONLY CALL THIS FROM A COMPONENT THAT UNCONDITIONALLY RENDERS ITS OWN EXIT, and mean it. This
+ * removes the last navigation on screen. `BoardThread` is the sole caller and its "Canvas" control
+ * is not behind a condition; `board-thread.test.ts` is what holds that up.
+ */
+export function useDeclareFullBleedSurface(): void {
+  const registry = useContext(ImmersiveSurfaceContext);
+  const id = useId();
+  useEffect(() => {
+    if (!registry) return;
+    registry.claimFullBleed(id);
+    return () => registry.releaseFullBleed(id);
+    // The two functions are stable; depending on `registry` itself would re-run on every claim.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, registry?.claimFullBleed, registry?.releaseFullBleed]);
 }
 
 /**

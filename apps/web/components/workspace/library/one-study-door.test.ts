@@ -101,12 +101,16 @@ test("🔴🔴 a kind's own page shows only that kind, and a search hides the se
 test("🔴🔴 Library rows file into the SIDEBAR's folders, never a second tree", () => {
   // Owner 2026-08-24: the `folders` table was built generic for exactly this — its migration says
   // *"folders organise sessions, and Nemesis is not education-only"*. A `library_folders` table
-  // would give one learner two unrelated trees. Projects left the page on 2026-09-04, but a row's
-  // ⋯ still moves it into one, and that list is the shared store's.
+  // would give one learner two unrelated trees.
+  //
+  // 🔴 THE FILING HALF RETIRED 2026-09-07 (owner: *"pretty much no more projects"*). Projects left
+  // the page on 2026-09-04 and the concept left the product three days later, so the ⋯ no longer
+  // moves a row into one. What this guard still protects is the thing that would be expensive to
+  // undo: ONE folder store for the whole app, so if projects ever return there is no second tree
+  // to reconcile.
   assert.match(OUTPUTS, /from "@\/lib\/learn\/canvas-store"/, "the Library stopped using the shared folder store");
-  assert.match(OUTPUTS, /listFolders\(userId\)/, "the Library does not load the learner's folders for filing");
-  assert.match(OUTPUTS, /Move to project/, "a row can no longer be filed into a project");
-  assert.ok(!/createFolder\(userId/.test(OUTPUTS), "the Library makes folders again — projects are made on /projects");
+  assert.ok(!/Move to project/.test(OUTPUTS), "a row files into a project again — projects were cut on 2026-09-07");
+  assert.ok(!/createFolder\(userId/.test(OUTPUTS), "the Library makes folders again");
   assert.ok(!/library_folders/.test(OUTPUTS), "a second folder tree appeared");
 });
 

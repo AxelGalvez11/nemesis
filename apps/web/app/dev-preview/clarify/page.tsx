@@ -14,7 +14,6 @@
 
 import { useState } from "react";
 
-import { CanvasClarification } from "@/components/workspace/learn/canvas-clarification";
 import { CanvasComposer } from "@/components/workspace/learn/canvas-composer";
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
@@ -87,13 +86,6 @@ export default function ClarifyPreviewPage() {
         Nemesis said: “One thing first, so I build the right course.”
       </p>
 
-      {pending && (
-        <CanvasClarification
-          onAnswer={record}
-          onDismiss={() => setDismissed(true)}
-          question={pending}
-        />
-      )}
 
       {answered && (
         <p className="text-[length:var(--canvas-text-body)] text-(--ui-text-primary)">
@@ -120,6 +112,8 @@ export default function ClarifyPreviewPage() {
             onAnswer={() => undefined}
             onAsk={() => undefined}
             onClarify={record}
+            onDismissClarify={() => setDismissed(true)}
+            onSkipClarify={() => record("Use your judgment")}
             onClearSelection={() => undefined}
             onFiles={() => undefined}
             onStart={() => undefined}

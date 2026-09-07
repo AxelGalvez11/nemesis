@@ -79,7 +79,7 @@ test("🔴🔴🔴 the hook is TOLD when the column appears, because it appears 
   const CANVAS = readFileSync(new URL("./learning-canvas.tsx", import.meta.url), "utf8");
   // 🔴 AND THE CALLER HAS TO ATTACH IT. A hook returning a ref nobody puts on an element is the
   // same defect wearing a different shape.
-  assert.match(CANVAS, /ref=\{attachThread\}/u, "the scrolling column is not wired to the anchor");
+  assert.match(CANVAS, /ref=\{attachScroller\}/u, "the scrolling column is not wired to the anchor");
   assert.match(CANVAS, /const attachThread = useCallback\(/u, "the ref callback is inline, so React detaches it every render");
   assert.match(CANVAS, /threadRef\.current = node;\s*anchorThread\(node\);/u, "the other effects lost the ref they read");
 });

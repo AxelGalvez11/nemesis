@@ -276,3 +276,25 @@ test("🔴 a phone keeps its exit when a panel docks", () => {
   assert.equal(narrow.sidebarVisible, false);
   assert.equal(narrow.navToggleShowing, true, "a phone with a docked panel has no way back to navigation");
 });
+
+test("🔴🔴 a full-size chat opened out of a canvas takes the rail too, and still has a way out", () => {
+  // Owner, 2026-09-06, of the board's entered thread: "the left rail sidebar still shows in full
+  // size view". This is the old §38.1 narrowed to ONE surface; a chat and the board itself keep the
+  // rail, because that reversal (2026-08-31) still stands for them.
+  const base = { pathname: "/canvas", sidebarOpen: true, narrowViewport: false, libraryFullScreen: false };
+  const board = shellNavigation({ ...base, canvasRunning: true });
+  assert.equal(board.railVisible, true, "the board lost its rail as well");
+  assert.equal(board.sidebarVisible, false, "the board kept the expanded sidebar");
+
+  const full = shellNavigation({ ...base, canvasRunning: true, surfaceFullBleed: true });
+  assert.equal(full.focusMode, true);
+  assert.equal(full.railVisible, false, "the rail survives a full-bleed surface");
+  assert.equal(full.sidebarVisible, false);
+  assert.equal(full.navToggleShowing, false, "a floating reopen control is back over the surface");
+  // 🔴 THE INVARIANT HOLDS ONLY BECAUSE THE SURFACE CARRIES ITS OWN EXIT.
+  assert.equal(full.surfaceOwnsExit, true);
+  assert.equal(navigationReachable(full), true);
+  // And a full-bleed claim from a surface with NO exit would be a dead end, which is what
+  // `surfaceOwnsExit` exists to make assertable.
+  assert.equal(navigationReachable({ ...full, surfaceOwnsExit: false }), false);
+});
