@@ -233,6 +233,10 @@ export function SidebarSectionHeader({
     <div className={cn("group/section flex h-[32px] shrink-0 items-center justify-between gap-1 py-[6px]", className)}>
       {collapsible ? (
         <button
+          // 🔴 THE CARET IS THE ONLY THING THAT SAID THIS FOLDS, AND IT IS `opacity-0` UNTIL HOVER.
+          // So to a screen reader this was a button with a word on it and no state at all. Found
+          // 2026-09-07 while the section guards were being repointed; the fix is one attribute.
+          aria-expanded={open}
           className="group/section-label flex w-fit items-center gap-1 bg-transparent text-left leading-none"
           onClick={onToggle}
           type="button"

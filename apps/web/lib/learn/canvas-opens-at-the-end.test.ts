@@ -84,7 +84,7 @@ test("🔴🔴 an opening canvas lands on its most recent turn", () => {
   // `threadRef.current` AND hands the node to `useAnchoredScroll` — which needs to be told when the
   // column appears, because it appears after the not-ready gate. This landing loop still drives
   // `threadRef` and is unaffected; what it needs is for something to keep populating it.
-  assert.match(CANVAS, /ref=\{attachThread\}/, "the thread scroller lost its ref, so there is nothing to scroll");
+  assert.match(CANVAS, /ref=\{attachScroller\}/, "the thread scroller lost its ref, so there is nothing to scroll");
   assert.match(CANVAS, /threadRef\.current = node;/, "the ref callback stopped populating threadRef, so the landing has nothing to scroll");
   // 🔴 INSTANT, NOT SMOOTH. Asked for in the same sentence as "quick not laggy"; a smooth scroll
   // through eight screens of a conversation already read is the opposite of arriving at the end.

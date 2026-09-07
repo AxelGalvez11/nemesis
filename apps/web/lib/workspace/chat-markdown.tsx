@@ -368,7 +368,11 @@ export function markdownComponents(
       );
     },
     blockquote: ({ children }) => (
-      <blockquote className="border-s-2 border-border ps-3 text-muted-foreground italic" dir="auto">
+      // 🔴 NO TREATMENT HERE. The quote is dressed in `desktop-chrome.css` (`.aui-md :where(blockquote)`),
+      // where the reference's own numbers live as multiples of `--markdown-space`. It used to carry
+      // `border-s-2 border-border ps-3 text-muted-foreground italic`: a grey italic aside, where
+      // theirs is upright, full strength, and marked by a 4px bar that stops short of both ends.
+      <blockquote dir="auto">
         {children}
       </blockquote>
     ),

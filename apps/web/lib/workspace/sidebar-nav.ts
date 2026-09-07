@@ -34,14 +34,21 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   // that accurately sums it up pretty much."* The conversation surface at /learn is a chat; the
   // word "canvas" now names the spatial board at /canvas. The id, the route and every file name
   // stay as they were, the same seam as folder/project and plugins/apps above and below.
-  { id: "new-canvas", label: "New chat", codicon: "add", route: "/learn" },
+  // 🔴🔴 THE FIRST ROW MAKES A CANVAS, NOT A CHAT. Owner, 2026-09-07: *"get rid of the chat as
+  // landing page in webapp, the canvas should be landing page"*, and, asked whether a plain
+  // full-screen chat should survive beside it, *"No, chats only live on boards"*. `?new=1` is what
+  // separates this from the front door: /canvas alone reopens the board you were last on, and this
+  // row has to be able to give you an empty one.
+  { id: "new-canvas", label: "New canvas", codicon: "add", route: "/canvas?new=1" },
   { id: "library", label: "Library", codicon: "library", route: "/library" },
-  // A project IS a folder holding canvases — the same `folders` row the sidebar groups under
-  // "Projects" and the Library filters by. The page is a place to see them all at once; the
-  // sidebar group stays the place to jump into one. Named after the reference's destination
-  // because the owner asked for the reference's shape, and "folder" is what the object is
-  // called everywhere else in this codebase, so the page does not rename it.
-  { id: "projects", label: "Projects", codicon: "folder", route: "/projects" },
+  // 🔴🔴 PROJECTS IS GONE, 2026-09-07, AND THE ROW IS RECORDED HERE RATHER THAN ERASED. Owner:
+  // *"since the canvas is going to be like the main feature thing, I would like there to be pretty
+  // much no more projects … each canvas is supposed to grow … not just a throwaway canvas like a
+  // chat"*. Filing was the answer to a pile of throwaway conversations; a canvas you keep coming
+  // back to is filed by being one canvas. The route still answers and redirects (see
+  // app/(workspace)/projects/page.tsx), and `canvas_folders` is untouched, so this is one line to
+  // put back if he wants it.
+  //     { id: "projects", label: "Projects", codicon: "folder", route: "/projects" },
   // Where connected apps live. The Composio door already existed (`/api/composio`) with its only
   // surface a card buried in Settings; this promotes it to a destination.
   // 🔴 `extensions` (the puzzle piece), BY THE OWNER'S OWN PICK — 2026-08-30, from a fitting page

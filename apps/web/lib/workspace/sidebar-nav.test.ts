@@ -46,13 +46,17 @@ test("🔴 the plugins row wears the puzzle piece, and the rail icons do not mov
 
 test("🔴 with nothing connected, Plugins and Calendar are not offered", () => {
   const ids = visibleNav(SIDEBAR_NAV, []).map((item) => item.id);
+  assert.ok(!ids.includes("projects"), "the Projects row is back in the rail — see sidebar-groups.test.ts");
   assert.ok(!ids.includes("plugins"), "a Plugins page with no connections is a settings screen in a destination's clothes");
   assert.ok(!ids.includes("calendar"), "a Calendar with nothing behind it is an empty grid");
 });
 
 test("🔴 the product's own destinations are NEVER gated", () => {
   const ids = visibleNav(SIDEBAR_NAV, []).map((item) => item.id);
-  for (const core of ["new-canvas", "library", "projects"]) {
+  // 🔴 "projects" LEFT THIS LIST ON 2026-09-07, and it left the rail entirely (owner: *"pretty much
+  // no more projects"*). The rule is unchanged and is the important half: a destination that IS the
+  // product must never hide behind a connection. Two remain.
+  for (const core of ["new-canvas", "library"]) {
     assert.ok(ids.includes(core), `${core} must be reachable before anything is connected`);
   }
 });

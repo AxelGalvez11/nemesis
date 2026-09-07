@@ -26,7 +26,6 @@
 //     filed here was cut by the owner on 2026-09-01 (*"remove the pencil icon in the projects
 //     in sidebar, clicking on projects in sidebar should only open the project folder"*); the
 //     `?folder=` lane it used is still how the front door's project picker files a new canvas.
-//   * An expanded project lists its FIVE most recent canvases, then a "Show more" row.
 //   * A canvas row's hover controls are pin + ⋯ (the reference's chat rows: pin + ⋯).
 //   * A pinned PROJECT (folders.pinned_at, 20260830T40) moves into Pinned — same row, same
 //     expand — and leaves the Projects section rather than appearing twice.
@@ -76,8 +75,6 @@ import {
   type CanvasSummary,
   type Folder,
 } from "@/lib/learn/canvas-store";
-import { projectFolders } from "@/lib/learn/project-folders";
-import { buildProjects, type ProjectNode } from "@/components/workspace/projects/projects-model";
 import { cn } from "@/lib/utils";
 
 import {
@@ -110,9 +107,6 @@ function sortCanvasSummaries(rows: CanvasSummary[]): CanvasSummary[] {
 const OPEN_FOLDERS_KEY = "nemesis.sidebar.canvases.v1.openFolders";
 const CLOSED_SECTIONS_KEY = "nemesis.sidebar.canvases.v1.closedSections";
 
-/** The reference's own cap, measured 2026-08-30: an expanded project lists its five most recent
- *  chats, then a tertiary "Show more" row reveals the rest in place. */
-const FOLDER_PREVIEW_ROWS = 5;
 
 /**
  * A list that GROWS open instead of appearing — the sidebar's one disclosure.
@@ -196,13 +190,9 @@ export function SidebarCanvases({
   const [closedSections, setClosedSections] = useState<Set<string>>(() =>
     typeof window === "undefined" ? new Set() : readClosedSections(),
   );
-  /** Projects whose expanded list shows every canvas rather than the first five. Session-only:
-   *  "Show more" is a reading gesture, not a setting worth remembering. */
-  const [showAll, setShowAll] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ kind: "canvas" | "folder"; id: string; value: string } | null>(null);
   /** The project whose look and instructions are being edited, or null. */
-  const [customizing, setCustomizing] = useState<Folder | null>(null);
   const debounceRef = useRef<number | null>(null);
   /** When the list was last read from the cloud; a window focus re-reads only past FOCUS_STALE_MS. */
   const lastFetchRef = useRef(0);
@@ -219,9 +209,10 @@ export function SidebarCanvases({
     const [nextCanvases, nextFolders] = await Promise.all([listCanvases(userId), listFolders(userId)]);
     lastFetchRef.current = Date.now();
     setCanvases(nextCanvases);
-    // 🔴 PROJECTS ONLY, for the same reason the Projects page filters: the sidebar's Projects
-    //    section must not list a folder the learner made in the Library.
-    setFolders([...projectFolders(nextFolders)]);
+    // 🔴 STILL READ, NO LONGER DRAWN. Projects left the sidebar on 2026-09-07 (see the render), but
+    //    `canvas_folders` is untouched and a chat still carries its `folderId`. Holding the rows
+    //    means nothing here has to guess whether a folder exists.
+    setFolders(nextFolders);
   }, [seed, userId]);
 
   useEffect(() => {
@@ -329,23 +320,6 @@ export function SidebarCanvases({
     void refresh();
   };
 
-  const removeFolder = async (folder: Folder) => {
-    const sure = await confirm({
-      title: "Delete this project?",
-      body: `Chats inside “${folder.name}” are kept — they go back to your recents.`,
-      confirmLabel: "Delete project",
-    });
-    if (!sure) return;
-    await deleteFolder(userId, folder.id);
-    void refresh();
-  };
-
-  const fileInto = async (canvasId: string, folderId: string | null) => {
-    await setCanvasFolder(userId, canvasId, folderId);
-    if (folderId) setOpenFolders((was) => new Set(was).add(folderId));
-    void refresh();
-  };
-
   // Always top level. "New sub-project" sat in the project menu until
   // 2026-09-01, when the owner cut it: "I don't get why that's there. I don't
   // need that." Nesting is not ripped out of the model — the database still
@@ -360,16 +334,9 @@ export function SidebarCanvases({
   // 🔴 THE SAME DIALOG THE COMPOSER'S PICKER OPENS. Two doors to "make a project" that looked
   // nothing alike was the shape the owner flagged on 2026-09-03; one component is what stops them
   // drifting again.
-  const [creatingProject, setCreatingProject] = useState(false);
-  const newFolder = async (name: string, icon: string | null) => {
-    const folder = await createFolder(userId, name, null, icon);
-    if (!folder) return null;
-    setOpenFolders((was) => new Set(was).add(folder.id));
-    void refresh();
-    return folder.id;
-  };
-
   const pinned = useMemo(() => canvases.filter((c) => c.pinnedAt), [canvases]);
+  /** Every chat in one list, most recently worked on first. See the render for why there is only one. */
+  const everyChat = useMemo(() => [...canvases].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")), [canvases]);
   const unfiled = useMemo(() => canvases.filter((c) => !c.pinnedAt && !c.folderId), [canvases]);
   const byFolder = useMemo(() => {
     const map = new Map<string, CanvasSummary[]>();
@@ -381,47 +348,6 @@ export function SidebarCanvases({
     }
     return map;
   }, [canvases]);
-  // 🔴 RECENCY ORDER, SHARED WITH /projects RATHER THAN REIMPLEMENTED. `buildProjects` already
-  // rolls "most recently worked canvas anywhere inside" up the tree and sorts by it — the same
-  // fact the reference's sidebar orders projects by. Reading the tree here means the sidebar and
-  // the Projects page can never disagree about which project was touched last.
-  const projectTree = useMemo(() => buildProjects(folders, canvases), [canvases, folders]);
-  const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f] as const)), [folders]);
-  const nodeById = useMemo(() => {
-    const map = new Map<string, ProjectNode>();
-    const walk = (nodes: readonly ProjectNode[]) =>
-      nodes.forEach((node) => {
-        map.set(node.id, node);
-        walk(node.children);
-      });
-    walk(projectTree);
-    return map;
-  }, [projectTree]);
-  /** Pinned projects live in the Pinned section and LEAVE Projects — the reference does not show
-   *  a pinned project twice. Ordered by when they were pinned, newest first, like pinned canvases. */
-  const pinnedFolders = useMemo(
-    () => folders.filter((f) => f.pinnedAt).sort((a, b) => (b.pinnedAt ?? "").localeCompare(a.pinnedAt ?? "")),
-    [folders],
-  );
-  const rootFolders = useMemo(
-    () =>
-      projectTree
-        .map((node) => folderById.get(node.id))
-        .filter((f): f is Folder => Boolean(f && !f.pinnedAt)),
-    [folderById, projectTree],
-  );
-  /** Children in the tree's recency order, for RENDERING an expanded project. */
-  const childFolders = useCallback(
-    (id: string) =>
-      (nodeById.get(id)?.children ?? [])
-        .map((child) => folderById.get(child.id))
-        .filter((f): f is Folder => Boolean(f)),
-    [folderById, nodeById],
-  );
-  /** The full flat list for the Move-to menu — filing into a pinned project must stay possible,
-   *  so the menu deliberately does NOT reuse `rootFolders`' pinned-exclusion. */
-  const menuRootFolders = useMemo(() => folders.filter((f) => !f.parentId), [folders]);
-  const menuChildFolders = useCallback((id: string) => folders.filter((f) => f.parentId === id), [folders]);
   /** The project page the learner is on, so its row lights up the way an open canvas's row does. */
   const activeFolderId = pathname?.startsWith("/projects/") ? (pathname.split("/")[2] ?? null) : null;
 
@@ -500,173 +426,10 @@ export function SidebarCanvases({
                 <DropdownMenuItem onClick={() => void removeCanvas(canvas)} variant="destructive">
                   Delete
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {canvas.folderId ? (
-                  <DropdownMenuLabel>{folderById.get(canvas.folderId)?.name ?? "This project"}</DropdownMenuLabel>
-                ) : null}
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>Move to project</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    {menuRootFolders.map((folder) => (
-                      <div key={folder.id}>
-                        <DropdownMenuItem
-                          disabled={canvas.folderId === folder.id}
-                          onClick={() => void fileInto(canvas.id, folder.id)}
-                        >
-                          {folder.name}
-                        </DropdownMenuItem>
-                        {menuChildFolders(folder.id).map((child) => (
-                          <DropdownMenuItem
-                            className="pl-6"
-                            disabled={canvas.folderId === child.id}
-                            key={child.id}
-                            onClick={() => void fileInto(canvas.id, child.id)}
-                          >
-                            {child.name}
-                          </DropdownMenuItem>
-                        ))}
-                      </div>
-                    ))}
-                    {menuRootFolders.length > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuItem onClick={() => setCreatingProject(true)}>New project…</DropdownMenuItem>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                {canvas.folderId ? (
-                  <DropdownMenuItem onClick={() => void fileInto(canvas.id, null)}>Remove from project</DropdownMenuItem>
-                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </>
         )}
-      </li>
-    );
-  };
-
-  const folderRow = (folder: Folder, depth: number) => {
-    const contents = byFolder.get(folder.id) ?? [];
-    const children = childFolders(folder.id);
-    const isOpen = openFolders.has(folder.id);
-    const isEditing = editing?.kind === "folder" && editing.id === folder.id;
-    // The reference's cap: five most recent, then "Show more" reveals the rest in place.
-    const revealed = showAll.has(folder.id) ? contents : contents.slice(0, FOLDER_PREVIEW_ROWS);
-    const hidden = contents.length - revealed.length;
-    // 🔴 A FOLDER ROW LOOKS EXACTLY LIKE A CANVAS ROW, AND ONLY THE ICON SAYS WHICH IS WHICH.
-    // Owner 2026-08-29: *"the sidebar kinda just looks like it's too bolded, especially the
-    // pages"*. This row carried `font-medium` AND `--ui-text-secondary` — heavier than the canvases
-    // under it and simultaneously faded, which is the two ways of standing out fighting each other.
-    // Measured on chatgpt.com the same day: a project row and a chat row are both 14px / weight
-    // 400 / rgb(13,13,13), identical, told apart by the glyph alone.
-    return (
-      <li className="min-w-0" key={folder.id}>
-        <div className="group/row relative flex min-w-0 items-center">
-          {isEditing ? (
-            <input
-              autoFocus
-              className="my-px h-7 w-full rounded-[var(--nav-row-radius)] border border-(--ui-stroke-secondary) bg-transparent px-2 text-[length:var(--canvas-text-small)] text-foreground outline-none"
-              onBlur={() => void commitRename()}
-              onChange={(e) => setEditing({ kind: "folder", id: folder.id, value: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void commitRename();
-                if (e.key === "Escape") setEditing(null);
-              }}
-              value={editing.value}
-            />
-          ) : (
-            <>
-              {/* 🔴 NO LEADING CHEVRON — the reference's project row is icon + name and nothing
-                  else at rest (measured in the owner's Chrome 2026-08-30); expandability shows in
-                  what the click DOES, not in an ornament. The old chevron also indented every
-                  project 14px past the canvases, which no reference row does. */}
-              <button
-                aria-expanded={isOpen}
-                className={cn(
-                  "flex h-[var(--nav-row-height)] min-w-0 flex-1 items-center gap-[var(--nav-icon-gap)] rounded-[var(--nav-row-radius)] border border-transparent pr-[30px] text-left text-[length:var(--canvas-text-small)] text-foreground transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none",
-                  activeFolderId === folder.id &&
-                    "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) hover:border-(--ui-stroke-tertiary)!",
-                )}
-                onClick={() => toggleFolder(folder.id)}
-                style={{ paddingLeft: `calc(var(--nav-row-pad-x) - 1px + ${depth * 26}px)` }}
-                type="button"
-              >
-                {/* 🔴 THE PROJECT'S OWN LOOK (owner 2026-08-30, the reference's model): a custom
-                    glyph holds steady open or closed, at the reference's 20px.
-                    🔴 THE TINT LEFT AND CAME BACK THE SAME DAY, both times by the owner. It went
-                    with the accent sweep (*"remove any color accents throughout the app"*) and
-                    returned as a setting a few hours later (*"allow projects to have color too. and
-                    allow user to choose that color in the project settings"*). `project-look.ts`
-                    carries why those two instructions are not in conflict, and why the tint is a
-                    token rather than the raw hex the database stores. */}
-                <Codicon
-                  className="shrink-0"
-                  name={folder.icon ?? (isOpen ? "folder-opened" : "folder")}
-                  size="20px"
-                  style={projectTint(folder)}
-                />
-                <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-              </button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    aria-label="Project actions"
-                    className="absolute right-1 grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
-                    type="button"
-                  >
-                    <Codicon name="kebab-vertical" size="0.8rem" />
-                  </button>
-                </DropdownMenuTrigger>
-                {/* The reference's project menu (measured 2026-08-30): Rename / Project settings /
-                    Project home, then Pin project / Delete project. "Share project" is not drawn
-                    because Nemesis has no project sharing — a dead door would be the one way to
-                    fail a 1:1 copy while matching it (project-page.tsx's own precedent). */}
-                <DropdownMenuContent align="start" side="right">
-                  <DropdownMenuItem onClick={() => setEditing({ kind: "folder", id: folder.id, value: folder.name })}>
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setCustomizing(folder)}>Project settings</DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      router.push(`/projects/${folder.id}`);
-                      onNavigate?.();
-                    }}
-                  >
-                    Project home
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void setFolderPinned(userId, folder.id, !folder.pinnedAt).then(refresh)}>
-                    {folder.pinnedAt ? "Unpin project" : "Pin project"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void removeFolder(folder)} variant="destructive">
-                    Delete project
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          )}
-        </div>
-        <Reveal open={isOpen}>
-          {children.map((child) => folderRow(child, depth + 1))}
-          {revealed.map((canvas) => canvasRow(canvas, depth + 1))}
-          {hidden > 0 ? (
-            <li>
-              <button
-                className="flex h-[var(--nav-row-height)] w-full items-center rounded-[var(--nav-row-radius)] border border-transparent text-left text-[length:var(--canvas-text-small)] text-(--ui-text-tertiary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
-                onClick={() => setShowAll((was) => new Set(was).add(folder.id))}
-                style={{ paddingLeft: `calc(var(--nav-row-pad-x) - 1px + ${(depth + 1) * 26}px)` }}
-                type="button"
-              >
-                Show more
-              </button>
-            </li>
-          ) : null}
-          {children.length === 0 && contents.length === 0 ? (
-            <li
-              className="h-7 content-center truncate text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)"
-              style={{ paddingLeft: `calc(var(--nav-row-pad-x) + ${(depth + 1) * 26}px)` }}
-            >
-              Empty
-            </li>
-          ) : null}
-        </Reveal>
       </li>
     );
   };
@@ -694,17 +457,6 @@ export function SidebarCanvases({
   // project, everything the code CALLS ITSELF stays folder, and this comment is why.
   const isEmpty = canvases.length === 0 && folders.length === 0;
 
-  const newFolderButton = (
-    <button
-      aria-label="New project"
-      className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100"
-      onClick={() => setCreatingProject(true)}
-      title="New project"
-      type="button"
-    >
-      <Codicon name="new-folder" size="0.875rem" />
-    </button>
-  );
 
   return (
     <SidebarGroup className="flex min-h-0 flex-1 flex-col p-0 pt-1">
@@ -715,63 +467,30 @@ export function SidebarCanvases({
           </div>
         ) : (
           <>
-            {/* 🔴 EVERY SECTION HEADER COLLAPSES — the owner's 2026-08-30 report named this
-                exactly ("the canvases or projects or pinned things being collapsable"), and the
-                reference's Pinned/Projects/Chats headers are all buttons with a hover caret.
-                Collapse hides the ROWS, never the header, and the state persists the same way
-                `openFolders` does (stored closed-set, so new sections default open). */}
-            {/* Pinned only exists when something is pinned — an empty "Pinned" header would be a
-                heading over nothing, which reads as a list that failed to load. Pinned PROJECTS
-                come first (the reference's own order: its pinned project sits above its pinned
-                chat), then pinned canvases; both render their ordinary rows, so a pinned project
-                still expands in place. */}
-            {pinned.length > 0 || pinnedFolders.length > 0 ? (
-              <>
-                <SidebarSectionHeader
-                  label="Pinned"
-                  onToggle={() => toggleSection("pinned")}
-                  open={!closedSections.has("pinned")}
-                />
-                <Reveal open={!closedSections.has("pinned")}>
-                  {pinnedFolders.map((folder) => folderRow(folder, 0))}
-                  {pinned.map((canvas) => canvasRow(canvas, 0))}
-                </Reveal>
-              </>
-            ) : null}
+            {/* 🔴🔴 ONE FLAT LIST, NO PROJECTS, NO PINNED. Owner, 2026-09-07: *"since the canvas is
+                going to be like the main feature thing, I would like there to be pretty much no
+                more projects … each canvas is supposed to grow, you know, it's like supposed to be
+                a long term thing, not just a throwaway canvas like a chat"*, and, asked what the
+                list should look like without a Projects page, *"One flat list, newest first"*.
+                Filing was an answer to a pile of throwaway conversations; a canvas you keep coming
+                back to does not need filing, it needs to be at the top when you last touched it.
 
-            {/* 🔴 PROJECTS ALWAYS SHOWS, BECAUSE IT CARRIES THE ONLY WAY TO MAKE ONE. Hiding the
-                header until a project exists would hide the button that creates the first one, and
-                a learner with every canvas already filed would have no way back to it. */}
+                🔴 THE OLD CHATS ARE STILL LISTED, and that is deliberate rather than an oversight.
+                Nothing new arrives at /learn any more, but every conversation made before today is
+                still real work, and taking the last route to it out of the sidebar would put it
+                beyond reach with nobody having asked for that. `canvas_folders` is untouched: the
+                rows are still there, they are simply not what the sidebar draws.
+
+                🔴 `Reveal` AND THE COLLAPSE STATE STAY, because one section is still a section and
+                a learner with two hundred chats wants to fold them away under the canvases. */}
             <SidebarSectionHeader
-              action={newFolderButton}
-              className={pinned.length > 0 || pinnedFolders.length > 0 ? "pt-4" : undefined}
-              label="Projects"
-              onToggle={() => toggleSection("projects")}
-              open={!closedSections.has("projects")}
+              label="Chats"
+              onToggle={() => toggleSection("canvases")}
+              open={!closedSections.has("canvases")}
             />
-            <Reveal open={!closedSections.has("projects")}>
-              {rootFolders.length > 0 ? (
-                rootFolders.map((folder) => folderRow(folder, 0))
-              ) : (
-                <li className="h-7 content-center px-[var(--nav-row-pad-x)] text-[length:var(--canvas-text-meta)] text-(--ui-text-tertiary)">
-                  None yet.
-                </li>
-              )}
+            <Reveal open={!closedSections.has("canvases")}>
+              {everyChat.map((canvas) => canvasRow(canvas, 0))}
             </Reveal>
-
-            {unfiled.length > 0 ? (
-              <>
-                <SidebarSectionHeader
-                  className="pt-4"
-                  label="Chats"
-                  onToggle={() => toggleSection("canvases")}
-                  open={!closedSections.has("canvases")}
-                />
-                <Reveal open={!closedSections.has("canvases")}>
-                  {unfiled.map((canvas) => canvasRow(canvas, 0))}
-                </Reveal>
-              </>
-            ) : null}
           </>
         )}
         {/* 🔴 CANVASES SIT UNDER THE CHATS, IN THE SAME SCROLLER. Owner, 2026-09-03: "the sidebar
@@ -780,13 +499,6 @@ export function SidebarCanvases({
             because its header carries the only way to make a first board. */}
         <SidebarBoards className={isEmpty ? undefined : "pt-4"} onNavigate={onNavigate} userId={userId} />
       </div>
-      <ProjectCreateDialog onCreate={newFolder} onOpenChange={setCreatingProject} open={creatingProject} />
-      <ProjectCustomizeDialog
-        folder={customizing}
-        onClose={() => setCustomizing(null)}
-        onSaved={() => void refresh()}
-        userId={userId}
-      />
     </SidebarGroup>
   );
 }

@@ -59,14 +59,19 @@ test("🔴🔴 a map the answer drew opens itself in the pane, once per answer",
   assert.match(CANVAS, /const parsed = parseMermaidMindmap\(match\[1\] \?\? ""\);\s*if \(!parsed\) continue;[\s\S]{0,400}?const root = withoutCitationMarks\(parsed\);\s*openedMapFor\.current = replyText;\s*dock\.openMindmap\(root, root\.label\);/, "a drawn map no longer opens itself");
   // The inline door and the outputs shelf go through the same dock.
   assert.match(CANVAS, /open: \(root: MindmapNode\) => dock\.openMindmap\(root, root\.label\)/);
-  assert.match(CONTROLS, /onReviewDeck=\{dock\.openDeck\}/, "the outputs shelf opens a deck outside the dock");
+  assert.match(CONTROLS, /dock\.openDeck\(chosen\.deckId, chosen\.title\)/, "the outputs card opens a deck outside the dock");
   assert.ok(!/<DeckReview/.test(CONTROLS), "the sources control mounts a deck panel of its own again");
 });
 
-test("🔴 the door to the pane stands on the pane's own edge, once", () => {
-  // #1121 moved it there the same evening, from the same screenshot; this only holds the line.
-  assert.equal((HEADER.match(/<ReaderToggle sources=\{canvas\.sources\} \/>/g) ?? []).length, 1, "the pane's door is drawn twice or not at all");
-  assert.ok(HEADER.indexOf("<ReaderToggle sources") > HEADER.indexOf("<CourseMapControl"), "the pane's door is back before the right-hand cluster");
+test("🔴 the pane has no door of its own: a document opens from its row in the card or its card in the thread", () => {
+  // 2026-09-06, the one-for-one order: ChatGPT's header holds only the Files and sources toggle
+  // (Share and ⋯ excluded by the owner); the reading pane opens from an output row, a file row or
+  // a file card, never from a header glyph. `ReaderToggle` went with it.
+  assert.ok(!/<ReaderToggle/.test(HEADER), "the reading-pane door is back in the header");
+  assert.ok(!/function ReaderToggle/.test(HEADER), "the reading-pane door still exists");
+  assert.equal((CONTROLS.match(/data-testid="canvas-work-panel-toggle"/g) ?? []).length, 1, "the Files and sources toggle is drawn twice or not at all");
+  assert.match(CONTROLS, /onOpenDocument=\{openDocument\}/, "a file row no longer opens the pane");
+  assert.match(CONTROLS, /else dock\.openOutput\(chosen\);/, "an output row no longer opens the pane");
 });
 
 test("🔴🔴 a turn the door took takes the previous answer off the screen", () => {

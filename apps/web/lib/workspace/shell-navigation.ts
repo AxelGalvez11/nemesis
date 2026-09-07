@@ -78,6 +78,17 @@ export interface ShellNavigationInput {
   /** Something is docked on the right — see side-panel.tsx. Collapses the sidebar to the rail for
    *  as long as it is open, and never touches the stored preference. */
   sidePanelOpen?: boolean;
+  /**
+   * A surface owns the WHOLE window, rail included — the full-size chat opened out of a canvas
+   * (board-thread.tsx), which fills the screen and carries its own way back.
+   *
+   * 🔴 THIS IS THE OLD §38.1, NARROWED TO ONE SURFACE. `canvasRunning` used to buy this and was
+   * reversed on 2026-08-31 because a chat is somewhere you live and must keep its navigation. A
+   * chat opened FULL SIZE out of a board is not that: the owner asked for it explicitly
+   * (2026-09-06, "the left rail sidebar still shows in full size view"), and the way out is one
+   * control at its top left.
+   */
+  readonly surfaceFullBleed?: boolean;
 }
 
 export interface ShellNavigation {
@@ -115,6 +126,7 @@ export function shellNavigation({
   libraryFullScreen,
   canvasRunning = false,
   sidePanelOpen = false,
+  surfaceFullBleed = false,
 }: ShellNavigationInput): ShellNavigation {
   const route = normalizePathname(pathname);
   // Narrow viewports are exempt from focus mode: there both rails are overlays, so there is nothing
@@ -126,6 +138,7 @@ export function shellNavigation({
   // applying focus mode there costs a phone nothing and gives it §38.1's full-bleed surface, which
   // is where a full-bleed surface matters most.
   const focusMode =
+    surfaceFullBleed ||
     IMMERSIVE_ROUTES.has(route) ||
     (libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(route));
   // 🔴🔴 A DOCKED PANEL COLLAPSES THE SIDEBAR AND LEAVES THE RAIL — owner, 2026-08-25: *"when the
@@ -153,7 +166,7 @@ export function shellNavigation({
     navToggleShowing: !sidebarVisible && !focusMode && !railVisible,
     railVisible,
     sidebarVisible,
-    surfaceOwnsExit: canvasRunning,
+    surfaceOwnsExit: canvasRunning || surfaceFullBleed,
   };
 }
 

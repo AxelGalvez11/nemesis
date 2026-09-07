@@ -828,31 +828,15 @@ function RowMenu({
       <DropdownMenuContent align="end">
         {children}
         {children ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuSub>
-          {/* 🔴 "PROJECT", NOT "FOLDER", ON THIS PAGE NOW. While the Library drew folder rows and
-              had a New folder button, this said "Add to folder" so one object had one word on one
-              page. With projects gone from the Library (owner 2026-09-04) the only other place the
-              learner meets these rows is /projects, and the seam `sidebar-canvases.tsx` records
-              is that what a learner READS follows the surface they are on. */}
-          <DropdownMenuSubTrigger>Move to project</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {folders.length === 0 ? (
-              <DropdownMenuItem disabled>No projects yet</DropdownMenuItem>
-            ) : (
-              <>
-                <DropdownMenuItem disabled={current === null} onClick={() => onFile(null)}>
-                  No project
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {folders.map((folder) => (
-                  <DropdownMenuItem disabled={current === folder.id} key={folder.id} onClick={() => onFile(folder.id)}>
-                    {folder.name}
-                  </DropdownMenuItem>
-                ))}
-              </>
-            )}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        {/* 🔴🔴 "Move to project" WAS HERE AND CAME OUT ON 2026-09-07. Owner, cutting the concept
+            from the product: *"pretty much no more projects … each canvas is supposed to grow, you
+            know, it's like supposed to be a long term thing, not just a throwaway canvas like a
+            chat"*. This was the last surface in the app that filed anything into one, so the
+            sub-menu it opened now had nowhere to send a row that a learner could ever see again.
+            `folder_id` still round-trips on every row and `canvas_folders` is untouched — nothing
+            was migrated — so restoring this is restoring this block. `folders` and `onFile` are
+            deliberately still passed in and still work: he said *"for now"*, and leaving the wiring
+            live means the block above is the whole of the change. */}
         {/* Rename, then Delete: the reference's order, destructive at the bottom, furthest from
             the pointer's resting place. Every row kind has both, so neither is optional here. */}
         <DropdownMenuSeparator />

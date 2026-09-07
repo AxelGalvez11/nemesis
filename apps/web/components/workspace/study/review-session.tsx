@@ -7,6 +7,7 @@ import {
   IconThumbUp,
   IconThumbUpFilled,
 } from "@tabler/icons-react";
+import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -61,10 +62,35 @@ interface ReviewSessionProps {
    * `deck-review.tsx` was built on.
    */
   surface?: "dialog" | "bare";
+  /**
+   * Gemini's player rather than Anki's: one Track learning switch, and two buttons when it is on.
+   * True from the canvas (deck-review.tsx); the Study tab leaves it false and keeps the four grades.
+   */
+  simple?: boolean;
 }
 
-export function ReviewSession({ cards, deck, open, onOpenChange, settings, surface = "dialog" }: ReviewSessionProps) {
+export function ReviewSession({ cards, deck, open, onOpenChange, settings, surface = "dialog", simple = false }: ReviewSessionProps) {
   const bare = surface === "bare";
+  /**
+   * 🔴🔴 TWO BUTTONS ON THE CANVAS, FOUR IN THE STUDY TAB, AND ONE TOGGLE THAT TURNS GRADING OFF.
+   *
+   * Owner, 2026-09-07: *"simplify the options to two buttons for flashcard rather than 4 … Gemini
+   * allows users to do learn mode and also a mode to just scroll thru cards"*, and then: make it one
+   * for one. Driven in his own Gemini deck the same night: the player carries a single **Track
+   * learning** switch. Off, there is a card, "1 of 24" and a next arrow, and nothing is recorded.
+   * On, the footer is Undo, a red cross and a green tick, and two counters ride the progress bar.
+   *
+   * 🔴 THE FOUR GRADES ARE NOT DELETED, AND DELETING THEM WOULD BE THE WRONG READ. This screen is
+   * shared: the Study tab opens it as the place real spaced repetition happens, and it prints the
+   * actual next-review date under each button because of the owner's own report on 2026-08-30
+   * (*"just saying good and it disappears for, like, three days"*). A deck you made on the canvas
+   * two minutes ago is not that; it is a thing to run through. So `simple` decides, one component
+   * still, and the scheduler underneath is the same one either way: ✗ writes `again`, ✓ writes
+   * `good`, which are two of the four it already understands.
+   */
+  const [tracking, setTracking] = useState(true);
+  const [tally, setTally] = useState({ got: 0, missed: 0 });
+  const [browseAt, setBrowseAt] = useState(0);
   /**
    * 🔴🔴 THE HOTKEYS MUST NOT REACH ACROSS A NON-MODAL PANEL. In the dialog the review owns the
    * screen, so a bare `window` listener is safe. Docked beside a live canvas it is not: Space,
@@ -143,6 +169,8 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
     if (!open) return;
     setPriorityId(null);
     setRevealed(false);
+    setBrowseAt(0);
+    setTally({ got: 0, missed: 0 });
     setError(null);
     setLastGrade(null);
     setRewriting(false);
@@ -163,7 +191,17 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `tick` is the clock, deliberately
     [cards, deck?.id, priorityId, tick],
   );
-  const current = queue[0] ?? null;
+  /**
+   * The whole deck in its stored order: what BROWSING walks through.
+   *
+   * 🔴 BROWSING IS NOT A QUEUE, WHICH IS WHY IT IS A SEPARATE LIST. The review queue answers "what
+   * is due"; a learner scrolling their own deck expects card 1, card 2, card 3, all of them, in
+   * order, including the ones that are not due for a week. Feeding the queue a browse index would
+   * have meant teaching the scheduler about a mode that does not schedule anything.
+   */
+  const deckCards = useMemo(() => cards.filter((card) => card.deckId === deck?.id && !card.suspended), [cards, deck?.id]);
+  const browsing = simple && !tracking;
+  const current = browsing ? (deckCards[Math.min(browseAt, Math.max(0, deckCards.length - 1))] ?? null) : (queue[0] ?? null);
 
   // 🔴 KEYED ON THE CARD, NOT ON THE REVEAL. The clock has to start when the QUESTION appears —
   // that is the whole interval a latency signal would be about — and a card re-queued after
@@ -239,6 +277,19 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
     ? renderCloze(current.front, activeClozeNumber(current.front, current.repetitions), revealed)
     : current?.front ?? "";
   const showBack = Boolean(current) && revealed && ((!clozeCard && !occlusionPayload) || Boolean(current?.back.trim()));
+
+  /**
+   * The two buttons, written down as two of the four grades the scheduler already knows.
+   *
+   * 🔴 IT IS THE SAME SCHEDULER. ✗ is `again` and ✓ is `good`, so a deck run through on the canvas
+   * and a deck reviewed in the Study tab move through exactly the same FSRS state. Inventing a
+   * separate "canvas progress" would be the second copy of the scheduler this repo has a standing
+   * rule against.
+   */
+  async function mark(knewIt: boolean) {
+    setTally((count) => (knewIt ? { ...count, got: count.got + 1 } : { ...count, missed: count.missed + 1 }));
+    await grade(knewIt ? "good" : "again");
+  }
 
   async function grade(value: StudyGrade) {
     if (!current || saving) return;
@@ -391,14 +442,38 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
       const inside = target instanceof Node && scope.current?.contains(target);
       if (bare && scope.current && !inside && target !== document.body) return;
       if (!current) return;
+      /**
+       * 🔴🔴 BROWSING NEVER WRITES A GRADE, INCLUDING FROM THE KEYBOARD. This is the half of the
+       * Track learning switch that is easy to forget and impossible to see: with the switch off
+       * there is no grading button on screen, but Space, Enter and 1-4 would still have scheduled
+       * the card. A learner flicking through their own deck would have been silently rescheduling
+       * every card they looked at. Arrows walk the deck instead.
+       */
+      if (browsing) {
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          setBrowseAt((at) => Math.min(deckCards.length - 1, at + 1));
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          setBrowseAt((at) => Math.max(0, at - 1));
+          return;
+        }
+        if (event.key === " " || event.key === "Enter" || event.code === "Space") {
+          event.preventDefault();
+          setRevealed((was) => !was);
+        }
+        return;
+      }
       if (event.key === " " || event.key === "Enter" || event.code === "Space") {
         event.preventDefault();
-        if (revealed) void grade("good");
+        if (revealed) void (simple ? mark(true) : grade("good"));
         else setRevealed(true);
         return;
       }
       const byDigit = GRADE_KEYS[event.key] ?? (event.code.startsWith("Digit") ? GRADE_KEYS[event.code.slice(5)] : undefined);
-      if (byDigit && revealed) {
+      if (byDigit && revealed && !simple) {
         event.preventDefault();
         void grade(byDigit);
         return;
@@ -432,8 +507,22 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
                 which one it is. `DialogTitle` above still carries it for screen readers, where
                 a nameless dialog is a real loss rather than clutter. */}
             <div className={cn("flex items-center justify-end", !bare && "pr-10")}>
+              {/* 🔴 GEMINI'S TWO TALLIES, MEASURED IN HIS DECK: a red pill and a green pill riding the
+                  top of the player. They count this sitting, not the card's history. */}
+              {simple && tracking && (
+                <div className="mr-auto flex items-center gap-[6px] text-xs font-medium tabular-nums" data-testid="review-tally">
+                  <span className="flex items-center gap-[4px] rounded-full bg-red-500/15 px-[8px] py-[2px] text-red-500">
+                    <X className="size-[12px]" />
+                    {tally.missed}
+                  </span>
+                  <span className="flex items-center gap-[4px] rounded-full bg-emerald-500/15 px-[8px] py-[2px] text-emerald-500">
+                    <Check className="size-[12px]" />
+                    {tally.got}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-1">
-                {lastGrade && (
+                {lastGrade && !simple && (
                   <Button className="text-xs" disabled={saving} onClick={() => void undo()} size="sm" title="Undo last grade (Z)" variant="ghost">
                     Undo
                   </Button>
@@ -536,14 +625,43 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
               </p>
             )}
             <div className="grid justify-items-center gap-3">
-              <div className="flex items-center justify-center gap-4 text-xs font-medium tabular-nums" data-testid="review-counts" title="New · Learning · Due left in this session">
-                <span className={cn("text-sky-500", currentBucket === "new" && "underline underline-offset-4")}>{remaining.newCount}</span>
-                <span className={cn("text-amber-500", currentBucket === "learn" && "underline underline-offset-4")}>{remaining.learnCount}</span>
-                <span className={cn("text-emerald-500", currentBucket === "due" && "underline underline-offset-4")}>{remaining.dueCount}</span>
-              </div>
+              {/* 🔴 THE STUDY TAB'S THREE BUCKET COUNTS ARE ANKI'S; the canvas gets Gemini's two
+                  tallies instead, and browsing gets neither because nothing is being counted. */}
+              {!simple && (
+                <div className="flex items-center justify-center gap-4 text-xs font-medium tabular-nums" data-testid="review-counts" title="New · Learning · Due left in this session">
+                  <span className={cn("text-sky-500", currentBucket === "new" && "underline underline-offset-4")}>{remaining.newCount}</span>
+                  <span className={cn("text-amber-500", currentBucket === "learn" && "underline underline-offset-4")}>{remaining.learnCount}</span>
+                  <span className={cn("text-emerald-500", currentBucket === "due" && "underline underline-offset-4")}>{remaining.dueCount}</span>
+                </div>
+              )}
               {!revealed ? (
                 <Button className="bg-foreground text-background hover:bg-foreground/90" onClick={() => setRevealed(true)} size="lg" title="Show answer (Space)" variant="ghost">Show answer</Button>
-              ) : (
+              ) : simple && tracking ? (
+                /* Gemini's footer, driven in his own deck: Undo on the left, a red cross and a green
+                   tick in the middle, the switch on the right. */
+                <div className="flex w-full items-center justify-center gap-4" data-testid="review-two-buttons">
+                  <button
+                    aria-label="I did not know this"
+                    className="flex size-[44px] items-center justify-center rounded-full border border-red-500/60 text-red-500 transition-colors hover:bg-red-500/10 disabled:opacity-40"
+                    data-testid="mark-missed"
+                    disabled={saving}
+                    onClick={() => void mark(false)}
+                    type="button"
+                  >
+                    <X className="size-[20px]" />
+                  </button>
+                  <button
+                    aria-label="I knew this"
+                    className="flex size-[44px] items-center justify-center rounded-full border border-emerald-500/60 text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:opacity-40"
+                    data-testid="mark-got"
+                    disabled={saving}
+                    onClick={() => void mark(true)}
+                    type="button"
+                  >
+                    <Check className="size-[20px]" />
+                  </button>
+                </div>
+              ) : simple ? null : (
                 <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
                   {GRADES.map(({ grade: value, label, variant }) => (
                     <Button className="h-auto flex-col gap-0.5 bg-background py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]" data-testid={`grade-${value}`} disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
@@ -554,6 +672,64 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings, surfa
                       </span>
                     </Button>
                   ))}
+                </div>
+              )}
+              {/* The switch itself, and the browse arrows it reveals. */}
+              {simple && (
+                <div className="flex w-full items-center justify-between pt-[4px]" data-testid="review-track-row">
+                  {browsing ? (
+                    <div className="flex items-center gap-[10px] text-xs tabular-nums text-(--ui-text-tertiary)">
+                      <button
+                        aria-label="Previous card"
+                        className="flex size-[32px] items-center justify-center rounded-full text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) disabled:opacity-30"
+                        disabled={browseAt === 0}
+                        onClick={() => setBrowseAt((at) => Math.max(0, at - 1))}
+                        type="button"
+                      >
+                        <ChevronLeft className="size-[16px]" />
+                      </button>
+                      <span data-testid="browse-position">{Math.min(browseAt + 1, deckCards.length)} of {deckCards.length}</span>
+                      <button
+                        aria-label="Next card"
+                        className="flex size-[32px] items-center justify-center rounded-full text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) disabled:opacity-30"
+                        disabled={browseAt >= deckCards.length - 1}
+                        onClick={() => setBrowseAt((at) => Math.min(deckCards.length - 1, at + 1))}
+                        type="button"
+                      >
+                        <ChevronRight className="size-[16px]" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs tabular-nums text-(--ui-text-tertiary)">
+                      {lastGrade ? (
+                        <button className="rounded-[8px] px-[8px] py-[4px] transition-colors hover:bg-(--ui-control-hover-background)" data-testid="simple-undo" disabled={saving} onClick={() => void undo()} type="button">
+                          Undo
+                        </button>
+                      ) : null}
+                    </span>
+                  )}
+                  {/* 🔴 A BUTTON WITH `role="switch"`, NOT A CHECKBOX, AND THE REASON IS A GUARD THAT
+                      WAS RIGHT. `cards-are-output-only.test.ts` bans every `<input>` on this screen,
+                      because the owner has twice said a learner may never type into a card. A hidden
+                      checkbox behind a toggle is not a card editor, but it IS an input on the review
+                      screen, and a guard that has to learn exceptions stops being a guard. A switch
+                      needs no input element anyway. */}
+                  <button
+                    aria-checked={tracking}
+                    className="flex cursor-pointer items-center gap-[8px] text-xs text-(--ui-text-secondary)"
+                    data-testid="track-learning"
+                    onClick={() => {
+                      setTracking((was) => !was);
+                      setRevealed(false);
+                    }}
+                    role="switch"
+                    type="button"
+                  >
+                    Track learning
+                    <span aria-hidden className={cn("relative h-[18px] w-[32px] rounded-full transition-colors", tracking ? "bg-(--ui-action)" : "bg-(--ui-bg-quaternary)")}>
+                      <span className={cn("absolute left-[2px] top-[2px] size-[14px] rounded-full bg-white transition-transform", tracking && "translate-x-[14px]")} />
+                    </span>
+                  </button>
                 </div>
               )}
             </div>

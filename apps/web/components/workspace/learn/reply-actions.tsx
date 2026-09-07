@@ -110,10 +110,13 @@ export function ReplyActions({
   // overhang is not a mistake: a 20px glyph centred in a 32px box needs the box to start left of
   // the column for the GLYPH to line up with the prose above it. `mt-2` was 18px here (112.5%
   // root) against their 12, and `gap-0.5` put 2px between boxes that theirs leaves touching.
-  const button = "flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[8px] text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-secondary)";
+  // 🔴 CHATGPT WORK'S ROW, MEASURED 2026-09-06 (docs/chatgpt-work-chat-reference.md §2): 32px
+  // buttons, radius 8, a 20px glyph, no gap, ink rgb(93,93,93) = secondary; the row is `p-1 -mt-1`
+  // and starts 10px left of the text so the first glyph lines up with it.
+  const button = "flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[8px] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)";
 
   return (
-    <div className="-ml-[10px] mt-[12px] flex w-full min-w-0 items-center gap-0">
+    <div className="-ml-[10px] -mt-[4px] flex w-full min-w-0 items-center gap-0 p-[4px]">
       <button
         aria-label={copied ? "Copied" : "Copy"}
         className={cn(button, copied && "text-(--ui-text-secondary)")}
@@ -134,7 +137,9 @@ export function ReplyActions({
 
       {/* 🔴 11px, MEASURED off claude.ai (2026-08-26), and it sits AFTER the controls rather than
           opposite them. §46.3-exempt: measured value from the reference. */}
-      {since && <span className="ml-2 shrink-0 text-[11px] leading-none text-(--ui-text-quaternary)">{since}</span>}
+      {/* 🪦 THE "2m ago" STAMP WENT ON 2026-09-06: ChatGPT's row carries none, and the thread's date
+          lines (thread-dates.ts) now say when a turn happened. `since` stays on the props so no
+          caller changes; nothing reads it. */}
     </div>
   );
 }

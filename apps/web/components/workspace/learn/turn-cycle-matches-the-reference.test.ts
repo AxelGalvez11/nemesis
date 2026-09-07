@@ -75,7 +75,8 @@ test("🔴 the actions under an answer are their 32px squares with 20px glyphs",
   assert.match(ACTIONS, /h-\[32px\] w-\[32px\]/, "the action buttons left the reference's 32px square");
   assert.match(ACTIONS, /rounded-\[8px\]/, "the action buttons left the reference's 8px radius");
   assert.match(ACTIONS, /size="20px"/, "the action glyphs left the reference's 20px");
-  assert.match(ACTIONS, /-ml-\[10px\] mt-\[12px\]/, "the strip left the reference's 12px drop and 10px overhang");
+  // 2026-09-06: ChatGPT Work's strip (docs/chatgpt-work-chat-reference.md §2): `p-1 -mt-1`, 10px overhang, no drop.
+  assert.match(ACTIONS, /-ml-\[10px\] -mt-\[4px\] flex w-full min-w-0 items-center gap-0 p-\[4px\]/, "the strip left the reference's 10px overhang and 4px lift");
   assert.ok(!/gap-0\.5/.test(ACTIONS), "the buttons are spaced again; theirs sit flush");
   // The rem trap, one more time: `mt-2` is 18px at this app's root, `px-1.5` is 6.75.
   assert.ok(!/\bmt-2\b/.test(ACTIONS), "mt-2 is back, which is 18px here against their 12");

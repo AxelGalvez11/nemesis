@@ -14,6 +14,9 @@ import { PREVIEW_LIBRARY_SOURCES, loadLibrarySource } from "@/lib/workspace/libr
 
 const strip = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const CONTROLS = strip(readFileSync(new URL("./canvas-controls.tsx", import.meta.url), "utf8"));
+// 2026-09-06: the shelves became ChatGPT Work's Outputs/Sources card (work-panel.tsx); the control
+// keeps the toggle, the dock and the reader.
+const PANEL = strip(readFileSync(new URL("./work-panel.tsx", import.meta.url), "utf8"));
 const PREVIEW = strip(readFileSync(new URL("./source-preview.tsx", import.meta.url), "utf8"));
 
 test("🔴 the paste-a-link field stays out of the sources panel", () => {
@@ -28,10 +31,10 @@ test("🔴🔴 a document row opens the preview card, and the old library link s
   // The row moved into a `SourceRow` component when the panel became three shelves; the press
   // calls the prop and the panel supplies the setter. Both halves, because a prop nothing passes is
   // a row that opens nothing.
-  assert.match(CONTROLS, /onClick=\{\(\) => onPreview\(source\)\}/, "a document row no longer opens the preview");
+  assert.match(PANEL, /onClick=\{\(\) => onOpen\(source\)\}/, "a document row no longer opens the preview");
   // Repointed 2026-08-28: the setter became `openDocument`, which also brings an already-open
   // document forward instead of listing it twice. The property is that the row has a way to open.
-  assert.match(CONTROLS, /onPreview=\{openDocument\}/, "the row is never given a way to open the preview");
+  assert.match(CONTROLS, /onOpenDocument=\{openDocument\}/, "the row is never given a way to open the preview");
   assert.ok(!CONTROLS.includes("/library/source/"), "the sources panel navigates to the old library again");
   assert.match(CONTROLS, /<SourcePreview[\s>]/, "the preview card is not mounted");
 });
@@ -205,154 +208,78 @@ test("🔴 loadLibrarySource serves the fixtures to the preview harness, and mis
 // Nemesis went and read), Inputs (what the learner handed it). `websites`/`documents` are
 // unchanged and still feed them; only the labels and the container moved.
 
-test("🔴🔴 the panel is three shelves, in the reference's order and its words", () => {
-  // Calibration: rename a shelf and this reddens.
-  assert.match(CONTROLS, /<PanelSection[\s\S]{0,200}?label="Outputs"/, "the Outputs shelf is gone");
-  assert.match(CONTROLS, /<PanelSection[\s\S]{0,400}?label="Sources"/, "the Sources shelf is gone");
-  assert.match(CONTROLS, /<PanelSection[\s\S]{0,200}?label="Inputs"/, "the Inputs shelf is gone");
-  assert.match(CONTROLS, /websites\.map\(/, "the Sources shelf renders no websites");
-  assert.match(CONTROLS, /documents\.map\(/, "the Inputs shelf renders no documents");
-  // 🔴 AND THE TABS MUST NOT COME BACK. They are what made this one question into two clicks: the
-  // learner checking their sources is the same learner asking whether the deck got made.
+test("🔴🔴 the card is two sections, Outputs then Sources, in the owner's 2026-09-06 words", () => {
+  // Owner's answer to "what should Sources list?": "Files + Web search". No Inputs shelf, no tabs.
+  assert.match(PANEL, /<Section label="Outputs">/, "the Outputs section is gone");
+  assert.match(PANEL, /label="Sources"/, "the Sources section is gone");
+  assert.ok(PANEL.indexOf('label="Outputs"') < PANEL.indexOf('label="Sources"'), "the sections are not in the reference's order");
+  assert.ok(!/label="Inputs"/.test(PANEL), "the Inputs shelf is back");
+  assert.match(PANEL, /documents\.map\(/, "the Sources section renders no files");
+  assert.match(PANEL, /Web search/, "the Sources section has no Web search row");
   assert.ok(!/setTab\(/.test(CONTROLS), "the sources/outputs tabs are back");
   assert.ok(!/tab === "sources"/.test(CONTROLS), "the panel branches on a tab again");
 });
 
-test("🔴🔴 an empty shelf does not render, and Sources is the exception that anchors the panel", () => {
-  // 🔴🔴 THIS GUARD HAS NOW SAID THREE DIFFERENT THINGS, AND THE HISTORY IS THE POINT — each turn
-  // was an owner call, not a drift.
-  //
-  //   v1  no headings unless BOTH kinds of source are present. Reasoning: *"the panel's own tab
-  //       already says sources, so 'Documents' printed under it is a label restating a label."*
-  //   v2  every shelf prints its heading, empty or not. The tab was gone, so the heading became the
-  //       only label there was, and a hidden one left "read nothing from the web" indistinguishable
-  //       from "not tracked".
-  //   v3  owner, 2026-08-25: *"outputs and inputs should only appear when there are some."* An
-  //       empty shelf is noise on a panel opened to see what a canvas HAS.
-  //
-  // 🔴 THE RULE IS CARRIED BY THE PROP SHAPE, NOT BY A FLAG BESIDE IT. A section with both an empty
-  // sentence AND a hide flag has two answers for one state, and whichever the code checked first
-  // would win silently. No `empty` IS the instruction to disappear.
-  //
-  // Calibration: give Outputs an `empty` and this reddens; take Sources' away and it reddens.
-  const start = CONTROLS.indexOf("function PanelSection");
-  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
-  assert.ok(start !== -1 && section.length > 0, "PanelSection moved — this guard is pointed at nothing");
-  // 🔴 `filled` IS GONE (2026-09-01). It existed so the Sources shelf could refuse to call itself
-  // empty while showing a model-knowledge ROW; the row moved into the empty sentence, so the state
-  // it worked around cannot occur. The rule this line guards is unchanged: no `empty`, no shelf.
-  assert.match(section, /if \(rows\.length === 0 && !empty\) return null/, "an empty shelf still renders");
-  assert.match(section, /empty\?: string/, "`empty` stopped being optional, so nothing can hide");
-
-  // Outputs and Inputs pass no empty state; Sources does, and is therefore always on screen.
-  assert.match(CONTROLS, /<PanelSection label="Outputs">/, "the Outputs shelf gained an empty state and can no longer hide");
-  assert.match(CONTROLS, /<PanelSection label="Inputs" onAdd=/, "the Inputs shelf gained an empty state and can no longer hide");
-  // 🔴 THE SHELF STILL PASSES AN `empty`, IT IS JUST NO LONGER A LITERAL. Since 2026-09-01 the
-  // sentence changes when the canvas holds model knowledge — that IS the provenance disclosure now
-  // (see canvas-provenance.test.ts). What this guards is unchanged: Sources passes SOMETHING, so it
-  // is the one shelf that cannot hide, and the disclosure cannot vanish with it.
-  assert.match(CONTROLS, /empty=\{[\s\S]{0,200}?"Nothing read from the web yet\."/, "the Sources shelf lost the empty state that anchors the panel");
-  assert.ok(!CONTROLS.includes("Nothing made yet"), "the Outputs description is back");
-  assert.ok(!CONTROLS.includes("Nothing attached yet"), "the Inputs description is back");
+test("🔴🔴 both sections stand, and each says plainly when it is empty", () => {
+  // ChatGPT's card prints both sections whatever they hold; an empty Outputs shows a placeholder
+  // row. Ours says "Nothing made yet" / "Nothing attached yet" in the row's place, never a shelf
+  // that vanishes and takes the model-knowledge disclosure with it (canvas-provenance.test.ts).
+  assert.match(PANEL, /Nothing made yet/, "an empty Outputs section says nothing");
+  assert.match(PANEL, /Nothing attached yet/, "an empty Sources section says nothing");
+  assert.match(PANEL, /function Section\(/, "the section component moved — this guard is pointed at nothing");
 });
 
 test("🔴 the panel's own icon is the reference's, not the Library's", () => {
   // Owner, 2026-08-25, with the glyph screenshotted. `library` is a stack of books, which reads as
   // "go to the Library" — a different surface this panel is repeatedly mistaken for.
-  assert.match(CONTROLS, /name="list-unordered" size="20px"/, "the panel trigger stopped using the reference's icon");
+  // 2026-09-06: their own mark, lifted from their sprite, replaces the nearest codicon.
+  assert.match(CONTROLS, /<SourcesGlyph \/>/, "the panel trigger stopped using the reference's icon");
+  assert.match(readFileSync(new URL("../../icons.tsx", import.meta.url), "utf8"), /export function SourcesGlyph/, "the glyph is gone");
   assert.ok(!/name="library"/.test(CONTROLS), "the books icon is back on the panel trigger");
 });
 
 test("🔴🔴 Outputs has no `+`, because those three rows are not coming back", () => {
-  // The reference offers "Create a file or site" on its Outputs heading. This is the one place its
-  // styling is deliberately NOT copied — owner ruling, 2026-08-24: *"remove the make flash cards,
-  // make slide, make summary note from the output section."* A `+` there is those rows returning
-  // behind an icon. §38: a phrase to the composer, not a control.
-  const outputs = CONTROLS.slice(CONTROLS.indexOf('<PanelSection label="Outputs"'));
-  const heading = outputs.slice(0, outputs.indexOf("</PanelSection>"));
-  assert.ok(!/onAdd/.test(heading), "the Outputs shelf grew an add control");
-  // And the two that DO have one drive the file picker rather than making anything.
-  assert.match(CONTROLS, /onAdd=\{\(\) => filePicker\.current\?\.click\(\)\}/, "the `+` no longer opens the file picker");
+  const outputs = PANEL.slice(PANEL.indexOf('<Section label="Outputs">'));
+  const heading = outputs.slice(0, outputs.indexOf("</Section>"));
+  assert.ok(!/onAdd/.test(heading), "the Outputs section grew an add control");
+  assert.match(PANEL, /onAdd=\{\(\) => picker\.current\?\.click\(\)\}/, "the `+` no longer opens the file picker");
 });
 
-test("🔴🔴 every shelf folds, and folding stays safe without a count", () => {
-  // Owner, 2026-08-25: *"make sure each section is collapsible."*
-  //
-  // 🔴 THE COUNT IS GONE AND THE INVARIANT IT PROTECTED IS STILL HELD — by a different mechanism,
-  // which is why this is a repoint and not a deletion. The count existed because a collapsed
-  // section with no number is indistinguishable from an empty one: the moment somebody concludes
-  // their sources were lost. Empty shelves no longer render at all, so a visible collapsed shelf
-  // always has something in it and that ambiguity cannot occur. The reference carries no count
-  // either. Calibration: make an empty shelf render again and the guard above reddens.
-  const start = CONTROLS.indexOf("function PanelSection");
-  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
-  assert.match(section, /const \[open, setOpen\] = useState\(true\)/, "shelves no longer fold, or no longer start open");
-  assert.match(section, /aria-expanded=\{open\}/, "a screen reader is not told the shelf folds");
-  assert.match(section, /open \? "chevron-down" : "chevron-right"/, "the shelf folds with no visible sign that it does");
+test("🔴🔴 every section folds, and folding stays safe without a count", () => {
+  const start = PANEL.indexOf("function Section");
+  const section = PANEL.slice(start, PANEL.indexOf("\nfunction ", start + 1));
+  assert.match(section, /const \[open, setOpen\] = useState\(true\)/, "sections no longer fold, or no longer start open");
+  assert.match(section, /aria-expanded=\{open\}/, "a screen reader is not told the section folds");
+  assert.match(section, /open \? "chevron-down" : "chevron-right"/, "the section folds with no visible sign that it does");
   assert.ok(!/\{rows\.length\}<\/span>/.test(section), "the count is back — the reference has none");
 });
 
 test("🔴 a row is ONE line — the descriptions are gone", () => {
-  // Owner, 2026-08-25: *"remove description for outputs, inputs and sources."* Three shelves of
-  // two-line rows is a wall, and each second line was either a restatement of the icon
-  // ("Flashcard deck") or bookkeeping about how Nemesis read something ("· 12 excerpts") rather
-  // than an answer to "what is this".
-  //
-  // Calibration: put any of these back and the matching line reddens.
-  assert.ok(!/excerpt\{source\.excerpts\.length === 1/.test(CONTROLS), "the excerpt count is back under every source");
-  assert.ok(!CONTROLS.includes("Flashcard deck · click to review"), "the flashcards description is back");
-  assert.ok(!CONTROLS.includes("Note · in your Library"), "the note description is back");
-  assert.ok(!CONTROLS.includes("Slides · click to download .pptx"), "the slides description is back");
-  // 🔴 AND THE ONE SECOND LINE THAT IS NOT A DESCRIPTION MUST SURVIVE. A source Nemesis could only
-  // half read has to say so where the source is named; dropping this with the rest would have the
-  // panel quietly claim a partial read was a whole one.
-  // 🔴 `coverageLabel`, NOT `coverageNote` — the learner's spelling. The row still carries a
-  // disclosure; what it may not carry is the sentence written for the model (see
-  // `model-copy-stays-with-the-model.test.ts` for the two separate times that reached a learner).
-  assert.match(CONTROLS, /source\.coverageLabel/, "a half-read source no longer says so");
-  // What kind of output a row is moved onto the icon, which is where it costs no line at all.
-  assert.match(CONTROLS, /const OUTPUT_ICONS: Record<string, string>/, "output rows lost the icon that says what they are");
+  assert.ok(!/excerpt\{source\.excerpts\.length === 1/.test(PANEL), "the excerpt count is back under every source");
+  assert.ok(!PANEL.includes("Flashcard deck · click to review"), "the flashcards description is back");
+  assert.ok(!PANEL.includes("Note · in your Library"), "the note description is back");
+  assert.ok(!PANEL.includes("Slides · click to download .pptx"), "the slides description is back");
+  assert.match(PANEL, /source\.coverageLabel/, "a half-read source no longer says so");
+  assert.match(PANEL, /OUTPUT_KIND_MARKS\[output\.kind\]/, "output rows lost the mark that says what they are");
 });
 
 test("🔴 the split uses the same host rule the rows already use", () => {
-  // `sourceUrl` is absent for every upload and present only for a page. One idea, spelled once —
-  // a second rule here would eventually disagree with the row rendering directly below it.
-  assert.match(CONTROLS, /const websites = canvas\.sources\.filter\(\(source\) => hostnameOf\(source\.sourceUrl\) !== null\)/);
+  // Only the files reach the card (2026-09-06); the host rule is still what tells a file from a page.
   assert.match(CONTROLS, /const documents = canvas\.sources\.filter\(\(source\) => hostnameOf\(source\.sourceUrl\) === null\)/);
+  assert.ok(!/websites\.map\(/.test(PANEL), "pages Nemesis read are listed as sources again");
 });
 
-test("🔴🔴 a heading is not pressable, and the thing that IS pressable looks it", () => {
-  // 🔴🔴 THIS GUARD HAS NOW BEEN INVERTED TWICE, AND THE INVARIANT UNDERNEATH NEVER MOVED: nothing
-  // may look pressable without being pressable, and nothing may be pressable without looking it.
-  // That is this codebase's most-repeated defect.
-  //
-  //   v1  the heading is a <span> — it opens nothing, so it must not look like the rows that do.
-  //   v2  owner: *"the websites in the source panel are supposed to be collapsible."* The heading
-  //       became a real <button> with a chevron and a count, so it looked like what it did.
-  //   v3  the fold is gone; a long shelf caps at six and offers the rest. The heading opens
-  //       nothing again, so it is an <h3> again — and the tail, which DOES do something, is a real
-  //       button that reads as one.
-  //
-  // Calibration: make the heading a <button> and this reddens; make the tail a <div> and it reddens.
-  const start = CONTROLS.indexOf("function PanelSection");
-  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
-  const heading = section.slice(section.indexOf("<h3"), section.indexOf("</h3>"));
-  assert.ok(!/onClick|role="button"|cursor-pointer/.test(heading), "the shelf heading looks or behaves like a control");
-  assert.match(section, /<button[\s\S]{0,400}?Show \$\{hidden\} more/, "the tail is not a real button");
-  assert.match(section, /"Show less"/, "a shelf that expands cannot be put back");
+test("🔴🔴 a section heading is the fold, and it looks like one", () => {
+  // ChatGPT's section label is a button with a chevron (measured 2026-09-06: 28px, `px-4 py-1`,
+  // 14px label, 12px chevron). Pressable, and it says so.
+  const start = PANEL.indexOf("function Section");
+  const section = PANEL.slice(start, PANEL.indexOf("\nfunction ", start + 1));
+  assert.match(section, /<button\s+aria-expanded=\{open\}/, "the heading is not a real button");
+  assert.match(section, /name=\{open \? "chevron-down" : "chevron-right"\} size="12px"/, "the heading lost its chevron");
+  assert.ok(!/Show \$\{hidden\} more/.test(PANEL), "the old capped tail is back");
 });
 
-test("🔴 each shelf caps on its own, so opening one never lengthens another", () => {
-  // 🔴 THE OLD RULE, PRESERVED THROUGH A CHANGE OF MECHANISM. It read: *"the two groups fold
-  // independently, so shutting one never hides the other"* — sharing one flag would mean the
-  // learner who collapsed a long list of searched websites also lost the three documents they
-  // attached themselves. The cap inherits the requirement exactly: shelf state lives INSIDE
-  // `PanelSection`, so each instance has its own and there is no shared flag to get wrong.
-  const start = CONTROLS.indexOf("function PanelSection");
-  const section = CONTROLS.slice(start, CONTROLS.indexOf("\nfunction ", start + 1));
-  assert.match(section, /const \[all, setAll\] = useState\(false\)/, "shelf state left the component and can now be shared");
+test("🔴 the card scrolls instead of capping, as theirs does", () => {
+  assert.match(PANEL, /max-h-\[calc\(100svh-84px\)\] overflow-y-auto/, "the card neither caps nor scrolls");
   assert.ok(!/shutGroups/.test(CONTROLS), "the old shared fold state is back");
-  // 🔴 AND THE COUNT COMES OFF THE RENDERED ROWS. A caller passing its own length could filter its
-  // list, forget the count, and print a tail that reveals nothing — with nothing to catch it.
-  assert.match(section, /Children\.toArray\(children\)/, "the tail counts something other than the rows it hides");
 });

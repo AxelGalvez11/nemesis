@@ -187,10 +187,24 @@ function SourceCardInner({ data, selected }: NodeProps & { data: SourceNodeData 
         </CardIcon>
       </CardTitleBar>
       <div className={cn("flex min-h-0 flex-1 flex-col px-[16px] py-[12px]", source.collapsed && "hidden")}>
+        {/* 🔴🔴 A DROPPED FILE SHIMMERS WHILE IT IS BEING READ. Owner, 2026-09-06: *"when dropping in
+            documents there should be a shimmering effect as they load in the canvas"*. What was
+            here was a 16px spinner and the words "Reading source…", and reading a lecture takes
+            tens of seconds: a spinner held that long reads as a hang, where a page of shimmering
+            lines reads as a document arriving. The shape is the document's own — a heading and
+            paragraph lines of uneven length — so the card does not change size when the real thing
+            replaces it. `board-shimmer` (board.css) carries the sheen and stands still under
+            `prefers-reduced-motion`. */}
         {source.status === "processing" && (
-          <div className="flex items-center gap-[8px] py-[16px] text-[14px] text-(--ui-text-secondary)">
-            <LoaderCircle className="size-[16px] animate-spin" />
-            <span>Reading source…</span>
+          <div aria-label={`Reading ${source.name}`} className="board-shimmer flex min-h-0 flex-1 flex-col gap-[10px] rounded-[10px] py-[4px]" role="status">
+            <span className="h-[14px] w-[52%] rounded-[4px] bg-(--ui-bg-secondary)" />
+            <span className="h-[10px] w-full rounded-[3px] bg-(--ui-bg-secondary)" />
+            <span className="h-[10px] w-[94%] rounded-[3px] bg-(--ui-bg-secondary)" />
+            <span className="h-[10px] w-[97%] rounded-[3px] bg-(--ui-bg-secondary)" />
+            <span className="h-[10px] w-[61%] rounded-[3px] bg-(--ui-bg-secondary)" />
+            <span className="mt-[6px] h-[10px] w-full rounded-[3px] bg-(--ui-bg-secondary)" />
+            <span className="h-[10px] w-[88%] rounded-[3px] bg-(--ui-bg-secondary)" />
+            <span className="h-[10px] w-[43%] rounded-[3px] bg-(--ui-bg-secondary)" />
           </div>
         )}
         {source.status === "error" && (
@@ -231,7 +245,7 @@ export const SourceCard = memo(SourceCardInner, (a, b) => a.data.sourceId === b.
  * maker's own reason). What it shows is the chat's `ArtifactCard`, minus the sentence above it.
  */
 function OutputCardInner({ data, selected }: NodeProps & { data: OutputNodeData }) {
-  const { outputs, openOutput, finishCheck, explainCheck, deleteNode } = useBoard();
+  const { outputs, openOutput, finishCheck, explainCheck, deleteNode, setOutputCollapsed } = useBoard();
   const output = outputs.find((item) => item.id === data.outputId);
   if (!output) return null;
   // 🔴 A CHECK HAS ITS OWN MARK HERE RATHER THAN JOINING `OUTPUT_KIND_MARKS`. That map is the
@@ -244,26 +258,50 @@ function OutputCardInner({ data, selected }: NodeProps & { data: OutputNodeData 
   const title = output.output?.title ?? output.topic;
   const filename = output.output && mark.extension ? docFilename(output.output.title, mark.extension) : title;
   const score = output.run && output.picks ? scoreTestRun(output.run, output.picks) : null;
+  const collapsed = output.collapsed === true;
   return (
     <div
       className={cn(
         "group/card relative flex w-full cursor-grab flex-col rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) shadow-sm transition-[color,transform,box-shadow] duration-150 ease-out motion-reduce:transition-none",
         data.isPickedUp ? "-translate-y-[4px] scale-[1.02] cursor-grabbing shadow-xl" : "active:cursor-grabbing",
+        // 🔴 THE FAN. A chat's made things are hidden nodes until the chat is opened out
+        // (board-surface.tsx), so revealing one MOUNTS it and this arrival runs once, from under
+        // the chat outwards. It is on the card rather than on the node wrapper because React Flow
+        // keeps a node's wrapper element across a re-render, and a class added to a live element
+        // does not restart an animation that has already played.
+        "board-fan-in",
+        // 🔴 A FOLDED CARD IS STILL A BOX. Every title bar on this board is drawn ABOVE its card
+        // (`CardTitleBar` is `absolute bottom-full`), so a card whose body is hidden has nothing
+        // left to give it height and collapses to a hairline with a title floating over it. The
+        // other two kinds are given `COLLAPSED_HEIGHT` by the layout; this one sets its own,
+        // because a made card's height has always been its content's.
+        collapsed && "h-[48px]",
         selected && "ring-2 ring-foreground",
       )}
       data-board-output={output.status}
+      data-board-output-collapsed={collapsed ? "" : undefined}
     >
       {/* The same bar the thread and the document wear, so a board of three kinds reads as one set
           of cards. A made thing has nothing to make FROM it, so the row is delete alone. */}
+      {/* 🔴 A MADE THING FOLDS, LIKE EVERY OTHER CARD ON THIS BOARD. Owner, 2026-09-06: *"having
+          flashcards and artifacts in canvas … can clutter the canvas"*. It arrives open, because you
+          asked for it and want to see it; after that it is a title row until you want it back. The
+          folded state is saved with the board, so a canvas you tidied stays tidy. */}
       <CardTitleBar
         icon={<Codicon className="shrink-0" name={mark.icon} size="16px" style={{ color: `var(${mark.tint})` }} />}
-        title={score ? `${score.correct} out of ${score.total}` : mark.label}
+        title={collapsed && title ? title : score ? `${score.correct} out of ${score.total}` : mark.label}
       >
+        <CardIcon
+          label={collapsed ? `Expand ${mark.label.toLowerCase()}` : `Collapse ${mark.label.toLowerCase()}`}
+          onClick={() => setOutputCollapsed(output.id, !collapsed)}
+        >
+          {collapsed ? <Maximize2 className="size-[16px]" /> : <Minimize2 className="size-[16px]" />}
+        </CardIcon>
         <CardIcon label="Delete" onClick={() => deleteNode(output.id)} tone="danger">
           <Trash2 className="size-[16px]" />
         </CardIcon>
       </CardTitleBar>
-      <div className="flex flex-col px-[16px] py-[12px]">
+      <div className={cn("flex flex-col px-[16px] py-[12px]", collapsed && "hidden")}>
         {output.status === "making" && (
           <div className="flex items-center gap-[8px] py-[8px] text-[14px] text-(--ui-text-secondary)">
             <LoaderCircle className="size-[16px] shrink-0 animate-spin" />

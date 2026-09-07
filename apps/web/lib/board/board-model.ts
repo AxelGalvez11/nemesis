@@ -15,6 +15,7 @@ import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
 import type { TestRun } from "@/lib/learn/test-run";
 
 import { parseBoardAnnotations, serializeBoardAnnotations, type BoardAnnotation } from "./board-annotations";
+import { parseBoardGroups, type BoardGroup } from "./board-groups";
 import { makeRoomForDocuments } from "./board-layout";
 
 export const BOARD_DOCUMENT_VERSION = 1;
@@ -173,6 +174,8 @@ export interface BoardDocument {
    *  🔴 OPTIONAL, BECAUSE EVERY BOARD SAVED BEFORE THIS EXISTED HAS NO SUCH FIELD and must load
    *  exactly as it always did. Absent reads as none. */
   annotations?: BoardAnnotation[];
+  /** Labelled frames around parts of the board (`board-groups.ts`). Optional for the same reason. */
+  groups?: BoardGroup[];
 }
 
 export type BoardOutputStatus = "making" | "ready" | "error";
@@ -188,6 +191,17 @@ export type BoardOutputStatus = "making" | "ready" | "error";
  * a real Library page. What is the board's is only where the card sits.
  */
 export interface BoardOutputCard {
+  /**
+   * Folded to its title row, exactly as a thread and a document already fold.
+   *
+   * 🔴 THIS IS THE ANSWER TO CLUTTER, AND THE NUMBERS SAY WHY IT IS THE RIGHT ONE. Owner,
+   * 2026-09-06: *"having flashcards and artifacts in canvas … can clutter the canvas"*. Measured on
+   * the board: a made thing is 320 x 132 and a test 420 x 300, against a thread at 720 wide and a
+   * document at 640 x 560. A made card is already the SMALLEST thing on a canvas. What actually
+   * piles up is a term of them, and every other card on this board could be folded away while these
+   * alone could not — which is the inconsistency, not the presence.
+   */
+  collapsed?: true;
   id: string;
   /** The thread it was made from, or null when asked from the board composer. */
   cardId: string | null;
@@ -238,6 +252,7 @@ export interface BoardState {
   useWebSearch: boolean;
   viewport?: BoardViewport;
   annotations?: BoardAnnotation[];
+  groups?: BoardGroup[];
 }
 
 export function normalizeContextExcerpt(text: string | undefined | null): string | undefined {
@@ -343,6 +358,10 @@ export function serializeBoardState(state: BoardState, measured?: ReadonlyMap<st
     ...(state.annotations && state.annotations.length > 0
       ? { annotations: serializeBoardAnnotations(state.annotations, sourceIds) }
       : {}),
+    // 🔴 A GROUP CARRIES NO MEMBERS TO CHECK. It is a rectangle and a label, and what is inside is
+    // whatever is inside when the board is next drawn (board-groups.ts), so nothing here can point
+    // at a card that has been deleted.
+    ...(state.groups && state.groups.length > 0 ? { groups: state.groups } : {}),
   };
 }
 
@@ -393,6 +412,7 @@ export function parseBoardState(raw: unknown): BoardState {
   const viewport = parseViewport(value.viewport);
   // 🔴 THE SAME CUT THE CARDS GET: an annotation whose source is gone points at nothing.
   const annotations = serializeBoardAnnotations(parseBoardAnnotations(value.annotations), sourceIds);
+  const groups = parseBoardGroups(value.groups);
   // 🔴 A DOCUMENT SAVED AS FOUR LINES OF PREVIEW OPENS AS A READER, AND THE CARDS UNDER IT MOVE
   // OUT OF ITS WAY. See `makeRoomForDocuments`: the same object comes back for a board that needs
   // nothing, so this costs an up-to-date board no render and no save.
@@ -404,6 +424,7 @@ export function parseBoardState(raw: unknown): BoardState {
     useWebSearch: value.useWebSearch === true,
     ...(viewport ? { viewport } : {}),
     ...(annotations.length > 0 ? { annotations } : {}),
+    ...(groups.length > 0 ? { groups } : {}),
   });
 }
 

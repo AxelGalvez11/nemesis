@@ -100,11 +100,15 @@ test("🔴🔴 floating: ChatGPT's pane one for one, with corners, in Gemini's a
   // measured live; a panel flush to the edge cannot show a corner, so it keeps the 24px inset and
   // the 32px gap Gemini's was measured with; and the corner is 24, small enough that ChatGPT's
   // 8px tab inset clears the curve.
-  assert.match(CHROME, /export const DOCK_MARGIN = 24;/, "the margin is not 24");
-  assert.match(CHROME, /export const DOCK_GAP = 32;/, "the gap to the conversation is not Gemini's 32");
-  assert.match(CHROME, /export const DOCK_RADIUS = 24;/, "the corner is not 24");
+  // 🔴 FLUSH AGAIN (owner, 2026-09-06: *"i dont want rounded edges for it"*), which is where the
+  // 2026-08-25 measurement of their pane had it and where their desktop app draws it. The 24px
+  // inset and corner came from Gemini on 2026-09-04 and went together: a panel on the window's
+  // edge cannot show a corner, and an inset with no corner is an unexplained gap.
+  assert.match(CHROME, /export const DOCK_MARGIN = 0;/, "the panel floats off the edge again");
+  assert.match(CHROME, /export const DOCK_GAP = 0;/, "a gap to the conversation is back");
+  assert.match(CHROME, /export const DOCK_RADIUS = 0;/, "the corner is back");
   assert.match(FRAME, /borderRadius: DOCK_RADIUS,\s*bottom: DOCK_MARGIN,\s*right: DOCK_MARGIN,\s*top: DOCK_MARGIN,/, "the docked frame is not the measured floating panel");
-  assert.match(FRAME, /border border-\(--ui-stroke-tertiary\)/, "the hairline edge is gone");
+  assert.match(FRAME, /border-l border-\(--ui-stroke-tertiary\)/, "the pane lost its left hairline, or wears four edges again");
   assert.ok(!/shadow-xl|shadow-lg|shadow-md/.test(FRAME), "the panel floats on a shadow, which Gemini's does not");
   // 🔴 ONE ROW, TABS LEFT, CONTROLS RIGHT, AND NOTHING UNDER IT BUT THE BODY. ChatGPT's Work pane,
   // from the owner's own screenshots: no name bar (the tab is the name), no outline, no comments
@@ -161,11 +165,13 @@ test("🔴 the header is the measured one: 28x28 buttons, 8px radius, 18px glyph
 test("🔴🔴 the panel arrives the way Gemini's does, and stands still under reduced motion", () => {
   // Read off Gemini's own Web Animations in the owner's account on 2026-09-04 (`Element.prototype
   // .animate` hooked while the canvas opened): the panel scales from 0.6 to 1 over 500ms on
-  // cubic-bezier(0.2, 0, 0, 1), its opacity 0 to 1 over the first 200ms. Filmed headless after
-  // building it: 0.60 at 76ms, 0.88 at 210ms, 0.99 at 476ms, `none` at 609ms, opacity 1 by 276ms.
+  // cubic-bezier(0.2, 0, 0, 1), its opacity 0 to 1 over the first 200ms. The curve and the clock
+  // survive; the scale did not (2026-09-06, the pane went flush and now travels 24px instead).
   const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
-  assert.match(css, /\.dock-panel-in \{\s*animation: dock-panel-in 500ms cubic-bezier\(0\.2, 0, 0, 1\);\s*transform-origin: center;/, "the arrival is not Gemini's 500ms scale from the centre");
-  assert.match(css, /@keyframes dock-panel-in \{\s*from \{ transform: scale\(0\.6\); opacity: 0; \}\s*40% \{ opacity: 1; \}/, "the arrival does not start at 0.6 or fade in over the first 200ms");
+  assert.match(css, /\.dock-panel-in \{\s*animation: dock-panel-in 500ms cubic-bezier\(0\.2, 0, 0, 1\);/, "the arrival left Gemini's 500ms curve");
+  // 🔴 IT SLIDES FROM ITS EDGE NOW, NOT OUT OF ITS CENTRE (2026-09-06). The scale was right for a
+  // floating rounded card; flush to the window it made a full-height panel balloon out of nothing.
+  assert.match(css, /@keyframes dock-panel-in \{\s*from \{ transform: translateX\(24px\); opacity: 0; \}\s*40% \{ opacity: 1; \}/, "the arrival does not travel from the edge or fade in over the first 200ms");
   // 🔴 THE LAYOUT STILL MOVES ON THE ONE 220ms CLOCK. Filmed: the conversation narrowed from 1418
   // to 473 between 76ms and 276ms while the panel was still growing into its box; a box that
   // took 500ms would leave the two edges of one seam apart for 280ms.

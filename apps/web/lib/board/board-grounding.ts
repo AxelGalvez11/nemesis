@@ -108,3 +108,20 @@ export async function boardMaterialContext(sources: readonly CanvasSource[], que
       ].join("\n\n")
     : [inventoryNote(sources, sources), groundingBlock(sources)].filter(Boolean).join("\n\n");
 }
+
+/**
+ * The chat-shaped view of ONE dropped document, for opening it in the reading panel.
+ *
+ * 🔴 BUILT OVER THE WHOLE LIST, NEVER OVER THE ONE SOURCE. The `s1`, `s2` ids are allocated across
+ * every source on the board so a citation means the same thing everywhere; rebuilding a single
+ * source in isolation would hand it `s1` no matter where it sits, and the panel would open one
+ * document while the answer's marks pointed at another.
+ */
+export function groundedSourceFor(sources: readonly BoardSource[], sourceId: string): CanvasSource | null {
+  const target = sources.find((source) => source.id === sourceId);
+  if (!target) return null;
+  if (target.grounded) return target.grounded;
+  const included = sources.filter((source) => source.grounded || (source.status === "ready" && source.content.trim()));
+  const index = included.findIndex((source) => source.id === sourceId);
+  return index < 0 ? null : (groundedSources(sources)[index] ?? null);
+}

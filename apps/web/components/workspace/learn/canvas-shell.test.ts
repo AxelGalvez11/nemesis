@@ -331,7 +331,8 @@ test("🔴 every Canvas upload door accepts exactly the same material", () => {
   // 🔴 THE CHECK IS "THEY REFERENCE ONE CONSTANT", NOT "THE STRINGS MATCH". Three equal literals
   // are how this drifted in the first place — they were equal once too. A shared constant cannot
   // be edited in one place.
-  for (const door of ["canvas-composer.tsx", "canvas-home.tsx", "canvas-controls.tsx"]) {
+  // 2026-09-06: the sources door moved into the Outputs/Sources card (work-panel.tsx).
+  for (const door of ["canvas-composer.tsx", "canvas-home.tsx", "work-panel.tsx"]) {
     const source = read(door);
     assert.match(
       source,

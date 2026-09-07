@@ -111,7 +111,60 @@ export function sourcesInFolder(sources: readonly LibrarySource[], folderPath: s
 // (source_id), so in the signed-out demo clicking a note's source pill opens
 // the matching file page — the full loop the owner described. Field-agnostic,
 // aligned with the PREVIEW_NOTES folder paths in library-cloud-store.ts.
+/**
+ * 🔴🔴 REAL COURSE MATERIAL, HELD LOCALLY, NAMED NEUTRALLY. Owner, 2026-09-06: *"use actual school
+ * pdf, pptx, docx, from my desktop for the canvas"* — the harness was being reviewed on three tidy
+ * samples, and a 13MB lecture deck is a different thing to draw.
+ *
+ * TWO CONSTRAINTS DECIDE THE SHAPE, and both are facts rather than caution. This repository is
+ * PUBLIC, and `/dev-preview/board` answers 200 on production. So:
+ *  - the files themselves live in `apps/web/public/dev-fixtures/`, which `.gitignore` excludes, and
+ *    never leave the machine they were copied on;
+ *  - the names here are generic. His real filenames carry his course code, his professor's name and
+ *    his field, and `field-agnostic.test.ts` is right to stop all three from reaching a page anyone
+ *    can open. What he is reviewing is the DOCUMENT, and the document is the real one.
+ *
+ * On a machine without the files these three cards show the reader's own "could not open" state,
+ * which is correct: nothing here is used by the product, only by /dev-preview/board.
+ */
+const OWNER_COURSE_SOURCES: LibrarySource[] = [
+  {
+    id: "preview-src-course-slides",
+    folderPath: "Course materials",
+    fileName: "Course slides.pptx",
+    kind: "slides",
+    sizeBytes: 13_000_000,
+    createdAt: "2026-08-28T09:00:00.000Z",
+    storagePath: "/dev-fixtures/course-slides.pptx",
+    coverage: null,
+    status: { kind: "parsed" },
+  },
+  {
+    id: "preview-src-course-worksheet",
+    folderPath: "Course materials",
+    fileName: "Course worksheet.docx",
+    kind: "document",
+    sizeBytes: 30_000,
+    createdAt: "2026-08-30T09:00:00.000Z",
+    storagePath: "/dev-fixtures/course-worksheet.docx",
+    coverage: null,
+    status: { kind: "parsed" },
+  },
+  {
+    id: "preview-src-course-charts",
+    folderPath: "Course materials",
+    fileName: "Course reference charts.pdf",
+    kind: "pdf",
+    sizeBytes: 1_600_000,
+    createdAt: "2026-08-20T09:00:00.000Z",
+    storagePath: "/dev-fixtures/course-charts.pdf",
+    coverage: null,
+    status: { kind: "parsed" },
+  },
+];
+
 export const PREVIEW_LIBRARY_SOURCES: LibrarySource[] = [
+  ...OWNER_COURSE_SOURCES,
   {
     id: "preview-src-conlaw-slides",
     folderPath: "Constitutional law/Commerce power",

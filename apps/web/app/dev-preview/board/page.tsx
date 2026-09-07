@@ -192,21 +192,28 @@ const CHECK: BoardOutputCard = {
   width: CHECK_WIDTH,
 };
 
-// 🔴 A REAL PDF, SO THE CARD'S READER IS REVIEWED ON A PDF AND NOT ONLY ON MARKDOWN. The harness's
-// library fixture `preview-src-conlaw-slides` points at /reader-sample.pdf, and `useBoardReader`
-// resolves a source with a `librarySourceId` to its filed original exactly as production does.
+// 🔴🔴 THE OWNER'S OWN COURSE FILES, NOT SAMPLES. Owner, 2026-09-06: *"use actual school pdf, pptx,
+// docx, from my desktop for the canvas"*. The three cards below name real rows in
+// `PREVIEW_LIBRARY_SOURCES` whose files sit in `public/dev-fixtures/`, which `.gitignore` excludes —
+// they are his university's material and this repository is public. `useBoardReader` resolves a
+// source with a `librarySourceId` to its filed original exactly as production does, so what the
+// harness draws is the real 13MB deck, the real worksheet and the real chart PDF.
+//
+// 🔴 THE NAMES ON THESE CARDS ARE GENERIC ON PURPOSE. This page answers 200 on production and this
+// repository is public; his real filenames carry his course code, his professor and his field. The
+// document is his, the label is nobody's.
 const PDF_SOURCE: BoardSource = {
-  content: "Constitutional law, slides 1 to 12. The commerce clause and its limits.",
+  content: "The reference charts that go with the course.",
   grounded: {
-    excerpts: [{ id: "s2:e1", label: null, text: "The commerce clause and its limits." }],
+    excerpts: [{ id: "s2:e1", label: null, text: "The reference charts." }],
     id: "s2",
     kind: "pdf",
-    librarySourceId: "preview-src-conlaw-slides",
-    title: "Constitutional law slides.pdf",
+    librarySourceId: "preview-src-course-charts",
+    title: "Course reference charts.pdf",
   },
   height: 560,
   id: "src-pdf",
-  name: "Constitutional law slides.pdf",
+  name: "Course reference charts.pdf",
   position: { x: 1600, y: 520 },
   previewUrls: [],
   status: "ready",
@@ -218,21 +225,62 @@ const PDF_SOURCE: BoardSource = {
 // pages now (`docx-render.ts`), and a card is where the owner reads them (2026-09-04: *"make sure
 // any documents can be viewed too"*). Under the PDF, so both formats are in one screen.
 const DOCX_SOURCE: BoardSource = {
-  content: "Reading a document as a document. One table, no pictures.",
+  content: "The active-learning worksheet for session 1.",
   grounded: {
-    excerpts: [{ id: "s3:e1", label: null, text: "Reading a document as a document." }],
+    excerpts: [{ id: "s3:e1", label: null, text: "Active-learning worksheet, session 1." }],
     id: "s3",
     kind: "document",
-    librarySourceId: "preview-src-brief",
-    title: "Reading a document as a document.docx",
+    librarySourceId: "preview-src-course-worksheet",
+    title: "Course worksheet.docx",
   },
   height: 560,
   id: "src-docx",
-  name: "Reading a document as a document.docx",
+  name: "Course worksheet.docx",
   position: { x: 1600, y: 1150 },
   previewUrls: [],
   status: "ready",
   type: "document",
+  width: 640,
+};
+
+// 🔴 A REAL DECK. Owner, 2026-09-06: *"canvas should support pptx, pdf, docx, md"*. Three of the
+// four were already on this board and a .pptx was not, so the one format he could not see working
+// was the one nothing here proved. `preview-src-deck` is the harness's filed slides row
+// (lib/workspace/library-sources.ts), pointing at public/reader-sample.pptx, and the card draws it
+// through the same `DocumentReader` as the rest.
+const PPTX_SOURCE: BoardSource = {
+  content: "The lecture deck for this week.",
+  grounded: {
+    excerpts: [{ id: "s4:e1", label: null, text: "The lecture deck for this week." }],
+    id: "s4",
+    kind: "slides",
+    librarySourceId: "preview-src-course-slides",
+    title: "Course slides.pptx",
+  },
+  // The deck's own shape: 640 wide at 16:9 (board-layout.ts `defaultSourceHeight`).
+  height: 404,
+  id: "src-pptx",
+  name: "Course slides.pptx",
+  position: { x: 2320, y: 520 },
+  previewUrls: [],
+  status: "ready",
+  type: "document",
+  width: 640,
+};
+
+// 🔴 A DOCUMENT STILL BEING READ, so the shimmer that replaced the old spinner has somewhere to be
+// reviewed (owner 2026-09-06: "when dropping in documents there should be a shimmering effect as
+// they load in the canvas"). Nothing finishes it: a maker is a client call and the harness makes
+// none, which is exactly the state a learner sees for the seconds after a drop.
+const READING_SOURCE: BoardSource = {
+  content: "",
+  height: 400,
+  id: "src-reading",
+  name: "Week 4 seminar notes.pdf",
+  position: { x: 2320, y: 1150 },
+  previewUrls: [],
+  status: "processing",
+  type: "pdf",
   width: 640,
 };
 
@@ -262,12 +310,14 @@ const NOTE_OUTPUT: BoardOutputCard = {
 const SEED: BoardState = {
   cards: [ROOT, BRANCH, STREAMING],
   outputs: [CHECK, NOTE_OUTPUT],
-  selectedSourceIds: [],
-  sources: [SOURCE, PDF_SOURCE, DOCX_SOURCE],
+  // Every source ticked, as a board loads since 2026-09-06 (board-provider.tsx `ticksOf`).
+  selectedSourceIds: [SOURCE.id, PDF_SOURCE.id, DOCX_SOURCE.id, PPTX_SOURCE.id],
+  sources: [SOURCE, PDF_SOURCE, DOCX_SOURCE, PPTX_SOURCE, READING_SOURCE],
   // 🔴 THE HARNESS OPENS ON EVERYTHING. Without a viewport the board lands at 0,0 and half the
   // fixture (the PDF card, the test) is off screen, so a review measures what happened to be
-  // visible. Zoomed out enough to hold every card at once.
-  viewport: { x: 24, y: 24, zoom: 0.55 },
+  // visible. Zoomed out enough to hold every card at once; the sources-and-create column floats
+  // over the board's RIGHT edge (320 wide, 16 in), so the fixture is pulled a little left of it.
+  viewport: { x: 24, y: 24, zoom: 0.45 },
   useWebSearch: false,
 };
 

@@ -87,8 +87,13 @@ test("🔴🔴 the offered apps are a closed list", () => {
   // route text (that would have passed on the word "gmail" appearing in any comment).
   assert.match(ROUTE, /if \(!isOffered\(app\)\) \{/, "the route stopped refusing unoffered apps");
   assert.match(ROUTE, /return Response\.json\(\{ error: "That app is not offered\." \}, \{ status: 400 \}\)/);
-  for (const app of ["googledrive", "gmail", "googlecalendar", "googledocs"]) {
-    assert.ok(isOffered(app), `${app} is no longer offered`);
+  // 🔴 THE LIST SHRANK TO ONE ON 2026-09-07 (owner: *"should only really have google calendar as a
+  // connector for now"*). This asked for googledrive, gmail, googlecalendar and googledocs; three
+  // of those are withdrawn, so the guard is repointed at what the gate actually admits. The claim
+  // it makes has not changed: membership, and a closed list.
+  assert.ok(isOffered("googlecalendar"), "the one offered app is no longer offered");
+  for (const withdrawn of ["googledrive", "gmail", "googledocs"]) {
+    assert.ok(!isOffered(withdrawn), `${withdrawn} is offered again — check that was intended`);
   }
   // And `isOffered` is a membership test over the list, not something that grew a wildcard.
   assert.ok(!isOffered("stripe") && !isOffered("slack"), "the closed list stopped being closed");

@@ -251,6 +251,8 @@ export interface CanvasSession {
   drafted: boolean;
   /** The lines the last turn showed while it worked, and how long it took. */
   lastTurn: { lines: readonly string[]; seconds: number } | null;
+  /** When the turn in flight started (performance.now()), for the surface's "Working for" clock; null between turns. */
+  turnClock: number | null;
   /** A real step running inside the turn — the caption's fallback when no milestone covers it. */
   work: string | null;
   workApp: string | null;
@@ -599,6 +601,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    */
   const [lastTurn, setLastTurn] = useState<{ lines: readonly string[]; seconds: number } | null>(null);
   const turnStartedAt = useRef(0);
+  const [turnClock, setTurnClock] = useState<number | null>(null);
   const shownLines = useRef<readonly string[]>([]);
   /** Whether the last answer arrived through a draft, so the canvas does not replay its arrival. */
   const [drafted, setDrafted] = useState(false);
@@ -939,6 +942,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     setDraft("");
     setDrafted(false);
     setLastTurn(null);
+    setTurnClock(null);
     setError(null);
     setOpening(null);
     setAside(null);
@@ -2094,6 +2098,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setLastTurn(null);
       shownLines.current = [];
       turnStartedAt.current = performance.now();
+      setTurnClock(turnStartedAt.current);
       draftedRef.current = false;
       setDrafted(false);
       // 🔴 THE LABEL CHANGES UNDER THE LEARNER WHEN THE TURN ACTUALLY BUYS A SEARCH, and only then.
@@ -2175,6 +2180,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setDrafted(draftedRef.current);
       // 🔴 THE ROW THAT REPLACES THE CAPTION: only when the turn showed something. A turn that
       // showed nothing (a greeting) leaves no row, which is the owner's first rule about the slot.
+      setTurnClock(null);
       setLastTurn(
         shownLines.current.length > 0
           ? { lines: shownLines.current, seconds: (performance.now() - turnStartedAt.current) / 1000 }
@@ -3268,6 +3274,7 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     draft,
     drafted,
     lastTurn,
+    turnClock,
     milestones,
     stage,
     work,

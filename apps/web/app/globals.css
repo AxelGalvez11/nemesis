@@ -1368,6 +1368,7 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   .reader-dock-in,
   .reader-cover-in,
   .dock-panel-in,
+  .board-thread-in,
   [data-workspace] .animate-pulse {
     animation: none;
   }
@@ -1469,13 +1470,18 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
  *
  * 🔴 ON MOUNT ONLY, which is what `animation` gives and `transition` does not. A drag mid-read
  * cannot replay it. */
+/* 🔴 IT ARRIVES FROM ITS OWN EDGE NOW, NOT OUT OF ITS MIDDLE. Until 2026-09-06 the pane was a
+   floating rounded card and scaled up from 0.6 at its centre, which is Gemini's arrival and reads
+   correctly on a card. Flush to the window (owner: *"i dont want rounded edges for it"*) the same
+   animation makes a full-height panel balloon out of nowhere; sliding the width it is about to
+   occupy is the same 500ms on the same curve, and the conversation's own edge is already moving on
+   `--pane-slide` beside it. */
 .dock-panel-in {
   animation: dock-panel-in 500ms cubic-bezier(0.2, 0, 0, 1);
-  transform-origin: center;
 }
 
 @keyframes dock-panel-in {
-  from { transform: scale(0.6); opacity: 0; }
+  from { transform: translateX(24px); opacity: 0; }
   40% { opacity: 1; }
   to { transform: none; opacity: 1; }
 }
@@ -1534,4 +1540,84 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
   [data-canvas-surface] > * {
     --canvas-column: 694px;
   }
+}
+
+/* The tab strip's edge fade, copied from ChatGPT's desktop app (2026-09-06).
+ *
+ * 🔴🔴 OWNER'S WORDS, WITH THE PANE ON SCREEN: *"the desktop app has one top row with tabs and the
+ * tools, as tabs grow, they fade out if they hit the tools"*. Read out of their bundle
+ * (`app-initial-*.css`, `.horizontal-scroll-fade-mask`) rather than approximated: a mask on the
+ * scroller itself, driven by its OWN scroll position, so the left edge fades only once there is
+ * something scrolled past it and the right edge stops fading once the last tab is reached.
+ *
+ * 🔴 `--edge-fade-distance` IS IN PIXELS, NOT THEIR `1rem`. This app sets `html { font-size: 112.5% }`,
+ * so their 1rem would render 18px here against the 16 they drew. The same rem trap the pane's own
+ * header hit in #1148.
+ *
+ * 🔴 REGISTERED, OR THE MASK NEVER MOVES. An unregistered custom property is a string to the
+ * animation engine; `@property` is what makes a length interpolate.
+ * 🔴 GUARDED BY `@supports`, THEIRS TOO: a browser without scroll-driven animations gets no mask at
+ * all rather than a fade frozen at one end. */
+@property --left-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --right-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes edge-fade-horizontal {
+  0% {
+    --left-fade: 0px;
+    --right-fade: var(--edge-fade-distance, 16px);
+  }
+  0.1%,
+  99.9% {
+    --left-fade: var(--edge-fade-distance, 16px);
+    --right-fade: var(--edge-fade-distance, 16px);
+  }
+  to {
+    --left-fade: var(--edge-fade-distance, 16px);
+    --right-fade: 0px;
+  }
+}
+@supports (animation-timeline: scroll(self x)) {
+  .horizontal-scroll-fade-mask {
+    -webkit-mask: linear-gradient(to right, transparent, #000 var(--left-fade) calc(100% - var(--right-fade)), transparent);
+    mask: linear-gradient(to right, transparent, #000 var(--left-fade) calc(100% - var(--right-fade)), transparent);
+    animation-name: edge-fade-horizontal;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-timeline: scroll(self x);
+  }
+}
+
+/* A tab's name runs out rather than ending in dots: ChatGPT's `.text-fade-truncate`, read out of
+ * their desktop bundle (2026-09-06). `text-overflow: clip` and a mask that takes the last 16px to
+ * transparent. It is the visible difference in the owner's screenshot, where the names are cut
+ * mid-word with no ellipsis. Theirs writes the distance in rem; 16px here, for the reason the fade
+ * above gives. */
+.dock-tab-fade {
+  text-overflow: clip;
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--text-fade-truncate-distance, 16px)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--text-fade-truncate-distance, 16px)), transparent);
+}
+
+/* Stepping into a thread on the canvas (board-thread.tsx).
+ *
+ * 🔴 IT COMES FORWARD, IT DOES NOT SLIDE IN FROM A SIDE. Sliding is the gesture a panel makes when
+ * it arrives beside something; this is the same material being read closer, so it rises the way the
+ * board's own reader does. The board behind it never moves, which is what makes the way back read
+ * as going back rather than as opening something else. */
+@keyframes board-thread-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.board-thread-in {
+  animation: board-thread-in 220ms cubic-bezier(0.2, 0, 0, 1) both;
 }

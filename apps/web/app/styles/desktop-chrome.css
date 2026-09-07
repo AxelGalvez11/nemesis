@@ -752,6 +752,74 @@
   padding: 2.4px 4.8px;
 }
 
+/* 🔴🔴 THEIR WHOLE MARKDOWN SYSTEM IS ONE NUMBER, read out of the ChatGPT bundle on 2026-09-06
+   (`app-initial-*.css`, the `_MarkdownRoot_` module). Owner: *"if you can look at chatgpt budle and
+   copy the chat ui/ux as well so we have a good base for chat"*. They define
+
+     --markdown-font-size: var(--text-base);
+     --markdown-space: calc(var(--markdown-font-size) / 4);
+
+   and then every margin, indent, rule and cell in an answer is a multiple of that space. At the
+   16px body this thread uses, the space is 4px, and the numbers already in this file are exactly
+   those multiples: 16 between blocks (4x), 8 after a heading (2x), 28 around a rule (7x), 26 and 6
+   for a list (6.5x and 1.5x), 10 and 8 in a table cell (2.5x and 2x). They were measured one at a
+   time before this; naming the unit is what makes the next one derivable rather than measured.
+
+   🔴 IN PIXELS, NOT rem. `html { font-size: 112.5% }` here, so their `/ 4` of a rem-based size would
+   drift 12.5% and every number in this block would be wrong by two pixels. */
+.aui-md.aui-md {
+  --markdown-space: 4px;
+}
+
+/* 🔴🔴 A QUOTE IS UPRIGHT AND FULL STRENGTH, WITH A BAR THAT STOPS SHORT. Theirs, exactly:
+   `font-style: normal`, `color: var(--text-primary)`, `border: 0`, 24px of indent, 8px of padding
+   above and below, and the rule drawn as an `::after` 4px wide with a 2px radius, inset 8px from
+   the top and bottom so it never touches the lines it marks.
+
+   Ours was a 2px hairline with grey italic text, which is the web's default idea of a quotation and
+   reads as an aside. In an answer a quote is usually the passage the learner asked about, so it is
+   the one thing on the screen that must not be dimmer than the sentence around it. */
+.aui-md.aui-md :where(blockquote) {
+  position: relative;
+  margin: 0;
+  border: 0;
+  padding-block: calc(var(--markdown-space) * 2);
+  padding-inline-start: calc(var(--markdown-space) * 6);
+  color: var(--ui-text-primary);
+  font-style: normal;
+  line-height: calc(var(--markdown-space) * 6);
+}
+
+/* 🔴 AND NO QUOTATION MARKS. Tailwind Typography adds `content: open-quote` and `close-quote` to the
+   first and last paragraph of every blockquote, so a quoted passage arrived wearing curly marks the
+   model never wrote. Theirs has none, and the marks are wrong twice over here: the passage is
+   usually the learner's own document rather than speech, and a quote that already carries marks in
+   the source ends up with two sets. Seen for the first time in the answer-markdown preview. */
+.aui-md.aui-md :where(blockquote p:first-of-type)::before,
+.aui-md.aui-md :where(blockquote p:last-of-type)::after {
+  content: none;
+}
+
+.aui-md.aui-md :where(blockquote)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: calc(var(--markdown-space) * 2);
+  bottom: calc(var(--markdown-space) * 2);
+  width: var(--markdown-space);
+  border-radius: calc(var(--markdown-space) / 2);
+  background-color: var(--ui-stroke-primary);
+}
+
+/* A fenced block gets more air than a paragraph: theirs is `margin-block: calc(space * 5)`.
+   🔴 THE WRAPPER CARRIES IT, NOT THE `pre`. Our code block renders as `.aui-md-code-block` around a
+   `pre` that is pinned to `!my-0`, so a rule on the `pre` sets a margin inside a box that has
+   already collapsed it. Measured 9px before this (`my-2` at the 112.5% root, which is not even the
+   9px it reads as). */
+.aui-md.aui-md .aui-md-code-block {
+  margin-block: calc(var(--markdown-space) * 5);
+}
+
 /* A rule between sections is a hairline with real air either side. */
 .aui-md.aui-md :where(hr) {
   margin-top: 28px;
@@ -765,6 +833,17 @@
    had attached; ChatGPT rules the rows and leaves the edges open, so the table
    stays part of the sentence around it. Scoped to assistant markdown, so the
    real tables elsewhere in the app (Study decks, Calendar) are untouched. */
+/* 🔴 THE TAIL OF A TABLE, which is theirs and is what stops the last row sitting on the sentence
+   under it: every cell keeps 24px at its end (`space * 6`), the last header cell keeps 40px
+   (`space * 10`) so a wide heading never touches the edge, and the last row's cells carry 24px
+   beneath them.
+
+   🔴🔴 THE DOUBLED CLASS, AND THE PHYSICAL PROPERTY. The cells already asked for 24px through a
+   `pr-[24px]` utility and were rendering 22.5 — Tailwind Typography writes its table padding
+   through `.prose :where(th)`, which is two classes and beats a one-class utility outright, and it
+   writes it in rem, so it lands 12.5% out under this app's 112.5% root. A logical `padding-inline-end`
+   loses to that physical `padding-right` whatever the specificity, so both are written here. This is
+   the same fight the note at the top of this block describes, arriving one element later. */
 [data-slot='aui_assistant-message-content'] .aui-md :where(table) {
   border: 0;
   border-radius: 0;
@@ -772,12 +851,29 @@
   background: transparent;
 }
 
+/* 🔴🔴 THIS RULE WAS IN rem AND HAS BEEN QUIETLY WINNING. `0.4rem` and `1.25rem` render 7.2px and
+   22.5px under this app's 112.5% root, and they beat the component's own `py-[10px] pr-[24px]`
+   because `[data-slot] .aui-md :where(th, td)` is two selectors against one class. So the table has
+   never had the padding it was written to have. Found on 2026-09-06 by rendering a table in the new
+   answer-markdown preview and measuring it, which is the first time any harness drew one.
+
+   Theirs, as multiples of the space unit: 24px at the end of every cell (`6x`), 8px above and below
+   a header cell (`2x`), 10px in a body cell (`2.5x`), 40px at the end of the last header (`10x`),
+   and 24px under the last row (`6x`). */
 [data-slot='aui_assistant-message-content'] .aui-md :where(th, td) {
   border: 0;
   border-block-end: 1px solid var(--ui-stroke-tertiary);
-  padding-block: 0.4rem;
-  padding-inline: 0 1.25rem;
+  padding-block: calc(var(--markdown-space) * 2);
+  padding-inline: 0 calc(var(--markdown-space) * 6);
   background: transparent;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md :where(tbody td) {
+  padding-block: calc(var(--markdown-space) * 2.5);
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md :where(th):last-child {
+  padding-inline-end: calc(var(--markdown-space) * 10);
 }
 
 /* The header rule is the only strong line; the last row has nothing under it,
@@ -789,6 +885,7 @@
 
 [data-slot='aui_assistant-message-content'] .aui-md :where(tbody tr:last-child td) {
   border-block-end: 0;
+  padding-bottom: calc(var(--markdown-space) * 6);
 }
 
 [data-slot='aui_assistant-message-content'] .aui-md > :first-child,

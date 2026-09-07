@@ -107,10 +107,19 @@ export const CHROME = {
  * read as off-centre. The GAP to the conversation is theirs exactly, because that is the number
  * the eye reads.
  */
-export const DOCK_MARGIN = 24;
-export const DOCK_GAP = 32;
-export const DOCK_RADIUS = 24;
-/** `--nav-rail-width` in globals.css. The sidebar folds to this when a panel opens (side-panel.tsx). */
+// 🔴🔴 FLUSH AGAIN, BY OWNER ORDER 2026-09-06: *"is the right sidepanel still rounded? i dont want
+// rounded edges for it."* This puts the pane back where the 2026-08-25 measurement had it and where
+// their desktop app actually draws it: `absolute top-0 bottom-0`, a `border-l` hairline, no radius,
+// no shadow, no inset. The 24px inset and 24px corner in between came from Gemini's canvas on
+// 2026-09-04, when he asked for rounded corners; a panel flush to the window's edge cannot show one,
+// so the inset went with the corner rather than being left behind as an unexplained gap.
+//
+// 🔴 THE GAP GOES TOO, AND IT IS NOT DECORATION. `use-dock-width.ts` takes the gap and the margin
+// out of the column to get the panel's width; with the panel flush the column IS the panel, so both
+// are zero and the arithmetic keeps working untouched.
+export const DOCK_MARGIN = 0;
+export const DOCK_GAP = 0;
+export const DOCK_RADIUS = 0;
 export const NAV_RAIL_WIDTH = 52;
 
 /**

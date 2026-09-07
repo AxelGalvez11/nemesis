@@ -177,6 +177,10 @@ export function DeckReview({
           }}
           open
           settings={REVIEW_DEFAULTS}
+          /* 🔴 GEMINI'S PLAYER ON THE CANVAS: one Track learning switch, two buttons when it is on
+             (owner 2026-09-07). The Study tab keeps Anki's four grades and their real intervals —
+             see the note on `simple` in review-session.tsx for why both exist. */
+          simple
           surface="bare"
         />
       )}

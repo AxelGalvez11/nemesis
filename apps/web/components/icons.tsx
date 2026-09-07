@@ -72,3 +72,23 @@ export function Icon({ name, size = 17, className, ...rest }: { name: IconName; 
     </svg>
   );
 }
+
+/**
+ * ChatGPT's own "Files and sources" glyph, lifted from their sprite (2026-09-06).
+ *
+ * 🔴 OWNER ASKED FOR IT BY NAME: *"could also look at their sources panel to in desktop and also copy
+ * the icon for it?"*. It is the mark on the button that opens their Outputs/Sources rail, read out
+ * of `sprites-core-*.svg#644ce5` in his signed-in app: two rows, each a filled dot and a rule
+ * beside it, on a 20 box.
+ *
+ * 🔴 IT IS NOT IN `PATHS` ABOVE, AND THAT IS NOT AN OVERSIGHT. Every icon in that set is a 1.7px
+ * STROKE on a 24 box, and this one is a FILL on a 20 box. Dropping it in would render a hairline
+ * outline of a filled shape, which is how a copied glyph quietly stops being the glyph.
+ */
+export function SourcesGlyph({ size = 20, ...rest }: { size?: number } & SVGProps<SVGSVGElement>) {
+  return (
+    <svg aria-hidden fill="currentColor" height={size} viewBox="0 0 20 20" width={size} xmlns="http://www.w3.org/2000/svg" {...rest}>
+      <path d="M5.693 11.056a2.71 2.71 0 0 1 2.432 2.694l-.015.277a2.71 2.71 0 0 1-2.694 2.432l-.276-.015a2.71 2.71 0 0 1-2.418-2.417l-.014-.277a2.71 2.71 0 0 1 2.708-2.708zm-.277 1.316a1.378 1.378 0 1 0 0 2.757 1.378 1.378 0 0 0 0-2.757M16.8 13.099a.665.665 0 0 1 0 1.302l-.134.014h-5.833a.665.665 0 0 1 0-1.33h5.833zM5.693 3.556A2.71 2.71 0 0 1 8.125 6.25l-.015.277A2.71 2.71 0 0 1 5.416 8.96l-.276-.015a2.71 2.71 0 0 1-2.418-2.417l-.014-.277a2.71 2.71 0 0 1 2.708-2.708zm-.277 1.316a1.378 1.378 0 1 0 .001 2.757 1.378 1.378 0 0 0-.001-2.757M16.8 5.599a.665.665 0 0 1 0 1.302l-.134.014h-5.833a.665.665 0 0 1 0-1.33h5.833z" />
+    </svg>
+  );
+}

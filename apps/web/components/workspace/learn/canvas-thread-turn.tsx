@@ -20,7 +20,10 @@
 //
 // 🔴 READ-ONLY. No session, no policy, no handler that writes.
 
+import { useState } from "react";
+
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
+import { Codicon } from "@/components/desktop-ui/codicon";
 import { AttachedRow } from "./attached-row";
 import { AnnotationNoteView } from "./annotation-note-view";
 
@@ -56,7 +59,7 @@ export function CanvasThreadTurnView({
   turn: CanvasThreadTurn;
 }) {
   return (
-    <div className="mx-auto w-full max-w-(--canvas-column) px-6" data-thread-turn={turn.id}>
+    <div className="group/turn mx-auto w-full max-w-(--canvas-column) px-6" data-thread-turn={turn.id}>
       {/* 🔴 THE LEARNER'S WORDS, ON THE RIGHT, IN THE ONE TREATMENT §46.2 ALLOWS. The Canvas view
           is the one that hides these — owner, 2026-08-26: *"just make the canvas the one where it
           doesn't show the user's prompt. It just shows the output."* In the chat they are the half
@@ -83,8 +86,16 @@ export function CanvasThreadTurnView({
         </div>
       )}
       {turn.said?.trim() && (
-        <div className="mb-4 flex justify-end" data-learner-said>
+        <div className="flex justify-end" data-learner-said>
           <LearnerUtterance via={turn.saidVia}>{turn.said}</LearnerUtterance>
+        </div>
+      )}
+      {/* 🔴 CHATGPT WORK'S ROW UNDER THE LEARNER'S WORDS (measured 2026-09-06): 40px tall, right-aligned,
+          invisible until the turn is hovered, a 32px Copy with a 20px glyph. Theirs also carries Share,
+          which the owner excluded. */}
+      {turn.said?.trim() && (
+        <div className="-mr-[4px] flex h-[40px] items-center justify-end opacity-0 transition-opacity focus-within:opacity-100 group-hover/turn:opacity-100" data-learner-actions="">
+          <CopySaid text={turn.said} />
         </div>
       )}
 
@@ -167,5 +178,25 @@ export function CanvasThreadTurnView({
         />
       )}
     </div>
+  );
+}
+
+function CopySaid({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      aria-label={copied ? "Copied" : "Copy message"}
+      className="flex size-[32px] items-center justify-center rounded-[8px] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      title={copied ? "Copied" : "Copy message"}
+      type="button"
+    >
+      <Codicon name={copied ? "check" : "copy"} size="20px" />
+    </button>
   );
 }

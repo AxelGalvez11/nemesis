@@ -29,6 +29,9 @@ const SESSION = code("../../components/workspace/learn/use-canvas-session.ts");
 const CHAT = code("../../components/workspace/learn/canvas-chat.ts");
 const DELIVERABLES = code("./canvas-deliverables.ts");
 const CONTROLS = code("../../components/workspace/learn/canvas-controls.tsx");
+// 2026-09-06: the outputs rows live in the Outputs/Sources card; their marks are the artifact card's.
+const PANEL = code("../../components/workspace/learn/work-panel.tsx");
+const MARKS = code("../../components/workspace/learn/artifact-card.tsx");
 
 test("🔴🔴 every capability is routed somewhere — none is a row that does nothing", () => {
   // The four kinds of destination, in the order `converse` checks them.
@@ -73,7 +76,8 @@ test("🔴 every maker has a maker, and every made thing has a way out", () => {
     // 🔴 AND THE ROW IT PRODUCES MUST OPEN. A file that is made and then sits in a list that cannot
     // hand it over is the same dead end one step later — the defect the Outputs panel already had
     // once, when a report row fell through to a plain div.
-    assert.match(CONTROLS, new RegExp(`${maker}: "`), `${maker} outputs have no icon, so the row renders a gap`);
+    assert.match(MARKS, new RegExp(`\\b${maker}: \\{`), `${maker} outputs have no mark, so the row renders a gap`);
+    assert.match(PANEL, /OUTPUT_KIND_MARKS\[output\.kind\]/, "the row does not draw the kind's mark");
   }
   // 🔴 THE DOWNLOADS MOVED INTO THE ARTIFACT CARD, so this asserts they are reachable from THERE.
   // Left pointed at the panel it would have gone red for the right change, which is how a guard
@@ -83,7 +87,7 @@ test("🔴 every maker has a maker, and every made thing has a way out", () => {
 test("🔴 the file rows are guarded on the payload, not on the kind", () => {
   // An output whose content failed to save is a row that would open an empty card, which is the
   // same dead end wearing a nicer coat.
-  assert.match(CONTROLS, /\(output\.markdown \|\| output\.sheet\)/, "a row can open an artifact with nothing in it");
+  assert.match(PANEL, /\(output\.markdown \|\| output\.sheet\)/, "a row can open an artifact with nothing in it");
 });
 
 test("🔴🔴 a made file is an ARTIFACT you open, not a download the row fires", () => {
@@ -93,7 +97,7 @@ test("🔴🔴 a made file is an ARTIFACT you open, not a download the row fires
   // means downloading it twice.
   //
   // Calibration: put `downloadDocx` back on the row's onClick and this reddens.
-  assert.match(CONTROLS, /onClick=\{\(\) => onOpen\(output\)\}/, "the row does not open the artifact");
+  assert.match(PANEL, /onClick=\{\(\) => onOpen\(output\)\}/, "the row does not open the artifact");
   assert.match(CONTROLS, /<OutputPreview[\s\n]/, "the artifact card is never mounted");
   assert.ok(!/downloadDocx|downloadPdf|downloadSheet/.test(CONTROLS), "🔴 the outputs panel downloads on click again");
 

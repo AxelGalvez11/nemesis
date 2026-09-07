@@ -59,7 +59,12 @@ test("🔴🔴 three sections in the owner's order, each with a View all, and no
   assert.ok(!/folderRow|visibleFolders|openFolder|setOpenFolder/.test(OUTPUTS), "folder rows or the open-folder state came back");
   assert.ok(!/FolderCreateDialog|createFolder\(|New folder/.test(OUTPUTS), "the Library makes folders again");
   assert.ok(!/LayoutGrid|chooseView|nemesis\.library\.v1\.view/.test(OUTPUTS), "the grid/list toggle came back");
-  assert.match(OUTPUTS, /<DropdownMenuSubTrigger>Move to project<\/DropdownMenuSubTrigger>/, "filing is gone from the row menu");
+  // 🔴 AND THE ⋯ NO LONGER FILES EITHER, SINCE 2026-09-07. This asserted the opposite one line
+  // above ("the ⋯ still files, because that is the one thing only this page can do") — true while
+  // /projects existed to receive a filed row. The owner then cut the concept outright: *"pretty
+  // much no more projects … each canvas is supposed to grow"*. With no page and no sidebar section,
+  // filing sent a row somewhere nobody could look. `folder_id` still round-trips.
+  assert.ok(!/Move to project/.test(OUTPUTS), "filing is back in the row menu — projects were cut on 2026-09-07");
   assert.ok(!/Add to folder|No folders yet|>\s*No folder\s*</.test(OUTPUTS), "the Library is calling a project a folder again");
 });
 

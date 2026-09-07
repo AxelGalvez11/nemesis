@@ -35,7 +35,8 @@ test("🔴🔴 the microphone now EXISTS in a browser with no recogniser", () =>
   assert.match(HOOK, /export function speechRecognitionSupported\(\): boolean \{\n  return dictationEngine\(\) !== "none";/);
   // Both surfaces still gate the button on it, which is why the meaning had to widen rather than a
   // second predicate being introduced beside it.
-  assert.match(COMPOSER, /dictation\.supported && \(/);
+  // 2026-09-06: the composer hides its mic while a question waits (ChatGPT Work's question row has none).
+  assert.match(COMPOSER, /dictation\.supported && intent\.kind !== "clarify" && \(/);
   assert.match(HOME, /dictation\.supported && \(/);
 });
 

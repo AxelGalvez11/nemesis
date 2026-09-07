@@ -25,6 +25,34 @@ export const SOURCE_MIN_HEIGHT = 320;
  */
 export const SOURCE_DEFAULT_HEIGHT = 560;
 export const IMAGE_SOURCE_MIN_HEIGHT = 340;
+
+/**
+ * How tall a dropped file opens, given its shape.
+ *
+ * 🔴🔴 A DECK IS NOT A PAGE, AND ONE HEIGHT FOR BOTH IS WHAT THE OWNER SAW. Owner, 2026-09-07:
+ * *"make sure any documents dropped in are fitted to card size"*. Every source opened at 640 x 560,
+ * and the reader fits the document to the card's WIDTH — so a portrait page fills the card and
+ * carries on below the fold, while a 16:9 slide is 360 tall inside it and leaves 200px of empty
+ * card under every deck. Measured on his own lecture deck.
+ *
+ * The shape is read from the file name, which is the only thing known at drop time: the card is
+ * built the moment the file lands and the first page's real size arrives seconds later, from inside
+ * the reader. Getting it right for the three common shapes beats being exactly right once the
+ * document has finished parsing.
+ *
+ * 🔴 IT IS A DEFAULT, NOT A RULE. Every card is resizable from every edge and the size the learner
+ * leaves it at is what is saved.
+ */
+const SLIDES = /\.(?:pptx?|key|odp)$/i;
+const SHEETS = /\.(?:xlsx?|csv|numbers|ods)$/i;
+
+export function defaultSourceHeight(fileName: string): number {
+  // 640 wide at 16:9 is 360 of slide, plus the card's own bar and padding.
+  if (SLIDES.test(fileName)) return 404;
+  // A sheet is rows: wide and short reads better than a tall empty grid.
+  if (SHEETS.test(fileName)) return 420;
+  return SOURCE_DEFAULT_HEIGHT;
+}
 /** A streaming card grows to the composer's top edge, and never past this. */
 export const CARD_AUTO_MAX_HEIGHT = 900;
 export const CARD_MAX_HEIGHT = 3000;
@@ -205,7 +233,7 @@ export function occupiedRects(cards: readonly BoardCard[], sources: readonly Boa
     ...cards,
     ...cards.flatMap((card) => card.notes.map((note: BoardNote) => ({ position: note.position, width: NOTE_WIDTH }))),
     ...sources,
-    ...outputs.map((output) => ({ position: output.position, width: output.width, height: output.height ?? OUTPUT_MIN_HEIGHT })),
+    ...outputs.map((output) => ({ position: output.position, width: output.width, height: output.collapsed ? COLLAPSED_HEIGHT : (output.height ?? OUTPUT_MIN_HEIGHT) })),
   ];
 }
 
@@ -282,7 +310,7 @@ export function makeRoomForDocuments<TState extends { cards: readonly BoardCard[
     occupants.set(source.id, occupant(source.id, source.position, source.width, height));
   }
   for (const output of state.outputs) {
-    occupants.set(output.id, occupant(output.id, output.position, output.width, output.height ?? OUTPUT_MIN_HEIGHT));
+    occupants.set(output.id, occupant(output.id, output.position, output.width, output.collapsed ? COLLAPSED_HEIGHT : (output.height ?? OUTPUT_MIN_HEIGHT)));
   }
 
   /**

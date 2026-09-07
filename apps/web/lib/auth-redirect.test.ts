@@ -53,7 +53,13 @@ assert.equal(sanitizeNextPath("/account/billing", "/account"), "/account/billing
 // -- so their first screen was somewhere they could not themselves have navigated to. Five of the
 // six were literal "/sessions"; the sixth was URL-ENCODED as "%2Fsessions" inside the confirmation
 // email's redirect, invisible to a search for the other five.
-assert.equal(DEFAULT_LANDING_PATH, "/learn", "the front door is /learn (acceptance §L)");
+//
+// 🔴🔴 THE ANSWER CHANGED ON 2026-09-07 AND THE GUARD MOVED WITH IT, which is the whole point of it
+// being one answer. Owner: *"get rid of the chat as landing page in webapp, the canvas should be
+// landing page"*, and, asked whether a plain full-screen chat should survive beside it, *"No, chats
+// only live on boards"*. /canvas reopens the board last worked on, or gives an empty one to a new
+// account (app/(workspace)/canvas/page.tsx). /learn still opens every chat made before today.
+assert.equal(DEFAULT_LANDING_PATH, "/canvas", "the front door is the canvas (owner 2026-09-07)");
 
 // 🔴 IT IS A FALLBACK, NEVER AN OVERRIDE. An explicit ?next= always wins. A default that could
 // override a requested path would break a client this repo cannot update.

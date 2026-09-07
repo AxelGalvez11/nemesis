@@ -1,7 +1,9 @@
 "use client";
 
-// The board itself: React Flow with our three node kinds, edges between a card and what it branched
-// from, the zoom controls, undo/redo, and the camera rules (docs/wondering-canvas-reference.md §3).
+// The board itself: React Flow with our node kinds, edges between a card and what it branched
+// from, the zoom controls, undo/redo, and the camera rules (docs/wondering-canvas-reference.md §3);
+// and, since 2026-09-06, the sources-and-create column down the right edge (board-studio.tsx),
+// inside this provider because pressing a made thing there moves the camera to it.
 
 import {
   Background,
@@ -22,20 +24,25 @@ import {
   type OnNodesChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Maximize, Minus, Plus, Redo2, Undo2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Group as GroupIcon, Maximize, Minus, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from "react";
 
 import { CARD_WIDTH, EMPTY_CARD_HEIGHT, INITIAL_CARD_ZOOM, MAX_ZOOM, MIN_ZOOM, NOTE_WIDTH, SOURCE_DEFAULT_HEIGHT, centeredViewportForNode, connectionSides } from "@/lib/board/board-layout";
+import { GROUP_HEADER, nodesInsideGroup } from "@/lib/board/board-groups";
 import type { BoardViewport } from "@/lib/board/board-model";
 import { cn } from "@/lib/utils";
 
 import { IconTooltip, isEditableTarget, measureBoardArea, sourceHandleId, targetHandleId } from "./board-chrome";
 import { useBoard } from "./board-provider";
+import { BoardStudio } from "./board-studio";
+import { BoardThread } from "./board-thread";
 import { ConversationCard, type ConversationNodeData } from "./conversation-card";
+import { GROUP_DRAG_HANDLE, GroupCard, type GroupNodeData } from "./group-card";
 import { NoteCard, OutputCard, SourceCard, type NoteNodeData, type OutputNodeData, type SourceNodeData } from "./other-cards";
 import "./board.css";
 
 type BoardNode =
+  | Node<GroupNodeData, "groupBox">
   | Node<ConversationNodeData, "conversation">
   | Node<NoteNodeData, "note">
   | Node<SourceNodeData, "source">
@@ -57,49 +64,20 @@ type BoardNode =
  * `text-align: center` with nothing in our own CSS asking for it. `board-panel.test.ts` guards
  * the names now.
  */
-const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard, deliverable: OutputCard };
+const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard, deliverable: OutputCard, groupBox: GroupCard };
+
+/**
+ * 🔴🔴 A GROUP FRAME SITS BEHIND EVERY CARD, EVEN WHILE IT IS SELECTED, AND THAT IS WHY THIS NUMBER
+ * IS NOT -1. React Flow adds 1000 to a selected node's z (`elevateNodesOnSelect`, on by default and
+ * relied on by every other card here). A frame at -1 would therefore jump to 999 the moment it was
+ * clicked and paint its wash over the cards standing in it. -1001 selects to -1, which is still
+ * behind everything and above the dot lattice.
+ */
+const GROUP_Z = -1001;
 const PRO_OPTIONS = { hideAttribution: true };
 const EDGE_STROKE = "var(--board-edge)";
 const CONTROL_CLASS =
   "react-flow__controls-button !border-(--ui-stroke-secondary) !bg-(--ui-bg-elevated) !text-(--ui-text-secondary) transition-colors hover:!bg-(--ui-control-hover-background) hover:!text-foreground disabled:!text-(--ui-text-tertiary)";
-
-const isApple = () => typeof navigator !== "undefined" && /Mac|iP(?:hone|ad|od)/.test(navigator.platform || navigator.userAgent);
-
-function UndoRedoControls() {
-  const { canUndo, canRedo, undo, redo } = useBoard();
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || isEditableTarget(event.target) || !(event.metaKey || event.ctrlKey) || event.altKey) return;
-      const key = event.key.toLowerCase();
-      const isRedo = (key === "z" && event.shiftKey) || (key === "y" && event.ctrlKey && !event.metaKey && !event.shiftKey);
-      const isUndo = key === "z" && !event.shiftKey;
-      if (!isUndo && !isRedo) return;
-      event.preventDefault();
-      if (isRedo && canRedo) redo();
-      else if (isUndo && canUndo) undo();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [canRedo, canUndo, redo, undo]);
-  const apple = isApple();
-  const undoKey = apple ? "⌘Z" : "Ctrl+Z";
-  const redoKey = apple ? "⇧⌘Z" : "Ctrl+Y";
-  const button = "rounded-[6px] p-[6px] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-(--ui-text-secondary)";
-  return (
-    <div className="absolute right-[16px] top-[16px] z-10 flex items-center gap-[2px] rounded-[8px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated)/95 p-[4px] shadow-sm">
-      <IconTooltip label={`Undo (${undoKey})`}>
-        <button aria-label={`Undo (${undoKey})`} className={button} disabled={!canUndo} onClick={undo} type="button">
-          <Undo2 className="size-[16px]" />
-        </button>
-      </IconTooltip>
-      <IconTooltip label={`Redo (${redoKey})`}>
-        <button aria-label={`Redo (${redoKey})`} className={button} disabled={!canRedo} onClick={redo} type="button">
-          <Redo2 className="size-[16px]" />
-        </button>
-      </IconTooltip>
-    </div>
-  );
-}
 
 function ViewportControls() {
   const { fitView, getNodes, setViewport, zoomIn, zoomOut } = useReactFlow();
@@ -178,6 +156,100 @@ function CenterTarget({ nodeId, companionId, instant, maxZoom }: { nodeId: strin
   return null;
 }
 
+/**
+ * "Group these" — the one control that makes a frame.
+ *
+ * 🔴 IT APPEARS OVER THE SELECTION, NOT IN A TOOLBAR. Grouping is about the things you have just
+ * picked, so the control belongs where they are; a button parked on the edge of the screen would
+ * have to explain what it acts on. Shift-drag boxes a selection, Cmd-click adds to one, and this
+ * is what the board does with it.
+ *
+ * 🔴 IT FOLLOWS THE CAMERA. Subscribed to React Flow's transform, so panning or zooming with a
+ * selection open moves the pill with the cards instead of leaving it stranded.
+ */
+function GroupSelectionPill({ ids, bounds, onGroup }: { ids: readonly string[]; bounds: { x: number; y: number; width: number }; onGroup: () => void }) {
+  const { flowToScreenPosition } = useReactFlow();
+  useStore((state) => state.transform);
+  const board = document.querySelector("[data-board]")?.getBoundingClientRect();
+  const point = flowToScreenPosition({ x: bounds.x + bounds.width / 2, y: bounds.y });
+  if (!board) return null;
+  return (
+    <div className="pointer-events-none absolute z-20" style={{ left: point.x - board.left, top: point.y - board.top - 44 }}>
+      <button
+        className="pointer-events-auto flex h-[32px] -translate-x-1/2 items-center gap-[6px] rounded-full border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-[12px] text-[13px] font-medium text-foreground shadow-md transition-colors hover:bg-(--ui-control-hover-background)"
+        data-board-group-action=""
+        onClick={onGroup}
+        type="button"
+      >
+        <GroupIcon aria-hidden className="size-[14px] text-(--ui-text-secondary)" />
+        Group {ids.length}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The light that follows the pointer across the board (board.css, `.board-glow`).
+ *
+ * Owner, 2026-09-06: *"copy the glow that follows the mouse in canvas"*, then, of the first build,
+ * *"the dot glow is delayed"* and *"the canvas feels slow and laggy"*.
+ *
+ * 🔴🔴 IT MOVES BY `transform`, IT DOES NOT EASE, AND BOTH OF THOSE WERE ONE MISTAKE. The first
+ * version wrote the pointer into a full-bleed gradient's origin and eased 16% toward it each frame:
+ * the easing is what made the light trail the cursor, and moving a gradient's origin REPAINTS the
+ * whole element — a board-sized repaint at pointer speed, on the main thread, behind every card,
+ * which is exactly what "laggy" feels like. A fixed 920px layer moved with `translate3d` is
+ * composited rather than painted, and it is pinned to the pointer with no easing at all.
+ *
+ * 🔴 NO REACT STATE, AND NO LAYOUT READ PER MOVE. A pointer emits well over a hundred moves a
+ * second: setting state would re-render every card on the board, and `getBoundingClientRect()` in
+ * the handler would force a synchronous layout just as often. The box is measured on entry and on
+ * resize; the position is written straight onto the element inside one rAF.
+ */
+function useCursorGlow(board: RefObject<HTMLDivElement | null>, glow: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const surface = board.current;
+    const light = glow.current;
+    if (!surface || !light) return;
+    let box = surface.getBoundingClientRect();
+    let at: { x: number; y: number } | null = null;
+    let frame = 0;
+    const paint = () => {
+      frame = 0;
+      if (!at) return;
+      light.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(at.y)}px, 0)`;
+    };
+    const onMove = (event: PointerEvent) => {
+      at = { x: event.clientX - box.left, y: event.clientY - box.top };
+      // 🔴 WRITE THE ATTRIBUTE ONCE, NOT ON EVERY MOVE. Setting `dataset` invalidates style for the
+      // subtree; at pointer speed that is a recalculation a hundred times a second for a value that
+      // has not changed.
+      if (surface.dataset.glow !== "on") surface.dataset.glow = "on";
+      if (!frame) frame = requestAnimationFrame(paint);
+    };
+    const onEnter = () => {
+      box = surface.getBoundingClientRect();
+    };
+    const onLeave = () => {
+      surface.dataset.glow = "off";
+    };
+    const observer = new ResizeObserver(() => {
+      box = surface.getBoundingClientRect();
+    });
+    observer.observe(surface);
+    surface.addEventListener("pointerenter", onEnter);
+    surface.addEventListener("pointermove", onMove);
+    surface.addEventListener("pointerleave", onLeave);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      observer.disconnect();
+      surface.removeEventListener("pointerenter", onEnter);
+      surface.removeEventListener("pointermove", onMove);
+      surface.removeEventListener("pointerleave", onLeave);
+    };
+  }, [board, glow]);
+}
+
 function BoardInner() {
   const { fitView } = useReactFlow();
   const {
@@ -193,16 +265,57 @@ function BoardInner() {
     hasSavedViewport,
     updateViewport,
     addSourceFiles,
+    groups,
+    nodeRects,
+    createGroup,
+    moveGroup,
+    resizeGroup,
+    deleteGroup,
+    fannedCardId,
+    closeFan,
   } = useBoard();
   const ready = useNodesInitialized();
   const { getInternalNode } = useReactFlow();
   const [nodes, setNodes] = useState<BoardNode[]>([]);
   const [pickedUp, setPickedUp] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const board = useRef<HTMLDivElement>(null);
+  const glow = useRef<HTMLDivElement>(null);
   const resizeAttributes = useRef(new Map<string, boolean | "width" | "height">());
   const known = useRef(new Map<string, { position: { x: number; y: number }; width?: number; height?: number }>());
+  useCursorGlow(board, glow);
+
+  /**
+   * What is hidden because the frame around it is folded (owner 2026-09-06: *"there should be a way
+   * to collapse groups too"*).
+   *
+   * 🔴 ASKED OF THE GEOMETRY, NOT OF A MEMBER LIST (lib/board/board-groups.ts). A card dragged into
+   * a folded frame disappears into it, and one dragged out reappears, with nothing to keep in step.
+   * 🔴 `node.hidden`, NOT A FILTER ON THE ARRAY. React Flow hides an edge whose end is hidden by
+   * itself; filtering the node out instead would leave a line running to nowhere.
+   */
+  const hidden = useMemo(() => {
+    const set = new Set<string>();
+    /**
+     * 🔴🔴 A CHAT'S MADE THINGS ARE PUT AWAY UNTIL THAT CHAT IS FANNED. Owner, 2026-09-07: *"any
+     * deliverables created by chats should not show on canvas and instead should be able to be
+     * seen behind the chat"*. Hidden, not removed: the node keeps its id, its position and its
+     * place in the saved document, so fanning is a change of what is drawn and nothing else.
+     * A thing being MADE is always drawn, because a progress card nobody can see is a hang.
+     */
+    for (const output of outputs) {
+      if (output.cardId && output.cardId !== fannedCardId && output.status !== "making") set.add(output.id);
+    }
+    const folded = groups.filter((group) => group.collapsed === true);
+    if (folded.length === 0) return set;
+    const rects = nodeRects();
+    for (const group of folded) for (const id of nodesInsideGroup(group, rects)) set.add(id);
+    return set;
+  }, [fannedCardId, groups, nodeRects, outputs]);
 
   const total = cards.length + sources.length + cards.reduce((sum, card) => sum + card.notes.length, 0);
+  /** Nothing at all, not even a thing being made: the landing is up (board-page.tsx) and the controls stay out of its way. */
+  const empty = total === 0 && outputs.length === 0;
   const isEmpty = useRef(total === 0);
   isEmpty.current = total === 0;
   const onlyOne = total === 1;
@@ -247,6 +360,7 @@ function BoardInner() {
     const previous = known.current;
     const next = new Map(
       [
+        ...groups.map((group) => ({ id: group.id, position: group.position, width: group.width, height: group.collapsed ? GROUP_HEADER : group.height })),
         ...cards.map((card) => ({ id: card.id, position: card.position, width: card.width, height: heightOf(card) })),
         ...cards.flatMap((card) => card.notes.map((note) => ({ id: note.id, position: note.position, width: NOTE_WIDTH, height: undefined }))),
         ...sources.map((source) => ({ id: source.id, position: source.position, width: source.width, height: sourceHeightOf(source) })),
@@ -266,6 +380,24 @@ function BoardInner() {
         return { ...node, position: nextPosition, width: nextWidth, height: nextHeight, deletable };
       };
       const rebuilt: BoardNode[] = [
+        // Frames first, so they are behind everything even before z-index is consulted.
+        ...groups.map((group) => {
+          const height = group.collapsed ? GROUP_HEADER : group.height;
+          const existing = byId.get(group.id) as Node<GroupNodeData, "groupBox"> | undefined;
+          if (existing) return reuse(group.id, existing, group.position, group.width, height);
+          changed = true;
+          return {
+            id: group.id,
+            type: "groupBox",
+            position: group.position,
+            width: group.width,
+            height,
+            zIndex: GROUP_Z,
+            // Only the label bar drags the frame; the rest of it belongs to the board (group-card.tsx).
+            dragHandle: `.${GROUP_DRAG_HANDLE}`,
+            data: { groupId: group.id },
+          } as BoardNode;
+        }),
         ...cards.map((card) => {
           const existing = byId.get(card.id) as Node<ConversationNodeData, "conversation"> | undefined;
           if (existing) return reuse(card.id, existing, card.position, card.width, heightOf(card), card.status !== "streaming");
@@ -296,7 +428,21 @@ function BoardInner() {
       return changed ? rebuilt : was;
     });
     known.current = next;
-  }, [cards, outputs, sources]);
+  }, [cards, groups, outputs, sources]);
+
+  // A card inside a folded frame is hidden, and so are the lines that reach it.
+  useEffect(() => {
+    setNodes((was) => {
+      let changed = false;
+      const next = was.map((node) => {
+        const shouldHide = hidden.has(node.id);
+        if (Boolean(node.hidden) === shouldHide) return node;
+        changed = true;
+        return { ...node, hidden: shouldHide };
+      });
+      return changed ? next : was;
+    });
+  }, [hidden]);
 
   // The node being dragged floats above the rest.
   useEffect(() => {
@@ -319,14 +465,18 @@ function BoardInner() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || isEditableTarget(event.target) || (event.key !== "Backspace" && event.key !== "Delete")) return;
-      const chosen = nodes.filter((node) => node.type !== "source" && node.selected).map((node) => node.id);
-      if (chosen.length === 0) return;
+      const picked = nodes.filter((node) => node.type !== "source" && node.selected);
+      if (picked.length === 0) return;
       event.preventDefault();
-      deleteNodes(chosen);
+      // 🔴 A FRAME IS DELETED ON ITS OWN AND KEEPS WHAT WAS INSIDE IT (board-provider's
+      // `deleteGroup`). It was never a parent, so there is nothing to take with it.
+      for (const node of picked) if (node.type === "groupBox") deleteGroup(node.id);
+      const chosen = picked.filter((node) => node.type !== "groupBox").map((node) => node.id);
+      if (chosen.length > 0) deleteNodes(chosen);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [deleteNodes, nodes]);
+  }, [deleteGroup, deleteNodes, nodes]);
 
   const edges = useMemo<Edge[]>(() => {
     const rects = new Map(
@@ -405,12 +555,51 @@ function BoardInner() {
     return [...cardEdges, ...noteEdges, ...outputEdges];
   }, [cards, getInternalNode, outputs, ready, sources]);
 
+  /**
+   * What a frame is carrying, captured the moment it is picked up.
+   *
+   * 🔴🔴 CAPTURED AT DRAG START, NOT RECOMPUTED PER FRAME. Membership is geometric, so asking again
+   * mid-drag would answer with the cards the frame happens to be over RIGHT NOW — a group dragged
+   * across the board would collect everything it passed and leave its own cards behind. Obsidian
+   * has the same rule for the same reason: what moves is what was inside when you took hold of it.
+   */
+  const carrying = useRef<{ id: string; start: { x: number; y: number }; members: Array<{ id: string; x: number; y: number }> } | null>(null);
+  const groupIds = useMemo(() => new Set(groups.map((group) => group.id)), [groups]);
+
   const onNodesChange = useCallback<OnNodesChange<BoardNode>>(
     (changes: NodeChange<BoardNode>[]) => {
-      setNodes((was) => applyNodeChanges(changes, was));
-      for (const change of changes) {
-        if (change.type === "position" && change.position && change.dragging === false) updateCardPosition(change.id, change.position);
+      // A frame's move becomes a move for everything it is carrying, in the same batch, so the
+      // cards travel with it rather than snapping into place when it is dropped.
+      const held = carrying.current;
+      let all = changes;
+      if (held) {
+        const move = changes.find((change) => change.type === "position" && change.id === held.id && change.position);
+        if (move && move.type === "position" && move.position) {
+          const dx = move.position.x - held.start.x;
+          const dy = move.position.y - held.start.y;
+          all = [
+            ...changes,
+            ...held.members.map((member) => ({ id: member.id, type: "position" as const, position: { x: member.x + dx, y: member.y + dy }, dragging: move.dragging })),
+          ];
+        }
+      }
+      setNodes((was) => applyNodeChanges(all, was));
+      for (const change of all) {
+        if (change.type === "position" && change.position && change.dragging === false) {
+          if (groupIds.has(change.id)) moveGroup(change.id, change.position);
+          else updateCardPosition(change.id, change.position);
+        }
         if (change.type !== "dimensions" || !change.dimensions) continue;
+        // A frame resized by its handles: only once the handle is let go, and its corner may have
+        // moved too (dragging the top-left edge changes both).
+        if (groupIds.has(change.id)) {
+          if (change.resizing === false) {
+            resizeGroup(change.id, change.dimensions);
+            const position = getInternalNode(change.id)?.position;
+            if (position) moveGroup(change.id, position);
+          }
+          continue;
+        }
         const card = cards.find((item) => item.id === change.id);
         const source = sources.find((item) => item.id === change.id);
         const settled = Boolean(
@@ -433,10 +622,56 @@ function BoardInner() {
         }
       }
     },
-    [cards, getInternalNode, reportNodeSize, sources, updateCardPosition, updateCardSize],
+    [cards, getInternalNode, groupIds, moveGroup, reportNodeSize, resizeGroup, sources, updateCardPosition, updateCardSize],
   );
 
-  const clearSelection = useCallback(() => setNodes((was) => was.map((node) => (node.selected ? { ...node, selected: false } : node))), []);
+  const clearSelection = useCallback(() => {
+    setNodes((was) => was.map((node) => (node.selected ? { ...node, selected: false } : node)));
+    // A press on the board puts a fanned chat's made things back behind it.
+    closeFan();
+  }, [closeFan]);
+
+  /** Two or more cards chosen: the box around them, and the ids a frame would be drawn around. */
+  const grouping = useMemo(() => {
+    const chosen = nodes.filter((node) => node.selected && node.type !== "groupBox" && !node.hidden);
+    if (chosen.length < 2) return null;
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    for (const node of chosen) {
+      const measuredNode = ready ? getInternalNode(node.id) : undefined;
+      const width = measuredNode?.measured?.width ?? node.width ?? 0;
+      left = Math.min(left, node.position.x);
+      top = Math.min(top, node.position.y);
+      right = Math.max(right, node.position.x + width);
+    }
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+    return { ids: chosen.map((node) => node.id), bounds: { x: left, y: top, width: right - left } };
+  }, [getInternalNode, nodes, ready]);
+
+  /**
+   * 🔴 THE SELECTION IS LET GO THE MOMENT THE FRAME EXISTS. Leaving the cards selected leaves the
+   * "Group 2" pill standing over the frame it just made — measured in the harness, where it sat on
+   * top of the new label and swallowed the click meant for it. Obsidian does the same thing: what
+   * you had chosen stops being chosen, and the new group's name is what has your attention (the
+   * label focuses itself in group-card.tsx).
+   */
+  const groupSelection = useCallback(() => {
+    if (!grouping) return;
+    if (!createGroup(grouping.ids)) return;
+    setNodes((was) => was.map((node) => (node.selected ? { ...node, selected: false } : node)));
+  }, [createGroup, grouping]);
+
+  // ⌘G / Ctrl+G, the shortcut every canvas has for this.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isEditableTarget(event.target) || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "g" || !grouping) return;
+      event.preventDefault();
+      groupSelection();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [grouping, groupSelection]);
 
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
@@ -449,6 +684,7 @@ function BoardInner() {
     <div
       className="absolute inset-0 overflow-hidden overscroll-none"
       data-board=""
+      data-glow="off"
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) setDragOver(false);
       }}
@@ -459,7 +695,9 @@ function BoardInner() {
         }
       }}
       onDrop={onDrop}
+      ref={board}
     >
+      <div aria-hidden className="board-glow" ref={glow} />
       <ReactFlow<BoardNode>
         deleteKeyCode={null}
         edges={edges}
@@ -480,8 +718,24 @@ function BoardInner() {
           if (isEditableTarget(event.target) || window.getSelection()?.isCollapsed === false) return;
           void fitView({ nodes: [{ id: node.id }], duration: 320, padding: 0.1, maxZoom: 1 });
         }}
-        onNodeDragStart={(_event, node) => setPickedUp(node.id)}
-        onNodeDragStop={() => setPickedUp(null)}
+        onNodeDragStart={(_event, node) => {
+          setPickedUp(node.id);
+          const group = groups.find((item) => item.id === node.id);
+          carrying.current = group
+            ? {
+                id: group.id,
+                start: { ...node.position },
+                members: nodesInsideGroup(group, nodeRects()).map((id) => {
+                  const held = getInternalNode(id);
+                  return { id, x: held?.position.x ?? 0, y: held?.position.y ?? 0 };
+                }),
+              }
+            : null;
+        }}
+        onNodeDragStop={() => {
+          setPickedUp(null);
+          carrying.current = null;
+        }}
         onNodesChange={onNodesChange}
         onPaneClick={clearSelection}
         panOnDrag
@@ -497,8 +751,8 @@ function BoardInner() {
         <CenterTarget companionId={companion} instant={onlyOne} maxZoom={onlyOne && cards.length === 1 ? INITIAL_CARD_ZOOM : undefined} nodeId={target} />
         <Background color="var(--board-dot)" gap={28} size={2} variant={BackgroundVariant.Dots} />
       </ReactFlow>
-      <ViewportControls />
-      <UndoRedoControls />
+      {grouping && <GroupSelectionPill bounds={grouping.bounds} ids={grouping.ids} onGroup={groupSelection} />}
+      {!empty && <ViewportControls />}
       {dragOver && (
         <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-(--ui-bg-editor)/60 backdrop-blur-[1px]">
           <div className="rounded-[12px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-[16px] py-[10px] text-[14px] font-medium text-foreground shadow-md">Drop to add as a source</div>
@@ -512,6 +766,10 @@ export function BoardSurface() {
   return (
     <ReactFlowProvider>
       <BoardInner />
+      <BoardStudio />
+      {/* 🔴 LAST, SO IT IS THE TOP LAYER, and inside the provider so the board keeps its camera while
+          it is covered (board-thread.tsx). */}
+      <BoardThread />
     </ReactFlowProvider>
   );
 }

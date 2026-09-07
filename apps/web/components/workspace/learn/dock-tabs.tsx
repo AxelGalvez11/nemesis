@@ -102,51 +102,82 @@ export function DockTabs({
   return (
     // 🔴 THE STRIP FILLS THE LEFT OF THE PANEL'S ONE ROW NOW (`dock-panel.tsx`, 2026-09-04): the
     // row owns the padding and the height, so the strip is the tabs and nothing around them.
-    <div
-      className="scrollbar-none flex h-[28px] w-full items-center gap-[8px] overflow-x-auto"
-      data-testid="dock-tabs"
-      role="tablist"
-    >
-      {items.map((item) => {
+    // 🔴 THE STRIP AND THE `+` ARE SIBLINGS, because theirs is: in the desktop app's row the `+`
+    // stands still between the last tab and the tools while the tabs scroll under the fade. Inside
+    // the scroller it would slide out of reach the moment a fourth document opened.
+    <div className="flex h-[32px] w-full min-w-0 items-center gap-[8px]">
+      <div
+        className="scrollbar-none horizontal-scroll-fade-mask flex h-full min-w-0 flex-1 items-center overflow-x-auto"
+        data-testid="dock-tabs"
+        role="tablist"
+      >
+      {items.map((item, index) => {
         const row = face(item);
         const current = item.key === active?.key;
         const marks = badgeFor?.(item) ?? 0;
+        // 🔴 NO SEPARATOR ON THE ACTIVE TAB, THE ONE BEFORE IT, OR THE LAST ONE. Theirs is the same
+        // rule (`t < l.length - 1 && !isActive && !nextIsActive`): a rule beside a filled pill reads
+        // as part of the pill, and one after the last tab is a rule to nowhere.
+        const separated = index < items.length - 1 && !current && items[index + 1]?.key !== active?.key;
         return (
           // 🔴 A `div` WEARING THE TAB, NOT A BUTTON CONTAINING ONE. The ✕ is a second action on the
           // same tab, and a button inside a button is invalid markup that browsers resolve by
           // dropping one of them — which is how a close control quietly becomes a select control.
           // The same reason `dock-switcher.tsx` gives for its menu rows.
+          //
+          // 🔴🔴 THEIR OWN TAB, READ OUT OF THE DESKTOP BUNDLE 2026-09-06 (owner: *"i need the tabs
+          // to actually match the image i sent you one for one"*). Their shell is
+          // `group/tab relative flex h-8 shrink-0 items-center rounded-lg py-1 px-2 ps-2.5` with
+          // `pe-1.75` when it can be closed and `pe-1` when it cannot; `--spacing: .25rem` and
+          // `--radius-lg` = 12.5px, so: 32 tall, 10 in at the start, 7 at the end, 4 top and bottom.
           <div
             className={cn(
-              "group/tab relative flex h-[28px] max-w-[156px] shrink-0 items-center overflow-hidden rounded-[12.5px] px-[8px] py-[4px] transition-colors",
-              current
-                ? "bg-(--ui-bg-tertiary) text-(--ui-text-primary)"
-                : "text-(--ui-text-secondary) hover:bg-(--ui-bg-tertiary)/60",
+              "group/tab relative flex h-[32px] max-w-[156px] shrink-0 items-center rounded-[12.5px] py-[4px] pe-[7px] ps-[10px]",
+              current ? "text-(--ui-text-primary)" : "text-(--ui-text-secondary)",
             )}
             key={item.key}
             role="tab"
             aria-selected={current}
             title={marks > 0 ? `${row.title} · ${marks} annotation${marks === 1 ? "" : "s"}` : row.title}
           >
-            {/* §46.3-exempt: ChatGPT's tab label, measured live at 13px on an 18.57px line at
-                weight 430 (2026-09-04), and the owner asked for their pane one for one. The scale's
-                nearest steps are 12 and 14, and a tab in either reads as a different tab. */}
+            {/* 🔴🔴 THE FILL IS ITS OWN LAYER, WHICH IS WHY AN INACTIVE TAB HAS NO EDGE AT ALL. Theirs:
+                `pointer-events-none absolute inset-x-px inset-y-0 z-0 rounded-md` carrying
+                `border-hairline` always, and then the state: active gets a raised fill, a real border
+                and `shadow-tab-elevated` (0 0 8px rgba(0,0,0,.05)); inactive gets a TRANSPARENT border
+                and only a ghost fill on hover. Painting the fill on the tab itself instead is what
+                made every tab look like a pill. `--radius-md` = 10px against the shell's 12.5. */}
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute inset-x-px inset-y-0 z-0 rounded-[10px] border-[0.5px] transition-colors",
+                current
+                  ? "border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) shadow-[0_0_8px_rgba(0,0,0,0.05)]"
+                  : "border-transparent group-hover/tab:bg-(--ui-bg-tertiary)/60",
+              )}
+            />
+            {/* §46.3-exempt: their tab label wears their small step, which their own app-shell theme
+                block sets to 12px (it measured 13 live at the window's 1.1 zoom). The owner asked for
+                their pane one for one.
+                🔴 THE CLASS NAME IS NOT WRITTEN OUT ANYWHERE IN THIS COMMENT. Tailwind scans .tsx
+                prose and emits what it finds, and `canvas-shell.test.ts` reads it as a second type
+                scale arriving on the canvas. It caught this line the first time it was written. */}
             <button
               className={cn(
-                "relative z-10 flex min-w-0 flex-1 items-center gap-[8px] text-left text-[13px] font-[430] leading-[18.57px] transition-[padding]",
-                current ? "pe-[20px]" : "group-hover/tab:pe-[14px] group-focus-within/tab:pe-[14px]",
+                "no-drag relative z-10 flex min-w-0 flex-1 items-center gap-[8px] text-left text-[12px] font-[430] leading-[16px] transition-[padding]",
+                current ? "pe-[20px]" : "group-hover/tab:pe-[20px] group-focus-within/tab:pe-[20px]",
               )}
               onClick={() => onSelect(item.key)}
               type="button"
             >
               <Codicon className="shrink-0" name={row.icon} size="16px" />
-              <span className="truncate">{row.title}</span>
-              {/* 🔴 A NUMBER, NOT THE WHOLE PHRASE. The tab has 220px at most and the file's name is
+              {/* 🔴🔴 THE NAME FADES OUT, IT DOES NOT ELLIPSIS. Theirs is `.text-fade-truncate`:
+                  `text-overflow: clip` plus a mask that takes the last 16px to transparent. It is the
+                  visible difference in the owner's screenshot, where "Enola" and "Lilly In" are cut
+                  mid-word with no dots. `dock-tab-fade` in globals.css carries the rule. */}
+              <span className="dock-tab-fade block min-w-0 flex-1 whitespace-nowrap text-start">{row.title}</span>
+              {/* 🔴 A NUMBER, NOT THE WHOLE PHRASE. The tab has 156px at most and the file's name is
                   what the learner is looking for; "3 annotations" is in the tab's own tooltip and on
                   the card the document was opened from, where there is room to say it. */}
-              {/* 🔴 `--canvas-text-meta` (12px), THE SMALLEST STEP ON THE SCALE, not a 10px of its
-                  own. §46.3 is one type scale for the whole surface, and `canvas-shell.test.ts`
-                  catches a size invented for one badge. */}
               {marks > 0 && (
                 <span
                   className="shrink-0 rounded-full bg-(--ui-action) px-[5px] text-[length:var(--canvas-text-meta)] font-semibold leading-[16px] text-(--ui-action-glyph)"
@@ -161,11 +192,9 @@ export function DockTabs({
               // 🔴 ALWAYS RENDERED, REVEALED ON HOVER — never conditionally mounted. A control that
               // appears on hover by being added to the DOM shifts the label under the pointer, so
               // the thing you were about to click moves as you reach it. Opacity costs no layout.
-              // 🔴 ABSOLUTE, 4px IN FROM THE PILL'S RIGHT AND TOP, as theirs is: the name's own
-              // `pe-5` is what makes room for it, so the label never reflows when it appears.
               className={cn(
-                "absolute end-[4px] top-[4px] z-20 grid size-[20px] place-items-center rounded-[10px] transition-opacity",
-                "text-(--ui-text-quaternary) hover:bg-(--ui-bg-elevated) hover:text-(--ui-text-primary)",
+                "absolute end-[6px] top-[6px] z-20 grid size-[20px] place-items-center rounded-[10px] transition-opacity",
+                "text-(--ui-text-quaternary) hover:bg-(--ui-bg-tertiary) hover:text-(--ui-text-primary)",
                 current ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100",
               )}
               onClick={(event) => {
@@ -176,9 +205,20 @@ export function DockTabs({
             >
               <Codicon name="close" size="12px" />
             </button>
+            {/* Their `trailingDecoration`, exactly: `h-3 w-px shrink-0 end-0 absolute bg-border`,
+                fading rather than mounting so the row never reflows. */}
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute end-0 z-10 h-[12px] w-px shrink-0 bg-(--ui-stroke-secondary) transition-opacity duration-150",
+                separated ? "opacity-100" : "opacity-0",
+              )}
+              data-testid="dock-tab-separator"
+            />
           </div>
         );
       })}
+      </div>
       {onAdd && (
         <button
           aria-label="Open another document"
