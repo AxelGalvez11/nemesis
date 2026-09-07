@@ -11,7 +11,7 @@ import { Closer } from "@/components/home/Closer";
  *
  *   hero      the job, in the reader's words, with the identity on lit ground
  *   learn     the range, drawn as a ring rather than argued as a list
- *   features  see it / built on evidence / calendar, one noun heading each
+ *   features  visualize anything / built on evidence, one noun heading each
  *   close     "accelerate cognition", now that it means something
  *
  * `learn` is its own component rather than a fourth entry in `Features` because it
@@ -22,6 +22,14 @@ import { Closer } from "@/components/home/Closer";
  * The page states what it does, shows what it looks like, says what is underneath
  * it, and asks. That is the owner's brief almost verbatim: describe what it does,
  * how it looks, and the purpose.
+ *
+ * ── WHAT WAS REMOVED, 2026-09-06 ──────────────────────────────────────────────
+ *
+ * The `Calendar` and `Voice` bands, at the owner's instruction: "remove the 'voice' and calendar
+ * section". `Features` is two bands now. The classical engravings went in the same message
+ * ("remove the images of statues") — a seated figure beside `Built on evidence` and the Sistine
+ * hands beside `Learn anything` — and every ground on the page was redrawn in the new grainy orange
+ * (scripts/art-gradient.mjs).
  *
  * ── WHAT WAS REMOVED, 2026-08-24 ──────────────────────────────────────────────
  *

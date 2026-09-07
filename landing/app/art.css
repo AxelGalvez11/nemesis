@@ -357,17 +357,23 @@
   display: block;
 }
 
+/* 🔴 THE MASK IS WHY THE ORANGE READ AS PEACH, NOT THE ART. These stops fell to 22% opacity by
+   62% across, so the only part of a ground the page ever composited was its foot — and the foot of
+   any ramp over white is a tint. Three passes were spent making the images hotter before the
+   measurement pointed here. The plateau now holds to 40% and the falloff starts from 80%, which is
+   what puts real colour on the page. The text column is on the OPPOSITE side of every band
+   (`data-side` / `data-art`), so a wider wash still never runs under a sentence. */
 /* THE TWO MASKS ARE THE LAYOUT. Everything else about a band is padding. The
    ellipse is pushed off the frame so only its soft shoulder is ever on screen —
    centring it would put the bright core behind the middle of the band, which is
    exactly where the sentence is. */
 .band[data-side="right"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
-  mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  -webkit-mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
 }
 .band[data-side="left"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
-  mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  -webkit-mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
 }
 
 /* ── WHEN THE WASH CROSSES SIDES ──────────────────────────────────────────────
@@ -381,12 +387,12 @@
    same, so source order is what decides, and at 900px the mask must still go to the
    top edge for every band. */
 .band[data-art="left"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
-  mask-image: radial-gradient(ellipse 78% 108% at -4% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  -webkit-mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  mask-image: radial-gradient(ellipse 86% 112% at -4% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
 }
 .band[data-art="right"] .band-art img {
-  -webkit-mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
-  mask-image: radial-gradient(ellipse 78% 108% at 104% 50%, #000 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.22) 62%, transparent 82%);
+  -webkit-mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
+  mask-image: radial-gradient(ellipse 86% 112% at 104% 50%, #000 0%, #000 40%, rgba(0,0,0,0.80) 60%, rgba(0,0,0,0.26) 78%, transparent 92%);
 }
 
 /* 🔴 A CORNER, NOT A SIDE, WHEN THE WASH LANDS ON THE COPY'S OWN SIDE. `Built on

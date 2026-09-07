@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import { useParallax } from "@/components/use-parallax";
-import { LEARN_BLUR, LEARN_FIGURE_BLUR } from "./art-blur";
+import { LEARN_BLUR } from "./art-blur";
 
 /**
  * "Learn anything", centred, inside a ring of subjects.
@@ -53,7 +53,6 @@ const SUBJECTS = [
 
 export function LearnAnything() {
   const art = useParallax<HTMLDivElement>(0.16);
-  const figure = useParallax<HTMLDivElement>(0.1);
 
   return (
     /* `data-art="left"` sends the WASH to the far edge, away from the hands (owner,
@@ -77,18 +76,6 @@ export function LearnAnything() {
       {/* The two reaching hands, behind the wash above and on their own slower offset so the
           grounds separate as the page moves. Full width rather than boxed to one side: the gap
           between the fingertips is the picture, and a half-width box loses it. */}
-      <div className="band-figure" ref={figure} aria-hidden="true">
-        <Image
-          src="/nemesis/art/learn-figure.webp"
-          alt=""
-          width={1400}
-          height={1400}
-          sizes="100vw"
-          placeholder="blur"
-          blurDataURL={LEARN_FIGURE_BLUR}
-          quality={84}
-        />
-      </div>
 
       <div className="wrap ring-in" data-reveal="up">
         <div className="subject-ring" style={{ ["--n" as string]: SUBJECTS.length }}>
