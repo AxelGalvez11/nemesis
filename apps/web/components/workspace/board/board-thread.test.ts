@@ -108,7 +108,11 @@ test("🔴🔴 what a chat made is shown IN the chat, and it opens beside it rat
   // this layer, so from inside a full-size chat nothing appeared to happen.
   assert.match(THREAD, /data-thread-made=""/, "a full-size chat does not show what it has made");
   assert.match(THREAD, /outputs\.filter\(\(output\) => output\.cardId === enteredCardId\)/, "the rows are not this thread's own");
-  assert.match(THREAD, /onOpen\(output\.id\)/, "Open does not open it");
+  assert.match(THREAD, /onOpen\(output\)/, "Open does not open it");
+  // 🔴 A MIND MAP IS NOT A `CanvasOutput`, so it cannot go through `openOutput`: it carries a tree
+  // and the dock has its own door for one. Owner, 2026-09-07: *"I would reserve the mind maps for
+  // the sidebar"*.
+  assert.match(THREAD, /dock\.openMindmap\(output\.mindmap/, "a mind map opened from a chat goes nowhere");
   // 🔴🔴 AND IT IS DRAWN WHERE IT WAS MADE, NOT AT THE FOOT. Owner, 2026-09-07: *"the node or the
   // artifact inline chip continues to persist like downward"*. Everything a chat had ever made was
   // listed under the whole conversation, so a note from the first exchange sat under the tenth
@@ -120,7 +124,7 @@ test("🔴🔴 what a chat made is shown IN the chat, and it opens beside it rat
   // 🔴 A TEST HAS NO PANEL VIEW, SO ITS BUTTON SAYS SOMETHING ELSE. A check carries a `run` in its
   // own card, not a `CanvasOutput`, so "Open" on one was a button that did nothing.
   assert.match(THREAD, /output\.kind === "check" \? "Show on canvas" : "Open"/, "a test offers an Open that cannot work");
-  assert.match(THREAD, /output\.kind === "check" \? onLeave\(\) : onOpen\(output\.id\)/);
+  assert.match(THREAD, /output\.kind === "check" \? onLeave\(\) : onOpen\(output\)/);
   // Beside the chat, over the board: both are the owner's, for different surfaces.
   // 🔴 THE BOARD'S HALF OF THIS WENT ON 2026-09-07. It read `enteredCardId ? "docked" : "full"`,
   // docking inside a chat and covering the window on the board (*"i dont want a sidebar to open in

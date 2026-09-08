@@ -10,6 +10,7 @@
 // `board` so the ~120 `canvas-*` files of the chat cannot be confused with it; what a learner
 // reads says "Canvas".
 
+import type { MindmapNode } from "@/lib/learn/mindmap-tree";
 import type { BoardMakeKind } from "./board-deliverables";
 import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
 import type { TestRun } from "@/lib/learn/test-run";
@@ -232,6 +233,14 @@ export interface BoardOutputCard {
   /** Runtime only: the maker's current step ("Reading 3 of 8 pages…"). */
   progress?: string;
   output?: CanvasOutput;
+  /**
+   * The tree, when this is a mind map.
+   *
+   * 🔴 ITS OWN FIELD, LIKE A CHECK'S `run`, AND NOT A `CanvasOutput`. A mind map is not a file: it
+   * is a shape the learner unfolds, drawn by `mindmap-view.tsx`. Owner, 2026-09-07: *"I would
+   * reserve the mind maps for the sidebar"* and *"only a [tile] makes them"*.
+   */
+  mindmap?: MindmapNode;
   /**
    * The questions, when this card is a check.
    *

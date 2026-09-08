@@ -64,6 +64,19 @@ export const STUDIO_TILES: readonly StudioTile[] = [
     more: "Write a long test.",
     graded: true,
   },
+  // 🔴🔴 THE MIND MAP IS A TILE AND NOTHING ELSE MAKES ONE. Owner, 2026-09-07: *"Yes, build a mind
+  // map ... make it similar to Notebook LM"*, *"I would reserve the mind maps for the sidebar"* and,
+  // asked whether the inline one in a chat answer should stay, *"only a [tile] makes them"*. It
+  // opens in the reading panel, which is where NotebookLM's opens too (§12).
+  {
+    kind: "mindmap",
+    label: "Mind map",
+    hint: "The shape of the material, one branch at a time",
+    make: "Lay out the mind map",
+    example: "Start from the treatment options rather than the whole topic.",
+    fewer: "Keep it to the big ideas.",
+    more: "Go as deep as the material supports.",
+  },
   { kind: "note", label: "Study guide", hint: "A written guide to the material", make: "Make the study guide", example: "Cover chapter 3 only, and keep the worked examples." },
   { kind: "slides", label: "Presentation", hint: "A slide deck", make: "Make the presentation", example: "Ten slides for a seminar, one idea per slide.", fewer: "Keep it short.", more: "Go into detail." },
   { kind: "document", label: "Document", hint: "A Word document", make: "Make the document", example: "A handout a classmate could read without me there.", fewer: "Keep it short.", more: "Go into detail." },

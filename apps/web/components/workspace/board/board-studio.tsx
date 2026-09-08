@@ -112,6 +112,7 @@ const HEAD_BUTTON = "flex size-[32px] shrink-0 items-center justify-center round
 /** The icon and tint a kind wears everywhere else: the artifact chip's marks, and the test's own. */
 function markOf(kind: BoardMakeKind): { icon: string; tint: string } {
   if (kind === "check") return { icon: "checklist", tint: "--ui-kind-green" };
+  if (kind === "mindmap") return { icon: "type-hierarchy-sub", tint: "--ui-kind-purple" };
   const mark = OUTPUT_KIND_MARKS[kind];
   return mark ? { icon: mark.icon, tint: mark.tint } : { icon: "file", tint: "--ui-kind-blue" };
 }
@@ -627,6 +628,13 @@ export function BoardStudio() {
    * node"*). So a check is fanned out and flown to, and everything else opens in the panel.
    */
   const show = (output: BoardOutputCard) => {
+    // 🔴 A MIND MAP OPENS IN THE PANEL, WHICH IS THE OWNER'S OWN PLACE FOR IT (2026-09-07: *"I would
+    // reserve the mind maps for the sidebar"*) AND NOTEBOOKLM'S (§12: theirs opens in the Studio
+    // panel, root left, children unfolding right).
+    if (output.kind === "mindmap") {
+      if (output.mindmap) dock.openMindmap(output.mindmap, output.output?.title || output.topic || "Mind map");
+      return;
+    }
     if (output.kind !== "check") {
       openOutput(output.id);
       return;
