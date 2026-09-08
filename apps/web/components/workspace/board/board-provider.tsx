@@ -18,6 +18,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { useAuth } from "@/components/AuthProvider";
 import type { BoardAnnotation } from "@/lib/board/board-annotations";
 import { GROUP_HEADER, GROUP_MIN_HEIGHT, GROUP_MIN_WIDTH, groupFromSelection, nodesInsideGroup, type BoardGroup, type GroupColor, type GroupRect } from "@/lib/board/board-groups";
+import { mergeLoaded, mergeTicks } from "@/lib/board/board-merge";
 import { activeSourceIds } from "@/lib/board/board-scope";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import {
@@ -327,6 +328,9 @@ export function BoardProvider({
   const [loaded, setLoaded] = useState(initialBoardId === null);
   const composerMessageId = useRef<string | null>(null);
 
+  /** The cards as they are right now, for the load to merge against. See the note at `getBoard`. */
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
   const boardIdRef = useRef<string | null>(initialBoardId);
   const versionRef = useRef<number | null>(null);
   const pendingBoardIdRef = useRef<string | null>(null);
@@ -455,12 +459,33 @@ export function BoardProvider({
           ),
         }));
         skipNextSave.current = true;
-        dispatch({ type: "replace", cards: settled, history: storedHistory });
-        setSources(state.sources);
-        setOutputs(state.outputs);
+        /**
+         * 🔴🔴 ANYTHING THE LEARNER STARTED WHILE THIS WAS IN FLIGHT IS KEPT, NOT CLOBBERED. Owner,
+         * 2026-09-07, of a canvas he had just made: *"I dropped in the sources ... and it pretty
+         * much just stayed on the landing canvas"*.
+         *
+         * That is this line. A saved board renders its landing while `getBoard` is still running,
+         * the landing takes drops, and the fetch then REPLACED every piece of state with the stored
+         * document — so the file was thrown away, `sources.length` went back to zero and the
+         * landing returned. The parse of the dropped file was still running and wrote into a source
+         * that no longer existed. Nothing said so; it read as "the drop did nothing".
+         *
+         * 🔴 IT IS NOT ONLY DROPS. The landing's composer starts a thread, so a question typed in
+         * the same second was lost the same way, which is why the cards are merged too.
+         *
+         * 🔴 THE STORED COPY WINS ON A CLASH, and there is no real clash to lose: ids are minted
+         * with `crypto.randomUUID`, so a local id cannot collide with a stored one. The filter is
+         * there so this stays correct if that ever stops being true.
+         */
+        dispatch({ type: "replace", cards: mergeLoaded(settled, cardsRef.current), history: storedHistory });
+        setSources((local) => mergeLoaded(state.sources, local));
+        setOutputs((local) => mergeLoaded(state.outputs, local));
         setAnnotations(state.annotations ?? []);
         setGroups(state.groups ?? []);
-        setSelectedSourceIds(ticksOf(state));
+        // 🔴 A FILE DROPPED DURING THE LOAD IS TICKED LIKE ANY OTHER ARRIVAL. `ticksOf` reads the
+        // STORED document, which has never heard of it, so seeding from that alone would leave it
+        // in the list and out of every answer.
+        setSelectedSourceIds((local) => mergeTicks(ticksOf(state), local, state.sources.map((source) => source.id)));
         setUseWebSearch(state.useWebSearch);
         setViewport(state.viewport ?? null);
         setHasSavedViewport(state.viewport !== undefined);
@@ -717,7 +742,7 @@ export function BoardProvider({
    * reply, because nothing would ever finish it.
    */
   const makeDeliverable = useCallback(
-    (kind: BoardMakeKind, options: { cardId?: string | null; sourceId?: string; sourceIds?: readonly string[]; topic?: string } = {}) => {
+    (kind: BoardMakeKind, options: { cardId?: string | null; sourceId?: string; sourceIds?: readonly string[]; topic?: string; afterMessageId?: string } = {}) => {
       const cardId = options.cardId ?? null;
       const topic = (options.topic ?? "").trim();
       if (!uid) {
@@ -741,6 +766,9 @@ export function BoardProvider({
         id: outputId,
         cardId,
         ...(sourceParent ? { sourceId: sourceParent.id } : {}),
+        // 🔴 WHERE IN THE CONVERSATION THIS HAPPENED. Absent when it was asked from the panel
+        // rather than in words, which is why the field is optional. See `BoardOutputCard`.
+        ...(options.afterMessageId ? { afterMessageId: options.afterMessageId } : {}),
         kind,
         status: "making",
         topic,
@@ -927,7 +955,16 @@ export function BoardProvider({
       if (!retry && !contextExcerpt && options.readsAsk !== false && !thenCheck) {
         const asked = readBoardMakeAsk(message);
         if (asked) {
-          makeDeliverable(asked, { cardId, topic: message });
+          /**
+           * 🔴 THE ASK ITSELF BECOMES A TURN, SO THE THING LANDS UNDER IT. Owner, 2026-09-07: *"the
+           * node or the artifact inline chip continues to persist like downward"*. "Make me
+           * flashcards on this" used to make the deck and add nothing to the conversation, so the
+           * chip could only be drawn at the foot of the whole thread and sat under every later
+           * answer forever. Writing the ask as a message gives it somewhere to belong.
+           */
+          const askId = crypto.randomUUID();
+          updateCards((all) => all.map((item) => (item.id === cardId ? { ...item, messages: [...item.messages, { id: askId, role: "user" as const, content: message }] } : item)));
+          makeDeliverable(asked, { cardId, topic: message, afterMessageId: askId });
           return true;
         }
       }

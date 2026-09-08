@@ -32,7 +32,7 @@ import { GROUP_HEADER, nodesInsideGroup } from "@/lib/board/board-groups";
 import type { BoardViewport } from "@/lib/board/board-model";
 import { cn } from "@/lib/utils";
 
-import { IconTooltip, isEditableTarget, measureBoardArea, sourceHandleId, targetHandleId } from "./board-chrome";
+import { CARD_DRAG_HANDLE, IconTooltip, isEditableTarget, measureBoardArea, sourceHandleId, targetHandleId } from "./board-chrome";
 import { useBoard } from "./board-provider";
 import { BoardStudio } from "./board-studio";
 import { BoardThread } from "./board-thread";
@@ -272,7 +272,6 @@ function BoardInner() {
     resizeGroup,
     deleteGroup,
     fannedCardId,
-    closeFan,
   } = useBoard();
   const ready = useNodesInitialized();
   const { getInternalNode } = useReactFlow();
@@ -427,7 +426,15 @@ function BoardInner() {
           const existing = byId.get(output.id) as Node<OutputNodeData, "deliverable"> | undefined;
           if (existing) return reuse(output.id, existing, output.position, output.width, undefined, output.status !== "making");
           changed = true;
-          return { id: output.id, type: "deliverable", position: output.position, width: output.width, deletable: output.status !== "making", data: { outputId: output.id } } as BoardNode;
+          /**
+           * 🔴🔴 A MADE CARD MOVES BY ITS TITLE BAR, BECAUSE ITS BODY CANNOT MOVE IT. Owner,
+           * 2026-09-07: *"I still can't move any notes in the canvas"*. A test wraps its whole body
+           * in `nodrag nopan nowheel` so a tap answers a question rather than dragging the board,
+           * and a made card's body is one full-width button that opens it — measured, EVERY point
+           * on a check card is inside a `.nodrag`. Naming the title bar as the handle gives the card
+           * somewhere to be grabbed without taking a press away from anything.
+           */
+          return { id: output.id, type: "deliverable", position: output.position, width: output.width, deletable: output.status !== "making", dragHandle: `.${CARD_DRAG_HANDLE}`, data: { outputId: output.id } } as BoardNode;
         }),
       ];
       return changed ? rebuilt : was;
@@ -630,11 +637,20 @@ function BoardInner() {
     [cards, getInternalNode, groupIds, moveGroup, reportNodeSize, resizeGroup, sources, updateCardPosition, updateCardSize],
   );
 
+  /**
+   * 🔴🔴 A PRESS ON THE BOARD NO LONGER PUTS A FANNED CHAT'S THINGS AWAY. Owner, 2026-09-07, twice:
+   * *"I still can't move any notes in the canvas"*. They are movable — a drag on a fanned note
+   * moves it, measured — but they were closing again on the first press on empty board, which is
+   * exactly what a learner does between deciding to move one and reaching for it. It read as the
+   * note not being there at all.
+   *
+   * They still hide by default, which is his own answer to clutter (2026-09-07: *"They fan out on
+   * the board around the chat"*). What changed is that opening them out is a state you stay in
+   * until you press the stack again, rather than one that ends on the next click anywhere.
+   */
   const clearSelection = useCallback(() => {
     setNodes((was) => was.map((node) => (node.selected ? { ...node, selected: false } : node)));
-    // A press on the board puts a fanned chat's made things back behind it.
-    closeFan();
-  }, [closeFan]);
+  }, []);
 
   /** Two or more cards chosen: the box around them, and the ids a frame would be drawn around. */
   const grouping = useMemo(() => {

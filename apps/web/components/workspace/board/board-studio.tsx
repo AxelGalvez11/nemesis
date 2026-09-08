@@ -191,28 +191,45 @@ function Tick({ checked, disabled, label, onChange }: { checked: boolean; disabl
  * that changed nothing. A disabled box would say "you may not", which is also untrue; the answer is
  * that there is nothing to choose.
  */
+function SourceGlyph({ failed, processing, source }: { failed: boolean; processing: boolean; source: BoardSource }) {
+  if (processing) return <LoaderCircle aria-hidden className="size-[24px] shrink-0 animate-spin text-(--ui-text-tertiary)" />;
+  if (failed) return <CircleAlert aria-hidden className="size-[24px] shrink-0 text-(--board-error)" />;
+  return <Codicon aria-hidden className="shrink-0" name={sourceIcon(source)} size="24px" style={{ color: `var(${sourceTint(source)})` }} />;
+}
+
 function SourceRow({ source, ticked, onOpen, onTick }: { source: BoardSource; ticked: boolean; onOpen?: () => void; onTick?: () => void }) {
   const processing = source.status === "processing";
   const failed = source.status === "error";
   const openable = Boolean(onOpen) && !processing && !failed;
   return (
-    <li>
-      <label
-        {...(openable ? { onClick: onOpen, role: "button", tabIndex: 0, onKeyDown: (event: ReactKeyboardEvent<HTMLLabelElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen?.(); } } } : {})}
-        className={cn("flex h-[52px] items-center gap-[10px] rounded-[8px] px-[8px] transition-colors hover:bg-(--ui-control-hover-background)", (onTick && !processing) || openable ? "cursor-pointer" : "cursor-default")}
-        title={failed ? source.error || "This file could not be read." : source.name}
-      >
-        {processing ? (
-          <LoaderCircle aria-hidden className="size-[24px] shrink-0 animate-spin text-(--ui-text-tertiary)" />
-        ) : failed ? (
-          <CircleAlert aria-hidden className="size-[24px] shrink-0 text-(--board-error)" />
-        ) : (
-          <Codicon aria-hidden className="shrink-0" name={sourceIcon(source)} size="24px" style={{ color: `var(${sourceTint(source)})` }} />
-        )}
-        <span className={cn("min-w-0 flex-1 truncate text-[14px] leading-[24px]", failed ? "text-(--ui-text-tertiary)" : "text-foreground")}>{source.name}</span>
-        {processing && <span className="shrink-0 text-[12px] text-(--ui-text-tertiary)">Reading…</span>}
-        {onTick && <Tick checked={ticked && !processing && !failed} disabled={processing || failed} label={`Use ${source.name}`} onChange={onTick} />}
-      </label>
+    <li className={cn("flex h-[52px] items-center gap-[10px] rounded-[8px] px-[8px] transition-colors hover:bg-(--ui-control-hover-background)")}>
+      {/* 🔴🔴 THE ROW OPENS, THE TICK TICKS, AND THEY ARE TWO SEPARATE CONTROLS. Owner, 2026-09-07:
+          *"I cannot unselect a single source without it opening the sidebar"*. They were one: the
+          whole row was a `<label role="button" onClick={onOpen}>` with the tick INSIDE it, so a
+          press on the box did its own job and then bubbled to the row's, and untickng a document
+          always opened it. Two siblings cannot do that to each other.
+
+          🔴 A `<button>` FOR THE NAME, NOT A CLICKABLE `<li>`. Wrapping the row would put the tick
+          inside a button, which is invalid and swallows its clicks in a different way; making the
+          name its own button leaves the tick a sibling and gives the keyboard two real stops. */}
+      {openable ? (
+        <button
+          className="flex min-w-0 flex-1 items-center gap-[10px] text-left"
+          onClick={onOpen}
+          title={source.name}
+          type="button"
+        >
+          <SourceGlyph failed={failed} processing={processing} source={source} />
+          <span className="min-w-0 flex-1 truncate text-[14px] leading-[24px] text-foreground">{source.name}</span>
+        </button>
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center gap-[10px]" title={failed ? source.error || "This file could not be read." : source.name}>
+          <SourceGlyph failed={failed} processing={processing} source={source} />
+          <span className={cn("min-w-0 flex-1 truncate text-[14px] leading-[24px]", failed ? "text-(--ui-text-tertiary)" : "text-foreground")}>{source.name}</span>
+        </span>
+      )}
+      {processing && <span className="shrink-0 text-[12px] text-(--ui-text-tertiary)">Reading…</span>}
+      {onTick && <Tick checked={ticked && !processing && !failed} disabled={processing || failed} label={`Use ${source.name}`} onChange={onTick} />}
     </li>
   );
 }

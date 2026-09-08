@@ -41,7 +41,12 @@ test("🔴🔴 entering a thread is a LAYER, never a route: the board keeps its 
   assert.ok(!/style=\{\{ right: inset \}\}/.test(THREAD), "the inset is applied twice and the chat collapses");
   // What the inset IS for: dropping the toolbar reserve once the toolbar has moved with the panel,
   // so the conversation stays centred in the room that is left (owner, 2026-09-07).
-  assert.match(THREAD, /paddingRight: inset > 0 \? 0 : TOOLBAR_RESERVE/, "the chat sits off-centre while a document is open");
+  // 🔴🔴 AND NOTHING IS RESERVED FOR THE TOOLBAR AT ALL, SINCE 2026-09-07. Owner: *"I feel like the
+  // chat is kind of to the left ... I want a full chat to be centered"*. An 80px `paddingRight` was
+  // kept clear for the board's controls, so the 768px column was centred in the room LEFT OVER and
+  // sat 40px left of the window's middle. The toolbar is a pill in the top-right CORNER, in the
+  // same band as this layer's header, whose right half is empty — it overlaps nothing.
+  assert.ok(!THREAD.includes("TOOLBAR_RESERVE"), "the chat reserves room for the toolbar again and sits off-centre");
   // 🔴 AND THE PANEL FLOATS OVER IT: the sidebar half of the ask. Drawn the other way round it is in
   // the DOM, answering, and invisible, which is how this first shipped.
   assert.match(STUDIO, /right-\[16px\] top-\[72px\] z-40/, "the Sources and Create panel is buried under an entered thread");
@@ -103,11 +108,19 @@ test("🔴🔴 what a chat made is shown IN the chat, and it opens beside it rat
   // this layer, so from inside a full-size chat nothing appeared to happen.
   assert.match(THREAD, /data-thread-made=""/, "a full-size chat does not show what it has made");
   assert.match(THREAD, /outputs\.filter\(\(output\) => output\.cardId === enteredCardId\)/, "the rows are not this thread's own");
-  assert.match(THREAD, /openOutput\(output\.id\)/, "Open does not open it");
+  assert.match(THREAD, /onOpen\(output\.id\)/, "Open does not open it");
+  // 🔴🔴 AND IT IS DRAWN WHERE IT WAS MADE, NOT AT THE FOOT. Owner, 2026-09-07: *"the node or the
+  // artifact inline chip continues to persist like downward"*. Everything a chat had ever made was
+  // listed under the whole conversation, so a note from the first exchange sat under the tenth
+  // answer and the eleventh, reading as part of every turn rather than as the result of one.
+  // `afterMessageId` says which turn asked; anything without one (made from the panel, or made
+  // before this existed) still lands at the foot, which is where it was.
+  assert.match(THREAD, /anchored\.get\(message\.id\)/, "the made rows no longer sit with their turn");
+  assert.match(THREAD, /orphaned\.map/, "a made thing with no turn to sit with has nowhere to go");
   // 🔴 A TEST HAS NO PANEL VIEW, SO ITS BUTTON SAYS SOMETHING ELSE. A check carries a `run` in its
   // own card, not a `CanvasOutput`, so "Open" on one was a button that did nothing.
   assert.match(THREAD, /output\.kind === "check" \? "Show on canvas" : "Open"/, "a test offers an Open that cannot work");
-  assert.match(THREAD, /if \(output\.kind === "check"\) leaveCard\(\);/);
+  assert.match(THREAD, /output\.kind === "check" \? onLeave\(\) : onOpen\(output\.id\)/);
   // Beside the chat, over the board: both are the owner's, for different surfaces.
   // 🔴 THE BOARD'S HALF OF THIS WENT ON 2026-09-07. It read `enteredCardId ? "docked" : "full"`,
   // docking inside a chat and covering the window on the board (*"i dont want a sidebar to open in
