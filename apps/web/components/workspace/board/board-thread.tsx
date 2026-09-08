@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { AutoResizingTextarea, IconTooltip } from "./board-chrome";
 import { CardMessage } from "./card-message";
 import { useDeclareFullBleedSurface } from "@/components/workspace/shell/immersive-surface";
+import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
 
 import { useBoard } from "./board-provider";
 
@@ -59,6 +60,23 @@ function FullBleed() {
 
 export function BoardThread() {
   const { cards, sources, outputs, enteredCardId, leaveCard, openOutput, sendCardMessage, createBranchCard } = useBoard();
+  /**
+   * Whether a document or a made thing is docked beside this conversation.
+   *
+   * 🔴🔴 THIS LAYER DOES NOT POSITION ITSELF BY IT, AND ONE BUILD TRIED. `BoardArea` already carries
+   * the inset and this layer is `inset-0` inside it, so it narrows for free: measured in headless
+   * Chrome at 1470, the chat is 525 wide and the panel starts at exactly 525. Setting `right` here
+   * as well applied the inset twice and collapsed the conversation to nothing.
+   *
+   * 🔴 IT WAS MEASURED AS OVERLAPPING IN THE BROWSER PANE, AND THAT WAS THE PANE. Its window is
+   * hidden, which freezes rAF, so the `transition-[right]` on `BoardArea` sat at `currentTime: 0`
+   * holding the FROM value, and the entrance animation held `scale(0.98)`. A transition outranks an
+   * inline style, so the element genuinely reported `right: 0px` with `right: 945px` set on it.
+   * Anything about this layout has to be measured in a real browser (Playwright), never in the pane.
+   *
+   * What it IS used for is the 80px kept clear for the board's toolbar, below.
+   */
+  const inset = useSidePanelInset();
   const card = cards.find((item) => item.id === enteredCardId) ?? null;
   const [text, setText] = useState("");
   // Everything this conversation has made, oldest first, so it reads as the thread's own history.
@@ -147,7 +165,13 @@ export function BoardThread() {
         </IconTooltip>
       </header>
 
-      <div className="scrollbar-dt min-h-0 flex-1 overflow-y-auto" style={{ paddingRight: TOOLBAR_RESERVE }}>
+      {/* 🔴🔴 THE 80px RESERVE IS FOR THE BOARD'S OWN TOOLBAR, WHICH ONLY SITS OVER THIS LAYER WHILE
+          NOTHING IS DOCKED. Owner, 2026-09-07: *"chats should be centered and they should move to
+          left to make room for the panel"*. The moving-left half was already true; the centring half
+          was not, because this reserve stayed at 80 once the panel took the right edge and pushed
+          the conversation off-centre in the room left over. The toolbar has moved with the panel by
+          then, so there is nothing to keep clear of. */}
+      <div className="scrollbar-dt min-h-0 flex-1 overflow-y-auto" style={{ paddingRight: inset > 0 ? 0 : TOOLBAR_RESERVE }}>
         <div className="mx-auto flex flex-col gap-[24px] px-[16px] pb-[24px]" style={{ width: COLUMN, maxWidth: "100%" }}>
           {/* 🔴 NO `onOpenFile` ON THESE MESSAGES. On the board a citation flies the camera to the
               source card; inside a thread there is no camera to fly, and opening the document is the
@@ -237,7 +261,7 @@ export function BoardThread() {
           send button stays on the last one, which is ChatGPT's behaviour and the reason this is not
           simply a fixed-height input. The cap is 200px, after which it scrolls rather than eating
           the conversation. */}
-      <div className="shrink-0 px-[16px] pb-[16px]" style={{ paddingRight: TOOLBAR_RESERVE }}>
+      <div className="shrink-0 px-[16px] pb-[16px]" style={{ paddingRight: inset > 0 ? 16 : TOOLBAR_RESERVE }}>
         <form
           className="mx-auto overflow-hidden rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated)/75 backdrop-blur-xl"
           onSubmit={(event) => {

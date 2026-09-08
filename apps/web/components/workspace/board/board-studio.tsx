@@ -56,7 +56,6 @@ import { KIND_LABELS, MAKING_LABELS, type BoardMakeKind } from "@/lib/board/boar
 import { groundedSourceFor } from "@/lib/board/board-grounding";
 import { relativeTime } from "@/lib/watch-format";
 import type { BoardOutputCard, BoardSource } from "@/lib/board/board-model";
-import { groupHoldingExactly } from "@/lib/board/board-scope";
 import { STUDIO_LENGTHS, STUDIO_LEVELS, STUDIO_TILES, boardHasMaterial, studioInstruction, type StudioLength, type StudioLevel, type StudioTile } from "@/lib/board/board-studio";
 import { cn } from "@/lib/utils";
 
@@ -462,7 +461,7 @@ function MakeForm({ tile, scope, onMake }: { tile: StudioTile; scope: string; on
 }
 
 export function BoardStudio() {
-  const { cards, sources, outputs, selectedSourceIds, toggleSourceSelection, setSourceSelection, addSourceFiles, makeDeliverable, enteredCardId, scopeFor, groupTickedSources, groups, nodeRects } = useBoard();
+  const { cards, sources, outputs, selectedSourceIds, toggleSourceSelection, setSourceSelection, addSourceFiles, makeDeliverable, enteredCardId } = useBoard();
   const { fitView } = useReactFlow();
   const dock = useDocumentDock();
   const picker = useRef<HTMLInputElement>(null);
@@ -565,17 +564,17 @@ export function BoardStudio() {
 
   const ready = sources.filter((source) => source.status === "ready");
   /**
-   * 🔴🔴 INSIDE A CHAT THE PANEL IS THAT CHAT'S SOURCES, AND IT HAS NO TICKS. Owner, 2026-09-07:
-   * *"entering a chat makes it fullscreen size, and the sources panel then shows only the sources
-   * attached to the chat"*. What a chat reads is decided by the frame it stands in, so a tick here
-   * would be a control that changes nothing — worse than absent. A source still being read is kept
-   * on the list wherever it is, because that is the parse the owner asked to be able to watch.
+   * 🔴🔴 THE SAME LIST, WITH THE SAME TICKS, ON THE BOARD AND INSIDE A CHAT. Owner, 2026-09-07:
+   * *"so all chats should contain all sources"* and *"thats why we have tickers"*. For one build
+   * this panel showed only "that chat's sources" and hid the ticks inside a conversation, because a
+   * frame decided what a chat read and a tick would have changed nothing. Both of those are gone:
+   * there is one tick list for the canvas, it is the whole answer, and it has to be reachable from
+   * wherever you are asking.
    */
-  const listed = entered ? sources.filter((source) => scopeFor(entered.id).sourceIds.includes(source.id) || source.status !== "ready") : sources;
+  const listed = sources;
   const ticked = ready.filter((source) => selectedSourceIds.includes(source.id));
   const allTicked = ready.length > 0 && ready.every((source) => selectedSourceIds.includes(source.id));
-  /** Some but not all: the one case that needs a frame drawn round it. */
-  const groupable = ticked.length >= 2 && ticked.length < ready.length && !groupHoldingExactly(ticked.map((source) => source.id), { groups, rects: nodeRects(), sourceIds: ready.map((source) => source.id) });
+
   const material = boardHasMaterial(cards, sources);
   const made = [...outputs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   // 🔴🔴 THE BUTTONS FOLLOW YOU IN, AND THE SCOPE IS WHAT CHANGES. Owner, 2026-09-06, asking whether
@@ -584,7 +583,17 @@ export function BoardStudio() {
   // a thread, the material in front of the learner is that conversation, so Create makes from the
   // thread (`makeDeliverable(kind, { cardId })`, which has always existed). Same six buttons, same
   // makers, one honest difference, stated in the line under the heading rather than left to guess.
-  const scope = entered ? `From this chat: ${entered.title}` : ticked.length > 0 ? `From ${ticked.length} ticked source${ticked.length === 1 ? "" : "s"}` : "From everything on the canvas";
+  /**
+   * 🔴 THE ONE LINE THAT SAYS WHAT A PRESS WILL READ FROM. Inside a chat a maker works on that
+   * conversation; on the board it works on what is ticked, and nothing ticked means everything
+   * (lib/board/board-scope.ts). Ticks apply to every chat since 2026-09-07, so this no longer has
+   * a third case for a frame.
+   */
+  const scope = entered
+    ? `From this chat: ${entered.title}`
+    : ticked.length > 0 && !allTicked
+      ? `From ${ticked.length} ticked source${ticked.length === 1 ? "" : "s"}`
+      : "From everything on the canvas";
 
   const show = (id: string) => void fitView({ nodes: [{ id }], duration: 320, padding: 0.1, maxZoom: 1 });
 
@@ -603,8 +612,17 @@ export function BoardStudio() {
         data-board-toolbar=""
         role="toolbar"
       >
-        <UndoRedoButtons />
-        <span aria-hidden className="mx-[3px] h-[20px] w-px shrink-0 bg-(--ui-stroke-secondary)" />
+        {/* 🔴🔴 NO UNDO OR REDO INSIDE A CHAT. Owner, 2026-09-07: *"chats shouldnt have the forward
+            and back buttons, should only have sources and create buttons"*. They belong to the
+            BOARD: undo puts back a deleted card, a moved frame, a document that was removed. Inside
+            a conversation there is nothing on screen either of them acts on, so pressing one
+            appeared to do nothing while silently rearranging the canvas behind the layer. */}
+        {!entered && (
+          <>
+            <UndoRedoButtons />
+            <span aria-hidden className="mx-[3px] h-[20px] w-px shrink-0 bg-(--ui-stroke-secondary)" />
+          </>
+        )}
         <ToolButton active={shown === "sources"} dot={sources.length > 0} id="sources" onPress={() => toggle("sources")} />
         {/* 🔴🔴 CREATE IS NOT ON THE CANVAS. Owner, 2026-09-07: *"hide the 'create' button in the
             canvas, create should happen within chats"*, and *"when you go inside that chat you have
@@ -647,7 +665,7 @@ export function BoardStudio() {
               ref={picker}
               type="file"
             />
-            {!entered && ready.length > 0 && (
+            {ready.length > 0 && (
               <label className="flex h-[40px] cursor-pointer items-center gap-[10px] rounded-[8px] px-[8px] text-[14px] leading-[20px] text-foreground transition-colors hover:bg-(--ui-control-hover-background)">
                 <Tick checked={allTicked} label="Select all sources" onChange={() => setSourceSelection(allTicked ? [] : ready.map((source) => source.id))} />
                 Select all
@@ -669,42 +687,21 @@ export function BoardStudio() {
                      nothing for a panel to add (board-panel.tsx records that ruling at length) —
                      but a full-size chat covers the board, so from in here the card is exactly what
                      the learner cannot reach. Same dock, same tabs as the things this chat made. */
-                  onOpen={
-                    entered
-                      ? () => {
-                          const grounded = groundedSourceFor(sources, source.id);
-                          if (grounded) dock.openDocument(grounded);
-                        }
-                      : undefined
-                  }
-                  onTick={entered ? undefined : () => toggleSourceSelection(source.id)}
+                  /* 🔴🔴 THE PANEL IS THE ONLY WAY INTO A DOCUMENT NOW, ON THE BOARD AS WELL AS
+                     INSIDE A CHAT. Owner, 2026-09-07: *"adding documents still loads them on canvas,
+                     please remove that"*. A source used to draw its own card with the real document
+                     rendered inside it, and this row flew the camera to it; with no card there is
+                     nothing to fly to, so the row opens the reader. */
+                  onOpen={() => {
+                    const grounded = groundedSourceFor(sources, source.id);
+                    if (grounded) dock.openDocument(grounded);
+                  }}
+                  onTick={() => toggleSourceSelection(source.id)}
                   source={source}
-                  ticked={entered ? true : selectedSourceIds.includes(source.id)}
+                  ticked={selectedSourceIds.includes(source.id)}
                 />
               ))}
             </ul>
-            {/* 🔴🔴 THE TICKS BECOME A GROUP, WHICH IS THE ONLY WAY THEY MEAN ANYTHING NOW. Owner,
-                2026-09-07: *"user can select what sources chats receive by selecting them in the
-                source panel and that should becomes its own group automatically and user can name
-                the group"*. A frame is what a chat reads (board-scope.ts), so ticking without
-                framing would be a setting that changed no answer. Sending from the composer draws
-                the frame too (board-provider.tsx `startCard`); this is the door for a learner who
-                wants the group before the question. Everything ticked is the global case and needs
-                no frame, so the row is not offered. */}
-            {!entered && groupable && (
-              <button
-                className="mt-[4px] flex h-[36px] w-full items-center gap-[10px] rounded-[8px] bg-(--ui-bg-secondary) px-[8px] text-left text-[13px] font-medium leading-[18px] text-foreground transition-colors hover:bg-(--ui-control-hover-background)"
-                data-studio-group-ticked=""
-                onClick={() => {
-                  const id = groupTickedSources();
-                  if (id) window.setTimeout(() => void fitView({ nodes: [{ id }], duration: 320, padding: 0.2, maxZoom: 1 }), 0);
-                }}
-                type="button"
-              >
-                <FolderPlus aria-hidden className="size-[16px] shrink-0 text-(--ui-text-secondary)" />
-                Group these {ticked.length} sources
-              </button>
-            )}
           </div>
         </PanelFrame>
       )}
@@ -770,17 +767,16 @@ export function BoardStudio() {
                 <h3 className="flex h-[32px] items-center px-[16px] text-[12px] font-medium uppercase tracking-[0.04em] text-(--ui-text-tertiary)">Made here</h3>
                 <ul className="m-0 list-none px-[8px]">
                   {/* 🔴 THE COUNT IS ASKED OF THE BOARD, NOT STORED ON THE ROW. A deliverable
-                      carries the chat or the document it came from, never a list of sources — and
-                      since 2026-09-07 what a chat reads is decided by where it stands
-                      (lib/board/board-scope.ts), so a number written down when it was made could
-                      already be wrong. One document is one source; a thread is however many its
-                      frame holds right now. */}
+                      carries the chat or the document it came from, never a list of sources, and
+                      what a chat reads is whatever is ticked right now — so a number written down
+                      when it was made could already be wrong. One document is one source; anything
+                      else is however many are in play. */}
                   {made.map((output) => (
                     <MadeRow
                       key={output.id}
                       onOpen={() => show(output.id)}
                       output={output}
-                      sources={output.sourceId ? 1 : output.cardId ? scopeFor(output.cardId).sourceIds.length : 0}
+                      sources={output.sourceId ? 1 : ticked.length || ready.length}
                     />
                   ))}
                 </ul>

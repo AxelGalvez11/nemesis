@@ -158,51 +158,8 @@ export function parseBoardGroups(raw: unknown): BoardGroup[] {
   return groups;
 }
 
-/**
- * Lay these rectangles out as a tidy block, keeping the top-left of where they already are.
- *
- * 🔴🔴 GATHERING IS NOT TIDINESS HERE, IT IS CORRECTNESS. Since 2026-09-07 a frame's contents are
- * what the chats inside it read (`board-scope.ts`, the owner's own choice). Ticking three sources
- * scattered across a board and drawing the bounding box around them would enclose every unticked
- * card standing between them — so the group would read documents nobody ticked, and the picture
- * would be telling the truth about a scope the learner never asked for. Bringing the three together
- * first is the only way the frame can hold exactly what was ticked.
- *
- * 🔴🔴 AND `origin` IS THE OTHER HALF OF THE SAME PROBLEM. Gathering the ticked cards into a block
- * where they already sat still leaves whatever was standing there INSIDE the new frame — and inside
- * means read. Measured on the harness: framing two ticked documents left an unticked deck five
- * pixels outside the edge, which was luck and not design. The caller passes clear ground below
- * everything on the board, so the frame can hold nothing but what was ticked.
- *
- * Three across, because a source card is 640 wide and three of them is a comfortable sweep at the
- * zoom a board sits at.
- */
-export function gatherIntoBlock(rects: readonly GroupRect[], origin?: BoardPosition, gap = 48, perRow = 3): Map<string, BoardPosition> {
-  const moved = new Map<string, BoardPosition>();
-  if (rects.length === 0) return moved;
-  const left = origin?.x ?? Math.min(...rects.map((rect) => rect.position.x));
-  const top = origin?.y ?? Math.min(...rects.map((rect) => rect.position.y));
-  let x = left;
-  let y = top;
-  let rowHeight = 0;
-  rects.forEach((rect, index) => {
-    if (index > 0 && index % perRow === 0) {
-      x = left;
-      y += rowHeight + gap;
-      rowHeight = 0;
-    }
-    moved.set(rect.id, { x, y });
-    x += rect.width + gap;
-    rowHeight = Math.max(rowHeight, rect.height);
-  });
-  return moved;
-}
-
-/** The same rectangle grown to hold one more card below what is already inside it. */
-export function growGroupFor(group: BoardGroup, added: { width: number; height: number }): { group: BoardGroup; position: BoardPosition } {
-  const position = { x: group.position.x + GROUP_PADDING, y: group.position.y + group.height + GROUP_PADDING };
-  return {
-    group: { ...group, height: group.height + added.height + GROUP_PADDING * 2 },
-    position,
-  };
-}
+// 🔴 `gatherIntoBlock` AND `growGroupFor` WERE REMOVED ON 2026-09-07. They brought ticked sources
+// together onto clear ground and grew a frame to take a new chat, both in service of the rule that
+// a frame's contents were what its chats read. Documents left the board that day (*"adding
+// documents still loads them on canvas, please remove that"*) and ticks became the whole answer
+// (*"thats why we have tickers"*), so neither had anything to act on. See lib/board/board-scope.ts.

@@ -27,7 +27,21 @@ test("🔴🔴 entering a thread is a LAYER, never a route: the board keeps its 
   assert.match(PROVIDER, /const \[enteredCardId, setEnteredCardId\] = useState<string \| null>\(null\);/, "the entered thread is not state on the provider, so leaving cannot be free");
   assert.ok(!/router\.(push|replace)/.test(THREAD), "entering navigates, which remounts the provider and drops a streaming answer");
   assert.match(SURFACE, /<BoardInner \/>\s*<BoardStudio \/>\s*[\s\S]{0,200}?<BoardThread \/>/, "the thread is not the top layer, or is outside the board's provider");
+  // 🔴 `inset-0` BECAME `inset-y-0 left-0` PLUS AN INSET ON 2026-09-07, and the claim is unchanged:
+  // the layer still covers the board. What it must NOT cover is the reading panel. Owner that day:
+  // *"chats should be centered and they should move to left to make room for the panel"* and *"bug
+  // when opening docs in sidepanels is that they cannot scroll or arent clickable"* — one fault.
+  // Measured at 1470 before the fix: the panel took x549 to x1494 and this layer stayed 1441 wide,
+  // so the conversation's own scroll box lay under the left half of the document and took the wheel.
   assert.match(THREAD, /className="board-thread-in absolute inset-0 z-30/, "the layer does not cover the board");
+  // 🔴 AND IT MUST NOT POSITION ITSELF AGAINST THE PANEL. `BoardArea` already carries the inset and
+  // this layer is `inset-0` inside it, so it narrows for free: measured in headless Chrome at 1470,
+  // the chat is 525 wide and the panel starts at exactly 525. A build that also set `right` here
+  // applied the inset twice and collapsed the conversation to zero width.
+  assert.ok(!/style=\{\{ right: inset \}\}/.test(THREAD), "the inset is applied twice and the chat collapses");
+  // What the inset IS for: dropping the toolbar reserve once the toolbar has moved with the panel,
+  // so the conversation stays centred in the room that is left (owner, 2026-09-07).
+  assert.match(THREAD, /paddingRight: inset > 0 \? 0 : TOOLBAR_RESERVE/, "the chat sits off-centre while a document is open");
   // 🔴 AND THE PANEL FLOATS OVER IT: the sidebar half of the ask. Drawn the other way round it is in
   // the DOM, answering, and invisible, which is how this first shipped.
   assert.match(STUDIO, /right-\[16px\] top-\[72px\] z-40/, "the Sources and Create panel is buried under an entered thread");
@@ -95,6 +109,11 @@ test("🔴🔴 what a chat made is shown IN the chat, and it opens beside it rat
   assert.match(THREAD, /output\.kind === "check" \? "Show on canvas" : "Open"/, "a test offers an Open that cannot work");
   assert.match(THREAD, /if \(output\.kind === "check"\) leaveCard\(\);/);
   // Beside the chat, over the board: both are the owner's, for different surfaces.
-  assert.match(PAGE, /initialMode=\{enteredCardId \? "docked" : "full"\}/, "a made thing covers the chat that made it, or a panel narrows the board");
+  // 🔴 THE BOARD'S HALF OF THIS WENT ON 2026-09-07. It read `enteredCardId ? "docked" : "full"`,
+  // docking inside a chat and covering the window on the board (*"i dont want a sidebar to open in
+  // canvas"*). Owner, of a note opened from a canvas: *"I can't scroll on it. And also I can't move
+  // it in the canvas."* Everything docks now; the claim this guard makes, that a made thing opens
+  // BESIDE the chat that made it rather than over it, is unchanged and is what the value asserts.
+  assert.match(PAGE, /initialMode="docked"/, "a made thing covers the chat that made it again");
 });
 

@@ -178,19 +178,23 @@ function BoardOutputPanel() {
       activeKey={dock.activeKey}
       canvasId={boardId ?? ""}
       comments={{ preview: false, uid: session?.user?.id ?? null }}
-      // 🔴🔴 FULL ON THE BOARD, DOCKED INSIDE A FULL-SIZE CHAT, AND BOTH ARE THE OWNER'S.
-      //
-      // On the board: *"i dont want a sidebar to open in canvas"* (2026-09-04). A note or a deck
-      // opens over the board and closes back to it; nothing narrows the cards it was made from,
-      // because the cards ARE the canvas and a panel beside them would squeeze the thing you are
-      // arranging.
-      //
-      // Inside a full-size chat there are no cards to squeeze, and he asked for the other shape by
-      // name (2026-09-06, of the Gemini thread he linked): *"i like the fullscreen chat with right
-      // side panel … you basically have a chat and you prompt it to create flashcard"*. Measured in
-      // that thread at 1470 wide: the chat keeps a narrow column on the left and the made thing
-      // takes 865 on the right. So the chat narrows and the thing it made stands beside it.
-      initialMode={enteredCardId ? "docked" : "full"}
+      /**
+       * 🔴🔴 DOCKED EVERYWHERE, AND THAT REVERSES THE 2026-09-04 RULING. It used to open FULL on the
+       * board and docked only inside a chat, because of *"i dont want a sidebar to open in canvas,
+       * that does not make sense"*. Owner, 2026-09-07, of a note opened from a canvas:
+       *
+       *     *"I can't scroll on it. And also I can't move it in the canvas."*
+       *
+       * The scrolling half was a broken flex chain (dock-panel.tsx). The moving half is this: full
+       * screen covers the whole window, so the board underneath cannot be panned, zoomed or even
+       * seen. Docking is also what he has been asking for all week for documents (*"chats in
+       * fullscreen view can open a right sidepanel to view sources"*), and since sources left the
+       * canvas this panel is the only place anything is read.
+       *
+       * 🔴 FULL SCREEN IS STILL ONE PRESS AWAY, in the panel's own header. What changed is which of
+       * the two you arrive in.
+       */
+      initialMode="docked"
       items={dock.items}
       onClose={dock.closeAll}
       onCloseKey={dock.close}
@@ -204,12 +208,12 @@ function BoardOutputPanel() {
 /**
  * A dropped document, opened beside a full-size chat.
  *
- * 🔴🔴 INSIDE A THREAD ONLY, AND THAT IS NOT A HEDGE. On the board a document is drawn inside its
- * own card, by the owner's own ruling (*"i dont want any popups in canvas, everything should be
- * seen and done within the cards"*, 2026-09-04), and board-panel.tsx records how much was cut to
- * honour it. A full-size chat covers the board, so from inside one that card is the single thing
- * the learner cannot reach — which is why he asked for exactly this and no more, 2026-09-07:
- * *"chats in fullscreen view can open a right sidepanel to view sources"*.
+ * 🔴🔴 ON THE BOARD AS WELL AS INSIDE A CHAT, SINCE 2026-09-07, AND THAT REVERSES A RULING. It was
+ * *"i dont want any popups in canvas, everything should be seen and done within the cards"*
+ * (2026-09-04), and board-panel.tsx records how much was cut to honour it: a document was drawn
+ * inside its own card on the canvas. Then: *"adding documents still loads them on canvas, please
+ * remove that"*. With no card, this panel is the only place a document can be read, so gating it on
+ * being inside a chat would have made every source unopenable from the board.
  *
  * 🔴 THE READER'S ACTIONS SEND INTO THIS THREAD. *"users can dropp annotations to ask questions"*,
  * and *"if you select a certain amount of text it only answers from those"*. `onSendToChat` is the
@@ -223,6 +227,10 @@ function BoardSourcePanel() {
   const dock = useDocumentDock();
   const onSendToChat = useCallback(
     (prompt: string, _files: File[], _notes?: unknown, said?: string) => {
+      // 🔴 THE READER'S ACTIONS ONLY HAVE SOMEWHERE TO GO FROM INSIDE A CHAT. On the board there is
+      // no conversation in front of the learner to send a marked passage into, so the reader hides
+      // its action bar entirely rather than offering a control with nowhere to send (`onSendToChat`
+      // absent is that signal — see source-preview.tsx).
       if (!enteredCardId) return;
       // `said` is the passage the learner marked. Passing it as the turn's context excerpt is what
       // narrows the answer to it: the same field a selection on a card fills (board-provider.tsx).
@@ -230,7 +238,6 @@ function BoardSourcePanel() {
     },
     [enteredCardId, sendCardMessage],
   );
-  if (!enteredCardId) return null;
   return (
     <SourcePreview
       activeId={dock.activeId}
@@ -241,7 +248,7 @@ function BoardSourcePanel() {
       onCloseTab={(id) => dock.close(documentKey(id))}
       onSelect={(id) => dock.select(documentKey(id))}
       onSelectKey={dock.select}
-      onSendToChat={onSendToChat}
+      {...(enteredCardId ? { onSendToChat } : {})}
       open={dock.open}
       uid={session?.user?.id ?? null}
     />

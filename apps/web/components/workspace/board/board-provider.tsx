@@ -17,8 +17,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 
 import { useAuth } from "@/components/AuthProvider";
 import type { BoardAnnotation } from "@/lib/board/board-annotations";
-import { GROUP_HEADER, GROUP_MIN_HEIGHT, GROUP_MIN_WIDTH, GROUP_PADDING, gatherIntoBlock, groupFromSelection, growGroupFor, nodesInsideGroup, type BoardGroup, type GroupColor, type GroupRect } from "@/lib/board/board-groups";
-import { groupHoldingExactly, scopeForCard, type BoardScope } from "@/lib/board/board-scope";
+import { GROUP_HEADER, GROUP_MIN_HEIGHT, GROUP_MIN_WIDTH, groupFromSelection, nodesInsideGroup, type BoardGroup, type GroupColor, type GroupRect } from "@/lib/board/board-groups";
+import { activeSourceIds } from "@/lib/board/board-scope";
 import { extractFile } from "@/lib/workspace/chat-attachments";
 import {
   buildDeleteTargets,
@@ -212,15 +212,13 @@ export interface BoardContextValue {
   /** Draw a frame around these, Obsidian's bounding box padded by 20. Returns its id, or null. */
   createGroup: (nodeIds: readonly string[]) => string | null;
   /**
-   * What this chat reads, worked out from where it is standing right now.
+   * The sources every chat on this canvas is answered from: whatever is ticked, or all of them.
    *
-   * 🔴 ASKED ON EVERY RENDER, NEVER STORED. Owner 2026-09-07: *"A frame, and whatever sits in it is
-   * what chats read"*. A cached answer would go stale the instant anything moved, which is the one
-   * failure this design cannot afford — see lib/board/board-scope.ts.
+   * 🔴 ONE ANSWER FOR THE WHOLE CANVAS, NOT ONE PER CHAT. Owner, 2026-09-07: *"so all chats should
+   * contain all sources"* and *"thats why we have tickers"*. See lib/board/board-scope.ts for the
+   * rule this replaced and why it could not survive documents leaving the board.
    */
-  scopeFor: (cardId: string) => BoardScope;
-  /** Gather the ticked sources together and draw a named frame round them. Returns the frame's id. */
-  groupTickedSources: () => string | null;
+  activeSources: () => string[];
   /**
    * The one chat whose made things are showing on the board, or null while they are all put away.
    *
@@ -408,67 +406,7 @@ export function BoardProvider({
     return rects;
   }, [cards, measuredRect, outputs, sources]);
 
-  /**
-   * What a chat reads: the sources inside the frame it stands in, the document it hangs off, or
-   * everything. See lib/board/board-scope.ts for why this is a question and never a stored field.
-   */
-  const scopeFor = useCallback(
-    (cardId: string): BoardScope => {
-      const card = cards.find((item) => item.id === cardId);
-      const attachedSourceId = card?.parentId && sources.some((source) => source.id === card.parentId) ? card.parentId : null;
-      return scopeForCard(cardId, {
-        groups,
-        rects: nodeRects(),
-        sourceIds: sources.filter((source) => source.status === "ready").map((source) => source.id),
-        attachedSourceId,
-      });
-    },
-    [cards, groups, nodeRects, sources],
-  );
-
-  /**
-   * Bring the ticked sources together and draw a frame round exactly them, reusing one that already
-   * holds exactly those.
-   *
-   * 🔴🔴 THE GATHER IS THE POINT. Owner, 2026-09-07: *"user can select what sources chats receive by
-   * selecting them in the source panel and that should becomes its own group automatically"*. Under
-   * his frame rule the group's contents ARE the scope, so a frame drawn around three scattered
-   * cards would also enclose — and therefore read — every unticked card standing between them. The
-   * three are moved into a block first, and only then framed, so the picture and the scope agree.
-   */
-  const ensureTickGroup = useCallback(
-    (ticked: readonly string[], added?: { width: number; height: number }): { groupId: string; position: BoardPosition } | null => {
-      const rects = nodeRects();
-      const readyIds = sources.filter((source) => source.status === "ready").map((source) => source.id);
-      let group = groupHoldingExactly(ticked, { groups, rects, sourceIds: readyIds });
-      if (!group) {
-        const chosen = rects.filter((rect) => ticked.includes(rect.id));
-        if (chosen.length === 0) return null;
-        /**
-         * 🔴🔴 CLEAR GROUND, BELOW EVERYTHING. The frame decides what its chats read, so it must
-         * hold exactly what was ticked and nothing that happened to be standing nearby. Gathering
-         * the cards where they already were left the frame overlapping whatever was between them;
-         * measured on the harness, one unticked document missed being enclosed by five pixels.
-         */
-        const bottom = rects.length > 0 ? Math.max(...rects.map((rect) => rect.position.y + rect.height)) : 0;
-        const left = rects.length > 0 ? Math.min(...rects.map((rect) => rect.position.x)) : 0;
-        const moved = gatherIntoBlock(chosen, { x: left, y: bottom + PLACEMENT_GAP });
-        setSources((all) => all.map((source) => (moved.has(source.id) ? { ...source, position: moved.get(source.id)! } : source)));
-        const gathered = chosen.map((rect) => ({ ...rect, position: moved.get(rect.id) ?? rect.position }));
-        const made = groupFromSelection(gathered, crypto.randomUUID());
-        if (!made) return null;
-        group = made;
-        setGroups((all) => [...all, made]);
-      }
-      if (!added) return { groupId: group.id, position: group.position };
-      const grown = growGroupFor(group, added);
-      setGroups((all) => all.map((item) => (item.id === grown.group.id ? grown.group : item)));
-      return { groupId: grown.group.id, position: grown.position };
-    },
-    [groups, nodeRects, sources],
-  );
-
-  const groupTickedSources = useCallback(() => ensureTickGroup(selectedSourceIds)?.groupId ?? null, [ensureTickGroup, selectedSourceIds]);
+  const activeSources = useCallback(() => activeSourceIds(sources, selectedSourceIds), [selectedSourceIds, sources]);
 
   const toggleFan = useCallback((cardId: string) => setFannedCardId((was) => (was === cardId ? null : cardId)), []);
   const closeFan = useCallback(() => setFannedCardId(null), []);
@@ -916,21 +854,12 @@ export function BoardProvider({
       // document and sits beside it; several ticks are a question across the pile and stand alone.
       const parentSource = sourceIds.length === 1 ? sources.find((source) => source.id === sourceIds[0]) : undefined;
       /**
-       * 🔴🔴 TICKING SEVERAL SOURCES MAKES A GROUP, AND THE NEW CHAT LANDS IN IT. Owner, 2026-09-07:
-       * *"user can select what sources chats receive by selecting them in the source panel and that
-       * should becomes its own group automatically and user can name the group, chats will all
-       * sources selected should be 'global' chats"*. So the three cases are the three he named:
-       *
-       *   every source ticked (or none)  →  no frame, the chat stands on open board and is GLOBAL
-       *   exactly one ticked             →  the chat hangs off that document, joined by a line
-       *   some but not all               →  a frame around exactly those, and the chat inside it
-       *
-       * The frame is what the chat reads from then on (board-scope.ts), which is why the sources
-       * are gathered into a block before it is drawn: a frame stretched across where they happened
-       * to be sitting would enclose, and therefore read, everything in between.
+       * 🔴 A NEW CHAT LANDS ON OPEN BOARD. Owner, 2026-09-07: *"so all chats should contain all
+       * sources"* and *"thats why we have tickers"*. Ticking several sources used to gather them
+       * together and draw a frame around them, with the chat inside it, because a frame decided
+       * what its chats read; the ticks are the whole answer now, and they apply to every chat, so
+       * there is nothing for a frame to say. See lib/board/board-scope.ts.
        */
-      const readyCount = sources.filter((source) => source.status === "ready").length;
-      const framed = sourceIds.length >= 2 && sourceIds.length < readyCount ? ensureTickGroup(sourceIds, { width: CARD_WIDTH, height: CARD_MIN_HEIGHT }) : null;
       const cardId = crypto.randomUUID();
       const assistantId = crypto.randomUUID();
       const card: BoardCard = {
@@ -945,11 +874,9 @@ export function BoardProvider({
         savedImages: [],
         notes: [],
         status: "streaming",
-        position: framed
-          ? framed.position
-          : parentSource
-            ? findFreeChildPosition({ parent: measuredRect(parentSource), occupied: occupied(cards, sources), childHeight: CARD_MIN_HEIGHT })
-            : nextRootPosition([...cards, ...sources]),
+        position: parentSource
+          ? findFreeChildPosition({ parent: measuredRect(parentSource), occupied: occupied(cards, sources), childHeight: CARD_MIN_HEIGHT })
+          : nextRootPosition([...cards, ...sources]),
         width: CARD_WIDTH,
         messages: [
           { id: crypto.randomUUID(), role: "user", content: message },
@@ -976,7 +903,7 @@ export function BoardProvider({
       });
       return true;
     },
-    [cards, ensureTickGroup, makeDeliverable, measuredRect, occupied, runTurn, selectedSourceIds, sources, updateCards],
+    [cards, makeDeliverable, measuredRect, occupied, runTurn, selectedSourceIds, sources, updateCards],
   );
 
   const sendRootMessage = useCallback((text: string) => startCard(text, { updatesComposerSuggestions: true }), [startCard]);
@@ -1046,11 +973,12 @@ export function BoardProvider({
         requestMessage: message,
         history: context,
         contextExcerpt: excerpt,
-        // 🔴🔴 WHERE IT STANDS NOW, NOT WHAT IT WAS MADE WITH. `card.sourceIds` is the tick list
-        // frozen at the moment the chat was started; since 2026-09-07 the frame a chat is standing
-        // in is what it reads (board-scope.ts, the owner's own choice), so a follow-up asked after
-        // dragging a document into the group has to see that document.
-        sourceIds: scopeFor(cardId).sourceIds,
+        // 🔴🔴 WHAT IS TICKED NOW, NOT WHAT WAS TICKED WHEN THE CHAT STARTED. `card.sourceIds` is
+        // that frozen list, kept for boards saved before today and read by nothing. Owner,
+        // 2026-09-07: *"so all chats should contain all sources"*, *"thats why we have tickers"* —
+        // so unticking a document and asking again has to answer without it, in the chat you are
+        // already in.
+        sourceIds: activeSources(),
         responseMode,
         updatesComposerSuggestions: updatesComposer,
         cardTitle: card.title.trim() || undefined,
@@ -1059,7 +987,7 @@ export function BoardProvider({
       });
       return true;
     },
-    [cards, makeDeliverable, runTurn, scopeFor, updateCards],
+    [activeSources, cards, makeDeliverable, runTurn, updateCards],
   );
 
   /**
@@ -1535,26 +1463,13 @@ export function BoardProvider({
       ];
       for (const draft of drafts) for (const url of draft.previewUrls) previewUrls.current.add(url);
       /**
-       * 🔴🔴 A FILE DROPPED WHILE YOU ARE INSIDE A CHAT LANDS IN THAT CHAT'S FRAME. Owner,
-       * 2026-09-07: *"entering a chat makes it fullscreen size, and the sources panel then shows
-       * only the sources attached to the chat"* — and adding to that list has to mean something.
-       * Under the frame rule (board-scope.ts) a source is read by a chat only if it stands inside
-       * the same rectangle, so a drop made from inside a framed chat that landed on open board
-       * would appear in the panel and be read by nobody. The frame grows to take it. A chat with no
-       * frame is global and already reads everything, so there is nothing to place it in.
+       * 🔴 A DROPPED FILE JOINS THE PANEL, NOT THE BOARD. Owner, 2026-09-07: *"adding documents
+       * still loads them on canvas, please remove that"*. It used to be placed inside the frame of
+       * whichever chat you were in, because a frame decided what its chats read; sources are not on
+       * the board at all now and every chat reads whatever is ticked, so a new one is simply
+       * ticked and in play. The position below is still written because the row carries the field
+       * and a board saved before today has one, but nothing draws it.
        */
-      const frame = enteredCardId ? scopeFor(enteredCardId).group : null;
-      const placed = new Map<string, BoardPosition>();
-      if (frame) {
-        let y = frame.position.y + frame.height + GROUP_PADDING;
-        for (const draft of drafts) {
-          placed.set(draft.id, { x: frame.position.x + GROUP_PADDING, y });
-          y += defaultSourceHeight(draft.name) + GROUP_PADDING;
-        }
-        const height = y - frame.position.y + GROUP_PADDING;
-        const width = Math.max(frame.width, SOURCE_WIDTH + GROUP_PADDING * 2);
-        setGroups((all) => all.map((group) => (group.id === frame.id ? { ...group, height, width } : group)));
-      }
       setSources((all) => {
         const next = [...all];
         for (const draft of drafts) {
@@ -1565,7 +1480,7 @@ export function BoardProvider({
             content: "",
             status: "processing",
             previewUrls: draft.previewUrls,
-            position: placed.get(draft.id) ?? nextRootPosition([...cards, ...next]),
+            position: nextRootPosition([...cards, ...next]),
             width: SOURCE_WIDTH,
             // 🔴 THE CARD TAKES THE DOCUMENT'S SHAPE (board-layout.ts `defaultSourceHeight`): a deck
             // opened at a page's height left 200px of empty card under every slide.
@@ -1622,7 +1537,7 @@ export function BoardProvider({
         }),
       );
     },
-    [cards, claimSourceOrdinal, enteredCardId, scopeFor, uid],
+    [cards, claimSourceOrdinal, uid],
   );
 
   // ------------------------------------------------------------- groups
@@ -1689,8 +1604,7 @@ export function BoardProvider({
       groups,
       nodeRects,
       createGroup,
-      scopeFor,
-      groupTickedSources,
+      activeSources,
       fannedCardId,
       toggleFan,
       closeFan,
@@ -1760,8 +1674,7 @@ export function BoardProvider({
       groups,
       nodeRects,
       createGroup,
-      scopeFor,
-      groupTickedSources,
+      activeSources,
       fannedCardId,
       toggleFan,
       closeFan,
