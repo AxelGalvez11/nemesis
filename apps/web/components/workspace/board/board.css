@@ -4,7 +4,12 @@
    equivalent here (branch purple, highlight yellow, note tint) are literal. */
 
 [data-workspace] {
-  --board-dot: color-mix(in srgb, var(--ui-base) 12%, transparent);
+  /* 🔴🔴 34%, AND THIS IS NOT A CHANGE OF APPEARANCE. Until the two lattices were given their own
+     `id` in board-surface.tsx they shared the generated pattern id `pattern-1`, so the whole field
+     was painted by the CURSOR lattice — which in this theme is 34%. Putting 34% here is therefore
+     exactly what the light board has looked like all along: measured before and after, its dots sit
+     at a contrast of 2.21 against the ground either way. The old 12% has never been on screen. */
+  --board-dot: color-mix(in srgb, var(--ui-base) 34%, transparent);
   --board-edge: color-mix(in srgb, var(--ui-base) 46%, transparent);
   --board-branch-highlight: hsl(262 83% 76%);
   --board-text-highlight: hsl(54 97% 63%);
@@ -16,9 +21,11 @@
   /* The light under the pointer (Stitch's canvas). On a near-white ground a "glow" can only be a
      soft shading, so light mode gets a whisper and dark mode carries the effect. */
   --board-glow: color-mix(in srgb, var(--ui-base) 3%, transparent);
-  /* 🔴 THE LIT DOT: the lattice's own colour at full strength, which is what 'lights up a
-     little bit more' means. `--board-dot` is the resting value; this is it, brighter. */
-  --board-dot-lit: color-mix(in srgb, var(--ui-base) 34%, transparent);
+  /* 🔴🔴 AN INCREMENT ON TOP OF THE FIELD, NOT A BRIGHTNESS, so it reads LOWER than `--board-dot`
+     and belongs there. The cursor lattice paints over the resting one, so 34% under 22% composites
+     to a contrast of 3.39 against a field of 2.21 — about 1.6x, the same step dark mode is tuned
+     to. Read the two together; this line alone says nothing about how bright anything looks. */
+  --board-dot-lit: color-mix(in srgb, var(--ui-base) 22%, transparent);
   /* The sheen that crosses a document while it is being read. */
   --board-shimmer: color-mix(in srgb, var(--ui-base) 7%, transparent);
   /* 🔴 OBSIDIAN'S OWN SIX, READ OUT OF THEIR STYLESHEET (`--canvas-color-1` … `-6` resolve to
@@ -39,18 +46,32 @@
     --board-text-highlight: hsl(54 80% 40%);
     --board-error-bg: hsl(7 60% 22%);
     --board-error-text: hsl(13 100% 86%);
-    /* 🔴 THE DOTS ARE NOT ONE COLOUR IN BOTH THEMES, AND 12% WAS THE OWNER'S REPORT ("darkmode
-       makes it hard to see the background dots", 2026-09-06). Measured on /dev-preview/board:
-       the ground is #000, the dot was `color(srgb 1 1 1 / 0.12)` — rgb(31,31,31) — and at the
-       board's own 0.55 zoom each dot is barely one device pixel wide, so anti-aliasing spends
-       most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
+    /* 🔴🔴 28% WAS ALWAYS THE RIGHT NUMBER AND IT WAS NEVER ONCE DRAWN. Until board-surface.tsx
+       gave the two lattices their own `id`, both React Flow Backgrounds generated the pattern id
+       `pattern-1`, and `url(#pattern-1)` resolves to whichever came first — so EVERY dot on the
+       board, everywhere, was painted by the CURSOR lattice at `--board-dot-lit`. Proved by setting
+       this to red and the cursor colour to blue: the empty board came back blue.
+
+       That is the whole history of this complaint. Raising this from 12% to 28% on 2026-09-06 did
+       nothing at all. Dropping the cursor colour 70% -> 45% on 2026-09-07 was the only change that
+       ever moved anything, because that value was painting the entire field, and 45% white on black
+       is exactly the "too bright" he reported twice.
+
+       Measured now that it is actually drawn (peak dot pixel vs the ground, as a contrast ratio,
+       every node and panel hidden): 28% gives 2.19, and light mode's own field gives 2.21. The two
+       themes match, which is the point: light has never been complained about. */
     --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
     --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
-    /* 🔴 45%, NOT 70%. Owner, 2026-09-07: *"the dots are too bright in dark mode"*. The dark base
-       is already 28% (raised from 12% the day before, when he could not see them at all), so a lit
-       dot only has to be clearly brighter than that, not white. In the light theme the base is 12%
-       and the lit 34%, close to three times; 28 to 45 is the same relationship on a dark ground. */
-    --board-dot-lit: color-mix(in srgb, var(--ui-base) 45%, transparent);
+    /* 🔴🔴 THIS IS AN INCREMENT, NOT A BRIGHTNESS, WHICH IS WHY IT IS LOWER THAN THE FIELD ABOVE
+       AND MUST STAY THERE. The cursor lattice is painted OVER the resting one, so what a learner
+       sees under the pointer is the two composited: 28% under 16% lands at a contrast of 3.44
+       against a field of 2.19. Raise this to "look brighter than the field" and you get the
+       spotlight this board has already been told off for twice.
+
+       Owner, 2026-09-07: *"They just make the individual buttons or dots glow. Or light up a little
+       bit more around the mouse."* A little bit more is about 1.6x the field, and light mode is
+       tuned to the same step (2.21 -> 3.39) so the two themes feel like one board. */
+    --board-dot-lit: color-mix(in srgb, var(--ui-base) 16%, transparent);
     --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
     --board-group-1: #fb464c;
     --board-group-2: #e9973f;
@@ -65,18 +86,32 @@
     --board-text-highlight: hsl(54 80% 40%);
     --board-error-bg: hsl(7 60% 22%);
     --board-error-text: hsl(13 100% 86%);
-    /* 🔴 THE DOTS ARE NOT ONE COLOUR IN BOTH THEMES, AND 12% WAS THE OWNER'S REPORT ("darkmode
-       makes it hard to see the background dots", 2026-09-06). Measured on /dev-preview/board:
-       the ground is #000, the dot was `color(srgb 1 1 1 / 0.12)` — rgb(31,31,31) — and at the
-       board's own 0.55 zoom each dot is barely one device pixel wide, so anti-aliasing spends
-       most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
+    /* 🔴🔴 28% WAS ALWAYS THE RIGHT NUMBER AND IT WAS NEVER ONCE DRAWN. Until board-surface.tsx
+       gave the two lattices their own `id`, both React Flow Backgrounds generated the pattern id
+       `pattern-1`, and `url(#pattern-1)` resolves to whichever came first — so EVERY dot on the
+       board, everywhere, was painted by the CURSOR lattice at `--board-dot-lit`. Proved by setting
+       this to red and the cursor colour to blue: the empty board came back blue.
+
+       That is the whole history of this complaint. Raising this from 12% to 28% on 2026-09-06 did
+       nothing at all. Dropping the cursor colour 70% -> 45% on 2026-09-07 was the only change that
+       ever moved anything, because that value was painting the entire field, and 45% white on black
+       is exactly the "too bright" he reported twice.
+
+       Measured now that it is actually drawn (peak dot pixel vs the ground, as a contrast ratio,
+       every node and panel hidden): 28% gives 2.19, and light mode's own field gives 2.21. The two
+       themes match, which is the point: light has never been complained about. */
     --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
     --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
-    /* 🔴 45%, NOT 70%. Owner, 2026-09-07: *"the dots are too bright in dark mode"*. The dark base
-       is already 28% (raised from 12% the day before, when he could not see them at all), so a lit
-       dot only has to be clearly brighter than that, not white. In the light theme the base is 12%
-       and the lit 34%, close to three times; 28 to 45 is the same relationship on a dark ground. */
-    --board-dot-lit: color-mix(in srgb, var(--ui-base) 45%, transparent);
+    /* 🔴🔴 THIS IS AN INCREMENT, NOT A BRIGHTNESS, WHICH IS WHY IT IS LOWER THAN THE FIELD ABOVE
+       AND MUST STAY THERE. The cursor lattice is painted OVER the resting one, so what a learner
+       sees under the pointer is the two composited: 28% under 16% lands at a contrast of 3.44
+       against a field of 2.19. Raise this to "look brighter than the field" and you get the
+       spotlight this board has already been told off for twice.
+
+       Owner, 2026-09-07: *"They just make the individual buttons or dots glow. Or light up a little
+       bit more around the mouse."* A little bit more is about 1.6x the field, and light mode is
+       tuned to the same step (2.21 -> 3.39) so the two themes feel like one board. */
+    --board-dot-lit: color-mix(in srgb, var(--ui-base) 16%, transparent);
     --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
     --board-group-1: #fb464c;
     --board-group-2: #e9973f;

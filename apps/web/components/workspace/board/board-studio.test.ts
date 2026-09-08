@@ -222,3 +222,29 @@ test("🔴🔴 every made thing opens in the panel, tests included, and none of 
   assert.match(CARD, /openMade\(data\.cardId\)/, "the stack stopped opening the panel");
   assert.ok(!/toggleFan|fannedCardId/.test(CARD), "the fan is back, and there is nothing on the board to fan");
 });
+
+test("🔴🔴 the two dot lattices have their own pattern id, or one of them paints the whole board", () => {
+  // Owner, 2026-09-07, twice: *"the dots are too bright in dark mode"*, then *"dots still too
+  // bright"*. The cause was not a colour. React Flow derives its `<pattern>` id from the flow, so
+  // two `<Background>`s came out as `pattern-1` and `pattern-1`, and `url(#pattern-1)` resolves to
+  // whichever is first in the document — the CURSOR lattice. Every dot on the board, in both
+  // themes, was painted at `--board-dot-lit`; `--board-dot` had never once been drawn.
+  //
+  // Proved rather than reasoned: with the resting colour set to red and the cursor colour to blue,
+  // the empty board away from the pointer came back BLUE. After naming them, red.
+  assert.match(SURFACE, /id="board-rest"/, "the resting lattice has no id of its own");
+  assert.match(SURFACE, /id="board-lit"/, "the cursor lattice has no id of its own");
+  // 🔴 AND THE SAME SIZE. The cursor lattice was `size={3}` against the board's `size={2}`, so a dot
+  // under the pointer grew by half as well as brightening. Owner: *"light up a little bit more"*.
+  const sizes = [...SURFACE.matchAll(/<Background[^>]*?size=\{(\d)\}/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(sizes)], ["3"], `the two lattices draw different sized dots: ${sizes.join(", ")}`);
+  // 🔴 THE CURSOR VALUE IS AN INCREMENT PAINTED OVER THE FIELD, so it is LOWER than the field in
+  // both themes. Someone will read that as a bug and "fix" it back into a spotlight.
+  const alphas = [...BOARD_CSS.matchAll(/--board-dot(-lit)?: color-mix\(in srgb, var\(--ui-base\) (\d+)%/g)]
+    .map((m) => ({ lit: Boolean(m[1]), value: Number(m[2]) }));
+  const field = alphas.filter((a) => !a.lit).map((a) => a.value);
+  const cursor = alphas.filter((a) => a.lit).map((a) => a.value);
+  assert.deepEqual(field, [34, 28, 28], "the resting dot changed; re-measure both themes before trusting it");
+  assert.deepEqual(cursor, [22, 16, 16], "the cursor increment changed; re-measure, and remember it composites OVER the field");
+  for (const [i, value] of field.entries()) assert.ok((cursor[i] ?? 99) < value, "the cursor value went above the field value, which is the spotlight again");
+});

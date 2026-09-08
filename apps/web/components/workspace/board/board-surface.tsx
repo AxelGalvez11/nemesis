@@ -710,7 +710,17 @@ function BoardInner() {
           its colour and size differ. board.css explains why the window moves and the dots do not. */}
       <div aria-hidden className="board-halo" ref={glow}>
         <div className="board-halo-inner" ref={halo}>
-          <Background color="var(--board-dot-lit)" gap={28} size={3} variant={BackgroundVariant.Dots} />
+          {/* 🔴🔴 THE SAME SIZE AS THE RESTING LATTICE. It was `size={3}` against the board's own
+              `size={2}`, so a dot under the cursor grew by half as well as brightening, and a dot
+              that grows is a bloom, not a light. Owner, 2026-09-07: *"They just make the individual
+              buttons or dots glow. Or light up a little bit more around the mouse."* A little bit
+              more is a change of colour and nothing else. */}
+          {/* 🔴🔴 THE `id` IS LOad-BEARING, NOT DECORATION. React Flow derives its `<pattern>` id from
+              the props, so two Backgrounds with the same `gap` and `size` are both `pattern-1`, and
+              `url(#pattern-1)` resolves to whichever came first: ONE lattice paints both rectangles.
+              Measured the moment these two sizes were made equal, in both themes. Naming them keeps
+              them apart no matter how alike they look. */}
+          <Background color="var(--board-dot-lit)" gap={28} id="board-lit" size={3} variant={BackgroundVariant.Dots} />
         </div>
       </div>
       <ReactFlow<BoardNode>
@@ -764,7 +774,7 @@ function BoardInner() {
       >
         <RestoreViewport key="restore" viewport={hasSavedViewport ? viewport : null} />
         <CenterTarget companionId={companion} instant={onlyOne} maxZoom={onlyOne && cards.length === 1 ? INITIAL_CARD_ZOOM : undefined} nodeId={target} />
-        <Background color="var(--board-dot)" gap={28} size={2} variant={BackgroundVariant.Dots} />
+        <Background color="var(--board-dot)" gap={28} id="board-rest" size={3} variant={BackgroundVariant.Dots} />
       </ReactFlow>
       {grouping && <GroupSelectionPill bounds={grouping.bounds} ids={grouping.ids} onGroup={groupSelection} />}
       {!empty && <ViewportControls />}
