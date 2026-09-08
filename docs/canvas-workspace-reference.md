@@ -331,3 +331,33 @@ attributes are both allow-listed, an unknown element takes its contents with it,
 per drawing so two figures in one answer cannot collide, and a figure with no viewBox is refused
 rather than repaired. Thirteen tests, calibrated by widening the allow-list and confirming exactly
 the security guards redden.
+
+## §11 Wondering's IN-CHAT comparison figure, measured 2026-09-07
+
+Owner: *"go into wondering ... if they have an opportunity to utilize any visualization, they'll do
+it in a chat ... our visualizations look pretty much bland, black and white"*. Driven in his own
+Wondering canvas ("Compare insulin aspart, glargine and degludec"), which draws a
+**Pharmacokinetic Comparison of Insulins** figure inline in the conversation.
+
+| Part | Measurement |
+| --- | --- |
+| Card | 490 wide, radius 16, fill `#FFFCF0`, 1px `rgb(212,205,196)` |
+| Title | 16px/24 weight **700**, centred, `rgb(38,20,18)` |
+| Header chip | 145 x 27, radius 8, **2px solid `rgb(38,20,18)`**, saturated fill (`#7BCAFF` blue, `#879A39` olive, red), 14px weight 700 |
+| Cell | same 145 x 27, radius 8, **the same 2px ink**, fill = paper `#FFFCF0`, 16px weight 400 |
+| Footer | a FILLED amber band, not an outlined box |
+
+🔴🔴 **THE SIGNATURE IS THE INK, NOT THE COLOUR.** Every chip and every cell carries the same heavy
+2px border in the text colour; only the header is filled. That is what makes it read as designed.
+Ours had an 18% wash with a hairline in the tint's own colour, and "bland" was a fair description.
+
+🔴 **WE DO NOT COPY THEIR PALETTE, AND THE REASON IS CONTRAST.** Their fills are pale brand colours
+carrying dark text on cream, and their figure only ever sits on cream. Our `--ui-kind-*` are
+mid-tone in the light theme, so a full-strength fill would put foreground text on a colour it cannot
+be read against. The fill is mixed to **45%** toward the panel and the ink is `--ui-text-primary`,
+so the same bold reading survives both themes. Verified in Playwright at both schemes:
+`/dev-preview/visual-figure`.
+
+🔴 **AND THE MODEL HAS TO REACH FOR IT.** A comparison drawn as a mermaid flowchart is grey boxes
+however well this component is styled. The mermaid paragraph was claiming the case; §10's handover
+and the lane order in `diagram-instruction.ts` are the other half of this fix.
