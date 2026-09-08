@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { MAX_FIGURE_NODES, SVG_FIGURE_INSTRUCTION, sanitizeSvgFigure } from "./svg-figure";
@@ -172,4 +173,24 @@ test("🔴 the instruction and the sanitiser name the same fills, and the prompt
   // And it must send the other two shapes to the right lane, or every comparison arrives as SVG.
   assert.match(SVG_FIGURE_INSTRUCTION, /```visual/);
   assert.match(SVG_FIGURE_INSTRUCTION, /```mermaid/);
+});
+
+test("🔴🔴 mermaid hands the mechanism case over instead of competing for it", () => {
+  // 🔴 THE FEATURE WAS DEAD ON ARRIVAL WITHOUT THIS. The figure lane asks for a mechanism; the
+  // mermaid paragraph under it offered "flowchart TD for steps and decisions ... several parts
+  // relating to each other ... if you find yourself writing 'first... then... which leads to...'",
+  // which is a mechanism described in the words a model actually thinks in, and mermaid is far
+  // easier to write than SVG. Two instructions cannot both own a case.
+  const DIAGRAM = readFileSync(new URL("../learn/diagram-instruction.ts", import.meta.url), "utf8");
+  assert.match(DIAGRAM, /A MECHANISM is not one of these and never a flowchart/, "mermaid stopped handing mechanisms to the figure lane");
+  assert.match(DIAGRAM, /```figure/, "the mermaid paragraph does not name where a mechanism goes");
+  assert.ok(!/flowchart TD for steps and\s*"\s*\+\s*"decisions/.test(DIAGRAM), "flowchart is offered for 'steps and decisions' again, which is a mechanism");
+  // The three lanes are offered in the order they should be reached for. Measured from the
+  // ASSEMBLED constant, not the file: both lane names also appear in the imports at the top.
+  const packet = DIAGRAM.slice(DIAGRAM.indexOf("export const DIAGRAM_INSTRUCTION"));
+  const visual = packet.indexOf("VISUAL_INSTRUCTION");
+  const figure = packet.indexOf("SVG_FIGURE_INSTRUCTION");
+  const mermaid = packet.indexOf("For a real graph");
+  assert.ok(visual >= 0 && figure >= 0 && mermaid >= 0, "a lane is missing from the packet");
+  assert.ok(visual < figure && figure < mermaid, "the lanes are no longer offered figure-before-graph");
 });

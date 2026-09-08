@@ -62,13 +62,22 @@ export const DIAGRAM_INSTRUCTION: string =
   // comparison is a figure, a mechanism is a drawing, and a plain web of relationships is a graph.
   + SVG_FIGURE_INSTRUCTION
   + " "
-  + "For a real graph, where the point is the EDGES between things, Nemesis also draws fenced mermaid blocks in your answer: flowchart TD for steps and "
-  + "decisions, mindmap for how a subject branches, sequenceDiagram for exchanges over time, "
+  // 🔴🔴 MERMAID USED TO CLAIM THE MECHANISM CASE TOO, AND IT CLAIMED IT MORE CONCRETELY. This
+  // paragraph offered "flowchart TD for steps and decisions ... several parts relating to each
+  // other ... if you find yourself writing 'first... then... which leads to...'", which is a
+  // mechanism described in the words a model actually thinks in. The figure lane above asks for
+  // the same thing and is far harder to write, so a model reading both had every reason to reach
+  // for the easy one. Two instructions cannot both own a case; this one hands it over by name.
+  + "For a real graph, where the point is only the EDGES and not WHERE anything sits, Nemesis also draws fenced mermaid blocks in your answer: "
+  + "flowchart TD for ordered steps and decision trees, mindmap for how a subject branches, sequenceDiagram for exchanges over time, "
   + "stateDiagram-v2 for states, pie for shares of a whole. Judge for yourself when one would "
   + "genuinely help, without being asked: an answer that IS a process with stages, a branching "
-  + "decision, a cycle, a hierarchy, or several parts relating to each other lands better drawn, "
-  + 'and if you find yourself writing "first... then... which leads to...", draw that answer '
-  + "beside the prose. Always use one when the learner asks for a flow chart, diagram, mind map "
+  + "decision, a cycle, or a hierarchy lands better drawn. "
+  + "A MECHANISM is not one of these and never a flowchart: if several things act on each other, "
+  + "or one blocks or reverses another, or the arrangement itself carries the meaning, that is a "
+  + "```figure block and you draw it yourself. Reach for mermaid only when a graph engine laying "
+  + "the nodes out wherever it likes would lose nothing. "
+  + "Always use one when the learner asks for a flow chart, diagram, mind map "
   + "or similar. Keep a diagram under about eight nodes, write labels as short plain "
   + 'text in double quotes (no HTML, no LaTeX inside labels), and let the prose still carry the '
   + "explanation. If what you want to draw needs more than eight, draw the part that matters most "

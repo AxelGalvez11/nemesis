@@ -255,7 +255,7 @@ function MadeRow({ output, onOpen, sources }: { output: BoardOutputCard; onOpen:
       <button
         className="flex h-[64px] w-full items-center gap-[12px] rounded-[16px] p-[8px] text-left transition-colors hover:bg-(--ui-control-hover-background)"
         onClick={onOpen}
-        title={`Show ${title} on the canvas`}
+        title={output.kind === "check" ? `Show ${title} on the canvas` : `Open ${title}`}
         type="button"
       >
         {output.status === "making" ? (
@@ -478,7 +478,7 @@ function MakeForm({ tile, scope, onMake }: { tile: StudioTile; scope: string; on
 }
 
 export function BoardStudio() {
-  const { cards, sources, outputs, selectedSourceIds, toggleSourceSelection, setSourceSelection, addSourceFiles, makeDeliverable, enteredCardId } = useBoard();
+  const { cards, sources, outputs, selectedSourceIds, toggleSourceSelection, setSourceSelection, addSourceFiles, makeDeliverable, enteredCardId, openOutput, leaveCard, toggleFan } = useBoard();
   const { fitView } = useReactFlow();
   const dock = useDocumentDock();
   const picker = useRef<HTMLInputElement>(null);
@@ -612,7 +612,29 @@ export function BoardStudio() {
       ? `From ${ticked.length} ticked source${ticked.length === 1 ? "" : "s"}`
       : "From everything on the canvas";
 
-  const show = (id: string) => void fitView({ nodes: [{ id }], duration: 320, padding: 0.1, maxZoom: 1 });
+  /**
+   * Open a made thing from the panel.
+   *
+   * 🔴🔴 IT USED TO FLY THE CAMERA TO ITS CARD, AND THAT STOPPED WORKING TWICE OVER. Owner,
+   * 2026-09-07: *"it seems like I can't open the actual document for the flashcards within the
+   * panel by clicking on it"*. `fitView` needs a node on screen to fly to, and since 2026-09-07 a
+   * chat's made things are HIDDEN behind its card until the stack is pressed, so there was nothing
+   * to aim at. From inside a full-size chat there is not even a board to aim at.
+   *
+   * 🔴 A CHECK IS THE ONE EXCEPTION AND IT IS NOT A HEDGE. Every other kind carries a `CanvasOutput`
+   * the reading panel knows how to draw; a check carries a `run` that is answered in its own card,
+   * which is the owner's own ruling (2026-09-04: *"tests should show results in their own card
+   * node"*). So a check is fanned out and flown to, and everything else opens in the panel.
+   */
+  const show = (output: BoardOutputCard) => {
+    if (output.kind !== "check") {
+      openOutput(output.id);
+      return;
+    }
+    if (enteredCardId) leaveCard();
+    if (output.cardId) toggleFan(output.cardId);
+    window.setTimeout(() => void fitView({ nodes: [{ id: output.id }], duration: 320, padding: 0.1, maxZoom: 1 }), 60);
+  };
 
   return (
     <>
@@ -791,7 +813,7 @@ export function BoardStudio() {
                   {made.map((output) => (
                     <MadeRow
                       key={output.id}
-                      onOpen={() => show(output.id)}
+                      onOpen={() => show(output)}
                       output={output}
                       sources={output.sourceId ? 1 : ticked.length || ready.length}
                     />
