@@ -21,6 +21,7 @@ import { BoardSurface } from "./board-surface";
 import { useAuth } from "@/components/AuthProvider";
 import { CHECK_KEY, documentKey, useDocumentDock } from "@/components/workspace/learn/document-dock";
 import { CanvasCheck } from "@/components/workspace/learn/canvas-check";
+import { DeckReview } from "@/components/workspace/study/deck-review";
 import { StudyPanel } from "@/components/workspace/learn/study-panel";
 import { SourcePreview } from "@/components/workspace/learn/source-preview";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
@@ -130,6 +131,7 @@ export function BoardPage({
           </BoardArea>
           <BoardOutputPanel />
           <BoardSourcePanel />
+          <BoardDeckPanel />
           <BoardCheckPanels />
         </BoardDock>
       </BoardProvider>
@@ -318,5 +320,33 @@ function BoardCheckPanel({ output }: { output: BoardOutputCard }) {
         )}
       </div>
     </StudyPanel>
+  );
+}
+
+/**
+ * A deck of flashcards, reviewed in the panel.
+ *
+ * 🔴🔴 THE BOARD USED TO SEND THESE TO THE DOCUMENT READER AND THE PANEL CAME UP EMPTY. Owner,
+ * 2026-09-07: *"the flashcards came back empty"*. A flashcards output is a pointer — a `deckId` and
+ * a name — because the cards themselves are rows in `study_cards`; handing that to a reader gives it
+ * nothing to draw. The learn lane has always opened the deck instead, and this is the board saying
+ * the same thing.
+ *
+ * 🔴 PLAIN ANKI, WHICH IS HIS STANDING RULING (2026-09-07: *"just the X and the check"*).
+ * `DeckReview` passes `simple` and `flipAnimation: false` for every panel; nothing here overrides it.
+ */
+function BoardDeckPanel() {
+  const dock = useDocumentDock();
+  if (dock.active?.kind !== "deck") return null;
+  return (
+    <DeckReview
+      activeKey={dock.activeKey}
+      deckId={dock.active.deckId}
+      items={dock.items}
+      onClose={() => dock.close(dock.activeKey ?? "")}
+      onCloseKey={dock.close}
+      onSelectKey={dock.select}
+      widthSlot="reader"
+    />
   );
 }

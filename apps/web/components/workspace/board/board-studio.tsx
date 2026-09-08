@@ -672,6 +672,26 @@ export function BoardStudio() {
       dock.openCheck(output.output?.title || output.topic || "Test", output.id);
       return;
     }
+    /**
+     * 🔴🔴 FLASHCARDS OPEN THEIR REAL DECK, NOT A DOCUMENT OF THEM. Owner, 2026-09-07: *"the
+     * flashcards came back empty ... it seems like I can't open the actual document for the
+     * flashcards, like within the panel by clicking on it"*. The second half of that report
+     * outlived my first fix, and this is it: a flashcards output carries a `deckId` and NOTHING
+     * ELSE — no markdown, no blocks — because the cards live in `study_cards`. Sending it to the
+     * reading panel therefore opened a reader over an output with nothing to read, which is a panel
+     * that is literally empty. The learn lane has always routed this to the deck
+     * (`learning-canvas.tsx`, `canvas-controls.tsx`); the board never learned to.
+     *
+     * 🔴 AND THE DECK IS THE PLAIN ANKI CARD, which is his standing ruling (2026-09-07: *"it's
+     * supposed to retain the Anki like style where it's just like plain flashcard like with just
+     * the X and the check"*). `DeckReview` in a panel already passes `simple` and `REVIEW_DEFAULTS`
+     * (`flipAnimation: false`), so the style follows from opening the right thing.
+     */
+    const deckId = output.output?.kind === "flashcards" ? output.output.deckId : undefined;
+    if (deckId) {
+      dock.openDeck(deckId, output.output?.title || output.topic || "Flashcards");
+      return;
+    }
     openOutput(output.id);
   };
 

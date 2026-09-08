@@ -307,9 +307,31 @@ const NOTE_OUTPUT: BoardOutputCard = {
   width: OUTPUT_WIDTH,
 };
 
+// 🔴 A DECK, BECAUSE ITS PATH IS THE ONE THAT BROKE. Owner, 2026-09-07: *"the flashcards came back
+// empty"*. A flashcards output carries a `deckId` and no body — the cards are rows in `study_cards` —
+// so a board that sent it to the reading panel drew a reader over nothing. Seeded here so the
+// routing can be driven: pressing this row must open the DECK panel, never the document reader.
+const DECK_OUTPUT: BoardOutputCard = {
+  cardId: ROOT.id,
+  createdAt: "2026-09-07T09:00:00.000Z",
+  id: "deck-out",
+  kind: "flashcards",
+  output: {
+    createdAt: "2026-09-07T09:00:00.000Z",
+    deckId: "00000000-0000-4000-8000-000000000001",
+    id: "out-deck-1",
+    kind: "flashcards",
+    title: "The three analogues",
+  },
+  position: { x: 1180, y: 1160 },
+  status: "ready",
+  topic: "Make me flashcards on the analogues",
+  width: OUTPUT_WIDTH,
+};
+
 const SEED: BoardState = {
   cards: [ROOT, BRANCH, STREAMING],
-  outputs: [CHECK, NOTE_OUTPUT],
+  outputs: [CHECK, NOTE_OUTPUT, DECK_OUTPUT],
   // Every source ticked, as a board loads since 2026-09-06 (board-provider.tsx `ticksOf`).
   selectedSourceIds: [SOURCE.id, PDF_SOURCE.id, DOCX_SOURCE.id, PPTX_SOURCE.id],
   sources: [SOURCE, PDF_SOURCE, DOCX_SOURCE, PPTX_SOURCE, READING_SOURCE],

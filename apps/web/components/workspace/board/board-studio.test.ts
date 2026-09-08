@@ -210,6 +210,13 @@ test("🔴🔴 every made thing opens in the panel, tests included, and none of 
   // are component state. Gating the mount on `open` would throw them away, silently.
   assert.match(PAGE, /checks\.map\(\(output\) => \(\s*<BoardCheckPanel key=\{output\.id\} output=\{output\} \/>/, "the board no longer mounts a panel per test");
   assert.match(PAGE, /const key = `\$\{CHECK_KEY\}:\$\{output\.id\}`;/, "two tests on one board would share a tab");
+  // 🔴🔴 FLASHCARDS OPEN THEIR DECK, AND THE PANEL WAS EMPTY UNTIL THEY DID. Owner, 2026-09-07:
+  // *"the flashcards came back empty"*. The output carries a `deckId` and no body at all — the cards
+  // are rows in `study_cards` — so the reading panel drew a reader over nothing. The learn lane has
+  // always routed this to the deck; `openOutput` here is the fallback for kinds that carry material.
+  assert.match(STUDIO, /dock\.openDeck\(deckId,/, "flashcards open the document reader again, which has nothing to read");
+  assert.match(PAGE, /dock\.active\?\.kind !== "deck"/, "the board mounts no deck panel, so opening one shows nothing");
+  assert.ok(!/simple=|flipAnimation/.test(PAGE), "the board overrides the deck's own review style — the Anki card is DeckReview's default");
   // And the stack under a chat opens the panel rather than putting cards back on the board.
   const CARD = read("./conversation-card.tsx");
   assert.match(CARD, /openMade\(data\.cardId\)/, "the stack stopped opening the panel");
