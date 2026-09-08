@@ -11,7 +11,6 @@ import { CARD_AUTO_MAX_HEIGHT, CARD_MIN_HEIGHT, CONTRACTED_CARD_MIN_HEIGHT } fro
 import { BOARD_MESSAGE_TOO_LONG_REPLY, isMessageTooLong, messageLimitNotice, type BoardCard } from "@/lib/board/board-model";
 import { boardCitableFiles, boardSourceForFile } from "@/lib/board/board-grounding";
 import { deriveCardSummary, firstImage } from "@/lib/board/board-protocol";
-import { scopeLabel } from "@/lib/board/board-scope";
 import type { FileCitation } from "@/lib/workspace/chat-citations";
 import { cn } from "@/lib/utils";
 import { ConceptPillContext, type ConceptPillActions } from "@/components/workspace/concept-pill";
@@ -55,8 +54,6 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     addCardNote,
     setCardCollapsed,
     deleteNode,
-    scopeFor,
-    groups,
     outputs,
     fannedCardId,
     toggleFan,
@@ -316,17 +313,6 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     />
   );
 
-  /**
-   * What this chat reads, worked out from where it stands, on every render.
-   *
-   * 🔴🔴 `groups` AND `cameraKey` ARE BOTH REAL DEPENDENCIES OF THE ANSWER even though neither
-   * appears in the call. `scopeFor` closes over the board's groups and its measured rectangles, so
-   * a card that did not re-render when a frame moved would print a stale scope — and a stale scope
-   * here is exactly the silent wrong answer this line exists to prevent. Naming `groups` keeps the
-   * memo honest; the card already re-renders on card and source changes.
-   */
-  const scope = useMemo(() => scopeFor(data.cardId), [scopeFor, data.cardId, groups]);
-  const scopeText = useMemo(() => scopeLabel(scope, (id) => sources.find((source) => source.id === id)?.name), [scope, sources]);
 
   /**
    * The things this chat has made, drawn as paper stacked UNDER it rather than as cards on the board.
@@ -371,16 +357,6 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
   const titleBar = (
     <CardTitleBar
       icon={card.kind === "lesson" ? <BookOpen className="size-[16px] shrink-0 text-(--ui-action)" /> : undefined}
-      meta={
-        <IconTooltip label={scope.global ? "This chat reads every source on the canvas" : "This chat reads only what is inside its frame"}>
-          <span
-            className="shrink-0 truncate rounded-full bg-(--ui-bg-secondary) px-[8px] text-[11px] leading-[18px] text-(--ui-text-tertiary)"
-            data-card-scope=""
-          >
-            {scopeText}
-          </span>
-        </IconTooltip>
-      }
       title={card.title}
     >
       {/* 🔴🔴 THE WAY INTO THE THREAD (owner 2026-09-06: *"allow users to enter individual chats in the

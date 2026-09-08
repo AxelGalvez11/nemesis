@@ -31,6 +31,7 @@ const PANEL = read("./board-panel.tsx");
 const DOC = read("./source-document.tsx");
 const PAGE = read("./board-page.tsx");
 const CARD = read("./other-cards.tsx");
+const SURFACE = read("./board-surface.tsx");
 const READER = readFileSync(new URL("../reader/document-reader.tsx", import.meta.url), "utf8");
 const CHROME = read("./board-chrome.tsx");
 const CHAT = read("./conversation-card.tsx");
@@ -97,18 +98,21 @@ test("🔴🔴 a document opens IN ITS CARD: no sidebar, no cover, nothing over 
   // *"pdfs, docx, pptx, still cannot be seen in the canvas, they only render text"* and *"i dont
   // want any popups in canvas, everything should be seen and done within the cards"*. A canvas is
   // made of cards, so the document is drawn in the card it was dropped as.
-  assert.match(CARD, /<SourceDocument interactive=/, "the source card does not draw its document");
-  assert.ok(!CARD.includes("openInPanel"), "the source card still sends its document somewhere else");
+  //
+  // 🔴🔴 AND ON 2026-09-07 THE CARD ITSELF WENT: *"adding documents still loads them on canvas,
+  // please remove that"*. There is no source card to draw a document in any more, so the whole of
+  // the paragraph above is history rather than a rule. `SourceDocument` is kept and still renders,
+  // because nothing was migrated and every source row still carries its geometry (board-scope.ts).
+  assert.ok(!SURFACE.includes('type: "source"'), "sources are back on the canvas");
   assert.match(DOC, /nodrag nopan nowheel/, "the reader in a card must opt out of React Flow's drag and wheel");
-  // Nothing left for a document tab to open, and no width taken from the board.
-  assert.match(PANEL, /useDocumentDockState\(\[\]\)/, "documents are back in the dock");
+  // Nothing left for a document tab to open in the BOARD's own dock, and no width taken by one.
+  assert.match(PANEL, /useDocumentDockState\(\[\]\)/, "documents are back in the board's own dock");
   assert.ok(!PANEL.includes("reader-cover-in"), "the document panel is still drawn over the board");
-  // A deliverable is the one thing left with no card of its own. ON THE BOARD it covers rather than
-  // docks, which is the rule quoted above and unchanged. INSIDE A FULL-SIZE CHAT it docks, because
-  // there are no cards to squeeze and the owner asked for that shape by name on 2026-09-06: *"i like
-  // the fullscreen chat with right side panel"*, of the Gemini thread he linked. One expression, so
-  // the two cannot drift into two opinions about where a made thing goes.
-  assert.match(PAGE, /initialMode=\{enteredCardId \? "docked" : "full"\}/, "a deliverable opens in a docked panel over the board again, or stopped docking inside a chat");
+  // 🔴🔴 EVERYTHING DOCKS NOW, WHICH REVERSES *"i dont want a sidebar to open in canvas"*. Owner,
+  // 2026-09-07, of a note opened from a canvas: *"I can't scroll on it. And also I can't move it in
+  // the canvas."* Full screen covers the window, so the board underneath cannot be panned, zoomed
+  // or seen. Full screen is still one press away in the panel's own header.
+  assert.match(PAGE, /initialMode="docked"/, "a deliverable covers the board again, so the canvas cannot be moved while it is open");
   assert.match(PAGE, /const inset = useSidePanelInset\(\);/, "the board page stopped reading a panel's claim");
 });
 

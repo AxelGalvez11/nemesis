@@ -412,12 +412,17 @@ function BoardInner() {
             return { id: note.id, type: "note", position: note.position, width: NOTE_WIDTH, data: { cardId: card.id, noteId: note.id } } as BoardNode;
           }),
         ),
-        ...sources.map((source) => {
-          const existing = byId.get(source.id) as Node<SourceNodeData, "source"> | undefined;
-          if (existing) return reuse(source.id, existing, source.position, source.width, sourceHeightOf(source));
-          changed = true;
-          return { id: source.id, type: "source", position: source.position, width: source.width, height: sourceHeightOf(source), deletable: false, data: { sourceId: source.id } } as BoardNode;
-        }),
+        /**
+         * 🔴🔴 SOURCES ARE NOT DRAWN ON THE BOARD. Owner, 2026-09-07: *"adding documents still loads
+         * them on canvas, please remove that"*, and in the same breath *"so all chats should contain
+         * all sources"* and *"thats why we have tickers"*. A document is a row in the Sources panel
+         * with a tick beside it; the canvas holds conversations.
+         *
+         * 🔴 THE ROWS ARE UNTOUCHED. Every `BoardSource` still carries its `position`, `width` and
+         * `height`, still round-trips through the saved document, and a board made before today
+         * still holds them. Nothing was migrated: this is one map call away from coming back, which
+         * is why `source-document.tsx`, `sourceHeightOf` and the layout's source constants all stay.
+         */
         ...outputs.map((output) => {
           const existing = byId.get(output.id) as Node<OutputNodeData, "deliverable"> | undefined;
           if (existing) return reuse(output.id, existing, output.position, output.width, undefined, output.status !== "making");

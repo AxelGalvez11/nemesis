@@ -142,7 +142,24 @@ export function DockPanel({
         <div className="flex shrink-0 items-center">{controls}</div>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
+      {/* 🔴🔴🔴 `flex flex-col`, AND WITHOUT IT NOTHING IN THIS PANEL CAN SCROLL. Owner, 2026-09-07,
+          of a long note opened from the canvas: *"I can't scroll on it"*.
+ 
+          This was a BLOCK. Every body that goes in here sizes itself with `min-h-0 flex-1` — the
+          reader, the output preview, the deck — and `flex-1` against a block parent means nothing,
+          so the child took its content's height instead of the panel's. Measured in headless Chrome
+          with a 3,042px note: this box was 790 tall and CLIPPED at 790 by its own `overflow-hidden`,
+          while the child that carries `overflow-auto` was 3,042 tall and therefore had nothing left
+          to scroll. The text below 790px was simply unreachable.
+ 
+          🔴 IT LOOKED FINE FOR A YEAR BECAUSE SHORT CONTENT FITS. A note of two sentences is 202px,
+          under the 790, so it neither clipped nor needed to scroll, and every fixture in the repo
+          was short. It only breaks on a real document, which is the only place it was ever seen.
+ 
+          🔴 SAFE FOR THE BODIES THAT USE `h-full` INSTEAD. A flex column stretches a single child
+          across the cross axis and `h-full` still resolves against this box, so the document reader
+          (which sizes that way) is unchanged. Verified with both. */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
     </div>,
     host,
   );
