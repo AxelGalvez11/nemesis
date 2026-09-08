@@ -222,9 +222,24 @@ export const BRANCH_BUTTONS: ReadonlyArray<{ side: BranchSide; positionClassName
  * test), then collapse, then delete. Destructive last is why delete moved off the middle of the
  * conversation card's row, where it used to sit between collapse and the note count.
  */
+/**
+ * The class React Flow is told to use as a card's drag handle.
+ *
+ * 🔴🔴 SOME CARDS HAVE NO OTHER GRABBABLE PIXEL. Owner, 2026-09-07, twice: *"I still can't move any
+ * notes in the canvas"*. A test card wraps its whole body in `nodrag nopan nowheel` so a tap picks
+ * an option instead of dragging the board (other-cards.tsx says so), and a made card's body is one
+ * full-width button that opens it. Measured on the harness: every point on a check card, at 6, 14,
+ * 30, 60 and 158 pixels down, sits inside a `.nodrag`. The card was not hard to move, it was
+ * impossible.
+ *
+ * The title bar is the answer the group frame already uses: one strip that is only ever chrome, so
+ * it can be the handle without taking a press away from anything.
+ */
+export const CARD_DRAG_HANDLE = "board-card-handle";
+
 export function CardTitleBar({ children, icon, meta, title }: { children?: ReactNode; icon?: ReactNode; meta?: ReactNode; title: string }) {
   return (
-    <div className="absolute bottom-full left-[4px] right-[4px] mb-[6px] flex items-center gap-[6px]">
+    <div className={`${CARD_DRAG_HANDLE} absolute bottom-full left-[4px] right-[4px] mb-[6px] flex cursor-grab items-center gap-[6px] active:cursor-grabbing`}>
       {icon}
       <span className="min-w-0 max-w-[60%] truncate text-[14px] font-semibold leading-[20px] text-foreground" title={title}>
         {title}

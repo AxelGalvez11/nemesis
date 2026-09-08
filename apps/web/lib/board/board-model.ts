@@ -205,6 +205,20 @@ export interface BoardOutputCard {
   id: string;
   /** The thread it was made from, or null when asked from the board composer. */
   cardId: string | null;
+  /**
+   * The message this was made after, so it can be drawn where it happened.
+   *
+   * 🔴🔴 WITHOUT IT THE CHIP FOLLOWS YOU DOWN THE CONVERSATION FOREVER. Owner, 2026-09-07: *"the
+   * node or the artifact inline chip continues to persist like downward"*. The thread listed
+   * everything it had ever made at the FOOT of the whole message list, so a note made in the first
+   * exchange sat under the tenth answer, under the eleventh, and so on — it read as part of every
+   * turn rather than as the result of one.
+   *
+   * 🔴 OPTIONAL, AND ABSENT MEANS THE FOOT. Everything made before today has none, and a canvas
+   * where the maker was pressed from the panel rather than asked for in words has no message to
+   * hang off either. Those still land at the bottom, which is where they were.
+   */
+  afterMessageId?: string;
   /** The dropped document it was made from, when it was made from one rather than from a thread.
    *  Owner 2026-09-04: *"users should be allowed to … make note, make flashcards, and make tests
    *  from documents too that were dropped in"*. The line on the board is drawn from whichever of

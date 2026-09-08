@@ -26,26 +26,23 @@
 // full typography (chat-markdown.tsx) rather than a card's compressed one.
 
 import { ArrowLeft, ArrowUp, GitBranch, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { OUTPUT_KIND_MARKS } from "@/components/workspace/learn/artifact-card";
 import { KIND_LABELS, MAKING_LABELS } from "@/lib/board/board-deliverables";
 import { boardCitableFiles } from "@/lib/board/board-grounding";
-import { isMessageTooLong, messageLimitNotice, type BoardCard } from "@/lib/board/board-model";
+import { isMessageTooLong, messageLimitNotice, type BoardCard, type BoardOutputCard } from "@/lib/board/board-model";
 import { cn } from "@/lib/utils";
 
 import { AutoResizingTextarea, IconTooltip } from "./board-chrome";
 import { CardMessage } from "./card-message";
 import { useDeclareFullBleedSurface } from "@/components/workspace/shell/immersive-surface";
-import { useSidePanelInset } from "@/components/workspace/shell/side-panel";
 
 import { useBoard } from "./board-provider";
 
 /** The column the chat reads at. */
 const COLUMN = 768;
-/** Room kept clear on the right for the board's own toolbar, which stays where it is. */
-const TOOLBAR_RESERVE = 80;
 
 /**
  * 🔴🔴 A FULL-SIZE CHAT OWNS THE WHOLE WINDOW, RAIL AND ALL. Owner, 2026-09-06, of the first build:
@@ -58,29 +55,80 @@ function FullBleed() {
   return null;
 }
 
+/**
+ * One thing this conversation made, as a row in the conversation.
+ *
+ * 🔴 A TEST IS NOT OPENABLE IN THE PANEL AND THIS BUTTON SAYS SO. Every other kind carries a
+ * `CanvasOutput` the reading pane knows how to draw; a check carries a `run` that lives in its own
+ * card on the board, so "Open" on one would be a button that does nothing. Answering a test where
+ * it stands is also the rule the owner set on 2026-09-04.
+ */
+function MadeRow({ onLeave, onOpen, output }: { onLeave: () => void; onOpen: (id: string) => void; output: BoardOutputCard }) {
+  const mark = OUTPUT_KIND_MARKS[output.kind as keyof typeof OUTPUT_KIND_MARKS];
+  const title = output.output?.title || output.topic || KIND_LABELS[output.kind];
+  const making = output.status === "making";
+  return (
+    <div
+      className="flex items-center gap-[12px] rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-[14px] py-[12px]"
+      data-thread-made-row={output.kind}
+    >
+      {making ? (
+        <LoaderCircle aria-hidden className="size-[18px] shrink-0 animate-spin text-(--ui-text-tertiary)" />
+      ) : (
+        <Codicon aria-hidden name={mark?.icon ?? "file"} size="18px" style={{ color: `var(${mark?.tint ?? "--ui-kind-blue"})` }} />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] leading-[20px] text-foreground">{making ? `${MAKING_LABELS[output.kind]}…` : title}</span>
+        <span className="block truncate text-[12px] leading-[16px] text-(--ui-text-tertiary)">
+          {output.status === "error" ? output.error || "Could not be made" : KIND_LABELS[output.kind]}
+        </span>
+      </span>
+      {output.status === "ready" && (
+        <button
+          className="shrink-0 rounded-full bg-(--ui-action) px-[16px] py-[6px] text-[13px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-90"
+          data-thread-made-open={output.kind === "check" ? "canvas" : "panel"}
+          onClick={() => (output.kind === "check" ? onLeave() : onOpen(output.id))}
+          type="button"
+        >
+          {output.kind === "check" ? "Show on canvas" : "Open"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function BoardThread() {
   const { cards, sources, outputs, enteredCardId, leaveCard, openOutput, sendCardMessage, createBranchCard } = useBoard();
   /**
-   * Whether a document or a made thing is docked beside this conversation.
+   * 🔴🔴 NOTHING IS RESERVED FOR THE TOOLBAR, AND THAT IS WHY THE CHAT IS CENTRED. Owner,
+   * 2026-09-07: *"I feel like the chat is kind of to the left ... I want a full chat to be
+   * centered"*. It was: an 80px `paddingRight` was kept clear for the board's controls, so the
+   * 768px column was centred in the room LEFT OVER and sat 40px left of the window's middle.
    *
-   * 🔴🔴 THIS LAYER DOES NOT POSITION ITSELF BY IT, AND ONE BUILD TRIED. `BoardArea` already carries
-   * the inset and this layer is `inset-0` inside it, so it narrows for free: measured in headless
-   * Chrome at 1470, the chat is 525 wide and the panel starts at exactly 525. Setting `right` here
-   * as well applied the inset twice and collapsed the conversation to nothing.
+   * The reserve was never needed. The toolbar is a pill in the top-right CORNER, in the same band
+   * as this layer's own header, and that header's right half is empty — so it overlaps nothing.
+   * Reserving a strip down the full height to clear something 40px tall was the mistake.
    *
-   * 🔴 IT WAS MEASURED AS OVERLAPPING IN THE BROWSER PANE, AND THAT WAS THE PANE. Its window is
-   * hidden, which freezes rAF, so the `transition-[right]` on `BoardArea` sat at `currentTime: 0`
-   * holding the FROM value, and the entrance animation held `scale(0.98)`. A transition outranks an
-   * inline style, so the element genuinely reported `right: 0px` with `right: 945px` set on it.
-   * Anything about this layout has to be measured in a real browser (Playwright), never in the pane.
-   *
-   * What it IS used for is the 80px kept clear for the board's toolbar, below.
+   * 🔴 THIS LAYER STILL DOES NOT POSITION ITSELF AGAINST THE READING PANEL, and one build tried.
+   * `BoardArea` carries the inset and this layer is `inset-0` inside it, so it narrows for free:
+   * measured in headless Chrome at 1470, the chat is 525 wide and the panel starts at exactly 525.
+   * Setting `right` here as well applied the inset twice and collapsed the chat to nothing. And it
+   * was the Browser pane that made it LOOK like an overlap: its window is hidden, which freezes the
+   * `transition-[right]` at `currentTime: 0`, and a transition outranks an inline style. Measure
+   * this surface in Playwright, never in the pane.
    */
-  const inset = useSidePanelInset();
   const card = cards.find((item) => item.id === enteredCardId) ?? null;
   const [text, setText] = useState("");
   // Everything this conversation has made, oldest first, so it reads as the thread's own history.
   const made = outputs.filter((output) => output.cardId === enteredCardId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  /** Made things that know which turn asked for them, keyed by that message. */
+  const anchored = new Map<string, typeof made>();
+  const orphaned: typeof made = [];
+  for (const output of made) {
+    const at = output.afterMessageId;
+    if (at && card?.messages.some((message) => message.id === at)) anchored.set(at, [...(anchored.get(at) ?? []), output]);
+    else orphaned.push(output);
+  }
   const foot = useRef<HTMLDivElement>(null);
 
   // 🔴 ESCAPE LEAVES, unless the learner is typing: a composer with words in it owns its own Escape.
@@ -171,7 +219,7 @@ export function BoardThread() {
           was not, because this reserve stayed at 80 once the panel took the right edge and pushed
           the conversation off-centre in the room left over. The toolbar has moved with the panel by
           then, so there is nothing to keep clear of. */}
-      <div className="scrollbar-dt min-h-0 flex-1 overflow-y-auto" style={{ paddingRight: inset > 0 ? 0 : TOOLBAR_RESERVE }}>
+      <div className="scrollbar-dt min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex flex-col gap-[24px] px-[16px] pb-[24px]" style={{ width: COLUMN, maxWidth: "100%" }}>
           {/* 🔴 NO `onOpenFile` ON THESE MESSAGES. On the board a citation flies the camera to the
               source card; inside a thread there is no camera to fly, and opening the document is the
@@ -179,13 +227,22 @@ export function BoardThread() {
           {card.messages.map((message, index) => {
             const failed = message.isError ? card.messages[index - 1] : undefined;
             return (
-              <CardMessage
-                files={files}
-                hideContextExcerpt={index === 0 && message.contextExcerpt === (card.contextExcerpt ?? undefined)}
-                key={message.id}
-                message={message}
-                {...(failed?.role === "user" ? { onRetry: () => setText(failed.content) } : {})}
-              />
+              <Fragment key={message.id}>
+                <CardMessage
+                  files={files}
+                  hideContextExcerpt={index === 0 && message.contextExcerpt === (card.contextExcerpt ?? undefined)}
+                  message={message}
+                  {...(failed?.role === "user" ? { onRetry: () => setText(failed.content) } : {})}
+                />
+                {/* 🔴🔴 THE THING IS DRAWN WHERE IT WAS MADE. Owner, 2026-09-07: *"the node or the
+                    artifact inline chip continues to persist like downward"*. Every made thing used
+                    to be listed at the FOOT of the whole conversation, so a note made in the first
+                    exchange sat under the tenth answer and the eleventh, reading as part of every
+                    turn rather than as the result of one. */}
+                {(anchored.get(message.id) ?? []).map((output) => (
+                  <MadeRow key={output.id} onLeave={leaveCard} onOpen={openOutput} output={output} />
+                ))}
+              </Fragment>
             );
           })}
           {/* 🔴🔴 WHAT THIS CONVERSATION MADE, SHOWN IN THE CONVERSATION. Owner, 2026-09-06, of the
@@ -198,52 +255,15 @@ export function BoardThread() {
               "make me flashcards on this" and calls `makeDeliverable` (board-provider.tsx). What was
               missing is that it landed on the board BEHIND this layer, so from inside a full-size
               chat you asked for a deck and nothing appeared to happen. */}
-          {made.length > 0 && (
+          {/* 🔴🔴 EVERYTHING MADE BEFORE THIS FEATURE EXISTED, AND ANYTHING ASKED FOR FROM THE
+              PANEL, STILL LANDS AT THE FOOT. Those have no message to hang off (`afterMessageId`
+              is absent) and putting them nowhere would lose them. Everything asked for in words
+              is drawn against its own turn, above. */}
+          {orphaned.length > 0 && (
             <div className="flex flex-col gap-[8px]" data-thread-made="">
-              {made.map((output) => {
-                const mark = OUTPUT_KIND_MARKS[output.kind as keyof typeof OUTPUT_KIND_MARKS];
-                const title = output.output?.title || output.topic || KIND_LABELS[output.kind];
-                const making = output.status === "making";
-                return (
-                  <div
-                    className="flex items-center gap-[12px] rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-[14px] py-[12px]"
-                    data-thread-made-row={output.kind}
-                    key={output.id}
-                  >
-                    {making ? (
-                      <LoaderCircle aria-hidden className="size-[18px] shrink-0 animate-spin text-(--ui-text-tertiary)" />
-                    ) : (
-                      <Codicon aria-hidden name={mark?.icon ?? "file"} size="18px" style={{ color: `var(${mark?.tint ?? "--ui-kind-blue"})` }} />
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] leading-[20px] text-foreground">{making ? `${MAKING_LABELS[output.kind]}…` : title}</span>
-                      <span className="block truncate text-[12px] leading-[16px] text-(--ui-text-tertiary)">
-                        {output.status === "error" ? output.error || "Could not be made" : KIND_LABELS[output.kind]}
-                      </span>
-                    </span>
-                    {/* 🔴 A TEST IS NOT OPENABLE IN THE PANEL AND THIS BUTTON SAYS SO. Every other
-                        kind carries a `CanvasOutput` the reading pane knows how to draw; a check
-                        carries a `run` that lives in its own card on the board, so "Open" on one
-                        would be a button that does nothing — which is exactly what it did when this
-                        row was first built and every kind got the same label. Answering a test where
-                        it stands is also the rule the owner set on 2026-09-04 ("tests should show
-                        results in their own card node"). */}
-                    {output.status === "ready" && (
-                      <button
-                        className="shrink-0 rounded-full bg-(--ui-action) px-[16px] py-[6px] text-[13px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-90"
-                        data-thread-made-open={output.kind === "check" ? "canvas" : "panel"}
-                        onClick={() => {
-                          if (output.kind === "check") leaveCard();
-                          else openOutput(output.id);
-                        }}
-                        type="button"
-                      >
-                        {output.kind === "check" ? "Show on canvas" : "Open"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+              {orphaned.map((output) => (
+                <MadeRow key={output.id} onLeave={leaveCard} onOpen={openOutput} output={output} />
+              ))}
             </div>
           )}
           <div ref={foot} />
@@ -261,7 +281,7 @@ export function BoardThread() {
           send button stays on the last one, which is ChatGPT's behaviour and the reason this is not
           simply a fixed-height input. The cap is 200px, after which it scrolls rather than eating
           the conversation. */}
-      <div className="shrink-0 px-[16px] pb-[16px]" style={{ paddingRight: inset > 0 ? 16 : TOOLBAR_RESERVE }}>
+      <div className="shrink-0 px-[16px] pb-[16px]">
         <form
           className="mx-auto overflow-hidden rounded-[16px] border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated)/75 backdrop-blur-xl"
           onSubmit={(event) => {
