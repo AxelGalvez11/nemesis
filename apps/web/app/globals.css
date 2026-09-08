@@ -12,6 +12,9 @@
 @import "./styles/desktop-ui.css";
 @import "./styles/desktop-chrome.css";
 @import "./styles/reader.css";
+/* The design-system token layer. Canonical source: /design/TOKENS.md. Additive: it defines new
+   semantic names on top of the existing `--ui-*` tokens, so both work during the migration. */
+@import "./styles/design-tokens.css";
 @import "@vscode/codicons/dist/codicon.css";
 @import "katex/dist/katex.min.css";
 @config "../tailwind.config.ts";

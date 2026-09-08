@@ -1,0 +1,180 @@
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   THE DESIGN SYSTEM TOKEN LAYER.  Canonical source: /design/TOKENS.md
+   Derived from measured references in /research/design-references/.
+
+   🔴🔴 THIS FILE IS ADDITIVE AND BREAKS NOTHING. The existing `--ui-*` tokens keep their values
+   and their meaning; the names below are defined ON TOP of them, so both work during the
+   migration and a component can be moved one at a time. `/design/MIGRATION.md` §Consolidate
+   lists which old names collapse into which new ones.
+
+   🔴 THE RULE THIS FILE EXISTS TO ENFORCE: a component may not contain a raw value. No
+   `text-[13px]`, no `rounded-[9px]`, no `p-[14px]`. Today the app carries 24 distinct hard-coded
+   font sizes, 26 radii and 210 spacing values. If a value is needed and no token fits, the
+   missing token is the bug, not the exception.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* 🔴🔴 PLAIN `@theme`, NEVER `@theme inline`, AND THAT DISTINCTION IS LOAD-BEARING. `inline`
+   generates the Tailwind utilities but does NOT emit the custom property, so every `var(--space-12)`
+   and `var(--radius-6)` in hand-written CSS resolved to NOTHING. Measured on the live board: the
+   colour tokens (declared in the plain `:root` block below) resolved, while every scalar declared
+   under `@theme inline` came back empty. Plain `@theme` emits the variable AND generates the
+   utility, which is what we need for both Tailwind classes and hand-written CSS. */
+
+
+[data-workspace],
+:root {
+
+  /* 🔴🔴 THESE LIVE IN PLAIN `:root`, NOT IN `@theme`, AND THAT IS A MEASURED DECISION.
+     Tailwind v4 only emits theme variables in namespaces it RECOGNISES (`--radius-*`, `--color-*`,
+     `--font-*`, `--text-*`, `--ease-*`, `--spacing`), and it tree-shakes the ones no utility uses.
+     Verified on the live board: `--radius-6` and `--space-12` resolved, while `--dur-instant`,
+     `--ease-standard`, `--control-standard`, `--space-64` and `--reading-column` all came back
+     EMPTY. Anything hand-written CSS must read at runtime is declared here. */
+
+  /* Spacing. Named by value (Figma's convention): `space-8` cannot drift from 8px, and nobody has
+     to remember whether `md` is 6 or 8. Base 4, with 2 and 6 as half steps for dense chrome. */
+  --space-2: 2px;   --space-4: 4px;   --space-6: 6px;   --space-8: 8px;
+  --space-12: 12px; --space-16: 16px; --space-20: 20px; --space-24: 24px;
+  --space-32: 32px; --space-40: 40px; --space-48: 48px; --space-64: 64px;
+
+  /* Radius. Six values, nothing else, ever. The rule: the closer a control is to the learner's
+     content, the rounder it gets. Chrome is square (6), containers soft (8 to 12), the things a
+     learner presses to answer are pills. Nothing above 12 except pills and the composer. */
+  --radius-2: 2px; --radius-4: 4px; --radius-6: 6px; --radius-8: 8px; --radius-12: 12px;
+  --radius-full: 9999px;
+
+  /* Control heights. Five exist; a surface uses TWO. Chrome takes compact + standard, content
+     takes comfortable + large. Every reference application uses exactly two (Figma 32/24,
+     Sana 36/28). --control-touch is the mobile floor and is never reduced. */
+  --control-compact: 24px; --control-standard: 28px; --control-comfortable: 32px;
+  --control-large: 36px;   --control-touch: 44px;
+
+  /* Motion. The closer a change is to the pointer, the faster it resolves (Sana's tiered model).
+     🔴 40ms is not really a transition: it is a refusal of one that still avoids the hard flicker
+     of `transition: none` on repaint. Sana uses 0.02s, about 1.2 frames. */
+  --dur-instant: 40ms; --dur-fast: 120ms; --dur-standard: 200ms; --dur-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Layout. 672 is the measured reading column at x.ai and Figma. Prose wider than that costs
+     comprehension; on a large monitor it gets more margin, not more width. */
+  --reading-column: 672px; --content-max: 1120px;
+  --w-sidebar: 240px; --w-sidebar-narrow: 200px;
+  --w-panel: 320px; --w-panel-wide: 400px; --h-topbar: 48px;
+
+  /* ── Neutrals: alpha over ONE ink, never a grey palette.
+     🔴🔴 WE ALREADY DO THIS AND IT IS THE BEST IDEA IN THE REFERENCE SET. `--ui-base` is our ink;
+     three of five measured references (Sana `#0a1217`, Figma `#000` at 10/30%, x.ai
+     `rgba(10,10,10,.04)`) arrived at the same construction independently. A wash composes over any
+     surface, the set harmonises by construction because it is one hue, and dark mode is one
+     variable. Eleven steps: fine at the bottom where hairlines live, coarse at the top where text
+     lives. Sana ships 25; unused steps only invite arbitrary choices. */
+  --n-2: color-mix(in srgb, var(--ui-base) 2%, transparent);
+  --n-4: color-mix(in srgb, var(--ui-base) 4%, transparent);
+  --n-6: color-mix(in srgb, var(--ui-base) 6%, transparent);
+  --n-10: color-mix(in srgb, var(--ui-base) 10%, transparent);
+  --n-14: color-mix(in srgb, var(--ui-base) 14%, transparent);
+  --n-20: color-mix(in srgb, var(--ui-base) 20%, transparent);
+  --n-30: color-mix(in srgb, var(--ui-base) 30%, transparent);
+  --n-45: color-mix(in srgb, var(--ui-base) 45%, transparent);
+  --n-60: color-mix(in srgb, var(--ui-base) 60%, transparent);
+  --n-80: color-mix(in srgb, var(--ui-base) 80%, transparent);
+  --n-100: var(--ui-base);
+
+  /* ── Semantic surfaces.  Role first, then prominence, then context, then state (Figma's
+     grammar). A component references ONLY these names; the ramp above is raw material. */
+  --bg-page: var(--ui-bg-primary);
+  --bg-surface: var(--ui-bg-elevated);
+  --bg-overlay: var(--ui-bg-elevated);
+  --bg-sunken: var(--n-2);
+  --bg-hover: var(--n-4);
+  --bg-active: var(--n-6);
+
+  /* ── Text. Three weights of ink, not five. */
+  --text-primary: var(--n-100);
+  --text-secondary: var(--n-60);
+  --text-muted: var(--n-45);
+  --text-disabled: var(--n-30);
+
+  /* 🔴 ICONS GET THEIR OWN NAMESPACE, AND THAT IS NOT TIDINESS. A glyph is a solid mass and text
+     is not, so an icon at the same alpha as its label reads HEAVIER than the label. Figma keeps
+     `--color-icon-*` separate from `--color-text-*` for exactly this reason. Ours currently share
+     the text colour, which is why our icons look slightly too loud beside their labels. */
+  --icon-primary: var(--n-80);
+  --icon-secondary: var(--n-45);
+  --icon-muted: var(--n-30);
+
+  /* ── Borders. Hairlines are the alpha ramp, never a separate border colour. */
+  --border-subtle: var(--n-6);
+  --border-default: var(--n-10);
+  --border-strong: var(--n-20);
+
+  /* ── Elevation. Four defined, two used in practice.
+     🔴 HIERARCHY COMES FROM BACKGROUND STEPS AND HAIRLINES, NOT SHADOW. Figma ships exactly two
+     elevations for its whole product, both 10% opacity with a very wide blur and almost no offset;
+     Sana's application chrome has effectively none. THERE IS NO `0 1px 2px` TIGHT SHADOW: a tight
+     dark shadow is the clearest signature of a generated interface. Give it a border first. */
+  --elev-flat: none;
+  --elev-raised: inset 0 0 0 1px var(--border-default);
+  --elev-floating: 0 4px 24px color-mix(in srgb, var(--ui-base) 8%, transparent);
+  --elev-overlay: 0 16px 48px color-mix(in srgb, var(--ui-base) 12%, transparent);
+
+  /* 🔴 FOCUS IS AN INSET RING, NOT AN OUTLINE. Held transparent when unfocused so it costs no
+     layout and cannot shift a row by a pixel when it appears. Sana's approach, and the reason
+     their rows never jump under keyboard navigation. */
+  --focus-ring: inset 0 0 0 2px var(--ui-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   TYPOGRAPHY.  Nine steps. Size, weight, line height AND tracking travel together, always.
+
+   🔴🔴 TRACKING CROSSES ZERO AT 12px, AND THAT IS A MEASURED RULE, NOT A PREFERENCE. Collected
+   across all five references: sans is set POSITIVE below 12px and increasingly NEGATIVE above,
+   plateauing near -0.025em (Figma app 11px/+0.055px; Figma 18px/-0.075px; champ 32px/-0.8px;
+   x.ai 60px/-1.5px; Figma 88px/-1.25px). Monospace INVERTS it and takes positive tracking at every
+   size, because mono letterforms already sit in wide boxes and need separation to read as labels.
+   No component sets letter-spacing by hand.
+
+   🔴 TWO DENSITIES, NEVER MIXED IN ONE REGION. Chrome is `ui` (12px). Content is `body` (16px) or
+   `body-lg` (18px). There is no 14px chrome and no 12px prose. This is the rule that most
+   separates a designed application from a generated one, and Figma proves it inside its own brand:
+   their app runs at 11px with 4px radii, their marketing site at 16px with 24px radii.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+@utility type-meta     { font-size: 11px; font-weight: 500; line-height: 16px;   letter-spacing:  0.06px; }
+@utility type-caption  { font-size: 12px; font-weight: 400; line-height: 16px;   letter-spacing:  0.02px; }
+@utility type-ui       { font-size: 12px; font-weight: 500; line-height: 16px;   letter-spacing:  0.02px; }
+@utility type-ui-lg    { font-size: 13px; font-weight: 500; line-height: 18px;   letter-spacing:  0; }
+@utility type-body     { font-size: 16px; font-weight: 400; line-height: 25.6px; letter-spacing: -0.1px; }
+@utility type-body-lg  { font-size: 18px; font-weight: 400; line-height: 28.8px; letter-spacing: -0.15px; }
+@utility type-title-sm { font-size: 20px; font-weight: 500; line-height: 28px;   letter-spacing: -0.2px; }
+@utility type-title    { font-size: 24px; font-weight: 500; line-height: 31px;   letter-spacing: -0.35px; }
+/* 🔴 DISPLAY IS WEIGHT 450, NOT BOLD. Not one of the five references sets a heading at 700, and
+   three set display type at 400 (x.ai 60px/400, Figma 88px/400). Presence comes from size and
+   negative tracking. `text-4xl font-bold` is the signature of a generated interface. */
+@utility type-display  { font-size: 32px; font-weight: 450; line-height: 37px;   letter-spacing: -0.7px; }
+
+/* 🔴 THE CEILING IS 600, NOT 700, and it is defined here so a careless `font-bold` CANNOT shout.
+   Sana redefines its own `bold` to 500 for the same reason: make the mistake impossible at the
+   token level rather than catching it in review. */
+@theme {
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 600;
+}
+
+/* Reduced motion is not optional. Every duration above collapses, except short opacity fades. */
+@theme static {
+  --radius-2: 2px; --radius-4: 4px; --radius-6: 6px; --radius-8: 8px; --radius-12: 12px;
+  --font-weight-normal: 400; --font-weight-medium: 500; --font-weight-bold: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workspace],
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-standard: 0ms;
+    --dur-slow: 0ms;
+  }
+}
