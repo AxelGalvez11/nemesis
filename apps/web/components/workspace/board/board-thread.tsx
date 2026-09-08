@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 
 import { AutoResizingTextarea, IconTooltip } from "./board-chrome";
 import { CardMessage } from "./card-message";
+import { useDocumentDock } from "@/components/workspace/learn/document-dock";
 import { useDeclareFullBleedSurface } from "@/components/workspace/shell/immersive-surface";
 
 import { useBoard } from "./board-provider";
@@ -63,7 +64,7 @@ function FullBleed() {
  * card on the board, so "Open" on one would be a button that does nothing. Answering a test where
  * it stands is also the rule the owner set on 2026-09-04.
  */
-function MadeRow({ onLeave, onOpen, output }: { onLeave: () => void; onOpen: (id: string) => void; output: BoardOutputCard }) {
+function MadeRow({ onLeave, onOpen, output }: { onLeave: () => void; onOpen: (output: BoardOutputCard) => void; output: BoardOutputCard }) {
   const mark = OUTPUT_KIND_MARKS[output.kind as keyof typeof OUTPUT_KIND_MARKS];
   const title = output.output?.title || output.topic || KIND_LABELS[output.kind];
   const making = output.status === "making";
@@ -87,7 +88,7 @@ function MadeRow({ onLeave, onOpen, output }: { onLeave: () => void; onOpen: (id
         <button
           className="shrink-0 rounded-full bg-(--ui-action) px-[16px] py-[6px] text-[13px] font-medium text-(--ui-action-glyph) transition-opacity hover:opacity-90"
           data-thread-made-open={output.kind === "check" ? "canvas" : "panel"}
-          onClick={() => (output.kind === "check" ? onLeave() : onOpen(output.id))}
+          onClick={() => (output.kind === "check" ? onLeave() : onOpen(output))}
           type="button"
         >
           {output.kind === "check" ? "Show on canvas" : "Open"}
@@ -130,6 +131,19 @@ export function BoardThread() {
     else orphaned.push(output);
   }
   const foot = useRef<HTMLDivElement>(null);
+  const dock = useDocumentDock();
+  /**
+   * 🔴 A MIND MAP IS NOT A `CanvasOutput`, SO IT CANNOT GO THROUGH `openOutput`. It carries a tree
+   * rather than a file (board-model.ts), and the dock has its own door for one. Owner, 2026-09-07:
+   * *"I would reserve the mind maps for the sidebar"*.
+   */
+  const open = (output: BoardOutputCard) => {
+    if (output.kind === "mindmap") {
+      if (output.mindmap) dock.openMindmap(output.mindmap, output.output?.title || output.topic || "Mind map");
+      return;
+    }
+    openOutput(output.id);
+  };
 
   // 🔴 ESCAPE LEAVES, unless the learner is typing: a composer with words in it owns its own Escape.
   useEffect(() => {
@@ -240,7 +254,7 @@ export function BoardThread() {
                     exchange sat under the tenth answer and the eleventh, reading as part of every
                     turn rather than as the result of one. */}
                 {(anchored.get(message.id) ?? []).map((output) => (
-                  <MadeRow key={output.id} onLeave={leaveCard} onOpen={openOutput} output={output} />
+                  <MadeRow key={output.id} onLeave={leaveCard} onOpen={open} output={output} />
                 ))}
               </Fragment>
             );
@@ -262,7 +276,7 @@ export function BoardThread() {
           {orphaned.length > 0 && (
             <div className="flex flex-col gap-[8px]" data-thread-made="">
               {orphaned.map((output) => (
-                <MadeRow key={output.id} onLeave={leaveCard} onOpen={openOutput} output={output} />
+                <MadeRow key={output.id} onLeave={leaveCard} onOpen={open} output={output} />
               ))}
             </div>
           )}

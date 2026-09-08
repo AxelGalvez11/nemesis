@@ -361,3 +361,61 @@ so the same bold reading survives both themes. Verified in Playwright at both sc
 🔴 **AND THE MODEL HAS TO REACH FOR IT.** A comparison drawn as a mermaid flowchart is grey boxes
 however well this component is styled. The mermaid paragraph was claiming the case; §10's handover
 and the lane order in `diagram-instruction.ts` are the other half of this fix.
+
+## §12 NotebookLM's mind map, measured 2026-09-07
+
+Owner: *"make it similar to Notebook LM. I think they also use mermaid flowcharts. Like, I don't
+know, because it looks similar to that, honestly."* Opened his own **COPD Mindmap** in his notebook.
+
+🔴🔴 **IT IS NOT A MERMAID FLOWCHART, AND CHECKING WAS THE POINT.** The root sits on the LEFT as a
+pill; children fan RIGHT on curved connectors; and **every child carries a `>` chevron**, because
+you unfold one branch at a time. A mermaid render is a finished picture. Theirs unfolds, which is
+the giveaway.
+
+- Opens in the **Studio side panel**, not full screen, with the title, a "View 1 source" chip, and
+  a Good content / Bad content pair at the foot.
+- Pan and zoom controls down the left: recentre, `+`, `−`, and a **download**.
+- Opens at one level: five branches under the root, each closed.
+
+**Node styling could not be read**: the map is drawn on a canvas or in a frame, so `getComputedStyle`
+returns the wrapper. The shape above is from the screenshot and is what was copied.
+
+### What we already had, and what was actually missing
+
+`mindmap-view.tsx` has been an unfoldable tree since 2026-09-03 (owner: *"one that I can click on
+and then reveals more nodes"*) with a `panel` mode that fills the side panel. The picture was never
+the gap.
+
+The gap was that a mind map **arrived inside a chat answer and was gone when you scrolled past**.
+It is a made thing now: `lib/board/board-mindmap.ts` writes one, it is stored on the card as a tree
+(its own field, like a check's `run`, because it is a shape and not a file), and it opens in the
+reading panel.
+
+🔴 **THE INLINE ONE WENT.** Owner, asked directly: *"only a [tile] makes them"*. The mermaid
+`mindmap` fence was the one diagram exempt from the eight-node cap; that exemption and the fence
+are both out of `diagram-instruction.ts`. Asking in words still works, routed by `readBoardMakeAsk`.
+
+🔴 **MERMAID IS STILL THE WIRE FORMAT AND THAT IS NOT A CONTRADICTION.** The model writes a
+`mindmap` block because it writes those well and `parseMermaidMindmap` already reads them. The
+result is stored as a tree and drawn by our own component. Nobody sees mermaid.
+
+## §13 Stitch's cursor light, and what ours was doing wrong
+
+Owner, 2026-09-07: *"fix the glow because essentially Stitch does it a different way. They don't
+actually have like a glow. They just make the individual buttons or dots glow. Or light up a little
+bit more around the mouse."*
+
+Ours was a 920px radial **wash** laid over the lattice: the light was on the board and the dots were
+merely underneath it. Theirs is the lattice itself brightening.
+
+**What is drawn now**: a second copy of React Flow's own dot pattern at a brighter colour, shown
+through a circular window that follows the pointer.
+
+🔴🔴 **THE WINDOW MOVES AND THE DOTS DO NOT, WHICH IS THE WHOLE TRICK.** `.board-halo` is a fixed
+920px circle translated to the cursor; `.board-halo-inner` is translated by exactly the opposite
+amount, so the bright lattice stays pinned to the board while the hole slides over it. Two
+transforms, both composited: no repaint, no gradient origin to recompute. A `mask-image` positioned
+at the cursor is the obvious way and is the bug this board already paid for once, because moving a
+mask repaints the whole element every frame.
+
+Dots rest at 12% (light) / 28% (dark) and light to 34% / 70%.

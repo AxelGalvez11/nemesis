@@ -206,7 +206,7 @@ function GroupSelectionPill({ ids, bounds, onGroup }: { ids: readonly string[]; 
  * the handler would force a synchronous layout just as often. The box is measured on entry and on
  * resize; the position is written straight onto the element inside one rAF.
  */
-function useCursorGlow(board: RefObject<HTMLDivElement | null>, glow: RefObject<HTMLDivElement | null>) {
+function useCursorGlow(board: RefObject<HTMLDivElement | null>, glow: RefObject<HTMLDivElement | null>, inner: RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const surface = board.current;
     const light = glow.current;
@@ -217,7 +217,12 @@ function useCursorGlow(board: RefObject<HTMLDivElement | null>, glow: RefObject<
     const paint = () => {
       frame = 0;
       if (!at) return;
-      light.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(at.y)}px, 0)`;
+      const x = Math.round(at.x);
+      const y = Math.round(at.y);
+      light.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      // 🔴 THE EXACT OPPOSITE, OR THE BRIGHT DOTS TRAVEL WITH THE POINTER instead of the window
+      // travelling over them, which reads as a smear rather than as the lattice lighting up.
+      if (inner.current) inner.current.style.transform = `translate3d(${-x}px, ${-y}px, 0)`;
     };
     const onMove = (event: PointerEvent) => {
       at = { x: event.clientX - box.left, y: event.clientY - box.top };
@@ -280,9 +285,11 @@ function BoardInner() {
   const [dragOver, setDragOver] = useState(false);
   const board = useRef<HTMLDivElement>(null);
   const glow = useRef<HTMLDivElement>(null);
+  /** The bright lattice inside the halo, counter-translated so it stays pinned to the board. */
+  const halo = useRef<HTMLDivElement>(null);
   const resizeAttributes = useRef(new Map<string, boolean | "width" | "height">());
   const known = useRef(new Map<string, { position: { x: number; y: number }; width?: number; height?: number }>());
-  useCursorGlow(board, glow);
+  useCursorGlow(board, glow, halo);
 
   /**
    * What is hidden because the frame around it is folded (owner 2026-09-06: *"there should be a way
@@ -718,7 +725,14 @@ function BoardInner() {
       onDrop={onDrop}
       ref={board}
     >
-      <div aria-hidden className="board-glow" ref={glow} />
+      {/* 🔴 THE BRIGHT LATTICE, SEEN THROUGH A MOVING WINDOW. React Flow's own `<Background>` reads
+          the viewport from context, so a second one draws the SAME pattern in the same place; only
+          its colour and size differ. board.css explains why the window moves and the dots do not. */}
+      <div aria-hidden className="board-halo" ref={glow}>
+        <div className="board-halo-inner" ref={halo}>
+          <Background color="var(--board-dot-lit)" gap={28} size={3} variant={BackgroundVariant.Dots} />
+        </div>
+      </div>
       <ReactFlow<BoardNode>
         deleteKeyCode={null}
         edges={edges}

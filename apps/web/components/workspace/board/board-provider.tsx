@@ -85,6 +85,7 @@ import { BoardVersionConflict, createBoard, getBoard, updateBoard } from "@/lib/
 import { DIVE_DEEPER_MESSAGE, runBoardTurn, type BoardResponseMode } from "@/lib/board/board-turn";
 import { boardCanvasFor, makeBoardDeliverable, readBoardMakeAsk, type BoardMakeKind } from "@/lib/board/board-deliverables";
 import { asksToBeTaughtToo, makeBoardCheck, readCheckAsk } from "@/lib/board/board-check";
+import { makeBoardMindmap } from "@/lib/board/board-mindmap";
 import { groundedSources, sourceOrdinalOf } from "@/lib/board/board-grounding";
 import { buildExcerpts, buildExcerptsFromModel, excerptsFromSourceContext } from "@/lib/learn/canvas-grounding";
 import type { CanvasOutput, CanvasSource } from "@/lib/learn/canvas-model";
@@ -798,11 +799,20 @@ export function BoardProvider({
       // 🔴 A CHECK TAKES THE SAME ROUTE AND LANDS IN THE SAME CARD, because everything around it —
       // where the card sits, the line back to its thread, being saved, being deleted — is identical.
       // Only what arrives differs: a run of questions rather than a file in the Library.
-      const made = kind === "check" ? makeBoardCheck(uid, canvas, topic) : makeBoardDeliverable(uid, canvas, kind, topic, (label) => patch((output) => ({ ...output, progress: label })));
+      // 🔴 THREE MAKERS, ONE CARD. A check returns a `run`, a mind map returns a `root`, everything
+      // else returns a `CanvasOutput`. Where the card sits, the line back to its thread, being
+      // saved and being deleted are identical for all three; only what arrives differs.
+      const made =
+        kind === "check"
+          ? makeBoardCheck(uid, canvas, topic)
+          : kind === "mindmap"
+            ? makeBoardMindmap(uid, canvas, topic)
+            : makeBoardDeliverable(uid, canvas, kind, topic, (label) => patch((output) => ({ ...output, progress: label })));
       void made
         .then((result) => {
           if ("error" in result) patch((output) => ({ ...output, status: "error", error: result.error, progress: undefined }));
           else if ("run" in result) patch((output) => ({ ...output, status: "ready", run: result.run, progress: undefined }));
+          else if ("root" in result) patch((output) => ({ ...output, status: "ready", mindmap: result.root, progress: undefined }));
           else patch((output) => ({ ...output, status: "ready", output: result.output, progress: undefined }));
         })
         .catch((error: unknown) => {

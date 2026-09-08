@@ -16,6 +16,9 @@
   /* The light under the pointer (Stitch's canvas). On a near-white ground a "glow" can only be a
      soft shading, so light mode gets a whisper and dark mode carries the effect. */
   --board-glow: color-mix(in srgb, var(--ui-base) 3%, transparent);
+  /* 🔴 THE LIT DOT: the lattice's own colour at full strength, which is what 'lights up a
+     little bit more' means. `--board-dot` is the resting value; this is it, brighter. */
+  --board-dot-lit: color-mix(in srgb, var(--ui-base) 34%, transparent);
   /* The sheen that crosses a document while it is being read. */
   --board-shimmer: color-mix(in srgb, var(--ui-base) 7%, transparent);
   /* 🔴 OBSIDIAN'S OWN SIX, READ OUT OF THEIR STYLESHEET (`--canvas-color-1` … `-6` resolve to
@@ -43,6 +46,7 @@
        most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
     --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
     --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
+    --board-dot-lit: color-mix(in srgb, var(--ui-base) 70%, transparent);
     --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
     --board-group-1: #fb464c;
     --board-group-2: #e9973f;
@@ -64,6 +68,7 @@
        most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
     --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
     --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
+    --board-dot-lit: color-mix(in srgb, var(--ui-base) 70%, transparent);
     --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
     --board-group-1: #fb464c;
     --board-group-2: #e9973f;
@@ -108,7 +113,22 @@
    in that gap: React Flow's own container makes a stacking context (position: relative, z-index: 0)
    and takes its background SVG (z-index: -1) in with it, so everything React Flow draws stays on
    top. */
-.board-glow {
+/* 🔴🔴 THE DOTS LIGHT UP, THE BOARD DOES NOT. Owner, 2026-09-07: *"fix the glow because essentially
+   Stitch does it a different way. They don't actually have like a glow. They just make the
+   individual buttons or dots glow. Or light up a little bit more around the mouse."*
+
+   This was a 920px radial WASH laid over the lattice, so the light was on the board and the dots
+   were merely underneath it. Theirs is the lattice itself brightening. What is drawn now is a
+   second, brighter copy of React Flow's own dot pattern, shown only through a circular window that
+   follows the pointer.
+
+   🔴🔴 THE WINDOW MOVES AND THE DOTS DO NOT, WHICH IS THE WHOLE TRICK. `.board-halo` is a fixed
+   920px circle translated to the cursor; `.board-halo-inner` is translated by exactly the opposite
+   amount, so the bright lattice inside stays pinned to the board while the hole slides over it.
+   Two transforms, both composited: no repaint, no mask, no gradient origin to recompute. A
+   `mask-image` positioned at the cursor would have been the obvious way and is the bug this board
+   already paid for once, because moving a mask repaints the whole element every frame. */
+.board-halo {
   position: absolute;
   left: 0;
   top: 0;
@@ -116,13 +136,28 @@
   width: 920px;
   height: 920px;
   margin: -460px 0 0 -460px;
+  border-radius: 50%;
+  overflow: hidden;
   pointer-events: none;
-  background: radial-gradient(circle closest-side, var(--board-glow), transparent 72%);
   opacity: 0;
   transition: opacity 320ms ease-out;
   will-change: transform;
+  /* 🔴 THE EDGE IS FEATHERED OR THE HALO IS A DISC WITH A RIM. A mask that never moves costs
+     nothing: it is rasterised once and rides along with the layer's transform. */
+  -webkit-mask-image: radial-gradient(circle closest-side, #000 30%, transparent 72%);
+  mask-image: radial-gradient(circle closest-side, #000 30%, transparent 72%);
 }
-[data-board][data-glow="on"] .board-glow {
+
+.board-halo-inner {
+  position: absolute;
+  left: 460px;
+  top: 460px;
+  width: 100vw;
+  height: 100vh;
+  will-change: transform;
+}
+
+[data-board][data-glow="on"] .board-halo {
   opacity: 1;
 }
 
@@ -210,7 +245,7 @@
     animation: none;
     opacity: 0.5;
   }
-  .board-glow {
+  .board-halo {
     transition: none;
   }
 }

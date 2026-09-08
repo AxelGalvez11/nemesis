@@ -47,7 +47,13 @@ export type { DeliverableKind };
  * Adding "check" to `DeliverableKind` would also send it through `makeBoardDeliverable`'s switch,
  * whose default arm writes a NOTE, so an unhandled kind would quietly file the wrong thing.
  */
-export type BoardMakeKind = DeliverableKind | "check";
+/**
+ * 🔴 `mindmap` JOINS `check` AS A BOARD-ONLY KIND, 2026-09-07. Owner: *"Yes, build a mind map ...
+ * make it similar to Notebook LM"*, and *"only a [tile] makes them"*. Like a check it carries its
+ * own payload rather than a `CanvasOutput` (a tree, not a file), which is why it is added here
+ * rather than to `DeliverableKind`.
+ */
+export type BoardMakeKind = DeliverableKind | "check" | "mindmap";
 
 /**
  * 🔴🔴 THERE IS NO MENU ANY MORE, AND THAT IS THE OWNER'S SECOND RULING IN A DAY. It was the chat's
@@ -63,6 +69,7 @@ export type BoardMakeKind = DeliverableKind | "check";
 /** The busy line on a card being made; the chat's own words. */
 export const MAKING_LABELS: Record<BoardMakeKind, string> = {
   check: "Writing your questions",
+  mindmap: "Laying out your mind map",
   document: "Writing your document",
   flashcards: "Making your flashcards",
   html: "Building your page",
@@ -75,6 +82,7 @@ export const MAKING_LABELS: Record<BoardMakeKind, string> = {
 
 export const KIND_LABELS: Record<BoardMakeKind, string> = {
   check: "Test",
+  mindmap: "Mind map",
   document: "Document",
   flashcards: "Flashcards",
   html: "Page",
@@ -94,6 +102,12 @@ export const KIND_LABELS: Record<BoardMakeKind, string> = {
  */
 export function readBoardMakeAsk(text: string): BoardMakeKind | null {
   if (readCheckAsk(text)) return "check";
+  // 🔴 A MIND MAP ASKED FOR IN WORDS STILL WORKS, and it has to. The inline one left the answer on
+  // 2026-09-07 (*"only a [tile] makes them"*), so without this "make me a mind map of this" would
+  // draw nothing at all and read as the feature having been removed rather than moved. Narrow on
+  // `readDeliverableAsk`'s own rule: a leading question word refuses the match, because "how do I
+  // make a mind map" is a question about mind maps and must be answered.
+  if (/^(?!\s*(?:what|why|how|when|where|who|which|can|could|should|is|are|do|does)\b)[\s\S]{0,80}?\bmind ?maps?\b/i.test(text.trim())) return "mindmap";
   return readDeliverableAsk(text);
 }
 

@@ -69,7 +69,7 @@ export const DIAGRAM_INSTRUCTION: string =
   // the same thing and is far harder to write, so a model reading both had every reason to reach
   // for the easy one. Two instructions cannot both own a case; this one hands it over by name.
   + "For a real graph, where the point is only the EDGES and not WHERE anything sits, Nemesis also draws fenced mermaid blocks in your answer: "
-  + "flowchart TD for ordered steps and decision trees, mindmap for how a subject branches, sequenceDiagram for exchanges over time, "
+  + "flowchart TD for ordered steps and decision trees, sequenceDiagram for exchanges over time, "
   + "stateDiagram-v2 for states, pie for shares of a whole. Judge for yourself when one would "
   + "genuinely help, without being asked: an answer that IS a process with stages, a branching "
   + "decision, a cycle, or a hierarchy lands better drawn. "
@@ -78,13 +78,16 @@ export const DIAGRAM_INSTRUCTION: string =
   + "```figure block and you draw it yourself. Reach for mermaid only when a graph engine laying "
   + "the nodes out wherever it likes would lose nothing. "
   + "Always use one when the learner asks for a flow chart, diagram, mind map "
-  + "or similar. Keep a diagram under about eight nodes, write labels as short plain "
+  + "or a similar drawing. Keep a diagram under about eight nodes, write labels as short plain "
   + 'text in double quotes (no HTML, no LaTeX inside labels), and let the prose still carry the '
   + "explanation. If what you want to draw needs more than eight, draw the part that matters most "
   + "and put the rest in sentences. "
-  + "A mindmap is the exception to that cap: it draws as an interactive tree the learner opens "
-  + "one branch at a time, so when they ask for a mind map go deep, three to five levels and up "
-  + "to about sixty nodes, the big ideas nearest the root and the specifics at the leaves, one "
-  + "idea per node in a few words, every branch drawn from their material. "
+  // 🔴🔴 THE MIND MAP LEFT THE ANSWER ON 2026-09-07. Owner: *"I would reserve the mind maps for the
+  // sidebar"* and, asked whether the inline one should stay, *"only a [tile] makes them"*. It used
+  // to be the one diagram exempt from the eight-node cap, going three to five levels and up to
+  // sixty nodes, because it drew as a tree the learner unfolded rather than a picture in the
+  // column. It is a made thing now: the Create panel's Mind map tile writes one, it is saved with
+  // the canvas, and it opens in the reading panel (lib/board/board-mindmap.ts). Asking for one in
+  // words still works, because `readBoardMakeAsk` routes the ask to that maker.
   + "Never decorate: a plain fact, a definition, or a feeling needs no diagram. "
   + "Keep drawings small and few: at most one per answer unless the learner asked for more.";
