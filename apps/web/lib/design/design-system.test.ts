@@ -98,3 +98,55 @@ test("🔴 the design system is documented where the docs say it is", () => {
     assert.ok(readFileSync(new URL(`../../../../design/${doc}.md`, import.meta.url), "utf8").length > 500, `/design/${doc}.md is missing or a stub`);
   }
 });
+
+// ── The primitives ────────────────────────────────────────────────────────────────────────────
+
+const strip = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const src = (f: string) => strip(readFileSync(new URL(`../../components/design/${f}`, import.meta.url), "utf8"));
+
+test("🔴🔴 no primitive paints with `--ui-bg-primary`: it is a FILL, not a ground", () => {
+  // This one mistake shipped THREE invisible controls before it was caught, and it was caught by
+  // measuring the rendered gallery rather than by reading the file. `--ui-bg-primary` resolves to
+  // `color-mix(accent <n>%, ink 10%)` — a translucent CONTROL FILL — so:
+  //   the primary button drew `srgb 0.182 / 0.244` text on its own `rgb(13,13,13)` background,
+  //   the checkbox tick was invisible inside its filled box,
+  //   the toggle knob was invisible on its filled track.
+  // The page ground in this codebase is `--ui-bg-editor`; the foreground for anything sitting ON
+  // the ink is `--text-on-inverse`. Both flip correctly in dark mode.
+  for (const file of ["button.tsx", "controls.tsx", "layout.tsx", "text.tsx", "icon.tsx"]) {
+    assert.ok(!src(file).includes("--ui-bg-primary"), `${file} paints with --ui-bg-primary, which is a fill and will render invisible`);
+  }
+  const tokens = strip(readFileSync(new URL("../../app/styles/design-tokens.css", import.meta.url), "utf8"));
+  assert.match(tokens, /--bg-page: var\(--ui-bg-editor\)/, "the page ground was remapped onto a fill again");
+  assert.match(tokens, /--text-on-inverse: var\(--ui-bg-elevated\)/, "inverse text lost its ground and will vanish on the ink");
+});
+
+test("🔴 the primitives keep their measured decisions", () => {
+  const icon = src("icon.tsx");
+  const button = src("button.tsx");
+  const text = src("text.tsx");
+
+  // /design/ICONS.md: Lucide's default stroke of 2.0 reads heavier than every reference beside
+  // 12px text (Figma draws 1.25, x.ai 1.75). Set once so it cannot drift across call sites.
+  assert.match(icon, /strokeWidth=\{1\.5\}/, "the icon stroke moved off 1.5");
+  assert.match(icon, /ICON_SIZES = \[12, 14, 16, 20, 24\]/, "the icon size scale changed");
+  // Icons use their own tones: a glyph is a solid mass and reads heavier than text at equal alpha.
+  assert.ok(!/tone-primary|tone-secondary|tone-muted/.test(icon.replace(/itone-\w+/g, "")), "an icon used a TEXT tone");
+
+  // 🔴 THE PRIMARY BUTTON IS INK, NEVER THE ACCENT. Measured on Sana's own primary control. This is
+  // the single biggest reason their product reads as calm, and the accent belongs to the character.
+  assert.match(button, /primary: \{[^}]*background: "var\(--text-primary\)"/, "the primary button stopped being ink");
+  assert.ok(!/primary: \{[^}]*var\(--ui-accent\)/.test(button), "the primary button became the accent");
+
+  // Four sizes, and `content` is the only pill: the closer a control is to the learner's content,
+  // the rounder it gets (/design/REFERENCE_CONFLICTS.md §1).
+  assert.match(button, /content: \{[^}]*radius: "var\(--radius-full\)"/, "the learner-facing size lost its pill");
+  assert.match(button, /md: \{[^}]*radius: "var\(--radius-6\)"/, "chrome buttons stopped being radius 6");
+
+  // A loading button keeps its width: the spinner replaces the ICON slot, never the label.
+  assert.match(button, /loading \? <Spinner/, "the spinner stopped replacing the icon slot, so the button will reflow");
+
+  // Nine type variants, and tracking is never set at a call site.
+  assert.match(text, /TEXT_VARIANTS = \[\s*"meta",\s*"caption",\s*"ui",\s*"ui-lg",\s*"body",\s*"body-lg",\s*"title-sm",\s*"title",\s*"display",\s*\]/, "the type scale changed");
+  assert.ok(!/letterSpacing|letter-spacing|tracking-/.test(text), "a call site set letter-spacing by hand");
+});

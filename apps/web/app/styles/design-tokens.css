@@ -84,9 +84,19 @@
 
   /* ── Semantic surfaces.  Role first, then prominence, then context, then state (Figma's
      grammar). A component references ONLY these names; the ramp above is raw material. */
-  --bg-page: var(--ui-bg-primary);
+  /* 🔴🔴 `--ui-bg-primary` IS A FILL, NOT A GROUND, AND MAPPING IT HERE SHIPPED AN INVISIBLE
+     BUTTON. It resolves to `color-mix(accent <n>%, ink 10%)` — a translucent control fill — so the
+     primary button drew dark 24%-alpha text on its own near-black background. Caught by measuring
+     the rendered gallery, not by reading the file: the label came back as
+     `color(srgb 0.182 0.182 0.182 / 0.244)` on `rgb(13,13,13)`.
+     The real page ground in this codebase is `--ui-bg-editor`; elevated surfaces are
+     `--ui-bg-elevated`. Both flip correctly in dark mode, which is why the inverse text token
+     points at a ground rather than at a literal white. */
+  --bg-page: var(--ui-bg-editor);
   --bg-surface: var(--ui-bg-elevated);
   --bg-overlay: var(--ui-bg-elevated);
+  /* The foreground for anything sitting ON the ink: the primary button's label. */
+  --text-on-inverse: var(--ui-bg-elevated);
   --bg-sunken: var(--n-2);
   --bg-hover: var(--n-4);
   --bg-active: var(--n-6);
@@ -161,6 +171,41 @@
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-bold: 600;
+}
+
+
+/* ── Tone utilities ───────────────────────────────────────────────────────────────────────────
+   🔴 THESE EXIST SO A COMPONENT NEVER WRITES A COLOUR EXPRESSION. `text-(--text-primary)` is
+   ambiguous to Tailwind (the `--text-*` namespace is font SIZE), and `text-[color:var(...)]` is
+   noise repeated at every call site. A named tone is unambiguous, greppable, and means the whole
+   palette can be re-pointed from this file.
+
+   🔴 TEXT AND ICON TONES ARE SEPARATE because a glyph is a solid mass and text is not: an icon at
+   the label's alpha reads heavier than the label. Figma keeps these namespaces apart for the same
+   reason. Never put a text tone on an icon. */
+@utility tone-primary   { color: var(--text-primary); }
+@utility tone-secondary { color: var(--text-secondary); }
+@utility tone-muted     { color: var(--text-muted); }
+@utility tone-disabled  { color: var(--text-disabled); }
+@utility tone-danger    { color: var(--danger, #e5484d); }
+@utility tone-inverse   { color: var(--text-on-inverse); }
+
+@utility itone-primary   { color: var(--icon-primary); }
+@utility itone-secondary { color: var(--icon-secondary); }
+@utility itone-muted     { color: var(--icon-muted); }
+@utility itone-inherit   { color: inherit; }
+
+/* Surfaces, so a component never hand-rolls a wash plus a hairline. */
+@utility surface-flat    { background: transparent; }
+@utility surface-sunken  { background: var(--bg-sunken); }
+@utility surface-raised  { background: var(--bg-surface); box-shadow: var(--elev-raised); }
+@utility surface-floating{ background: var(--bg-surface); box-shadow: var(--elev-floating); }
+@utility surface-overlay { background: var(--bg-overlay); box-shadow: var(--elev-overlay); }
+
+/* 🔴 FOCUS IS AN INSET RING, and it is declared once here so no control invents its own. Held on
+   :focus-visible only, so a mouse click never draws it. It cannot shift layout by a pixel. */
+@utility focus-ring {
+  &:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 }
 
 /* Reduced motion is not optional. Every duration above collapses, except short opacity fades. */
