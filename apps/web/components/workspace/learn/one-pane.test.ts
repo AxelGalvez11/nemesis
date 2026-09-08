@@ -22,7 +22,7 @@ const DECK = readFileSync(new URL("../study/deck-review.tsx", import.meta.url), 
 test("🔴🔴 a deck, a check and a mind map are items of the one dock", () => {
   assert.match(DOCK, /readonly kind: "mindmap"; readonly root: MindmapNode; readonly title: string \}/);
   assert.match(DOCK, /readonly kind: "deck"; readonly deckId: string; readonly title: string \}/);
-  assert.match(DOCK, /readonly kind: "check"; readonly title: string \}/);
+  assert.match(DOCK, /readonly kind: "check"; readonly title: string; readonly outputId\?: string \}/);
   for (const opener of ["openMindmap", "openDeck", "openCheck"]) {
     assert.match(DOCK, new RegExp(`const ${opener} = useCallback\\(`), `${opener} is not a door of the dock`);
     assert.match(DOCK, new RegExp(`\\b${opener},\\n`), `${opener} is not returned by the dock`);

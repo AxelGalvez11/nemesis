@@ -32,7 +32,7 @@ import { GROUP_HEADER, nodesInsideGroup } from "@/lib/board/board-groups";
 import type { BoardViewport } from "@/lib/board/board-model";
 import { cn } from "@/lib/utils";
 
-import { CARD_DRAG_HANDLE, IconTooltip, isEditableTarget, measureBoardArea, sourceHandleId, targetHandleId } from "./board-chrome";
+import { IconTooltip, isEditableTarget, measureBoardArea, sourceHandleId, targetHandleId } from "./board-chrome";
 import { useBoard } from "./board-provider";
 import { BoardStudio } from "./board-studio";
 import { BoardThread } from "./board-thread";
@@ -276,7 +276,6 @@ function BoardInner() {
     moveGroup,
     resizeGroup,
     deleteGroup,
-    fannedCardId,
   } = useBoard();
   const ready = useNodesInitialized();
   const { getInternalNode } = useReactFlow();
@@ -303,21 +302,16 @@ function BoardInner() {
   const hidden = useMemo(() => {
     const set = new Set<string>();
     /**
-     * 🔴🔴 A CHAT'S MADE THINGS ARE PUT AWAY UNTIL THAT CHAT IS FANNED. Owner, 2026-09-07: *"any
-     * deliverables created by chats should not show on canvas and instead should be able to be
-     * seen behind the chat"*. Hidden, not removed: the node keeps its id, its position and its
-     * place in the saved document, so fanning is a change of what is drawn and nothing else.
-     * A thing being MADE is always drawn, because a progress card nobody can see is a hang.
+     * 🔴 ONLY A FOLDED FRAME HIDES ANYTHING NOW. The other half of this used to put a chat's made
+     * things away until the chat was fanned; they are not board objects at all since 2026-09-07
+     * (see the node list above), so there is nothing left to hide.
      */
-    for (const output of outputs) {
-      if (output.cardId && output.cardId !== fannedCardId && output.status !== "making") set.add(output.id);
-    }
     const folded = groups.filter((group) => group.collapsed === true);
     if (folded.length === 0) return set;
     const rects = nodeRects();
     for (const group of folded) for (const id of nodesInsideGroup(group, rects)) set.add(id);
     return set;
-  }, [fannedCardId, groups, nodeRects, outputs]);
+  }, [groups, nodeRects]);
 
   const total = cards.length + sources.length + cards.reduce((sum, card) => sum + card.notes.length, 0);
   /** Nothing at all, not even a thing being made: the landing is up (board-page.tsx) and the controls stay out of its way. */
@@ -429,25 +423,26 @@ function BoardInner() {
          * still holds them. Nothing was migrated: this is one map call away from coming back, which
          * is why `source-document.tsx`, `sourceHeightOf` and the layout's source constants all stay.
          */
-        ...outputs.map((output) => {
-          const existing = byId.get(output.id) as Node<OutputNodeData, "deliverable"> | undefined;
-          if (existing) return reuse(output.id, existing, output.position, output.width, undefined, output.status !== "making");
-          changed = true;
-          /**
-           * 🔴🔴 A MADE CARD MOVES BY ITS TITLE BAR, BECAUSE ITS BODY CANNOT MOVE IT. Owner,
-           * 2026-09-07: *"I still can't move any notes in the canvas"*. A test wraps its whole body
-           * in `nodrag nopan nowheel` so a tap answers a question rather than dragging the board,
-           * and a made card's body is one full-width button that opens it — measured, EVERY point
-           * on a check card is inside a `.nodrag`. Naming the title bar as the handle gives the card
-           * somewhere to be grabbed without taking a press away from anything.
-           */
-          return { id: output.id, type: "deliverable", position: output.position, width: output.width, deletable: output.status !== "making", dragHandle: `.${CARD_DRAG_HANDLE}`, data: { outputId: output.id } } as BoardNode;
-        }),
+        /**
+         * 🔴🔴 A MADE THING IS NOT ON THE CANVAS AT ALL. Owner, 2026-09-07: *"why are tests supposed
+         * to be on Canvas? They're supposed to be in the sidebar, like anything any deliverable is
+         * supposed to show up in the sidebar ... Canvas should only have chats and notes by the
+         * user."*
+         *
+         * 🔴 THIS IS THE THIRD AND LAST STEP OF THE SAME MOVE. Deliverables were cards on the board;
+         * then hidden behind their chat and fanned out on a press (2026-09-07, his own answer to
+         * clutter); now they are not board objects. What replaced the fan is the panel: they are
+         * listed under Made here and every kind opens there, tests included (board-page.tsx).
+         *
+         * 🔴 THE ROWS ARE UNTOUCHED. Every `BoardOutputCard` still carries its position and width,
+         * still round-trips through the saved document, and a board made before today still holds
+         * them. Nothing was migrated: this is one map call away from coming back.
+         */
       ];
       return changed ? rebuilt : was;
     });
     known.current = next;
-  }, [cards, groups, outputs, sources]);
+  }, [cards, groups, sources]);
 
   // A card inside a folded frame is hidden, and so are the lines that reach it.
   useEffect(() => {
@@ -499,7 +494,7 @@ function BoardInner() {
 
   const edges = useMemo<Edge[]>(() => {
     const rects = new Map(
-      [...cards, ...cards.flatMap((card) => card.notes), ...sources, ...outputs].map((item) => {
+      [...cards, ...cards.flatMap((card) => card.notes), ...sources].map((item) => {
         const measured = ready ? getInternalNode(item.id)?.measured : undefined;
         return [
           item.id,
@@ -551,28 +546,14 @@ function BoardInner() {
         ];
       }),
     );
-    // A deliverable hangs off the thread it was made from, on the same line a branch uses.
-    const outputEdges = outputs.flatMap((output) => {
-      if (!output.cardId) return [];
-      const from = rects.get(output.cardId);
-      const to = rects.get(output.id);
-      if (!from || !to) return [];
-      const { sourceSide, targetSide } = connectionSides(from, to);
-      return [
-        {
-          id: `edge-${output.cardId}-${output.id}`,
-          source: output.cardId,
-          sourceHandle: sourceHandleId(sourceSide),
-          target: output.id,
-          targetHandle: targetHandleId(targetSide),
-          animated: output.status === "making",
-          style: { stroke: EDGE_STROKE, strokeWidth: 1.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_STROKE, width: 18, height: 18 },
-        } satisfies Edge,
-      ];
-    });
-    return [...cardEdges, ...noteEdges, ...outputEdges];
-  }, [cards, getInternalNode, outputs, ready, sources]);
+    /**
+     * 🔴 THERE IS NO LINE TO A MADE THING, BECAUSE THERE IS NO MADE THING ON THE BOARD. A deliverable
+     * used to hang off the thread it came from on the same kind of line a branch uses; since they
+     * left the canvas entirely (see the node list above), an edge here would name a target React
+     * Flow cannot find and warn about it on every render.
+     */
+    return [...cardEdges, ...noteEdges];
+  }, [cards, getInternalNode, ready, sources]);
 
   /**
    * What a frame is carrying, captured the moment it is picked up.
@@ -645,15 +626,14 @@ function BoardInner() {
   );
 
   /**
-   * 🔴🔴 A PRESS ON THE BOARD NO LONGER PUTS A FANNED CHAT'S THINGS AWAY. Owner, 2026-09-07, twice:
-   * *"I still can't move any notes in the canvas"*. They are movable — a drag on a fanned note
-   * moves it, measured — but they were closing again on the first press on empty board, which is
-   * exactly what a learner does between deciding to move one and reaching for it. It read as the
-   * note not being there at all.
+   * A press on empty board lets go of whatever was chosen, and does nothing else.
    *
-   * They still hide by default, which is his own answer to clutter (2026-09-07: *"They fan out on
-   * the board around the chat"*). What changed is that opening them out is a state you stay in
-   * until you press the stack again, rather than one that ends on the next click anywhere.
+   * 🔴🔴 IT USED TO ALSO PUT A CHAT'S MADE THINGS AWAY, AND THAT WAS A REPORTED BUG. Owner,
+   * 2026-09-07, twice: *"I still can't move any notes in the canvas"*. They were movable, measured;
+   * they were closing again on the first press on empty board, which is exactly what a learner does
+   * between deciding to move one and reaching for it, so the card was gone before it could be
+   * grabbed. Made things left the canvas entirely later the same day, so there is nothing here to
+   * close any more; the rule survives as: pressing the board never takes anything off it.
    */
   const clearSelection = useCallback(() => {
     setNodes((was) => was.map((node) => (node.selected ? { ...node, selected: false } : node)));

@@ -46,7 +46,11 @@
        most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
     --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
     --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
-    --board-dot-lit: color-mix(in srgb, var(--ui-base) 70%, transparent);
+    /* 🔴 45%, NOT 70%. Owner, 2026-09-07: *"the dots are too bright in dark mode"*. The dark base
+       is already 28% (raised from 12% the day before, when he could not see them at all), so a lit
+       dot only has to be clearly brighter than that, not white. In the light theme the base is 12%
+       and the lit 34%, close to three times; 28 to 45 is the same relationship on a dark ground. */
+    --board-dot-lit: color-mix(in srgb, var(--ui-base) 45%, transparent);
     --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
     --board-group-1: #fb464c;
     --board-group-2: #e9973f;
@@ -68,7 +72,11 @@
        most of that alpha. Light mode is unchanged: #0d0d0d at 12% on #fcfcfc already reads. */
     --board-dot: color-mix(in srgb, var(--ui-base) 28%, transparent);
     --board-glow: color-mix(in srgb, var(--ui-base) 10%, transparent);
-    --board-dot-lit: color-mix(in srgb, var(--ui-base) 70%, transparent);
+    /* 🔴 45%, NOT 70%. Owner, 2026-09-07: *"the dots are too bright in dark mode"*. The dark base
+       is already 28% (raised from 12% the day before, when he could not see them at all), so a lit
+       dot only has to be clearly brighter than that, not white. In the light theme the base is 12%
+       and the lit 34%, close to three times; 28 to 45 is the same relationship on a dark ground. */
+    --board-dot-lit: color-mix(in srgb, var(--ui-base) 45%, transparent);
     --board-shimmer: color-mix(in srgb, var(--ui-base) 11%, transparent);
     --board-group-1: #fb464c;
     --board-group-2: #e9973f;

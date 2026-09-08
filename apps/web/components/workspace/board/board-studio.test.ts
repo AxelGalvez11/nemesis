@@ -192,3 +192,33 @@ test("the panel's two questions of a board", () => {
   assert.equal(boardHasMaterial([card("")], []), false, "an empty answer is material");
   assert.equal(boardHasMaterial([card("Glargine has no peak.")], []), true);
 });
+
+test("🔴🔴 every made thing opens in the panel, tests included, and none of them is a card on the canvas", () => {
+  // Owner, 2026-09-07: *"why are tests supposed to be on Canvas? They're supposed to be in the
+  // sidebar, like anything any deliverable is supposed to show up in the sidebar ... Canvas should
+  // only have chats and notes by the user."* This reverses his own 2026-09-04 ruling that a test is
+  // answered in its own card node, and it is the third and last step of the same move: deliverables
+  // were cards, then were hidden behind their chat and fanned out on a press, and now they are not
+  // board objects at all.
+  assert.match(STUDIO, /if \(output\.kind === "check"\) \{\s*dock\.openCheck\(/, "a test opens somewhere other than the panel");
+  assert.ok(!/fitView|setCenter/.test(STUDIO.slice(STUDIO.indexOf("const show = (output"), STUDIO.indexOf("return (\n    <>"))), "opening a made thing flies the camera at it again — there is no card on the board to fly to");
+  // Nothing but a chat and the learner's own note is drawn.
+  assert.ok(!/type: "deliverable"/.test(SURFACE), "made things are back on the canvas");
+  assert.ok(!/outputEdges/.test(SURFACE), "a line is drawn to a node React Flow cannot find");
+  // 🔴 ONE PANEL PER TEST, MOUNTED WHETHER OR NOT IT IS THE OPEN TAB. StudyPanel hides rather than
+  // unmounts, and that is the only reason closing a test half-answered is safe: the answers so far
+  // are component state. Gating the mount on `open` would throw them away, silently.
+  assert.match(PAGE, /checks\.map\(\(output\) => \(\s*<BoardCheckPanel key=\{output\.id\} output=\{output\} \/>/, "the board no longer mounts a panel per test");
+  assert.match(PAGE, /const key = `\$\{CHECK_KEY\}:\$\{output\.id\}`;/, "two tests on one board would share a tab");
+  // 🔴🔴 FLASHCARDS OPEN THEIR DECK, AND THE PANEL WAS EMPTY UNTIL THEY DID. Owner, 2026-09-07:
+  // *"the flashcards came back empty"*. The output carries a `deckId` and no body at all — the cards
+  // are rows in `study_cards` — so the reading panel drew a reader over nothing. The learn lane has
+  // always routed this to the deck; `openOutput` here is the fallback for kinds that carry material.
+  assert.match(STUDIO, /dock\.openDeck\(deckId,/, "flashcards open the document reader again, which has nothing to read");
+  assert.match(PAGE, /dock\.active\?\.kind !== "deck"/, "the board mounts no deck panel, so opening one shows nothing");
+  assert.ok(!/simple=|flipAnimation/.test(PAGE), "the board overrides the deck's own review style — the Anki card is DeckReview's default");
+  // And the stack under a chat opens the panel rather than putting cards back on the board.
+  const CARD = read("./conversation-card.tsx");
+  assert.match(CARD, /openMade\(data\.cardId\)/, "the stack stopped opening the panel");
+  assert.ok(!/toggleFan|fannedCardId/.test(CARD), "the fan is back, and there is nothing on the board to fan");
+});
