@@ -11,7 +11,7 @@
 import { X } from "lucide-react";
 import { useCallback, type ReactNode } from "react";
 
-import type { BoardState } from "@/lib/board/board-model";
+import type { BoardOutputCard, BoardState } from "@/lib/board/board-model";
 
 import { BoardComposer } from "./board-composer";
 import { BoardLanding } from "./board-landing";
@@ -19,7 +19,9 @@ import { BoardDock } from "./board-panel";
 import { BoardProvider, useBoard } from "./board-provider";
 import { BoardSurface } from "./board-surface";
 import { useAuth } from "@/components/AuthProvider";
-import { documentKey, useDocumentDock } from "@/components/workspace/learn/document-dock";
+import { CHECK_KEY, documentKey, useDocumentDock } from "@/components/workspace/learn/document-dock";
+import { CanvasCheck } from "@/components/workspace/learn/canvas-check";
+import { StudyPanel } from "@/components/workspace/learn/study-panel";
 import { SourcePreview } from "@/components/workspace/learn/source-preview";
 import { OutputPreview } from "@/components/workspace/learn/output-preview";
 import { useSidePanelInset, useSidePanelLive } from "@/components/workspace/shell/side-panel";
@@ -128,6 +130,7 @@ export function BoardPage({
           </BoardArea>
           <BoardOutputPanel />
           <BoardSourcePanel />
+          <BoardCheckPanels />
         </BoardDock>
       </BoardProvider>
     </main>
@@ -252,5 +255,68 @@ function BoardSourcePanel() {
       open={dock.open}
       uid={session?.user?.id ?? null}
     />
+  );
+}
+
+/**
+ * The tests this canvas has made, each answered in the reading panel.
+ *
+ * 🔴🔴 A TEST USED TO BE ANSWERED IN ITS OWN CARD ON THE BOARD, and that was an owner ruling
+ * (2026-09-04: *"tests should show results in their own card node"*). He reversed it on 2026-09-07:
+ * *"why are tests supposed to be on Canvas? They're supposed to be in the sidebar, like anything
+ * any deliverable is supposed to show up in the sidebar ... Canvas should only have chats and notes
+ * by the user."*
+ *
+ * 🔴🔴 ONE PANEL PER TEST, MOUNTED FOR AS LONG AS THE TEST EXISTS, AND THAT IS NOT WASTE. `StudyPanel`
+ * HIDES rather than unmounts, which is the only reason closing the panel mid-test is safe: the
+ * answers so far are component state and would go with it. Gating the mount on "is this the open
+ * tab" is the exact bug that rule exists to prevent, and `learning-canvas.tsx` says so at its own
+ * mount. A board rarely holds more than one or two.
+ */
+function BoardCheckPanels() {
+  const { outputs } = useBoard();
+  const checks = outputs.filter((output) => output.kind === "check" && output.run);
+  if (checks.length === 0) return null;
+  return (
+    <>
+      {checks.map((output) => (
+        <BoardCheckPanel key={output.id} output={output} />
+      ))}
+    </>
+  );
+}
+
+function BoardCheckPanel({ output }: { output: BoardOutputCard }) {
+  const { deleteNode, finishCheck } = useBoard();
+  const dock = useDocumentDock();
+  const key = `${CHECK_KEY}:${output.id}`;
+  const title = output.output?.title || output.topic || "Test";
+  return (
+    <StudyPanel
+      activeKey={dock.activeKey}
+      crumb="Test"
+      items={dock.items}
+      onClose={() => dock.close(key)}
+      onCloseKey={dock.close}
+      onSelectKey={dock.select}
+      open={dock.active?.kind === "check" && dock.activeKey === key}
+      title={title}
+      widthSlot="reader"
+    >
+      <div className="px-4 py-3">
+        {output.run && (
+          <CanvasCheck
+            bare
+            onAnswers={(picks) => finishCheck(output.id, picks)}
+            onDismiss={() => {
+              dock.close(key);
+              deleteNode(output.id);
+            }}
+            onFinished={() => undefined}
+            run={output.run}
+          />
+        )}
+      </div>
+    </StudyPanel>
   );
 }

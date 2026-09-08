@@ -222,22 +222,18 @@ export interface BoardContextValue {
    */
   activeSources: () => string[];
   /**
-   * The one chat whose made things are showing on the board, or null while they are all put away.
+   * Show, in the Sources and Create panel, what a chat has made.
    *
-   * 🔴🔴 A DELIVERABLE MADE BY A CHAT IS NOT ON THE CANVAS. Owner, 2026-09-07: *"any deliverables
-   * created by chats should not show on canvas and instead should be able to be seen behind the
-   * chat to indicate that it has deliverables in it"*, and asked what a click on that stack should
-   * do he chose *"They fan out on the board around the chat"*. So they are hidden nodes standing at
-   * the positions they were made at; fanning reveals them where they already are, and clicking the
-   * board puts them back. Nothing is moved and nothing is deleted, so undo, the Library and the
-   * saved document all see exactly what they saw before.
-   *
-   * A thing made from the composer or from a document has no chat to hide behind and is always
-   * drawn, which is the same rule read the other way round.
+   * 🔴🔴 IT USED TO FAN THEM ONTO THE BOARD. Owner, 2026-09-07, first: *"any deliverables created by
+   * chats should not show on canvas and instead should be able to be seen behind the chat"*, and
+   * asked what a press should do, *"They fan out on the board around the chat"*. Then, the same
+   * day: *"anything any deliverable is supposed to show up in the sidebar ... Canvas should only
+   * have chats and notes by the user."* So a press opens the panel rather than putting cards back
+   * on the canvas, and `fannedCardId` / `toggleFan` / `closeFan` went with the fan.
    */
-  fannedCardId: string | null;
-  toggleFan: (cardId: string) => void;
-  closeFan: () => void;
+  openMade: (cardId: string) => void;
+  /** The chat whose made things the panel is showing, or null for the whole canvas. */
+  madeForCardId: string | null;
   renameGroup: (groupId: string, label: string) => void;
   setGroupColor: (groupId: string, color: GroupColor) => void;
   setGroupCollapsed: (groupId: string, collapsed: boolean) => void;
@@ -310,7 +306,7 @@ export function BoardProvider({
   const [outputs, setOutputs] = useState<BoardOutputCard[]>([]);
   const [openedOutputId, setOpenedOutputId] = useState<string | null>(null);
   const [enteredCardId, setEnteredCardId] = useState<string | null>(null);
-  const [fannedCardId, setFannedCardId] = useState<string | null>(null);
+  const [madeForCardId, setMadeForCardId] = useState<string | null>(null);
   /** Notes pinned inside a source in the reading panel. Saved with the board. See board-panel.tsx. */
   const [annotations, setAnnotations] = useState<BoardAnnotation[]>([]);
   const [groups, setGroups] = useState<BoardGroup[]>([]);
@@ -413,8 +409,11 @@ export function BoardProvider({
 
   const activeSources = useCallback(() => activeSourceIds(sources, selectedSourceIds), [selectedSourceIds, sources]);
 
-  const toggleFan = useCallback((cardId: string) => setFannedCardId((was) => (was === cardId ? null : cardId)), []);
-  const closeFan = useCallback(() => setFannedCardId(null), []);
+  const openMade = useCallback((cardId: string) => {
+    setMadeForCardId(cardId);
+    // 🔴 THE PANEL HAS TO BE OPEN TO SHOW ANYTHING, and the press is the learner asking for it.
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("nemesis:board-show-made"));
+  }, []);
 
   // ----------------------------------------------------------------- load
   useEffect(() => {
@@ -1652,9 +1651,8 @@ export function BoardProvider({
       nodeRects,
       createGroup,
       activeSources,
-      fannedCardId,
-      toggleFan,
-      closeFan,
+      openMade,
+      madeForCardId,
       renameGroup,
       setGroupColor,
       setGroupCollapsed,
@@ -1722,9 +1720,8 @@ export function BoardProvider({
       nodeRects,
       createGroup,
       activeSources,
-      fannedCardId,
-      toggleFan,
-      closeFan,
+      openMade,
+      madeForCardId,
       renameGroup,
       setGroupColor,
       setGroupCollapsed,

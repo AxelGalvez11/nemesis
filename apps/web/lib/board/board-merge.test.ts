@@ -78,9 +78,12 @@ test("🔴🔴 a made card can be moved: its title bar is the drag handle", () =
   const SURFACE = readFileSync(new URL("../../components/workspace/board/board-surface.tsx", import.meta.url), "utf8");
   assert.match(CHROME, /export const CARD_DRAG_HANDLE = "board-card-handle";/, "the handle's name is gone");
   assert.match(CHROME, /\$\{CARD_DRAG_HANDLE\} absolute bottom-full/, "the title bar is no longer the handle");
-  assert.match(SURFACE, /dragHandle: `\.\$\{CARD_DRAG_HANDLE\}`/, "a made card has no handle, so it cannot be moved at all");
-  // 🔴 AND THE FAN STAYS OPEN WHILE YOU WORK. It used to close on any press on empty board, which
-  // is exactly what a learner does between deciding to move a note and reaching for it, so the note
-  // vanished mid-gesture. Pressing the stack again is what puts them away.
-  assert.ok(!/const clearSelection[\s\S]{0,200}closeFan\(\)/.test(SURFACE), "a press on the board hides a fanned chat's things again");
+  // 🔴🔴 AND THEN MADE CARDS LEFT THE BOARD ALTOGETHER, LATER THE SAME DAY. Owner: *"anything any
+  // deliverable is supposed to show up in the sidebar ... Canvas should only have chats and notes
+  // by the user."* So there is no made card to drag, and the handle it was given is now carried by
+  // the cards that remain. The claim worth keeping is the one that cost the bug: a card whose body
+  // is entirely `nodrag` needs a handle, and `CardTitleBar` is it.
+  assert.match(CHROME, /cursor-grab/, "the title bar stopped offering itself as a handle");
+  assert.ok(!SURFACE.includes('type: "deliverable"'), "made things are back on the canvas");
+  assert.ok(!SURFACE.includes("fannedCardId"), "the fan is back, and there is nothing on the board to fan");
 });

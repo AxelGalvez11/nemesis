@@ -58,7 +58,7 @@ export type DockItem =
    */
   | { readonly key: string; readonly kind: "mindmap"; readonly root: MindmapNode; readonly title: string }
   | { readonly key: string; readonly kind: "deck"; readonly deckId: string; readonly title: string }
-  | { readonly key: string; readonly kind: "check"; readonly title: string };
+  | { readonly key: string; readonly kind: "check"; readonly title: string; readonly outputId?: string };
 
 export const documentKey = (id: string) => `document:${id}`;
 export const outputKey = (id: string) => `output:${id}`;
@@ -91,7 +91,13 @@ export interface DocumentDock {
   /** Open a deck as a tab. */
   openDeck: (deckId: string, title: string) => void;
   /** Bring the check to the front as a tab (there is only ever one). */
-  openCheck: (title: string) => void;
+  /**
+   * 🔴 A BOARD CAN HOLD SEVERAL TESTS, A CHAT HOLDS ONE. Owner, 2026-09-07: *"why are tests supposed
+   * to be on Canvas? They're supposed to be in the sidebar, like anything any deliverable is
+   * supposed to show up in the sidebar."* With every test opening here, a single `CHECK_KEY` would
+   * make two of them the same tab, so an id gives each its own. The chat keeps passing none.
+   */
+  openCheck: (title: string, outputId?: string) => void;
   /**
    * Open the document a citation chip names.
    *
@@ -213,7 +219,7 @@ export function useDocumentDockState(sources: readonly CanvasSource[]): Document
     [put],
   );
   const openDeck = useCallback((deckId: string, title: string) => put({ deckId, key: deckKey(deckId), kind: "deck", title }), [put]);
-  const openCheck = useCallback((title: string) => put({ key: CHECK_KEY, kind: "check", title }), [put]);
+  const openCheck = useCallback((title: string, outputId?: string) => put({ key: outputId ? `${CHECK_KEY}:${outputId}` : CHECK_KEY, kind: "check", title, ...(outputId ? { outputId } : {}) }), [put]);
 
   const close = useCallback((key: string) => {
     setDocs((current) => withClosed(current, key));

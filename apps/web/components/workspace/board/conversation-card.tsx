@@ -55,8 +55,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     setCardCollapsed,
     deleteNode,
     outputs,
-    fannedCardId,
-    toggleFan,
+    openMade,
   } = useBoard();
   const card = cards.find((item) => item.id === data.cardId);
   const shell = useRef<HTMLDivElement | null>(null);
@@ -317,11 +316,17 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
   /**
    * The things this chat has made, drawn as paper stacked UNDER it rather than as cards on the board.
    *
-   * 🔴🔴 THE CANVAS DOES NOT HOLD DELIVERABLES ANY MORE. Owner, 2026-09-07: *"any deliverables
-   * created by chats should not show on canvas and instead should be able to be seen behind the
-   * chat to indicate that it has deliverables in it"*, and, asked what a press should do,
-   * *"They fan out on the board around the chat"*. This is the whole of the clutter answer he had
-   * been circling for two days: a term of flashcard decks is one chat with a thicker edge.
+   * 🔴🔴 THE CANVAS HOLDS CHATS AND THE LEARNER'S OWN NOTES, AND NOTHING ELSE. Owner, 2026-09-07:
+   * *"any deliverables created by chats should not show on canvas and instead should be able to be
+   * seen behind the chat to indicate that it has deliverables in it"*, then, the same day:
+   * *"anything any deliverable is supposed to show up in the sidebar ... Canvas should only have
+   * chats and notes by the user"*.
+   *
+   * 🔴 SO THIS IS AN INDICATOR, NOT A DOOR ONTO THE BOARD. The sheets said "there are two things in
+   * here" and a press fanned them out as cards; they are not board objects any more, so a press
+   * opens the panel with this chat's things listed instead. The picture is unchanged and it is
+   * still the whole of the clutter answer: a term of flashcard decks is one chat with a thicker
+   * edge.
    *
    * 🔴 THE SHEETS SIT ENTIRELY BELOW THE CARD'S BOTTOM EDGE, and that is not a style choice. Drawing
    * them behind the card would need a negative z-index inside a box that becomes a stacking context
@@ -330,16 +335,15 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
    * Peeking out from under the bottom is the same picture with no paint order to lose.
    */
   const made = useMemo(() => outputs.filter((output) => output.cardId === data.cardId), [outputs, data.cardId]);
-  const fanned = fannedCardId === data.cardId;
   const stack =
-    made.length === 0 || fanned ? null : (
+    made.length === 0 ? null : (
       <button
         aria-label={made.length === 1 ? "Show the 1 thing this chat made" : `Show the ${made.length} things this chat made`}
         className="nodrag nopan absolute inset-x-0 -bottom-[20px] z-0 flex flex-col items-center"
         data-card-stack={made.length}
         onClick={(event) => {
           event.stopPropagation();
-          toggleFan(data.cardId);
+          openMade(data.cardId);
         }}
         onPointerDown={(event) => event.stopPropagation()}
         type="button"
@@ -367,7 +371,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
         <Expand className="size-[16px]" />
       </CardIcon>
       {made.length > 0 && (
-        <CardIcon count={made.length} label={fanned ? "Put these away" : `Show what this chat made (${made.length})`} onClick={() => toggleFan(card.id)}>
+        <CardIcon count={made.length} label={`Show what this chat made (${made.length})`} onClick={() => openMade(card.id)}>
           <Layers className="size-[16px]" />
         </CardIcon>
       )}

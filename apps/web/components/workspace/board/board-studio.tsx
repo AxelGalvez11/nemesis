@@ -479,7 +479,7 @@ function MakeForm({ tile, scope, onMake }: { tile: StudioTile; scope: string; on
 }
 
 export function BoardStudio() {
-  const { cards, sources, outputs, selectedSourceIds, toggleSourceSelection, setSourceSelection, addSourceFiles, makeDeliverable, enteredCardId, openOutput, leaveCard, toggleFan } = useBoard();
+  const { cards, sources, outputs, selectedSourceIds, toggleSourceSelection, setSourceSelection, addSourceFiles, makeDeliverable, enteredCardId, openOutput, leaveCard, madeForCardId } = useBoard();
   const { fitView } = useReactFlow();
   const dock = useDocumentDock();
   const picker = useRef<HTMLInputElement>(null);
@@ -509,6 +509,26 @@ export function BoardStudio() {
       /* not remembered */
     }
   }, [sources.length]);
+
+  /**
+   * 🔴 PRESSING A CHAT'S STACK OPENS THIS PANEL. The sheets under a card say "there are two things
+   * in here"; with nothing fanning onto the board any more the press has to lead somewhere, and the
+   * place they live is Made here. An event rather than a prop because the presser is a card drawn
+   * deep inside the surface, which is the same plumbing problem the dock was extracted to solve.
+   */
+  useEffect(() => {
+    const show = () => {
+      setStored("create");
+      setPeek("create");
+      try {
+        window.localStorage.setItem(PANEL_KEY, "create");
+      } catch {
+        /* not remembered */
+      }
+    };
+    window.addEventListener("nemesis:board-show-made", show);
+    return () => window.removeEventListener("nemesis:board-show-made", show);
+  }, []);
 
   const docked = dock.items.length > 0;
   useEffect(() => {
@@ -594,7 +614,13 @@ export function BoardStudio() {
   const allTicked = ready.length > 0 && ready.every((source) => selectedSourceIds.includes(source.id));
 
   const material = boardHasMaterial(cards, sources);
-  const made = [...outputs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  /**
+   * 🔴 PRESSING A CHAT'S STACK NARROWS THIS LIST TO THAT CHAT. Owner, 2026-09-07: the sheets under a
+   * card are *"to indicate that it has deliverables in it"*, and with nothing fanning onto the board
+   * any more the press has to lead somewhere. Inside a chat it is already that chat's list.
+   */
+  const forCard = entered?.id ?? madeForCardId;
+  const made = [...outputs].filter((output) => !forCard || output.cardId === forCard).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   // 🔴🔴 THE BUTTONS FOLLOW YOU IN, AND THE SCOPE IS WHAT CHANGES. Owner, 2026-09-06, asking whether
   // artifacts live in the canvas only or in the chat's sidebar too. On the board, Create makes from
   // the TICKED SOURCES, which is what the ticks are for and NotebookLM's own model. Standing inside
@@ -618,14 +644,14 @@ export function BoardStudio() {
    *
    * 🔴🔴 IT USED TO FLY THE CAMERA TO ITS CARD, AND THAT STOPPED WORKING TWICE OVER. Owner,
    * 2026-09-07: *"it seems like I can't open the actual document for the flashcards within the
-   * panel by clicking on it"*. `fitView` needs a node on screen to fly to, and since 2026-09-07 a
-   * chat's made things are HIDDEN behind its card until the stack is pressed, so there was nothing
-   * to aim at. From inside a full-size chat there is not even a board to aim at.
+   * panel by clicking on it"*. `fitView` needs a node on screen to fly to, and that day a chat's
+   * made things were first HIDDEN behind its card and then taken off the board altogether, so there
+   * was nothing to aim at. From inside a full-size chat there is not even a board to aim at.
    *
-   * 🔴 A CHECK IS THE ONE EXCEPTION AND IT IS NOT A HEDGE. Every other kind carries a `CanvasOutput`
-   * the reading panel knows how to draw; a check carries a `run` that is answered in its own card,
-   * which is the owner's own ruling (2026-09-04: *"tests should show results in their own card
-   * node"*). So a check is fanned out and flown to, and everything else opens in the panel.
+   * 🔴 EVERY KIND OPENS IN THE PANEL NOW, WITH NO EXCEPTION LEFT. A check was the last one out: it
+   * carries a `run` answered in its own card rather than a `CanvasOutput` the reading panel draws,
+   * so it stayed on the canvas under the owner's 2026-09-04 ruling (*"tests should show results in
+   * their own card node"*) until he reversed it below.
    */
   const show = (output: BoardOutputCard) => {
     // 🔴 A MIND MAP OPENS IN THE PANEL, WHICH IS THE OWNER'S OWN PLACE FOR IT (2026-09-07: *"I would
@@ -635,13 +661,18 @@ export function BoardStudio() {
       if (output.mindmap) dock.openMindmap(output.mindmap, output.output?.title || output.topic || "Mind map");
       return;
     }
-    if (output.kind !== "check") {
-      openOutput(output.id);
+    /**
+     * 🔴🔴 A TEST OPENS HERE TOO NOW, AND THAT REVERSES 2026-09-04. It used to be answered in its own
+     * card on the board (*"tests should show results in their own card node"*); owner, 2026-09-07:
+     * *"why are tests supposed to be on Canvas? They're supposed to be in the sidebar, like anything
+     * any deliverable is supposed to show up in the sidebar."* board-page.tsx mounts one panel per
+     * test so the answers survive it being closed.
+     */
+    if (output.kind === "check") {
+      dock.openCheck(output.output?.title || output.topic || "Test", output.id);
       return;
     }
-    if (enteredCardId) leaveCard();
-    if (output.cardId) toggleFan(output.cardId);
-    window.setTimeout(() => void fitView({ nodes: [{ id: output.id }], duration: 320, padding: 0.1, maxZoom: 1 }), 60);
+    openOutput(output.id);
   };
 
   return (
@@ -678,7 +709,11 @@ export function BoardStudio() {
             The board-level maker it replaces was not lost: the composer still reads "make me
             flashcards on chapter 3" (board-provider.tsx `readBoardMakeAsk`), and every card carries
             its own two maker icons. */}
-        {entered && <ToolButton active={shown === "create"} dot={made.length > 0} id="create" onPress={() => toggle("create")} />}
+        {/* 🔴 CREATE IS A CHAT'S CONTROL, AND A CHAT'S STACK IS THE OTHER WAY IN. Owner, 2026-09-07:
+            *"hide the 'create' button in the canvas, create should happen within chats"*. Pressing
+            the sheets under a card asks for that chat's made things, so the button has to be there
+            to close what the press opened; without this it opened a panel with no control. */}
+        {(entered || madeForCardId) && <ToolButton active={shown === "create"} dot={made.length > 0} id="create" onPress={() => toggle("create")} />}
       </div>
 
       {panel === "sources" && (
