@@ -49,22 +49,18 @@ export const SIDEBAR_NAV: readonly NavItem[] = [
   // app/(workspace)/projects/page.tsx), and `canvas_folders` is untouched, so this is one line to
   // put back if he wants it.
   //     { id: "projects", label: "Projects", codicon: "folder", route: "/projects" },
-  // Where connected apps live. The Composio door already existed (`/api/composio`) with its only
-  // surface a card buried in Settings; this promotes it to a destination.
-  // 🔴 `extensions` (the puzzle piece), BY THE OWNER'S OWN PICK — 2026-08-30, from a fitting page
-  // that drew four candidates on the real row; the plug was offered and passed over, the same day
-  // it was retired from the composer's apps control (#915). Do not bring the plug back here.
-  // 🔴 THE WORD IS "APPS" — owner, 2026-09-03: *"rename the plugins into apps."* It was always the
-  // more honest label: what this page lists is Gmail, Drive, Calendar and Canvas LMS, which nobody
-  // calls a plugin. The composer's own control beside it has said "Apps" since 2026-08-30, so the
-  // rail was the last surface using the other word for the same thing.
+  // 🔴🔴 APPS AND CALENDAR CAME OUT ON 2026-09-07, AND THAT REVERSES A CALL FROM EARLIER THE SAME
+  // DAY. He had said *"should only really have google calendar as a connector for now, so calendar
+  // stays"*; hours later: *"could you remove the calendar and the apps I mainly just want to focus
+  // on the canvas right now for the live website"*. The reversal is the point, not a mistake: the
+  // live site is being narrowed to one thing while the canvas is being worked on daily.
   //
-  // 🔴 THE ROUTE STAYS `/plugins`, AND SO DOES EVERY FILE NAME. This is the same seam
-  // `sidebar-canvases.tsx` records for folder/project: everything a learner READS says Apps,
-  // everything the code CALLS ITSELF stays plugins. A route rename is a redirect, a directory move
-  // and a week of stale links to buy a word nobody sees.
-  { id: "plugins", label: "Apps", codicon: "extensions", route: "/plugins" },
-  { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
+  // 🔴 NOTHING WAS DELETED. `/plugins` and `/calendar` still answer and redirect (their pages wear
+  // `RetiredSurfaceGuard`), every Composio connection an account holds is untouched, and
+  // `composio-apps.ts` still carries the full catalogue behind a one-app shortlist. Both rows are
+  // one line each to put back.
+  //     { id: "plugins", label: "Apps", codicon: "extensions", route: "/plugins" },
+  //     { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
 ];
 
 /**
