@@ -8,7 +8,8 @@ the live DOM.
 
 ## What this product does especially well
 
-**Restraint at display size.** x.ai's hero type is 60px at **weight 400** with `-1.5px` tracking. It
+**Restraint at display size.** x.ai's hero is 60px at **weight 500** with `-1.5px` tracking, and its
+section display is 36px at **weight 400**. It
 is large, quiet and expensive looking. Almost every AI product ships 48px at weight 700, and that
 single difference is most of why one looks designed and the other looks generated.
 

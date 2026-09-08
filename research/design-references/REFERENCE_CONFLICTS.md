@@ -131,7 +131,9 @@ shape and position are merely fast, and overlays get the longest.
 
 ## 7. Weight: champ's 700 against everyone else
 
-Four references cap at 600 or below; three put **display type at weight 400**. champ keeps 700.
+Four references cap display at 600 or below. Measured: Figma sets 44, 56 and 88px all at **400**;
+x.ai sets 36px at **400** and its 60px hero at **500**; Sana caps at **500** and redefines `bold`
+to it; champ sets 32px at **600** and is the only one keeping `bold: 700`.
 
 ### Decision: cap at 600, and make it structural
 
@@ -164,6 +166,6 @@ heavy beside 12px text. Set once in the shared `<Icon />` so it cannot drift.
 | neutral construction | alpha over one ink | Sana, Figma, x.ai |
 | ground | `#fcfcfd`, cool off-white | champ's idea, our hue |
 | motion | four durations by proximity to pointer | Sana |
-| max weight | 600; display at 400 to 500 | Sana, x.ai, Figma |
+| max weight | 600; display at 400 to 500 | Figma (400), x.ai (400 to 500), Sana (500) |
 | icon stroke | 1.5 | between Figma and x.ai |
 | letter spacing | crosses zero at 12px, scales with size | Figma |

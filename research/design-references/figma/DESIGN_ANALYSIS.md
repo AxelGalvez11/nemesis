@@ -70,7 +70,7 @@ but not bold". Nothing on the surface is 700.
 The marketing site goes the other way and uses **320 and 330** for nav and body, which are *below*
 regular.
 
-Combined with Sana (`bold = 500`) and x.ai (display at weight 400), the conclusion across all
+Combined with Sana (`bold = 500`) and x.ai (36px at 400, 60px at 500), the conclusion across all
 references is unambiguous:
 
 > **Hierarchy is carried by size, colour and spacing. Weight is a fine adjustment, and 700 is never

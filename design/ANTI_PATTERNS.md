@@ -36,7 +36,8 @@ renders five. Figma's application uses three type sizes and two radii.
 - **No arbitrary font sizes.** Nine tokens exist. `text-[13.5px]` is a bug.
 - **No weight above 600.** `--fw-bold` is 600 by definition. Nothing is 700, 800 or 900.
 - **No `text-4xl font-bold` headings.** Display type is 32px at weight 450 with tight negative
-  tracking. Not one reference sets a heading at 700; three set display at 400.
+  tracking. Not one reference sets a heading above 600, and the largest display type measured
+  anywhere (Figma, 88px) is weight 400.
 - **No oversized marketing typography inside the application.** A 48px hero belongs on the landing
   page, never on a working surface.
 - **No hand-set `letter-spacing`.** It is baked into the type tokens.

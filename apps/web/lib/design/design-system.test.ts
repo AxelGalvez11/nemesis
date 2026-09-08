@@ -94,7 +94,7 @@ test("🔴 the token layer exists, is imported, and keeps its measured decisions
 
 test("🔴 the design system is documented where the docs say it is", () => {
   // The authority chain in /design/DESIGN.md ends at these files. If they vanish it is folklore.
-  for (const doc of ["DESIGN", "TOKENS", "COMPONENTS", "ICONS", "INTERACTIONS", "MOTION", "RESPONSIVE", "ANTI_PATTERNS", "MIGRATION"]) {
+  for (const doc of ["DESIGN", "TOKENS", "COMPONENTS", "ICONS", "INTERACTIONS", "MOTION", "RESPONSIVE", "ANTI_PATTERNS", "MIGRATION", "PROVENANCE"]) {
     assert.ok(readFileSync(new URL(`../../../../design/${doc}.md`, import.meta.url), "utf8").length > 500, `/design/${doc}.md is missing or a stub`);
   }
 });
@@ -149,4 +149,23 @@ test("🔴 the primitives keep their measured decisions", () => {
   // Nine type variants, and tracking is never set at a call site.
   assert.match(text, /TEXT_VARIANTS = \[\s*"meta",\s*"caption",\s*"ui",\s*"ui-lg",\s*"body",\s*"body-lg",\s*"title-sm",\s*"title",\s*"display",\s*\]/, "the type scale changed");
   assert.ok(!/letterSpacing|letter-spacing|tracking-/.test(text), "a call site set letter-spacing by hand");
+});
+
+test("🔴🔴 the provenance of every value stays auditable", () => {
+  // Asked directly whether the system was reverse engineered one to one, the honest answer was no:
+  // a third of the values are interpolations between two measured references and some are outright
+  // judgement. PROVENANCE.md is what makes that checkable instead of a matter of trust, and it is
+  // the first thing to go stale, so it is guarded.
+  const p = readFileSync(new URL("../../../../design/PROVENANCE.md", import.meta.url), "utf8");
+  for (const bucket of ["## MEASURED", "## INTERPOLATED", "## INVENTED", "## VERIFIED", "## NOT VERIFIED"]) {
+    assert.ok(p.includes(bucket), `PROVENANCE.md lost its ${bucket} section`);
+  }
+  // 🔴 THE INTERPOLATED VALUES ARE THE ONES TO CHALLENGE, so each must stay named. A value that
+  // quietly moves from "interpolated" to unlabelled is how a guess becomes folklore.
+  for (const claim of ["chrome type 12px", "chrome radius 6px", "icon stroke 1.5", "ground #fcfcfd"]) {
+    assert.ok(p.includes(claim), `PROVENANCE.md stopped declaring "${claim}" as interpolated`);
+  }
+  // The measured display weights, after a correction: x.ai's hero is 500, not 400.
+  assert.match(p, /60px\/500\/lh 1\.0\/-1\.5px/, "the x.ai display reading was altered");
+  assert.ok(p.includes("## Corrections to this research"), "the corrections log was removed");
 });
