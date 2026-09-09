@@ -1,155 +1,307 @@
-/* ── Landing structure, measured ───────────────────────────────────────────────────────────────
-   Canonical source: /research/design-references/LANDING_PATTERNS.md.
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   The landing page, built on figma.com's measured skeleton.
 
-   🔴🔴 NO DECORATIVE GRADIENTS, AND THAT IS THE MEASURED FINDING, NOT A PREFERENCE. figma.com
-   carries exactly ONE gradient on its whole page (a conic starburst in brand blue); x.ai/bot
-   carries TWO, and neither is decorative — a fade-to-ground scrim and a dot lattice. Their modern
-   quality comes from a rigid section rhythm, one ground, large quiet type and very faint shadows
-   on large-radius frames. Adding colour washes would move us AWAY from the two references, which
-   is why the owner chose "match the references" when shown this.
+   Canonical source: /research/design-references/figma/DESIGN_ANALYSIS.md and the teardown of
+   2026-09-08. Owner, 2026-09-09: "figma leads, use sana where it doesn't fight" and "use Figma
+   as the reference for the landing page".
 
-   🔴 THE MARKETING RADIUS LADDER (10/16/24) IS DELIBERATELY LOOSER THAN THE APP'S (4/6). Figma
-   proves the split inside one brand: their product runs at 4 to 5px radii and 11px type, their
-   marketing site at 12 to 24px and 16px. A product frame is a PICTURE OF the app, not the app. */
+   Every number below was read off figma.com's COMPUTED styles in a real browser with animation
+   frozen, not estimated from a screenshot. Where a number is ours rather than theirs it says so.
+
+   🔴 THE PAGE GROUND IS ONE FLAT WHITE AND STAYS THAT WAY. figma.com runs all ten of its sections
+   on rgb(255,255,255) with a uniform 80px of padding and no bands, no dividers and no washes; the
+   only dark surface on 8,973px is the footer. Sana alternates white with a sand band, and that is
+   the first place the two references fight. Figma leads, so there are no bands here.
+
+   🔴 COLOUR LIVES INSIDE THE FRAMES, NEVER BEHIND THE TYPE. Figma's page is carried by product
+   screenshots. Ours are gradient panels (see GradientArt) because the app is being redesigned.
+   Same slots, same sizes, different content.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
 
 .ref-page {
-  /* One ground for the entire page. Vertical padding is the only separator: Figma ships 8 sections
-     all at `padding: 80px 0` on pure white, with no alternating bands and no dividers. */
-  --ref-container: 1280px;
-  --ref-gutter: 24px;
+  /* Measured: content well 1360 inside 1440 → 40px gutters. The footer runs its own 60px. */
+  --ref-well: 1360px;
+  --ref-gutter: 40px;
+  --ref-footer-gutter: 60px;
+  /* Measured: EVERY section is padding 80px 0. There are no exceptions on their page. */
   --ref-section-y: 80px;
-  --ref-measure: 672px;   /* sub-copy, and the app's reading column */
-  --ref-hero-measure: 560px;
-  --ref-frame-radius: 24px;
-  --ref-card-radius: 16px;
-  --ref-inner-radius: 10px;
-  /* Measured: rgba(37,37,37,0.10) on the hero frame, 2.5% on cards. Nothing heavier anywhere. */
-  --ref-frame-shadow: 0 24px 70px rgba(var(--fg), 0.10);
-  --ref-card-shadow: 0 2px 10px rgba(var(--fg), 0.025);
-}
+  /* Measured: the centred heading column is 901.3px wide, which lands it at x269.3 in the well. */
+  --ref-measure: 901.3px;
+  /* Measured: the h1 is held to 328px so 56px type wraps to FOUR short lines. A headline that
+     fills the viewport reads as a template; one that stacks reads as a poster. This single
+     number does more for the page than any other. */
+  --ref-hero-measure: 328px;
 
-.ref-section { padding-block: var(--ref-section-y); }
-.ref-container {
-  max-width: var(--ref-container);
-  margin-inline: auto;
-  padding-inline: var(--ref-gutter);
-}
+  /* Measured: alpha over ONE ink. Their secondary text is black at 54%, the button hairline is
+     black at 16%, footer secondary is white at 60%. There is no grey palette on their page and
+     there is none here. This is the one construction Figma, Sana and x.ai all arrived at
+     independently, and the one we already had. */
+  --ref-ink: rgb(0, 0, 0);
+  --ref-ink-54: rgba(0, 0, 0, 0.54);
+  --ref-ink-16: rgba(0, 0, 0, 0.16);
+  --ref-ink-04: rgba(0, 0, 0, 0.04);
+  --ref-paper: rgb(255, 255, 255);
+  --ref-paper-60: rgba(255, 255, 255, 0.6);
+  --ref-paper-24: rgba(255, 255, 255, 0.24);
+  --ref-paper-16: rgba(255, 255, 255, 0.16);
 
-/* 🔴 HERO TYPE IS LINE-HEIGHT EXACTLY 1.0, TRACKING -1.2px, WEIGHT 500. Two independently designed
-   products landed on the same numbers: x.ai 60/500/lh 60/-1.2, Figma 56/400/lh 56/-1.25. Neither is
-   bold. `clamp` keeps the ratio at every width rather than stepping the size per breakpoint. */
-.ref-h1 {
-  font-size: clamp(40px, 5.4vw, 60px);
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  /* 🔴 THE NARROW MEASURE IS THE COMPOSITIONAL TRICK. Figma sets its 56px headline in a 336px
-     column so it WRAPS into short stacked lines. A headline that fills the viewport reads as a
-     template; one that wraps reads as designed. */
-  max-width: var(--ref-hero-measure);
-  text-wrap: balance;
-}
-.ref-h2 {
-  font-size: clamp(28px, 3.2vw, 36px);
+  /* ── MOTION. The whole vocabulary of their 8,973px page is eight transition recipes and one
+     keyframe animation. Almost everything is 0.18s ease-out; fades are 0.15s. No springs, no
+     scroll reveals, no stagger. Sana's motion is far richer (a real spring, 2s word reveals),
+     and this is the second place the references fight. Figma leads: restraint wins.
+
+     The ONE thing we take from Sana is its easing for the sign-in, which is a different surface
+     and is documented there. */
+  --ref-dur-fast: 0.15s;
+  --ref-dur: 0.18s;
+  --ref-ease: ease-out;
+
+  background: var(--ref-paper);
+  color: var(--ref-ink);
+  /* Measured on their page: figmaSans, which is proprietary. Inter is the substitute the owner
+     cleared, and it is what the app now ships too, so the two are one family. */
+  font-family: "Inter Variable", Inter, -apple-system, system-ui, helvetica, sans-serif;
+  font-size: 16px;
   font-weight: 400;
-  line-height: 1.11;
-  letter-spacing: -0.02em;
-  max-width: 20ch;
-  text-wrap: balance;
+  line-height: 22.4px;
 }
-.ref-sub {
-  font-size: 18px;
-  font-weight: 400;
-  line-height: 1.625;
-  max-width: var(--ref-measure);
-  color: var(--text-2);
+.ref-page *,
+.ref-page *::before,
+.ref-page *::after { box-sizing: border-box; }
+
+.ref-container { width: var(--ref-well); max-width: calc(100vw - 80px); margin: 0 auto; }
+.ref-section { padding: var(--ref-section-y) 0; background: var(--ref-paper); }
+
+/* ── TYPE ────────────────────────────────────────────────────────────────────────────────────
+   Measured across their whole page. Six sizes, twelve combinations, and NOTHING above weight 400:
+
+     88 / 400 / lh 88   (1.00) / -1.25px    the stat
+     56 / 400 / lh 56   (1.00) / -1.25px    hero h1, the big CTA label
+     44 / 400 / lh 48.4 (1.10) / -0.66px    section headings, the pull quote
+     30 / 400 / lh 36   (1.20) / -0.66px    lead paragraphs, the hero CTA label
+     16 / 400 / lh 22.4                     body, links, nav
+     16 / 320 / lh 23.2 / -0.12px           long-form body
+     12 mono / 400 / lh 12 / +0.6px         footer column heads
+
+   Two rules do the work. Line-height is EXACTLY 1.0 at display sizes, and tracking grows more
+   negative as the type grows. Together they turn a headline into one solid mass.
+
+   🔴 WEIGHT IS NOT A HIERARCHY TOOL HERE. Their whole page peaks at 400 and gets emphasis from
+   COLOUR instead: the first sentence in ink, the continuation at 54% in the same size and weight.
+   Sana does the opposite, leaning on 440/450/500. Figma leads, so display type is 400 here too.
+
+   🔴 IT IS 400 BECAUSE THE PIXELS SAY SO, NOT BECAUSE THEIR STYLESHEET DOES. The assumption on
+   the first pass was that Inter at 400 would render thinner than their proprietary figmaSans and
+   would need 450 to match. That was wrong in both directions. Cropping their live hero headline
+   and ours to the identical 328px box and measuring ink coverage:
+
+       figmaSans 400 (theirs)   16.04% ink
+       Inter     400 (ours)     16.57%     <- already very slightly heavier
+       Inter     420            17.22%
+       Inter     440            17.88%
+       Inter     450+           wraps to FIVE lines, not four
+
+   450 does not just overshoot the colour, it breaks the wrap, and the four-line stack in a 328px
+   column is the single most valuable thing on their fold. Re-measure before changing this. */
+.ref-h1 { font-size: 56px; font-weight: 400; line-height: 56px; letter-spacing: -1.25px;
+          width: var(--ref-hero-measure); margin: 0; }
+.ref-h2 { font-size: 44px; font-weight: 400; line-height: 48.4px; letter-spacing: -0.66px; margin: 0; }
+.ref-lead { font-size: 30px; font-weight: 400; line-height: 36px; letter-spacing: -0.66px; margin: 0; }
+.ref-stat { font-size: 88px; font-weight: 400; line-height: 88px; letter-spacing: -1.25px; margin: 0; }
+.ref-body { font-size: 16px; font-weight: 400; line-height: 22.4px; margin: 0; }
+.ref-body-long { font-size: 16px; font-weight: 320; line-height: 23.2px; letter-spacing: -0.12px; margin: 0; }
+.ref-meta { font-size: 14px; font-weight: 400; line-height: 20.3px; margin: 0; }
+.ref-mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+            font-size: 12px; font-weight: 400; line-height: 12px; letter-spacing: 0.6px;
+            text-transform: uppercase; margin: 0; }
+.ref-dim { color: var(--ref-ink-54); }
+
+/* ── HEADER. Measured 78.39px tall with a hairline bottom. ──────────────────────────────────── */
+.ref-nav {
+  height: 78.39px; display: flex; align-items: center; background: var(--ref-paper);
+  border-bottom: 1px solid var(--ref-ink-16); position: sticky; top: 0; z-index: 50;
+}
+.ref-nav-in { width: 100%; padding: 0 var(--ref-gutter); display: flex; align-items: center; }
+/* 🔴 THESE LIVE IN CSS, NOT IN A style={{}} PROP. An inline `display: flex` beats any stylesheet
+   rule regardless of specificity, so the phone breakpoint below could not hide the nav and the
+   header ran 28px off a 390px screen while every guard and every wider viewport looked fine. */
+.ref-nav-links { display: flex; align-items: center; }
+.ref-nav-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+/* Measured: their nav ANCHOR is 18/330 but the text span inside it is 16/400, and the span wins.
+   Reproducing the anchor's size alone renders the whole nav two points too large. */
+.ref-nav-link {
+  display: flex; align-items: center; gap: 4px; padding: 8px;
+  font-size: 16px; font-weight: 400; line-height: 22.4px; color: inherit; text-decoration: none;
+  transition: opacity var(--ref-dur-fast) var(--ref-ease);
+}
+.ref-nav-link:hover { opacity: 0.6; }
+
+/* ── CONTROLS. Measured: 46.39px tall, radius 8, padding 12px 22px. The outline variant has NO
+   border — it is an inset 1px box-shadow at 16% ink, which is why it never shifts layout on
+   hover. Their transition is `background, box-shadow 0.18s ease-out`, verbatim. ───────────── */
+.ref-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 46.39px; border-radius: 8px; padding: 12px 22px; border: 0; cursor: pointer;
+  font-family: inherit; font-size: 16px; font-weight: 400; line-height: 22.4px;
+  background: none; color: inherit; text-decoration: none;
+  transition: background var(--ref-dur) var(--ref-ease), box-shadow var(--ref-dur) var(--ref-ease);
+}
+.ref-btn-outline { box-shadow: inset 0 0 0 1px var(--ref-ink-16); }
+.ref-btn-outline:hover { background: var(--ref-ink-04); }
+.ref-btn-solid { background: var(--ref-ink); color: var(--ref-paper); }
+.ref-btn-solid:hover { background: #333; }
+
+/* ── HERO. Measured 860px tall, padding 80px 0, and laid out in THREE columns: headline left at
+   x40, art centred at x429.5 (581x700), and a large call to action right at x1124 (224x84).
+   That third column is the part nobody copies and it is why their fold does not look like a
+   template — the primary action is a slab, not a pill in a row under the paragraph. ────────── */
+.ref-hero { position: relative; height: 860px; padding: var(--ref-section-y) 0; }
+.ref-hero-in { width: var(--ref-well); max-width: calc(100vw - 80px); margin: 0 auto;
+               position: relative; height: 100%; }
+.ref-hero h1 { position: absolute; left: 0; top: 238px; }
+/* Measured 581x700 at x429.5 within the well. Theirs holds a Vimeo loop of their app; ours holds
+   gradient art with the character standing on it. */
+.ref-hero-art { position: absolute; left: 389.5px; top: 0; width: 581px; height: 700px; }
+/* Measured 224x84, radius 16, padding 24/32, label 30/400/lh36/-0.66. */
+.ref-hero-cta {
+  position: absolute; left: 1084px; top: 308px; width: 224px; height: 84px;
+  border-radius: 16px; background: var(--ref-ink); color: var(--ref-paper);
+  display: flex; align-items: center; justify-content: center; padding: 24px 32px;
+  text-decoration: none; transition: background var(--ref-dur) var(--ref-ease);
+}
+.ref-hero-cta:hover { background: #333; }
+
+/* ── SECTION HEADS. The two-tone rule: first sentence in ink, continuation at 54%, SAME size and
+   SAME weight. Hierarchy is colour. Measured centred width 901.3px. ───────────────────────── */
+.ref-head-c { width: var(--ref-measure); max-width: 100%; margin: 0 auto; }
+.ref-head-l { width: var(--ref-measure); max-width: 100%; }
+.ref-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 40px; }
+
+/* Measured: a text link is underlined in its own colour with a 14px arrow, and the arrow moves
+   3px on hover under `transform 0.18s ease-out` — their single most-used recipe (x15). */
+.ref-link {
+  display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none;
+  font-size: 16px; line-height: 22.4px; border-bottom: 1px solid currentColor; padding-bottom: 1px;
+  transition: opacity var(--ref-dur-fast) var(--ref-ease);
+}
+.ref-link:hover { opacity: 0.6; }
+.ref-link svg { transition: transform var(--ref-dur) var(--ref-ease); }
+.ref-link:hover svg { transform: translateX(3px); }
+
+/* ── FEATURE TWO-UP. Measured at x154.7 and x728 inside the well → 114.7px of inset. ───────── */
+.ref-two-up { display: grid; grid-template-columns: 1fr 1fr; padding: 0 114.7px; }
+.ref-feat-ico { width: 12px; height: 12px; background: var(--ref-ink); border-radius: 50%;
+                margin-bottom: 14px; }
+
+/* ── MEDIA STRIP. Measured 348x433 cards on a 364px pitch → 16px gutters, running full bleed
+   past both edges of the well. ─────────────────────────────────────────────────────────────── */
+.ref-strip { display: flex; gap: 16px; overflow-x: auto; scrollbar-width: none; }
+.ref-strip::-webkit-scrollbar { display: none; }
+.ref-strip > * { flex: 0 0 auto; width: 348px; height: 433px; }
+
+/* ── QUOTE + STAT. Measured: quote column 901.3 wide, stat column at x1113 behind a 1px rule. ── */
+.ref-quote-row { display: flex; gap: 0; }
+.ref-quote { width: var(--ref-measure); max-width: 100%; }
+.ref-byline { display: flex; align-items: center; gap: 19px; margin-top: 44px; }
+.ref-byline-art { width: 48px; height: 48px; border-radius: 9999px; flex: 0 0 auto; }
+.ref-stat-col { margin-left: auto; width: 287px; padding-left: 40px;
+                border-left: 1px solid var(--ref-ink-16); }
+
+/* ── BIG CTA BAND. Measured 1360x136, radius 24, padding 40px 80px, label at 56px. ─────────── */
+.ref-cta-band {
+  width: var(--ref-well); max-width: calc(100vw - 80px); margin: 0 auto; height: 136px;
+  border-radius: 24px; background: var(--ref-ink); color: var(--ref-paper);
+  display: flex; align-items: center; justify-content: center; padding: 40px 80px;
+  text-decoration: none; transition: background var(--ref-dur) var(--ref-ease);
+}
+.ref-cta-band:hover { background: #222; }
+
+/* ── FOOTER. Measured: black, padding 120px 0, its own 60px gutter, link columns 180px wide on a
+   240px pitch, and column heads in 12px MONO uppercase at +0.6px — the only positive tracking
+   and almost the only mono on the entire page. ────────────────────────────────────────────── */
+.ref-foot { background: #000; color: var(--ref-paper); padding: 120px 0;
+            border-top: 1px solid var(--ref-paper-16); }
+.ref-foot-in { padding: 0 var(--ref-footer-gutter); display: flex; gap: 0; }
+.ref-foot-brand { width: 450px; }
+.ref-foot-cols { display: flex; gap: 60px; }
+.ref-foot-col { width: 180px; }
+.ref-foot-col h4 { color: var(--ref-paper-60); margin: 0 0 12px; }
+.ref-foot-col ul { list-style: none; margin: 0; padding: 0; }
+.ref-foot-col li { margin-bottom: 5px; }
+.ref-foot-col a { font-size: 16px; font-weight: 320; line-height: 23.2px; color: inherit;
+                  text-decoration: none; }
+.ref-foot-col a:hover { text-decoration: underline; }
+
+/* ── GRADIENT ART (ours, not theirs). See GradientArt.tsx for why it exists. ───────────────── */
+/* 🔴 width/height 100% MATTER. Without them the panel collapses to its content height, which
+   the 348x433 strip cards hide (the strip sizes its own children) and the 581x700 hero slot
+   does not. The hero panel rendered 361px tall on the first pass. */
+/* 🔴 `:where()` CONTRIBUTES ZERO SPECIFICITY, and that is the entire point. The art must fill
+   whatever slot it is put in, but any caller that states a size — the 48px byline avatar, the
+   348x433 strip card — has to win. Written as a plain `.grad-art { width: 100% }` this rule ties
+   with those on specificity, comes later in the file, and wins: the avatar rendered 833px wide
+   and pushed the page 79px past the viewport at 834. */
+:where(.grad-art) { width: 100%; height: 100%; }
+.grad-art { position: relative; overflow: hidden; isolation: isolate; }
+.grad-art-mesh { position: absolute; inset: -12%; }
+.grad-art-grain {
+  position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+  /* 0.16 is where the grain kills 8-bit banding without reading as texture in its own right. */
+  opacity: 0.16; mix-blend-mode: overlay;
+}
+/* One light shaft so the mesh has a direction rather than reading as a blob. */
+.grad-art-shaft {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(118deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 26%,
+              rgba(255,255,255,0) 52%);
+}
+.grad-art-body { position: relative; z-index: 2; width: 100%; height: 100%; }
+/* Slow enough to be felt rather than watched, and only on the hero. */
+@keyframes grad-drift {
+  from { transform: translate3d(0, 0, 0) scale(1.02); }
+  to   { transform: translate3d(-2.5%, -1.6%, 0) scale(1.09); }
+}
+.grad-art.is-drifting .grad-art-mesh { animation: grad-drift 34s ease-in-out infinite alternate; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ref-page *, .ref-page *::before, .ref-page *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
-/* The eyebrow pill, measured at 279x38 with padding 6px 6px 6px 10px and a 10px gap. */
-.ref-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 38px;
-  padding: 6px 14px 6px 10px;
-  border: 1px solid rgba(var(--fg), 0.08);
-  border-radius: 9999px;
-  font-size: 14px;
-  color: var(--text-2);
+/* ── RESPONSIVE. Their three-column hero cannot survive a narrow viewport, so below the well
+   width it becomes a stack. Breakpoint is 1439.98 and not 1440, because `max-width` is
+   inclusive and firing AT the reference width collapses the layout we are matching. ───────── */
+@media (max-width: 1439.98px) {
+  .ref-page { --ref-well: calc(100vw - 80px); }
+  .ref-hero { height: auto; }
+  .ref-hero-in { display: flex; flex-direction: column; gap: 40px; height: auto; }
+  .ref-hero h1, .ref-hero-art, .ref-hero-cta { position: static; }
+  .ref-hero h1 { width: min(100%, 520px); }
+  .ref-hero-art { width: 100%; max-width: 581px; height: 520px; }
 }
-
-/* 🔴 THE PRODUCT FRAME CLIPS ITS CONTENTS rather than fading them out: x.ai's 976x660 frame is
-   `overflow: hidden` with one soft shadow. A frame that fades at the edges reads as a screenshot
-   with a vignette; one that clips reads as a window. */
-.ref-frame {
-  border-radius: var(--ref-frame-radius);
-  overflow: hidden;
-  box-shadow: var(--ref-frame-shadow);
-  border: 1px solid rgba(var(--fg), 0.06);
-  background: var(--bg);
-}
-.ref-card {
-  border-radius: var(--ref-card-radius);
-  background: rgba(var(--fg), 0.02);
-  border: 1px solid rgba(var(--fg), 0.05);
-  box-shadow: var(--ref-card-shadow);
-}
-
-/* Nav measured at 64px, no shadow, no border. */
-.ref-nav { height: 64px; }
-
-@media (max-width: 768px) {
-  .ref-page { --ref-section-y: 56px; --ref-gutter: 16px; }
-}
-
-/* 🔴 THE FRAME SIZES ITSELF TO THE SESSION SURFACE rather than imposing an aspect ratio on it.
-   Forcing 976/660 on content that wants a different shape is what produced ~270px of dead space
-   above and below the canvas on the first build. The reference ratio is a RESULT of their content,
-   not a constraint they applied to it. */
-.ref-frame-inner {
-  /* 🔴 `position: relative` AND A REAL HEIGHT, because `.sess` is `position: absolute; inset: 0`.
-     Without both, the frame collapsed to 42px and the session overflowed it by 27x. Measured. */
-  position: relative;
-  /* 🔴 2.29:1 IS THE SCENES' OWN viewBox RATIO, not x.ai's 1.48. Their frame ratio is a RESULT of
-     their content, and home.css already records what happens when this is imposed rather than
-     derived: at 3:1 against 2.29:1 artwork every scene letterboxed itself into the middle and sat
-     in two hundred pixels of dead space. */
-  aspect-ratio: 2.29;
-  margin: 20px;
-}
-@media (max-width: 768px) { .ref-frame-inner { margin: 12px; } }
-
-/* 🔴 THE HERO IS TWO COLUMNS, WHICH THE REFERENCES ARE NOT. Both run a single left column with the
-   product frame beneath. The character earns the second column because it is the only coloured
-   object on an otherwise ink-on-paper page, and the only interactive thing above the fold.
-   It collapses BELOW the copy on narrow screens rather than shrinking beside it: a 300px character
-   squeezed next to a wrapped headline reads as clutter, and the copy is what has to land first. */
-.ref-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 48px;
-  align-items: center;
-}
-.ref-hero-character { justify-self: end; }
-
 @media (max-width: 900px) {
-  .ref-hero { grid-template-columns: minmax(0, 1fr); gap: 32px; }
-  .ref-hero-character { justify-self: start; }
+  .ref-page { --ref-section-y: 56px; }
+  .ref-h1 { font-size: 44px; line-height: 44px; letter-spacing: -0.9px; width: auto; }
+  .ref-h2 { font-size: 32px; line-height: 35.2px; letter-spacing: -0.5px; }
+  .ref-lead { font-size: 22px; line-height: 28px; letter-spacing: -0.4px; }
+  .ref-stat { font-size: 64px; line-height: 64px; }
+  .ref-two-up { grid-template-columns: 1fr; gap: 40px; padding: 0; }
+  .ref-quote-row { flex-direction: column; gap: 40px; }
+  .ref-stat-col { margin-left: 0; padding-left: 0; border-left: 0; width: auto; }
+  .ref-cta-band { height: auto; padding: 32px 24px; }
+  .ref-foot-in { flex-direction: column; gap: 48px; }
+  .ref-foot-brand { width: auto; }
+  .ref-foot-cols { flex-wrap: wrap; gap: 32px; }
+  .ref-strip > * { width: 268px; height: 334px; }
 }
-
-/* 🔴 THE CHARACTER SCALES ON A PHONE, AND `size` ALONE WILL NOT DO IT. `Mascot` takes a pixel size
-   at render, so a 300px character stayed 300px on a 390px viewport: 77% of the screen width,
-   measured. Scaling the rendered SVG keeps one component and one prop while letting CSS own the
-   responsive behaviour, which is where it belongs. */
-@media (max-width: 600px) {
-  .ref-hero-character svg { width: 180px; height: 180px; }
-}
-
-/* 🔴 CARDS AT 3% AND 6%, NOT 2% AND 5%. At the first values they read as very faint rectangles
-   rather than as surfaces, which is the failure mode on the OTHER side of "no unnecessary
-   containers": a container so quiet it neither groups nor separates is doing nothing at all.
-   x.ai's equivalent cards measure rgba(16,16,0,0.04) with a real border. */
-.ref-card {
-  background: rgba(var(--fg), 0.03);
-  border-color: rgba(var(--fg), 0.06);
+/* The header carries a logo, three links and three actions. That is 570px of content in a 390px
+   phone. Everything except the primary action goes; the links all live in the footer as well, so
+   nothing becomes unreachable. */
+@media (max-width: 720px) {
+  .ref-nav { height: 64px; }
+  .ref-nav nav, .ref-nav .ref-btn:not(.ref-btn-solid) { display: none; }
+  .ref-nav-in { padding: 0 20px; }
+  .ref-page { --ref-gutter: 20px; --ref-well: calc(100vw - 40px); }
 }

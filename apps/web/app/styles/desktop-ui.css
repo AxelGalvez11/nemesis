@@ -594,8 +594,10 @@
     --dt-user-bubble: var(--ui-chat-bubble-background);
     --dt-user-bubble-border: #dedee2;
 
+    /* Inter Variable leads here too. This is the app's SECOND sans stack (globals.css `--font`
+       is the first); a face installed in only one of them ships two typefaces in one product. */
     --dt-font-sans:
-      'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif,
+      'Inter Variable', 'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif,
       'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
     /* Key caps always use the native UI face — never theme typography overrides. */
     --dt-font-kbd: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;

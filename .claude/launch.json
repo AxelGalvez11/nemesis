@@ -54,6 +54,24 @@
         "cd /private/tmp/nemesis-wt-pricing/apps/web && npx next start -p 3311"
       ],
       "port": 3311
+    },
+    {
+      "name": "studio-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/axelgalvez/Desktop/nemesis-studio/apps/web && npx next dev -p 3300"
+      ],
+      "port": 3300
+    },
+    {
+      "name": "refs",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /private/tmp/claude-501/-Users-axelgalvez-Desktop-nemesis/dbb81aea-ce02-4d7c-9352-d83708856842/scratchpad/preview && python3 -m http.server 3355"
+      ],
+      "port": 3355
     }
   ]
 }

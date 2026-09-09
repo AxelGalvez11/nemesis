@@ -1,0 +1,212 @@
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   Sign-in, built on sana.ai/login's measured anatomy.
+
+   Canonical source: the teardown of 2026-09-08. Owner, 2026-09-09: "for the sign in, make sure it
+   looks like the sana sign in because that one had a nice, cool animation."
+
+   WHY SANA AND NOT FIGMA HERE. figma.com leads the landing page, but Figma has no sign-in worth
+   copying: it is a plain centred card. Sana's is a split — a narrow centred form column against a
+   dark rounded panel that crops an oversized product shot — and it is the better page. This is
+   exactly the "use Sana where it doesn't fight" case: a surface Figma has no opinion about.
+
+   Every number below was read off sana.ai/login's computed styles at 1440x900.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.sig {
+  /* Measured: the form column is 381px wide and starts at x182. Everything in it is centred. */
+  --sig-col: 381px;
+  --sig-col-x: 182px;
+
+  /* Measured: Sana's ink is rgb(10,18,23), a very dark blue-black, and every secondary tone is
+     that same ink at an alpha step — 0.6 / 0.4 / 0.25 / 0.08 / 0.04. Alpha over one ink again,
+     the third reference in a row to build neutrals this way. We use OUR ink the same way, so the
+     construction is Sana's and the colour is ours. */
+  --sig-ink: #0a1217;
+  --sig-ink-60: rgba(10, 18, 23, 0.6);
+  --sig-ink-40: rgba(10, 18, 23, 0.4);
+  --sig-ink-25: rgba(10, 18, 23, 0.25);
+  --sig-ink-08: rgba(10, 18, 23, 0.08);
+  --sig-ink-04: rgba(10, 18, 23, 0.04);
+  --sig-paper: #ffffff;
+  /* Measured: the panel is its own near-black, distinct from the ink. */
+  --sig-panel: rgb(23, 24, 26);
+
+  /* ── MOTION, measured on sanalabs.com. This is the "nice, cool animation".
+     Their signature is one easing used 31 times: a fast start with a long settle. They also run a
+     real spring, written as a linear() curve with 19 stops that overshoots to 1.263 and settles
+     back through 0.93 before landing on 1. Figma has no spring anywhere and no reveals at all,
+     which is why the landing page has none — but this surface is Sana's, so the motion is too. */
+  --sig-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --sig-spring: linear(0 0%, 0.041 1.2%, 0.161 2.5%, 0.819 7.1%, 1.055 9.1%, 1.203 11.1%,
+                1.244 12.1%, 1.263 13.1%, 1.262 14.4%, 1.231 15.9%, 1.043 20.9%, 0.98 23%,
+                0.945 24.8%, 0.93 26.7%, 0.936 29.2%, 1.001 36.1%, 1.019 40.3%, 0.995 53.8%, 1 100%);
+  --sig-dur: 0.3s;
+
+  position: relative;
+  min-height: 100svh;
+  background: var(--sig-paper);
+  color: var(--sig-ink);
+  font-family: "Inter Variable", Inter, -apple-system, system-ui, sans-serif;
+}
+.sig *, .sig *::before, .sig *::after { box-sizing: border-box; }
+
+/* Dark theme. Sana's page is light only; our app is not, and a sign-in that flashes white for a
+   student running dark is worse than one that does not match the reference exactly. */
+[data-theme="dark"] .sig {
+  --sig-ink: #f3f5f6;
+  --sig-ink-60: rgba(243, 245, 246, 0.6);
+  --sig-ink-40: rgba(243, 245, 246, 0.4);
+  --sig-ink-25: rgba(243, 245, 246, 0.25);
+  --sig-ink-08: rgba(243, 245, 246, 0.1);
+  --sig-ink-04: rgba(243, 245, 246, 0.06);
+  --sig-paper: #0d0f10;
+}
+
+/* Measured: the mark is 24x24 at x180,y32, inside a 44x44 hit area at x170,y22. */
+.sig-mark {
+  position: absolute; left: 170px; top: 22px; width: 44px; height: 44px;
+  border-radius: 9999px; display: grid; place-items: center; color: var(--sig-ink);
+}
+
+/* ── THE FORM COLUMN ────────────────────────────────────────────────────────────────────────
+   Measured vertical rhythm, gap by gap. These are irregular ON PURPOSE and they tighten as you
+   approach the action — 24, then 30, then 10, 12, 8. A uniform stack loses that.
+
+     h1 (two lines, 95.2 tall)  top 220.6, ends 315.8
+     24px  → lead paragraph     339.8
+     30px  → Google button      417.8
+     10px  → "or"               471.8
+     12px  → email field        503.4
+      8px  → submit             559.4
+     22px  → legal              625.4 */
+.sig-form {
+  position: absolute; left: var(--sig-col-x); top: 220.6px;
+  width: var(--sig-col); text-align: center;
+}
+
+/* Measured: ONE h1 carries both lines at 34/500/lh47.6. The second line is the SAME size and the
+   SAME weight, dimmed to 60%. Hierarchy is colour, not scale — which is the one rule Sana and
+   Figma actually agree on, and the reason it survives into our system. */
+.sig h1 { margin: 0; font-size: 34px; font-weight: 500; line-height: 47.6px; letter-spacing: 0; }
+.sig h1 span { color: var(--sig-ink-60); }
+.sig-lead { margin: 24px 0 0; font-size: 16px; font-weight: 400; line-height: 24px; color: var(--sig-ink-40); }
+
+/* Measured: 381x44, pill, white ground, hairline at 8% ink. On the live page this slot is
+   Google's own iframe widget, so the box is theirs and the button is ours. */
+.sig-sso {
+  margin-top: 30px; width: 100%; height: 44px; border-radius: 9999px;
+  background: var(--sig-paper); border: 1px solid var(--sig-ink-08);
+  display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 500; line-height: 20px; color: var(--sig-ink);
+  transition: background-color var(--sig-dur) var(--sig-ease), border-color var(--sig-dur) var(--sig-ease);
+}
+.sig-sso:hover { background: var(--sig-ink-04); border-color: var(--sig-ink-25); }
+.sig-sso svg { width: 18px; height: 18px; }
+
+/* Measured: plain centred text with NO rules either side. Everyone draws lines here; Sana does not. */
+.sig-or { margin-top: 10px; font-size: 14px; font-weight: 500; line-height: 19.6px; color: var(--sig-ink-25); }
+
+/* Measured: 381x48, radius 24 — a pill at this height — padding 12/24, 14/500. */
+.sig-field {
+  margin-top: 12px; width: 100%; height: 48px; border-radius: 24px; background: var(--sig-paper);
+  border: 1px solid var(--sig-ink-08); padding: 12px 24px; font-family: inherit;
+  font-size: 14px; font-weight: 500; line-height: 19.6px; color: var(--sig-ink); outline: none;
+  transition: border-color var(--sig-dur) var(--sig-ease), box-shadow var(--sig-dur) var(--sig-ease);
+}
+.sig-field::placeholder { color: var(--sig-ink-40); }
+.sig-field:focus { border-color: var(--sig-ink-25); box-shadow: 0 0 0 3px var(--sig-ink-04); }
+
+/* Measured: 381x44, pill, ground is ink at 4% and the LABEL is ink at 40%. The submit is
+   deliberately quieter than the field above it until there is something to submit — the only
+   state change on their whole page, and the reason the page feels responsive rather than busy. */
+.sig-submit {
+  margin-top: 8px; width: 100%; height: 44px; border-radius: 9999px; background: var(--sig-ink-04);
+  border: 0; padding: 12px 24px; font-family: inherit; font-size: 14px; font-weight: 500;
+  line-height: 20px; color: var(--sig-ink-40); cursor: pointer;
+  transition: background-color var(--sig-dur) var(--sig-ease), color var(--sig-dur) var(--sig-ease),
+              transform var(--sig-dur) var(--sig-ease);
+}
+.sig-submit:hover { background: var(--sig-ink-08); }
+.sig-submit.is-ready { background: var(--sig-ink); color: var(--sig-paper); }
+/* The spring, on the one element where an overshoot means something: the button waking up. */
+.sig-submit.is-ready { transition-timing-function: var(--sig-spring); transition-duration: 1s; }
+
+.sig-legal { margin: 22px 0 0; font-size: 13px; font-weight: 400; line-height: 19.5px; color: var(--sig-ink-40); }
+.sig-legal a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── THE PANEL ──────────────────────────────────────────────────────────────────────────────
+   Measured: a 706.3x720 section at x671.7,y118, radius 18, ground rgb(23,24,26), overflow hidden.
+   The artwork inside is LARGER than the panel (731.9x751.1) and offset up and left by 12.8 and
+   15.5, so it bleeds past every edge and the panel crops it. That overfill is the whole trick:
+   a shot sized to fit reads as a framed screenshot, a shot that runs off the edges reads as a
+   window onto something bigger. Sana's holds a photograph of a laptop; ours holds gradient art
+   until the in-app redesign lands. */
+/* 🔴 ANCHORED FROM THE RIGHT, NOT THE LEFT. Measured at 1440 the panel sits at x671.7 with a
+   706.3px width, which leaves exactly 62px to the right edge (671.7 + 706.3 + 62 = 1440). Pinning
+   `left: 671.7px` reproduces that one viewport and then hangs 98px off the screen at 1280.
+   Pinning `right: 62px` reproduces the same 1440 geometry and slides correctly as it narrows. */
+.sig-panel {
+  position: absolute; right: 62px; top: 118px; width: 706.3px; height: 720px;
+  border-radius: 18px; background: var(--sig-panel); overflow: hidden; isolation: isolate;
+}
+.sig-panel-art { position: absolute; left: -12.8px; top: -15.5px; width: 731.9px; height: 751.1px; }
+.sig-panel-mesh {
+  position: absolute; inset: -14%;
+  background:
+    radial-gradient(78% 62% at 12% 8%, rgba(84,212,237,0.92) 0%, rgba(84,212,237,0) 62%),
+    radial-gradient(70% 58% at 88% 18%, rgba(115,184,250,0.85) 0%, rgba(115,184,250,0) 60%),
+    radial-gradient(90% 72% at 78% 92%, rgba(42,140,205,0.90) 0%, rgba(42,140,205,0) 66%),
+    radial-gradient(85% 70% at 22% 88%, rgba(11,96,180,0.95) 0%, rgba(11,96,180,0) 64%),
+    linear-gradient(148deg, #0b60b4 0%, #062e86 52%, #0a4ea0 100%);
+  animation: sig-drift 34s ease-in-out infinite alternate;
+  will-change: transform;
+}
+/* Grain. A plain CSS gradient bands visibly on an 8-bit display; real gradient art is dithered.
+   0.16 is where the noise kills the banding without reading as texture. */
+.sig-panel-grain { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.16;
+                   mix-blend-mode: overlay; pointer-events: none; }
+.sig-panel-shaft {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(118deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.05) 26%,
+              rgba(255,255,255,0) 52%);
+}
+@keyframes sig-drift {
+  from { transform: translate3d(0, 0, 0) scale(1.02); }
+  to   { transform: translate3d(-2.5%, -1.8%, 0) scale(1.10); }
+}
+
+/* ── THE ARRIVAL. Measured on sanalabs.com: `wordFadeIn 2s cubic-bezier(0.16,1,0.3,1)` running
+   five times, one per word, and `fade-in 0.6s` on the blocks. This is the animation the owner
+   picked the page for. Ours staggers the form the same way: each row arrives on the signature
+   easing, 60ms apart, and it runs ONCE on load rather than on scroll. */
+@keyframes sig-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.sig-in { animation: sig-rise 0.9s var(--sig-ease) both; }
+.sig-in-1 { animation-delay: 0.02s; }
+.sig-in-2 { animation-delay: 0.08s; }
+.sig-in-3 { animation-delay: 0.14s; }
+.sig-in-4 { animation-delay: 0.20s; }
+.sig-in-5 { animation-delay: 0.26s; }
+.sig-in-6 { animation-delay: 0.32s; }
+/* The panel arrives on the spring, and it is the only thing on the page that overshoots. */
+@keyframes sig-panel-in { from { opacity: 0; transform: translateY(24px) scale(0.985); }
+                          to   { opacity: 1; transform: none; } }
+.sig-panel { animation: sig-panel-in 1s var(--sig-spring) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sig *, .sig *::before, .sig *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important; transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── RESPONSIVE. Sana drops the panel and centres the column; below 460 the column goes fluid.
+   The absolute positions above are the 1440 case only. */
+@media (max-width: 1380px) {
+  .sig-panel { display: none; }
+  .sig-form { left: 50%; transform: translateX(-50%); }
+}
+@media (max-width: 460px) {
+  .sig-form { left: 24px; width: calc(100vw - 48px); transform: none; top: 160px; }
+  .sig h1 { font-size: 28px; line-height: 38px; }
+  .sig-mark { left: 12px; }
+}

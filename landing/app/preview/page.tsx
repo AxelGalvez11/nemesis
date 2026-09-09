@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 
 import { Mascot } from "@/components/home/Mascot";
-import { ProductFrame } from "@/components/reference/ProductFrame";
+import { NemesisLockup } from "@/components/NemesisMark";
+import { GradientArt } from "@/components/reference/GradientArt";
 
 import "./reference.css";
 
@@ -11,205 +12,328 @@ export const metadata: Metadata = {
 };
 
 /**
- * The landing page, rebuilt to the structure measured on figma.com and x.ai/bot.
+ * The landing page, built on figma.com's measured skeleton.
  *
- * Canonical source: /research/design-references/LANDING_PATTERNS.md.
+ * Canonical source: /research/design-references/figma/DESIGN_ANALYSIS.md, plus the full teardown
+ * of 2026-09-08 (section spine, type scale, control geometry, motion vocabulary, icon grid).
  *
- * 🔴🔴 THERE ARE NO DECORATIVE GRADIENTS ON THIS PAGE, ON PURPOSE. Swept with animation forced off,
- * figma.com carries ONE gradient (a conic starburst in brand blue) and x.ai/bot carries TWO, both
- * functional (a fade-to-ground scrim, a dot lattice). What makes those pages read as expensive is a
- * rigid section rhythm on ONE ground, headline type at line-height 1.0 with negative tracking at
- * weight 400 to 500, and shadows at 10% or less. Colour washes would move us away from the two
- * references, not toward them.
+ * Owner, 2026-09-09: "figma leads, use sana where it doesn't fight" and "use Figma as the
+ * reference for the landing page ... replace the images with gradients before you actually use
+ * the actual in-app because we're actually redesigning the in-app stuff".
  *
- * 🔴 THE PRODUCT FRAME HOLDS REAL COMPONENTS, NOT A SCREENSHOT. `ProductFrame` drives the actual
- * session renderer with actual session data, so the page cannot drift from the product and there is
- * no image to re-export when the app changes. Both references use captured screens; this is ours.
+ * WHAT IS THEIRS. The skeleton, and only the skeleton: a 1360 well on 40px gutters, ten sections
+ * at a uniform 80px of padding on ONE white ground, a three-column hero (headline left, art
+ * centred, a 224x84 slab of a call to action right), two-tone section heads where the
+ * continuation is the same size and weight at 54% ink, a 348x433 media strip on 16px gutters, a
+ * 44px pull quote against an 88px stat, a 1360x136 closing band at radius 24, and a black footer
+ * on 120px of padding with 12px mono column heads.
+ *
+ * WHAT IS OURS. Every word, the character, and the art. Figma's frames hold screenshots of their
+ * product; ours hold gradient panels, because the app is mid-redesign and putting a picture of a
+ * screen that is about to change in front of every visitor is worse than putting no screen there
+ * at all. When the redesign lands, the gradients come out and real product art goes into the same
+ * frames at the same sizes.
+ *
+ * 🔴 THE PREVIOUS VERSION OF THIS FILE SAID "THERE ARE NO GRADIENTS ON THIS PAGE, ON PURPOSE",
+ * and that note was right about the thing it was actually defending: figma.com carries ONE
+ * gradient across 8,973px, and washes behind the type are what make an AI landing page look
+ * generic. That still holds. The page ground here is flat white and the type sits on nothing.
+ * Gradients appear only INSIDE the frames where the reference has a photograph, which is a
+ * different decision from the one that note refused.
  *
  * Lives at /preview rather than replacing `/` so it can be compared against the live page first.
  */
 export default function ReferenceLanding() {
   return (
-    <div className="ref-page" style={{ background: "var(--bg)", color: "var(--text)" }}>
+    <div className="ref-page">
       <Nav />
 
-      {/* ── Hero. Measured anatomy from x.ai/bot: eyebrow, 20px, h1, 20px, sub, 28px, actions.
-             Explicit margins rather than a flex gap, because each step is tuned separately. */}
+      {/* ── HERO. Measured 860px tall. The h1 is deliberately held to 328px so it wraps to four
+             short lines: a headline that fills the viewport reads as a template, one that stacks
+             reads as a poster. That single constraint does more for the fold than anything else
+             on their page. */}
+      <section className="ref-hero">
+        <div className="ref-hero-in">
+          <h1 className="ref-h1">An academic OS for whatever you are studying</h1>
+
+          {/* Their slot holds a Vimeo loop of the product at 581x700. Ours holds gradient art
+              with the character standing on it: the character is the one thing neither reference
+              has, and on a page that is otherwise ink on paper it carries the brand alone.
+
+              🔴 THE PALE VARIANT, NOT THE DEEP ONE. The character is flat black — that is the
+              shipped mark, not a bug — so on the navy mesh it read as a hole punched through the
+              panel. `ice` gives it a field to sit on. The deep meshes still carry the strip below,
+              where nothing dark sits on top of them. */}
+          <div className="ref-hero-art">
+            <GradientArt variant="ice" radius={24} drift>
+              <div
+                style={{
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Mascot size={300} />
+              </div>
+            </GradientArt>
+          </div>
+
+          <a className="ref-hero-cta" href="/app">
+            <span className="ref-lead">Start free</span>
+          </a>
+        </div>
+      </section>
+
+      {/* ── Two-tone head. Measured: both halves are 30/400/-0.66; only the colour changes. */}
       <section className="ref-section">
-        {/* 🔴 A TWO-COLUMN HERO IS OUR ADDITION, NOT THE REFERENCES'. Both x.ai/bot and figma.com
-            run a single left-aligned column with the product frame beneath. We put the character
-            beside the headline because it is the one thing on this page neither reference has, and
-            because it is the only coloured object in the whole design: the interface is ink on
-            paper so that the mascot carries the brand alone. It is also the only interactive thing
-            above the fold, and it is pokeable. */}
-        <div className="ref-container ref-hero">
-          <div>
-            <a className="ref-eyebrow" href="/principles">
-              <Dot />
-              The canvas is the front door
-            </a>
-            <h1 className="ref-h1" style={{ marginTop: 20 }}>
-              An academic OS for whatever you are studying
-            </h1>
-            <p className="ref-sub" style={{ marginTop: 20 }}>
-              Bring a lecture, a paper, a scan of a page. Nemesis reads it, thinks with you on a
-              canvas, and makes the things you need to actually learn it.
-            </p>
-            <div style={{ marginTop: 28, display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <Cta href="/pricing" primary>
-                Start free
-              </Cta>
-              <Cta href="/about">See how it works</Cta>
+        <div className="ref-container">
+          <div className="ref-head-c">
+            <h2 className="ref-lead" style={{ display: "inline" }}>
+              One workspace for everything you are trying to learn.
+            </h2>{" "}
+            <span className="ref-lead ref-dim">
+              Bring a lecture, a paper, a scan of a page. Nemesis reads it and thinks with you.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Feature two-up. Measured inset of 114.7px inside the well. */}
+      <section className="ref-section" style={{ paddingTop: 0 }}>
+        <div className="ref-container">
+          <div className="ref-two-up">
+            <Feature
+              title="Read anything you put in front of it"
+              body="Slides, PDFs, recordings, photographs of a whiteboard."
+              cta="See what it reads"
+            />
+            <Feature
+              round={false}
+              title="Make the things you actually study from"
+              body="Notes, cards, tests, a course map, all from your own material."
+              cta="See what it makes"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="ref-section">
+        <div className="ref-container">
+          <div className="ref-head-c">
+            <h2 className="ref-lead" style={{ display: "inline" }}>
+              The canvas is the front door.
+            </h2>{" "}
+            <span className="ref-lead ref-dim">
+              Ask a question and the answer lands on a board you can keep working on, next to the
+              source it came from.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Media strip. Measured 348x433 on a 364px pitch, full bleed past the well. */}
+      <section className="ref-section">
+        <div className="ref-container">
+          <div className="ref-head-row">
+            <div className="ref-head-l">
+              <h2 className="ref-lead" style={{ display: "inline" }}>
+                Precise where it matters. Quiet everywhere else.
+              </h2>{" "}
+              <span className="ref-lead ref-dim">
+                Every tool you need to take something apart and put it back together.
+              </span>
+            </div>
+            <Link href="/principles" style={{ flex: "0 0 auto", marginTop: 10 }}>
+              How it thinks
+            </Link>
+          </div>
+        </div>
+        <div className="ref-strip" style={{ marginTop: 63 }}>
+          <GradientArt variant="cyan" radius={0} />
+          <GradientArt variant="dusk" radius={0} />
+          <GradientArt variant="azure" radius={0} />
+          <GradientArt variant="cobalt" radius={0} />
+        </div>
+        <div className="ref-strip" style={{ marginTop: 16 }}>
+          <GradientArt variant="ice" radius={0} />
+          <GradientArt variant="deep" radius={0} />
+          <GradientArt variant="azure" radius={0} />
+          <GradientArt variant="cyan" radius={0} />
+        </div>
+      </section>
+
+      {/* ── Quote and stat. Measured: 44px quote against an 88px number behind a 1px rule. */}
+      <section className="ref-section">
+        <div className="ref-container">
+          <h2 className="ref-h2" style={{ marginBottom: 107 }}>
+            Built for the work you were already doing
+          </h2>
+          <div className="ref-quote-row">
+            <div className="ref-quote">
+              <p className="ref-h2">
+                “I stopped keeping a separate pile of notes. The material goes in, and the thing I
+                revise from comes out of the same place I asked the question.”
+              </p>
+              <div className="ref-byline">
+                <GradientArt variant="dusk" radius={9999} className="ref-byline-art" />
+                <div>
+                  <p className="ref-body">A second-year law student</p>
+                  <p className="ref-body ref-dim">On the canvas, not the notes app</p>
+                </div>
+              </div>
+            </div>
+            <div className="ref-stat-col">
+              <p className="ref-stat">17</p>
+              <p className="ref-body ref-dim" style={{ marginTop: 27 }}>
+                File formats read on the way in, from slide decks to handwriting
+              </p>
+              <p className="ref-meta ref-dim" style={{ marginTop: 42 }}>
+                Counted in the app, September 2026.
+              </p>
             </div>
           </div>
-          <div className="ref-hero-character">
-            <Mascot size={300} />
-          </div>
-        </div>
-
-        {/* The product frame: radius 24, one shadow at 10%, contents clipped rather than faded. */}
-        <div className="ref-container" style={{ marginTop: 48 }}>
-          <ProductFrame />
         </div>
       </section>
 
-      <Section
-        heading="It reads what you actually have"
-        body="Slides, a textbook chapter, a photographed whiteboard, a recording. Seventeen formats, and it tells you plainly what it could and could not read."
-      >
-        <Trio
-          items={[
-            { title: "Drop anything", body: "PDFs, decks, documents, images, audio. It parses the structure, not just the words." },
-            { title: "Ask across all of it", body: "Every source on the canvas answers together, or tick the ones you want." },
-            { title: "Keep the thread", body: "Chats live on the canvas beside the material they came from." },
-          ]}
-        />
-      </Section>
-
-      <Section
-        heading="Then it makes the things you need"
-        body="Flashcards on a real scheduler, tests that mark themselves, notes, decks, mind maps. Everything it makes opens in the panel, not scattered across the board."
-      >
-        <Trio
-          items={[
-            { title: "Cards that come back", body: "Spaced repetition underneath, so the ones you miss return sooner." },
-            { title: "Tests with hints", body: "Answer in the panel. Your progress survives closing it." },
-            { title: "Notes you own", body: "Written to your library, editable, yours to take away." },
-          ]}
-        />
-      </Section>
-
-      {/* ── The mascot. Neither reference has a character, so this composition is ours. It gets a
-             section to itself because the character IS the accent: nothing else on this page is
-             coloured, so it carries the whole warmth of the brand on its own. */}
+      {/* ── Closing band. Measured 1360x136, radius 24, label at 56px. */}
       <section className="ref-section">
-        <div
-          className="ref-container"
-          style={{ display: "flex", gap: 48, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}
-        >
-          <div style={{ flex: "0 0 auto" }}>
-            <Mascot size={200} />
-          </div>
-          <div style={{ flex: "1 1 380px", minWidth: 280 }}>
-            <h2 className="ref-h2">It is a study partner, not a chat box</h2>
-            <p className="ref-sub" style={{ marginTop: 16 }}>
-              Nemesis explains first and then holds its ground. It asks you a question before it
-              builds you a course, and it will tell you when you have got something wrong.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="ref-section">
-        <div className="ref-container" style={{ textAlign: "center" }}>
-          <h2 className="ref-h2" style={{ marginInline: "auto" }}>
-            Start with one lecture
+        <div className="ref-container">
+          <h2 className="ref-h2 ref-head-c" style={{ margin: "0 auto 60px", textAlign: "center" }}>
+            Put your material somewhere it can think
           </h2>
-          <p className="ref-sub" style={{ marginTop: 16, marginInline: "auto" }}>
-            Free to try. No card.
-          </p>
-          <div style={{ marginTop: 28, display: "flex", gap: 12, justifyContent: "center" }}>
-            <Cta href="/pricing" primary>
-              Start free
-            </Cta>
-          </div>
         </div>
+        <a className="ref-cta-band" href="/app">
+          <span style={{ fontSize: 56, fontWeight: 400, lineHeight: "56px", letterSpacing: "-1.25px" }}>
+            Start free
+          </span>
+        </a>
       </section>
+
+      <Foot />
     </div>
   );
 }
 
+/* ── Nav. Measured 78.39px with a hairline bottom; labels render at 16/400, not the 18/330 that
+      sits on their anchor. The two pills are 46.39px at radius 8 with 12/22 padding. */
 function Nav() {
   return (
     <header className="ref-nav">
-      <div className="ref-container" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <a href="/" style={{ fontSize: 16, fontWeight: 500, letterSpacing: "-0.01em", color: "var(--text)", textDecoration: "none" }}>
-          Nemesis
+      <div className="ref-nav-in">
+        <a href="/" aria-label="Nemesis home" style={{ display: "flex", marginRight: 24 }}>
+          <NemesisLockup size={26} />
         </a>
-        <nav style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Cta href="/pricing">Pricing</Cta>
-          <Cta href="/app" primary>
-            Open
-          </Cta>
+        <nav className="ref-nav-links">
+          <a className="ref-nav-link" href="/principles">
+            How it thinks
+          </a>
+          <a className="ref-nav-link" href="/about">
+            About
+          </a>
+          <a className="ref-nav-link" href="/pricing">
+            Pricing
+          </a>
         </nav>
+        <div className="ref-nav-actions">
+          <a className="ref-btn" href="/app" style={{ padding: 8 }}>
+            Log in
+          </a>
+          <a className="ref-btn ref-btn-outline" href="/about">
+            Talk to us
+          </a>
+          <a className="ref-btn ref-btn-solid" href="/app">
+            Start free
+          </a>
+        </div>
       </div>
     </header>
   );
 }
 
-/** 🔴 THE PRIMARY ACTION IS INK, NOT A BRAND COLOUR — the app's rule, kept here so the character
- *  stays the only coloured thing on the page. Measured on x.ai and champ: both use their darkest
- *  neutral for the main call to action. */
-function Cta({ href, children, primary }: { href: string; children: React.ReactNode; primary?: boolean }) {
+function Feature({
+  title,
+  body,
+  cta,
+  round = true,
+}: {
+  title: string;
+  body: string;
+  cta: string;
+  round?: boolean;
+}) {
   return (
-    <a
-      href={href}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        height: 40,
-        padding: "0 18px",
-        borderRadius: 9999,
-        fontSize: 14,
-        fontWeight: 500,
-        textDecoration: "none",
-        background: primary ? "var(--text)" : "transparent",
-        color: primary ? "var(--bg)" : "var(--text)",
-        border: primary ? "1px solid transparent" : "1px solid rgba(var(--fg), 0.10)",
-      }}
-    >
-      {children}
-    </a>
-  );
-}
-
-function Section({ heading, body, children }: { heading: string; body: string; children?: React.ReactNode }) {
-  return (
-    <section className="ref-section">
-      <div className="ref-container">
-        <h2 className="ref-h2">{heading}</h2>
-        <p className="ref-sub" style={{ marginTop: 16 }}>
-          {body}
-        </p>
-        {children ? <div style={{ marginTop: 40 }}>{children}</div> : null}
-      </div>
-    </section>
-  );
-}
-
-function Trio({ items }: { items: { title: string; body: string }[] }) {
-  return (
-    <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-      {items.map((item) => (
-        <div className="ref-card" key={item.title} style={{ padding: 24 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 500, letterSpacing: "-0.01em" }}>{item.title}</h3>
-          <p style={{ marginTop: 8, fontSize: 15, lineHeight: 1.6, color: "var(--text-2)" }}>{item.body}</p>
-        </div>
-      ))}
+    <div>
+      <div className="ref-feat-ico" style={round ? undefined : { borderRadius: 2 }} />
+      <h3 className="ref-body" style={{ margin: "0 0 2px" }}>
+        {title}
+      </h3>
+      <p className="ref-body ref-dim" style={{ margin: "0 0 20px" }}>
+        {body}
+      </p>
+      <Link href="/principles">{cta}</Link>
     </div>
   );
 }
 
-function Dot() {
-  return <span aria-hidden style={{ width: 6, height: 6, borderRadius: 9999, background: "var(--text)", opacity: 0.5 }} />;
+/** The arrow is Figma's own geometry, read out of their DOM: a FILLED outline on a 24x24 grid
+ *  with a 0.13px stroke used to thicken it, not a stroked chevron-and-line. Drawing it by eye
+ *  is what made an earlier pass look subtly wrong. */
+function Link({
+  href,
+  children,
+  style,
+}: {
+  href: string;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <a className="ref-link" href={href} style={style}>
+      {children}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          fill="currentColor"
+          stroke="currentColor"
+          strokeWidth="0.13"
+          d="m12.57 4.205 7.477 7.75.043.045-.043.045-7.478 7.75-.046.047-.046-.045-.734-.71-.046-.044.045-.047 6.195-6.42H3.935v-1.151h14.003l-6.196-6.421-.045-.047.046-.045.734-.709.046-.045z"
+        />
+      </svg>
+    </a>
+  );
+}
+
+/* ── Footer. Measured: black, 120px padding, a 60px gutter of its own, 180px columns on a 240px
+      pitch, and heads in 12px mono uppercase at +0.6px — the only positive tracking on the page. */
+function Foot() {
+  const cols = [
+    { head: "Product", links: ["The canvas", "Reading", "Study tools", "Pricing"] },
+    { head: "Learn", links: ["How it thinks", "Principles", "What it reads", "Changelog"] },
+    { head: "Company", links: ["About", "Contact", "Privacy", "Terms"] },
+  ];
+  return (
+    <footer className="ref-foot">
+      <div className="ref-foot-in">
+        <div className="ref-foot-brand">
+          <div style={{ fontSize: 44, fontWeight: 400, lineHeight: "48.4px", letterSpacing: "-0.66px" }}>
+            Nemesis
+          </div>
+        </div>
+        <div className="ref-foot-cols">
+          {cols.map((col) => (
+            <div className="ref-foot-col" key={col.head}>
+              <h4 className="ref-mono">{col.head}</h4>
+              <ul>
+                {col.links.map((l) => (
+                  <li key={l}>
+                    <a href="/">{l}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </footer>
+  );
 }

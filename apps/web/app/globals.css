@@ -4,6 +4,16 @@
    round trip to a third party before any styled text can paint. */
 
 @layer theme, base, components, utilities;
+/* Inter Variable, self-hosted through the bundler from node_modules — NOT the third-party
+   @import removed above. These resolve to files served from our own origin, so there is no
+   extra DNS/TLS round trip before text paints, and `unicode-range` means a visitor downloads
+   only the subset their text needs (Latin roman is 71 KB for the whole 100-900 range).
+   `opsz.css` is the OPTICAL-SIZE cut, not the plain weight cut: it carries Inter's `opsz` axis,
+   which browsers drive from font-size by default (`font-optical-sizing: auto` is the initial
+   value). That axis is the whole reason this face was chosen over any other open sans — it is
+   what keeps 11px chrome legible and 32px display tight in one family. See /design/TOKENS.md 2.1. */
+@import "@fontsource-variable/inter/opsz.css";
+@import "@fontsource-variable/inter/opsz-italic.css";
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 /* Desktop-parity token layer + workspace utilities. Imported here (not from layout.tsx) so
@@ -451,10 +461,10 @@
      shell that actually renders used 52px — the drift had already happened. */
   --rail: var(--nav-sidebar-width); --rail-collapsed: var(--nav-rail-width);
   --radius-pill: 28px; --radius-menu: 12px; --radius-menu-item: 8px;
-  --font: -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font: "Inter Variable", -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
   /* Desktop has no serif display face — the serif slot now resolves to the sans
      stack so old headline styles quietly join the one identity. */
-  --font-serif: -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-serif: "Inter Variable", -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
   --glow: 0.12;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px -4px rgba(0, 0, 0, 0.07);

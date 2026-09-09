@@ -1,5 +1,42 @@
 # Where the references disagree, and what we decided
 
+> ## THE OWNER'S RULING, 2026-09-09
+>
+> **"figma leads, use sana where it doesn't fight."**
+>
+> Everything below this line was written before that ruling, when the eight conflicts were being
+> resolved case by case on their merits. Several of those resolutions split the difference. They no
+> longer get to. Where a decision below disagrees with figma.com, figma.com wins unless following it
+> would break something Figma has no opinion about.
+>
+> ### What the ruling changes
+>
+> | # | Conflict | Was decided | Now |
+> |---|---|---|---|
+> | 1 | Radius | split by role | **Figma's role split stands.** It was already Figma's model. |
+> | 2 | Type size | two densities, 11px chrome / 16px content | **Stands.** Figma's own page runs two densities. |
+> | 3 | Accent | Sana's decorative model | **Reversed.** Figma's page has no decorative accent at all: ink, paper, and one 54% grey. Colour is functional or it is art inside a frame. |
+> | 4 | Colour naming | Figma's grammar | **Stands.** |
+> | 5 | Ground | a cool tinted ground | **Reversed.** figma.com runs pure `rgb(255,255,255)` on all ten sections and never bands. The landing page is now one flat white. |
+> | 6 | Motion | Sana's tiered model | **Reversed for the landing, kept for the sign-in.** Measured 2026-09-08: Figma's entire 8,973px page is eight transition recipes, almost all `0.18s ease-out`, plus one 25s rotation. No spring, no reveals, no stagger. Sana runs a real spring and 2s word reveals. The landing takes Figma's restraint; the sign-in is a surface Figma has no opinion about, so it takes Sana's. |
+> | 7 | Weight | cap at 600 | **Tightened to 400 for landing display type.** Nothing on figma.com exceeds 400 anywhere. They get emphasis from colour: first sentence in ink, continuation at 54% in the same size and weight. |
+> | 8 | Icon stroke | 1.5 | **Stands**, but the icon GRID is now Figma's measured 24x24 with `currentColor`, and their UI marks are reproduced from the real path data rather than drawn by eye. |
+>
+> ### The test for "doesn't fight"
+>
+> Sana is allowed to win only where figma.com is silent. Sana's sign-in is better than Figma's
+> (which is a plain centred card), so `/dev-preview/sign-in` is Sana's anatomy and Sana's easing
+> end to end. Sana's sand bands, fractional weights and denser 14px base all have a Figma
+> counterpart, so they lose.
+>
+> ### The one thing all three references agree on
+>
+> Every neutral is one ink at an alpha step. Figma: black at 54% and 16%. Sana: `rgb(10,18,23)` at
+> 60/40/25/8/4. x.ai the same. None of them ships a grey palette. We already built it this way, and
+> the ruling does not touch it.
+
+---
+
 Each conflict below is real: two measured systems giving different answers to the same question.
 Averaging them would produce mush, so each one gets an explicit decision and a reason.
 
