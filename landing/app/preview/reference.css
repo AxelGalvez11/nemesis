@@ -1,0 +1,155 @@
+/* ── Landing structure, measured ───────────────────────────────────────────────────────────────
+   Canonical source: /research/design-references/LANDING_PATTERNS.md.
+
+   🔴🔴 NO DECORATIVE GRADIENTS, AND THAT IS THE MEASURED FINDING, NOT A PREFERENCE. figma.com
+   carries exactly ONE gradient on its whole page (a conic starburst in brand blue); x.ai/bot
+   carries TWO, and neither is decorative — a fade-to-ground scrim and a dot lattice. Their modern
+   quality comes from a rigid section rhythm, one ground, large quiet type and very faint shadows
+   on large-radius frames. Adding colour washes would move us AWAY from the two references, which
+   is why the owner chose "match the references" when shown this.
+
+   🔴 THE MARKETING RADIUS LADDER (10/16/24) IS DELIBERATELY LOOSER THAN THE APP'S (4/6). Figma
+   proves the split inside one brand: their product runs at 4 to 5px radii and 11px type, their
+   marketing site at 12 to 24px and 16px. A product frame is a PICTURE OF the app, not the app. */
+
+.ref-page {
+  /* One ground for the entire page. Vertical padding is the only separator: Figma ships 8 sections
+     all at `padding: 80px 0` on pure white, with no alternating bands and no dividers. */
+  --ref-container: 1280px;
+  --ref-gutter: 24px;
+  --ref-section-y: 80px;
+  --ref-measure: 672px;   /* sub-copy, and the app's reading column */
+  --ref-hero-measure: 560px;
+  --ref-frame-radius: 24px;
+  --ref-card-radius: 16px;
+  --ref-inner-radius: 10px;
+  /* Measured: rgba(37,37,37,0.10) on the hero frame, 2.5% on cards. Nothing heavier anywhere. */
+  --ref-frame-shadow: 0 24px 70px rgba(var(--fg), 0.10);
+  --ref-card-shadow: 0 2px 10px rgba(var(--fg), 0.025);
+}
+
+.ref-section { padding-block: var(--ref-section-y); }
+.ref-container {
+  max-width: var(--ref-container);
+  margin-inline: auto;
+  padding-inline: var(--ref-gutter);
+}
+
+/* 🔴 HERO TYPE IS LINE-HEIGHT EXACTLY 1.0, TRACKING -1.2px, WEIGHT 500. Two independently designed
+   products landed on the same numbers: x.ai 60/500/lh 60/-1.2, Figma 56/400/lh 56/-1.25. Neither is
+   bold. `clamp` keeps the ratio at every width rather than stepping the size per breakpoint. */
+.ref-h1 {
+  font-size: clamp(40px, 5.4vw, 60px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  /* 🔴 THE NARROW MEASURE IS THE COMPOSITIONAL TRICK. Figma sets its 56px headline in a 336px
+     column so it WRAPS into short stacked lines. A headline that fills the viewport reads as a
+     template; one that wraps reads as designed. */
+  max-width: var(--ref-hero-measure);
+  text-wrap: balance;
+}
+.ref-h2 {
+  font-size: clamp(28px, 3.2vw, 36px);
+  font-weight: 400;
+  line-height: 1.11;
+  letter-spacing: -0.02em;
+  max-width: 20ch;
+  text-wrap: balance;
+}
+.ref-sub {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.625;
+  max-width: var(--ref-measure);
+  color: var(--text-2);
+}
+
+/* The eyebrow pill, measured at 279x38 with padding 6px 6px 6px 10px and a 10px gap. */
+.ref-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid rgba(var(--fg), 0.08);
+  border-radius: 9999px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+/* 🔴 THE PRODUCT FRAME CLIPS ITS CONTENTS rather than fading them out: x.ai's 976x660 frame is
+   `overflow: hidden` with one soft shadow. A frame that fades at the edges reads as a screenshot
+   with a vignette; one that clips reads as a window. */
+.ref-frame {
+  border-radius: var(--ref-frame-radius);
+  overflow: hidden;
+  box-shadow: var(--ref-frame-shadow);
+  border: 1px solid rgba(var(--fg), 0.06);
+  background: var(--bg);
+}
+.ref-card {
+  border-radius: var(--ref-card-radius);
+  background: rgba(var(--fg), 0.02);
+  border: 1px solid rgba(var(--fg), 0.05);
+  box-shadow: var(--ref-card-shadow);
+}
+
+/* Nav measured at 64px, no shadow, no border. */
+.ref-nav { height: 64px; }
+
+@media (max-width: 768px) {
+  .ref-page { --ref-section-y: 56px; --ref-gutter: 16px; }
+}
+
+/* 🔴 THE FRAME SIZES ITSELF TO THE SESSION SURFACE rather than imposing an aspect ratio on it.
+   Forcing 976/660 on content that wants a different shape is what produced ~270px of dead space
+   above and below the canvas on the first build. The reference ratio is a RESULT of their content,
+   not a constraint they applied to it. */
+.ref-frame-inner {
+  /* 🔴 `position: relative` AND A REAL HEIGHT, because `.sess` is `position: absolute; inset: 0`.
+     Without both, the frame collapsed to 42px and the session overflowed it by 27x. Measured. */
+  position: relative;
+  /* 🔴 2.29:1 IS THE SCENES' OWN viewBox RATIO, not x.ai's 1.48. Their frame ratio is a RESULT of
+     their content, and home.css already records what happens when this is imposed rather than
+     derived: at 3:1 against 2.29:1 artwork every scene letterboxed itself into the middle and sat
+     in two hundred pixels of dead space. */
+  aspect-ratio: 2.29;
+  margin: 20px;
+}
+@media (max-width: 768px) { .ref-frame-inner { margin: 12px; } }
+
+/* 🔴 THE HERO IS TWO COLUMNS, WHICH THE REFERENCES ARE NOT. Both run a single left column with the
+   product frame beneath. The character earns the second column because it is the only coloured
+   object on an otherwise ink-on-paper page, and the only interactive thing above the fold.
+   It collapses BELOW the copy on narrow screens rather than shrinking beside it: a 300px character
+   squeezed next to a wrapped headline reads as clutter, and the copy is what has to land first. */
+.ref-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 48px;
+  align-items: center;
+}
+.ref-hero-character { justify-self: end; }
+
+@media (max-width: 900px) {
+  .ref-hero { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .ref-hero-character { justify-self: start; }
+}
+
+/* 🔴 THE CHARACTER SCALES ON A PHONE, AND `size` ALONE WILL NOT DO IT. `Mascot` takes a pixel size
+   at render, so a 300px character stayed 300px on a 390px viewport: 77% of the screen width,
+   measured. Scaling the rendered SVG keeps one component and one prop while letting CSS own the
+   responsive behaviour, which is where it belongs. */
+@media (max-width: 600px) {
+  .ref-hero-character svg { width: 180px; height: 180px; }
+}
+
+/* 🔴 CARDS AT 3% AND 6%, NOT 2% AND 5%. At the first values they read as very faint rectangles
+   rather than as surfaces, which is the failure mode on the OTHER side of "no unnecessary
+   containers": a container so quiet it neither groups nor separates is doing nothing at all.
+   x.ai's equivalent cards measure rgba(16,16,0,0.04) with a real border. */
+.ref-card {
+  background: rgba(var(--fg), 0.03);
+  border-color: rgba(var(--fg), 0.06);
+}
