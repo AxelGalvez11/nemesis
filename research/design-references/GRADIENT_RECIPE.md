@@ -51,6 +51,17 @@ prompt:
 The negatives carry most of the weight. Without "no bokeh circles, no streaks, no detail" the
 model produces busy macro photography, which is the *genre* but not the *composition*.
 
+### Two corrections found by looking at the output
+
+**Do not put a near-white stop in the palette.** Giving `#FFE6B8` / `#EEF9A8` / `#FFDCE4` as the
+lightest colour made the model fill half the frame with it, and three of six came back washed out.
+Weight every palette toward the saturated end and add the negatives *"no white areas, no pale
+washed out regions, colour edge to edge"*.
+
+**One colour family per image, and vary the family across the set.** Not one fixed hue (flat) and
+not several families in one image (cheap). openai.com ships a blue one, an orange one, a green one
+and a pink one — each internally coherent. Ours: orange, lime, emerald, azure, coral, violet.
+
 Then: `magick <in> -resize 1400x1400 -quality 82 -define webp:method=6 <out>.webp` — 2MB PNG down
 to roughly 15KB, which is what makes them shippable in a public repo.
 
