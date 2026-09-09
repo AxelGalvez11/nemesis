@@ -110,17 +110,32 @@ export default function SanaShapedSignIn() {
       {/* Measured: 706.3x720 at radius 18 on rgb(23,24,26), cropping artwork that is deliberately
           LARGER than the frame (731.9x751.1, offset -12.8/-15.5) so it bleeds past every edge. */}
       <section className="sig-panel" aria-hidden="true">
-        <div className="sig-panel-art">
-          <div className="sig-panel-mesh" />
-          <svg className="sig-panel-grain" focusable="false">
-            <filter id={`sig-grain-${grainId}`}>
-              <feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves="3" stitchTiles="stitch" />
-              <feColorMatrix type="saturate" values="0" />
-            </filter>
-            <rect width="100%" height="100%" filter={`url(#sig-grain-${grainId})`} />
-          </svg>
-          <div className="sig-panel-shaft" />
+        {/* 🔴 THE COMPUTER IS THE SUBJECT, NOT THE GRADIENT. Sana's panel holds a photograph of a
+            laptop running their product, cropped by the frame. The first pass here kept the frame
+            and replaced its contents with a flat wash, which is how the thing the owner actually
+            picked the page for went missing. The machine is built in CSS 3D rather than
+            photographed because the app is being redesigned: a real screenshot today would be a
+            picture of something about to change. The mesh is what is ON the screen, and when the
+            redesign lands the product replaces it in the same laptop at the same angle. */}
+        <div className="sig-stage">
+          <div className="sig-laptop">
+            <div className="sig-lid">
+              <div className="sig-screen">
+                <div className="sig-panel-mesh" />
+                <svg className="sig-panel-grain" focusable="false">
+                  <filter id={`sig-grain-${grainId}`}>
+                    <feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves="3" stitchTiles="stitch" />
+                    <feColorMatrix type="saturate" values="0" />
+                  </filter>
+                  <rect width="100%" height="100%" filter={`url(#sig-grain-${grainId})`} />
+                </svg>
+                <div className="sig-glass" />
+              </div>
+            </div>
+            <div className="sig-deck" />
+          </div>
         </div>
+        <div className="sig-panel-shaft" />
       </section>
     </div>
   );

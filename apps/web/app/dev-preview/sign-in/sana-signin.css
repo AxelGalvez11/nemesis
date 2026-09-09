@@ -150,6 +150,79 @@
   border-radius: 18px; background: var(--sig-panel); overflow: hidden; isolation: isolate;
 }
 .sig-panel-art { position: absolute; left: -12.8px; top: -15.5px; width: 731.9px; height: 751.1px; }
+
+/* ── THE COMPUTER ────────────────────────────────────────────────────────────────────────────
+   🔴 THE FIRST PASS DROPPED THIS AND IT WAS THE POINT. Owner, on picking the page: "I like the
+   way the computer looks." Sana's panel is not a gradient — it is a photograph of a laptop at a
+   three-quarter angle, running their product, cropped by the frame so the machine runs off the
+   bottom and right edges. Replacing it with a flat wash kept the box and threw away the subject.
+
+   Ours is built rather than photographed: a laptop in CSS 3D, screen holding the brand mesh. It
+   is drawn instead of shot because the app is mid-redesign, so a real screenshot would be a
+   picture of something about to change. When the redesign lands the mesh comes out and the
+   product goes in, in the same screen, at the same angle.
+
+   Measured off their shot: the machine is turned away from the viewer to the LEFT, tipped back a
+   few degrees, and sits low and right so roughly a third of it is outside the frame. */
+.sig-stage {
+  position: absolute; inset: 0;
+  perspective: 2200px; perspective-origin: 46% 46%;
+}
+.sig-laptop {
+  position: absolute;
+  /* 🔴 SIZED SO THE WHOLE MACHINE READS. The first attempt ran 108% wide from 20% left, which
+     cropped everything but one corner — a laptop you cannot recognise is just a dark shape.
+     Theirs shows the entire screen with the body running off the bottom and right only. */
+  left: 6%; top: 19%; width: 90%;
+  transform-style: preserve-3d;
+  transform: rotateX(8deg) rotateY(-17deg) rotateZ(-1deg);
+  animation: sig-laptop-in 1.4s var(--sig-spring) both 0.15s;
+}
+/* The lid. A dark bezel with the screen inset — the bezel is NOT black, it is a lighter grey than
+   the panel behind it, which is what makes the machine read as an object sitting in a space
+   rather than a hole cut in the panel. */
+.sig-lid {
+  position: relative; aspect-ratio: 16 / 10.4; border-radius: 18px;
+  background: linear-gradient(150deg, #3a3d42 0%, #24262a 44%, #16181b 100%);
+  padding: 10px 10px 14px;
+  box-shadow: 0 46px 90px rgba(0, 0, 0, 0.44), 0 2px 0 rgba(255, 255, 255, 0.10) inset;
+}
+.sig-screen {
+  position: relative; width: 100%; height: 100%; border-radius: 10px; overflow: hidden;
+  background: #0b1020;
+}
+/* The camera dot, which is the detail that stops the lid reading as a picture frame. */
+.sig-lid::before {
+  content: ""; position: absolute; top: 4.5px; left: 50%; width: 4px; height: 4px;
+  border-radius: 50%; background: rgba(255, 255, 255, 0.22); transform: translateX(-50%);
+}
+/* The deck, in perspective below the lid. A trapezoid, because a laptop base seen from above is
+   never a rectangle — squaring it off is the thing that makes CSS laptops look like toys. */
+.sig-deck {
+  /* Deep enough to read as a base rather than a shelf. A real machine at this angle shows a
+     shallow wedge under the lid; 15px read as a lip the screen was resting on. */
+  position: relative; height: 26px; margin: 0 -2.4%;
+  background: linear-gradient(180deg, #4a4d53 0%, #2a2c30 60%, #191b1e 100%);
+  border-radius: 0 0 14px 14px;
+  clip-path: polygon(1.6% 0, 98.4% 0, 100% 100%, 0 100%);
+  box-shadow: 0 30px 46px rgba(0, 0, 0, 0.42), 0 1px 0 rgba(255, 255, 255, 0.14) inset;
+}
+/* The notch you press to open it. */
+.sig-deck::after {
+  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 13%; height: 3px; border-radius: 0 0 4px 4px; background: rgba(0, 0, 0, 0.34);
+}
+/* A single specular sweep across the glass. Screens reflect; a screen that does not read as a
+   printed panel. */
+.sig-glass {
+  position: absolute; inset: 0; pointer-events: none; border-radius: 10px;
+  background: linear-gradient(112deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 18%,
+              rgba(255,255,255,0) 42%);
+}
+@keyframes sig-laptop-in {
+  from { opacity: 0; transform: rotateX(8deg) rotateY(-17deg) rotateZ(-1deg) translate3d(22px, 26px, -80px); }
+  to   { opacity: 1; transform: rotateX(8deg) rotateY(-17deg) rotateZ(-1deg) translate3d(0, 0, 0); }
+}
 .sig-panel-mesh {
   position: absolute; inset: -14%;
   background:
