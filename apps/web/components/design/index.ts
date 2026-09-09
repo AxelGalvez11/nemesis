@@ -9,3 +9,4 @@ export { Icon, ICON_SIZES, ICON_TONES, ICON_FOR_CONTROL, type IconSize, type Ico
 export { Button, IconButton, BUTTON_VARIANTS, BUTTON_SIZES, ICON_BUTTON_SIZES, type ButtonVariant, type ButtonSize } from "./button";
 export { Surface, Stack, Row, Container, Card, Divider, SPACE, RADII, ELEVATIONS, type Space, type Radius, type Elevation } from "./layout";
 export { Input, Textarea, Checkbox, Toggle, SegmentedControl } from "./controls";
+export { GradientField, type GradientFieldProps } from "./gradient-field";

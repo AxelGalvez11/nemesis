@@ -17,6 +17,7 @@ import {
   Text,
   Textarea,
   Toggle,
+  GradientField,
 } from "@/components/design";
 
 import "./system.css";
@@ -177,9 +178,11 @@ export default function DesignSystemPortfolio() {
           <section className="ds-sec" id="gradients">
             <h2>Gradients</h2>
             <p className="ds-rule">
-              <b>One hue each, and neon is bloom.</b> A bright core, blurred at three radii and
-              screened back over a dark base of the same hue. One blur is a soft blob; three read as
-              light. Only lightness and chroma move — the hue never does.
+              <b>Rendered by a WebGL shader, one hue each, and no black anywhere.</b> Lightness
+              runs 0.42 to 0.99 and chroma peaks in the mid-lights, all inside a single hue — the
+              darkest pixel is a deep saturated version of the colour, not a shadow. Four CSS
+              attempts came before this and every one of them reached its dark end by falling to
+              black, which quietly makes a single-hue gradient two colours.
             </p>
             <p className="ds-src">
               <b>The references do not use CSS gradients for hero art at all.</b> Measured by
@@ -189,40 +192,13 @@ export default function DesignSystemPortfolio() {
               match that we render images; CSS is not in the same medium. These are for surfaces
               where a rendered asset would be overkill, and they still never go behind reading text.
             </p>
-            {/* Shared filters. One turbulence field drives the broad flow, a second the fine
-                texture; both are reused by every panel so the page pays for them once. */}
-            <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
-              <filter id="ds-flow" x="-30%" y="-30%" width="160%" height="160%">
-                <feTurbulence type="fractalNoise" baseFrequency="0.004 0.009" numOctaves="3" seed="5" result="n" />
-                <feDisplacementMap in="SourceGraphic" in2="n" scale="170" xChannelSelector="R" yChannelSelector="G" />
-              </filter>
-              <filter id="ds-fine" x="-30%" y="-30%" width="160%" height="160%">
-                <feTurbulence type="fractalNoise" baseFrequency="0.018 0.026" numOctaves="2" seed="17" result="n" />
-                <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G" />
-              </filter>
-              <filter id={`ds-grain-${gid}`}>
-                <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="4" stitchTiles="stitch" />
-                <feColorMatrix type="saturate" values="0" />
-              </filter>
-            </svg>
             <div className="ds-grads" style={{ marginTop: 16 }}>
-              {GRADS.map((g) => {
-                const core = neonCore(g.h, g.c);
-                return (
-                  <div className="ds-grad" key={g.name}>
-                    <div className="ds-grad-l" style={{ background: neonBase(g.h) }} />
-                    <div className="ds-grad-l b1" style={{ background: core }} />
-                    <div className="ds-grad-l b2" style={{ background: core }} />
-                    <div className="ds-grad-l b3" style={{ background: core }} />
-                    <div className="ds-grad-l b4" style={{ background: core }} />
-                    <div className="ds-grad-fall" />
-                    <svg className="ds-grad-grain" aria-hidden="true" focusable="false">
-                      <rect width="100%" height="100%" filter={`url(#ds-grain-${gid})`} />
-                    </svg>
-                    <span className="ds-grad-name">{g.name} · h{g.h}</span>
-                  </div>
-                );
-              })}
+              {GRADS.map((g) => (
+                <div className="ds-grad" key={g.name}>
+                  <GradientField hue={g.h} chroma={Number(g.c) * 4.2} style={{ width: "100%", height: "100%" }} />
+                  <span className="ds-grad-name">{g.name} · h{g.h}</span>
+                </div>
+              ))}
             </div>
           </section>
 
