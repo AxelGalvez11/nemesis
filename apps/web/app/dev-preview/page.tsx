@@ -27,6 +27,11 @@ const GROUPS: { title: string; note: string; items: { href: string; name: string
         note: "Sana's anatomy and Sana's motion, with the laptop rebuilt in CSS. Presentational only; the real /sign-in is untouched.",
       },
       {
+        href: "/dev-preview/cards",
+        name: "Cards",
+        note: "Three card shapes and four accents, with the flip, the grading and the dropdown motion. Every colour measured, with its source.",
+      },
+      {
         href: "/dev-preview/design-variations",
         name: "Design variations",
         note: "Earlier explorations, kept for comparison.",
