@@ -82,54 +82,44 @@
 .ds-bright p { margin: 0; padding: 11px 13px 13px; font-size: 12px; line-height: 17px; color: var(--dim); }
 
 /* ── gradients ───────────────────────────────────────────────────────────────────────────────
-   Built as MESHES: several large radial stops with transparent falloff over a linear base, plus a
-   grain layer. A two-stop linear gradient is the thing that reads as a template; a mesh has a
-   light direction. The grain is what kills 8-bit banding — it is the difference between gradient
-   artwork and a gradient in a div. */
-.ds-grads { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 12px; }
-.ds-grad { position: relative; height: 168px; border-radius: 16px; overflow: hidden; isolation: isolate; }
-.ds-grad-mesh { position: absolute; inset: -12%; }
-.ds-grad-grain { position: absolute; inset: 0; width: 100%; height: 100%;
-                 opacity: 0.16; mix-blend-mode: overlay; pointer-events: none; }
-.ds-grad-shaft { position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(118deg, rgba(255,255,255,.30) 0%, rgba(255,255,255,.06) 26%, rgba(255,255,255,0) 52%); }
-.ds-grad-name { position: absolute; left: 12px; bottom: 11px; z-index: 2; font-size: 11px;
-  font-weight: 500; letter-spacing: .3px; color: rgba(255,255,255,.92);
-  font-family: "JetBrains Mono", ui-monospace, monospace; text-shadow: 0 1px 3px rgba(0,0,0,.3); }
-.ds-grad.on-light .ds-grad-name { color: rgba(10,18,23,.72); text-shadow: none; }
+   🔴 THREE VERSIONS OF THIS WERE WRONG BEFORE THIS ONE, AND THE REASON MATTERS.
+   v1 stacked radial gradients with noise on top. Owner: "the gradients suck ... not just a bunch
+   of blobs." Correct — radials composite by plain alpha-over, so every overlap muddies toward grey
+   and the whole field sits in the midtones with nothing to look at.
+   v2 added displacement warping and blend modes. Better, but multi-hue and gloomy.
+   v3 tuned the ranges. Owner: "don't use multiple colors ... they need to be neonish."
 
-.g-deep   { background: radial-gradient(78% 62% at 12% 8%, rgba(84,212,237,.92) 0%, rgba(84,212,237,0) 62%),
-            radial-gradient(70% 58% at 88% 18%, rgba(115,184,250,.85) 0%, rgba(115,184,250,0) 60%),
-            radial-gradient(90% 72% at 78% 92%, rgba(42,140,205,.90) 0%, rgba(42,140,205,0) 66%),
-            radial-gradient(85% 70% at 22% 88%, rgba(11,96,180,.95) 0%, rgba(11,96,180,0) 64%),
-            linear-gradient(148deg,#0b60b4 0%,#062e86 52%,#0a4ea0 100%); }
-.g-cyan   { background: radial-gradient(84% 70% at 18% 22%, rgba(158,240,255,.95) 0%, rgba(158,240,255,0) 58%),
-            radial-gradient(76% 64% at 82% 10%, rgba(84,212,237,.90) 0%, rgba(84,212,237,0) 60%),
-            radial-gradient(92% 76% at 70% 96%, rgba(42,140,205,.85) 0%, rgba(42,140,205,0) 64%),
-            linear-gradient(160deg,#2a8ccd 0%,#0b60b4 60%,#073a92 100%); }
-.g-azure  { background: radial-gradient(80% 66% at 26% 14%, rgba(115,184,250,.95) 0%, rgba(115,184,250,0) 60%),
-            radial-gradient(88% 70% at 90% 74%, rgba(84,212,237,.80) 0%, rgba(84,212,237,0) 62%),
-            radial-gradient(70% 60% at 8% 92%, rgba(6,46,134,.90) 0%, rgba(6,46,134,0) 58%),
-            linear-gradient(136deg,#0a4ea0 0%,#2a8ccd 55%,#0b60b4 100%); }
-.g-dusk   { background: radial-gradient(82% 68% at 22% 18%, rgba(255,168,142,.85) 0%, rgba(255,168,142,0) 58%),
-            radial-gradient(78% 64% at 86% 24%, rgba(186,140,255,.85) 0%, rgba(186,140,255,0) 60%),
-            radial-gradient(94% 78% at 62% 98%, rgba(11,96,180,.90) 0%, rgba(11,96,180,0) 66%),
-            linear-gradient(152deg,#4a2f8f 0%,#16307e 58%,#062e86 100%); }
-.g-ice    { background: radial-gradient(86% 72% at 20% 16%, rgba(255,255,255,.96) 0%, rgba(255,255,255,0) 56%),
-            radial-gradient(78% 66% at 84% 20%, rgba(158,240,255,.78) 0%, rgba(158,240,255,0) 58%),
-            radial-gradient(88% 74% at 72% 94%, rgba(115,184,250,.72) 0%, rgba(115,184,250,0) 62%),
-            linear-gradient(150deg,#dff2fb 0%,#b9dcf6 54%,#8fc4ee 100%); }
-.g-cobalt { background: radial-gradient(74% 62% at 14% 12%, rgba(115,184,250,.80) 0%, rgba(115,184,250,0) 58%),
-            radial-gradient(96% 80% at 88% 88%, rgba(84,212,237,.70) 0%, rgba(84,212,237,0) 64%),
-            linear-gradient(142deg,#062e86 0%,#0a4ea0 62%,#0b60b4 100%); }
-/* The acid mesh: Sana's measured lime, used the way they use it — as a small bright surface on
-   near-black, never as a wash behind reading. */
-.g-acid   { background: radial-gradient(80% 68% at 22% 16%, rgba(205,254,0,.95) 0%, rgba(205,254,0,0) 56%),
-            radial-gradient(86% 72% at 82% 88%, rgba(175,216,10,.75) 0%, rgba(175,216,10,0) 62%),
-            linear-gradient(150deg,#1c1f16 0%,#131313 58%,#0e1108 100%); }
-.g-ember  { background: radial-gradient(82% 68% at 18% 20%, rgba(255,180,90,.92) 0%, rgba(255,180,90,0) 58%),
-            radial-gradient(88% 74% at 84% 86%, rgba(255,100,0,.85) 0%, rgba(255,100,0,0) 62%),
-            linear-gradient(146deg,#ff6400 0%,#c33b00 60%,#7a2300 100%); }
+   THIS IS NEON, AND NEON IS BLOOM. A neon tube is a small very bright core whose light SPREADS
+   into the dark around it. The construction:
+     - ONE hue. Only lightness and chroma move. `oklch(97% .23 122)` down to `oklch(5% .012 122)`.
+     - A dark base of that same hue, so the light has somewhere to die.
+     - The core shape blurred at THREE radii (52px, 22px, 7px) and screened back over the field.
+       One blur reads as a soft blob; three read as light.
+     - A fourth pass at small warp and 2px blur gives the glow texture rather than smoothness.
+     - Interpolated `in oklab`, because sRGB desaturates through the middle of every blend.
+
+   🔴 AND THE THING NO CSS FIXES: the reference sites do not use CSS gradients for hero art at all.
+   x.ai/bot ships 1920x1280 RENDERED images — landscape abstractions with a horizon, atmospheric
+   depth, directional motion blur and heavy grain, at LOW chroma (dominant colours measure 13-86,
+   not neon at all). openai.com uses straight photography. sanalabs.com uses product shots on
+   white. Measured 2026-09-09 by downloading their actual assets. To match that quality we render
+   images; CSS is not competing in the same medium. These are for surfaces where a rendered asset
+   is overkill. */
+.ds-grads { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 12px; }
+.ds-grad { position: relative; height: 200px; border-radius: 18px; overflow: hidden; isolation: isolate; }
+.ds-grad-l { position: absolute; inset: -24%; }
+/* Widest bloom first so the tight core lands on top. */
+.ds-grad-l.b1 { filter: url(#ds-flow) blur(52px); mix-blend-mode: screen; opacity: .85; }
+.ds-grad-l.b2 { filter: url(#ds-flow) blur(22px); mix-blend-mode: screen; opacity: .75; }
+.ds-grad-l.b3 { filter: url(#ds-flow) blur(7px);  mix-blend-mode: screen; opacity: .65; }
+.ds-grad-l.b4 { filter: url(#ds-fine) blur(2px);  mix-blend-mode: screen; opacity: .22; }
+.ds-grad-fall { position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset -50px -60px 120px rgba(0,0,0,.55), inset 30px 24px 80px rgba(0,0,0,.30); }
+.ds-grad-grain { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .10;
+                 mix-blend-mode: overlay; pointer-events: none; }
+.ds-grad-name { position: absolute; left: 13px; bottom: 12px; z-index: 4; font-size: 11px;
+  font-weight: 500; letter-spacing: .3px; color: rgba(255,255,255,.94);
+  font-family: "JetBrains Mono", ui-monospace, monospace; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
 
 /* ── specimen shelves ────────────────────────────────────────────────────────────────────── */
 .ds-shelf { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
@@ -231,3 +221,77 @@
   .ds-toc { position: static; width: auto; flex: none; display: flex; gap: 14px; flex-wrap: wrap; }
   .ds-title { font-size: 32px; line-height: 35px; letter-spacing: -0.5px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   PRODUCT SURFACES — owner, 2026-09-09: "I don't see Chat Composer here. Or how side panels look.
+   And icon buttons. It needs to be super comprehensive."
+   These are the shapes the app is actually made of, at the sizes the app actually uses.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── COMPOSER. The single most-used surface in the product, so it gets the most care.
+      Measured against ChatGPT's Work composer, which the chat already matches 1:1: a rounded well
+      that grows with its content, actions on the floor rather than in a toolbar above, and the
+      send control only reaching full contrast once there is something to send. */
+.ds-composer { max-width: 768px; border-radius: 26px; background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 2px 14px rgba(10,18,23,.05);
+  padding: 14px 14px 10px; transition: box-shadow var(--sana-dur) var(--sana-ease); }
+.ds-composer:focus-within { box-shadow: inset 0 0 0 1px var(--line), 0 4px 22px rgba(10,18,23,.08); }
+.ds-composer textarea { width: 100%; border: 0; outline: 0; resize: none; background: none;
+  font-family: inherit; font-size: 16px; line-height: 25.6px; letter-spacing: -.1px; color: var(--ink);
+  min-height: 52px; padding: 2px 4px; }
+.ds-composer textarea::placeholder { color: var(--faint); }
+.ds-composer-floor { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.ds-composer-floor .grow { flex: 1; }
+.ds-send { width: 34px; height: 34px; border-radius: 999px; border: 0; display: grid; place-items: center;
+  cursor: pointer; background: var(--n-14); color: var(--text-muted);
+  transition: background var(--sana-dur) var(--sana-ease), color var(--sana-dur) var(--sana-ease); }
+.ds-send.is-ready { background: var(--text-primary); color: var(--bg-page); }
+.ds-pill { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  border-radius: 999px; border: 0; cursor: pointer; background: none; color: var(--dim);
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  transition: background var(--fig-dur) var(--fig-ease), color var(--fig-dur) var(--fig-ease); }
+.ds-pill:hover { background: var(--bg-hover); color: var(--ink); }
+.ds-pill.is-on { background: var(--n-10); color: var(--ink); }
+
+/* ── PANELS. Three widths, and the rule that decides which: a panel that holds READING is 420,
+      a panel that holds CONTROLS is 320, a rail that holds ICONS is 52. Inside an elevated panel
+      nothing wears the page ground — that was a real bug once. */
+.ds-panels { display: flex; gap: 14px; align-items: stretch; height: 300px; }
+.ds-rail { width: 52px; flex: 0 0 52px; border-radius: 14px; background: var(--bg-sunken);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; }
+.ds-panel { border-radius: 14px; background: var(--bg-surface); box-shadow: inset 0 0 0 1px var(--hair);
+  display: flex; flex-direction: column; overflow: hidden; }
+.ds-panel-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px;
+  border-bottom: 1px solid var(--hair); flex: 0 0 auto; }
+.ds-panel-head b { font-size: 13px; font-weight: 500; letter-spacing: -.1px; }
+/* 🔴 flex-1 NEEDS A FLEX PARENT. A panel body declared as a block clipped long documents at 790px
+   and could not scroll; short fixtures hid it for months. */
+.ds-panel-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.ds-tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--hair); }
+.ds-tab { border: 0; background: none; cursor: pointer; font-family: inherit; font-size: 13px;
+  font-weight: 500; padding: 7px 11px; border-radius: 8px 8px 0 0; color: var(--dim);
+  position: relative; transition: color var(--fig-dur) var(--fig-ease); }
+.ds-tab.is-on { color: var(--ink); }
+.ds-tab.is-on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px;
+  height: 2px; background: var(--text-primary); border-radius: 2px 2px 0 0; }
+.ds-row-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 8px;
+  font-size: 13px; color: var(--dim); cursor: pointer;
+  transition: background var(--fig-dur) var(--fig-ease); }
+.ds-row-item:hover { background: var(--bg-hover); color: var(--ink); }
+.ds-row-item.is-on { background: var(--bg-active); color: var(--ink); }
+
+/* ── ICON BUTTONS. The glyph is 50-60% of the box, measured on Sana and Figma, and it is DERIVED
+      from the size rather than passed, so a call site cannot break the ratio. */
+.ds-ib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.ds-ib-cell { text-align: center; padding: 14px 8px; border-radius: 12px;
+              box-shadow: inset 0 0 0 1px var(--hair); }
+.ds-ib-cell span { display: block; margin-top: 9px; font-size: 10px; color: var(--faint);
+                   font-family: "JetBrains Mono", ui-monospace, monospace; }
+.ds-avatars { display: flex; gap: 10px; align-items: center; }
+.ds-avatar { border-radius: 999px; display: grid; place-items: center; font-size: 12px;
+  font-weight: 500; color: var(--bg-page); background: var(--text-primary); }
+.ds-badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
+  border-radius: 999px; font-size: 11px; font-weight: 500; background: var(--n-10); color: var(--dim); }
+.ds-empty { border-radius: 14px; padding: 40px 24px; text-align: center;
+  box-shadow: inset 0 0 0 1px var(--hair); }

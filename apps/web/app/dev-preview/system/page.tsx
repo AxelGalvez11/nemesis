@@ -2,7 +2,10 @@
 
 import { useId, useState } from "react";
 
-import { Bold, Check, Plus, Search, Settings, Trash2 } from "lucide-react";
+import {
+  ArrowUp, Bold, Check, FileText, Layers, Mic, MoreHorizontal, Paperclip,
+  Plus, Search, Settings, Sparkles, Trash2, X,
+} from "lucide-react";
 
 import {
   Button,
@@ -57,11 +60,19 @@ const BRIGHTS = [
   { name: "Ground", hex: "#131314", on: "#CDFE00", src: "--color-background-secondary. The near-black the accent is always used against." },
 ];
 
-const GRADS: [string, string, boolean][] = [
-  ["g-deep", "deep", false], ["g-cyan", "cyan", false], ["g-azure", "azure", false],
-  ["g-cobalt", "cobalt", false], ["g-dusk", "dusk", false], ["g-ice", "ice", true],
-  ["g-acid", "acid", false], ["g-ember", "ember", false],
+/** One hue per gradient. Only lightness and chroma move — that is what makes it read as neon
+ *  rather than as a colour blend. Hue 122 is the acid lime; 250 is the product blue. */
+const GRADS: { name: string; h: number; c: string }[] = [
+  { name: "lime", h: 122, c: ".23" }, { name: "cyan", h: 200, c: ".16" },
+  { name: "azure", h: 250, c: ".19" }, { name: "violet", h: 292, c: ".22" },
+  { name: "magenta", h: 340, c: ".22" }, { name: "ember", h: 46, c: ".19" },
 ];
+const neonCore = (h: number, c: string) =>
+  `radial-gradient(in oklab 42% 38% at 30% 26%, oklch(97% ${c} ${h}) 0%, oklch(88% ${c} ${h}) 26%, transparent 66%),` +
+  `radial-gradient(in oklab 34% 30% at 72% 62%, oklch(92% ${c} ${h}) 0%, transparent 62%),` +
+  `radial-gradient(in oklab 26% 24% at 52% 88%, oklch(84% ${c} ${h}) 0%, transparent 60%)`;
+const neonBase = (h: number) =>
+  `linear-gradient(in oklab 152deg, oklch(20% .04 ${h}), oklch(9% .02 ${h}) 62%, oklch(5% .012 ${h}))`;
 
 const TYPE: [string, string][] = [
   ["display", "The best code is the code you never wrote"],
@@ -97,12 +108,15 @@ export default function DesignSystemPortfolio() {
   const [checked, setChecked] = useState(true);
   const [on, setOn] = useState(true);
   const [go, setGo] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [tab, setTab] = useState("sources");
   const gid = useId().replace(/:/g, "");
 
   const SECTIONS = [
     ["colour", "Colour"], ["gradients", "Gradients"], ["type", "Typography"],
     ["space", "Spacing & radius"], ["elevation", "Elevation"], ["motion", "Motion"],
-    ["controls", "Controls"], ["cards", "Cards"], ["overlays", "Overlays"], ["icons", "Icons"],
+    ["controls", "Controls"], ["composer", "Composer"], ["panels", "Panels"],
+    ["cards", "Cards"], ["overlays", "Overlays"], ["icons", "Icons"],
   ];
 
   return (
@@ -163,32 +177,52 @@ export default function DesignSystemPortfolio() {
           <section className="ds-sec" id="gradients">
             <h2>Gradients</h2>
             <p className="ds-rule">
-              Meshes, not two-stop ramps: several large radial stops with transparent falloff over a
-              linear base, plus a grain layer. The grain is the whole trick — a mathematically smooth
-              gradient bands visibly on any 8-bit screen, and dithering it is what separates gradient
-              artwork from a gradient in a div.
+              <b>One hue each, and neon is bloom.</b> A bright core, blurred at three radii and
+              screened back over a dark base of the same hue. One blur is a soft blob; three read as
+              light. Only lightness and chroma move — the hue never does.
             </p>
             <p className="ds-src">
-              Where they are allowed: <b>inside a frame</b>, where a product screenshot would
-              otherwise go, and on the sign-in panel. Never behind reading text. figma.com carries
-              exactly one gradient across 8,973px; a wash behind a headline is the single clearest
-              signature of a generated interface.
+              <b>The references do not use CSS gradients for hero art at all.</b> Measured by
+              downloading their assets: x.ai/bot ships 1920×1280 rendered landscape abstractions —
+              horizon, atmospheric depth, directional blur, heavy grain — at low chroma, nothing
+              like neon. openai.com uses photography. sanalabs.com uses product shots on white. To
+              match that we render images; CSS is not in the same medium. These are for surfaces
+              where a rendered asset would be overkill, and they still never go behind reading text.
             </p>
+            {/* Shared filters. One turbulence field drives the broad flow, a second the fine
+                texture; both are reused by every panel so the page pays for them once. */}
+            <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+              <filter id="ds-flow" x="-30%" y="-30%" width="160%" height="160%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.004 0.009" numOctaves="3" seed="5" result="n" />
+                <feDisplacementMap in="SourceGraphic" in2="n" scale="170" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+              <filter id="ds-fine" x="-30%" y="-30%" width="160%" height="160%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.018 0.026" numOctaves="2" seed="17" result="n" />
+                <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+              <filter id={`ds-grain-${gid}`}>
+                <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="4" stitchTiles="stitch" />
+                <feColorMatrix type="saturate" values="0" />
+              </filter>
+            </svg>
             <div className="ds-grads" style={{ marginTop: 16 }}>
-              {GRADS.map(([cls, name, light]) => (
-                <div className={`ds-grad${light ? " on-light" : ""}`} key={cls}>
-                  <div className={`ds-grad-mesh ${cls}`} />
-                  <svg className="ds-grad-grain" aria-hidden="true" focusable="false">
-                    <filter id={`g-${gid}-${cls}`}>
-                      <feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves="3" stitchTiles="stitch" />
-                      <feColorMatrix type="saturate" values="0" />
-                    </filter>
-                    <rect width="100%" height="100%" filter={`url(#g-${gid}-${cls})`} />
-                  </svg>
-                  <div className="ds-grad-shaft" />
-                  <span className="ds-grad-name">{name}</span>
-                </div>
-              ))}
+              {GRADS.map((g) => {
+                const core = neonCore(g.h, g.c);
+                return (
+                  <div className="ds-grad" key={g.name}>
+                    <div className="ds-grad-l" style={{ background: neonBase(g.h) }} />
+                    <div className="ds-grad-l b1" style={{ background: core }} />
+                    <div className="ds-grad-l b2" style={{ background: core }} />
+                    <div className="ds-grad-l b3" style={{ background: core }} />
+                    <div className="ds-grad-l b4" style={{ background: core }} />
+                    <div className="ds-grad-fall" />
+                    <svg className="ds-grad-grain" aria-hidden="true" focusable="false">
+                      <rect width="100%" height="100%" filter={`url(#ds-grain-${gid})`} />
+                    </svg>
+                    <span className="ds-grad-name">{g.name} · h{g.h}</span>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -318,6 +352,94 @@ export default function DesignSystemPortfolio() {
             </div>
           </section>
 
+          {/* ── COMPOSER ───────────────────────────────────────────────────────────────── */}
+          <section className="ds-sec" id="composer">
+            <h2>Composer</h2>
+            <p className="ds-rule">
+              The most-used surface in the product. A well that grows with its content, actions on
+              the floor rather than in a toolbar above, and a send control that only reaches full
+              contrast once there is something to send.
+            </p>
+            <p className="ds-src" style={{ marginBottom: 16 }}>
+              Body is 16/25.6 at −0.1px, the reading size — a composer set in UI type tells you the
+              app thinks your words are metadata. Radius 26 because it sits closest to the
+              learner&apos;s own content, and the rule is that the nearer a control is to their
+              content, the rounder it gets.
+            </p>
+            <div className="ds-composer">
+              <textarea
+                placeholder="Ask anything, or drop a lecture in"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+              <div className="ds-composer-floor">
+                <button className="ds-pill"><Plus size={16} strokeWidth={1.5} /> Add</button>
+                <button className="ds-pill is-on"><Sparkles size={16} strokeWidth={1.5} /> Canvas</button>
+                <button className="ds-pill"><Paperclip size={16} strokeWidth={1.5} /></button>
+                <span className="grow" />
+                <button className="ds-pill"><Mic size={16} strokeWidth={1.5} /></button>
+                <button
+                  className={`ds-send${draft.trim() ? " is-ready" : ""}`}
+                  aria-label="Send"
+                >
+                  <ArrowUp size={17} strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* ── PANELS ─────────────────────────────────────────────────────────────────── */}
+          <section className="ds-sec" id="panels">
+            <h2>Panels &amp; rails</h2>
+            <p className="ds-rule">
+              Three widths, and the rule that picks one: a panel holding <b>reading</b> is 420, a
+              panel holding <b>controls</b> is 320, a rail holding <b>icons</b> is 52.
+            </p>
+            <p className="ds-src" style={{ marginBottom: 16 }}>
+              Inside an elevated panel nothing wears the page ground. And a panel body is
+              <code> flex: 1</code> inside a flex column — declared as a block it clips long
+              documents and cannot scroll, which short fixtures hide for months.
+            </p>
+            <div className="ds-panels">
+              <div className="ds-rail">
+                {[Search, FileText, Layers, Settings].map((I, i) => (
+                  <IconButton key={i} icon={I} label={`Rail ${i}`} size={32} />
+                ))}
+              </div>
+              <div className="ds-panel" style={{ width: 320, flex: "0 0 320px" }}>
+                <div className="ds-panel-head">
+                  <b>Controls</b>
+                  <span style={{ marginLeft: "auto" }} />
+                  <IconButton icon={MoreHorizontal} label="More" size={24} />
+                  <IconButton icon={X} label="Close" size={24} />
+                </div>
+                <div className="ds-panel-body">
+                  {["All material", "Lecture 9.pdf", "Seminar notes", "Reading list"].map((r, i) => (
+                    <div className={`ds-row-item${i === 1 ? " is-on" : ""}`} key={r}>
+                      <Icon icon={FileText} size={14} />
+                      {r}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="ds-panel" style={{ flex: 1 }}>
+                <div className="ds-tabs">
+                  {[["sources", "Sources"], ["notes", "Notes"], ["cards", "Cards"]].map(([v, l]) => (
+                    <button key={v} className={`ds-tab${tab === v ? " is-on" : ""}`} onClick={() => setTab(v as string)}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <div className="ds-panel-body">
+                  <Text variant="body">
+                    A reading panel runs at 420 and sets its text at the reading size. This body
+                    scrolls independently of the page, which is the whole reason a panel exists.
+                  </Text>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* ── CARDS ──────────────────────────────────────────────────────────────────── */}
           <section className="ds-sec" id="cards">
             <h2>Cards</h2>
@@ -389,12 +511,47 @@ export default function DesignSystemPortfolio() {
               they hold up against Inter rather than against their proprietary face.
             </p>
             <div className="ds-shelf">
-              {[12, 14, 16, 20, 24].map((s) => (
-                <div key={s} style={{ textAlign: "center" }}>
-                  <Icon icon={Search} size={s as never} />
-                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>{s}</div>
+              {[12, 14, 16, 20, 24].map((sz) => (
+                <div key={sz} style={{ textAlign: "center" }}>
+                  <Icon icon={Search} size={sz as never} />
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>{sz}</div>
                 </div>
               ))}
+            </div>
+
+            <p className="ds-sub">Icon buttons — the glyph is derived, never passed</p>
+            <p className="ds-src" style={{ marginBottom: 14 }}>
+              The glyph is 50–60% of the box, measured on Sana and Figma. It is computed from the
+              size so a call site cannot break the ratio, and every one of these requires a label:
+              it is the whole accessible name, with no text to fall back on.
+            </p>
+            <div className="ds-ib-grid">
+              {([24, 28, 32, 36] as const).map((sz) => (
+                <div className="ds-ib-cell" key={sz}>
+                  <IconButton icon={Search} label={`Search ${sz}`} size={sz} />
+                  <span>{sz}px</span>
+                </div>
+              ))}
+              {(["ghost", "secondary", "primary", "danger"] as const).map((v) => (
+                <div className="ds-ib-cell" key={v}>
+                  <IconButton icon={Trash2} label={v} size={32} variant={v} />
+                  <span>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="ds-sub">Avatars &amp; badges</p>
+            <div className="ds-avatars">
+              {[20, 24, 28, 32, 40].map((sz) => (
+                <div className="ds-avatar" key={sz} style={{ width: sz, height: sz, fontSize: sz * 0.4 }}>
+                  A
+                </div>
+              ))}
+              <div className="ds-badges" style={{ marginLeft: 16 }}>
+                <span className="ds-badge">New</span>
+                <span className="ds-badge">12 due</span>
+                <span className="ds-badge">Beta</span>
+              </div>
             </div>
           </section>
         </div>
