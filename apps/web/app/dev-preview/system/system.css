@@ -1,0 +1,233 @@
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   The whole design system, on one page.
+
+   Owner, 2026-09-09: "I want to see everything on one page like the whole design system, the
+   colors, the gradients, etc. Just give me the whole design portfolio."
+
+   🔴 THE PAGE SHOWS THE REAL PRIMITIVES, NOT MOCK-UPS OF THEM. Buttons, inputs, toggles and text
+   come from @/components/design. If a token drifts, this page drifts with it, which is the only
+   way a system page stays true. The CSS below styles the PORTFOLIO — its own chrome, the swatch
+   grids, the gradient panels and the card types — never the primitives themselves.
+
+   🔴 EVERY COLOUR CARRIES ITS SOURCE. Neutrals are alpha over one ink, which Figma, Sana and x.ai
+   all arrived at independently — and Sana's app confirms it in their own token names:
+   --color-foreground-1 through -100, every one of them #0a1217 at an alpha step. The brights are
+   their declared values, not guesses.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.ds {
+  --ink: var(--text-primary);
+  --dim: var(--text-secondary);
+  --faint: var(--text-muted);
+  --line: var(--border-default);
+  --hair: var(--border-subtle);
+  --paper: var(--bg-page);
+  --sunken: var(--bg-sunken);
+
+  /* Measured brights. See /research/design-references/ — provenance is printed beside each one. */
+  --acid: #cdfe00;
+  --acid-on: #131313;
+  --electric: #0055ff;
+  --ember: #ff6400;
+  --indigo: #4700de;
+
+  /* Two motion vocabularies, and they do not mix.
+     Marketing surfaces use Figma's; app surfaces use Sana's. */
+  --fig-dur: 0.18s;
+  --fig-fast: 0.15s;
+  --fig-ease: ease-out;
+  --sana-dur: 0.3s;
+  --sana-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --spring: linear(0 0%, 0.041 1.2%, 0.161 2.5%, 0.819 7.1%, 1.055 9.1%, 1.203 11.1%, 1.244 12.1%,
+            1.263 13.1%, 1.262 14.4%, 1.231 15.9%, 1.043 20.9%, 0.98 23%, 0.945 24.8%, 0.93 26.7%,
+            0.936 29.2%, 1.001 36.1%, 1.019 40.3%, 0.995 53.8%, 1 100%);
+
+  background: var(--paper); color: var(--ink); min-height: 100svh;
+  font-family: "Inter Variable", Inter, -apple-system, system-ui, sans-serif;
+}
+.ds *, .ds *::before, .ds *::after { box-sizing: border-box; }
+
+/* ── page chrome ─────────────────────────────────────────────────────────────────────────── */
+.ds-shell { display: flex; align-items: flex-start; gap: 48px; max-width: 1240px;
+            margin: 0 auto; padding: 56px 40px 140px; }
+.ds-toc { position: sticky; top: 40px; width: 176px; flex: 0 0 176px; }
+.ds-toc a { display: block; padding: 5px 0; font-size: 13px; line-height: 19px; color: var(--dim);
+            text-decoration: none; transition: color var(--fig-fast) var(--fig-ease); }
+.ds-toc a:hover { color: var(--ink); }
+.ds-main { flex: 1; min-width: 0; }
+
+.ds-title { font-size: 44px; font-weight: 400; line-height: 48.4px; letter-spacing: -0.66px; margin: 0; }
+.ds-lede { font-size: 16px; line-height: 22.4px; color: var(--dim); margin: 12px 0 0; max-width: 620px; }
+
+.ds-sec { margin-top: 68px; scroll-margin-top: 24px; }
+.ds-sec > h2 { font-size: 12px; font-weight: 500; line-height: 12px; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--faint); margin: 0 0 8px;
+  font-family: "JetBrains Mono", ui-monospace, monospace; }
+.ds-sec > .ds-rule { font-size: 15px; line-height: 22px; color: var(--dim); margin: 0 0 24px; max-width: 640px; }
+.ds-sub { font-size: 13px; font-weight: 500; color: var(--ink); margin: 28px 0 12px; }
+/* Provenance lines. Every number on this page can say where it came from. */
+.ds-src { font-size: 12px; line-height: 17px; color: var(--faint); margin: 8px 0 0; max-width: 620px;
+          font-variant-numeric: tabular-nums; }
+
+/* ── colour ──────────────────────────────────────────────────────────────────────────────── */
+.ds-ramp { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.ds-chip-c { border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--hair); }
+.ds-chip-c i { display: block; height: 56px; }
+.ds-chip-c p { margin: 0; padding: 8px 9px 10px; font-size: 11px; line-height: 15px; color: var(--dim);
+               font-family: "JetBrains Mono", ui-monospace, monospace; }
+.ds-brights { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 12px; }
+.ds-bright { border-radius: 14px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--hair); }
+.ds-bright i { display: grid; place-items: center; height: 84px; font-size: 13px; font-weight: 500;
+               font-family: "JetBrains Mono", ui-monospace, monospace; }
+.ds-bright p { margin: 0; padding: 11px 13px 13px; font-size: 12px; line-height: 17px; color: var(--dim); }
+
+/* ── gradients ───────────────────────────────────────────────────────────────────────────────
+   Built as MESHES: several large radial stops with transparent falloff over a linear base, plus a
+   grain layer. A two-stop linear gradient is the thing that reads as a template; a mesh has a
+   light direction. The grain is what kills 8-bit banding — it is the difference between gradient
+   artwork and a gradient in a div. */
+.ds-grads { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 12px; }
+.ds-grad { position: relative; height: 168px; border-radius: 16px; overflow: hidden; isolation: isolate; }
+.ds-grad-mesh { position: absolute; inset: -12%; }
+.ds-grad-grain { position: absolute; inset: 0; width: 100%; height: 100%;
+                 opacity: 0.16; mix-blend-mode: overlay; pointer-events: none; }
+.ds-grad-shaft { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(118deg, rgba(255,255,255,.30) 0%, rgba(255,255,255,.06) 26%, rgba(255,255,255,0) 52%); }
+.ds-grad-name { position: absolute; left: 12px; bottom: 11px; z-index: 2; font-size: 11px;
+  font-weight: 500; letter-spacing: .3px; color: rgba(255,255,255,.92);
+  font-family: "JetBrains Mono", ui-monospace, monospace; text-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.ds-grad.on-light .ds-grad-name { color: rgba(10,18,23,.72); text-shadow: none; }
+
+.g-deep   { background: radial-gradient(78% 62% at 12% 8%, rgba(84,212,237,.92) 0%, rgba(84,212,237,0) 62%),
+            radial-gradient(70% 58% at 88% 18%, rgba(115,184,250,.85) 0%, rgba(115,184,250,0) 60%),
+            radial-gradient(90% 72% at 78% 92%, rgba(42,140,205,.90) 0%, rgba(42,140,205,0) 66%),
+            radial-gradient(85% 70% at 22% 88%, rgba(11,96,180,.95) 0%, rgba(11,96,180,0) 64%),
+            linear-gradient(148deg,#0b60b4 0%,#062e86 52%,#0a4ea0 100%); }
+.g-cyan   { background: radial-gradient(84% 70% at 18% 22%, rgba(158,240,255,.95) 0%, rgba(158,240,255,0) 58%),
+            radial-gradient(76% 64% at 82% 10%, rgba(84,212,237,.90) 0%, rgba(84,212,237,0) 60%),
+            radial-gradient(92% 76% at 70% 96%, rgba(42,140,205,.85) 0%, rgba(42,140,205,0) 64%),
+            linear-gradient(160deg,#2a8ccd 0%,#0b60b4 60%,#073a92 100%); }
+.g-azure  { background: radial-gradient(80% 66% at 26% 14%, rgba(115,184,250,.95) 0%, rgba(115,184,250,0) 60%),
+            radial-gradient(88% 70% at 90% 74%, rgba(84,212,237,.80) 0%, rgba(84,212,237,0) 62%),
+            radial-gradient(70% 60% at 8% 92%, rgba(6,46,134,.90) 0%, rgba(6,46,134,0) 58%),
+            linear-gradient(136deg,#0a4ea0 0%,#2a8ccd 55%,#0b60b4 100%); }
+.g-dusk   { background: radial-gradient(82% 68% at 22% 18%, rgba(255,168,142,.85) 0%, rgba(255,168,142,0) 58%),
+            radial-gradient(78% 64% at 86% 24%, rgba(186,140,255,.85) 0%, rgba(186,140,255,0) 60%),
+            radial-gradient(94% 78% at 62% 98%, rgba(11,96,180,.90) 0%, rgba(11,96,180,0) 66%),
+            linear-gradient(152deg,#4a2f8f 0%,#16307e 58%,#062e86 100%); }
+.g-ice    { background: radial-gradient(86% 72% at 20% 16%, rgba(255,255,255,.96) 0%, rgba(255,255,255,0) 56%),
+            radial-gradient(78% 66% at 84% 20%, rgba(158,240,255,.78) 0%, rgba(158,240,255,0) 58%),
+            radial-gradient(88% 74% at 72% 94%, rgba(115,184,250,.72) 0%, rgba(115,184,250,0) 62%),
+            linear-gradient(150deg,#dff2fb 0%,#b9dcf6 54%,#8fc4ee 100%); }
+.g-cobalt { background: radial-gradient(74% 62% at 14% 12%, rgba(115,184,250,.80) 0%, rgba(115,184,250,0) 58%),
+            radial-gradient(96% 80% at 88% 88%, rgba(84,212,237,.70) 0%, rgba(84,212,237,0) 64%),
+            linear-gradient(142deg,#062e86 0%,#0a4ea0 62%,#0b60b4 100%); }
+/* The acid mesh: Sana's measured lime, used the way they use it — as a small bright surface on
+   near-black, never as a wash behind reading. */
+.g-acid   { background: radial-gradient(80% 68% at 22% 16%, rgba(205,254,0,.95) 0%, rgba(205,254,0,0) 56%),
+            radial-gradient(86% 72% at 82% 88%, rgba(175,216,10,.75) 0%, rgba(175,216,10,0) 62%),
+            linear-gradient(150deg,#1c1f16 0%,#131313 58%,#0e1108 100%); }
+.g-ember  { background: radial-gradient(82% 68% at 18% 20%, rgba(255,180,90,.92) 0%, rgba(255,180,90,0) 58%),
+            radial-gradient(88% 74% at 84% 86%, rgba(255,100,0,.85) 0%, rgba(255,100,0,0) 62%),
+            linear-gradient(146deg,#ff6400 0%,#c33b00 60%,#7a2300 100%); }
+
+/* ── specimen shelves ────────────────────────────────────────────────────────────────────── */
+.ds-shelf { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.ds-type-row { display: grid; grid-template-columns: 92px 1fr; gap: 20px; align-items: baseline;
+               padding: 11px 0; border-bottom: 1px solid var(--hair); }
+.ds-type-row > code { font-size: 11px; color: var(--faint);
+                      font-family: "JetBrains Mono", ui-monospace, monospace; }
+.ds-scale { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.ds-scale div { text-align: center; }
+.ds-scale i { display: block; background: var(--n-14); border-radius: 3px; }
+.ds-scale span { display: block; margin-top: 6px; font-size: 10px; color: var(--faint);
+                 font-family: "JetBrains Mono", ui-monospace, monospace; }
+.ds-radii { display: flex; gap: 12px; flex-wrap: wrap; }
+.ds-radii div { width: 78px; }
+.ds-radii i { display: block; height: 62px; background: var(--n-10); box-shadow: inset 0 0 0 1px var(--hair); }
+.ds-radii span { display: block; margin-top: 6px; font-size: 10px; color: var(--faint);
+                 font-family: "JetBrains Mono", ui-monospace, monospace; }
+.ds-elevs { display: flex; gap: 16px; flex-wrap: wrap; }
+.ds-elevs div { width: 168px; height: 92px; border-radius: 12px; background: var(--bg-surface);
+                display: grid; place-items: center; font-size: 11px; color: var(--dim);
+                font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+/* ── CARDS BY TYPE ───────────────────────────────────────────────────────────────────────────
+   🔴🔴 THE FLASHCARD IS WHITE AND STAYS WHITE. Owner, 2026-09-09: "the colors ... they're not for
+   the flash cards. The flash cards are supposed to be like regular white. This is for other types
+   of cards." That is the third time the flashcard has been ruled plain — it was "plain Anki style
+   with just an X and a check" before this — and it is right for a reason worth writing down:
+   while you are recalling something, nothing on screen should compete with the thing you are
+   trying to recall. Colour on a flashcard is decoration during the one moment decoration costs.
+
+   Colour belongs to the cards you BROWSE, not the ones you STUDY. In a list of outputs, a tint
+   tells a deck from a study guide from a test at a glance. That is work, not decoration. */
+.ds-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 14px; }
+.ds-card { border-radius: 16px; padding: 18px; min-height: 138px; display: flex; flex-direction: column;
+  background: var(--bg-surface); box-shadow: inset 0 0 0 1px var(--hair);
+  transition: box-shadow var(--sana-dur) var(--sana-ease), transform var(--sana-dur) var(--sana-ease); }
+.ds-card:hover { box-shadow: inset 0 0 0 1px var(--line); transform: translateY(-1px); }
+.ds-card h4 { margin: 10px 0 0; font-size: 15px; font-weight: 500; letter-spacing: -0.15px; }
+.ds-card p { margin: 4px 0 0; font-size: 13px; line-height: 19px; color: var(--dim); }
+.ds-card .ds-kind { font-size: 10px; font-weight: 500; letter-spacing: .6px; text-transform: uppercase;
+  font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--faint); }
+/* The type tint: a 3px top edge and a faint wash. Enough to sort by, not enough to shout. */
+.ds-card.is-typed { position: relative; overflow: hidden; }
+.ds-card.is-typed::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--tint); }
+.ds-card.is-typed::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tint) 12%, transparent) 0%, transparent 58%); }
+.ds-card.is-typed > * { position: relative; z-index: 1; }
+
+/* The flashcard specimen. Deliberately the only card here with no tint and no type label. */
+.ds-flash { background: #fff; color: #0a1217; border-radius: 20px; padding: 26px; min-height: 172px;
+  box-shadow: inset 0 0 0 1px rgba(10,18,23,.12); display: flex; flex-direction: column; }
+[data-theme="dark"] .ds-flash { background: #fff; color: #0a1217; }
+.ds-flash .q { font-size: 20px; font-weight: 450; line-height: 27px; letter-spacing: -0.2px; margin: 0; }
+.ds-flash .hint { margin-top: auto; font-size: 12px; color: rgba(10,18,23,.4); }
+
+/* ── overlays ────────────────────────────────────────────────────────────────────────────── */
+.ds-overlay-row { display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-start; }
+.ds-pop { position: relative; }
+.ds-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 196px; padding: 6px;
+  border-radius: 12px; background: var(--bg-surface); box-shadow: var(--elev-overlay), inset 0 0 0 1px var(--hair);
+  opacity: 0; transform: translateY(4px); pointer-events: none; z-index: 6;
+  transition: opacity var(--fig-dur) var(--fig-ease), transform var(--fig-dur) var(--fig-ease); }
+.ds-menu.is-open { opacity: 1; transform: none; pointer-events: auto; }
+.ds-menu button { display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer;
+  font-family: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; color: var(--ink);
+  transition: background var(--fig-dur) var(--fig-ease); }
+.ds-menu button:hover { background: var(--bg-hover); }
+.ds-toast { display: inline-flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px;
+  background: var(--text-primary); color: var(--bg-page); font-size: 14px;
+  animation: ds-rise .7s var(--sana-ease) both; }
+.ds-tip-wrap { position: relative; display: inline-flex; }
+.ds-tip { position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0; white-space: nowrap;
+  padding: 6px 10px; border-radius: 8px; background: var(--text-primary); color: var(--bg-page);
+  font-size: 12px; opacity: 0; transition: opacity var(--fig-fast) var(--fig-ease); pointer-events: none; }
+.ds-tip-wrap:hover .ds-tip { opacity: 1; }
+
+@keyframes ds-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.ds-reveal span { display: inline-block; opacity: 0; }
+.ds-reveal.is-in span { animation: ds-rise .7s var(--sana-ease) both; }
+
+/* ── motion demo ─────────────────────────────────────────────────────────────────────────── */
+.ds-track { position: relative; height: 46px; border-radius: 10px; background: var(--bg-sunken); overflow: hidden; }
+.ds-dot { position: absolute; top: 9px; left: 8px; width: 28px; height: 28px; border-radius: 9px;
+          background: var(--text-primary); }
+.ds-track.go .ds-dot.fig   { transform: translateX(calc(100% + 0px)); transition: transform var(--fig-dur) var(--fig-ease); }
+.ds-track.go .ds-dot.sana  { transform: translateX(calc(100% + 0px)); transition: transform var(--sana-dur) var(--sana-ease); }
+.ds-track.go .ds-dot.spr   { transform: translateX(calc(100% + 0px)); transition: transform 1s var(--spring); }
+.ds-track .ds-dot { transform: translateX(0); }
+.ds-mrow { display: grid; grid-template-columns: 118px 1fr; gap: 16px; align-items: center; margin-bottom: 10px; }
+.ds-mrow code { font-size: 11px; color: var(--faint); font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ds *, .ds *::before, .ds *::after {
+    animation-duration: .01ms !important; animation-delay: 0ms !important; transition-duration: .01ms !important;
+  }
+}
+@media (max-width: 900px) {
+  .ds-shell { flex-direction: column; gap: 24px; padding: 40px 20px 100px; }
+  .ds-toc { position: static; width: auto; flex: none; display: flex; gap: 14px; flex-wrap: wrap; }
+  .ds-title { font-size: 32px; line-height: 35px; letter-spacing: -0.5px; }
+}

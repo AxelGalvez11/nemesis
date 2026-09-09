@@ -17,6 +17,11 @@ const GROUPS: { title: string; note: string; items: { href: string; name: string
     note: "The measured system, and the two surfaces built on it. Figma leads; Sana owns the sign-in.",
     items: [
       {
+        href: "/dev-preview/system",
+        name: "The design system",
+        note: "Everything on one page: colour, gradients, type, spacing, radius, elevation, motion, controls, cards, overlays, icons. Every value says where it came from.",
+      },
+      {
         href: "/dev-preview/design",
         name: "Component gallery",
         note: "Every primitive at every size and state: nine type steps, four button variants, inputs, toggles, surfaces. This is what the app is being migrated onto.",

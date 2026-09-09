@@ -103,8 +103,10 @@
 .v-template .cd-face { box-shadow: inset 0 0 0 1px var(--ink-12); }
 .v-template .cd-front { border-top: 3px solid var(--pick); border-radius: 20px; }
 
-/* ── C · BRIGHT ON DARK. The Sana treatment, measured: #CDFD01 on #131313. Their acid lime never
-      appears in their stylesheet — it is inside the product photograph on their sign-in page. */
+/* ── C · BRIGHT ON DARK. The Sana treatment: #CDFE00 on #131313, both from their own tokens
+      (--color-background-accent and --color-background-secondary). An earlier note here said the
+      lime "never appears in their stylesheet" — that was true of their MARKETING site and wrong
+      about their app, which declares 831 custom properties including this one. */
 .v-bright .cd-face { background: var(--near-black); color: #fff; box-shadow: none; }
 .v-bright .cd-front { background: var(--pick); color: var(--on-pick); }
 .v-bright .cd-hint { color: color-mix(in srgb, var(--on-pick) 55%, transparent); }

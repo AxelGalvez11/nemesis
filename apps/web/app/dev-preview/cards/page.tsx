@@ -16,7 +16,7 @@ import "./cards.css";
  * FROM. Nothing here is a mood board. The three brights are sampled from Sana's own pixels, not
  * chosen: their whole stylesheet contains only two saturated colours (#0055ff and #ff6400, both on
  * tiny elements) and the acid lime everyone remembers is not in their CSS at all — it lives inside
- * the product photograph on their sign-in page, where it measures #CDFD01 against a #131313 ground.
+ * the product photograph on their sign-in page, where it measures #CDFE00 against a #131313 ground.
  *
  * 🔴 OUR CARD IS NOT A 1:1 OF MOCHI OR REMNOTE, and was never built to be. It was measured against
  * Claude.ai's learning card in August, plus the owner's instruction to keep it "plain Anki style
@@ -30,7 +30,7 @@ type Accent = "acid" | "electric" | "ember" | "ours";
 const ACCENTS: Record<Accent, { label: string; hex: string; on: string; note: string }> = {
   acid: {
     label: "Acid lime",
-    hex: "#CDFD01",
+    hex: "#CDFE00",
     on: "#131313",
     note: "Sampled from Sana's own product shot: 1,264px of it, chroma 252. Their brightest colour, and it never appears in their CSS.",
   },
