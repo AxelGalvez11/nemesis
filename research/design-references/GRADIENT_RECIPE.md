@@ -39,19 +39,39 @@ Higgsfield, model `recraft_v4_1`, **`model_type: "utility"`** — the standard t
 circles and streaks; utility is flatter and calmer, which is what the reference actually is.
 
 ```
-aspect_ratio 1:1, resolution 2k, count 4        # 8 credits for four
-colors: 3-4 hex values from the brand palette   # forces our hues rather than the model's taste
+aspect_ratio 1:1, resolution 2k, model_type utility      # ~2 credits an image
+colors: three hex values from ONE colour family, weighted to the saturated end
 prompt:
-  Minimalist soft gradient, only two or three large smooth colour regions meeting along one
-  gentle curved edge, extremely simple, completely smooth, no texture, no bokeh circles, no
-  streaks, no detail, no grain, calm and clean, like a single soft fold of light,
-  <colour words>, high key
+  One single continuous colour flowing gradually across the whole frame, imperceptible
+  transition, no distinct regions, no visible boundary anywhere, no edge, no line, no shape,
+  the colour shifts so slowly you cannot tell where one tone ends and the next begins,
+  extremely soft and diffuse, saturated <colour> throughout
 ```
 
 The negatives carry most of the weight. Without "no bokeh circles, no streaks, no detail" the
 model produces busy macro photography, which is the *genre* but not the *composition*.
 
-### Two corrections found by looking at the output
+### Three corrections found by looking at the output
+
+**🔴 The prompt was asking for the edge.** The first working prompt said *"two large smooth
+colour regions meeting along one gentle curved edge"*, and the owner kept saying the results looked
+sharp, like two colours. They did — because that is literally what the prompt requested. No blur or
+dither afterwards removed it; blurring an explicit boundary only makes a soft boundary. The fix was
+at generation: describe ONE colour whose tone changes too slowly to locate, and forbid regions,
+lines and edges outright.
+
+Measured with a Sobel edge-energy pass on a 400px greyscale copy
+(`magick <f> -resize 400x400! -colorspace gray -define convolve:scale='!' -morphology Convolve
+Sobel -format '%[fx:100*mean]' info:`). openai.com's cards read **-0.06 to 0.09**. The
+"meeting along an edge" prompt produced up to 0.195; the no-boundary prompt produced -0.075 to
+0.021. That number ends the argument about whether a gradient is "too sharp".
+
+The tradeoff, which is a taste call: removing the edge also removes some form, and two of six went
+nearly flat. The owner approved the no-edge set on 2026-09-10.
+
+**Dither is not the fix for a boundary.** It was tried first, calibrated per image to openai.com's
+fine-detail figure (a 3x3 standard-deviation pass, theirs averaging 1.87). It matched the number and
+changed almost nothing visible, because the problem was the boundary and not the texture.
 
 **Do not put a near-white stop in the palette.** Giving `#FFE6B8` / `#EEF9A8` / `#FFDCE4` as the
 lightest colour made the model fill half the frame with it, and three of six came back washed out.

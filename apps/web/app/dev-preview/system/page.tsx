@@ -200,6 +200,27 @@ export default function DesignSystemPortfolio() {
                 </div>
               ))}
             </div>
+          
+            <p className="ds-sub">Rendered artwork — for hero frames and panels</p>
+            <p className="ds-src" style={{ marginBottom: 14 }}>
+              Generated, not procedural: every reference site ships photographic or rendered art, and
+              no shader matches that. One colour family each, and no locatable edge — measured at
+              −0.075 to 0.021 edge energy against openai.com&apos;s −0.06 to 0.09. Recipe in
+              research/design-references/GRADIENT_RECIPE.md.
+            </p>
+            <div className="ds-grads">
+              {["orange", "lime", "emerald", "azure", "coral", "violet"].map((name) => (
+                <div className="ds-grad" key={name}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/gradients/${name}.webp`}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                  <span className="ds-grad-name">{name}</span>
+                </div>
+              ))}
+            </div>
           </section>
 
           {/* ── TYPE ───────────────────────────────────────────────────────────────────── */}
