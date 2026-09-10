@@ -77,7 +77,7 @@ export default function SignInPage() {
     try {
       const { error: verifyError } = await supabase.auth.mfa.verify({ challengeId: mfa.challengeId, code: mfaCode.trim(), factorId: mfa.factorId });
       if (verifyError) {
-        setError("That code didn't match — try the newest one from your app.");
+        setError("That code didn't match. Try the newest code from your app.");
         return;
       }
       const rawNext = new URLSearchParams(window.location.search).get("next");
@@ -202,8 +202,9 @@ export default function SignInPage() {
   return (
     <AuthFrame
       eyebrow="Welcome back"
-      title="Sign in to Nemesis."
-      description="Your account, your plan, and your workspace."
+      title="Welcome to Nemesis"
+      subtitle="Your learning workspace"
+      description="Sign in to pick up where you left off."
       footer={<p>New to Nemesis? <Link className="nemesis-auth-link" href="/sign-up">Create your account.</Link></p>}
     >
         <AuthModeSwitch active="sign-in" />
