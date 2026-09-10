@@ -14,7 +14,7 @@
    the first place the two references fight. Figma leads, so there are no bands here.
 
    🔴 COLOUR LIVES INSIDE THE FRAMES, NEVER BEHIND THE TYPE. Figma's page is carried by product
-   screenshots. Ours are gradient panels (see GradientArt) because the app is being redesigned.
+   screenshots. Ours are rendered gradient images (public/gradients) because the app is being redesigned.
    Same slots, same sizes, different content.
    ══════════════════════════════════════════════════════════════════════════════════════════════ */
 
@@ -232,36 +232,16 @@
                   text-decoration: none; }
 .ref-foot-col a:hover { text-decoration: underline; }
 
-/* ── GRADIENT ART (ours, not theirs). See GradientArt.tsx for why it exists. ───────────────── */
-/* 🔴 width/height 100% MATTER. Without them the panel collapses to its content height, which
-   the 348x433 strip cards hide (the strip sizes its own children) and the 581x700 hero slot
-   does not. The hero panel rendered 361px tall on the first pass. */
-/* 🔴 `:where()` CONTRIBUTES ZERO SPECIFICITY, and that is the entire point. The art must fill
-   whatever slot it is put in, but any caller that states a size — the 48px byline avatar, the
-   348x433 strip card — has to win. Written as a plain `.grad-art { width: 100% }` this rule ties
-   with those on specificity, comes later in the file, and wins: the avatar rendered 833px wide
-   and pushed the page 79px past the viewport at 834. */
-:where(.grad-art) { width: 100%; height: 100%; }
-.grad-art { position: relative; overflow: hidden; isolation: isolate; }
-.grad-art-mesh { position: absolute; inset: -12%; }
-.grad-art-grain {
-  position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
-  /* 0.16 is where the grain kills 8-bit banding without reading as texture in its own right. */
-  opacity: 0.16; mix-blend-mode: overlay;
-}
-/* One light shaft so the mesh has a direction rather than reading as a blob. */
-.grad-art-shaft {
-  position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(118deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 26%,
-              rgba(255,255,255,0) 52%);
-}
-.grad-art-body { position: relative; z-index: 2; width: 100%; height: 100%; }
-/* Slow enough to be felt rather than watched, and only on the hero. */
-@keyframes grad-drift {
-  from { transform: translate3d(0, 0, 0) scale(1.02); }
-  to   { transform: translate3d(-2.5%, -1.6%, 0) scale(1.09); }
-}
-.grad-art.is-drifting .grad-art-mesh { animation: grad-drift 34s ease-in-out infinite alternate; }
+/* ── RENDERED ART (ours, not theirs) ─────────────────────────────────────────────────────────
+   Approved gradient images in public/gradients. Five CSS meshes were rejected before these.
+   🔴 `:where()` CONTRIBUTES ZERO SPECIFICITY, and that is the point. The frame fills whatever slot
+   it is put in, but any caller that states a size — the 48px byline avatar, the 348x433 strip
+   card — has to win. Written as a plain `.ref-art { width: 100% }` it ties with `.ref-byline-art`
+   and `.ref-strip > *`, comes later in the file, and wins: the avatar once rendered 833px wide. */
+:where(.ref-art) { width: 100%; height: 100%; }
+.ref-art { position: relative; overflow: hidden; }
+.ref-art-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.ref-art-body { position: relative; z-index: 1; width: 100%; height: 100%; }
 
 @media (prefers-reduced-motion: reduce) {
   .ref-page *, .ref-page *::before, .ref-page *::after {

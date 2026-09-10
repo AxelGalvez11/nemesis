@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import { Mascot } from "@/components/home/Mascot";
 import { NemesisLockup } from "@/components/NemesisMark";
-import { GradientArt } from "@/components/reference/GradientArt";
 
 import "./reference.css";
 
@@ -60,12 +59,11 @@ export default function ReferenceLanding() {
               with the character standing on it: the character is the one thing neither reference
               has, and on a page that is otherwise ink on paper it carries the brand alone.
 
-              🔴 THE PALE VARIANT, NOT THE DEEP ONE. The character is flat black — that is the
-              shipped mark, not a bug — so on the navy mesh it read as a hole punched through the
-              panel. `ice` gives it a field to sit on. The deep meshes still carry the strip below,
-              where nothing dark sits on top of them. */}
+              🔴 RENDERED ART, NOT A CSS MESH. The owner rejected five procedural gradients and approved
+              six rendered ones on 2026-09-10 (research/design-references/GRADIENT_RECIPE.md). The
+              character is flat black, so the hero takes a field light enough for it to read on. */}
           <div className="ref-hero-art">
-            <GradientArt variant="ice" radius={24} drift>
+            <Art name="azure" radius={24} eager>
               <div
                 style={{
                   height: "100%",
@@ -76,7 +74,7 @@ export default function ReferenceLanding() {
               >
                 <Mascot size={300} />
               </div>
-            </GradientArt>
+            </Art>
           </div>
 
           <a className="ref-hero-cta" href="/app">
@@ -150,16 +148,16 @@ export default function ReferenceLanding() {
           </div>
         </div>
         <div className="ref-strip" style={{ marginTop: 63 }}>
-          <GradientArt variant="cyan" radius={0} />
-          <GradientArt variant="dusk" radius={0} />
-          <GradientArt variant="azure" radius={0} />
-          <GradientArt variant="cobalt" radius={0} />
+          <Art name="orange" />
+          <Art name="lime" />
+          <Art name="emerald" />
+          <Art name="azure" />
         </div>
         <div className="ref-strip" style={{ marginTop: 16 }}>
-          <GradientArt variant="ice" radius={0} />
-          <GradientArt variant="deep" radius={0} />
-          <GradientArt variant="azure" radius={0} />
-          <GradientArt variant="cyan" radius={0} />
+          <Art name="coral" />
+          <Art name="violet" />
+          <Art name="orange" />
+          <Art name="lime" />
         </div>
       </section>
 
@@ -176,7 +174,7 @@ export default function ReferenceLanding() {
                 revise from comes out of the same place I asked the question.”
               </p>
               <div className="ref-byline">
-                <GradientArt variant="dusk" radius={9999} className="ref-byline-art" />
+                <Art name="violet" radius={9999} className="ref-byline-art" />
                 <div>
                   <p className="ref-body">A second-year law student</p>
                   <p className="ref-body ref-dim">On the canvas, not the notes app</p>
@@ -335,5 +333,43 @@ function Foot() {
         </div>
       </div>
     </footer>
+  );
+}
+
+/**
+ * One frame of approved gradient artwork.
+ *
+ * 🔴 THESE ARE RENDERED IMAGES, NOT CSS. figma.com fills these slots with product screenshots and
+ * openai.com's gradients turned out to be defocused photography; five procedural attempts here
+ * were rejected before the owner approved six rendered families on 2026-09-10. The files live in
+ * public/gradients at roughly 15KB each. When the in-app redesign lands, real product art replaces
+ * them in the same frames at the same sizes.
+ */
+function Art({
+  name,
+  radius = 0,
+  eager = false,
+  className,
+  children,
+}: {
+  name: "orange" | "lime" | "emerald" | "azure" | "coral" | "violet";
+  radius?: number;
+  /** The hero loads eagerly; everything below the fold waits until it is near. */
+  eager?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className={["ref-art", className].filter(Boolean).join(" ")} style={{ borderRadius: radius }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        className="ref-art-img"
+        src={`/gradients/${name}.webp`}
+        alt=""
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+      />
+      {children ? <div className="ref-art-body">{children}</div> : null}
+    </div>
   );
 }
