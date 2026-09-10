@@ -93,7 +93,7 @@ export function OAuthButtons({ disabled, gate, onError, showTermsNote, next }: O
           <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>.
         </p>
       ) : null}
-      <div className="nemesis-auth-divider" aria-hidden="true"><span>or with email</span></div>
+      <div className="nemesis-auth-divider" aria-hidden="true"><span>or</span></div>
     </div>
   );
 }
