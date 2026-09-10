@@ -1,0 +1,148 @@
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   Coded mockups, built to x.ai/bot's measured window anatomy (2026-09-10). Our content.
+   Measured: their window glass does NOT blur. backdrop-filter is `none` on the shell, the sidebar,
+   the chat and every ancestor; the look is plain translucent white plus a 10% hairline ring.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+.mk { --mk-ink: rgb(20, 20, 20); --mk-ink-55: rgba(0, 0, 0, 0.55); --mk-ink-35: rgba(0, 0, 0, 0.35);
+      --mk-fill: rgba(16, 16, 0, 0.04); --mk-sel: rgba(10, 10, 10, 0.055); --mk-dark: rgb(17, 17, 16);
+      --mk-card: rgb(249, 248, 246); color: var(--mk-ink); font-family: var(--font-inter), -apple-system, sans-serif; }
+
+/* ── entrance: measured on x.ai, 0.28s, a small overshoot, 60ms stagger ──────────────────── */
+@keyframes mk-enter { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
+.mk[data-armed="true"]:not(.mk-is-in) .mk-in { opacity: 0; }
+.mk.mk-is-in .mk-in { animation: mk-enter 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+                   animation-delay: calc(var(--i, 0) * 60ms); }
+@media (prefers-reduced-motion: reduce) {
+  .mk .mk-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .mk-spinner { animation: none !important; }
+}
+
+/* ── the approved gradient behind a mockup ──────────────────────────────────────────────── */
+.mk-ground { position: relative; overflow: hidden; border-radius: 24px; isolation: isolate; }
+.mk-ground-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.mk-ground-body { position: relative; z-index: 1; }
+
+/* ── 1. the window: 976x660, r24, 280px sidebar ─────────────────────────────────────────── */
+.mk-window { position: relative; width: 976px; max-width: 100%; height: 660px; border-radius: 24px;
+  display: flex; overflow: hidden; background: rgba(252, 252, 252, 0.65);
+  /* Measured ring: rgba(37,37,37,0.1) 0 0 0 1px. The soft drop shadow is OURS, not theirs: their
+     window sits on white, ours sits on a gradient image and needs the separation. */
+  box-shadow: 0 0 0 1px rgba(37, 37, 37, 0.1), 0 24px 70px rgba(0, 0, 0, 0.12); }
+.mk-lights { position: absolute; top: 16px; left: 16px; display: flex; gap: 8px; z-index: 2; }
+.mk-lights i { width: 12px; height: 12px; border-radius: 9999px; display: block; }
+/* Measured: no dividing border (border-right 0px); the two panes are separated by tone alone. */
+.mk-sidebar { position: relative; width: 280px; flex: 0 0 280px; padding: 0 16px; background: rgba(251, 251, 251, 0.35); }
+.mk-sidebar-head { height: 44px; display: flex; align-items: center; justify-content: flex-end; }
+.mk-plus { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; font-size: 16px; color: rgba(20, 20, 20, 0.6); }
+.mk-search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.05); border: 1px solid rgba(20, 20, 20, 0.15); color: rgba(20, 20, 20, 0.4); font-size: 14px; margin-bottom: 8px; }
+.mk-row { display: flex; align-items: center; gap: 10px; height: 53px; padding: 8px; border-radius: 10px; margin-bottom: 2px; }
+.mk-row.is-on { background: var(--mk-sel); }
+.mk-avatar { flex: 0 0 auto; border-radius: 9999px; display: grid; place-items: center; color: #fff; font-weight: 600; }
+.mk-avatar-nemesis { background: #0d0f10; color: #fff; }
+.mk-row-body { min-width: 0; flex: 1; }
+.mk-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mk-row-name { font-size: 15px; font-weight: 400; line-height: 20px; letter-spacing: -0.1px; }
+.mk-row-time { font-size: 12px; line-height: 16px; color: var(--mk-ink-55); flex: 0 0 auto; }
+.mk-row-preview { display: block; font-size: 13px; line-height: 16px; color: var(--mk-ink-55);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-sidebar-foot { position: absolute; left: 14px; right: 14px; bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.mk-foot-avatar { width: 28px; height: 28px; border-radius: 9999px; background: var(--mk-sel); display: grid; place-items: center;
+  font-size: 10px; font-weight: 500; color: rgba(20, 20, 20, 0.6); }
+.mk-foot-name { font-size: 13px; line-height: 18px; letter-spacing: -0.08px; }
+
+.mk-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; background: rgba(252, 252, 252, 0.86); }
+.mk-chat-head { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+.mk-chat-title { font-size: 14px; font-weight: 500; }
+.mk-tag { font-size: 12px; line-height: 16px; padding: 2px 8px; border-radius: 9999px; background: var(--mk-fill); color: var(--mk-ink-55); }
+.mk-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; overflow: hidden; }
+.mk-divider { align-self: center; font-size: 12px; line-height: 16px; color: var(--mk-ink-55); }
+.mk-bubble { max-width: 560px; padding: 8px 12px; border-radius: 16px; background: var(--mk-fill); font-size: 14px; line-height: 20px; letter-spacing: -0.15px; }
+.mk-bubble-me { align-self: flex-end; max-width: 420px; background: var(--mk-dark); color: #fff; }
+.mk-tools { list-style: none; margin: 0; padding: 2px 0; display: flex; flex-direction: column; gap: 3px; }
+.mk-tools li { display: flex; align-items: center; gap: 6px; }
+.mk-check { color: rgb(23, 184, 122); flex: 0 0 auto; }
+.mk-pending { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 13px; color: var(--mk-ink-35); padding-left: 4px; }
+/* measured: 2.4s linear infinite for the working state */
+@keyframes mk-spin { to { transform: rotate(360deg); } }
+.mk-spinner { width: 12px; height: 12px; border-radius: 9999px; border: 1.5px solid rgba(0, 0, 0, 0.15);
+  border-top-color: rgba(0, 0, 0, 0.55); animation: mk-spin 2.4s linear infinite; }
+.mk-composer { display: flex; align-items: center; gap: 10px; height: 46px; margin: 0 20px 12px; padding: 8px;
+  border-radius: 9999px; background: rgba(252, 252, 252, 0.7); border: 1px solid rgba(0, 0, 0, 0.1); }
+.mk-attach, .mk-send { width: 28px; height: 28px; border-radius: 9999px; display: grid; place-items: center; flex: 0 0 auto; }
+.mk-attach { background: var(--mk-fill); color: var(--mk-ink-55); font-size: 16px; }
+.mk-send { background: var(--mk-dark); color: #fff; }
+.mk-composer-text { flex: 1; font-size: 14px; color: var(--mk-ink-35); }
+
+/* ── panels: the warm off-white card x.ai sets feature mockups on (rgb 249,248,246, r24) ──── */
+.mk-panel { border-radius: 24px; background: var(--mk-card); padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.mk-panel-head { display: flex; align-items: center; gap: 8px; }
+.mk-panel-title { font-size: 15px; font-weight: 500; letter-spacing: -0.15px; margin-right: auto; }
+.mk-chip { font-size: 12px; line-height: 16px; padding: 3px 9px; border-radius: 9999px; background: var(--mk-fill); color: var(--mk-ink-55); white-space: nowrap; }
+.mk-meta { font-size: 12px; line-height: 16px; color: var(--mk-ink-55); }
+
+.mk-flash { background: #fff; border-radius: 16px; padding: 22px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.mk-flash-q { margin: 0; font-size: 18px; font-weight: 450; line-height: 25px; letter-spacing: -0.2px; }
+.mk-flash-a { margin: 14px 0 0; padding-top: 14px; border-top: 1px solid rgba(0, 0, 0, 0.08); font-size: 15px; line-height: 23px; color: rgba(0, 0, 0, 0.72); }
+.mk-flash-src { display: block; margin-top: 12px; font-size: 12px; color: var(--mk-ink-55); }
+.mk-grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.mk-grade { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 0; border-radius: 10px; background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); font-size: 13px; font-weight: 500; }
+.mk-grade i { font-style: normal; font-size: 11px; font-weight: 400; color: var(--mk-ink-55); }
+.mk-grade.is-on { background: var(--mk-dark); color: #fff; box-shadow: none; }
+.mk-grade.is-on i { color: rgba(255, 255, 255, 0.6); }
+
+.mk-slide { aspect-ratio: 16 / 9; background: #fff; border-radius: 10px; padding: 22px 24px; display: flex; flex-direction: column;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.mk-slide-kicker { font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--mk-ink-55); }
+.mk-slide-title { margin-top: 6px; font-size: 22px; font-weight: 450; line-height: 26px; letter-spacing: -0.4px; }
+.mk-slide-list { margin: 14px 0 0; padding-left: 18px; font-size: 13px; line-height: 20px; color: rgba(0, 0, 0, 0.72); }
+.mk-thumbs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.mk-thumb { aspect-ratio: 16 / 9; border-radius: 5px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  display: flex; flex-direction: column; gap: 3px; padding: 6px; }
+.mk-thumb i { display: block; height: 3px; border-radius: 2px; background: rgba(0, 0, 0, 0.12); }
+.mk-thumb i:first-child { width: 70%; background: rgba(0, 0, 0, 0.3); }
+.mk-thumb.is-on { box-shadow: 0 0 0 2px var(--mk-dark); }
+
+.mk-callout { background: #fff; border-radius: 10px; padding: 12px 14px; font-size: 14px; line-height: 21px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.mk-steps { margin: 0; padding-left: 20px; font-size: 14px; line-height: 22px; color: rgba(0, 0, 0, 0.78); }
+.mk-table { display: grid; grid-template-columns: 1fr 1.2fr; background: #fff; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); font-size: 12.5px; line-height: 18px; }
+.mk-table > span { padding: 8px 12px; border-top: 1px solid rgba(0, 0, 0, 0.06); }
+.mk-table > .mk-th { border-top: 0; font-weight: 500; color: var(--mk-ink-55); background: var(--mk-fill); }
+
+.mk-schema { display: grid; grid-template-columns: 1fr 1.15fr; gap: 14px; align-items: start; }
+.mk-fields { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mk-fields li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 10px; background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); font-size: 13px; }
+.mk-fields code { font-family: var(--font-plex-mono), ui-monospace, monospace; font-size: 12.5px; }
+.mk-fields span { color: var(--mk-ink-55); }
+.mk-verdicts { display: flex; flex-direction: column; gap: 10px; }
+.mk-verdict { border-radius: 16px; background: #fff; padding: 14px 16px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.mk-verdict p { margin: 6px 0 4px; font-size: 15px; line-height: 21px; }
+.mk-verdict-state { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; }
+.is-pass .mk-verdict-state { color: rgb(14, 140, 92); }
+.is-fail .mk-verdict-state { color: rgb(200, 58, 40); }
+.mk-verdict-meta { font-size: 12px; line-height: 16px; color: var(--mk-ink-55); }
+
+.mk-canvas { position: relative; height: 440px; border-radius: 24px; background: #fff; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.mk-canvas-dots { position: absolute; inset: 0; width: 100%; height: 100%; color: rgba(0, 0, 0, 0.12); }
+.mk-card { position: absolute; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 8px 24px rgba(0, 0, 0, 0.06);
+  padding: 14px 16px; font-size: 14px; line-height: 21px; }
+.mk-card-q { top: 36px; left: 36px; display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.mk-card-answer { top: 120px; left: 96px; width: 380px; }
+.mk-card-src { top: 170px; right: 40px; width: 220px; font-size: 13px; color: var(--mk-ink-55); }
+.mk-src-kicker { display: block; font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 4px; }
+.mk-card-next { bottom: 40px; left: 96px; padding: 8px; }
+
+@media (max-width: 760px) {
+  .mk-window { height: 560px; }
+  .mk-sidebar { display: none; }
+  .mk-schema { grid-template-columns: 1fr; }
+  .mk-canvas { height: 520px; }
+  .mk-card-answer { left: 20px; right: 20px; width: auto; top: 110px; }
+  .mk-card-src { left: 20px; right: auto; top: auto; bottom: 110px; width: auto; }
+  .mk-card-q { left: 20px; right: 20px; }
+  .mk-card-next { left: 20px; bottom: 36px; }
+}

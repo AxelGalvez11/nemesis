@@ -1,0 +1,35 @@
+/* The brand exploration page. Portfolio chrome only; the marks themselves are flat SVG. */
+.bx { padding: 64px 40px 120px; max-width: 1240px; margin: 0 auto; }
+.bx-head { max-width: 640px; }
+.bx-head .ref-body { margin-top: 12px; }
+.bx-sec { margin-top: 56px; }
+.bx-label { color: var(--ref-ink-54); margin-bottom: 18px; }
+
+.bx-marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.bx-card { border-radius: 24px; background: rgb(249, 248, 246); padding: 20px; color: var(--ref-ink); }
+.bx-stage { height: 200px; border-radius: 16px; background: #fff; display: grid; place-items: center; }
+.bx-sizes { display: flex; align-items: flex-end; gap: 18px; padding: 18px 4px 6px; }
+.bx-size { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.bx-size i { font-style: normal; font-size: 11px; color: var(--ref-ink-54); font-family: var(--font-plex-mono), ui-monospace, monospace; }
+/* One colour means it must work reversed out too. */
+.bx-dark { margin-top: 12px; border-radius: 16px; background: #0d0f10; color: #fff; height: 84px;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 18px; }
+.bx-name { margin: 16px 0 2px; font-size: 16px; font-weight: 500; line-height: 22.4px; }
+
+.bx-lockup { display: inline-flex; align-items: center; gap: 9px; }
+.bx-words { display: flex; flex-direction: column; gap: 4px; }
+.bx-word-row { display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  padding: 18px 20px; border-radius: 16px; background: rgb(249, 248, 246); }
+.bx-lockup-lg { color: var(--ref-ink); }
+
+/* The current wordmark, reproduced from the shipped lockup for comparison. */
+.bw-current { font-family: var(--font-hanken), -apple-system, sans-serif; font-size: 15px; font-weight: 500; letter-spacing: 5.1px; }
+/* The system's tracking rule: zero at 12px, increasingly negative as size grows. */
+.bw-500 { font-family: var(--font-inter), -apple-system, sans-serif; font-size: 20px; font-weight: 500; letter-spacing: -0.3px; }
+.bw-400 { font-family: var(--font-inter), -apple-system, sans-serif; font-size: 20px; font-weight: 400; letter-spacing: -0.3px; }
+.bw-600 { font-family: var(--font-inter), -apple-system, sans-serif; font-size: 20px; font-weight: 600; letter-spacing: -0.4px; }
+
+@media (max-width: 720px) {
+  .bx { padding: 40px 20px 80px; }
+  .bx-word-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
