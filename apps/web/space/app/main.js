@@ -4,6 +4,7 @@ import { h, render } from 'preact';
 import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { ICONS, MASKS } from './icons.js';
+import { splitEmails } from '../../lib/space/invite-request';
 import { EMOJI_SECTIONS, EMOJI_KW } from './emoji.js';
 import { COVER_GALLERY } from './covers.js';
 import { TEMPLATES } from './templates.js';
@@ -16,15 +17,18 @@ const ALL_ICONS = ICONS;
 const SESSION_T0 = NOW();
 const S = space.state;
 const subs = new Set();
+// A change announced between a render and its subscription used to be lost until the next one (a hidden tab delays
+// effects by seconds), so the store counts its changes and a component that subscribes late catches up at once.
+let storeVersion = 0;
 let slash = null; // { id, query, sel, x, y }
 const persist = () => space.schedule();
-const refresh = () => subs.forEach((f) => f());
+const refresh = () => { storeVersion++; subs.forEach((f) => f()); };
 space.onChange(refresh);
 const isDark = () => space.isDark();
 const applyTheme = () => space.applyTheme();
 space.onTheme(refresh);
 const commit = () => { persist(); refresh(); };
-function useStore() { const [, tick] = useState(0); useEffect(() => { const f = () => tick((x) => x + 1); subs.add(f); return () => subs.delete(f); }, []); return S; }
+function useStore() { const [, tick] = useState(0); const seen = storeVersion; useLayoutEffect(() => { const f = () => tick((x) => x + 1); subs.add(f); if (storeVersion !== seen) f(); return () => subs.delete(f); }, []); return S; }
 const go = (r, opts) => space.go(r, opts);
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const propId = () => Math.random().toString(36).slice(2, 6);
@@ -32,6 +36,8 @@ const propId = () => Math.random().toString(36).slice(2, 6);
 const rowPageId = (rowId) => rowId.slice(0, 24) + (BigInt('0x' + rowId.slice(24)) ^ 0x5a5a5a5a5a5an).toString(16).padStart(12, '0');
 const pageOfBlock = (id) => { let b = S.blocks[id]; for (let i = 0; b && i < 60; i++) { if (S.pages[b.parent]) return b.parent; b = S.blocks[b.parent]; } return route(); };
 const sidebarRef = (el) => space.observeSidebar(el);
+// Someone shared a page: say so, with a way straight to it. Open also switches workspace when the page lives in theirs.
+space.onShared((it) => showToast({ text: `${(it.props && it.props.title) || 'A page'} was shared with you`, action: 'Open', onAction: () => go(it.id) }));
 
 // The page you leave moves to the top of Recents.
 let recentPin = null; // a page made this session stays first in Recents
@@ -48,7 +54,7 @@ space.onRoute((r, prev) => {
 // A feature whose server side does not exist yet stays out of sight rather than pretending: no canned AI answers, no
 // invite box that sends nothing (docs/space/PLAN.md). Turn a flag on in the milestone that builds it;
 // lib/space/space-ready.test.ts keeps every entry point behind its flag.
-const READY = { ai: false, meetings: false, inbox: false, invites: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
+const READY = { ai: false, meetings: false, inbox: false, invites: true, publish: false, members: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
 /* ------------------------------------------------------------------ helpers */
 const svgMarkup = (n, as) => (ALL_ICONS[n] || '').replace('<svg ', `<svg class="${as || n}" `);
 const Icon = ({ n, as, cls }) => html`<span class=${'nicon ' + (cls || '')} dangerouslySetInnerHTML=${{ __html: svgMarkup(n, as) }}></span>`;
@@ -778,6 +784,14 @@ function GetStartedMore() {
     ${READY.importExport ? html`${rest.length ? html`<div class="gs-div"></div>` : ''}<div class="gs-mi" role="menuitem" onClick=${closeOverlay}><${Icon} n="arrowLineDown" cls="i20"/><span>Import</span></div>` : ''}
   </div>`;
 }
+// A page this person can only view or comment on: nothing typed, pasted or dropped reaches it. Moving around, selecting
+// and copying still work.
+const stopEdit = (e) => { e.preventDefault(); e.stopPropagation(); };
+const stopKeys = (e) => {
+  const moves = e.key.startsWith('Arrow') || e.key.startsWith('Page') || ['Home', 'End', 'Escape', 'Tab', 'Shift', 'Meta', 'Control', 'Alt'].includes(e.key);
+  const copies = (e.metaKey || e.ctrlKey) && ['c', 'a', 'f'].includes(e.key.toLowerCase());
+  if (!moves && !copies) stopEdit(e);
+};
 function Page({ page }) {
   const titleRef = useRef(null);
   useLayoutEffect(() => {
@@ -795,16 +809,17 @@ function Page({ page }) {
     commit();
   };
   const st = page.style || {};
-  const gsEmpty = page.kind !== 'database' && page.kind !== 'stub' && !page.rowOf && !(page.content || []).length;
+  const editable = space.canEdit(page.id);
+  const gsEmpty = editable && page.kind !== 'database' && page.kind !== 'stub' && !page.rowOf && !(page.content || []).length;
   const cmtHere = !!(blockCmt && blockInPage(blockCmt.id, page.id));
   const threads = commentedBlocks(page);
   return html`${page.cover ? html`<${Cover} page=${page}/>` : ''}<div class=${'nsp-page-layout' + (gsEmpty ? ' gs-empty' : '') + (cmtHere || threads.length ? ' cmt-open' : '') + (st.full ? ' full' : '') + (st.small ? ' small' : '') + (st.font && st.font !== 'default' ? ' font-' + st.font : '')}>
     <div class=${'page-header' + (hasIcon(page) ? '' : ' noicon') + (page.cover ? ' hascover' : '')}>
       ${hasIcon(page) ? html`<div class="nsp-record-icon page-icon" role="button" onClick=${(e) => openOverlay('iconPicker', e.currentTarget, { pageId: page.id })}><div class="page-icon-in"><${PageIcon} ic=${page.icon} size=${78}/></div></div>` : ''}
       <div class="nsp-page-controls page-controls">${hasIcon(page) ? '' : html`<button onClick=${(e) => addRandomIcon(page, e.currentTarget.closest('.page-header'))}><${Icon} n="emojiFaceFill" cls="i14"/><span>Add icon</span></button>`}${page.cover ? '' : html`<button onClick=${() => addRandomCover(page)}><${Icon} n="photoFill" cls="i14"/><span>Add cover</span></button>`}${commentOpen === page.id ? '' : html`<button onClick=${() => openComment(page)}><${Icon} n="commentFilledFill" cls="i14"/><span>Add comment</span></button>`}</div>
-      <h1 ref=${titleRef} class="nsp-page-block-title" contenteditable="true" spellcheck="true" data-ph="New page" onInput=${(e) => { page.title = e.currentTarget.textContent; page.lastEdited = NOW(); if (page.rowOf) { const rr = (S.rows[page.rowOf.coll] || []).find((x) => x.id === page.rowOf.row); if (rr) rr.title = page.title; } persist(); refresh(); }} onKeyDown=${onKey}></h1>
+      <h1 ref=${titleRef} class="nsp-page-block-title" contenteditable=${editable ? 'true' : 'false'} spellcheck="true" data-ph="New page" onInput=${(e) => { page.title = e.currentTarget.textContent; page.lastEdited = NOW(); if (page.rowOf) { const rr = (S.rows[page.rowOf.coll] || []).find((x) => x.id === page.rowOf.row); if (rr) rr.title = page.title; } persist(); refresh(); }} onKeyDown=${onKey}></h1>
     </div>
-    ${commentOpen === page.id || (page.comments && page.comments.length) ? html`<${PageDiscussion} key=${'d' + page.id} page=${page}/>` : ''}${page.rowOf ? html`<${RowProps} page=${page}/>` : ''}<div class="nsp-page-content"><${Children} ids=${page.content}/></div>${gsEmpty ? html`<${GetStarted} page=${page}/>` : ''}${cmtHere ? html`<${BlockCommentCard} key=${blockCmt.id} id=${blockCmt.id}/>` : ''}${threads.map((b) => html`<${BlockThread} key=${'t' + b.id} b=${b}/>`)}
+    ${commentOpen === page.id || (page.comments && page.comments.length) ? html`<${PageDiscussion} key=${'d' + page.id} page=${page}/>` : ''}${page.rowOf ? html`<${RowProps} page=${page}/>` : ''}${editable ? '' : html`<div class="role-banner">${space.roleOf(page.id) === 'comment' ? 'You can comment on this page.' : 'You can view this page.'}</div>`}<div class="nsp-page-content" onBeforeInputCapture=${editable ? null : stopEdit} onPasteCapture=${editable ? null : stopEdit} onDropCapture=${editable ? null : stopEdit} onKeyDownCapture=${editable ? null : stopKeys}><${Children} ids=${page.content}/></div>${gsEmpty ? html`<${GetStarted} page=${page}/>` : ''}${cmtHere ? html`<${BlockCommentCard} key=${blockCmt.id} id=${blockCmt.id}/>` : ''}${threads.map((b) => html`<${BlockThread} key=${'t' + b.id} b=${b}/>`)}
   </div>`;
 }
 
@@ -860,7 +875,7 @@ function Database({ page }) {
       <div class="db-title-row">${hasIcon(page) ? html`<div class="nsp-record-icon db-icon" role="button" onClick=${(e) => openOverlay('iconPicker', e.currentTarget, { pageId: page.id })}><${PageIcon} ic=${page.icon} size=${36}/></div>` : ''}<h1 class="db-title" contenteditable="true" spellcheck="true" data-ph="New database" onInput=${(e) => { page.title = e.currentTarget.textContent; persist(); }}>${page.title}</h1></div>${page.hideDescription ? '' : html`<div class="db-desc">${page.description}</div>`}</div></div>
     <div class=${'db-bar' + (view.type === 'form' ? ' formbar' : '')}>
       <div class="db-tabs">${page.views.map((id) => { const vw = S.views[id]; const on = id === vid; return S.renamingView === id ? html`<div class="nsp-collection-view-tab-button db-tab"><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><input class="db-tab-input" value=${vw.name} ref=${(el) => { if (el && document.activeElement !== el) { el.focus(); el.select(); } }} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); } }} onBlur=${(e) => { if (S.renamingView !== id) return; vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); }}/></div>` : html`<div class=${'nsp-collection-view-tab-button db-tab' + (on ? '' : ' off')} role="button" onClick=${(e) => { if (on) openOverlay('viewMenu', e.currentTarget, { vid: id }); else { page.activeView = id; commit(); } }}><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><span class="lbl">${vw.name}</span></div>`; })}<div class="db-addview" role="button" aria-label="Add view" onClick=${(e) => openOverlay('addView', e.currentTarget)}><${Icon} n="plusSmall" cls="i16"/></div></div>${dbSel.size ? html`<div class="db-selbar"><span class="db-selcount">${dbSel.size} selected</span><div class="db-selbtn" role="button" onClick=${() => { const keep = rows.filter((x) => !dbSel.has(x.id)); rows.splice(0, rows.length, ...keep); dbSel.clear(); commit(); }}><${Icon} n="trash" cls="i16"/></div><div class="db-selbtn" role="button" onClick=${() => { dbSel.clear(); refresh(); }}><${Icon} n="xMarkSmall" cls="i16"/></div></div>` : ''}
-      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools">${READY.automations ? html`<div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div>` : ''}${READY.ai ? html`<div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div>` : ''}<div class="ft-ic" role="button" aria-label="Edit form, add questions and more…"><${Icon} n="slidersSmall" cls="i16"/></div><div class="ft-preview" role="button"><${Icon} n="eye" cls="i20"/><span>Preview</span></div>${READY.invites ? html`<div class="ft-share" role="button">Share form</div>` : ''}</div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && rows.some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button">No date (${rows.filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift({ id: uid(), title: '', created: NOW() }); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
+      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools">${READY.automations ? html`<div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div>` : ''}${READY.ai ? html`<div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div>` : ''}<div class="ft-ic" role="button" aria-label="Edit form, add questions and more…"><${Icon} n="slidersSmall" cls="i16"/></div><div class="ft-preview" role="button"><${Icon} n="eye" cls="i20"/><span>Preview</span></div>${READY.publish ? html`<div class="ft-share" role="button">Share form</div>` : ''}</div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && rows.some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button">No date (${rows.filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift({ id: uid(), title: '', created: NOW() }); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
     </div>
     ${view.sort && coll.schema[view.sort.pid] ? html`<div class="db-sortbar"><div class="db-chip" role="button" onClick=${() => { delete view.sort; commit(); }}><${Icon} n=${view.sort.dir === 'desc' ? 'arrowStraightDown' : 'arrowStraightUp'} cls="i14"/><span>${coll.schema[view.sort.pid].name}</span><${Icon} n="xMarkSmall" cls="i12"/></div></div>` : ''}
     ${viewSettings && S.views[viewSettings.vid] && page.views.includes(viewSettings.vid) ? (viewSettings.chartEdit ? html`<${ChartSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>` : html`<${ViewSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>`) : ''}
@@ -1178,10 +1193,10 @@ function WorkspaceMenu() {
     <div class="ws-rule"><div></div></div>
     <div class="ws-item blue" role="menuitem" onClick=${() => { closeOverlay(); space.openApp('/pricing'); }}><div class="ws-ic"><${Icon} n="arrowInCircleUp" cls="i20"/></div><span>Upgrade</span></div>
     <div class="ws-item" role="menuitem" onClick=${() => openOverlay('settings', null, { page: 'Preferences' })}><div class="ws-ic"><${Icon} n="gear" cls="i20"/></div><span>Settings</span></div>
-    ${READY.invites ? html`<div class="ws-item" role="menuitem" onClick=${() => openOverlay('settings', null, { page: 'People' })}><div class="ws-ic"><${Icon} n="envelope" cls="i20"/></div><span>Invite members</span></div>` : ''}
+    ${READY.members ? html`<div class="ws-item" role="menuitem" onClick=${() => openOverlay('settings', null, { page: 'People' })}><div class="ws-ic"><${Icon} n="envelope" cls="i20"/></div><span>Invite members</span></div>` : ''}
     <div class="ws-rule2"><div></div></div>
     <div class="ws-acct"><div class="ws-acct-head"><span>${space.me.email}</span></div>
-      ${(space.info.spaces || []).map((sp) => html`<div class="ws-acct-row" role="menuitem"><div class="ws-acct-ic"><img src=${space.avatar()} alt=""/></div><span class="ws-acct-name">${sp.name}</span>${sp.id === space.info.id ? html`<span class="ws-check"><${Icon} n="checkmark" cls="i20"/></span>` : ''}</div>`)}
+      ${(space.info.spaces || []).map((sp) => html`<div class="ws-acct-row" role="menuitem" onClick=${() => { closeOverlay(); if (sp.id !== space.info.id) void space.switchSpace(sp.id); }}><div class="ws-acct-ic"><img src=${space.avatar()} alt=""/></div><span class="ws-acct-name">${sp.name}</span>${sp.role === 'guest' ? html`<span class="ws-acct-guest">Guest</span>` : ''}${sp.id === space.info.id ? html`<span class="ws-check"><${Icon} n="checkmark" cls="i20"/></span>` : ''}</div>`)}
     </div>
     <div class="ws-rule2"><div></div></div>
     <div class="ws-logout" role="menuitem" onClick=${() => { closeOverlay(); space.host.signOut(); }}>Log out</div>
@@ -1383,18 +1398,65 @@ function PageMenu() {
     </div>
   </div>`;
 }
+const ROLE_LABEL = { full: 'Full access', edit: 'Can edit', comment: 'Can comment', read: 'Can view' };
+const ROLE_ORDER = ['full', 'edit', 'comment', 'read'];
+const asSentence = (m) => { const t = String(m || '').trim(); return t ? t[0].toUpperCase() + t.slice(1) + (/[.!?]$/.test(t) ? '' : '.') : 'Something went wrong. Try again.'; };
+// A role picker inside the Share menu: the four roles, and Remove for someone already on the page.
+function RoleMenu({ value, onPick, removable }) {
+  const [open, setOpen] = useState(false);
+  const pick = (r) => () => { setOpen(false); onPick(r); };
+  return html`<div class="shp-role"><div class="shp-access" role="button" onClick=${() => setOpen(!open)}><span>${ROLE_LABEL[value] || value}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i14"/></div>${open ? html`<div class="menu shp-role-menu"><div class="menu-group">${ROLE_ORDER.map((r) => html`<div class="mi" role="menuitem" onClick=${pick(r)}><div class="mi-in"><div class="mi-label">${ROLE_LABEL[r]}</div>${r === value ? html`<div class="mi-check"><${Icon} n="checkmarkSmall" cls="i16"/></div>` : ''}</div></div>`)}</div>${removable ? html`<div class="menu-group"><div class="mi" role="menuitem" onClick=${pick(null)}><div class="mi-in"><div class="mi-label">Remove</div></div></div></div>` : ''}</div>` : ''}</div>`;
+}
+// Sharing a page (docs/space/PLAN.md, M5): invite by email with a role, see who has access, change or remove it.
+// ws_invite and ws_set_access decide everything; this only asks and shows the answer.
 function SharePopover() {
   const [tab, setTab] = useState('share');
+  const [access, setAccess] = useState(null);
+  const [typed, setTyped] = useState('');
+  const [role, setRole] = useState('edit');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
   const left = Math.max(8, Math.min(overlay.r.right - 456, innerWidth - 464));
   const page = S.pages[route()];
+  const pid = page ? page.id : null;
+  const load = () => { if (pid) space.pageAccess(pid).then((a) => { if (a && !a.error) setAccess(a); }, (e) => setNote({ text: asSentence(e.message), warn: true })); };
+  useEffect(load, [pid]);
+  const full = !access || access.role === 'full';
+  const send = async () => {
+    const emails = splitEmails(typed);
+    if (!emails.length || busy || !pid) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await space.invite(pid, emails, role);
+      setTyped('');
+      setNote({ text: r.invited ? `Invited ${r.invited} ${r.invited === 1 ? 'person' : 'people'}.` : 'Everyone you added can already open this page.' });
+      load();
+    } catch (e) {
+      setNote({ text: asSentence(e.message), warn: true });
+    }
+    setBusy(false);
+  };
+  const change = (target) => async (r) => { try { const a = await space.setAccess(pid, target, r); if (a && !a.error) setAccess(a); } catch (e) { setNote({ text: asSentence(e.message), warn: true }); } };
+  const me = space.me;
+  const owner = access && access.owner;
+  const row = (av, name, email, right) => html`<div class="shp-member"><div class="shp-av">${av}</div><div class="shp-who"><div class="shp-name">${name}</div>${email ? html`<div class="shp-email">${email}</div>` : ''}</div>${right}</div>`;
+  const label = (r) => html`<div class="shp-access static"><span>${ROLE_LABEL[r] || r}</span></div>`;
+  const named = (p) => (p.id === me.id ? html`${p.name} <span class="shp-you">(You)</span>` : p.name);
   return html`<div class="menu share-pop" style=${`left:${left}px;top:44px`}>
-    <div class="shp-tabs"><div class="shp-tabs-l">${[['share', 'Share'], ...(READY.invites ? [['publish', 'Publish']] : [])].map(([k, label]) => html`<div class=${'shp-tab' + (tab === k ? ' on' : '')} onClick=${() => setTab(k)}><div class="shp-tab-in">${label}</div></div>`)}</div></div>
+    <div class="shp-tabs"><div class="shp-tabs-l">${[['share', 'Share'], ...(READY.publish ? [['publish', 'Publish']] : [])].map(([k, lab]) => html`<div class=${'shp-tab' + (tab === k ? ' on' : '')} onClick=${() => setTab(k)}><div class="shp-tab-in">${lab}</div></div>`)}</div></div>
     ${tab === 'share' ? html`<div>
-      ${READY.invites ? html`<div class="shp-invite"><div class="shp-input"><input placeholder="Email, separated by commas"/></div><div class="shp-invite-btn" role="button">Invite</div></div>` : ''}
-      <div class="shp-member"><div class="shp-av"><img src=${space.avatar()} alt=""/></div><div class="shp-who"><div class="shp-name">${space.me.name} <span class="shp-you">(You)</span></div><div class="shp-email">${space.me.email}</div></div><div class="shp-access"><span>Full access</span><${Icon} n="arrowChevronSingleDownSmall" cls="i14"/></div></div>
-      <div class="shp-general"><div class="shp-general-label">General access</div><div class="shp-general-row"><div class="shp-lock"><${Icon} n="lockFill" cls="i18"/></div><div class="shp-general-sel"><span>${page ? space.sectionLabel(page) === 'Private' ? 'Only people invited' : 'Everyone at ' + S.workspace : 'Only people invited'}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i16"/></div></div></div>
-      <div class="shp-bottom"><div class="shp-adv-row">${READY.invites ? html`<div class="shp-adv" role="button"><${Icon} n="gear" cls="i20"/><span>Advanced</span></div>` : ''}<div class="shp-copy" role="button" onClick=${() => { try { navigator.clipboard.writeText(page ? space.pageUrl(page.id) : location.href); } catch (e) {} }}><${Icon} n="link" cls="i16"/><span>Copy link</span></div></div></div>
-    </div>` : READY.invites ? html`<div class="shp-publish"><div class="shp-pub-title">Publish to web</div><div class="shp-pub-sub">Anyone with the link can read it, without signing in.</div><div class="shp-invite-btn wide" role="button">Publish</div></div>` : ''}
+      ${READY.invites && full ? html`<div class="shp-invite"><div class="shp-input"><input placeholder="Email, separated by commas" value=${typed} onInput=${(e) => setTyped(e.currentTarget.value)} onKeyDown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } }}/></div><${RoleMenu} value=${role} onPick=${(r) => { if (r) setRole(r); }}/><div class=${'shp-invite-btn' + (busy || !typed.trim() ? ' off' : '')} role="button" onClick=${send}>${busy ? 'Inviting…' : 'Invite'}</div></div>` : ''}
+      ${note ? html`<div class=${'shp-note' + (note.warn ? ' warn' : '')}>${note.text}</div>` : ''}
+      <div class="shp-list">
+        ${owner ? row(html`<img src=${space.avatar(owner.id)} alt=""/>`, named(owner), owner.email, label('full')) : row(html`<img src=${space.avatar()} alt=""/>`, html`${me.name} <span class="shp-you">(You)</span>`, me.email, label(access ? access.role : 'full'))}
+        ${(access ? access.people : []).map((p) => row(html`<img src=${space.avatar(p.id)} alt=""/>`, named(p), p.email, full && !p.inherited && p.id !== me.id ? html`<${RoleMenu} value=${p.role} removable onPick=${change({ user: p.id })}/>` : label(p.role)))}
+        ${(access ? access.pending : []).map((p) => row(html`<span class="shp-pending-ic"><${Icon} n="envelope" cls="i20"/></span>`, p.email, 'Invited, has not opened it yet', html`<${RoleMenu} value=${p.role} removable onPick=${change({ email: p.email })}/>`))}
+      </div>
+      ${full ? '' : html`<div class="shp-note">Only people with full access can invite others.</div>`}
+      <div class="shp-general"><div class="shp-general-label">General access</div><div class="shp-general-row"><div class="shp-lock"><${Icon} n="lockFill" cls="i18"/></div><div class="shp-general-sel"><span>${page ? space.sectionLabel(page) === 'Private' ? 'Only people invited' : 'Everyone at ' + S.workspace : 'Only people invited'}</span></div></div></div>
+      <div class="shp-bottom"><div class="shp-adv-row">${READY.publish ? html`<div class="shp-adv" role="button"><${Icon} n="gear" cls="i20"/><span>Advanced</span></div>` : ''}<div class="shp-copy" role="button" onClick=${() => { try { navigator.clipboard.writeText(page ? space.pageUrl(page.id) : location.href); } catch (e) {} }}><${Icon} n="link" cls="i16"/><span>Copy link</span></div></div></div>
+    </div>` : READY.publish ? html`<div class="shp-publish"><div class="shp-pub-title">Publish to web</div><div class="shp-pub-sub">Anyone with the link can read it, without signing in.</div><div class="shp-invite-btn wide" role="button">Publish</div></div>` : ''}
   </div>`;
 }
 
@@ -2044,7 +2106,7 @@ function SettingsModal({ data }) {
   } else if (pg === 'General') {
     body = html`<div class="set-page"><div class="set-h1">Workspace</div><div class="set-sec">${row('Name', 'Shown in the sidebar and on invitations.', html`<span class="set-row-title">${S.workspace}</span>`)}${row('Your role', '', html`<span class="set-row-title">${capWord(space.info.role || 'member')}</span>`)}</div></div>`;
   } else if (pg === 'People') {
-    body = html`<div class="set-page"><div class="set-h1">People</div><div class="set-sec">${[...space.people.values()].map((p) => html`<div class="set-person"><img src=${space.avatar(p.id)} alt=""/><div><div class="set-person-name">${p.name}${p.id === space.me.id ? ' (You)' : ''}</div><div class="set-person-mail">${p.email || ''}</div></div><div class="set-person-role">${capWord(p.role || 'member')}</div></div>`)}<div class="set-note">Only you can open the pages in your workspace.</div></div></div>`;
+    body = html`<div class="set-page"><div class="set-h1">People</div><div class="set-sec">${[...space.people.values()].map((p) => html`<div class="set-person"><img src=${space.avatar(p.id)} alt=""/><div><div class="set-person-name">${p.name}${p.id === space.me.id ? ' (You)' : ''}</div><div class="set-person-mail">${p.email || ''}</div></div><div class="set-person-role">${capWord(p.role || 'member')}</div></div>`)}<div class="set-note">${[...space.people.values()].some((p) => p.role === 'guest') ? 'Guests open only the pages shared with them.' : 'Share a page to work on it with someone. They join as a guest and see only what you share.'}</div></div></div>`;
   } else if (pg === 'Plans') {
     body = html`<div class="set-page"><div class="set-h1">Plans</div><div class="set-sec">${row('Your plan', 'What each plan includes, and how to change yours.', html`<div class="set-btn primary" role="button" onClick=${() => { closeOverlay(); space.openApp('/pricing'); }}>View plans</div>`)}</div></div>`;
   } else {
@@ -3149,13 +3211,6 @@ function App() {
   const status = isUuid(r) ? space.pageStatus(r) : 'ready';
   const drawable = page && (page.kind === 'database' ? !!S.collections[page.collection] && !!S.views[page.views && page.views[0]] : Array.isArray(page.content));
   useLayoutEffect(() => { applyFocus(); applySel(); });
-  // Home has no page of its own yet (docs/space/PLAN.md, M9), so it opens the page you were last on, or your first page.
-  useEffect(() => {
-    if (r !== 'home' || !space.ready) return;
-    const alive = (id) => isUuid(id) && !(S.pages[id] && S.pages[id].trashed);
-    const target = (S.recents || []).find(alive) || S.sidebar.private.find(alive) || S.sidebar.workspace.find(alive) || S.sidebar.shared.find(alive);
-    if (target) space.go(target, { replace: true });
-  });
   useEffect(() => { if (isAi && !READY.ai) space.go('home', { replace: true }); }, [isAi]);
   useEffect(() => { if (!isApp) document.title = isAi ? 'Nemesis AI' : isLib ? 'Library' : isTasks ? 'My Tasks' : isMarket ? 'Templates' : page ? pageTitleText(page) : 'Nemesis'; });
   const peek = page && page.kind === 'database' && peekRow && drawable ? (S.rows[page.collection] || []).find((x) => x.id === peekRow) : null;

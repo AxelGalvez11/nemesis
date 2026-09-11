@@ -1930,3 +1930,17 @@ body[data-contrast="high"],body[data-contrast="high"].nsp-light-theme,body[data-
 .set-person-mail{font-size:12px;line-height:16px;color:var(--c-texSec)}
 .set-person-role{margin-left:auto;font-size:14px;color:var(--c-texSec)}
 .set-note{margin-top:10px;font-size:12px;line-height:16px;color:var(--c-texTer)}
+
+/* Sharing (docs/space/PLAN.md, M5) */
+.shp-role{position:relative;flex:none}
+.shp-invite .shp-role .shp-access{height:32px}
+.shp-role-menu{position:absolute;right:0;left:auto;top:34px;width:180px;padding:4px;z-index:3}
+.shp-access.static{cursor:default}
+.shp-access.static:hover{background:none}
+.shp-invite-btn.off{opacity:.5;cursor:default}
+.shp-note{margin:0 16px 8px;font-size:12px;line-height:16px;color:var(--c-texSec)}
+.shp-note.warn{color:#d44c47}
+.shp-list{max-height:260px;overflow-y:auto;padding:4px 0}
+.shp-pending-ic{width:32px;height:32px;border-radius:100%;display:flex;align-items:center;justify-content:center;background:var(--ca-bacIntTra);fill:var(--c-icoSec)}
+.ws-acct-guest{margin-left:6px;font-size:12px;color:var(--c-texTer)}
+.role-banner{flex:none;height:36px;margin:0 0 8px;border-radius:6px;background:var(--ca-bacIntTra);color:var(--c-texSec);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:16.8px}

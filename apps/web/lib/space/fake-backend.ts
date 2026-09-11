@@ -227,6 +227,16 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
   const visits = new Map<string, number>();
   const channels = new Map<string, Map<string, Handler[]>>();
   const files = new Map<string, string>();
+  // Pending invites by page, then by email. The harness has one person, so every address stays pending.
+  const invites = new Map<string, Map<string, string>>();
+  const accessOf = (page: string) => ({
+    role: "full",
+    section: "private",
+    owner: { ...me, role: "full" },
+    people: [],
+    pending: [...(invites.get(page) ?? new Map<string, string>())].map(([email, role]) => ({ email, role })),
+    public: false,
+  });
 
   const summary = (id: string) => {
     const r = server.recs.get(id);
@@ -301,6 +311,32 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
         if (params.p_on) favorites.set(String(params.p_page), Date.now());
         else favorites.delete(String(params.p_page));
         return ok(null);
+      case "ws_invite": {
+        const page = String(params.p_page);
+        const role = String(params.p_role ?? "edit");
+        const list = invites.get(page) ?? new Map<string, string>();
+        const notify: string[] = [];
+        for (const raw of (params.p_emails as string[]) ?? []) {
+          const email = raw.trim().toLowerCase();
+          if (!email || email === me.email || notify.includes(email)) continue;
+          list.set(email, role);
+          notify.push(email);
+        }
+        invites.set(page, list);
+        return ok({ notify, page: { id: page, title: String(server.recs.get(page)?.props.title ?? "") || "Untitled" }, inviter: me.name });
+      }
+      case "ws_page_access":
+        return ok(accessOf(String(params.p_page)));
+      case "ws_set_access": {
+        const page = String(params.p_page);
+        const email = params.p_email ? String(params.p_email).toLowerCase() : null;
+        const list = invites.get(page);
+        if (email && list) {
+          if (params.p_role == null) list.delete(email);
+          else list.set(email, String(params.p_role));
+        }
+        return ok(accessOf(page));
+      }
       default:
         return { data: null, error: { message: `fake backend has no ${name}`, code: "42883" } };
     }

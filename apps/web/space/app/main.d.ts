@@ -6,6 +6,8 @@ export interface SpaceHost {
   navigate(path: string, opts?: { replace?: boolean }): void;
   setTheme(pref: "system" | "light" | "dark"): void;
   signOut(): Promise<void> | void;
+  /** Shares a page by email and says how many people were invited and emailed. */
+  invite?(request: { page: string; emails: string[]; role: "full" | "edit" | "comment" | "read" }): Promise<{ invited: number; emailed: number }>;
   toast?: (text: string) => void;
 }
 

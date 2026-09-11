@@ -36,6 +36,10 @@ export default function SpacePreview() {
           document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
         },
         signOut: () => {},
+        invite: async ({ page, emails, role }) => {
+          const { data } = await fake.rpc("ws_invite", { p_page: page, p_emails: emails, p_role: role });
+          return { invited: ((data as { notify?: string[] } | null)?.notify ?? []).length, emailed: 0 };
+        },
       });
     });
     return () => {

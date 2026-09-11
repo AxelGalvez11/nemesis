@@ -53,7 +53,11 @@ export function pathFor(r) {
 export const isSpacePath = (pathname) => routeFromPath(pathname) !== null;
 /** What route() answers while the React app owns the main column. No page has this id. */
 export const APP_ROUTE = '@app';
-export const route = () => (typeof location === 'undefined' ? APP_ROUTE : routeFromPath(location.pathname) ?? APP_ROUTE);
+const routeFromLocation = () => (typeof location === 'undefined' ? APP_ROUTE : routeFromPath(location.pathname) ?? APP_ROUTE);
+// The route the frontend last settled on, which is what gets drawn. Next.js replays the addresses it has seen after its
+// own commits, so for a moment after two quick navigations the address bar can read the earlier one; drawing from it
+// left a blank page with nothing to redraw it. A real change of address still arrives through routeChanged.
+export const route = () => (space.lastRoute != null ? space.lastRoute : routeFromLocation());
 
 // ------------------------------------------------------------------------------------------------ state
 
@@ -163,7 +167,15 @@ class Space {
     this.signed = new Map();
     this.signing = new Set();
     this.sidebarObserver = null;
-    this.sync = new SpaceSync({
+    this.switching = null;
+    this.switchTried = new Set();
+    this.sharedListeners = new Set();
+    this.sync = this.makeSync();
+  }
+
+  /** The sync engine for one workspace. Switching workspaces starts a new one that remembers nothing. */
+  makeSync() {
+    return new SpaceSync({
       transport: { apply: (spaceId, ops, client) => this.rpcApply(spaceId, ops, client) },
       state: () => this.state,
       changed: () => this.emit(),
@@ -303,7 +315,7 @@ class Space {
 
   /** The address bar changed (a click here, the back button, or the React app navigating). */
   routeChanged(force = false) {
-    const r = route();
+    const r = routeFromLocation();
     if (!force && r === this.lastRoute) return;
     const prev = this.lastRoute;
     this.lastRoute = r;
@@ -337,6 +349,99 @@ class Space {
   /** Canvas, Study and Calendar are the React app's; the sidebar stays and the main column changes hands. */
   openApp(path) {
     if (this.host) this.host.navigate(path);
+  }
+
+  // -------------------------------------------------------------------------------------------- sharing
+
+  /** Whether this person can change a page: what its last load said, or yes for a page made here and not loaded yet. */
+  canEdit(id) {
+    const role = this.roles.get(id);
+    return !role || role === 'edit' || role === 'full';
+  }
+
+  roleOf(id) {
+    return this.roles.get(id) || 'full';
+  }
+
+  /** Who can open a page and how (ws_page_access), for the Share menu. */
+  async pageAccess(id) {
+    const { data, error } = await this.sb.rpc('ws_page_access', { p_page: id });
+    if (error) throw new Error(error.message || 'Could not load who has access.');
+    return data;
+  }
+
+  /** Shares a page by email. The host sends it through the invite route, which also emails each person. */
+  async invite(pageId, emails, role) {
+    if (!this.host || !this.host.invite) throw new Error('Sharing is not available here.');
+    await this.sync.flush().catch(() => {});
+    return this.host.invite({ page: pageId, emails, role });
+  }
+
+  /** Changes what one person ({ user }) or pending invite ({ email }) can do on a page, or removes them when role is null. */
+  async setAccess(pageId, target, role) {
+    const { data, error } = await this.sb.rpc('ws_set_access', {
+      p_page: pageId,
+      p_user: target.user || null,
+      p_email: target.email || null,
+      p_role: role || null,
+    });
+    if (error) throw new Error(error.message || 'Could not change access.');
+    return data;
+  }
+
+  /** Called with a page's summary each time a page is shared with this person. */
+  onShared(fn) {
+    this.sharedListeners.add(fn);
+    return () => this.sharedListeners.delete(fn);
+  }
+
+  /** Access to a page was taken away: it leaves the sidebar, and the person leaves the page if it is open. */
+  revoke(id) {
+    const S = this.state;
+    for (const list of [S.sidebar.private, S.sidebar.workspace, S.sidebar.shared, S.recents]) {
+      const i = list.indexOf(id);
+      if (i >= 0) list.splice(i, 1);
+    }
+    this.sync.receive({ items: [{ id, kind: 'page', destroyed: true }] });
+    this.loaded.delete(id);
+    this.missing.set(id, 'no_access');
+    this.leave('ws:page:' + id);
+    if (route() === id) this.go('home', { replace: true });
+    this.emit();
+  }
+
+  /**
+   * Opens another workspace this person belongs to, their own or one they are a guest of. Everything held for the
+   * current workspace is dropped first, so no write meant for one can land in the other.
+   */
+  async switchSpace(id, opts = {}) {
+    if (!id || id === this.info.id || this.switching || !this.sb) return;
+    this.switching = id;
+    try {
+      await this.sync.flush().catch(() => {});
+      for (const topic of [...this.channels.keys()]) this.leave(topic);
+      this.pageTopics = [];
+      this.loaded.clear();
+      this.childrenLoaded.clear();
+      for (const map of [this.loading, this.missing, this.roles, this.children, this.favorites, this.people]) map.clear();
+      const fresh = emptyState();
+      for (const key of Object.keys(this.state)) delete this.state[key];
+      Object.assign(this.state, fresh);
+      this.sync = this.makeSync();
+      this.ready = false;
+      this.info = { ...this.info, id };
+      if (!opts.keepRoute) this.go('home', { replace: true });
+      this.emit();
+      await this.sb.rpc('ws_save_settings', { p_patch: { current_space: id } });
+      const { data, error } = await this.sb.rpc('ws_bootstrap', { p_space: id });
+      if (error) throw error;
+      this.applyBootstrap(data);
+    } catch (err) {
+      this.error = (err && err.message) || String(err);
+      this.emit();
+    } finally {
+      this.switching = null;
+    }
   }
 
   goHome() {
@@ -374,6 +479,16 @@ class Space {
         }
         this.missing.set(id, data.error);
         return;
+      }
+      if (data.space_id && this.info.id && data.space_id !== this.info.id) {
+        // A page shared from another workspace opens inside that workspace, where its writes belong. Once per page and
+        // workspace, so a page this person cannot join there cannot send them back and forth.
+        const key = id + ':' + data.space_id;
+        if (!this.switchTried.has(key)) {
+          this.switchTried.add(key);
+          void this.switchSpace(data.space_id, { keepRoute: true });
+          return;
+        }
       }
       this.missing.delete(id);
       const records = [data.page, ...(data.records || [])];
@@ -547,8 +662,23 @@ class Space {
 
   onTree(payload) {
     if (!payload) return;
-    this.sync.receive({ client: payload.client, items: payload.items || [] });
-    this.syncSidebar(payload.items || []);
+    const items = (payload.items || []).filter(Boolean);
+    for (const it of items) if (it.revoked) this.revoke(it.id);
+    const rest = items.filter((it) => !it.revoked);
+    // A grant names the page's workspace (ws_grant_user). A page in another workspace is offered, never mixed in here.
+    if (payload.space && payload.space !== this.info.id) {
+      for (const it of rest) if (it.kind === 'page') this.sharedListeners.forEach((fn) => fn(it));
+      return;
+    }
+    this.sync.receive({ client: payload.client, items: rest });
+    this.syncSidebar(rest);
+    if (!payload.space) return;
+    for (const it of rest) {
+      if (it.kind !== 'page' || !it.owner_id || it.owner_id === this.me.id || this.state.sidebar.shared.includes(it.id)) continue;
+      this.state.sidebar.shared.unshift(it.id);
+      this.sharedListeners.forEach((fn) => fn(it));
+    }
+    this.emit();
   }
 
   /** Keeps the sidebar's section lists in step with pages made, moved or deleted in another browser. */

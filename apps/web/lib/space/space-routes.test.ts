@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { pathFor, routeFromPath } from "../../space/app/runtime.js";
+import { pathFor, route, routeFromPath, space } from "../../space/app/runtime.js";
 
 const ID = "3d77f2d7-9611-4147-9b03-eba683704706";
 
@@ -22,4 +22,14 @@ test("every Space route round-trips through its path", () => {
     assert.equal(routeFromPath(pathFor(r)), r);
   }
   assert.equal(pathFor("anything else"), "/home");
+});
+
+test("🔴 the drawn route is the one the frontend settled on, not whatever the address bar reads in passing", () => {
+  const before = space.lastRoute;
+  try {
+    space.lastRoute = ID;
+    assert.equal(route(), ID);
+  } finally {
+    space.lastRoute = before;
+  }
 });
