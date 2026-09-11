@@ -182,7 +182,8 @@ export function mergeField(kind: Kind, field: string, baseVal: unknown, localVal
   return localVal;
 }
 
-function orderCreates(recs: LocalRecord[]): LocalRecord[] {
+/** Records to create, parents before children (a page before its blocks), whatever order they came in. */
+export function orderCreates(recs: LocalRecord[]): LocalRecord[] {
   const byId = new Map(recs.map((r) => [r.id, r]));
   const out: LocalRecord[] = [];
   const seen = new Set<string>();

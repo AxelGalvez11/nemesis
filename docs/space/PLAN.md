@@ -45,7 +45,7 @@ nothing here reuses that word.
 
 ## Not built yet stays hidden
 - `READY` in apps/web/space/app/main.js hides every way into a feature with no server behind it: ai, meetings, inbox,
-  notifyPrefs, publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5, the inbox with M6, chat and meeting notes with M9. The milestone that builds one turns its
+  notifyPrefs, publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5, the inbox with M6, chat and meeting notes with M9, agents with M11. The milestone that builds one turns its
   flag on. lib/space/space-ready.test.ts fails when an entry point escapes its flag.
 - Controls with no handler of their own: 71 on 2026-09-11, down from 106 (lib/space/dead-controls.ts). The budget only goes down.
 - Home has no page of its own until M9; it opens the page you were last on, or your first page.
@@ -124,3 +124,12 @@ nothing here reuses that word.
       after applying). Deleting an account (/api/account/delete) now removes the workspaces no one else owns or is a
       member of, with their files in ws-files, and the person's private pages and their files in workspaces others keep.
       Left: sources, the /library redirect, Canvas and Study inside the shell, the front door for everyone.
+- [ ] M11 Agents: outside AI tools connect in and make things as the person (owner 2026-09-11: "Outside AI connects in")
+      2026-09-11, part one: a remote MCP server at /api/mcp (mcp-handler, Streamable HTTP) with list_pages, read_page,
+      create_page, list_decks, create_flashcards and create_practice_test, each acting through a client that carries the
+      person's token, so row security bounds it as it bounds them (lib/agents/agent-actions.ts). Tokens come from Supabase
+      Auth's OAuth 2.1 server and must name the AI tool they were issued to (lib/agents/agent-auth.ts). Discovery is at
+      /.well-known/oauth-protected-resource, the approval page at /oauth/consent, and the sidebar's Agents section lists
+      connected tools with Disconnect and shows how to connect one. Needs, once, in the Supabase dashboard:
+      Authentication > OAuth Server on, Authorization Path /oauth/consent, dynamic client registration allowed. Left:
+      databases and rows through the door, the calendar, and a record of what each tool made.
