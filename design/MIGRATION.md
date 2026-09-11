@@ -19,7 +19,9 @@ Already correct. Do not touch.
   already role-first and self-documenting. They need consolidating, not replacing.
 - **No emoji as interface icons.** Verified: zero in JSX. The 204 files matching an emoji scan were
   code comments.
-- **The inset focus ring** where it already exists on the board.
+- **A focus ring drawn as a box-shadow** where it already exists on the board. The shape changed with
+  the 2026-09-11 ruling (a 2px ink ring with a 2px gap in the ground, no longer inset), but anything
+  already using a shadow rather than an `outline` only needs re-pointing at `--focus-ring`.
 - **`ui/skeleton.tsx`, `ui/separator.tsx`, `ui/scroll-area.tsx`, `ui/tabs.tsx`** as component
   architecture.
 - **The character's motion vocabulary.** Separate system, owns its own rules, out of scope.
@@ -34,9 +36,10 @@ Behaviour is right; styling or architecture is wrong.
 | `ui/button.tsx` | exists but **150 files use a raw `<button>`** | rebuild to the variant/size matrix, then migrate callers |
 | `ui/input.tsx`, `textarea.tsx` | not on the control-height scale | 32px, radius 6, `body` type |
 | `ui/card.tsx` | used as the default container | reduce to a last-resort primitive; most callers become sections |
-| `ui/dialog.tsx`, `sheet.tsx` | radius and elevation off-system | radius 12, `--elev-overlay`, bottom sheet below `md` |
-| sidebar and rows | heights and radii vary per call site | 28px, radius 6, `ui` type |
-| canvas toolbar | landing-page proportions on a working surface | chrome density: 28px controls, radius 6, 12px type |
+| `ui/dialog.tsx`, `sheet.tsx` | radius and elevation off-system | radius 24, `--elev-overlay`, bottom sheet below `md` |
+| sidebar and rows | heights and radii vary per call site | 30px rows, radius 6, `type-label` (14px) |
+| menus and popovers | radius and row height vary per call site | radius 10, 28px rows at radius 6, `--elev-floating` |
+| canvas toolbar | landing-page proportions on a working surface | chrome density: 28 to 30px controls, radius 6, 14px type |
 | every `text-[Npx]` | **24 distinct sizes, 401 uses** | `<Text variant>` |
 | every `rounded-[Npx]` | **26 distinct radii, 246 uses** | six radius tokens |
 | every arbitrary spacing | **210 distinct values, 1,142 uses** | twelve-step scale |
@@ -66,8 +69,9 @@ Many implementations, one concept.
 
 - `@tabler/icons-react` (dependency and all 22 imports)
 - decorative gradients and blurs that survive the audit with no function
-- the tight `0 1px 2px` shadow pattern
-- radius values above 12px that are not pills or the composer
+- the tight `0 1px 2px` shadow pattern, and any soft shadow without the 1px ring inside it
+- radius values outside the six: 4, 6, 10, 16, 24 and the pill. 2, 8 and 12 are retired, and 20, 26
+  and 28 were never in the system
 - any `--ui-kind-*` colour not carrying meaning
 
 ## Redesign
@@ -85,9 +89,15 @@ Substantial restructuring, in this order.
 
 ## Order of implementation
 
+🔴 **The app-screens pass has started** (owner, 2026-09-11, replacing "later on we'll finish the app
+screens"). It begins with **the new workspace shell and its sidebar**, built on the Sana and Notion
+synthesis. Two steps held back for that pass are now in scope: the app-wide switch to Inter, and
+`--font-weight-bold: 600`, which re-points Tailwind's `font-bold` on existing screens.
+
 Primitives first. **Do not redesign a page before the primitives it needs exist.**
 
-1. **Tokens** in `globals.css`, with old `--ui-*` names aliased to new ones so nothing breaks
+1. **Tokens**. Done on 2026-09-11: `app/styles/design-tokens.css` carries the synthesis values, still
+   additive, with every old `--ui-*` name left alone so nothing breaks
 2. **Guard tests** that fail on arbitrary values, so the count cannot grow while we work
 3. **Typography**: `Text`, `Heading`
 4. **Icons**: `Icon`, Lucide only, stroke 1.5

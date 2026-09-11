@@ -1,11 +1,20 @@
 /* ─────────────────────────────────────────────────────────────────────────────────────────────
    THE DESIGN SYSTEM TOKEN LAYER.  Canonical source: /design/TOKENS.md
-   Derived from measured references in /research/design-references/.
 
-   🔴🔴 THIS FILE IS ADDITIVE AND BREAKS NOTHING. The existing `--ui-*` tokens keep their values
-   and their meaning; the names below are defined ON TOP of them, so both work during the
-   migration and a component can be moved one at a time. `/design/MIGRATION.md` §Consolidate
-   lists which old names collapse into which new ones.
+   🔴🔴 THE VALUES HERE ARE THE SANA AND NOTION SYNTHESIS. Owner, 2026-09-11: "our new design",
+   approved on a mockup of the rebuilt app. It replaces the 2026-09-09 ruling that Figma led the
+   app's system, and it starts the app-screens pass that the 2026-09-10 ruling had put off, beginning
+   with the new workspace shell and its sidebar. The marketing site, sign-in and pricing keep their
+   existing Sana rulings and are untouched by this file.
+
+   The values were read off measured Sana and Notion components and then synthesised into one set.
+   The comparison sheet is NOT in git, so /design/PROVENANCE.md records what was measured, what was
+   a synthesis judgement, and where the sheet lives.
+
+   🔴🔴 THIS FILE IS STILL ADDITIVE AND RENAMES NOTHING. Every existing `--ui-*` token keeps its
+   name and its meaning, and no Tailwind utility (`font-bold` included) is redefined here, so both
+   sets work while screens move across one at a time. `/design/MIGRATION.md` §Consolidate lists
+   which old names collapse into which new ones.
 
    🔴 THE RULE THIS FILE EXISTS TO ENFORCE: a component may not contain a raw value. No
    `text-[13px]`, no `rounded-[9px]`, no `p-[14px]`. Today the app carries 24 distinct hard-coded
@@ -32,142 +41,228 @@
      EMPTY. Anything hand-written CSS must read at runtime is declared here. */
 
   /* Spacing. Named by value (Figma's convention): `space-8` cannot drift from 8px, and nobody has
-     to remember whether `md` is 6 or 8. Base 4, with 2 and 6 as half steps for dense chrome. */
+     to remember whether `md` is 6 or 8. Base 4, with 2 and 6 as half steps for dense chrome.
+     The synthesis does not restate spacing, so this scale stands. */
   --space-2: 2px;   --space-4: 4px;   --space-6: 6px;   --space-8: 8px;
   --space-12: 12px; --space-16: 16px; --space-20: 20px; --space-24: 24px;
   --space-32: 32px; --space-40: 40px; --space-48: 48px; --space-64: 64px;
 
-  /* Radius. Six values, nothing else, ever. The rule: the closer a control is to the learner's
-     content, the rounder it gets. Chrome is square (6), containers soft (8 to 12), the things a
-     learner presses to answer are pills. Nothing above 12 except pills and the composer. */
-  --radius-2: 2px; --radius-4: 4px; --radius-6: 6px; --radius-8: 8px; --radius-12: 12px;
+  /* Radius. SIX LIVE VALUES: 4, 6, 10, 16, 24 and the pill.
+     🔴 THE NESTING RULE IS ARITHMETIC, NOT TASTE: inner radius plus inset equals outer radius. A
+     row at 6 inside a menu of 10 works because 6 + 4 of padding is 10, and the send button at 16
+     inside the composer's 24 works because 16 + 8 of inset is 24. Get that wrong and the gap
+     between the two curves visibly thickens at the corner. */
+  --radius-4: 4px; --radius-6: 6px; --radius-10: 10px; --radius-16: 16px; --radius-24: 24px;
   --radius-full: 9999px;
+  /* RETIRED by the 2026-09-11 ruling, kept defined so nothing reading them breaks. Do not reach
+     for these in new work: 2 and 8 became 4 and 10, and 12 became 10 or 16. */
+  --radius-2: 2px; --radius-8: 8px; --radius-12: 12px;
 
-  /* Control heights. Five exist; a surface uses TWO. Chrome takes compact + standard, content
-     takes comfortable + large. Every reference application uses exactly two (Figma 32/24,
-     Sana 36/28). --control-touch is the mobile floor and is never reduced. */
-  --control-compact: 24px; --control-standard: 28px; --control-comfortable: 32px;
-  --control-large: 36px;   --control-touch: 44px;
+  /* Control heights. A surface uses TWO. Chrome takes the menu row (28) and the sidebar row (30);
+     the conversation takes 32 to 36px pill controls, and the send button is a 32px circle.
+     --control-touch is the mobile floor and is never reduced. */
+  --control-compact: 24px; --control-standard: 28px; --control-row: 30px;
+  --control-comfortable: 32px; --control-large: 36px; --control-touch: 44px;
 
-  /* Motion. The closer a change is to the pointer, the faster it resolves (Sana's tiered model).
-     🔴 40ms is not really a transition: it is a refusal of one that still avoids the hard flicker
-     of `transition: none` on repaint. Sana uses 0.02s, about 1.2 frames. */
-  --dur-instant: 40ms; --dur-fast: 120ms; --dur-standard: 200ms; --dur-slow: 320ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  /* Motion. The closer a change is to the pointer, the faster it resolves.
+     🔴 20ms is not really a transition: it is a refusal of one that still avoids the hard flicker
+     of `transition: none` on repaint. Both measured references sit at about that figure for a hover
+     fill. Menus get their own step because they open from scale .98 and opacity 0, and a panel
+     that travels gets the long curve so it decelerates instead of arriving. */
+  --dur-instant: 20ms; --dur-fast: 100ms; --dur-menu: 150ms;
+  --dur-standard: 200ms; --dur-slow: 320ms;
+  --ease-standard: cubic-bezier(0, 0, 0.2, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-travel: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Layout. 672 is the measured reading column at x.ai and Figma. Prose wider than that costs
-     comprehension; on a large monitor it gets more margin, not more width. */
+     comprehension; on a large monitor it gets more margin, not more width. The synthesis does not
+     restate these widths, so they stand. */
   --reading-column: 672px; --content-max: 1120px;
   --w-sidebar: 240px; --w-sidebar-narrow: 200px;
   --w-panel: 320px; --w-panel-wide: 400px; --h-topbar: 48px;
 
   /* ── Neutrals: alpha over ONE ink, never a grey palette.
-     🔴🔴 WE ALREADY DO THIS AND IT IS THE BEST IDEA IN THE REFERENCE SET. `--ui-base` is our ink;
-     three of five measured references (Sana `#0a1217`, Figma `#000` at 10/30%, x.ai
-     `rgba(10,10,10,.04)`) arrived at the same construction independently. A wash composes over any
-     surface, the set harmonises by construction because it is one hue, and dark mode is one
-     variable. Eleven steps: fine at the bottom where hairlines live, coarse at the top where text
-     lives. Sana ships 25; unused steps only invite arbitrary choices. */
+     🔴🔴 THIS CONSTRUCTION SURVIVED THE NEW RULING UNCHANGED, AND BOTH MEASURED REFERENCES USE IT.
+     `--ui-base` is our ink. A wash composes over any surface, the set harmonises by construction
+     because it is one hue, and a theme swap is one variable.
+     🔴 THE SYNTHESIS INK IS rgb(16,16,18) IN LIGHT AND rgb(237,237,238) IN DARK. `--ui-base` is the
+     app's own theme foreground and today resolves to #0d0d0d light and #ffffff dark (#ededed on the
+     charcoal tone), which is close but not identical. Moving it is a THEME change, owned by
+     `desktop-ui.css` in the shell pass, not something this additive layer may do: renaming or
+     re-pointing a `--ui-*` token would restyle every existing screen at once.
+     Seventeen steps, and every one of them is a job in /design/TOKENS.md §1.2. Steps exist because
+     a job needs them; a step with no job invites arbitrary choices. */
   --n-2: color-mix(in srgb, var(--ui-base) 2%, transparent);
   --n-4: color-mix(in srgb, var(--ui-base) 4%, transparent);
+  --n-5: color-mix(in srgb, var(--ui-base) 5%, transparent);
   --n-6: color-mix(in srgb, var(--ui-base) 6%, transparent);
+  --n-7: color-mix(in srgb, var(--ui-base) 7%, transparent);
+  --n-8: color-mix(in srgb, var(--ui-base) 8%, transparent);
   --n-10: color-mix(in srgb, var(--ui-base) 10%, transparent);
   --n-14: color-mix(in srgb, var(--ui-base) 14%, transparent);
   --n-20: color-mix(in srgb, var(--ui-base) 20%, transparent);
   --n-30: color-mix(in srgb, var(--ui-base) 30%, transparent);
+  --n-35: color-mix(in srgb, var(--ui-base) 35%, transparent);
   --n-45: color-mix(in srgb, var(--ui-base) 45%, transparent);
+  --n-50: color-mix(in srgb, var(--ui-base) 50%, transparent);
   --n-60: color-mix(in srgb, var(--ui-base) 60%, transparent);
   --n-80: color-mix(in srgb, var(--ui-base) 80%, transparent);
+  --n-90: color-mix(in srgb, var(--ui-base) 90%, transparent);
   --n-100: var(--ui-base);
 
-  /* ── Semantic surfaces.  Role first, then prominence, then context, then state (Figma's
-     grammar). A component references ONLY these names; the ramp above is raw material. */
-  /* 🔴🔴 `--ui-bg-primary` IS A FILL, NOT A GROUND, AND MAPPING IT HERE SHIPPED AN INVISIBLE
-     BUTTON. It resolves to `color-mix(accent <n>%, ink 10%)` — a translucent control fill — so the
+  /* ── Semantic surfaces.  A component references ONLY these names; the ramp above is raw material.
+     🔴🔴 `--ui-bg-primary` IS A FILL, NOT A GROUND, AND MAPPING IT HERE SHIPPED AN INVISIBLE
+     BUTTON. It resolves to `color-mix(accent <n>%, ink 10%)`, a translucent control fill, so the
      primary button drew dark 24%-alpha text on its own near-black background. Caught by measuring
      the rendered gallery, not by reading the file: the label came back as
      `color(srgb 0.182 0.182 0.182 / 0.244)` on `rgb(13,13,13)`.
      The real page ground in this codebase is `--ui-bg-editor`; elevated surfaces are
      `--ui-bg-elevated`. Both flip correctly in dark mode, which is why the inverse text token
-     points at a ground rather than at a literal white. */
+     points at a ground rather than at a literal white.
+     🔴 THE SYNTHESIS GROUNDS ARE #fff page / #f9f9f9 sunken / #fff surface in light, and #141415 /
+     #18181a / #1e1e20 in dark. The grounds still resolve through the app's theme above, because a
+     ground is a theme value and this layer may not re-point one. Sunken already lands on them:
+     ink at 2% is #f9f9f9 over white and #18181a over #141415. */
   --bg-page: var(--ui-bg-editor);
   --bg-surface: var(--ui-bg-elevated);
   --bg-overlay: var(--ui-bg-elevated);
   /* The foreground for anything sitting ON the ink: the primary button's label. */
   --text-on-inverse: var(--ui-bg-elevated);
   --bg-sunken: var(--n-2);
-  --bg-hover: var(--n-4);
-  --bg-active: var(--n-6);
 
-  /* ── Text. Three weights of ink, not five. */
-  --text-primary: var(--n-100);
-  --text-secondary: var(--n-60);
-  --text-muted: var(--n-45);
+  /* ── Fills, by job. Four steps and they are not interchangeable: a selected row that uses the
+     hover fill loses its selection the moment the pointer lands on its neighbour. */
+  --bg-soft: var(--n-4);              /* a resting wash: chips, the composer's ground */
+  --bg-hover: var(--n-5);
+  --bg-selected-neutral: var(--n-7);  /* selection is INK, not the accent */
+  --bg-pressed: var(--n-10);
+  --bg-active: var(--bg-pressed);     /* `active` is this codebase's older name for pressed */
+
+  /* ── Text, by job. Titles and emphasis sit at the full ink; body steps back to 90%, which is the
+     single change that stops a long answer reading as shouted. */
+  --text-primary: var(--n-100);   /* t0: titles, emphasis */
+  --text-body: var(--n-90);       /* t1: body, answers */
+  --text-secondary: var(--n-60);  /* t2 */
+  --text-muted: var(--n-45);      /* t3: muted, placeholders */
   --text-disabled: var(--n-30);
 
   /* 🔴 ICONS GET THEIR OWN NAMESPACE, AND THAT IS NOT TIDINESS. A glyph is a solid mass and text
-     is not, so an icon at the same alpha as its label reads HEAVIER than the label. Figma keeps
-     `--color-icon-*` separate from `--color-text-*` for exactly this reason. Ours currently share
-     the text colour, which is why our icons look slightly too loud beside their labels. */
-  --icon-primary: var(--n-80);
-  --icon-secondary: var(--n-45);
-  --icon-muted: var(--n-30);
+     is not, so an icon at the same alpha as its label reads HEAVIER than the label. Both measured
+     references keep the two namespaces apart for exactly this reason. */
+  --icon-primary: var(--n-80);    /* i1 */
+  --icon-secondary: var(--n-50);  /* i2 */
+  --icon-muted: var(--n-35);      /* i3 */
 
-  /* ── Borders. Hairlines are the alpha ramp, never a separate border colour. */
-  --border-subtle: var(--n-6);
-  --border-default: var(--n-10);
-  --border-strong: var(--n-20);
+  /* ── Lines. Hairlines are the alpha ramp, never a separate border colour. */
+  --border-subtle: var(--n-6);    /* l1 */
+  --border-default: var(--n-8);   /* l2 */
+  --border-strong: var(--n-14);   /* l3 */
 
-  /* ── Elevation. Four defined, two used in practice.
-     🔴 HIERARCHY COMES FROM BACKGROUND STEPS AND HAIRLINES, NOT SHADOW. Figma ships exactly two
-     elevations for its whole product, both 10% opacity with a very wide blur and almost no offset;
-     Sana's application chrome has effectively none. THERE IS NO `0 1px 2px` TIGHT SHADOW: a tight
-     dark shadow is the clearest signature of a generated interface. Give it a border first. */
+  /* ── Tooltip. The one surface that inverts, so it reads as an annotation on the interface rather
+     than a part of it. Named here so no component writes the pair by hand. */
+  --tooltip-bg: #262628;
+  --tooltip-text: rgba(255, 255, 255, 0.95);
+
+  /* ── Elevation: A 1px RING SITS INSIDE SOFT SHADOWS, and the ring is what does the work.
+     🔴 A LONE TIGHT DARK SHADOW IS STILL BANNED. It is the clearest signature of a generated
+     interface. The small 2px and 4px shadow only ever appears INSIDE the ring, where it reads as
+     contact rather than as a drop shadow, and the wide one carries the float. There is no
+     `0 1px 2px` anywhere in this system. */
+  --elev-ring: 0 0 0 1px var(--n-8);
   --elev-flat: none;
-  --elev-raised: inset 0 0 0 1px var(--border-default);
-  --elev-floating: 0 4px 24px color-mix(in srgb, var(--ui-base) 8%, transparent);
-  --elev-overlay: 0 16px 48px color-mix(in srgb, var(--ui-base) 12%, transparent);
+  --elev-raised: var(--elev-ring);
+  /* Menus, popovers, the focused composer. */
+  --elev-floating: var(--elev-ring),
+    0 2px 6px color-mix(in srgb, var(--ui-base) 3%, transparent),
+    0 10px 24px color-mix(in srgb, var(--ui-base) 6%, transparent);
+  /* Dialogs. */
+  --elev-overlay: var(--elev-ring),
+    0 4px 10px color-mix(in srgb, var(--ui-base) 4%, transparent),
+    0 24px 48px color-mix(in srgb, var(--ui-base) 10%, transparent);
 
-  /* 🔴 FOCUS IS AN INSET RING, NOT AN OUTLINE. Held transparent when unfocused so it costs no
-     layout and cannot shift a row by a pixel when it appears. Sana's approach, and the reason
-     their rows never jump under keyboard navigation. */
-  --focus-ring: inset 0 0 0 2px var(--ui-accent);
+  /* 🔴 FOCUS IS A 2px INK RING WITH A 2px GAP IN THE GROUND, and it is a box-shadow, so it shifts
+     no layout and cannot move a row by a pixel when it appears. The gap is what keeps the ring
+     legible on a filled control: without it the ring touches the fill and reads as a border.
+     It is INK, not the accent: the accent belongs to the character. */
+  --focus-ring: 0 0 0 2px var(--bg-page), 0 0 0 4px color-mix(in srgb, var(--ui-base) 70%, transparent);
+}
+
+/* ── Dark ─────────────────────────────────────────────────────────────────────────────────────
+   🔴🔴 BOTH SELECTORS ARE REQUIRED AND THE SECOND ONE IS NOT BELT AND BRACES. The block above
+   declares these on `[data-workspace]` as well as `:root`, and the shell stamps `data-workspace`
+   on a div INSIDE the page. A custom property inherits from the nearest ancestor that declares it,
+   and inheritance beats specificity across two different elements, so a dark value set only on
+   `:root` would lose to the light value sitting on that div for everything in the workspace.
+
+   🔴 THE DELTAS ARE ONE OR TWO PERCENT, AND THEY ARE WRITTEN OUT RATHER THAN ADDED TO THE RAMP.
+   The same percentage of near-white over a dark ground reads lighter than near-black over a pale
+   one, so dark needs its fills and lines a step stronger. A ramp step that exists for one theme
+   only would be a step with no job, which is how arbitrary choices get back in. */
+:root[data-theme="dark"],
+:root[data-theme="dark"] [data-workspace] {
+  --text-muted: color-mix(in srgb, var(--ui-base) 44%, transparent);
+  --text-disabled: color-mix(in srgb, var(--ui-base) 28%, transparent);
+
+  --icon-secondary: color-mix(in srgb, var(--ui-base) 52%, transparent);
+  --icon-muted: color-mix(in srgb, var(--ui-base) 36%, transparent);
+
+  --bg-soft: color-mix(in srgb, var(--ui-base) 5%, transparent);
+  --bg-hover: color-mix(in srgb, var(--ui-base) 6%, transparent);
+  --bg-selected-neutral: color-mix(in srgb, var(--ui-base) 9%, transparent);
+  --bg-pressed: color-mix(in srgb, var(--ui-base) 12%, transparent);
+
+  --border-subtle: color-mix(in srgb, var(--ui-base) 7%, transparent);
+  --border-default: color-mix(in srgb, var(--ui-base) 10%, transparent);
+  --border-strong: color-mix(in srgb, var(--ui-base) 16%, transparent);
+
+  --tooltip-bg: #ededee;
+  --tooltip-text: #141415;
+
+  /* The ring carries one percent more, and the shadows go to real black rather than to the ink:
+     a near-white ink at 6% over a dark ground is a glow, not a shadow. The negative spread keeps
+     the wide layer from haloing past the panel's own edge. */
+  --elev-ring: 0 0 0 1px color-mix(in srgb, var(--ui-base) 10%, transparent);
+  --elev-floating: var(--elev-ring), 0 2px 6px rgba(0, 0, 0, 0.3), 0 12px 28px -6px rgba(0, 0, 0, 0.5);
+  --elev-overlay: var(--elev-ring), 0 4px 10px rgba(0, 0, 0, 0.35), 0 24px 48px -8px rgba(0, 0, 0, 0.6);
+
+  --focus-ring: 0 0 0 2px var(--bg-page), 0 0 0 4px color-mix(in srgb, var(--ui-base) 75%, transparent);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────────────────────
-   TYPOGRAPHY.  Nine steps. Size, weight, line height AND tracking travel together, always.
+   TYPOGRAPHY.  Size, weight, line height AND tracking travel together, always.
 
-   🔴🔴 TRACKING CROSSES ZERO AT 12px, AND THAT IS A MEASURED RULE, NOT A PREFERENCE. Collected
-   across all five references: sans is set POSITIVE below 12px and increasingly NEGATIVE above,
-   plateauing near -0.025em (Figma app 11px/+0.055px; Figma 18px/-0.075px; champ 32px/-0.8px;
-   x.ai 60px/-1.5px; Figma 88px/-1.25px). Monospace INVERTS it and takes positive tracking at every
-   size, because mono letterforms already sit in wide boxes and need separation to read as labels.
-   No component sets letter-spacing by hand.
+   🔴🔴 CHROME TEXT IS 14px, AND THAT REVERSES THIS SYSTEM'S OWN "THERE IS NO 14px CHROME".
+   The 12px chrome step was an interpolation between Figma's 11px and Sana's 14px. Both references
+   measured for the synthesis set chrome at 14px, so the interpolation loses to the measurement:
+   sidebars, menus, buttons and tabs are 14/20. Reading text is 16/26. Small text is 12/16.
 
-   🔴 TWO DENSITIES, NEVER MIXED IN ONE REGION. Chrome is `ui` (12px). Content is `body` (16px) or
-   `body-lg` (18px). There is no 14px chrome and no 12px prose. This is the rule that most
-   separates a designed application from a generated one, and Figma proves it inside its own brand:
-   their app runs at 11px with 4px radii, their marketing site at 16px with 24px radii.
+   🔴 TRACKING IS NOW ZERO AT AND BELOW 13px, NOT POSITIVE. Negative tracking starts at 14px and
+   grows with size, reaching -0.6px on the display step. The old positive values below 12px came
+   from Figma's 11px chrome, which this ruling replaced. No component sets letter-spacing by hand.
+
+   🔴 WEIGHT: headings and labels are 500. Bold inside an answer is 600, and 600 stays the ceiling.
    ───────────────────────────────────────────────────────────────────────────────────────────── */
-@utility type-meta     { font-size: 11px; font-weight: 500; line-height: 16px;   letter-spacing:  0.06px; }
-@utility type-caption  { font-size: 12px; font-weight: 400; line-height: 16px;   letter-spacing:  0.02px; }
-@utility type-ui       { font-size: 12px; font-weight: 500; line-height: 16px;   letter-spacing:  0.02px; }
-@utility type-ui-lg    { font-size: 13px; font-weight: 500; line-height: 18px;   letter-spacing:  0; }
-@utility type-body     { font-size: 16px; font-weight: 400; line-height: 25.6px; letter-spacing: -0.1px; }
-@utility type-body-lg  { font-size: 18px; font-weight: 400; line-height: 28.8px; letter-spacing: -0.15px; }
-@utility type-title-sm { font-size: 20px; font-weight: 500; line-height: 28px;   letter-spacing: -0.2px; }
-@utility type-title    { font-size: 24px; font-weight: 500; line-height: 31px;   letter-spacing: -0.35px; }
-/* 🔴 DISPLAY IS WEIGHT 450, NOT BOLD. Not one of the five references sets a heading at 700, and
-   three set display type at 400 (x.ai 60px/400, Figma 88px/400). Presence comes from size and
-   negative tracking. `text-4xl font-bold` is the signature of a generated interface. */
-@utility type-display  { font-size: 32px; font-weight: 450; line-height: 37px;   letter-spacing: -0.7px; }
+@utility type-meta     { font-size: 11px; font-weight: 500; line-height: 16px; letter-spacing: 0; }
+@utility type-caption  { font-size: 12px; font-weight: 400; line-height: 16px; letter-spacing: 0; }
+@utility type-ui       { font-size: 14px; font-weight: 400; line-height: 20px; letter-spacing: -0.1px; }
+/* The label form of the chrome step: same metrics, weight 500. A sidebar row, a menu heading and a
+   button label are labels, not body text, and they are the reason this step exists. */
+@utility type-label    { font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: -0.1px; }
+@utility type-ui-lg    { font-size: 13px; font-weight: 500; line-height: 18px; letter-spacing: 0; }
+@utility type-body     { font-size: 16px; font-weight: 400; line-height: 26px; letter-spacing: -0.1px; }
+@utility type-body-lg  { font-size: 18px; font-weight: 400; line-height: 28px; letter-spacing: -0.15px; }
+@utility type-title-sm { font-size: 20px; font-weight: 500; line-height: 28px; letter-spacing: -0.2px; }
+@utility type-title    { font-size: 24px; font-weight: 500; line-height: 31px; letter-spacing: -0.35px; }
+/* 🔴 DISPLAY IS 30/36 AT WEIGHT 500. Presence comes from size and negative tracking, not from
+   weight: `text-4xl font-bold` is the signature of a generated interface. */
+@utility type-display  { font-size: 30px; font-weight: 500; line-height: 36px; letter-spacing: -0.6px; }
 
-/* 🔴 THE SYSTEM'S WEIGHT CEILING IS 600, AND THIS FILE DOES NOT ENFORCE IT YET. Redefining Tailwind's `font-bold` here
-   would restyle every screen that uses it today, and the app's screens move onto the system in their own pass (owner,
-   2026-09-10: "later on we'll finish the app screens"). /design/MIGRATION.md holds the step; until it runs, this layer
-   adds names and re-points none. design-system.test.ts fails if an existing utility is redefined early. */
+/* 🔴 THE SYSTEM'S WEIGHT CEILING IS 600, AND THIS FILE STILL DOES NOT ENFORCE IT. Redefining
+   Tailwind's `font-bold` here would restyle every screen that uses it today, including the screens
+   the app-screens pass has not reached yet. /design/MIGRATION.md holds that step, to be taken with
+   the Inter switch. design-system.test.ts fails if an existing utility is redefined early. */
 
 
 /* ── Tone utilities ───────────────────────────────────────────────────────────────────────────
@@ -177,9 +272,9 @@
    palette can be re-pointed from this file.
 
    🔴 TEXT AND ICON TONES ARE SEPARATE because a glyph is a solid mass and text is not: an icon at
-   the label's alpha reads heavier than the label. Figma keeps these namespaces apart for the same
-   reason. Never put a text tone on an icon. */
+   the label's alpha reads heavier than the label. Never put a text tone on an icon. */
 @utility tone-primary   { color: var(--text-primary); }
+@utility tone-body      { color: var(--text-body); }
 @utility tone-secondary { color: var(--text-secondary); }
 @utility tone-muted     { color: var(--text-muted); }
 @utility tone-disabled  { color: var(--text-disabled); }
@@ -198,22 +293,25 @@
 @utility surface-floating{ background: var(--bg-surface); box-shadow: var(--elev-floating); }
 @utility surface-overlay { background: var(--bg-overlay); box-shadow: var(--elev-overlay); }
 
-/* 🔴 FOCUS IS AN INSET RING, and it is declared once here so no control invents its own. Held on
-   :focus-visible only, so a mouse click never draws it. It cannot shift layout by a pixel. */
+/* 🔴 FOCUS IS DECLARED ONCE HERE so no control invents its own. Held on :focus-visible only, so a
+   mouse click never draws it. Being a box-shadow, it cannot shift layout by a pixel. */
 @utility focus-ring {
   &:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 }
 
-/* Reduced motion is not optional. Every duration above collapses, except short opacity fades. */
 @theme static {
-  --radius-2: 2px; --radius-4: 4px; --radius-6: 6px; --radius-8: 8px; --radius-12: 12px;
+  /* The six live radii, plus the three retired ones so existing utilities keep resolving. */
+  --radius-4: 4px; --radius-6: 6px; --radius-10: 10px; --radius-16: 16px; --radius-24: 24px;
+  --radius-2: 2px; --radius-8: 8px; --radius-12: 12px;
 }
 
+/* Reduced motion is not optional, and the synthesis collapses every step, menus included. */
 @media (prefers-reduced-motion: reduce) {
   [data-workspace],
   :root {
     --dur-instant: 0ms;
     --dur-fast: 0ms;
+    --dur-menu: 0ms;
     --dur-standard: 0ms;
     --dur-slow: 0ms;
   }

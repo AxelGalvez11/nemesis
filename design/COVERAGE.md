@@ -56,7 +56,7 @@ surface cannot arrive without someone deciding what governs it.
 | `components/nemesis-mark.tsx` | the mark | BRAND.md | on the system |
 | `components/AuthProvider.tsx` | auth state; draws nothing | none | not drawn |
 | `components/PostHogProvider.tsx` | analytics; draws nothing | none | not drawn |
-| `components/theme-provider.tsx` | the light and dark switch; draws nothing | TOKENS.md §1.4 | not drawn |
+| `components/theme-provider.tsx` | the light and dark switch; draws nothing | TOKENS.md §1.5 (dark mode moved from §1.4 when the grounds were added on 2026-09-11) | not drawn |
 | `components/AppShell.tsx` | the app's outer frame | DESIGN.md §1, §2 | to migrate |
 | `components/AppModal.tsx` | modal dialogs | COMPONENTS.md, INTERACTIONS.md | to migrate |
 | `components/SettingsSurface.tsx` | the settings page frame | COMPONENTS.md | to migrate |

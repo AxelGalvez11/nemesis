@@ -2,8 +2,13 @@
 
 ## Hover
 
-Chrome responds at **40ms**, effectively instantly. Background and border only; a hover that moves,
-scales or lifts something is decoration.
+A hover background responds at **20ms**, effectively instantly. Background and border only; a hover
+that moves, scales or lifts something is decoration.
+
+The rest of the ladder, set on 2026-09-11 in place of the single 40ms figure this file used to quote:
+quick changes (colour, opacity, icon state) take 100ms, menus open in 150ms, fades and rotations take
+200ms, and a panel travels in 320ms on `cubic-bezier(.32,.72,0,1)`. The closer a change is to the
+pointer, the faster it resolves. Full table in [MOTION.md](MOTION.md).
 
 **Hover-revealed controls are permitted only where a keyboard and touch path also exists.** Below
 `md` they are always visible. `opacity: 0` must always carry `pointer-events: none`: an invisible
@@ -11,17 +16,20 @@ control that still takes presses is a bug we have shipped before.
 
 ## Focus
 
-An **inset 2px accent ring**, held transparent when unfocused so it costs no layout and cannot shift
-a row when it appears. Every interactive element has one. `:focus-visible`, not `:focus`, so a mouse
-click does not draw it.
+A **2px ink ring with a 2px gap in the ground** (`--focus-ring`), drawn as a box-shadow so it costs no
+layout and cannot shift a row when it appears. The gap is what keeps the ring legible on a filled
+control. Reversed 2026-09-11: it was an inset accent ring, and focus is ink now because the accent has
+two places only. Every interactive element has one. `:focus-visible`, not `:focus`, so a mouse click
+does not draw it.
 
 Tab order follows visual order. A dialog traps focus and returns it to the trigger on close.
 
 ## Selection
 
-Single click selects, and selection is `--bg-selected` plus an accent border. Multi-select is
-shift-click for a range, cmd/ctrl-click for individual items, drag for a marquee on canvas.
-Escape clears. A selection count appears in the toolbar, not as a floating bar over content.
+Single click selects, and selection is `--bg-selected-neutral` plus an **ink** border (reversed
+2026-09-11: the border was the accent). Multi-select is shift-click for a range, cmd/ctrl-click for
+individual items, drag for a marquee on canvas. Escape clears. A selection count appears in the
+toolbar, not as a floating bar over content.
 
 ## Keyboard
 
@@ -46,8 +54,9 @@ entry. Enter commits, Escape reverts, blur commits. **No separate edit mode, no 
 ## Drag and drop
 
 Grab cursor on the handle, `grabbing` while dragging. The dragged item goes to 40% opacity in place
-and a preview follows the pointer at `--elev-floating`. Drop targets show a 2px accent line for
-insertion, or `--bg-selected` for containment. **Everything draggable is also movable by keyboard.**
+and a preview follows the pointer at `--elev-floating`. Drop targets show a 2px ink line for
+insertion, or `--bg-selected-neutral` for containment. **Everything draggable is also movable by
+keyboard.**
 
 ## Progressive disclosure
 

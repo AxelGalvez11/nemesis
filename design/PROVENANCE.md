@@ -10,6 +10,7 @@ system untrustworthy.
 | bucket | meaning |
 | --- | --- |
 | **MEASURED** | a literal reading from a live browser. Reproducible. |
+| **SYNTHESISED** | read in two references, then resolved into one value. New on 2026-09-11. |
 | **INTERPOLATED** | sits between two measured values. Defensible, but observed in no product. |
 | **INVENTED** | my judgement. No reference basis. |
 | **VERIFIED** | proven to render as specified, with the measurement. |
@@ -76,14 +77,73 @@ controls            40px pills          bold 700 (the only reference that keeps 
 
 ---
 
+## SYNTHESISED: measured Sana and Notion components, synthesised 2026-09-11
+
+**This is where the app's current values in `/design/TOKENS.md` come from.** The owner asked for the
+design philosophies of Sana and Notion as one system, picked the result as "our new design", and
+approved it on a mockup of the rebuilt app.
+
+🔴 **The comparison sheet is not in git**, so this section is the only record inside the repo. The
+sheet is `~/Desktop/design-synthesis/sana-notion-synthesis.html`, built from the two component
+teardowns at `~/Desktop/sana-teardown` and `~/Desktop/notion-chat-teardown`. Every raw number lives
+in each teardown's `live/measurements.md`. Those folders hold Sana and Notion frames, which is why
+they were kept out of the repo, and it means **a reader here cannot reproduce the readings**. Treat
+the lines below as the audit trail, not as proof.
+
+### What each reference supplied
+
+```
+Sana (signed-in Agents workspace, measured live, LIGHT ONLY)
+  sidebar ground      #f9f9f9                 -> our sunken ground
+  answer text         16/24.8 at ink 90%      -> the t1 body job, and the 16px reading step
+  composer            868x56, radius 32, ink 5% fill
+  menus               radius 24, 1px ink 8% ring, 0 7px 16px at 4%   -> ring inside a soft shadow
+  rows                radius 18               switch #34c759
+  chrome text         14px                    -> with Notion, the 14px chrome ruling
+
+Notion Chat (signed-in thread, measured live, BOTH THEMES)
+  menus               radius 10, rows 28px at radius 6, padding 0 8  -> the 6-inside-10 nesting rule
+  hover fill          rgba(33,27,23,.05) over .02s                   -> the 5% hover and the 20ms step
+  message bubble      radius 16, padding 6 14                        -> the 16 radius step
+  answers             16/24
+  menu open           .2s ease from scale .96                        -> the menu step, ours from .98
+  keyboard focus      2px #f8f8f7 then 4px #2383e2                   -> the 2px gap then 2px ring shape
+  dark                Notion's own dark token block, 587 overrides   -> every dark alpha below
+```
+
+### What the synthesis decided, which is judgement
+
+| our value | why, and what it is not |
+| --- | --- |
+| **ink rgb(16,16,18) light, rgb(237,237,238) dark** | one ink for both references' neutrals. Neither ships this exact value; Sana's is `#0a1217` and Notion's warm `rgba(33,27,23,…)`. Ours is neutral on purpose |
+| **the fifteen job alphas as one ramp** | Sana's construction (alpha over one ink) carrying Notion's job names (text, icon, fill, line). Neither product publishes this table |
+| **six radii 4, 6, 10, 16, 24, pill** | Notion's 10 and 16 plus Sana's 24. Sana's 18, 22, 32 and 40 were dropped to keep the ladder nesting |
+| **30px sidebar row** | between Notion's 28px menu row and Sana's 36px control. **Measured in neither** |
+| **focus as a 2px INK ring** | Notion's shape with its blue replaced by ink, because the accent belongs to the character. Sana's focus colour was never captured |
+| **the three elevation recipes** | Sana's ring-inside-shadow idea, rebuilt at app scale. The exact blurs and offsets are mine |
+| **150ms menu step** | Notion opens menus in 200ms; 150ms is ours, so a menu resolves before a panel |
+| **every dark alpha** | Sana was never measured in dark, so dark leans on Notion's token block plus our own judgement |
+
+### What this replaced
+
+The 2026-09-09 ruling that Figma led the app's system, and with it three values in the INTERPOLATED
+table below: **chrome type 12px** (now 14px, measured in both references), **chrome radius 6px** (still
+6 for rows, now nested inside menus of 10) and the positive tracking below 12px. Those rows stay in
+this file because they are the history of how the values got here, not because they are still in
+force. **Nothing in this section has been rendered and measured yet.**
+
+---
+
 ## INTERPOLATED: between measured values, observed nowhere
 
-**These are the ones to challenge.** Each is a reasoned midpoint, not a reading.
+**These are the ones to challenge.** Each is a reasoned midpoint, not a reading. This table is the
+2026-09-08 position; the rows marked replaced were overturned by the synthesis above and are kept as
+history.
 
 | our value | measured on either side | why |
 | --- | --- | --- |
-| **chrome type 12px** | Figma 11, Sana 14 | we are denser than Sana, less professional-daily-driver than Figma |
-| **chrome radius 6px** | Figma app 4 to 5, Sana 8 | square enough for a rail, soft enough not to look like an admin panel |
+| **chrome type 12px** **(REPLACED 2026-09-11: 14px, measured in both references)** | Figma 11, Sana 14 | we are denser than Sana, less professional-daily-driver than Figma |
+| **chrome radius 6px** **(still 6 for rows, now nested inside menus of 10)** | Figma app 4 to 5, Sana 8 | square enough for a rail, soft enough not to look like an admin panel |
 | **icon stroke 1.5** | Figma 1.25, x.ai 1.75 | midpoint, and a deliberate step down from Lucide's default 2.0 |
 | **control ladder 24/28/32/36** | Figma 24/32, Sana 28/36 | the union of two sets. **No product uses this ladder** |
 | **tracking at 16px (-0.1) and 24px (-0.35)** | Figma 13px/-0.03, 18px/-0.075, champ 32px/-0.8 | fitted to the curve between measured points. Those two sizes were never observed |
@@ -119,6 +179,10 @@ controls            40px pills          bold 700 (the only reference that keeps 
 
 Measured on `/dev-preview/design` in a real headless browser, not asserted.
 
+🔴 **These readings are from 2026-09-08 and they measured the pre-synthesis values.** The method
+stands and the contrast figures stand, but the type and radius numbers below are what the system used
+to say. The synthesis values have not been through this loop yet.
+
 ```
 type-meta      11px / 500 / 16px   / +0.06px     as specified
 type-ui        12px / 500 / 16px   / +0.02px     as specified
@@ -150,6 +214,14 @@ was clean. Only the rendered measurement caught it.
 
 Stated plainly, because these are the gaps:
 
+- **No synthesis value has been rendered and measured.** The values landed in the token layer on
+  2026-09-11; nothing has been drawn with them, so the 2026-09-08 verification loop needs rerunning.
+- **The ink and the grounds are not the synthesis values yet.** The ramp is built on `--ui-base`,
+  which resolves to `#0d0d0d` light and `#ffffff` dark rather than rgb(16,16,18) and rgb(237,237,238),
+  and the grounds still resolve through the app's theme. Moving them is a `desktop-ui.css` change in
+  the shell pass, because re-pointing a theme value restyles every screen at once.
+- **Sana was never measured in dark**, so every dark value leans on Notion's dark token block and on
+  judgement.
 - **No side-by-side comparison against any reference.** Nothing has been put next to a Sana or
   Figma screenshot and judged. The values trace to measurements; the *result* has not been compared.
 - **No real screen uses any of this yet.** The primitives and the gallery exist; every application

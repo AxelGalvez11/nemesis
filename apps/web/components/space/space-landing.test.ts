@@ -5,8 +5,9 @@ import { DEFAULT_LANDING_PATH } from "@/lib/auth-redirect";
 
 import { spaceLanding } from "./space-landing";
 
-test("🔴 the first workspace page a tab opens at the default landing goes to Home", () => {
-  assert.equal(spaceLanding({ firstInTab: true, pathname: DEFAULT_LANDING_PATH, search: "" }), "/home");
+// Owner, 2026-09-11: the first thing someone sees after signing in is a new chat, not the page they were last on.
+test("🔴 the first workspace page a tab opens at the default landing goes to a new chat", () => {
+  assert.equal(spaceLanding({ firstInTab: true, pathname: DEFAULT_LANDING_PATH, search: "" }), "/ai");
 });
 
 test("🔴 Canvas opened later from the sidebar stays Canvas", () => {

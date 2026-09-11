@@ -37,7 +37,44 @@ export interface ReviewQueueInput<T extends ReviewQueueCard> {
   learnAheadMinutes?: number;
 }
 
-const inSteps = (card: ReviewQueueCard) => card.state === "learning" || card.state === "relearning";
+/**
+ * The two states a card walks its learning steps in. The learn-ahead window below applies to these
+ * and to nothing else.
+ *
+ * 🔴 EXPORTED BECAUSE THE DUE-CARD COUNT HAS TO NAME THEM IN SQL. The sidebar's "Review due cards
+ * (N)" counts in the database rather than loading every card (see lib/space/due-cards.ts), so the
+ * same two names are needed on both sides. A second hand-typed list in the query is how the row's
+ * number and the review page's queue would start disagreeing.
+ */
+export const STEP_STATES = ["learning", "relearning"] as const;
+
+const inSteps = (card: ReviewQueueCard) => (STEP_STATES as readonly string[]).includes(card.state);
+
+/** This card's time has come, and it has not been put aside. Anki's plain due rule. */
+export function isDueNow(card: ReviewQueueCard, at: number): boolean {
+  return !card.suspended && new Date(card.dueAt).getTime() <= at;
+}
+
+/** A card mid-step, close enough to pull forward when nothing is genuinely due. */
+export function isWithinLearnAhead(card: ReviewQueueCard, at: number, learnAheadMinutes = LEARN_AHEAD_MINUTES): boolean {
+  return !card.suspended && inSteps(card) && new Date(card.dueAt).getTime() <= at + learnAheadMinutes * 60_000;
+}
+
+/**
+ * Every card one sitting works through: what is due, plus the step cards the learn-ahead window
+ * reaches.
+ *
+ * 🔴🔴 THIS IS THE SET, AND `buildReviewQueue` IS THE ORDER. The queue below shows the genuinely due
+ * cards first and only pulls a step card forward once they run out — that is a decision about what
+ * to put on screen NEXT, taken at one instant. A sitting that keeps going reaches both groups, and
+ * a card mid-step is work left rather than work done (the same reasoning the review screen's own
+ * counts carry). So "how many cards would this review" is this predicate, not the length of the
+ * queue at one moment, and the two agree on the only thing they must: either both are empty or
+ * neither is.
+ */
+export function isDueForReview(card: ReviewQueueCard, at: number, learnAheadMinutes = LEARN_AHEAD_MINUTES): boolean {
+  return isDueNow(card, at) || isWithinLearnAhead(card, at, learnAheadMinutes);
+}
 
 export function buildReviewQueue<T extends ReviewQueueCard>({
   cards,
@@ -56,12 +93,12 @@ export function buildReviewQueue<T extends ReviewQueueCard>({
   // 🔴 CARDS IN A STEP COME FIRST AMONG THE DUE ONES, because they are the only ones with a real
   // deadline: a review card due "today" is due any time today, while a card due four minutes ago is
   // four minutes late. Within each group, the one waiting longest goes first.
-  const due = mine.filter((card) => when(card) <= at).sort((a, b) => Number(inSteps(b)) - Number(inSteps(a)) || when(a) - when(b));
+  const due = mine.filter((card) => isDueNow(card, at)).sort((a, b) => Number(inSteps(b)) - Number(inSteps(a)) || when(a) - when(b));
   if (due.length > 0) return [...head, ...due];
 
   // Nothing is due. Pull a learning card forward rather than declaring the sitting finished.
   const ahead = mine
-    .filter((card) => inSteps(card) && when(card) <= at + learnAheadMinutes * 60_000)
+    .filter((card) => isWithinLearnAhead(card, at, learnAheadMinutes))
     .sort((a, b) => when(a) - when(b));
   return [...head, ...ahead];
 }

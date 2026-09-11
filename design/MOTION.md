@@ -6,32 +6,35 @@ Motion is feedback. If an animation does not tell the user something, delete it.
 
 **The closer a change is to the pointer, the faster it resolves.**
 
-Taken from Sana, the only reference that tiers its durations. The other three use one 0.15s for
-everything, which is simpler and wrong: a hover that takes as long as a panel slide feels laggy, and
-a panel that moves as fast as a hover feels broken.
+Both references measured for the 2026-09-11 synthesis tier their durations rather than using one
+figure for everything: a hover that takes as long as a panel slide feels laggy, and a panel that moves
+as fast as a hover feels broken.
 
 ## Durations
 
 | token | value | what moves | measured precedent |
 | --- | --- | --- | --- |
-| `--dur-instant` | **40ms** | hover background, hover border | Sana uses **0.02s**, about 1.2 frames |
-| `--dur-fast` | **120ms** | colour, opacity, icon state | Sana 0.1s |
-| `--dur-standard` | **200ms** | shape, size, position, transforms | Sana 0.2s |
-| `--dur-slow` | **320ms** | overlays, drawers, sheets, panels | |
+| `--dur-instant` | **20ms** | hover background, hover border | Notion's hover fill is **0.02s**, about 1.2 frames |
+| `--dur-fast` | **100ms** | colour, opacity, icon state | Sana 0.1s |
+| `--dur-menu` | **150ms** | menus and popovers, which open from scale .98 and opacity 0 | Notion opens in 0.2s from scale .96 |
+| `--dur-standard` | **200ms** | fades, rotations, shape and size | Sana 0.2s |
+| `--dur-slow` | **320ms** | panels travelling, drawers, sheets | |
 
-40ms is not really a transition. It is a refusal of one that still avoids the hard flicker of
+20ms is not really a transition. It is a refusal of one that still avoids the hard flicker of
 `transition: none` on repaint. A sidebar row should feel connected to the cursor.
 
 ## Easing
 
 ```css
---ease-standard: cubic-bezier(0.2, 0, 0.2, 1)   /* default: most things */
---ease-out:      cubic-bezier(0, 0, 0.2, 1)     /* things entering, or following a gesture */
+--ease-standard: cubic-bezier(0, 0, 0.2, 1)     /* default: everything up to 200ms */
+--ease-out:      cubic-bezier(0, 0, 0.2, 1)     /* the same curve, named for things entering */
+--ease-travel:   cubic-bezier(0.32, 0.72, 0, 1) /* a panel that travels, at 320ms */
 --ease-in-out:   cubic-bezier(0.4, 0, 0.2, 1)   /* things that leave and return */
 ```
 
-Sana authors its own curve (`cubic-bezier(.25,.5,.25,1)`), gentler out of the gate than Tailwind's
-standard and settling sooner. Ours is close in character.
+One out-curve covers everything short, so a hover, a colour change and a menu all settle the same
+way. `--ease-travel` is the exception and it is the reason a panel reads as arriving under its own
+weight: it leaves quickly and decelerates for most of its run.
 
 ## What never animates
 
@@ -63,5 +66,6 @@ real headless browser. See `docs/` and the memory note on this.
 
 ## Reduced motion
 
-Every transition above must be disabled under `prefers-reduced-motion: reduce`, except opacity
-changes under 120ms. This is not optional.
+Every transition above must be disabled under `prefers-reduced-motion: reduce`. The synthesis
+collapses all five durations to zero, menus included, with no exception carved out. This is not
+optional.

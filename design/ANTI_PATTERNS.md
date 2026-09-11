@@ -33,11 +33,11 @@ renders five. Figma's application uses three type sizes and two radii.
 ## Prohibited
 
 ### Typography
-- **No arbitrary font sizes.** Nine tokens exist. `text-[13.5px]` is a bug.
-- **No weight above 600.** `--fw-bold` is 600 by definition. Nothing is 700, 800 or 900.
-- **No `text-4xl font-bold` headings.** Display type is 32px at weight 450 with tight negative
-  tracking. Not one reference sets a heading above 600, and the largest display type measured
-  anywhere (Figma, 88px) is weight 400.
+- **No arbitrary font sizes.** Ten type utilities exist. `text-[13.5px]` is a bug.
+- **No weight above 600.** `--fw-bold` is 600 by definition. Nothing is 700, 800 or 900. Headings and
+  labels are 500; 600 is for emphasis inside an answer.
+- **No `text-4xl font-bold` headings.** Display type is 30px at weight 500 with tight negative
+  tracking. Presence comes from size and tracking, never from weight.
 - **No oversized marketing typography inside the application.** A 48px hero belongs on the landing
   page, never on a working surface.
 - **No hand-set `letter-spacing`.** It is baked into the type tokens.
@@ -49,20 +49,26 @@ renders five. Figma's application uses three type sizes and two radii.
 - **No generic purple/blue "AI" aesthetic.** No purple gradient, anywhere, for any reason.
 - **No gradient used to make something look premium.** Gradients are permitted only where they carry
   meaning (a fade that signals scrollable content, a mask). 186 declarations currently need review.
-- **No accent as the primary button.** The primary button is ink.
-- **No more than one accent element visible at rest.**
+- **No accent as the primary button.** The primary button is ink, and so are switches, checkboxes,
+  selected chips and focus.
+- **No accent anywhere except the send button and the learner's own message bubble.** Those are its
+  two places; there is no third.
 - **No decorative colour.** Status colour appears only when something has happened.
 
 ### Surfaces
 - **No cards inside cards.** If you have nested a card, one should have been a section.
 - **No card as the default container.** Whitespace, then type, then a hairline, then a background
   step, and only then a container.
-- **No tight shadows** (`0 1px 2px`). Two elevations exist, both wide and faint. A tight dark shadow
-  is the clearest signature of a generated interface. 555 current shadow uses need auditing.
+- **No tight shadows** (`0 1px 2px`). A lone tight dark shadow is the clearest signature of a
+  generated interface. Elevation is a 1px ring with soft shadows inside it, and the small 2px or 4px
+  layer only ever appears inside that ring. 555 current shadow uses need auditing.
 - **No gratuitous glassmorphism.** `backdrop-blur` is for genuine overlays above moving content.
   168 current uses need auditing; most are probably decorative.
-- **No radius above 12px** except pills and the composer. No 16px, 20px, 26px or 28px containers.
-- **No pill-shaped everything.** Chrome is radius 6. Pills are for learner-facing actions.
+- **No radius outside the six**: 4, 6, 10, 16, 24 and the pill. 2, 8 and 12 are retired and kept
+  defined only so older code resolves; 20px, 26px and 28px were never in the system.
+- **No radius that breaks the nesting rule.** Inner radius plus inset equals outer radius: 6 inside
+  10, and the 16px send button inside the composer's 24.
+- **No pill-shaped everything.** Chrome rows are radius 6. Pills are for learner-facing actions.
 
 ### Layout
 - **No giant "Welcome back" dashboard greeting.**

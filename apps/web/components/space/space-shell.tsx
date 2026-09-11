@@ -11,6 +11,7 @@ import "@/space/styles/space.css";
 import "@/space/styles/host.css";
 import "katex/dist/katex.min.css";
 
+import { Inter } from "next/font/google";
 import { usePathname, useRouter } from "next/navigation";
 import type * as React from "react";
 import { useEffect, useRef } from "react";
@@ -20,6 +21,10 @@ import { useTheme } from "@/components/theme-provider";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
 import { supabase } from "@/lib/supabase";
 import { isSpacePath, space } from "@/space/app/runtime.js";
+
+// The app's face (design/TOKENS.md §2): Inter with the optical size axis, served from our own domain by next/font and
+// published as --font-app for the workspace and for the React column beside it.
+const inter = Inter({ subsets: ["latin"], axes: ["opsz"], variable: "--font-app", display: "swap" });
 
 export function SpaceShell({ children, gates }: { children: React.ReactNode; gates?: React.ReactNode }) {
   const root = useRef<HTMLDivElement>(null);
@@ -73,8 +78,8 @@ export function SpaceShell({ children, gates }: { children: React.ReactNode; gat
 
   return (
     <>
-      <div className="nsp" data-workspace="" ref={root} />
-      <div className="nsp-app-column" data-hidden={spaceRoute ? "true" : undefined}>
+      <div className={`nsp ${inter.variable}`} data-workspace="" ref={root} />
+      <div className={`nsp-app-column ${inter.variable}`} data-hidden={spaceRoute ? "true" : undefined}>
         <WorkspaceShell navless>
           {spaceRoute ? null : children}
           {gates}

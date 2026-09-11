@@ -72,8 +72,26 @@ export interface StudyCard {
 
 export type StudyCardType = "basic" | "reversed" | "cloze" | "image_occlusion";
 
+/**
+ * 🔴🔴 THE FSRS AND STEP COLUMNS WERE MISSING HERE UNTIL 2026-09-11, AND EVERY LOADED CARD READ AS
+ * BRAND NEW BECAUSE OF IT. `toCard` has read `state`, `remaining_steps`, `stability`, `difficulty`
+ * and `last_reviewed_at` since the scheduler shipped (#947), but this list never asked for them, so
+ * PostgREST returned rows without them and `cardState(undefined)` fell back to `"new"` on every
+ * card in the collection. The database was always right; the browser simply never saw it.
+ *
+ * What that cost, all of it silent: a card walking its learning steps lost its place the moment the
+ * page reloaded, so the learn-ahead window could never pull one forward ("You're caught up" over
+ * unfinished work, which is the exact defect the window exists to prevent); the review screen's
+ * middle count read zero; and the interval printed under each of the four grades was computed from a
+ * card the scheduler thought it had never seen. Grading itself was never wrong — `grade_study_card`
+ * reads the row in Postgres — which is why nothing looked broken.
+ *
+ * 🔴 `,flag,quality,` STAYS CONTIGUOUS. `cards-are-output-only.test.ts` matches on it, for the same
+ * reason this comment exists: a column that is read but not selected is invisible in every way
+ * except the behaviour it quietly changes.
+ */
 const CARD_COLUMNS =
-  "id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,quality,tags,payload,created_at,updated_at";
+  "id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,quality,tags,payload,created_at,updated_at,stability,difficulty,last_reviewed_at,state,remaining_steps";
 
 export interface StudyReview {
   id: string;
