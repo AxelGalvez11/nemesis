@@ -764,6 +764,20 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cu
 .pe-chip img{width:16px;height:16px;border-radius:50%}
 .vs-row.static{cursor:default}
 .vs-row.static:hover{background:none}
+.sort-editor{width:340px;max-height:420px;display:flex;flex-direction:column;overflow:hidden}
+.se2-row{height:36px;padding:0 6px 0 8px;display:flex;align-items:center;gap:6px}
+.se2-btn{height:28px;padding:0 8px;border-radius:6px;box-shadow:var(--ca-borPriTra) 0 0 0 1px inset;display:flex;align-items:center;gap:4px;font-size:14px;line-height:20px;color:var(--c-texPri);fill:var(--c-icoSec);cursor:pointer;white-space:nowrap}
+.se2-btn:hover{background:var(--ca-bacIntTra)}
+.se2-prop{flex:1;min-width:0}
+.se2-prop span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.se2-btn .th-mask.pm2-mask{width:16px;height:16px;margin:0;background:var(--c-icoSec)}
+.fe-top{padding-top:8px}
+.tg{margin-top:8px}
+.tg-head{height:42px;margin-left:8px;display:flex;align-items:center;gap:6px}
+.tg-caret{width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;fill:var(--c-icoSec);cursor:pointer;transition:transform .15s}
+.tg-caret.open{transform:rotate(90deg)}
+.tg-caret:hover{background:var(--ca-bacIntTra)}
+.tg-label{display:flex;align-items:center}
 .prop-picker{width:268px;max-height:560px;display:flex;flex-direction:column;overflow:hidden}
 .new-menu{width:290px}
 .nm-desc{padding:0 8px 8px;font-size:12px;line-height:16px;color:var(--c-texSec)}
