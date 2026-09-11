@@ -8,9 +8,9 @@
  * accepts PNG or JPG and nothing else, which is the case that forced it.
  *
  * 🔴 GENERATED FROM THE GEOMETRY, NEVER EXPORTED BY HAND. A PNG of a logo is a second copy of
- * the mark, and the first person to nudge a bead leaves it stale — which is exactly how this app
+ * the mark, and the first person to nudge a dot leaves it stale — which is exactly how this app
  * ended up serving the previous logo from three places long after the mark had changed. The
- * ellipses below are the SAME numbers as app/icon.svg and app/apple-icon.tsx. Re-run this when
+ * circles below are the SAME numbers as app/icon.svg and app/apple-icon.tsx. Re-run this when
  * the mark moves; do not open the output in an image editor.
  *
  *   pnpm brand:raster
@@ -26,18 +26,18 @@ import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 
-/** Identical to app/icon.svg. Three beads on one diagonal, tilted -36°. */
-const VIEW = { x: -66, y: -10, w: 232, h: 232 } as const;
-const BEADS = [40, 106, 172] as const;
-const BEAD = { cx: 50, rx: 62, ry: 20, tilt: -36 } as const;
+/** Identical to app/icon.svg and components/nemesis-mark.tsx: three dots, two up and one down. */
+const VIEW = { x: 9.6, y: 13.6, w: 80.8, h: 80.8 } as const;
+const DOTS = [
+  { cx: 24.02, cy: 35, r: 10.8 },
+  { cx: 75.98, cy: 35, r: 10.8 },
+  { cx: 50, cy: 80, r: 10.8 },
+] as const;
 
 const markSvg = (fill: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}">` +
   `<g fill="${fill}">` +
-  BEADS.map(
-    (cy) =>
-      `<ellipse cx="${BEAD.cx}" cy="${cy}" rx="${BEAD.rx}" ry="${BEAD.ry}" transform="rotate(${BEAD.tilt} ${BEAD.cx} ${cy})"/>`,
-  ).join("") +
+  DOTS.map((dot) => `<circle cx="${dot.cx}" cy="${dot.cy}" r="${dot.r}"/>`).join("") +
   `</g></svg>`;
 
 
