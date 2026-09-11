@@ -41,7 +41,7 @@ test("🔴🔴 a phone never downloads the laptop", () => {
   // The component must not render a <video> until the same query matches, and the query must be the
   // one auth.css uses to show the panel.
   assert.match(laptop, /LAPTOP_PANEL_QUERY = "\(min-width: 1080px\)"/);
-  assert.match(css, /@media \(min-width: 1080px\)[\s\S]*\.is-split \.nemesis-auth-field \{ display: block; \}/);
+  assert.match(css, /@media \(min-width: 1080px\)[\s\S]*\.is-split \.nemesis-auth-field \{[^}]*display: block;/);
   assert.match(laptop, /if \(!shown\) return/, "AuthLaptop renders its media before checking the panel is visible");
   assert.match(laptop, /prefers-reduced-motion: reduce/, "reduced motion no longer gets the still");
 });
@@ -55,10 +55,31 @@ test("🔴 the panel and the column keep Sana's measured boxes", () => {
   assert.match(css, /--auth-panel-w: min\(706\.3px/);
   assert.match(css, /background: rgb\(23, 24, 26\)/);
   assert.match(css, /\.nemesis-auth-field \{[^}]*border-radius: 18px/);
-  assert.match(css, /right: calc\(var\(--auth-edge, 0px\) \+ 62px\)/);
+  // 62px from the row's right edge: on the last item in the row, that is a right margin, not a
+  // fixed offset — see the next test for why the row replaced fixed positioning.
+  assert.match(css, /\.is-split \.nemesis-auth-field \{[^}]*margin: 24px 62px 24px 0;/);
   assert.match(css, /\.nemesis-auth-card \{ max-width: 381px/);
   // the art bleeds past every edge: 731.9x751.1 at -12.8/-15.5 on 706.3x720
   assert.match(css, /\.nemesis-auth-art \{ position: absolute; left: -1\.812%; top: -2\.153%; width: 103\.63%; height: 104\.32%; \}/);
+});
+
+test("🔴🔴 the column and the panel share ONE vertical centre, the way Sana's do", () => {
+  // Re-measured 2026-09-11: on sana.ai/login, the <section> holding the whole form (headline through
+  // the legal text) and the dark panel section are both y118/h720 at 1440x900 — one shared band, not
+  // two independently-centred boxes. The first pass here centred the panel with `position: fixed` and
+  // a hand-tuned offset that only agreed with the form column's own flex-centring at one exact
+  // viewport height; the owner caught the drift as "doesn't match the sizing."
+  assert.match(
+    css,
+    /\.nemesis-auth-shell\.is-split \{[^}]*align-items: center;[^}]*display: flex;[^}]*flex-direction: row;/,
+    "the split shell stopped being the one row that centres both the column and the panel",
+  );
+  assert.ok(!/\.nemesis-auth-field \{[^}]*position: fixed/.test(css), "the panel went back to centring itself independently of the column");
+  assert.match(
+    css,
+    /\.is-split \.nemesis-auth-panel-wrap \{[^}]*min-height: 0;/,
+    "the column wrap still claims a full-viewport min-height in split mode, which double-centres against the row",
+  );
 });
 
 test("🔴 the headline is two lines of one size, the second dimmed, and both still fit", () => {
