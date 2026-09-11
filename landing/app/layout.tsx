@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
+import { Hanken_Grotesk, IBM_Plex_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { SITE_ORIGIN } from "@/lib/site";
@@ -23,6 +23,22 @@ const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
   variable: "--font-plex-mono",
+  display: "swap",
+});
+
+// Inter, with its optical-size axis: the face the homepage (app/page.tsx, home-sana.css) was designed,
+// measured and approved in.
+//
+// 🔴 IT WAS ONLY EVER LOADED UNDER /preview. The approved variation lived at /preview/v/together, and
+// app/preview/layout.tsx is what loaded Inter there. When the page moved to `/` on 2026-09-10 (#1191)
+// the stylesheet came with it and the font did not, so `var(--font-inter)` resolved to nothing and
+// every line fell through to Hanken Grotesk, this layout's own face. Measured on production
+// 2026-09-11: 288 text boxes a different size from the approved page, the headline 6px taller, the
+// school names 34px wider. Loaded here, at the root, because the pricing page wears the same system.
+const inter = Inter({
+  subsets: ["latin"],
+  axes: ["opsz"],
+  variable: "--font-inter",
   display: "swap",
 });
 
@@ -106,7 +122,7 @@ export default function RootLayout({
     // suppresses the same warning for the same reason (its theme script).
     <html
       lang="en"
-      className={`${hanken.variable} ${plexMono.variable}`}
+      className={`${hanken.variable} ${plexMono.variable} ${inter.variable}`}
       suppressHydrationWarning
     >
       <head>
