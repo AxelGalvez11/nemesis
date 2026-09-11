@@ -41,8 +41,8 @@ and how they are reached.
 Only one thing changes with viewport, and it changes for input reasons rather than space reasons:
 
 **Touch targets grow to 44px minimum below `lg`.** A 24px icon button is fine with a cursor and
-unusable with a thumb. Type sizes, radii and spacing do **not** change: 12px chrome text is 12px on
-a phone.
+unusable with a thumb. Type sizes, radii and spacing do **not** change: 14px chrome text is 14px on
+a phone (14px since the 2026-09-11 ruling, which replaced 12px chrome).
 
 ## Content width
 

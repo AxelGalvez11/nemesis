@@ -18,8 +18,9 @@ closest to the references. `@tabler/icons-react` is removed.
 | Lucide default | **2.0** |
 | **ours** | **1.5** |
 
-Lucide's default of 2.0 reads noticeably heavier than any reference beside 12px text. 1.5 sits
-between the two measured values and is set once, in the shared `<Icon />`, so it cannot drift.
+Lucide's default of 2.0 reads noticeably heavier than any reference beside 14px text (14px since the
+2026-09-11 ruling, which replaced 12px chrome). 1.5 sits between the two measured values and is set
+once, in the shared `<Icon />`, so it cannot drift.
 
 ## Sizes
 
@@ -57,8 +58,8 @@ reads heavier than the label, because a glyph is a solid mass and text is not.
 
 ```
 --icon-primary    80% ink   (label at 100%)
---icon-secondary  45%
---icon-muted      30%
+--icon-secondary  50%
+--icon-muted      35%
 ```
 
 This is why our icons currently look slightly too loud next to their text: they share the text

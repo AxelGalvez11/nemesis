@@ -5,7 +5,7 @@ Nemesis draws two families of surface, and they follow different references on p
 | family | surfaces | reference | density |
 | --- | --- | --- | --- |
 | Marketing and entry | www.enternemesis.com (home and pricing), the app's sign-in, sign-up, /auth/* and /pricing | sanalabs.com for the home page and sana.ai for the sign-in and pricing, measured live | 15 to 16px body, 34 to 67px heads, large radii |
-| The app | the canvas, chat, library, study, calendar, reader, settings and every other workspace surface | DESIGN.md: Figma leads, Sana where Figma is silent | 12px chrome, 16 to 18px content, radius 6 chrome |
+| The app | the canvas, chat, library, study, calendar, reader, settings and every other workspace surface | DESIGN.md: the Sana and Notion synthesis, which replaced "Figma leads, Sana where Figma is silent" on 2026-09-11 | 14px chrome, 16 to 18px content, radius 6 rows inside menus of 10, dialogs and the composer at 24 |
 
 Both families share Inter with its optical-size axis, one ink at alpha steps for every neutral, the three-dot mark
 (BRAND.md), and the copy rules in README.md.

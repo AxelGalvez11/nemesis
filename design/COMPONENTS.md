@@ -36,8 +36,8 @@ Always `strokeWidth={1.5}`.
 A background plus optional border and radius. Replaces ad-hoc `div`s with a wash and a rounded
 corner.
 `level`: `flat | sunken | raised | floating | overlay`
-`radius`: `4 | 6 | 8 | 12 | full`
-`raised` is a **border**, not a shadow.
+`radius`: `4 | 6 | 10 | 16 | 24 | full`
+`raised` is the **1px ring** (`--elev-raised`), not a drop shadow.
 
 ### Stack / Row **[build]**
 Vertical and horizontal flex with a `gap` from the spacing scale only. Removes most one-off
@@ -73,9 +73,10 @@ Vertical and horizontal flex with a `gap` from the spacing scale only. Removes m
 
 `content` is the learner-facing size and the only pill. Chrome uses `sm` to `lg` at radius 6.
 
-States: hover `--bg-hover` at `--dur-instant`; active `--bg-active`; focus inset 2px accent ring;
-disabled 40% opacity and `pointer-events: none`; loading shows a spinner **and keeps its width** so
-the layout does not jump.
+States: hover `--bg-hover` at `--dur-instant`; active `--bg-active`; focus `--focus-ring`, a 2px ink
+ring with a 2px gap in the ground, drawn as a shadow (reversed 2026-09-11: it was an inset accent
+ring); disabled 40% opacity and `pointer-events: none`; loading shows a spinner **and keeps its
+width** so the layout does not jump.
 
 ### IconButton **[refactor]**
 Square. 24 / 28 / 32 / 36 with icons 14 / 16 / 16 / 20. Radius 6, or full at `content` size.
@@ -83,8 +84,9 @@ Square. 24 / 28 / 32 / 36 with icons 14 / 16 / 16 / 20. Radius 6, or full at `co
 
 ### Input, Textarea, Select **[refactor]** (`ui/input.tsx`, `ui/textarea.tsx` exist)
 Height 32 (comfortable). Background `--bg-sunken`, border 1px `--border-default`, radius 6, type
-`body` so typed content matches read content. Focus: border goes to `--border-focus` plus the inset
-ring; **the border never changes width** (that shifts layout by a pixel).
+`body` so typed content matches read content. Focus: the border goes to `--border-focus` and
+`--focus-ring` is drawn outside it; **the border never changes width** (that shifts layout by a
+pixel).
 
 Placeholder `--text-muted`. Error: border `--danger`, message below in `caption`.
 
@@ -94,7 +96,8 @@ value. `⌘K` opens the command menu instead, where one exists.
 
 ### Checkbox, Radio, Toggle **[build]**
 16px box (checkbox radius 4, radio full), 20px toggle. Label `ui`, 8px gap, whole row clickable.
-Checked uses the **accent**: this is "what you have chosen", which is the accent's one job.
+Checked uses **ink**. Reversed 2026-09-11: checked used to be the accent, and the accent now has two
+places only, the send button and the learner's own message bubble.
 
 ### SegmentedControl **[build]**
 Height 28, radius 6, background `--bg-sunken`, 2px inset padding. The selected segment is
@@ -105,32 +108,36 @@ Height 28, radius 6, background `--bg-sunken`, 2px inset padding. The selected s
 ## 3. Navigation
 
 ### Sidebar / SidebarItem **[refactor]**
-240px, background `--bg-page` (**not** a different colour from content: a differently-coloured
-sidebar is chrome asserting itself). Right hairline at `--border-subtle`.
+240px, the sunken ground `--bg-sunken`, which is the ink at 2%. Reversed 2026-09-11: this file used to
+say the sidebar must not be a different colour from content, and the synthesis measured Sana's
+`#f9f9f9` sidebar instead. Right hairline at `--border-subtle`.
 
-Item: height 28, radius 6, padding `0 8`, icon 16 + 8px gap + `ui` label. Hover `--bg-hover` at
-40ms. **Selected: `--bg-active` plus `--text-primary`, no accent bar** unless it marks current
-learning position. Section labels `meta` in `--text-muted`, 24px top margin.
+Item: height 30, radius 6, padding `0 8`, icon 16 + 8px gap + `ui` label. Hover `--bg-hover` at
+`--dur-instant`, 20ms. **Selected: `--bg-selected-neutral` plus `--text-primary`, and no accent bar at
+all** (reversed 2026-09-11: the current learning position used to be allowed one). Section labels use
+`label` in `--text-muted`, 24px top margin.
 
 ### TopBar **[refactor]**
 48px, `--bg-page`, bottom hairline. Left: breadcrumb. Right: actions as 28px icon buttons. Never a
 shadow.
 
 ### Tabs **[refactor]** (`ui/tabs.tsx` exists)
-Height 32, `ui` type. Selected: `--text-primary` plus a 2px accent underline. Unselected
-`--text-secondary`. Underline slides at `--dur-standard`. Scrollable, never wrapping.
+Height 32, `ui` type. Selected: `--text-primary` plus a 2px **ink** underline (reversed 2026-09-11: it
+was the accent). Unselected `--text-secondary`. Underline slides at `--dur-standard`. Scrollable,
+never wrapping.
 
 ### Breadcrumb **[build]**
 `caption`, `--text-secondary`, last crumb `--text-primary`. Separator is a 12px chevron at
 `--icon-muted`. Collapses to `…` beyond three levels.
 
 ### CommandMenu **[build]**
-`⌘K`. 560px, radius 12, `--elev-overlay`. Rows 32px, `ui`, grouped with `meta` headings. Full
-keyboard control. **The primary navigation path for power users**, not a decoration.
+`⌘K`. 560px, radius 10, `--elev-overlay`. Rows 28px at radius 6, `ui`, grouped with `label`
+headings. Full keyboard control. **The primary navigation path for power users**, not a decoration.
 
 ### DropdownMenu / ContextMenu **[refactor]**
-Radius 8, `--elev-overlay`, 4px padding. Items 28px, radius 4, padding `0 8`. Separator is a
-hairline with 4px margin. Destructive items `--danger`, always last.
+Radius 10, `--elev-floating`, 4px padding. Items 28px, radius 6, padding `0 8`: 6 plus 4 of padding is
+10, which is the nesting rule (2026-09-11 ruling, replacing a menu at 8 holding items at 4). Separator
+is a hairline with 4px margin. Destructive items `--danger`, always last.
 
 ---
 
@@ -141,16 +148,17 @@ hairline with 4px margin. Destructive items `--danger`, always last.
 **Suppressed on touch.** Never contains the only copy of essential information.
 
 ### Popover **[refactor]** · **Modal / Dialog [refactor]** (`ui/dialog.tsx`, `ui/sheet.tsx`)
-Popover: radius 8, `--elev-overlay`, 12px padding.
-Dialog: max 560px, radius 12, 24px padding, `--elev-overlay`. Scrim is ink at 40%. Enters at
-`--dur-slow`, opacity plus a 4px rise, no scale. **Becomes a bottom sheet below `md`.**
+Popover: radius 10, `--elev-floating`, 12px padding.
+Dialog: max 560px, radius 24, 24px padding, `--elev-overlay` (2026-09-11 ruling: dialogs and the
+composer are 24, replacing 12). Scrim is ink at 40%. Enters at `--dur-slow`, opacity plus a 4px rise,
+no scale. **Becomes a bottom sheet below `md`.**
 
 ### Toast **[build]**
-Bottom-right (bottom-centre on mobile), 360px, radius 8, `--elev-floating`. 5s auto-dismiss;
+Bottom-right (bottom-centre on mobile), 360px, radius 10, `--elev-floating`. 5s auto-dismiss;
 never auto-dismisses an error.
 
 ### Alert **[build]** · **Skeleton [have]** (`ui/skeleton.tsx`)
-Alert: `--*-bg` background, 1px matching border, radius 8, 12px padding, 16px leading icon.
+Alert: `--*-bg` background, 1px matching border, radius 10, 12px padding, 16px leading icon.
 Skeleton: `--bg-sunken`, matches the real content's radius and line height. **Pulse only, no
 shimmer sweep** (a moving gradient repaints every frame).
 
@@ -164,7 +172,7 @@ Error: the same shape with `--danger` icon, the actual error, and a retry.
 ## 5. Content
 
 ### Card **[refactor]**
-`--bg-surface`, radius 8, 1px `--border-default`, 16px padding. **Cards are a last resort**
+`--bg-surface`, radius 10, 1px `--border-default`, 16px padding. **Cards are a last resort**
 (`DESIGN.md` §3). **Never nested.**
 
 ### ContentBlock **[no precedent]**
@@ -177,7 +185,7 @@ Row, not a card: 48px, 20px type icon, name in `ui-lg`, meta in `caption`, actio
 A grid of file *cards* is worse than a list of file *rows* for scanning.
 
 ### MediaBlock **[refactor]** · **Callout [build]** · **QuoteBlock [build]**
-Media: full reading width, radius 8, caption below in `caption`/`--text-secondary`.
+Media: full reading width, radius 10, caption below in `caption`/`--text-secondary`.
 Callout: `--bg-sunken`, **3px left rule** (not a full border), 12px padding, radius 4 on the right
 only. Variants tint the rule and the icon, never the background.
 Quote: 3px left rule at `--border-strong`, 16px left padding, no italics, no quotation glyph.
@@ -193,16 +201,19 @@ measured precedent and should be validated on screen first.**
 The governing rule (`DESIGN.md` §8): each learning object gets **one** structural signal, not a
 colour scheme.
 
+The accent left this table on 2026-09-11: it has two places now, the send button and the learner's own
+message bubble, so a poll fill, a selected option, a progress bar and a mastery dot are all ink.
+
 | component | its one signal |
 | --- | --- |
-| **Poll** | rows with a proportional fill behind the label; result bar is `--accent-subtle` |
+| **Poll** | rows with a proportional fill behind the label; result bar is `--bg-selected-neutral` |
 | **QuizQuestion** | a numbered rule down the left margin |
-| **MultipleChoice** | pill options, 36px, `--border-default`; selected takes the accent border and `--bg-selected` |
+| **MultipleChoice** | pill options, 36px, `--border-default`; selected takes an ink border (`--border-strong`) and `--bg-selected-neutral` |
 | **FreeResponse** | a textarea at reading width with a word count in `meta` |
 | **ReflectionPrompt** | a callout with no answer field: it asks and does not grade |
 | **Flashcard** | plain Anki card, **X and check only**, no flip animation (standing owner ruling) |
-| **ProgressIndicator** | 3px bar, `--bg-sunken` track, accent fill; **never a percentage number** |
-| **MasteryIndicator** | a four-step dot row, filled with accent (outline form of the dot) |
+| **ProgressIndicator** | 3px bar, `--bg-sunken` track, ink fill; **never a percentage number** |
+| **MasteryIndicator** | a four-step dot row, filled with ink (outline form of the dot) |
 | **AnswerFeedback** | a left rule in `--success` or `--danger`, plus the explanation. Never a full green or red panel |
 | **TeacherPrompt** | a callout with a 16px avatar; distinguished by **attribution**, not decoration |
 | **StudentResponse** | indented under its prompt with a hairline connector |
