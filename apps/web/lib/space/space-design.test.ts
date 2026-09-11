@@ -48,7 +48,9 @@ test("🔴 space.css is generated from its two sources, never edited by hand", (
 test("🔴 the accent marks the send button and the learner's own bubble, and nothing else", () => {
   const css = read("space/styles/space.css");
   const wearing: string[] = [];
-  for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+  for (const rule of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const selector = rule[1] ?? "";
+    const body = rule[2] ?? "";
     if (/var\(--k-(accent|bubble)\b/.test(body)) wearing.push(selector.trim());
   }
   assert.ok(wearing.length > 0, "nothing wears the accent, so the character has lost its one mark");
