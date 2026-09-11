@@ -21,3 +21,11 @@
 - If a technical term is unavoidable, define it in one short phrase inline.
 - This governs status updates, summaries, PR descriptions to the owner, and answers to questions.
   (Code, commit messages, and code comments stay normal/technical.)
+
+## Design system (standing rule, set by owner 2026-09-11)
+- **Every visual change follows `/design`.** Start at `/design/README.md` (the owner's rulings, newest first), then the
+  surface's family in `/design/SURFACES.md` and its row in `/design/COVERAGE.md`. The `nemesis-design` skill walks
+  through it.
+- The marketing site, sign-in and pricing follow Sana, measured one for one; the app follows `/design/DESIGN.md`.
+- Guards in `apps/web/lib/design/` fail when a component family has no coverage row, or when arbitrary sizes, radii or
+  spacing grow.
