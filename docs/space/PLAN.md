@@ -133,3 +133,58 @@ nothing here reuses that word.
       connected tools with Disconnect and shows how to connect one. Needs, once, in the Supabase dashboard:
       Authentication > OAuth Server on, Authorization Path /oauth/consent, dynamic client registration allowed. Left:
       databases and rows through the door, the calendar, and a record of what each tool made.
+
+## The app, rebuilt around the workspace (owner, 2026-09-11)
+
+Hours after the workspace went live for him: "the entire app is changing... integrate the synthesized design... I don't
+want the old library... I don't want the study page". Asked whether the real app should take the approved mockup's
+layout or keep today's with a new coat, he said "can't you do a synthesis of both?", because he likes the mockup's
+style and he likes the tests and the blocks that are live now.
+
+**Decided**, in his words or the options he picked:
+- The sidebar carries five tabs: **Chats, Workspaces, Notes, Canvas, Meetings**. The inbox is a bell with its count.
+  Notes keeps the page tree, All notes, My Tasks, Templates and Trash. Chats keeps the chat list and Agents. Meetings
+  keeps Upcoming, the calendar and the meeting notes. The live game joins the row once it works.
+- **Reviewing flashcards lives in the workspaces.** Each workspace lists its decks and tests under Made here, and one
+  "Review due cards (N)" row at the top of Workspaces opens the review. He had 397 of 401 cards due when he asked.
+- **The old Library goes.** Every way into it comes out and nothing in the database is deleted: 201 files, 22 decks,
+  9 tests, one mind map, and the 37 notes that already became pages.
+- **The Study page goes** the same way. Links inside old chats that carry parameters keep working until M16.
+- **Signing in lands on a new chat**: "What are we working on?", with the person's workspaces as chips.
+- **A shared workspace** shares its sources, its notes and what was made there. Each person's chats stay their own
+  until they press Share.
+- **The live group game is not called polls.** It is Kahoot-shaped: people join, answer together, score points and see
+  who is ahead, with multiple choice, select all that apply, free response and a word cloud. Taking part needs an
+  account, the way editing a shared document does. Researched 2026-09-11: Sana has live poll cards but no points, no
+  leaderboard and no word cloud, so Kahoot, Wayground, Poll Everywhere, Mentimeter and Slido are the references.
+- **The design** is the one in /design, under his ruling of the same day: one ink at alpha steps, Inter, 14px chrome,
+  radii 4/6/10/16/24/pill, a ring inside soft shadows, an ink focus ring, and the accent only on the send button and
+  the learner's own bubble.
+
+### Milestones
+- [ ] M12 **The design and the sidebar.** The build repaints the measured copy in our ink
+      (scripts/space-scope-css.mjs), the design layer (space/styles/synthesis.src.css) carries type, shape, elevation,
+      focus, motion and the accent, and the React column beside the shell reads the same tokens. The sidebar becomes
+      the five tabs with the bell: Apps goes, Canvas becomes a tab, the calendar moves under Meetings, and Study and
+      the old Library come out. Signing in lands on a new chat.
+      2026-09-11, part one: the design is in. `inkColors` in scripts/space-scope-css.mjs maps every colour in the
+      measured copy into our ink (a warm grey keeps its lightness, a warm tint becomes ink at the alpha that darkens
+      the ground by the same amount, the reference's accent becomes ink), synthesis.src.css carries the rest of the
+      system, and host.css re-points the React column's `--ui-*` tokens so Canvas, Review and the calendar match.
+      Both wear Inter. Apps is Canvas, Review and Calendar: Study and the old Library are gone and nothing was
+      deleted, the page list is "All notes" rather than a second Library, and signing in lands on a new chat that
+      asks "What are we working on?". /review reviews every card that is due across every deck, counted by the same
+      rule as the sidebar row (lib/space/due-cards.ts). lib/space/space-design.test.ts guards the mapping, keeps
+      space.css in step with its sources, and fails if anything but the send button and the learner's bubble wears
+      the accent. Left for part two: the five tabs, the bell, the Canvas tab and the review row in Workspaces.
+- [ ] M13 **Workspaces.** A workspace is a page that holds sources, chats, notes and what was made there: create,
+      rename and share it; upload sources that its chats read; the Create tiles (flashcards, test, study guide, mind
+      map); Made here; and the review row across workspaces. A note made in a workspace is the same record that shows
+      under Notes.
+- [ ] M14 **Canvas**, reset to the spatial board of #1141 and given the card kinds a canvas should hold: notes,
+      images, links, groups and labelled arrows, drawn in the new design and collaborative over the workspace's
+      realtime channels. No documents, no deliverables, no Office files on the board.
+- [ ] M15 **The live group game** (the name is still to choose): a host screen, joining by link or code with an
+      account, points and a leaderboard, and questions Nemesis writes from a workspace's sources.
+- [ ] M16 **Retirements.** /study and /library/classic redirect, saved chat links that point at /study are migrated,
+      and the front door flips for everyone once M12 to M15 are verified, which finishes M10.

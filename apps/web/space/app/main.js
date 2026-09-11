@@ -959,9 +959,13 @@ const SECTION_DEFS = [
   { key: 'private', label: 'Private', actions: ['arrowDiagonalUpRightSmall', 'plusSmall', 'ellipsisSmall'] },
   { key: 'apps', label: 'Apps', actions: ['ellipsisSmall'] },
 ];
-// Canvas, Study and Calendar belong to the React app; choosing one keeps the sidebar and hands over the main column.
-// The old Library stays one click away until its notes move into pages (docs/space/PLAN.md, M10).
-const APPS = [['appCanvas', 'Canvas', '/canvas'], ['appStudy', 'Study', '/study'], ['appCalendar', 'Calendar', '/calendar'], ['bookshelf', 'Old Library', '/library/classic']];
+// Canvas, Review and Calendar belong to the React app; choosing one keeps the sidebar and hands over the main column.
+// 🔴 THE OLD LIBRARY AND THE STUDY PAGE ARE NOT LISTED HERE ANY MORE. Owner, 2026-09-11: "can you just get rid of the
+// old library? Because that's not the one I like", and "I don't want the study page". Nothing was deleted: his files,
+// decks and tests are all still there, and the cards that are due are reviewed from Review, which is the door that
+// replaces the Study page (docs/space/PLAN.md, "The app, rebuilt around the workspace"). Review moves into the
+// Workspaces tab with its own count in M13.
+const APPS = [['appCanvas', 'Canvas', '/canvas'], ['checkStack', 'Review', '/review'], ['appCalendar', 'Calendar', '/calendar']];
 function subPagesOf(pid) { return space.childPages(pid); }
 let pendingTitleFocus = null;
 function createPage(parent, section) {
@@ -1080,7 +1084,9 @@ function InboxBody() {
 }
 function Sidebar({ current }) {
   const tab = SB_TABS.some(([k]) => k === S.sidebar.tab) ? S.sidebar.tab : 'home';
-  const links = [['bookshelf', 'Library'], ['checkmarkSquare', 'My Tasks'], ['templates', 'Templates'], ['questionMarkCircle', 'Help'], ['trash', 'Trash']];
+  // "All notes", not "Library": the owner asked for the old Library to be gone, and the word on two doors at once is
+  // exactly what he did not want. This one lists every page in the workspace; the old Library is no longer reachable.
+  const links = [['stack', 'All notes'], ['checkmarkSquare', 'My Tasks'], ['templates', 'Templates'], ['questionMarkCircle', 'Help'], ['trash', 'Trash']];
   return html`<div ref=${sidebarRef} class=${'nsp-sidebar-container' + (S.sidebar.collapsed ? ' collapsed' : '')}><div class="nsp-sidebar">
     <div class="sb-ws" role="button" onClick=${(e) => openOverlay('workspace', e.currentTarget)}><div class="sb-ws-inner"><div class="sb-av"><img src=${space.avatar()} alt=""/></div><div class="sb-ws-name">${S.workspace}</div><span class="sb-ws-chev"><${Icon} n="arrowChevronSingleDownFillSmall" cls="i14"/></span></div></div>
     <div class="sb-collapse" role="button" data-tip="Close sidebar" onClick=${() => { S.sidebar.collapsed = true; commit(); }}><${Icon} n="arrowChevronDoubleBackward" cls="i20"/></div>
@@ -1091,7 +1097,7 @@ function Sidebar({ current }) {
     <div class=${'sb-scroll tab-' + tab}>
       ${tab === 'chat' ? html`<${ChatBody}/>` : tab === 'meetings' ? html`<${MeetingsBody}/>` : tab === 'inbox' ? html`<${InboxBody}/>` : ''}
       ${tab !== 'home' ? '' : sectionOrder().map((k) => SECTION_DEFS.find((x) => x.key === k)).filter((def) => def && !(S.sidebar.hidden || {})[def.key] && (def.key !== 'favorites' || favPages().length) && (def.key !== 'shared' || S.sidebar.shared.length) && (def.key !== 'workspace' || S.sidebar.workspace.length)).map((def) => { const open = S.sidebar.open[def.key] !== false; return html`<div class=${'sb-section' + (open ? ' open' : '')} key=${def.key}><div class="sb-sec" role="button" onClick=${() => { S.sidebar.open[def.key] = !open; commit(); }}><span class="sb-sec-label">${def.label}</span><span class=${'sb-sec-chev' + (open ? '' : ' closed')}><${Icon} n="arrowChevronSingleDownFillSmall" cls="i12"/></span><div class="sb-sec-actions">${def.actions.map((ic) => html`<div class="sb-act" role="button" onClick=${(e) => { e.stopPropagation(); if (ic === 'plusSmall') createPage(null, def.key === 'workspace' ? 'workspace' : 'private'); if (ic === 'ellipsisSmall') openOverlay('sectionMenu', e.currentTarget, { key: def.key }); if (ic === 'arrowDiagonalUpRightSmall') go('library/' + (def.key === 'private' ? 'private' : def.key === 'agents' ? 'agents' : 'recents')); }}><${Icon} n=${ic} cls="i16"/></div>`)}</div></div>${open ? html`<${SectionBody} k=${def.key} current=${current}/>` : ''}</div>`; })}
-      ${tab !== 'home' ? '' : html`<div class="sb-links">${links.map(([ic, label, dot]) => html`<a class=${'sb-item link' + ((label === 'Library' && route().startsWith('library')) || (label === 'My Tasks' && route() === 'tasks') || (label === 'Templates' && route().startsWith('marketplace')) ? ' active' : '')} onClick=${(e) => sidebarLink(label, e.currentTarget)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n=${ic} cls="i22"/>${dot ? html`<span class="sb-dot"></span>` : ''}</div><div class="sb-item-label">${label}</div></div></a>`)}</div>`}
+      ${tab !== 'home' ? '' : html`<div class="sb-links">${links.map(([ic, label, dot]) => html`<a class=${'sb-item link' + ((label === 'All notes' && route().startsWith('library')) || (label === 'My Tasks' && route() === 'tasks') || (label === 'Templates' && route().startsWith('marketplace')) ? ' active' : '')} onClick=${(e) => sidebarLink(label, e.currentTarget)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n=${ic} cls="i22"/>${dot ? html`<span class="sb-dot"></span>` : ''}</div><div class="sb-item-label">${label}</div></div></a>`)}</div>`}
     </div>
     <div class="sb-bottom">
       ${READY.chat ? html`<div class="sb-newchat" role="button" onClick=${openNewChat}><${Icon} n="aiFace" cls="i20"/><span class="label">New chat</span><kbd>⌘O</kbd></div>` : ''}
@@ -1799,7 +1805,7 @@ function AiPage() {
   if (chat && !chat.loaded && !chat.loading && !chat.failed) void space.openChat(chat.id);
   if (!chat) return html`<div class="ai-page ai-full"><div class="ai-full-col">
     <div class="ai-full-sp"></div>
-    <div class="ai-full-top"><div class="aish-avw ai64"><div class="aish-av ai64"><${AiFace} size=${64}/></div><div class="aish-pz" role="button"><${Icon} n="pencilLine" cls="i14"/><span>Personalize</span></div></div><div class="ai-full-h">How can I help you today?</div></div>
+    <div class="ai-full-top"><div class="aish-avw ai64"><div class="aish-av ai64"><${AiFace} size=${64}/></div><div class="aish-pz" role="button"><${Icon} n="pencilLine" cls="i14"/><span>Personalize</span></div></div><div class="ai-full-h">What are we working on?</div></div>
     <div class="ai-full-menu"><div class="aish-menu-in" role="menu">${AI_FULL_ROWS.map(([ic, label, badge]) => html`<div class="aish-row" role="menuitem" onClick=${() => startFull(label)}><${Icon} n=${ic} cls="i20"/><span>${label}</span>${badge ? html`<span class="aish-new">${badge}</span>` : ''}</div>`)}</div></div>
     <div class="ai-full-dock"><${AiSideComposer} chat=${null} page=${null} onSend=${startFull}/></div>
   </div></div>`;
@@ -2044,7 +2050,7 @@ function AiSideComposer({ chat, page, onSend }) {
 function AiSideHome({ page }) {
   const rows = AI_FULL_ROWS;
   return html`<div class="aish"><div class="aish-sp"></div><div class="aish-body">
-    <div class="aish-top"><div class="aish-avw"><div class="aish-av"><${AiFace} size=${50}/></div><div class="aish-pz" role="button"><${Icon} n="pencilLine" cls="i14"/><span>Personalize</span></div></div><div class="aish-h">How can I help you today?</div></div>
+    <div class="aish-top"><div class="aish-avw"><div class="aish-av"><${AiFace} size=${50}/></div><div class="aish-pz" role="button"><${Icon} n="pencilLine" cls="i14"/><span>Personalize</span></div></div><div class="aish-h">What are we working on?</div></div>
     <div class="aish-menu"><div class="aish-menu-in" role="menu">${rows.map(([ic, label, badge]) => html`<div class="aish-row" role="menuitem" onClick=${() => sendSideMessage(null, label, page)}><${Icon} n=${ic} cls="i20"/><span>${label}</span>${badge ? html`<span class="aish-new">${badge}</span>` : ''}</div>`)}</div></div>
   </div></div>`;
 }
@@ -2098,7 +2104,7 @@ function openMeetingNote(title, opts) {
 /* ------------------------------------------------------------------ Library, Trash, Help (measured) */
 function sidebarLink(label, el) {
   if (label === 'Templates') { go('marketplace'); return; }
-  if (label === 'Library') go('library'); else if (label === 'My Tasks') go('tasks'); else if (label === 'Trash') { space.loadTrash(); openOverlay('trash', el); } else if (label === 'Help') openOverlay('help', el);
+  if (label === 'All notes') go('library'); else if (label === 'My Tasks') go('tasks'); else if (label === 'Trash') { space.loadTrash(); openOverlay('trash', el); } else if (label === 'Help') openOverlay('help', el);
 }
 function restorePage(pid) {
   const p = S.pages[pid]; if (!p) return;
@@ -2548,7 +2554,7 @@ function TasksPage() {
 function LibraryPage({ tab }) {
   const t = tab || 'recents'; const rows = libRows(t);
   return html`<div class="lib-page">
-    <div class="lib-head"><h1 class="lib-title">Library</h1><div class="lib-new" role="button" onClick=${() => createPage(null)}>New page</div></div>
+    <div class="lib-head"><h1 class="lib-title">All notes</h1><div class="lib-new" role="button" onClick=${() => createPage(null)}>New page</div></div>
     <div class="lib-bar"><div class="lib-tabs">${LIB_TABS.map(([k, ic, label]) => html`<div class=${'lib-tab' + (t === k ? ' on' : '')} role="button" onClick=${() => { go('library/' + k); }}><${Icon} n=${ic} cls="i20"/><span>${label}</span></div>`)}</div><div class="lib-tools">${['filterSmall', 'magnifyingGlassSmall', 'slidersSmall'].map((ic) => html`<div class="db-tool" role="button"><${Icon} n=${ic} cls="i16"/></div>`)}</div></div>
     <div class="nsp-table-view lib-table">
       <div class="nsp-table-view-header-row">${LIB_COLS.map(([n, w, mask]) => html`<div class="nsp-table-view-header-cell" style=${`width:${w}px`}><div class="th"><div class="th-inner"><div class="th-icon"><div class="th-icon-box"><div class="th-mask" style=${`-webkit-mask-image:url("${MASKS[mask] || MASKS.list}");mask-image:url("${MASKS[mask] || MASKS.list}")`}></div></div></div><div class="th-text">${n}</div></div></div></div>`)}</div>
@@ -3507,7 +3513,7 @@ function App() {
   const drawable = page && (page.kind === 'database' ? !!S.collections[page.collection] && !!S.views[page.views && page.views[0]] : Array.isArray(page.content));
   useLayoutEffect(() => { applyFocus(); applySel(); });
   useEffect(() => { if (isAi && !READY.chat) space.go('home', { replace: true }); }, [isAi]);
-  useEffect(() => { if (!isApp) document.title = isAi ? 'Nemesis AI' : isLib ? 'Library' : isTasks ? 'My Tasks' : isMarket ? 'Templates' : page ? pageTitleText(page) : 'Nemesis'; });
+  useEffect(() => { if (!isApp) document.title = isAi ? 'Nemesis AI' : isLib ? 'All notes' : isTasks ? 'My Tasks' : isMarket ? 'Templates' : page ? pageTitleText(page) : 'Nemesis'; });
   const peek = page && page.kind === 'database' && peekRow && drawable ? (S.rows[page.collection] || []).find((x) => x.id === peekRow) : null;
   let main = '';
   if (isMarket) main = html`<div class="nsp-scroller vertical"><${MarketplacePage}/></div>`;

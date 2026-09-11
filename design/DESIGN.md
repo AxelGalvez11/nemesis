@@ -3,6 +3,10 @@
 > **Read [README.md](README.md) first.** It holds the owner's rulings since this file was written on 2026-09-08, and
 > they outrank it: the marketing site, sign-in and pricing follow Sana one for one ([SURFACES.md](SURFACES.md)), and the
 > mark is three dots ([BRAND.md](BRAND.md)). This file governs the app.
+>
+> **The app's values are the Sana and Notion synthesis** (owner, 2026-09-11), which replaced "Figma leads the app's
+> system". The principles below still hold; the numbers they quote are the synthesis, and
+> [TOKENS.md](TOKENS.md) is where they live.
 
 The constitution. When this file and a screen disagree, the screen is wrong.
 
@@ -43,19 +47,22 @@ The learner's material is the most important thing on screen. Chrome recedes.
 This is enforced structurally, not by taste:
 
 - Chrome is built from the low end of the neutral ramp. It is **incapable** of out-shouting content.
-- Chrome type is 12px. Content type is 16 to 18px.
-- Chrome is square (radius 6). Content containers are soft.
-- The accent never appears on chrome except to mark what the learner is doing now.
+- Chrome type is 14px. Content type is 16 to 18px.
+- Chrome rows are radius 6 inside menus of radius 10. The conversation is rounder: pills, with the
+  composer and dialogs at 24.
+- The accent never appears on chrome at all. It has two places: the send button and the learner's own
+  message bubble.
 
 **Test:** squint at any screen. The things that survive should be the learner's words, not our
 toolbar.
 
 ## 2. Two densities, never mixed
 
-**Chrome density**: 12px type, 24 to 28px controls, radius 6, spacing 4 to 12.
-**Content density**: 16 to 18px type, 32 to 36px controls, radius 8 to pill, spacing 16 to 32.
+**Chrome density**: 14px type, 28px menu rows and 30px sidebar rows, radius 6 inside menus of 10,
+spacing 4 to 12.
+**Content density**: 16 to 18px type, 32 to 36px pill controls, radius 16 to 24, spacing 16 to 32.
 
-A region is one or the other. A 14px label inside a 12px toolbar is a bug. A 12px paragraph inside a
+A region is one or the other. A 16px label inside a 14px toolbar is a bug. A 12px paragraph inside a
 lesson is a bug.
 
 This is the single rule that most separates a designed application from a generated one, and it is
@@ -80,10 +87,12 @@ with a heading and some space.
 
 ## 4. Colour is nearly absent, and that is the point
 
-The interface is ink on paper. One accent, doing one job: **marking what the learner is doing now**.
+The interface is ink on paper. The accent has **two places and no others: the send button, and the
+learner's own message bubble**.
 
-The primary button is ink, not accent. This is Sana's rule and it is the largest single contributor
-to a product reading as calm. A user never has to hunt for the coloured thing to proceed.
+Primary buttons, switches, checkboxes, selected chips and focus are all ink. This is the rule both
+measured references share and it is the largest single contributor to a product reading as calm. A
+user never has to hunt for the coloured thing to proceed.
 
 Status colour (danger, warning, success) appears only when something has actually happened.
 Decorative colour does not exist.
@@ -92,18 +101,20 @@ Our accent belongs to the character. The interface does not compete with the mas
 
 ## 5. Type carries the hierarchy, not weight
 
-Nine type steps. Nothing outside them.
+Ten type utilities. Nothing outside them.
 
-**Nothing is ever set at 700.** Display type is 450 at 32px with tight negative tracking, which is
-how all three of the strongest references handle it. `text-4xl font-bold` is the signature of a
-generated interface.
+**Nothing is ever set at 700.** Headings and labels are 500, and bold inside an answer is 600, which
+is the ceiling. Display type is 30px at 500 with tight negative tracking. `text-4xl font-bold` is the
+signature of a generated interface.
 
-Tracking is optical: positive below 12px, negative and increasing above. Baked into the tokens.
+Tracking is optical: zero at and below 13px, negative from 14px and growing with size. Baked into the
+tokens.
 
 ## 6. Motion is feedback, never decoration
 
-Four durations, chosen by **how close the change is to the pointer**. Hover is effectively instant
-(40ms). Colour is quick. Shape and position are fast. Overlays are merely quick.
+Five durations, chosen by **how close the change is to the pointer**. Hover is effectively instant
+(20ms). Colour is quick (100ms). Menus open in 150ms, fades and rotations take 200ms, and a panel
+travels in 320ms on its own curve.
 
 Nothing animates on entry. There are no scroll reveals, no staggers, no springs on ordinary UI. The
 one place motion is allowed personality is the character, which has its own vocabulary.

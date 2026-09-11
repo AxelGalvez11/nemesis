@@ -1,0 +1,379 @@
+/* ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   THE APP'S DESIGN, LAID OVER THE MEASURED LAYOUT.   Canonical source: /design/TOKENS.md
+
+   Owner, 2026-09-11: the app wears our own design, synthesised from the two products we measured. The layout,
+   spacing and behaviour of the workspace stay exactly as they were measured; what changes here is the system:
+   one ink, our type, our corners, our elevation, our focus, our motion, and the accent in the two places it belongs.
+
+   🔴 THIS FILE IS NOT REPAINTED BY THE BUILD. scripts/space-scope-css.mjs maps every colour in the measured copy
+   into our ink before concatenating this file after it, so everything below wins on order and says what it means.
+
+   Read it in four parts: the ink and the tokens the copy already reads, then type, then shape and elevation, then
+   the accent and motion.
+   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. The ink ───────────────────────────────────────────────────────────────────────────────────────────────────
+   There is one ink and every neutral is that ink at an alpha, named by the job it does: text, icon, fill, line.
+   Icons carry their own steps because a glyph is a solid mass and reads heavier than a label at the same alpha. */
+:root {
+  --k-rgb: 16, 16, 18;
+  --k-ink: rgb(var(--k-rgb));
+  --k-on-ink: #fff;
+  --k-page: #fff;
+  --k-sunken: #f9f9f9;
+  --k-surface: #fff;
+
+  --k-t0: rgb(var(--k-rgb));
+  --k-t1: rgba(var(--k-rgb), 0.9);
+  --k-t2: rgba(var(--k-rgb), 0.6);
+  --k-t3: rgba(var(--k-rgb), 0.45);
+  --k-td: rgba(var(--k-rgb), 0.3);
+
+  --k-i1: rgba(var(--k-rgb), 0.8);
+  --k-i2: rgba(var(--k-rgb), 0.5);
+  --k-i3: rgba(var(--k-rgb), 0.35);
+
+  --k-soft: rgba(var(--k-rgb), 0.04);
+  --k-hov: rgba(var(--k-rgb), 0.05);
+  --k-sel: rgba(var(--k-rgb), 0.07);
+  --k-prs: rgba(var(--k-rgb), 0.1);
+
+  --k-l1: rgba(var(--k-rgb), 0.06);
+  --k-l2: rgba(var(--k-rgb), 0.08);
+  --k-l3: rgba(var(--k-rgb), 0.14);
+
+  /* Elevation is a 1px ring with soft shadows inside it. A tight dark shadow on its own is never used. */
+  --k-ring: 0 0 0 1px rgba(var(--k-rgb), 0.08);
+  --k-float: 0 0 0 1px rgba(var(--k-rgb), 0.08), 0 2px 6px rgba(var(--k-rgb), 0.03), 0 10px 24px rgba(var(--k-rgb), 0.06);
+  --k-over: 0 0 0 1px rgba(var(--k-rgb), 0.08), 0 4px 10px rgba(var(--k-rgb), 0.04), 0 24px 48px rgba(var(--k-rgb), 0.1);
+  /* Focus is a ring with a 2px gap in the ground, drawn as a shadow so it shifts no layout. */
+  --k-focus: 0 0 0 2px var(--k-page), 0 0 0 4px rgba(var(--k-rgb), 0.7);
+
+  /* The accent is the character's colour and marks two things only: the send button and the learner's own bubble. */
+  --k-accent: var(--accent-fill-light, #0a0a0c);
+  --k-accent-glyph: var(--accent-glyph-light, #fff);
+  --k-bubble: var(--accent-bubble-light, var(--accent-fill-light, #0a0a0c));
+  --k-bubble-glyph: var(--accent-bubble-glyph-light, var(--accent-glyph-light, #fff));
+
+  --k-hover-in: 20ms ease-in;
+  --k-quick: 100ms cubic-bezier(0, 0, 0.2, 1);
+  --k-fast: 200ms cubic-bezier(0, 0, 0.2, 1);
+  --k-menu: 150ms cubic-bezier(0, 0, 0.2, 1);
+  --k-travel: 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+body.nsp-dark-theme {
+  --k-rgb: 237, 237, 238;
+  --k-on-ink: #141415;
+  --k-page: #141415;
+  --k-sunken: #18181a;
+  --k-surface: #1e1e20;
+
+  --k-t3: rgba(var(--k-rgb), 0.44);
+  --k-td: rgba(var(--k-rgb), 0.28);
+  --k-i2: rgba(var(--k-rgb), 0.52);
+  --k-i3: rgba(var(--k-rgb), 0.36);
+
+  --k-soft: rgba(var(--k-rgb), 0.05);
+  --k-hov: rgba(var(--k-rgb), 0.06);
+  --k-sel: rgba(var(--k-rgb), 0.09);
+  --k-prs: rgba(var(--k-rgb), 0.12);
+
+  --k-l1: rgba(var(--k-rgb), 0.07);
+  --k-l2: rgba(var(--k-rgb), 0.1);
+  --k-l3: rgba(var(--k-rgb), 0.16);
+
+  --k-ring: 0 0 0 1px rgba(var(--k-rgb), 0.1);
+  --k-float: 0 0 0 1px rgba(var(--k-rgb), 0.1), 0 2px 6px rgba(0, 0, 0, 0.3), 0 12px 28px -6px rgba(0, 0, 0, 0.5);
+  --k-over: 0 0 0 1px rgba(var(--k-rgb), 0.1), 0 4px 10px rgba(0, 0, 0, 0.35), 0 24px 48px -8px rgba(0, 0, 0, 0.6);
+  --k-focus: 0 0 0 2px var(--k-page), 0 0 0 4px rgba(var(--k-rgb), 0.75);
+
+  --k-accent: var(--accent-fill-dark, #f2f2f4);
+  --k-accent-glyph: var(--accent-glyph-dark, #1a1a1a);
+  --k-bubble: var(--accent-bubble-dark, var(--accent-fill-dark, #f2f2f4));
+  --k-bubble-glyph: var(--accent-bubble-glyph-dark, var(--accent-glyph-dark, #1a1a1a));
+
+  color-scheme: dark;
+}
+
+/* The copy reads its own token names everywhere, so the names are re-pointed once, here, rather than in 3,000 rules.
+   Both themes are listed together: the copy's own dark block is more specific than a light one and would win. */
+:root,
+body.nsp-dark-theme {
+  --font: var(--font-app, "Inter"), -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "Apple Color Emoji", sans-serif;
+
+  --c-bacPri: var(--k-page);
+  --c-bacSec: var(--k-sunken);
+  --c-bacEle: var(--k-surface);
+  --c-bacTer: var(--k-sel);
+  --c-bacInt: var(--k-soft);
+  --c-popBac: var(--k-surface);
+  --sb: var(--k-sunken);
+  --c-graBacEle: var(--k-surface);
+  --c-graBacTer: var(--k-sel);
+  --c-assCorButBac: var(--k-surface);
+
+  --c-texPri: var(--k-t1);
+  --c-texAccPri: var(--k-t1);
+  --c-texSec: var(--k-t2);
+  --c-texTer: var(--k-t3);
+  --c-texDis: var(--k-td);
+  --c-texInvPri: var(--k-on-ink);
+  --c-sidSecCol: var(--k-t3);
+  --cl-pagTitPlaTexCol: var(--k-td);
+
+  --c-icoPri: var(--k-i1);
+  --c-icoSec: var(--k-i2);
+  --c-icoTer: var(--k-i3);
+  --c-icoDis: var(--k-td);
+
+  --c-borPri: var(--k-l2);
+  --c-borSec: var(--k-l1);
+  --c-borStr: var(--k-l3);
+  --ca-borPriTra: var(--k-l2);
+  --ca-borSecTra: var(--k-l1);
+  --ca-borStrTra: var(--k-l3);
+  --ca-bacIntTra: var(--k-hov);
+  --ca-bacSecTra: var(--k-soft);
+  --ca-bacTerTra: var(--k-sel);
+
+  --c-shaOutSm: var(--k-ring);
+  --c-shaOutMd: var(--k-float);
+  --c-shaOutLg: var(--k-float);
+  --c-shaOutDif: var(--k-float);
+  --c-shaOutScr: var(--k-over);
+  --c-shaBasSm: var(--k-ring);
+  --c-shaBasMd: var(--k-float);
+  --c-shaBasLg: var(--k-float);
+  --c-shaBasDif: var(--k-float);
+  --c-shaBasScr: var(--k-over);
+  --sh-menu: var(--k-float);
+
+  /* Every control the reference painted in its accent is ink here. The glyph on it flips with the theme. */
+  --blue: var(--k-ink);
+  --c-bluBacAccPri: var(--k-ink);
+  --c-bluIcoAccPri: var(--k-ink);
+  --c-bluBorAccPri: var(--k-ink);
+  --c-bluTexAccPri: var(--k-t0);
+  --c-bluTexInvPri: var(--k-on-ink);
+  --c-bluIcoInvPri: var(--k-on-ink);
+}
+
+/* Stronger text and lines when someone asks for high contrast, in either theme. */
+body[data-contrast="high"] {
+  --k-t1: rgb(var(--k-rgb));
+  --k-t2: rgba(var(--k-rgb), 0.78);
+  --k-t3: rgba(var(--k-rgb), 0.62);
+  --k-td: rgba(var(--k-rgb), 0.45);
+  --k-i2: rgba(var(--k-rgb), 0.7);
+  --k-i3: rgba(var(--k-rgb), 0.55);
+  --k-l1: rgba(var(--k-rgb), 0.14);
+  --k-l2: rgba(var(--k-rgb), 0.2);
+  --k-l3: rgba(var(--k-rgb), 0.3);
+}
+@media (prefers-contrast: more) {
+  body[data-contrast="auto"] {
+    --k-t1: rgb(var(--k-rgb));
+    --k-t2: rgba(var(--k-rgb), 0.78);
+    --k-t3: rgba(var(--k-rgb), 0.62);
+    --k-td: rgba(var(--k-rgb), 0.45);
+    --k-i2: rgba(var(--k-rgb), 0.7);
+    --k-i3: rgba(var(--k-rgb), 0.55);
+    --k-l1: rgba(var(--k-rgb), 0.14);
+    --k-l2: rgba(var(--k-rgb), 0.2);
+    --k-l3: rgba(var(--k-rgb), 0.3);
+  }
+}
+
+/* ── 2. Type ──────────────────────────────────────────────────────────────────────────────────────────────────────
+   Inter with optical sizes. Chrome is 14px, reading is 16/26, small print is 12px. Headings and labels are 500 and
+   bold inside an answer is 600, which is the ceiling: hierarchy comes from size, colour and spacing, not weight. */
+:root {
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.nsp-page-block-title {
+  font-weight: 500;
+  letter-spacing: -1px;
+}
+.ai-heading,
+.ai-full-h,
+.aish-h,
+.aq-q,
+.db-title,
+.set-h1,
+.mp-tc-name {
+  font-weight: 500;
+}
+.ai-full-h {
+  font-size: 30px;
+  line-height: 36px;
+  letter-spacing: -0.6px;
+}
+/* An answer reads at 16/26 wherever it is drawn: full page, side panel or inside a page. */
+.ai-thread.ais-full,
+.ais-full .ais-text,
+.ais-full .ais-md {
+  font-size: 16px;
+  line-height: 26px;
+}
+
+/* ── 3. Shape and elevation ───────────────────────────────────────────────────────────────────────────────────────
+   Six radii: 4, 6, 10, 16, 24 and pill. Rows are 6 inside menus of 10, because 6 plus 4 of padding makes 10. The
+   composer and dialogs are 24. Nothing in between. */
+.menu,
+.sb-chat-group {
+  border-radius: 10px;
+}
+.menu {
+  background: var(--k-surface);
+  box-shadow: var(--k-float);
+}
+.search,
+.set-card,
+.sp-card,
+.share-pop,
+.feed-card,
+.dash-card,
+.fmt-menu,
+.ol-pop {
+  border-radius: 16px;
+}
+.ai-box,
+.ai-dock .ai-box,
+.aisc,
+.ai-dock .aq,
+.aq {
+  border-radius: 24px;
+}
+.nsp-sidebar-container {
+  box-shadow: inset -1px 0 0 var(--k-l1);
+}
+.sb-tab.active,
+.sb-item.active .sb-item-inner,
+.sb-item.link.active .sb-item-inner,
+.sb-chat-row.on {
+  background: var(--k-sel);
+}
+.sb-tab.active:hover,
+.sb-item.active:hover .sb-item-inner {
+  background: var(--k-prs);
+}
+.sb-newchat,
+.sb-compose {
+  box-shadow: var(--k-ring);
+}
+
+/* The composer is a well at rest and lifts when it is being used. */
+.ai-box,
+.aisc {
+  background: var(--k-soft);
+  box-shadow: none;
+  outline: none;
+  transition: background-color var(--k-quick), box-shadow var(--k-quick);
+}
+.ai-box.focus,
+.aisc.focus {
+  background: var(--k-surface);
+  box-shadow: var(--k-float);
+  outline: none;
+}
+
+/* Focus is visible on everything that takes it, and never moves the row it is on. */
+[role="button"]:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible {
+  outline: none;
+  box-shadow: var(--k-focus);
+}
+
+/* ── 4. The accent, and the controls that are ink ─────────────────────────────────────────────────────────────────
+   The send button and the learner's own bubble carry the character's colour. Everything else a control can be is
+   ink: primary buttons, switches, checkboxes, radios and selected keys. */
+.ai-send,
+.ais-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--k-sel);
+  fill: var(--k-i3);
+  opacity: 1;
+  transition: background-color var(--k-quick);
+}
+.ai-send.on,
+.ais-send.on {
+  background: var(--k-accent);
+  fill: var(--k-accent-glyph);
+}
+.ai-send.stop,
+.ais-send.stop {
+  background: var(--k-ink);
+  fill: var(--k-on-ink);
+}
+.ais-bubble,
+.ai-msg.user .ai-bubble {
+  padding: 8px 16px;
+  border-radius: 16px;
+  background: var(--k-bubble);
+  color: var(--k-bubble-glyph);
+  box-shadow: none;
+}
+.shp-invite-btn,
+.lib-new,
+.tasks-new,
+.aq-next,
+.fv-submit,
+.cb.on,
+.fe-box.on,
+.aq-kbd.on,
+.toggle.on {
+  background: var(--k-ink);
+  color: var(--k-on-ink);
+  fill: var(--k-on-ink);
+}
+.aq-radio.on {
+  background: var(--k-ink);
+  box-shadow: 0 0 0 1.5px var(--k-ink);
+}
+.aq-radio.on i {
+  background: var(--k-on-ink);
+}
+
+/* ── 5. Motion ────────────────────────────────────────────────────────────────────────────────────────────────────
+   The closer a change is to the pointer, the faster it resolves. A menu opens from 98 per cent, a panel travels. */
+@keyframes k-open {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.menu,
+.search,
+.share-pop,
+.fmt-menu {
+  animation: k-open var(--k-menu) both;
+}
+.sb-item-inner,
+.sb-tab,
+.sb-act,
+.sb-act24,
+.tb-btn,
+.tb-crumb,
+.mi,
+.mn-row,
+.aish-row {
+  transition: background-color var(--k-hover-in), color var(--k-quick), fill var(--k-quick);
+}
+@media (prefers-reduced-motion: reduce) {
+  .nsp *,
+  .nsp *::before,
+  .nsp *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

@@ -12,7 +12,10 @@ test("Space routes are the Space frontend's; everything else stays the React app
   assert.equal(routeFromPath("/library"), "library");
   assert.equal(routeFromPath("/library/shared"), "library/shared");
   assert.equal(routeFromPath("/templates"), "marketplace");
-  for (const react of ["/canvas", "/study", "/calendar", "/settings", "/pricing", "/library/classic", "/library/source/abc", "/p/not-an-id"]) {
+  // 🔴 `/review` IS THE REACT APP'S, and the sidebar's "Review due cards (N)" row is what opens it.
+  // The row lives in the Space frontend, so the obvious mistake is for the path to be claimed here
+  // too: the Space column would draw itself over the page and the player would never appear.
+  for (const react of ["/canvas", "/study", "/review", "/calendar", "/settings", "/pricing", "/library/classic", "/library/source/abc", "/p/not-an-id"]) {
     assert.equal(routeFromPath(react), null, `${react} belongs to the React app`);
   }
 });

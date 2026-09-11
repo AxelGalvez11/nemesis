@@ -6,12 +6,15 @@
 import "@/space/styles/space.css";
 import "katex/dist/katex.min.css";
 
+import { Inter } from "next/font/google";
 import { useEffect, useRef } from "react";
 
 import { createFakeSupabase, fakeChatEngine, fakeMeetingDeps } from "@/lib/space/fake-backend";
 import { setBasePath, space } from "@/space/app/runtime.js";
 
 const BASE = "/dev-preview/space";
+// The same face the real shell loads (components/space/space-shell.tsx), so this harness shows the real type.
+const inter = Inter({ subsets: ["latin"], axes: ["opsz"], variable: "--font-app", display: "swap" });
 
 export default function SpacePreview() {
   const root = useRef<HTMLDivElement>(null);
@@ -51,5 +54,5 @@ export default function SpacePreview() {
       unmount?.();
     };
   }, []);
-  return <div className="nsp" data-workspace="" ref={root} />;
+  return <div className={`nsp ${inter.variable}`} data-workspace="" ref={root} />;
 }

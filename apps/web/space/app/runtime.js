@@ -394,7 +394,7 @@ class Space {
     }
   }
 
-  /** Canvas, Study and Calendar are the React app's; the sidebar stays and the main column changes hands. */
+  /** Canvas, Review and the calendar are the React app's; the sidebar stays and the main column changes hands. */
   openApp(path) {
     if (this.host) this.host.navigate(path);
   }
@@ -1511,7 +1511,7 @@ class Space {
     block('to_do', 'Type / on an empty line to add a heading, a list, a table or a database', { checked: false });
     block('to_do', 'Press + next to Private in the sidebar to make a new page', { checked: false });
     block('to_do', 'Open Templates in the sidebar to start a reading list or course notes', { checked: false });
-    block('to_do', 'Open Canvas or Study from Apps in the sidebar', { checked: false });
+    block('to_do', 'Open Canvas from Apps in the sidebar, or press New chat to ask Nemesis', { checked: false });
     block('callout', 'Pages can hold other pages. Press + on a page in the sidebar to add one inside it.', { icon: '💡' });
     S.pages[pid] = { id: pid, kind: 'page', icon: { emoji: '👋' }, title: 'Getting started', content, parent: null, section: 'private', lastEdited: NOW() };
     S.sidebar.private.unshift(pid);

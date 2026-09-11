@@ -21,7 +21,10 @@ When a screen and these files disagree, the screen is wrong.
 | [MIGRATION.md](MIGRATION.md) | the order the app moves onto the system |
 | [PROVENANCE.md](PROVENANCE.md) | where every value came from: measured, interpolated or invented |
 
-The research behind it is in /research/design-references (Sana, Figma, x.ai and champ, each measured in a live browser).
+The research behind it is in /research/design-references (Sana, Figma, x.ai and champ, each measured in a live
+browser). The app's values now come from the 2026-09-11 Sana and Notion synthesis instead; that comparison sheet is not
+in git, so [PROVENANCE.md](PROVENANCE.md) records what was measured, what was judgement, and where the sheet lives.
+The marketing site, sign-in and pricing are unaffected and keep their Sana rulings.
 
 ## Where it lives in code
 
@@ -40,12 +43,14 @@ These outrank anything older in this folder.
 
 | date | ruling | applies to |
 | --- | --- | --- |
+| 2026-09-11 | **The app's design is the Sana and Notion synthesis** ("our new design"), approved on a mockup of the rebuilt app. **Replaces "Figma leads the app's system"** below | the app; TOKENS.md, DESIGN.md |
+| 2026-09-11 | **The app-screens pass starts now**, beginning with the new workspace shell and its sidebar. **Replaces "app screens are finished later"** below | the app; MIGRATION.md |
 | 2026-09-11 | The mark is three dots, two up and one down, with no ring, and it must not resemble another famous logo | everywhere; BRAND.md |
 | 2026-09-11 | The sign-in matches sana.ai's sign-in one for one | /sign-in, /sign-up, /auth/*; SURFACES.md §2 |
 | 2026-09-11 | Pricing follows the new marketing style | both pricing pages; SURFACES.md §3 |
 | 2026-09-11 | Every component family is covered by the system | COVERAGE.md, and its test |
 | 2026-09-10 | The marketing site uses Sana's anatomy and motion (sand bands, weight 500 heads, word-by-word reveals). This reverses "Figma leads" for the marketing site only | landing; SURFACES.md §1 |
-| 2026-09-10 | App screens are finished later ("later on we'll finish the app screens"). Until then the token layer and the primitives change no existing screen | the app; MIGRATION.md |
+| 2026-09-10 | ~~App screens are finished later ("later on we'll finish the app screens"). Until then the token layer and the primitives change no existing screen~~ **REPLACED 2026-09-11: the pass has started** | the app; MIGRATION.md |
 | 2026-09-10 | Real students at top universities may be named; schools appear as names with one generic badge, never a school's crest | landing |
-| 2026-09-09 | Figma leads the app's system, and Sana is used where Figma is silent | the app; DESIGN.md |
+| 2026-09-09 | ~~Figma leads the app's system, and Sana is used where Figma is silent~~ **REPLACED 2026-09-11 by the Sana and Notion synthesis** | the app; DESIGN.md |
 | standing | No em dashes. No invented testimonials. Flashcards stay white. Generated images are 4K and show objects, not people. Gradients are rendered art in one colour family, never CSS | all copy and art |

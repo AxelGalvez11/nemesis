@@ -29,7 +29,7 @@ const count = (pattern: string, distinct: boolean) =>
 
 test("🔴🔴 arbitrary typography, radius and spacing are capped and shrinking", () => {
   // /design/TOKENS.md §2 gives nine type steps. The app carried TWENTY-FOUR distinct hard-coded
-  // sizes across 401 uses, including `text-[12.5px]` and `text-[13.5px]` — the clearest possible
+  // sizes across 401 uses, including `text-[12.5px]` and `text-[13.5px]`, the clearest possible
   // evidence that sizes were chosen per component by eye. Sana ships seven and renders five;
   // Figma's application uses three.
   assert.ok(count("text-\\[[0-9.]+px\\]", true) <= 24, "a new hard-coded font size was added: use <Text variant>");
@@ -75,22 +75,31 @@ test("🔴 the token layer exists, is imported, and keeps its measured decisions
   // the label's alpha reads heavier than the label.
   assert.match(tokens, /--icon-primary: var\(--n-80\)/, "icons went back to sharing the text colour");
 
-  // 🔴 TRACKING CROSSES ZERO AT 12px. Positive below, increasingly negative above. Measured across
-  // all five references; the point is that no call site sets letter-spacing by hand.
-  assert.match(tokens, /type-meta[^}]*letter-spacing:\s*0\.06px/, "small type lost its positive tracking");
-  assert.match(tokens, /type-display[^}]*letter-spacing:\s*-0\.7px/, "display type lost its negative tracking");
-  assert.match(tokens, /type-display[^}]*font-weight:\s*450/, "display type went bold: presence comes from size and tracking");
-  // 🔴 THE LAYER STAYS ADDITIVE UNTIL THE APP-SCREENS PASS. The system's ceiling is 600, but redefining Tailwind's
-  // `font-bold` in this file would restyle every screen that uses it today; /design/MIGRATION.md holds that step.
+  // 🔴 CHROME IS 14px. The owner's 2026-09-11 synthesis ruling reversed this system's own "there is no 14px chrome":
+  // 12px was an interpolation between Figma's 11 and Sana's 14, and both references it was measured from set 14.
+  assert.match(tokens, /type-ui\s*\{[^}]*font-size:\s*14px/, "chrome left 14px: the 2026-09-11 ruling set sidebars, menus, buttons and tabs at 14/20");
+
+  // 🔴 TRACKING IS ZERO AT AND BELOW 13px AND NEGATIVE FROM 14px (2026-09-11 ruling; the old positive tracking under
+  // 12px came from Figma's 11px chrome). The point is unchanged: no call site sets letter-spacing by hand.
+  assert.match(tokens, /type-meta[^}]*letter-spacing:\s*0;/, "small type took tracking back: it is zero at and below 13px");
+  assert.match(tokens, /type-display[^}]*letter-spacing:\s*-0\.6px/, "display type lost its negative tracking");
+  // 🔴 DISPLAY IS 30px AT WEIGHT 500 (2026-09-11 ruling, replacing 32px at 450): presence is size and tracking.
+  assert.match(tokens, /type-display[^}]*font-weight:\s*500/, "display type left weight 500: presence comes from size and tracking");
+  // 🔴 THE LAYER STAYS ADDITIVE. The system's ceiling is 600, but redefining Tailwind's `font-bold` in this file would
+  // restyle every screen that uses it today, including the ones the app-screens pass has not reached; MIGRATION.md
+  // holds that step, to be taken with the Inter switch.
   assert.ok(!/--font-weight-/.test(tokens), "the token layer re-pointed an existing utility before the migration");
 
-  // 🔴 THERE IS NO TIGHT SHADOW. Two elevations, both wide and faint. A `0 1px 2px` is the clearest
-  // signature of a generated interface; if something must look raised, it gets a border.
-  assert.match(tokens, /--elev-raised: inset 0 0 0 1px/, "raised stopped being a border and became a shadow");
+  // 🔴 ELEVATION IS A 1px RING WITH SOFT SHADOWS INSIDE IT (2026-09-11 ruling, replacing the inset raised ring).
+  // A lone tight `0 1px 2px` is still the clearest signature of a generated interface and is still banned.
+  assert.match(tokens, /--elev-ring: 0 0 0 1px/, "the ring stopped being a 1px ring");
+  assert.match(tokens, /--elev-raised: var\(--elev-ring\)/, "raised stopped being the ring on its own");
+  assert.match(tokens, /--elev-floating: var\(--elev-ring\)/, "the floating shadow lost the ring it sits inside");
   assert.ok(!/0 1px 2px/.test(tokens), "a tight shadow was added to the token layer");
 
-  // 🔴 FOCUS IS AN INSET RING so it cannot shift a row by a pixel when it appears.
-  assert.match(tokens, /--focus-ring: inset 0 0 0 2px/, "focus went back to an outline, which shifts layout");
+  // 🔴 FOCUS IS A 2px INK RING WITH A 2px GAP IN THE GROUND (2026-09-11 ruling, replacing the inset ring). Still a
+  // box-shadow, so it cannot shift a row by a pixel when it appears.
+  assert.match(tokens, /--focus-ring: 0 0 0 2px var\(--bg-page\), 0 0 0 4px/, "focus lost its 2px gap, or went back to an outline");
 
   assert.match(tokens, /prefers-reduced-motion: reduce/, "the durations no longer collapse under reduced motion");
 });
@@ -110,7 +119,7 @@ const src = (f: string) => strip(readFileSync(new URL(`../../components/design/$
 test("🔴🔴 no primitive paints with `--ui-bg-primary`: it is a FILL, not a ground", () => {
   // This one mistake shipped THREE invisible controls before it was caught, and it was caught by
   // measuring the rendered gallery rather than by reading the file. `--ui-bg-primary` resolves to
-  // `color-mix(accent <n>%, ink 10%)` — a translucent CONTROL FILL — so:
+  // `color-mix(accent <n>%, ink 10%)`, a translucent CONTROL FILL, so:
   //   the primary button drew `srgb 0.182 / 0.244` text on its own `rgb(13,13,13)` background,
   //   the checkbox tick was invisible inside its filled box,
   //   the toggle knob was invisible on its filled track.
