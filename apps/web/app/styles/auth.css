@@ -19,6 +19,9 @@
   --auth-faint: rgba(10, 18, 23, 0.4);
   --auth-accent: rgba(10, 18, 23, 0.25);
   --auth-line: rgba(10, 18, 23, 0.08);
+  /* Re-measured 2026-09-11: the input fields' own hairline reads heavier than the other 8%-ink
+     borders on the page (Sana's other hairlines, like the OAuth button, do stay at 8%). */
+  --auth-line-field: rgba(10, 18, 23, 0.15);
   --auth-soft: rgba(10, 18, 23, 0.04);
   /* The ground every control is cut out of. The floating labels punch a gap in a border by painting
      this exact colour over it, so it must stay opaque. */
@@ -46,6 +49,7 @@
   --auth-faint: rgba(243, 245, 246, 0.42);
   --auth-accent: rgba(243, 245, 246, 0.28);
   --auth-line: rgba(243, 245, 246, 0.12);
+  --auth-line-field: rgba(243, 245, 246, 0.2);
   --auth-soft: rgba(243, 245, 246, 0.06);
   --auth-ground: #212121;
 }
@@ -87,8 +91,20 @@
    731.9x751.1 at -12.8/-15.5, so it bleeds past every edge: art sized to fit reads as a framed
    screenshot, art that runs off the edges reads as a window onto something bigger.
 
-   Fixed, not absolute: a form that grows past the window (a captcha, an error and the MFA step at
-   once) scrolls, and the panel stays where it is. Shown from 1080px up; see the media query below. */
+   🔴🔴 RE-MEASURED 2026-09-11 ON THE LIVE PAGE, NOT JUST THE 2026-09-08 TEARDOWN — the panel and the
+   form column are NOT independently centred. Sana's `<section>` that HOLDS the form (the whole thing:
+   headline, buttons, fields, legal text) sits at x182/y118/w380.5/**h720** — the exact same y and
+   height as the panel section (x671.3/y118/w706.7/h720). Both are one flex row, one shared band.
+
+   🔴 THE OWNER'S "the sign-in still doesn't match the sizing" WAS THIS. The first pass gave the panel
+   a `position: fixed` box centred with a hand-tuned "+28px" fudge that only happened to land near
+   Sana's y=118 at exactly 900px tall, while the form column was centred SEPARATELY by its own flexbox
+   (`.nemesis-auth-panel-wrap`, centring whatever height the card happens to be). Two different
+   formulas agreeing by coincidence at one viewport size, and drifting apart at every other height or
+   whenever the form grows (an error, MFA, the captcha). Fixed below: `.nemesis-auth-shell.is-split`
+   is now the ONE flex row, `align-items: center` on it is the ONLY centring rule, and both the panel
+   and the column simply sit inside it — exactly Sana's own structure. Positioning moved out of this
+   base rule (only relevant once `.is-split` shows the panel) and into the media query below. */
 .nemesis-auth-field {
   aspect-ratio: 706.3 / 720;
   background: rgb(23, 24, 26);
@@ -96,11 +112,6 @@
   display: none;
   isolation: isolate;
   overflow: hidden;
-  position: fixed;
-  right: calc(var(--auth-edge, 0px) + 62px);
-  top: calc(50% + 28px);
-  translate: 0 -50%;
-  width: var(--auth-panel-w, 706.3px);
   z-index: 1;
   /* Measured: Sana's panel section fades in over 0.55s on cubic-bezier(0.32, 0.72, 0, 1). The 3D
      swing is in the film itself. */
@@ -128,8 +139,10 @@
 .nemesis-auth-art[data-phase="loop"] > .nemesis-auth-loop,
 .nemesis-auth-art[data-phase="still"] > .nemesis-auth-still { opacity: 1; }
 
-/* The column. Vertically centred in the window; symmetric padding so the form sits on the optical
-   centre, and min-height rather than a fixed height so a tall form scrolls instead of clipping. */
+/* The column. On the single-column pages this centres itself, in the window, with symmetric padding
+   so the form sits on the optical centre. On the split pages (1080px+) the centring job moves up to
+   the shared row (`.nemesis-auth-shell.is-split`, see the media query) so the column and the panel
+   share exactly one vertical centre line, the way Sana's do — see the note on `.nemesis-auth-field`. */
 .nemesis-auth-panel-wrap {
   align-items: center;
   background: transparent;
@@ -225,12 +238,13 @@
   top: 0;
 }
 .nemesis-auth-field-group input:focus + label { color: var(--auth-ink); }
-/* Measured: 381x48, radius 24, a hairline at 8% ink, 14/500. */
+/* Measured: 381x48, radius 24, a hairline at 15% ink (re-measured 2026-09-11; the field border reads
+   heavier than the other 8%-ink hairlines on the page), 14/500. */
 .nemesis-auth-shell input[type="email"],
 .nemesis-auth-shell input[type="password"],
 .nemesis-auth-shell input[inputmode="numeric"] {
   background: var(--auth-ground);
-  border: 1px solid var(--auth-line);
+  border: 1px solid var(--auth-line-field);
   border-radius: 24px;
   color: var(--auth-ink);
   font-family: inherit;
@@ -429,18 +443,43 @@
    the column 62.6% of the way across the space the panel leaves. Wider than 1440 the whole
    arrangement centres; narrower, the panel shrinks with the window (and with its height, so it never
    runs off the bottom) and the column keeps its proportion. Sana drops the panel under 1380; ours
-   holds to 1080 so a 1280 or 1366 laptop still gets the machine. ── */
+   holds to 1080 so a 1280 or 1366 laptop still gets the machine.
+
+   🔴🔴 ONE FLEX ROW, ONE `align-items: center` — THAT IS THE WHOLE FIX. Sana's own form column and
+   panel are both children of one row, both spanning the same y118..y838 band at 1440x900; that is why
+   they line up. `.nemesis-auth-shell.is-split` IS that row now. `.nemesis-auth-panel-wrap` no longer
+   centres itself (it did, independently of the panel, which is the bug the owner caught) — it just
+   holds the card at its natural height and lets the row centre the whole wrap. The panel is a normal
+   flex item too, sized by width + aspect-ratio, `align-self: center` doing nothing but stating the
+   obvious now that the row already centres everything on the cross axis. ── */
 @media (min-width: 1080px) {
   .nemesis-auth-shell.is-split {
     --auth-page: min(100vw, 1440px);
     --auth-edge: calc((100vw - var(--auth-page)) / 2);
     --auth-panel-w: min(706.3px, 49.1vw, calc((100svh - 124px) * 0.98097));
     --auth-col-x: calc(var(--auth-edge) + (var(--auth-page) - 62px - var(--auth-panel-w) - 381px) * 0.626);
-    display: block;
+    align-items: center;
+    display: flex;
+    flex-direction: row;
   }
   .nemesis-auth-shell.is-split::before { display: none; }
-  .is-split .nemesis-auth-field { display: block; }
-  .is-split .nemesis-auth-panel-wrap { justify-content: flex-start; padding: 64px 0 56px var(--auth-col-x); }
+  .is-split .nemesis-auth-field {
+    align-self: center;
+    display: block;
+    flex: 0 0 auto;
+    margin: 24px 62px 24px 0;
+    order: 2;
+    width: var(--auth-panel-w);
+  }
+  .is-split .nemesis-auth-panel-wrap {
+    align-items: normal;
+    display: block;
+    flex: 1 1 auto;
+    justify-content: normal;
+    min-height: 0;
+    order: 1;
+    padding: 24px 0 24px var(--auth-col-x);
+  }
   /* Measured: the mark alone, 24px, in a 44px hit area whose left edge is 12px before the column. */
   .is-split .nemesis-auth-brand {
     border-radius: 9999px;
