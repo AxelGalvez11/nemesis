@@ -44,6 +44,19 @@ export function SpaceShell({ children, gates }: { children: React.ReactNode; gat
           await live.current.signOut();
           live.current.router.replace("/sign-in");
         },
+        // Sharing goes through the route so the people invited also get an email; ws_invite still decides everything.
+        invite: async (request) => {
+          const { data } = await supabase.auth.getSession();
+          const token = data.session?.access_token;
+          const res = await fetch("/api/space/invite", {
+            method: "POST",
+            headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify(request),
+          });
+          const body = (await res.json().catch(() => ({}))) as { error?: string; invited?: number; emailed?: number };
+          if (!res.ok) throw new Error(body.error || "Sharing did not work. Try again.");
+          return { invited: body.invited ?? 0, emailed: body.emailed ?? 0 };
+        },
       });
     });
     return () => {

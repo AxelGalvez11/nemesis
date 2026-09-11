@@ -45,9 +45,9 @@ nothing here reuses that word.
 
 ## Not built yet stays hidden
 - `READY` in apps/web/space/app/main.js hides every way into a feature with no server behind it: ai, meetings, inbox,
-  invites, importExport, history, pageOps, automations, searchFilters, maps. The milestone that builds one turns its
+  publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5. The milestone that builds one turns its
   flag on. lib/space/space-ready.test.ts fails when an entry point escapes its flag.
-- Controls with no handler of their own: 109 on 2026-09-11 (lib/space/dead-controls.ts). The budget only goes down.
+- Controls with no handler of their own: 107 on 2026-09-11 (lib/space/dead-controls.ts). The budget only goes down.
 - Home has no page of its own until M9; it opens the page you were last on, or your first page.
 
 ## Milestones
@@ -63,6 +63,11 @@ nothing here reuses that word.
       (components/space/space-landing.ts). Left: the same checks on production after merge.
 - [ ] M4 Databases: rows, views, filters, sorts, groups, relations, rollups, unique ids, forms, files
 - [ ] M5 Sharing and people: invites by email, roles, guests, page share, publish to web, teamspaces
+      2026-09-11, part one: 20260911T11_space_invites.sql is live (self-test 30 of 30, rolled back). Share a page by
+      email with a role; an address without an account waits as an invite that only a confirmed email can claim; guests
+      reach only what is shared; access list, change and remove. Client: the Share menu invites and edits roles, the
+      workspace switcher works, a shared page opens in its own workspace, view and comment roles cannot type, and
+      /api/space/invite emails each person. Left: publish to web, workspace members, teamspaces.
 - [ ] M6 Comments, discussions, mentions, inbox notifications, presence avatars
 - [ ] M7 Search, templates gallery (ours), duplicate, import (Markdown, CSV), export
 - [ ] M8 Real settings (account, preferences, notifications, connections, workspace, people, teamspaces, billing)

@@ -27,10 +27,9 @@ const ENTRY_POINTS: Array<[string, RegExp, "dead"?]> = [
     /\['meet', 'AI Meeting Notes'|\['microphone', 'AI Meeting Notes'|'paperMicrophone', 'AI Meeting Notes'\]|g: 'Suggested'|\['meetings', 'paperMicrophone', 'Meetings'\]|key: 'meetings'/,
   ],
   ["inbox", /\['inbox', 'inbox', 'Inbox'\]|(?<!-)label="Notify me"|aria-label="Notification settings"/],
-  [
-    "invites",
-    /placeholder="Email, separated by commas"|<span>Invite members<\/span>|\['publish', 'Publish'\]|class="shp-adv"|class="shp-publish"|class="ft-share"/,
-  ],
+  ["invites", /placeholder="Email, separated by commas"/],
+  ["publish", /\['publish', 'Publish'\]|class="shp-adv"|class="shp-publish"|class="ft-share"/],
+  ["members", /<span>Invite members<\/span>/],
   ["importExport", /(?<!-)label="Import"|(?<!-)label="Export"|<span>Import<\/span>/],
   ["history", /(?<!-)label="Version history"|(?<!-)label="Updates & analytics"/],
   [
@@ -80,7 +79,7 @@ test("🔴 no text tells a learner to use a feature that is switched off", () =>
  * 🔴 THE COUNT ONLY GOES DOWN. Buttons and menu items with no handler of their own, most of them in screens whose
  * milestone has not come yet (docs/space/PLAN.md). Wiring or removing one means lowering BUDGET; adding one fails.
  */
-const BUDGET = 109;
+const BUDGET = 107;
 
 test("🔴 the number of controls that do nothing does not grow", () => {
   const dead = deadControls(main);
