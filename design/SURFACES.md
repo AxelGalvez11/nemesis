@@ -32,6 +32,14 @@ Motion, Marquee, StudyTools, device, mockups).
 - **Art**: gradients are rendered images in one colour family, never CSS. Photographs are 4K and show objects, never
   people. The product is shown with real components or rendered films.
 - **Words**: no testimonials. The school row names schools with one generic badge.
+- **Deliverables** (`StudyTools.tsx`, owner 2026-09-11): Quizlet's "How do you want to study?" row, measured on its
+  landing page at 1470 wide: cards 310x390, radius 24, 32 apart, title 24/32 centred 19px from the top, art from 70px
+  down. Ours put a rendered gradient under a wordless skeleton mock of each tool (flashcards, tests, slides, mind map):
+  four in a row, two by two under 1100px, a swipeable row on phones. A flashcard is graded with ✗ or ✓ and nothing else.
+- **Films**: rendered by HyperFrames at 60fps from `~/Desktop/nemesis-reel/showcase-*.html` in the kit's app window,
+  each a loop whose last second returns to its first frame, each under 1.5 MB (`lib/home.test.ts`). The note taker film
+  follows the launch film's camera: the composer grows into a recorder, the camera closes in on the words as they are
+  written, and after Stop the marked phrases fly into a full page of notes.
 
 ## 2. Sign-in, sign-up and /auth/*
 

@@ -41,8 +41,11 @@ branding settings.
 
 ## The wordmark
 
-"Nemesis" with a capital N (owner, 2026-08-25), set in Inter 500 at 18px with -0.3px tracking, 8px after a 20px mark in
-the site header. The new surfaces use no letter-spaced capitals.
+"Nemesis" with a capital N (owner, 2026-08-25), set in Inter 500 at 18px with -0.3px tracking, 8px after the mark in the
+site header. The new surfaces use no letter-spaced capitals.
+
+🔴 The mark is drawn small beside the word (owner, 2026-09-11: "make logo smaller"): 14px in the site header and the
+app's pricing header, 16px in the site footer, 18px in the sign-in's 44px circle.
 
 ## Colour
 

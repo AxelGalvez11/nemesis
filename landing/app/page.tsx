@@ -5,7 +5,7 @@ import { DeviceShot, LoopVideo } from "@/components/reference/device/DeviceShot"
 import { DEVICE_PHOTOS } from "@/components/reference/device/photos";
 import { CharacterMark } from "@/components/reference/agents";
 import { Marquee } from "@/components/reference/Marquee";
-import { FEATURES, FeatureIcon, SpaceMock } from "@/components/reference/StudyTools";
+import { Deliverables } from "@/components/reference/StudyTools";
 import { DeckMock, WorkspaceMock } from "@/components/reference/mockups/Mockups";
 import { Reveal, Slots, TypeOn, Words } from "@/components/reference/motion/Motion";
 import { SnFaq, SnFoot, SnHeader } from "@/components/reference/SanaChrome";
@@ -22,12 +22,15 @@ import "./home-sana.css";
  * and `CanvasShowcase` (see git blame before this commit): the old page is good work, nothing else
  * imports it, and it costs nothing to keep in case a future direction wants it back.
  *
- * WHAT IS REAL. FSRS scheduling, .pptx slides, .docx guides, seventeen input formats and the canvas
- * all exist in the app today. Outside agents connecting (Claude, ChatGPT, Cursor) is not built; the
- * owner chose on 2026-09-10 to show it by name, as a promise for launch. Nine of the twelve study
- * tools pictured (flashcards, quiz, study guide, slides) are built; mind maps, study packets, cheat
- * sheets, practice exams, podcasts, video summaries and shared spaces are not — the owner chose to
- * show the whole set anyway ("dont worry about the real app").
+ * WHAT IS REAL. FSRS scheduling, .pptx slides, .docx guides, seventeen input formats, lecture recording and the
+ * canvas all exist in the app today. Outside agents connecting (Claude, ChatGPT, Cursor) is not built; the owner chose
+ * on 2026-09-10 to show it by name, as a promise for launch. Of the seven deliverables, flashcards, quizzes, study guides
+ * and slides are built; mind maps, cheat sheets and practice exams are not, and the owner chose to show them anyway.
+ *
+ * OWNER, 2026-09-11: "remove that thermodynamic chart section, just show the deliverables"; the photo section (FSRS,
+ * ideas stay connected, slides and guides) "do not fit"; "Remove video summary and study packet and podcast and course
+ * map"; "Make lecture notes its own section with a cool animation", "similar to launch video style". The lecture clip is
+ * a HyperFrames render (~/Desktop/nemesis-reel/showcase-lecture.html) in the same kit as the other two.
  *
  * 🔴 NO INVENTED TESTIMONIALS. Sana's own page runs quotes from named customers; Nemesis has none to
  * quote, and a made-up quote with a made-up name is a fake review, so the sections that carry quotes
@@ -76,33 +79,6 @@ const SCHOOLS = [
   "National University of Singapore",
 ];
 
-const TRIO = [
-  {
-    src: "/photos/hourglass-cards.webp",
-    alt: "An hourglass with orange sand beside a stack of white index cards",
-    chip: "Next review: tomorrow, 9:00",
-    dot: TONE.ink,
-    lead: "Reviews at the right moment.",
-    rest: "FSRS brings each card back just before you would forget it.",
-  },
-  {
-    src: "/photos/card-board.webp",
-    alt: "White index cards pinned to a wall and joined with violet thread",
-    chip: "Linked to Lecture 6, slide 14",
-    dot: TONE.violet,
-    lead: "Ideas stay connected.",
-    rest: "Notes, cards and questions share one canvas, and each one keeps its source.",
-  },
-  {
-    src: "/photos/slides-print.webp",
-    alt: "Printed slides with lime and grey shapes spread across a desk",
-    chip: "Slides ready: 12 slides, .pptx",
-    dot: TONE.emerald,
-    lead: "Slides and guides, not just cards.",
-    rest: "The same lecture becomes a slide summary and a study guide you can export.",
-  },
-];
-
 type Who = { label: string; tone: string; character?: boolean };
 const CLAUDE: Who = { label: "C", tone: TONE.violet };
 const GPT: Who = { label: "G", tone: TONE.azure };
@@ -145,7 +121,7 @@ const TABLE: [string, string, string][] = [
 const FAQ = [
   { q: "Do I need my own agent?", a: "No. Nemesis has its own AI that builds the same decks, slides and guides. Connecting Claude, ChatGPT or Cursor is optional." },
   { q: "What can I bring in?", a: "PDFs, Word, PowerPoint and Excel files, links, transcripts, photos of handwritten notes and lecture recordings. Nemesis reads seventeen formats." },
-  { q: "What can Nemesis make from my files?", a: "Flashcards, quizzes, practice exams, study guides, study packets, cheat sheets, mind maps, a course map, slides, lecture notes, podcasts and video summaries. Each one links back to the page it came from." },
+  { q: "What can Nemesis make from my files?", a: "Flashcards, tests, slides, mind maps and notes from your lectures. Each one links back to the page it came from." },
   { q: "Can I study with classmates?", a: "Yes. Share a space and choose whether each person can view it, comment on it or edit it." },
   { q: "How does Nemesis decide when I review?", a: "It uses FSRS, a spaced repetition scheduler that predicts when you are about to forget each card and brings it back just before you do." },
   { q: "Can I see where a card came from?", a: "Yes. Every card, slide and section of a guide points back to the page or slide it came from." },
@@ -239,50 +215,43 @@ export default function Home() {
           <Slots className="sn-works sn-works-band" cellClassName="sn-works-cell" count={6} items={WORKS} />
         </section>
 
-        {/* ── study tools: every tool a space can make, in the Student Spaces layout the owner picked ── */}
+        {/* ── the note taker, its own section. Owner, 2026-09-11: "make section for the note taker and one for
+            deliverables". It comes first: the lecture is the material the deliverables are made from. ── */}
+        <section className="sn-band" id="lecture-notes">
+          <p className="sn-kicker">Note taker</p>
+          <Words as="h2" className="sn-h2" text="Record the lecture. Keep the notes." />
+          <TypeOn
+            className="sn-lead"
+            text="Press record from the chat box. Nemesis writes down what is said, then turns the transcript into a full page of notes: key ideas, examples to know and tips for the exam."
+          />
+          <div className="sn-art sn-show-art">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="sn-art-img" src="/gradients/orange.webp" alt="" loading="lazy" decoding="async" />
+            <Reveal kind="rise" className="sn-show">
+              <div className="sn-frame sn-show-frame">
+                <LoopVideo
+                  src="/showcase/lecture.mp4"
+                  poster="/showcase/lecture.webp"
+                  label="A student records a contract law lecture from the chat box. The words are written down as they are said, then the transcript turns into notes"
+                />
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ── the deliverables, as Quizlet shows them: a gradient card with a mock of each tool (owner, 2026-09-11) ── */}
         <section className="sn-tools" id="tools">
           <p className="sn-kicker">Study tools</p>
           <Words as="h2" className="sn-h2" text="Everything you need to study, made from your course" />
           <TypeOn
             className="sn-lead"
-            text="Drop in a lecture, a reading or an exam date. Nemesis makes the study tools, and every one points back to its source."
+            text="Drop in a lecture, a reading or an exam date. Nemesis makes what you need to study, and every piece points back to its source."
           />
-          <Reveal kind="rise" className="sn-space">
-            <SpaceMock />
-          </Reveal>
-          <div className="sn-feats">
-            {FEATURES.map((f, i) => (
-              <Reveal key={f.lead} kind="rise" className="sn-feat" style={{ transitionDelay: `${i * 70}ms` }}>
-                <FeatureIcon art={f.art} glyph={f.glyph} />
-                <p>
-                  <b>{f.lead}</b> {f.rest}
-                </p>
-              </Reveal>
-            ))}
-          </div>
-        </section>
-
-        {/* ── three photographs, each carrying a piece of the product ───────────────────────── */}
-        <section className="sn-trio" id="decks">
-          {TRIO.map((c, i) => (
-            <Reveal key={c.src} kind="rise" as="figure" className="nm-zoom" style={{ transitionDelay: `${i * 90}ms` }}>
-              <div className="sn-card-art">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="nm-zoom-bg" src={c.src} alt={c.alt} loading="lazy" decoding="async" />
-                <span className="sn-float" style={{ animationDelay: `${-i * 1.7}s` }}>
-                  <i style={{ background: c.dot }} aria-hidden="true" />
-                  {c.chip}
-                </span>
-              </div>
-              <figcaption className="sn-card-cap">
-                <b>{c.lead}</b> {c.rest}
-              </figcaption>
-            </Reveal>
-          ))}
+          <Deliverables />
         </section>
 
         {/* ── think together: cards from every author fall into one pile ────────────────────── */}
-        <section className="sn-pair">
+        <section className="sn-pair" id="decks">
           <div>
             <p className="sn-kicker">Think together</p>
             <Words as="h2" className="sn-h2" text="Every card shows who made it" />
