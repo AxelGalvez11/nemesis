@@ -2424,6 +2424,196 @@
   background: var(--k-on-ink);
 }
 
+/* ── 4b. The sidebar the owner approved ───────────────────────────────────────────────────────────────────────────
+   Account, bell and search on one row, the five tabs on their own row, and the tab's list filling what is left. The
+   measured copy placed all three absolutely, which cannot hold five tabs and lists of different heights, so the
+   sidebar becomes a column here. Sizes stay on the system: 30px rows, 28px controls, radius 6. */
+.nsp .nsp-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 8px;
+}
+.nsp .sb-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  flex: none;
+}
+.nsp .sb-ws {
+  position: static;
+  width: auto;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border-radius: 6px;
+}
+.nsp .sb-ws-inner {
+  padding: 4px 6px;
+}
+.nsp .sb-bell,
+.nsp .sb-collapse {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  fill: var(--k-i2);
+  --nsp-fill: var(--k-i2);
+  cursor: pointer;
+  flex: none;
+}
+.nsp .sb-bell:hover,
+.nsp .sb-collapse:hover,
+.nsp .sb-find:hover {
+  background: var(--k-sel);
+}
+/* Search is a field rather than an icon, so the account's name keeps the width it needs. */
+.nsp .sb-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--k-hov);
+  color: var(--k-t3);
+  font-size: 14px;
+  line-height: 20px;
+  cursor: text;
+  flex: none;
+}
+.nsp .sb-find .nicon {
+  fill: var(--k-i2);
+  --nsp-fill: var(--k-i2);
+}
+.nsp .sb-bell.on {
+  background: var(--k-sel);
+}
+/* Unread work waiting for you is the one place a warning colour earns its keep. */
+.nsp .sb-bell-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 2px var(--k-sunken);
+}
+.nsp .sb-collapse {
+  left: auto;
+  top: auto;
+  opacity: 0;
+}
+.nsp .nsp-sidebar-container:hover .sb-collapse {
+  opacity: 1;
+}
+.nsp .sb-tabs {
+  position: static;
+  display: flex;
+  gap: 2px;
+  margin: 8px 0 4px;
+  flex: none;
+}
+.nsp .sb-tab {
+  height: 30px;
+  padding: 0 4px;
+}
+.nsp .sb-tab.active {
+  margin: 0 2px;
+  padding: 0 0 0 6px;
+}
+.nsp .sb-tab.active:first-child {
+  margin-left: 0;
+}
+.nsp .sb-scroll {
+  position: static;
+  top: auto;
+  bottom: auto;
+  width: auto;
+  flex: 1;
+  min-height: 0;
+  margin: 0 -8px;
+  padding: 2px 8px 8px;
+}
+.nsp .sb-bottom {
+  position: static;
+  left: auto;
+  bottom: auto;
+  display: flex;
+  gap: 8px;
+  margin: 6px -8px 0;
+  padding: 8px 8px 0;
+  border-top: 1px solid var(--k-l1);
+  flex: none;
+}
+.nsp .sb-newchat {
+  flex: 1;
+  width: auto;
+  height: 36px;
+}
+.nsp .sb-compose {
+  width: 36px;
+  height: 36px;
+  flex: none;
+}
+/* A workspace wears a square of its own colour, so a course is recognisable before its name is read. */
+.nsp .sb-sq {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.nsp .sb-sq.c0 { background: #5b5bd6; }
+.nsp .sb-sq.c1 { background: #0e7c66; }
+.nsp .sb-sq.c2 { background: #b0480d; }
+.nsp .sb-sq.c3 { background: #1f6feb; }
+.nsp .sb-sq.c4 { background: #a5306f; }
+.nsp .sb-sq.c5 { background: #6e4cc4; }
+.nsp .sb-item.ws:hover .sb-sq {
+  display: none;
+}
+.nsp .sb-item.ws:hover .sb-ic-tog {
+  display: flex;
+}
+.nsp .sb-count {
+  margin-left: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--k-t3);
+  flex: none;
+}
+.nsp .sb-note {
+  margin: 6px 8px 2px;
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--k-t3);
+}
+.nsp .sb-list.kids {
+  margin-top: 1px;
+}
+.nsp .inbox-pop {
+  width: 340px;
+  max-height: 520px;
+  overflow: auto;
+  padding: 4px;
+}
+.nsp .inbox-pop .sb-inbox {
+  padding: 0;
+}
+
 /* ── 5. Motion ────────────────────────────────────────────────────────────────────────────────────────────────────
    The closer a change is to the pointer, the faster it resolves. A menu opens from 98 per cent, a panel travels. */
 @keyframes nsp-k-open {
