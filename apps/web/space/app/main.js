@@ -6,6 +6,7 @@ import htm from 'htm';
 import { ICONS, MASKS } from './icons.js';
 import { splitEmails } from '../../lib/space/invite-request';
 import { describeFilter, defaultOp, filterable, filterReady, filterRows, needsValue, operatorsFor, opLabel, searchRows, seedFromFilters } from '../../lib/space/db-filter';
+import { describeSorts, groupable, groupRows, sortRowsBy, sortsOf } from '../../lib/space/db-sort';
 import { EMOJI_SECTIONS, EMOJI_KW } from './emoji.js';
 import { COVER_GALLERY } from './covers.js';
 import { TEMPLATES } from './templates.js';
@@ -851,7 +852,7 @@ function Cell({ row, pid, prop, col }) {
   const opt = (name) => (prop.options || []).find((o) => o.value === name);
   const pill = (o, status) => { const [bg, fg, dot] = OPT[o.color] || OPT.default; return html`<div class=${'pill ' + (status ? 'status' : 'sel')} style=${`background:${bg};color:${fg}`}>${status ? html`<div class="dot" style=${`background:${dot}`}></div>` : ''}<span>${o.value}</span></div>`; };
   switch (prop.type) {
-    case 'title': return td('p75', html`<div class="tt"><div class="tt-ic"><div class="tt-ic-box"><${Icon} n="pageEmpty" cls="i18"/></div></div><div class="tt-text"><span>${v}</span></div><div class=${'tt-open' + (peekRow === row.id ? ' on' : '')} role="button" onClick=${(e) => { e.stopPropagation(); peekRow = peekRow === row.id ? null : row.id; closeOverlay(); refresh(); }}><div class="tt-open-in"><${Icon} n="peekSide" cls="i16"/><span>${peekRow === row.id ? 'CLOSE' : 'Open'}</span></div></div></div>`, open('cellText'));
+    case 'title': return td('p75', html`<div class="tt"><div class="tt-ic"><div class="tt-ic-box"><${Icon} n="pageEmpty" cls="i18"/></div></div><div class="tt-text"><span>${v}</span></div><div class=${'tt-open' + (peekRow === row.id ? ' on' : '')} role="button" onClick=${(e) => { e.stopPropagation(); closeOverlay(); openRow(row); }}><div class="tt-open-in"><${Icon} n="peekSide" cls="i16"/><span>${peekRow === row.id ? 'CLOSE' : 'Open'}</span></div></div></div>`, open('cellText'));
     case 'status': { const o = opt(v); return td('p8', o ? html`<div class="pills">${pill(o, true)}</div>` : '', open('cellSelect')); }
     case 'select': { const o = opt(v); return td('p8', o ? html`<div class="pills">${pill(o, false)}</div>` : '', open('cellSelect')); }
     case 'multi_select': return td('p8', html`<div class="pills">${(v || []).map((x) => opt(x)).filter(Boolean).map((o) => pill(o, false))}</div>`, open('cellSelect'));
@@ -868,8 +869,14 @@ function Cell({ row, pid, prop, col }) {
 }
 function Database({ page }) {
   const coll = S.collections[page.collection]; const vid = page.activeView && page.views.includes(page.activeView) ? page.activeView : page.views[0]; const view = S.views[vid]; const rows = S.rows[page.collection];
-  const cols = view.format.table_properties.filter((c) => c.visible);
+  const cols = view.format.table_properties.filter((c) => c.visible && coll.schema[c.property]);
   const shown = viewRows(rows, coll, view);
+  const gprop = (view.type || 'table') === 'table' && view.group_by && coll.schema[view.group_by] && groupable(coll.schema[view.group_by].type) ? coll.schema[view.group_by] : null;
+  const groups = gprop ? groupRows(shown, view.group_by, gprop).map((g) => ({ ...g, option: (gprop.options || []).find((o) => o.value === g.value) })) : null;
+  const collapsed = new Set(Array.isArray(view.collapsed) ? view.collapsed : []);
+  const toggleGroup = (key) => { const next = collapsed.has(key) ? [...collapsed].filter((k) => k !== key) : [...collapsed, key]; if (next.length) view.collapsed = next; else delete view.collapsed; commit(); };
+  const groupPill = (o) => { const [bg, fg, dot] = OPT[o.color] || OPT.default; const status = gprop.type === 'status'; return html`<div class=${'pill ' + (status ? 'status' : 'sel')} style=${`background:${bg};color:${fg}`}>${status ? html`<div class="dot" style=${`background:${dot}`}></div>` : ''}<span>${o.value}</span></div>`; };
+  const tableRow = (r) => html`<div class=${'nsp-table-view-row' + (dbSel.has(r.id) ? ' sel' : '')} key=${r.id} data-row-id=${r.id}><div class="row-gutter"><div class="blk-plus" role="button" data-tip-html=${TIP_PLUS} onClick=${() => { const i = rows.indexOf(r); rows.splice(i + 1, 0, newRow(view, coll)); commit(); }}><${Icon} n="plus" cls="i20"/></div><div class="blk-drag" role="button" data-tip-html=${TIP_DRAG} onMouseDown=${(e) => rowDragDown(e, rows, r, view)}><${Icon} n="dragHandle" cls="i20"/></div><div class=${'row-check' + (dbSel.has(r.id) ? ' on' : '')} role="checkbox" onClick=${() => { if (dbSel.has(r.id)) dbSel.delete(r.id); else dbSel.add(r.id); refresh(); }}>${dbSel.has(r.id) ? html`<${Icon} n="checkmarkFillSmall" cls="tick"/>` : ''}</div></div>${cols.map((c) => html`<${Cell} row=${r} pid=${c.property} prop=${coll.schema[c.property]} col=${c}/>`)}</div>`;
   // Measured: a map view's toolbar drops Sort.
   const tools = [['filterSmall', 'nsp-collection-filter'], ['arrowUpDownSmall', 'nsp-collection-sort'], ...(READY.automations ? [['lightningSmall', 'nsp-collection-automation-edit-view']] : []), ...(READY.ai ? [['magicWandSmall', '']] : []), ['magnifyingGlassSmall', 'nsp-collection-search'], ['slidersSmall', 'nsp-collection-edit-view']].filter((t) => !(view.type === 'map' && t[0] === 'arrowUpDownSmall'));
   return html`<div class="db-page">
@@ -878,15 +885,17 @@ function Database({ page }) {
       <div class="db-title-row">${hasIcon(page) ? html`<div class="nsp-record-icon db-icon" role="button" onClick=${(e) => openOverlay('iconPicker', e.currentTarget, { pageId: page.id })}><${PageIcon} ic=${page.icon} size=${36}/></div>` : ''}<h1 class="db-title" contenteditable="true" spellcheck="true" data-ph="New database" onInput=${(e) => { page.title = e.currentTarget.textContent; persist(); }}>${page.title}</h1></div>${page.hideDescription ? '' : html`<div class="db-desc">${page.description}</div>`}</div></div>
     <div class=${'db-bar' + (view.type === 'form' ? ' formbar' : '')}>
       <div class="db-tabs">${page.views.map((id) => { const vw = S.views[id]; const on = id === vid; return S.renamingView === id ? html`<div class="nsp-collection-view-tab-button db-tab"><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><input class="db-tab-input" value=${vw.name} ref=${(el) => { if (el && document.activeElement !== el) { el.focus(); el.select(); } }} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); } }} onBlur=${(e) => { if (S.renamingView !== id) return; vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); }}/></div>` : html`<div class=${'nsp-collection-view-tab-button db-tab' + (on ? '' : ' off')} role="button" onClick=${(e) => { if (on) openOverlay('viewMenu', e.currentTarget, { vid: id }); else { page.activeView = id; commit(); } }}><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><span class="lbl">${vw.name}</span></div>`; })}<div class="db-addview" role="button" aria-label="Add view" onClick=${(e) => openOverlay('addView', e.currentTarget)}><${Icon} n="plusSmall" cls="i16"/></div></div>${dbSel.size ? html`<div class="db-selbar"><span class="db-selcount">${dbSel.size} selected</span><div class="db-selbtn" role="button" onClick=${() => { const keep = rows.filter((x) => !dbSel.has(x.id)); rows.splice(0, rows.length, ...keep); dbSel.clear(); commit(); }}><${Icon} n="trash" cls="i16"/></div><div class="db-selbtn" role="button" onClick=${() => { dbSel.clear(); refresh(); }}><${Icon} n="xMarkSmall" cls="i16"/></div></div>` : ''}
-      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools">${READY.automations ? html`<div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div>` : ''}${READY.ai ? html`<div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div>` : ''}<div class="ft-ic" role="button" aria-label="Edit form, add questions and more…" onClick=${() => { viewSettings = viewSettings ? null : { vid }; refresh(); }}><${Icon} n="slidersSmall" cls="i16"/></div>${READY.publish ? html`<div class="ft-share" role="button">Share form</div>` : ''}</div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && viewRows(rows, coll, view).some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button" onClick=${(e) => openOverlay('noDate', e.currentTarget, { vid })}>No date (${viewRows(rows, coll, view).filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => c === 'nsp-collection-search' && dbSearchOpen.has(view.id) ? html`<div class="db-search"><${Icon} n="magnifyingGlassSmall" cls="i16"/><input placeholder="Type to search…" value=${dbSearch.get(view.id) || ''} ref=${(el) => { if (el && !el.dataset.on) { el.dataset.on = '1'; el.focus(); } }} onInput=${(e) => { dbSearch.set(view.id, e.currentTarget.value); refresh(); }} onBlur=${(e) => { if (!e.currentTarget.value) { dbSearchOpen.delete(view.id); refresh(); } }} onKeyDown=${(e) => { if (e.key === 'Escape') { e.stopPropagation(); dbSearch.delete(view.id); dbSearchOpen.delete(view.id); refresh(); } }}/></div>` : html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } if (c === 'nsp-collection-search') { dbSearchOpen.add(view.id); refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift(newRow(view, coll)); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
+      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools">${READY.automations ? html`<div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div>` : ''}${READY.ai ? html`<div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div>` : ''}<div class="ft-ic" role="button" aria-label="Edit form, add questions and more…" onClick=${() => { viewSettings = viewSettings ? null : { vid }; refresh(); }}><${Icon} n="slidersSmall" cls="i16"/></div>${READY.publish ? html`<div class="ft-share" role="button">Share form</div>` : ''}</div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && viewRows(rows, coll, view).some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button" onClick=${(e) => openOverlay('noDate', e.currentTarget, { vid })}>No date (${viewRows(rows, coll, view).filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => c === 'nsp-collection-search' && dbSearchOpen.has(view.id) ? html`<div class="db-search"><${Icon} n="magnifyingGlassSmall" cls="i16"/><input placeholder="Type to search…" value=${dbSearch.get(view.id) || ''} ref=${(el) => { if (el && !el.dataset.on) { el.dataset.on = '1'; el.focus(); } }} onInput=${(e) => { dbSearch.set(view.id, e.currentTarget.value); refresh(); }} onBlur=${(e) => { if (!e.currentTarget.value) { dbSearchOpen.delete(view.id); refresh(); } }} onKeyDown=${(e) => { if (e.key === 'Escape') { e.stopPropagation(); dbSearch.delete(view.id); dbSearchOpen.delete(view.id); refresh(); } }}/></div>` : html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' && liveSorts(view, coll).length) openOverlay('sortEditor', document.querySelector('[data-sorts]') || e.currentTarget, {}); else if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } if (c === 'nsp-collection-search') { dbSearchOpen.add(view.id); refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift(newRow(view, coll)); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
     </div>
-    ${(view.sort && coll.schema[view.sort.pid]) || (view.filters || []).length ? html`<div class="db-sortbar">${(view.filters || []).map((f) => { const fp = coll.schema[f.pid]; const fm = (fp && MASKS[PROP_MASK[fp.type]]) || MASKS.list; return html`<div class=${'db-chip db-fchip' + (filterReady(f, fp) ? '' : ' idle')} role="button" data-filter=${f.id} onClick=${(e) => openOverlay('filterEditor', e.currentTarget, { fid: f.id })}><div class="th-mask db-fmask" style=${`-webkit-mask-image:url("${fm}");mask-image:url("${fm}")`}></div><span>${describeFilter(f, fp, (id) => space.personName(id))}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div>`; })}${view.sort && coll.schema[view.sort.pid] ? html`<div class="db-chip" role="button" onClick=${() => { delete view.sort; commit(); }}><${Icon} n=${view.sort.dir === 'desc' ? 'arrowStraightDown' : 'arrowStraightUp'} cls="i14"/><span>${coll.schema[view.sort.pid].name}</span><${Icon} n="xMarkSmall" cls="i12"/></div>` : ''}</div>` : ''}
+    ${liveSorts(view, coll).length || (view.filters || []).length ? html`<div class="db-sortbar">${(view.filters || []).map((f) => { const fp = coll.schema[f.pid]; const fm = (fp && MASKS[PROP_MASK[fp.type]]) || MASKS.list; return html`<div class=${'db-chip db-fchip' + (filterReady(f, fp) ? '' : ' idle')} role="button" data-filter=${f.id} onClick=${(e) => openOverlay('filterEditor', e.currentTarget, { fid: f.id })}><div class="th-mask db-fmask" style=${`-webkit-mask-image:url("${fm}");mask-image:url("${fm}")`}></div><span>${describeFilter(f, fp, (id) => space.personName(id))}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div>`; })}${liveSorts(view, coll).length ? html`<div class="db-chip" role="button" data-sorts="1" onClick=${(e) => openOverlay('sortEditor', e.currentTarget, {})}><${Icon} n=${liveSorts(view, coll).length > 1 ? 'arrowUpDown' : liveSorts(view, coll)[0].dir === 'desc' ? 'arrowStraightDown' : 'arrowStraightUp'} cls="i14"/><span>${describeSorts(sortsOf(view), coll.schema)}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div>` : ''}</div>` : ''}
     ${viewSettings && S.views[viewSettings.vid] && page.views.includes(viewSettings.vid) ? (viewSettings.chartEdit ? html`<${ChartSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>` : html`<${ViewSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>`) : ''}
     ${view.type === 'board' ? html`<${BoardView} page=${page} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'gallery' ? html`<${GalleryView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'list' ? html`<${ListView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'calendar' ? html`<${CalendarView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'timeline' ? html`<${TimelineView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'feed' ? html`<${FeedView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'chart' ? html`<${ChartView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'dashboard' ? html`<${DashboardView}/>` : view.type === 'form' ? html`<${FormView} coll=${coll} view=${view}/>` : view.type === 'map' ? html`<${MapView} coll=${coll} view=${view} rows=${rows}/>` : html`
     <div class=${'nsp-table-view' + (view.lines === false ? ' nolines' : '') + (view.hideIcon ? ' noicon' : '') + (view.wrapAll ? ' wrapall' : '')}>
       <div class="nsp-table-view-header-row">${cols.map((c) => html`<${HeaderCell} c=${c} p=${coll.schema[c.property]}/>`)}</div>
-      ${shown.map((r) => html`<div class=${'nsp-table-view-row' + (dbSel.has(r.id) ? ' sel' : '')} key=${r.id} data-row-id=${r.id}><div class="row-gutter"><div class="blk-plus" role="button" data-tip-html=${TIP_PLUS} onClick=${() => { const i = rows.indexOf(r); rows.splice(i + 1, 0, newRow(view, coll)); commit(); }}><${Icon} n="plus" cls="i20"/></div><div class="blk-drag" role="button" data-tip-html=${TIP_DRAG} onMouseDown=${(e) => rowDragDown(e, rows, r, view)}><${Icon} n="dragHandle" cls="i20"/></div><div class=${'row-check' + (dbSel.has(r.id) ? ' on' : '')} role="checkbox" onClick=${() => { if (dbSel.has(r.id)) dbSel.delete(r.id); else dbSel.add(r.id); refresh(); }}>${dbSel.has(r.id) ? html`<${Icon} n="checkmarkFillSmall" cls="tick"/>` : ''}</div></div>${cols.map((c) => html`<${Cell} row=${r} pid=${c.property} prop=${coll.schema[c.property]} col=${c}/>`)}</div>`)}
-      <div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push(newRow(view, coll)); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>
+      ${groups ? groups.map((g) => html`<div class="tg" key=${'g:' + g.key}>
+        <div class="tg-head"><div class=${'tg-caret' + (collapsed.has(g.key) ? '' : ' open')} role="button" aria-label=${collapsed.has(g.key) ? 'Show group' : 'Hide group'} onClick=${() => toggleGroup(g.key)}><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div><div class="tg-label">${g.option ? groupPill(g.option) : html`<span class="board-none">${g.label}</span>`}</div><div class="board-count">${g.rows.length}</div></div>
+        ${collapsed.has(g.key) ? '' : html`${g.rows.map(tableRow)}<div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push({ ...newRow(view, coll), [view.group_by]: g.value === null ? undefined : g.value }); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>`}
+      </div>`) : html`${shown.map(tableRow)}<div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push(newRow(view, coll)); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>`}
     </div>`}
   </div>`;
 }
@@ -2462,10 +2471,7 @@ function LibraryPage({ tab }) {
 
 /* ------------------------------------------------------------------ database: column menu, sort/filter pickers, New menu (measured) */
 function sortRows(rows, coll, view) {
-  const st = view.sort; if (!st || !coll.schema[st.pid]) return rows;
-  const dir = st.dir === 'desc' ? -1 : 1; const prop = coll.schema[st.pid];
-  const val = (r) => { const v = r[st.pid]; if (prop.type === 'number' || prop.type === 'auto_increment_id') return v ?? -Infinity; if (prop.type === 'checkbox') return v ? 1 : 0; if (prop.type === 'select' || prop.type === 'status') { const i = (prop.options || []).findIndex((o) => o.value === v); return i < 0 ? 999 : i; } if (prop.type === 'created_time' || prop.type === 'last_edited_time') return r.created || 0; return String(Array.isArray(v) ? v.join(',') : v || '').toLowerCase(); };
-  return rows.slice().sort((a, b) => { const x = val(a); const y = val(b); return x < y ? -dir : x > y ? dir : 0; });
+  return sortRowsBy(rows, sortsOf(view), coll.schema, { nameOf: (id) => space.personName(id) });
 }
 // Filters live on the view and sync with it (lib/space/db-filter.ts); the search box is this browser's own, per view.
 const dbSearch = new Map();
@@ -2478,6 +2484,18 @@ function viewRows(rows, coll, view) {
   return sortRows(rows.filter((r) => kept.has(r.id) || madeHere.has(r.id)), coll, view);
 }
 const newRow = (view, coll) => { const id = uid(); madeHere.add(id); return { ...seedFromFilters(view.filters, coll.schema), id, title: '', created: NOW() }; };
+const liveSorts = (view, coll) => sortsOf(view).filter((s) => coll.schema[s.pid]);
+// A row opens the way its view says (view settings, Open pages in): in the side peek, or as its own page.
+function openRow(r) {
+  const ctx = dbCtx();
+  if (ctx && ctx.view && ctx.view.openIn === 'page') { openRowPage(r); return; }
+  peekRow = peekRow === r.id ? null : r.id; refresh();
+}
+function addSort(view, pid) {
+  view.sorts = [...sortsOf(view).filter((x) => x.pid !== pid), { id: uid(), pid, dir: 'asc' }]; delete view.sort;
+  closeOverlay(); commit();
+  setTimeout(() => { const el = document.querySelector('[data-sorts]'); if (el) openOverlay('sortEditor', el, {}); }, 0);
+}
 function addFilter(view, pid, prop) {
   const f = { id: uid(), pid, op: defaultOp(prop.type), ...(prop.type === 'checkbox' ? { value: true } : {}) };
   view.filters = [...(view.filters || []), f];
@@ -2499,15 +2517,15 @@ function PropMenu({ data }) {
   const openSub = (kind) => (e) => { const r = e.currentTarget.getBoundingClientRect(); setSub({ kind, top: r.top, bottom: r.bottom, x: ref.current.getBoundingClientRect().right - 4 }); };
   const insert = (at) => { const id = propId(); coll.schema[id] = { name: 'Text', type: 'text' }; cols.splice(at, 0, { property: id, visible: true, width: 200 }); done(); commit(); };
   const duplicate = () => { const id = propId(); coll.schema[id] = JSON.parse(JSON.stringify(p)); coll.schema[id].name = p.name + ' (1)'; if (coll.schema[id].type === 'title') coll.schema[id].type = 'text'; (S.rows[ctx.page.collection] || []).forEach((r) => { r[id] = JSON.parse(JSON.stringify(r[data.pid] ?? null)); }); cols.splice(idx + 1, 0, { ...col, property: id }); done(); commit(); };
-  const remove = () => { delete coll.schema[data.pid]; cols.splice(idx, 1); if (view.sort && view.sort.pid === data.pid) delete view.sort; done(); commit(); };
+  const remove = () => { delete coll.schema[data.pid]; for (const vw of ctx.page.views.map((id) => S.views[id]).filter(Boolean)) { if (vw.format && Array.isArray(vw.format.table_properties)) vw.format.table_properties = vw.format.table_properties.filter((c) => c.property !== data.pid); if (vw.sort && vw.sort.pid === data.pid) delete vw.sort; if (Array.isArray(vw.sorts)) { vw.sorts = vw.sorts.filter((x) => x.pid !== data.pid); if (!vw.sorts.length) delete vw.sorts; } if (Array.isArray(vw.filters)) { vw.filters = vw.filters.filter((f) => f.pid !== data.pid); if (!vw.filters.length) delete vw.filters; } if (vw.group_by === data.pid) { delete vw.group_by; delete vw.collapsed; } } done(); commit(); };
   const subBody = !sub ? null : sub.kind === 'sort'
-    ? html`<div class="menu-group"><${MenuItem} ic="arrowStraightUp" label="Ascending" onClick=${() => { view.sort = { pid: data.pid, dir: 'asc' }; done(); commit(); }}/><${MenuItem} ic="arrowStraightDown" label="Descending" onClick=${() => { view.sort = { pid: data.pid, dir: 'desc' }; done(); commit(); }}/></div>`
+    ? html`<div class="menu-group"><${MenuItem} ic="arrowStraightUp" label="Ascending" onClick=${() => { view.sorts = [{ id: uid(), pid: data.pid, dir: 'asc' }]; delete view.sort; done(); commit(); }}/><${MenuItem} ic="arrowStraightDown" label="Descending" onClick=${() => { view.sorts = [{ id: uid(), pid: data.pid, dir: 'desc' }]; delete view.sort; done(); commit(); }}/></div>`
     : sub.kind === 'type' ? html`<div class="menu-group"><div class="menu-head">Type</div>${PROP_TYPES.map(([t, n]) => html`<div class="mi" role="menuitem" onClick=${() => { p.type = t; if ((t === 'select' || t === 'multi_select' || t === 'status') && !p.options) p.options = []; done(); commit(); }}><div class="mi-in"><div class="mi-ic"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${MASKS[PROP_MASK[t]] || MASKS.list}");mask-image:url("${MASKS[PROP_MASK[t]] || MASKS.list}")`}></div></div><div class="mi-label">${n}</div>${p.type === t ? html`<div class="mi-check"><${Icon} n="checkmarkSmall" cls="i16"/></div>` : ''}</div></div>`)}</div>`
     : null;
   return html`<div class="menu prop-menu" ref=${ref} style=${`left:${left}px;top:${top}px`}>
     <div class="pm2-head"><div class="pm2-row"><div class="pm2-type" role=${isTitle ? undefined : 'button'} onClick=${isTitle ? undefined : openSub('type')}><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${mask}");mask-image:url("${mask}")`}></div></div><div class="bm-search-box pm2-name"><input value=${p.name} placeholder="Property name" onInput=${(e) => { p.name = e.currentTarget.value; persist(); refresh(); }}/></div><div class="pm2-info"><${Icon} n="infoCircleFill" cls="i16"/></div></div></div>
     <div class="menu-group" onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<div onMouseEnter=${openSub('type')}><${MenuItem} ic="arrowSquarePathUpDown" label="Change type" chev onClick=${openSub('type')}/></div>`}${READY.ai ? html`<${MenuItem} ic="magicWand" label="AI Autofill" badge="Now with agents"/>` : ''}</div>
-    <div class="menu-group"><div onMouseEnter=${() => setSub(null)}>${filterable(p.type) ? html`<${MenuItem} ic="filter" label="Filter" onClick=${() => addFilter(view, data.pid, p)}/>` : ''}</div><div onMouseEnter=${openSub('sort')}><${MenuItem} ic="arrowUpDown" label="Sort" chev onClick=${openSub('sort')}/></div><div onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<${MenuItem} ic="eyeSlash" label="Hide" onClick=${() => { col.visible = false; done(); commit(); }}/>`}<${MenuItem} ic="arrowUTurnDownLeft" label=${col.wrap ? 'Unwrap content' : 'Wrap content'} onClick=${() => { col.wrap = !col.wrap; done(); commit(); }}/></div></div>
+    <div class="menu-group"><div onMouseEnter=${() => setSub(null)}>${filterable(p.type) ? html`<${MenuItem} ic="filter" label="Filter" onClick=${() => addFilter(view, data.pid, p)}/>` : ''}</div><div onMouseEnter=${openSub('sort')}><${MenuItem} ic="arrowUpDown" label="Sort" chev onClick=${openSub('sort')}/></div>${(view.type || 'table') === 'table' && groupable(p.type) ? html`<div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="squareGridBelowLines" label=${view.group_by === data.pid ? 'Ungroup' : 'Group'} onClick=${() => { if (view.group_by === data.pid) { delete view.group_by; delete view.collapsed; } else { view.group_by = data.pid; delete view.collapsed; } done(); commit(); }}/></div>` : ''}<div onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<${MenuItem} ic="eyeSlash" label="Hide" onClick=${() => { col.visible = false; done(); commit(); }}/>`}<${MenuItem} ic="arrowUTurnDownLeft" label=${col.wrap ? 'Unwrap content' : 'Wrap content'} onClick=${() => { col.wrap = !col.wrap; done(); commit(); }}/></div></div>
     <div class="menu-group" onMouseEnter=${() => setSub(null)}><${MenuItem} ic="arrowRectangleLeft" label="Insert left" onClick=${() => insert(idx)}/><${MenuItem} ic="arrowRectangleRight" label="Insert right" onClick=${() => insert(idx + 1)}/><${MenuItem} ic="duplicate" label="Duplicate property" onClick=${duplicate}/>${isTitle ? '' : html`<${MenuItem} ic="trash" label="Delete property" onClick=${remove}/>`}</div>
   </div>${subBody ? html`<${SubMenu} sub=${sub}>${subBody}<//>` : ''}`;
 }
@@ -2516,11 +2534,15 @@ function PropPicker({ data }) {
   useEffect(() => { if (inputRef.current) inputRef.current.focus(); }, []);
   if (!ctx) return null;
   const { coll, view } = ctx;
-  const props = view.format.table_properties.map((c) => [c.property, coll.schema[c.property]]).filter(([, p]) => p && (!q || p.name.toLowerCase().includes(q.toLowerCase())) && (data.mode !== 'filter' || filterable(p.type))).sort((a, b) => (a[1].type === 'title' ? -1 : b[1].type === 'title' ? 1 : a[1].name.localeCompare(b[1].name)));
+  const target = (data.vid && S.views[data.vid]) || view;
+  const BY = { groupBy: (t) => ((target.type || 'table') === 'table' ? groupable(t) : t === 'select' || t === 'status'), calendarBy: (t) => t === 'date', timelineBy: (t) => t === 'date' };
+  const BY_KEY = { groupBy: 'group_by', calendarBy: 'calendar_by', timelineBy: 'timeline_by' };
+  const pool = BY[data.mode] ? Object.keys(coll.schema).map((k) => [k, coll.schema[k]]) : view.format.table_properties.map((c) => [c.property, coll.schema[c.property]]);
+  const props = pool.filter(([, p]) => p && (!q || p.name.toLowerCase().includes(q.toLowerCase())) && (data.mode !== 'filter' || filterable(p.type)) && (!BY[data.mode] || BY[data.mode](p.type))).sort((a, b) => (a[1].type === 'title' ? -1 : b[1].type === 'title' ? 1 : a[1].name.localeCompare(b[1].name)));
   const left = Math.max(8, Math.min(overlay.r.right - 268, innerWidth - 276)); const top = Math.min(overlay.r.bottom + 4, innerHeight - 300);
   return html`<div class="menu prop-picker" style=${`left:${left}px;top:${top}px`}>
-    <div class="bm-search"><div class="bm-search-in"><div class="bm-search-box"><input ref=${inputRef} placeholder=${data.mode === 'sort' ? 'Sort by…' : 'Filter by…'} value=${q} onInput=${(e) => setQ(e.currentTarget.value)}/></div></div></div>
-    <div class="bm-scroll"><div class="menu-group">${props.map(([pid, p]) => html`<div class="mi" role="menuitem" onClick=${() => { if (data.mode === 'filter') { addFilter(view, pid, p); return; } view.sort = { pid, dir: 'asc' }; closeOverlay(); commit(); }}><div class="mi-in"><div class="mi-ic"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}");mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}")`}></div></div><div class="mi-label">${p.name}</div></div></div>`)}</div></div>
+    <div class="bm-search"><div class="bm-search-in"><div class="bm-search-box"><input ref=${inputRef} placeholder=${{ sort: 'Sort by…', filter: 'Filter by…', groupBy: 'Group by…', calendarBy: 'Show calendar by…', timelineBy: 'Show timeline by…' }[data.mode] || 'Search…'} value=${q} onInput=${(e) => setQ(e.currentTarget.value)}/></div></div></div>
+    <div class="bm-scroll"><div class="menu-group">${data.mode === 'groupBy' && (target.type || 'table') === 'table' && target.group_by ? html`<div class="mi" role="menuitem" onClick=${() => { delete target.group_by; delete target.collapsed; closeOverlay(); commit(); }}><div class="mi-in"><div class="mi-label">None</div></div></div>` : ''}${props.map(([pid, p]) => html`<div class="mi" role="menuitem" onClick=${() => { if (data.mode === 'filter') { addFilter(view, pid, p); return; } if (BY[data.mode]) { target[BY_KEY[data.mode]] = pid; if (data.mode === 'groupBy') delete target.collapsed; closeOverlay(); commit(); return; } addSort(view, pid); }}><div class="mi-in"><div class="mi-ic"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}");mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}")`}></div></div><div class="mi-label">${p.name}</div></div></div>`)}</div></div>
   </div>`;
 }
 function FilterEditor({ data }) {
@@ -2548,6 +2570,28 @@ function FilterEditor({ data }) {
     <div class="fe-head"><span class="fe-name">${prop.name}</span><div class="fe-op" role="button" onClick=${() => setOps(!ops)}><span>${opLabel(f.op)}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div><div class="fe-del" role="button" aria-label="Delete filter" onClick=${remove}><${Icon} n="xMarkSmall" cls="i16"/></div></div>
     ${body}
   </div>`;
+}
+function SortEditor() {
+  const ctx = dbCtx(); const [pick, setPick] = useState(null); const [q, setQ] = useState('');
+  if (!ctx) return null;
+  const { coll, view } = ctx; const sorts = liveSorts(view, coll);
+  const save = (next) => { if (next.length) view.sorts = next; else { delete view.sorts; closeOverlay(); } delete view.sort; commit(); };
+  const r = overlay.r; const left = Math.max(8, Math.min(r.left, innerWidth - 348)); const top = Math.max(8, Math.min(r.bottom + 4, innerHeight - 360));
+  const propIcon = (p) => { const mk = MASKS[PROP_MASK[p.type]] || MASKS.list; return html`<div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${mk}");mask-image:url("${mk}")`}></div>`; };
+  let body;
+  if (pick && pick.kind === 'dir') {
+    const cur = sorts.find((x) => x.id === pick.sid) || {};
+    body = html`<div class="menu-group">${[['asc', 'Ascending'], ['desc', 'Descending']].map(([d, label]) => html`<div class="mi" role="menuitem" onClick=${() => { setPick(null); save(sorts.map((x) => (x.id === pick.sid ? { ...x, dir: d } : x))); }}><div class="mi-in"><div class="mi-label">${label}</div>${cur.dir === d ? html`<span class="fe-check"><${Icon} n="checkmarkFillSmall" cls="i16"/></span>` : ''}</div></div>`)}</div>`;
+  } else if (pick) {
+    const used = new Set(sorts.filter((x) => x.id !== pick.sid).map((x) => x.pid));
+    const list = Object.keys(coll.schema).filter((k) => !used.has(k) && (!q || coll.schema[k].name.toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (coll.schema[a].type === 'title' ? -1 : coll.schema[b].type === 'title' ? 1 : coll.schema[a].name.localeCompare(coll.schema[b].name)));
+    const choose = (pid) => { setPick(null); setQ(''); save(pick.kind === 'add' ? [...sorts, { id: uid(), pid, dir: 'asc' }] : sorts.map((x) => (x.id === pick.sid ? { ...x, pid } : x))); };
+    body = html`<div class="fe-search fe-top"><div class="bm-search-box"><input placeholder="Sort by…" value=${q} ref=${(el) => { if (el && !el.dataset.on) { el.dataset.on = '1'; el.focus(); } }} onInput=${(e) => setQ(e.currentTarget.value)}/></div></div><div class="menu-group fe-list">${list.map((pid) => html`<div class="mi" role="menuitem" onClick=${() => choose(pid)}><div class="mi-in"><div class="mi-ic">${propIcon(coll.schema[pid])}</div><div class="mi-label">${coll.schema[pid].name}</div></div></div>`)}${list.length ? '' : html`<div class="fe-none">No properties left to sort by</div>`}</div>`;
+  } else {
+    body = html`<div class="menu-group">${sorts.map((x) => html`<div class="se2-row" key=${x.id}><div class="se2-btn se2-prop" role="button" onClick=${() => setPick({ kind: 'prop', sid: x.id })}>${propIcon(coll.schema[x.pid])}<span>${coll.schema[x.pid].name}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div><div class="se2-btn" role="button" onClick=${() => setPick({ kind: 'dir', sid: x.id })}><span>${x.dir === 'desc' ? 'Descending' : 'Ascending'}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div><div class="fe-del" role="button" aria-label="Remove sort" onClick=${() => save(sorts.filter((y) => y.id !== x.id))}><${Icon} n="xMarkSmall" cls="i16"/></div></div>`)}</div>
+      <div class="menu-group"><${MenuItem} ic="plusSmall" label="Add sort" onClick=${() => setPick({ kind: 'add' })}/><${MenuItem} ic="xMarkSmall" label="Delete sort" onClick=${() => save([])}/></div>`;
+  }
+  return html`<div class="menu sort-editor" style=${`left:${left}px;top:${top}px`}>${body}</div>`;
 }
 function NoDateMenu({ data }) {
   const ctx = dbCtx(); if (!ctx) return null;
@@ -2761,7 +2805,7 @@ function rowDragDown(e, rows, r, view) {
     }
     ghost.style.top = ev.clientY - dy + 'px';
     const hit = [...document.querySelectorAll('.nsp-table-view-row')].map((el) => ({ el, b: el.getBoundingClientRect() })).find((x) => ev.clientY >= x.b.top && ev.clientY < x.b.bottom);
-    if (!hit || view.sort) { line.style.display = 'none'; target = null; return; }
+    if (!hit || sortsOf(view).length || (view.group_by && (view.type || 'table') === 'table')) { line.style.display = 'none'; target = null; return; }
     target = { id: hit.el.dataset.rowId, before: ev.clientY < hit.b.top + hit.b.height / 2 };
     Object.assign(line.style, { display: 'block', left: hit.b.left + 'px', width: hit.b.width + 'px', top: (target.before ? hit.b.top : hit.b.bottom) - 2 + 'px' });
   };
@@ -2825,7 +2869,7 @@ function BoardView({ page, coll, view, rows }) {
 function GalleryView({ coll, view, rows }) {
   const ordered = viewRows(rows, coll, view);
   const stop = (e) => e.stopPropagation();
-  return html`<div class="nsp-gallery-view gallery"><div class="gal-grid" style=${`grid-template-columns:repeat(auto-fill,minmax(${{ small: 180, medium: 260, large: 320 }[view.cardSize || 'medium']}px,1fr))`}>${ordered.map((r) => html`<div class=${'gal-card' + (peekRow === r.id ? ' on' : '')} key=${r.id} onClick=${() => { if (renamingCard !== r.id) { peekRow = peekRow === r.id ? null : r.id; refresh(); } }}>
+  return html`<div class="nsp-gallery-view gallery"><div class="gal-grid" style=${`grid-template-columns:repeat(auto-fill,minmax(${{ small: 180, medium: 260, large: 320 }[view.cardSize || 'medium']}px,1fr))`}>${ordered.map((r) => html`<div class=${'gal-card' + (peekRow === r.id ? ' on' : '')} key=${r.id} onClick=${() => { if (renamingCard !== r.id) openRow(r); }}>
       <div class="gal-preview"></div>
       <div class="bc-acts" onClick=${stop}><div class="bc-act" role="button" onClick=${() => { renamingCard = r.id; refresh(); }}><${Icon} n="pencilLineSmall" cls="i16"/></div><div class="bc-act" role="button" onClick=${(e) => openOverlay('rowActions', e.currentTarget, { rowId: r.id })}><${Icon} n="ellipsisSmall" cls="i16"/></div></div>
       <div class="bc-in">${renamingCard === r.id ? html`<div key="edit" class="bc-title editing" contenteditable="true" ref=${(el) => { if (el && document.activeElement !== el) { el.textContent = r.title || ''; el.focus(); setCaret(el, 'end'); } }} onClick=${stop} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); r.title = e.currentTarget.textContent; renamingCard = null; commit(); } }} onBlur=${(e) => { if (renamingCard === r.id) { r.title = e.currentTarget.textContent; renamingCard = null; commit(); } }}></div>` : html`<div key="view" class="bc-title">${r.title || html`<span class="bc-untitled">Untitled</span>`}</div>`}</div>
@@ -2837,7 +2881,7 @@ function GalleryView({ coll, view, rows }) {
 const VIEW_ICON = { map: 'viewMap', table: 'viewTable', board: 'viewBoard', gallery: 'squareGrid2X2', list: 'listBullet', calendar: 'viewCalendar', timeline: 'viewTimeline', feed: 'newspaper', chart: 'viewChart', dashboard: 'viewDashboard', form: 'form' };
 function ListView({ coll, view, rows }) {
   const ordered = viewRows(rows, coll, view);
-  return html`<div class=${'nsp-list-view listv' + (view.hideIcon ? ' noicon' : '')}><div class="lv-items">${ordered.map((r) => html`<div class=${'lv-item' + (peekRow === r.id ? ' on' : '')} key=${r.id} role="button" onClick=${() => { peekRow = peekRow === r.id ? null : r.id; refresh(); }}><div class="lv-in"><div class="lv-ic"><${Icon} n="pageEmpty" cls="i18"/></div><div class="lv-title">${r.title || html`<span class="bc-untitled">Untitled</span>`}</div></div></div>`)}<div class="lv-new" role="button" onClick=${() => { rows.push({ id: uid(), title: '', created: NOW() }); commit(); }}><${Icon} n="plusSmall" cls="i16"/><span>New page</span></div></div></div>`;
+  return html`<div class=${'nsp-list-view listv' + (view.hideIcon ? ' noicon' : '')}><div class="lv-items">${ordered.map((r) => html`<div class=${'lv-item' + (peekRow === r.id ? ' on' : '')} key=${r.id} role="button" onClick=${() => openRow(r)}><div class="lv-in"><div class="lv-ic"><${Icon} n="pageEmpty" cls="i18"/></div><div class="lv-title">${r.title || html`<span class="bc-untitled">Untitled</span>`}</div></div></div>`)}<div class="lv-new" role="button" onClick=${() => { rows.push({ id: uid(), title: '', created: NOW() }); commit(); }}><${Icon} n="plusSmall" cls="i16"/><span>New page</span></div></div></div>`;
 }
 
 
@@ -2853,6 +2897,7 @@ function ViewSettings({ page, coll, vid }) {
   const close = () => { if (vw.name === 'New view') vw.name = (VS_TYPES.find((x) => x[0] === type) || [0, 0, 'Table'])[2]; viewSettings = null; commit(); };
   const toggleRow = (label, on, fn) => html`<div class="mi vs-row" role="menuitemcheckbox" onClick=${fn}><div class="mi-in"><div class="mi-label">${label}</div><span class=${'toggle' + (on ? ' on' : '')}></span></div></div>`;
   const valueRow = (label, val, fn) => html`<div class="mi vs-row" role="menuitem" onClick=${fn}><div class="mi-in"><div class="mi-label">${label}</div><div class="mi-val">${val}</div><div class="mi-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div></div></div>`;
+  const staticRow = (label, val) => html`<div class="mi vs-row static"><div class="mi-in"><div class="mi-label">${label}</div><div class="mi-val">${val}</div></div></div>`;
   const gp = vw.group_by && coll.schema[vw.group_by] ? vw.group_by : groupPropOf(coll);
   const sizes = { small: 'Small', medium: 'Medium', large: 'Large' };
   return html`<div class=${'nsp-view-settings-sidebar vs' + (type === 'chart' ? ' chart-first' : '')} style=${`top:${top}px`}>
@@ -2861,22 +2906,23 @@ function ViewSettings({ page, coll, vid }) {
     <div class="vs-grid">${VS_TYPES.map(([t, ic, label]) => html`<div class=${'vs-tile' + (type === t ? ' on' : '')} role="button" onClick=${() => { vw.type = ['table', 'board', 'gallery', 'list', 'calendar', 'timeline', 'feed', 'chart', 'dashboard', 'form'].includes(t) ? t : 'table'; if (t === 'board' && !vw.group_by) vw.group_by = groupPropOf(coll); commit(); }}><${Icon} n=${ic} cls="i20"/><span>${label}</span></div>`)}</div>
     ${type === 'chart' ? '' : html`<div class="vs-group">
       ${type === 'table' ? toggleRow('Show vertical lines', vw.lines !== false, () => set('lines', vw.lines === false)) : ''}
+      ${type === 'table' ? valueRow('Group', (coll.schema[vw.group_by] || {}).name || 'None', (e) => openOverlay('propPicker', e.currentTarget, { mode: 'groupBy', vid })) : ''}
       ${toggleRow('Show page icon', vw.hideIcon !== true, () => set('hideIcon', !vw.hideIcon))}
       ${type !== 'list' && type !== 'calendar' && type !== 'timeline' && type !== 'feed' ? toggleRow('Wrap all content', !!vw.wrapAll, () => set('wrapAll', !vw.wrapAll)) : ''}
       ${type === 'calendar' ? toggleRow('Wrap page titles', !!vw.wrapAll, () => set('wrapAll', !vw.wrapAll)) : ''}
-      ${type === 'calendar' ? valueRow('Show calendar by', (coll.schema[vw.calendar_by || Object.keys(coll.schema).find((k) => coll.schema[k].type === 'date')] || {}).name || 'None', () => {}) : ''}
-      ${type === 'calendar' ? valueRow('Show calendar as', 'Month', () => {}) : ''}
+      ${type === 'calendar' ? valueRow('Show calendar by', (coll.schema[vw.calendar_by || Object.keys(coll.schema).find((k) => coll.schema[k].type === 'date')] || {}).name || 'None', (e) => openOverlay('propPicker', e.currentTarget, { mode: 'calendarBy', vid })) : ''}
+      ${type === 'calendar' ? staticRow('Show calendar as', 'Month') : ''}
       ${type === 'calendar' ? toggleRow('Show weekends', vw.weekends !== false, () => set('weekends', vw.weekends === false)) : ''}
-      ${type === 'timeline' ? valueRow('Show timeline by', (coll.schema[datePropOf(vw, coll)] || {}).name || 'None', () => {}) : ''}
+      ${type === 'timeline' ? valueRow('Show timeline by', (coll.schema[datePropOf(vw, coll)] || {}).name || 'None', (e) => openOverlay('propPicker', e.currentTarget, { mode: 'timelineBy', vid })) : ''}
       ${type === 'timeline' ? toggleRow('Separate start and end dates', !!vw.separateDates, () => set('separateDates', !vw.separateDates)) : ''}
       ${type === 'timeline' ? toggleRow('Show table', !!vw.showTable, () => set('showTable', !vw.showTable)) : ''}
       ${type === 'feed' ? toggleRow('Wrap properties', !!vw.wrapProps, () => set('wrapProps', !vw.wrapProps)) : ''}
       ${type === 'feed' ? toggleRow('Show author byline', vw.byline !== false, () => set('byline', vw.byline === false)) : ''}
-      ${type === 'board' ? valueRow('Group by', (coll.schema[gp] || {}).name || 'None', () => {}) : ''}
+      ${type === 'board' ? valueRow('Group by', (coll.schema[gp] || {}).name || 'None', (e) => openOverlay('propPicker', e.currentTarget, { mode: 'groupBy', vid })) : ''}
       ${type === 'board' ? toggleRow('Color columns', vw.colorColumns !== false, () => set('colorColumns', vw.colorColumns === false)) : ''}
-      ${valueRow('Open pages in', type === 'gallery' || type === 'calendar' || type === 'feed' ? 'Center peek' : 'Side peek', () => {})}
+      ${type === 'feed' ? '' : valueRow('Open pages in', vw.openIn === 'page' ? 'Full page' : 'Side peek', () => set('openIn', vw.openIn === 'page' ? 'side' : 'page'))}
       ${type === 'feed' ? valueRow('Load limit', String(vw.loadLimit || 10), () => set('loadLimit', { 10: 25, 25: 50, 50: 100, 100: 10 }[vw.loadLimit || 10])) : ''}
-      ${type === 'gallery' ? valueRow('Card preview', 'Page content', () => {}) : ''}
+      
       ${type === 'gallery' ? valueRow('Card size', sizes[vw.cardSize || 'medium'], () => set('cardSize', { small: 'medium', medium: 'large', large: 'small' }[vw.cardSize || 'medium'])) : ''}
     </div>`}
     <div class="vs-group vs-src-group"><div class="mi vs-row static"><div class="mi-in"><div class="mi-ic"><${Icon} n="pathRoundEnds" cls="i20"/></div><div class="mi-label vs-src">Source</div><div class="mi-val vs-src-val">${page.title}</div></div></div></div>
@@ -2894,7 +2940,7 @@ function ChartSettings({ page, coll, vid }) {
   const close = () => { viewSettings = null; refresh(); };
   const xp = chartProp(coll, vw); const groupable = Object.keys(coll.schema).filter((k) => ['multi_select', 'select', 'status'].includes(coll.schema[k].type));
   const SORTS = { manual: 'Manual', desc: 'Count descending', asc: 'Count ascending' };
-  const row = (y, ic, label, val, fn, toggle) => html`<div class="mi vs-row cs-abs" role=${toggle ? 'menuitemcheckbox' : 'menuitem'} style=${`top:${y}px`} onClick=${fn}><div class="mi-in"><div class="mi-ic"><${Icon} n=${ic} cls="i20"/></div><div class="mi-label">${label}</div>${toggle ? html`<span class=${'toggle' + (val ? ' on' : '')}></span>` : html`${val ? html`<div class="mi-val">${val}</div>` : ''}<div class="mi-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div>`}</div></div>`;
+  const row = (y, ic, label, val, fn, toggle) => !fn ? html`<div class="mi vs-row cs-abs static" style=${`top:${y}px`}><div class="mi-in"><div class="mi-ic"><${Icon} n=${ic} cls="i20"/></div><div class="mi-label">${label}</div>${val ? html`<div class="mi-val">${val}</div>` : ''}</div></div>` : html`<div class="mi vs-row cs-abs" role=${toggle ? 'menuitemcheckbox' : 'menuitem'} style=${`top:${y}px`} onClick=${fn}><div class="mi-in"><div class="mi-ic"><${Icon} n=${ic} cls="i20"/></div><div class="mi-label">${label}</div>${toggle ? html`<span class=${'toggle' + (val ? ' on' : '')}></span>` : html`${val ? html`<div class="mi-val">${val}</div>` : ''}<div class="mi-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div>`}</div></div>`;
   const head = (y, label) => html`<div class="cs-head" style=${`top:${y}px`}>${label}</div>`;
   return html`<div class="nsp-view-settings-sidebar vs cs" style=${`top:${top}px`}>
     <div class="vs-head"><div class="vs-title">View settings</div><div class="vs-x" role="button" onClick=${close}><${Icon} n="xMarkSmall" cls="i16"/></div></div>
@@ -2907,18 +2953,18 @@ function ChartSettings({ page, coll, vid }) {
     ${row(270.8, 'arrowUpDown', 'Sort by', SORTS[vw.chartSort || 'manual'], () => set('chartSort', { manual: 'desc', desc: 'asc', asc: 'manual' }[vw.chartSort || 'manual']))}
     ${row(299.8, 'eyeSlash', 'Omit zero values', !!vw.omitZero, () => set('omitZero', !vw.omitZero), true)}
     ${head(342, 'Y axis')}
-    ${row(365.7, 'arrowTurnLeftUp', 'What to show', 'Count', () => {})}
-    ${row(394.7, 'rectangleSplit2Vertical', 'Group by', 'None', () => {})}
-    ${row(423.7, 'arrowUpDownStacked', 'Range', 'Auto', () => {})}
-    ${row(452.7, 'dottedLineHorizontal', 'Reference line', '0 lines', () => {})}
+    ${row(365.7, 'arrowTurnLeftUp', 'What to show', 'Count', null)}
+    ${row(394.7, 'rectangleSplit2Vertical', 'Group by', 'None', null)}
+    ${row(423.7, 'arrowUpDownStacked', 'Range', 'Auto', null)}
+    ${row(452.7, 'dottedLineHorizontal', 'Reference line', '0 lines', null)}
     ${head(494.9, 'Style')}
-    ${row(518.6, 'paintPalette', 'Color', 'Auto', () => {})}
-    ${row(547.6, 'paintBrush', 'More style options', '', () => {})}
-    ${row(592.6, 'pathRoundEnds', 'Source', page.title, () => {})}
+    ${row(518.6, 'paintPalette', 'Color', 'Auto', null)}
+    ${row(547.6, 'paintBrush', 'More style options', '', null)}
+    ${row(592.6, 'pathRoundEnds', 'Source', page.title, null)}
     ${row(621.6, 'filter', 'Filter', '', () => openOverlay('propPicker', document.querySelector('.nsp-collection-filter'), { mode: 'filter' }))}
-    ${row(666.6, 'arrowLineDown', 'Save chart as…', '', () => {})}
+    ${row(666.6, 'arrowLineDown', 'Save chart as…', '', null)}
     <div class="mi vs-row cs-abs" role="menuitem" style="top:695.6px" onClick=${() => { try { navigator.clipboard.writeText(location.href); } catch (e) {} close(); }}><div class="mi-in"><div class="mi-ic"><${Icon} n="link" cls="i20"/></div><div class="mi-label">Copy link to view</div></div></div>
-    ${row(740.6, 'collection', 'Manage data sources', '', () => {})}
+    ${row(740.6, 'collection', 'Manage data sources', '', null)}
     <div class="cs-spacer"></div>
   </div>`;
 }
@@ -3047,7 +3093,7 @@ function FeedView({ coll, view, rows }) {
   return html`<div class="nsp-feed-view feed">${ordered.map((r) => html`<div class=${'feed-card' + (peekRow === r.id ? ' on' : '')} key=${r.id}>
     ${view.byline === false ? '' : html`<div class="feed-byline"><img class="feed-av" src=${space.avatar((space.sync.metaOf(r.id) || {}).created_by)} alt=""/><span class="feed-author">${space.personName((space.sync.metaOf(r.id) || {}).created_by || space.me.id)}</span><span class="feed-time">${ageShort(r.created)}</span></div>`}
     
-    <div class="feed-title" role="button" onClick=${() => { peekRow = peekRow === r.id ? null : r.id; refresh(); }}>${r.title || html`<span class="bc-untitled">Untitled</span>`}</div>
+    <div class="feed-title" role="button" onClick=${() => openRow(r)}>${r.title || html`<span class="bc-untitled">Untitled</span>`}</div>
     <div class="feed-foot"><${FeedComment} r=${r}/></div>
   </div>`)}</div>`;
 }
@@ -3107,7 +3153,7 @@ function tlDragDown(e, r, dp, mode) {
   };
   const onUp = () => {
     removeEventListener('mousemove', onMove, true); removeEventListener('mouseup', onUp, true);
-    if (!moved) { if (mode === 'move') { peekRow = peekRow === r.id ? null : r.id; refresh(); } return; }
+    if (!moved) { if (mode === 'move') openRow(r); return; }
     r.edited = NOW(); commit();
   };
   addEventListener('mousemove', onMove, true); addEventListener('mouseup', onUp, true);
@@ -3151,7 +3197,7 @@ function calDragDown(e, r, dp) {
   };
   const onUp = () => {
     removeEventListener('mousemove', onMove, true); removeEventListener('mouseup', onUp, true);
-    if (!moved) { peekRow = peekRow === r.id ? null : r.id; refresh(); return; }
+    if (!moved) { openRow(r); return; }
     ghost.remove(); card.classList.remove('dragging'); document.body.style.cursor = '';
     if (over) { over.classList.remove('drop'); r[dp] = over.dataset.date; r.edited = NOW(); commit(); }
   };
@@ -3176,7 +3222,7 @@ function cardDragDown(e, rows, r, gp) {
   };
   const onUp = () => {
     removeEventListener('mousemove', onMove, true); removeEventListener('mouseup', onUp, true);
-    if (!moved) { peekRow = peekRow === r.id ? null : r.id; refresh(); return; }
+    if (!moved) { openRow(r); return; }
     ghost.remove(); line.remove(); card.classList.remove('dragging'); document.body.style.cursor = '';
     if (!target) return;
     r[gp] = target.group || undefined; r.edited = NOW();
@@ -3190,7 +3236,7 @@ function cardDragDown(e, rows, r, gp) {
 function Overlay() {
   useStore();
   if (!overlay) return null;
-  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'cellPerson' ? html`<${PersonEditor} data=${overlay.data}/>` : overlay.kind === 'filterEditor' ? html`<${FilterEditor} data=${overlay.data}/>` : overlay.kind === 'noDate' ? html`<${NoDateMenu} data=${overlay.data}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : null;
+  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'cellPerson' ? html`<${PersonEditor} data=${overlay.data}/>` : overlay.kind === 'filterEditor' ? html`<${FilterEditor} data=${overlay.data}/>` : overlay.kind === 'noDate' ? html`<${NoDateMenu} data=${overlay.data}/>` : overlay.kind === 'sortEditor' ? html`<${SortEditor}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : null;
   return html`<div class="ov-root"><div class=${'ov-catch' + (overlay.kind === 'search' || overlay.kind === 'settings' || overlay.kind === 'formSetup' ? ' dim' : '') + (overlay.kind === 'settings' ? ' scrim' : '')} onMouseDown=${closeOverlay}></div>${body}</div>`;
 }
 // Measured: once a page holds any discussion, open or resolved, the topbar grows a Comments button after Copy link.

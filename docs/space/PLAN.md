@@ -67,6 +67,12 @@ nothing here reuses that word.
       a picker of the workspace's people, and a row made while filters are on starts inside them. Database controls with
       nothing behind them are wired or hidden. Left: calculations, grouping a table, several sorts, forms people fill in,
       files, unique ids, relations and rollups, and the chart settings rows that do nothing yet.
+      2026-09-11, part two: several sorts with a sort editor (`sorts` on the view; an old single `sort` still reads), tables
+      group by a select, status or checkbox property with groups that fold away, "Open pages in" chooses the side peek or
+      the full page, and the board's Group by and the calendar's and timeline's date pickers work (lib/space/db-sort.ts).
+      Deleting a property takes its column, sorts, filters and grouping out of every view. Chart settings with nothing
+      behind them read as plain text. Left: calculations, grouping by other property types, forms people fill in, files,
+      unique ids, relations and rollups, and the chart settings themselves.
 - [ ] M5 Sharing and people: invites by email, roles, guests, page share, publish to web, teamspaces
       2026-09-11, part one: 20260911T11_space_invites.sql is live (self-test 30 of 30, rolled back). Share a page by
       email with a role; an address without an account waits as an invite that only a confirmed email can claim; guests
