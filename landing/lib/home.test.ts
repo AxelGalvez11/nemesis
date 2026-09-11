@@ -80,11 +80,45 @@ describe("the homepage", () => {
     expect(marquee.match(/<Badge \/>/g)?.length ?? 0, "not every row gets the same one badge").toBeGreaterThan(0);
   });
 
-  it("🔴 every Student Spaces tool named 2026-09-10 is offered on the page", () => {
-    for (const tool of ["Flashcards", "Quiz", "Study guide", "Mind map", "Study packet", "Podcast", "Video summary", "Slides", "Cheat sheet"]) {
-      expect(studyTools, `the study tools lost ${tool}`).toContain(`name: "${tool}"`);
+  it("🔴 the deliverables are the owner's four, each a gradient card with a mock of the tool (2026-09-11)", () => {
+    // "just show the deliverables", "Remove video summary and study packet and podcast and course map", then "deliverables
+    // should be background gradient card with UI mockup (skeleton load etc) for flashcards ... and tests and slides and
+    // mind map".
+    for (const tool of ["Flashcards", "Tests", "Slides", "Mind map"]) {
+      expect(studyTools, `the deliverables lost ${tool}`).toContain(`name: "${tool}"`);
     }
-    for (const phrase of ["Bring any file", "shows its sources", "notes", "classmates", "exam date"]) expect(studyTools).toContain(phrase);
+    expect(studyTools.match(/name: "/g)?.length, "a fifth deliverable crept back in").toBe(4);
+    for (const gone of [/video summar/i, /study packet/i, /podcast/i, /course map/i]) {
+      expect(`${page}\n${studyTools}`, `${gone} is back on the page`).not.toMatch(gone);
+    }
+    expect(page, "the mocked Thermodynamics workspace is back").not.toMatch(/SpaceMock|FeatureIcon|FEATURES/);
+    expect(page).toMatch(/<Deliverables \/>/);
+    expect(studyTools, "a card lost its gradient").toMatch(/src=\{`\/gradients\/\$\{art\}\.webp`\}/);
+    expect(studyTools, "the mocks lost their skeleton bars").toMatch(/className=\{`sn-sk/);
+  });
+
+  it("🔴 a flashcard is graded with ✗ or ✓ and nothing else", () => {
+    // Owner, 2026-09-11: "use only x and check for flashcard".
+    expect(studyTools).toMatch(/sn-mk-btn sn-mk-no/);
+    expect(studyTools).toMatch(/sn-mk-btn sn-mk-yes/);
+    expect(studyTools.match(/sn-mk-btn /g)?.length, "a third grade button").toBe(2);
+    expect(studyTools).not.toMatch(/\b(Again|Hard|Good|Easy)\b/);
+  });
+
+  it("🔴 the note taker has a section of its own, before the deliverables, with its clip", () => {
+    // Owner, 2026-09-11: "make section for the note taker and one for deliverables".
+    expect(page).toMatch(/<section className="sn-band" id="lecture-notes">/);
+    expect(page).toMatch(/<p className="sn-kicker">Note taker<\/p>/);
+    expect(page.indexOf('id="lecture-notes"'), "the note taker moved below the deliverables").toBeLessThan(page.indexOf('id="tools"'));
+    expect(page).toMatch(/src="\/showcase\/lecture\.mp4"/);
+    expect(page).toMatch(/poster="\/showcase\/lecture\.webp"/);
+  });
+
+  it("the photo section is gone, and the Decks link still lands on a section", () => {
+    // Owner, 2026-09-11, of the three photographs (FSRS, ideas stay connected, slides and guides): they "do not fit".
+    expect(page).not.toMatch(/sn-trio|hourglass-cards|card-board|slides-print/);
+    expect(chrome).toMatch(/\["Decks", "#decks"\]/);
+    expect(page).toMatch(/id="decks"/);
   });
 
   it("🔴 the mascot sits in the middle of its bubble", () => {

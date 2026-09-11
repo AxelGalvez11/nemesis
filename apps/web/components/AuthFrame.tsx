@@ -53,7 +53,7 @@ export function AuthFrame({ title, subtitle, description, children, footer, mini
       <div className="nemesis-auth-page">
         <header className="nemesis-auth-top">
           <a aria-label="Nemesis home" className="nemesis-auth-brand" href={landingUrl}>
-            <NemesisMark size={24} />
+            <NemesisMark size={18} />
           </a>
           {minimal ? null : (
             <nav aria-label="Nemesis" className="nemesis-auth-nav">

@@ -250,7 +250,7 @@ function PricingInner() {
 
       <header className="nm-nav">
         <a aria-label="Nemesis home" className="nm-brand" href={landingUrl}>
-          <NemesisMark size={20} />
+          <NemesisMark size={14} />
           <span>Nemesis</span>
         </a>
         <Link className="nm-nav-link" href={session?.access_token ? "/" : "/sign-in"}>

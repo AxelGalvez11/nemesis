@@ -83,7 +83,7 @@
 
 /* ── THE TOP BAR ────────────────────────────────────────────────────────────────────────────────────── */
 .nemesis-auth-top { align-items: center; display: flex; position: relative; }
-/* Measured: the mark alone, 24px, in a 44px circle. */
+/* Measured: the mark alone in a 44px circle. */
 .nemesis-auth-brand {
   align-items: center;
   border-radius: 9999px;
@@ -97,7 +97,8 @@
   width: 44px;
   z-index: 21;
 }
-.nemesis-auth-brand svg { display: block; height: 24px; width: 24px; }
+/* Owner, 2026-09-11: "make logo smaller". The 44px circle and its position stay Sana's; only the dots shrink. */
+.nemesis-auth-brand svg { display: block; height: 18px; width: 18px; }
 @media (min-width: 821px) {
   .nemesis-auth-brand { margin-left: -12px; }
 }

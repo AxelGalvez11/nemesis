@@ -10,7 +10,7 @@ import "./motion.css";
  */
 
 type Nm = "armed" | "on" | undefined;
-type Tag = "h1" | "h2" | "h3" | "p" | "div" | "span" | "section" | "figure" | "ul";
+type Tag = "h1" | "h2" | "h3" | "p" | "div" | "span" | "section" | "figure" | "ul" | "li";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 

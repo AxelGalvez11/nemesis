@@ -23,7 +23,7 @@ export function SnHeader() {
     <header className="nm-header sn-head" data-scrolled={scrolled ? "true" : undefined}>
       <div className="sn-head-in">
         <Link className="sn-brand" href="/" aria-label="Nemesis home">
-          <NemesisMark state="static" size={20} />
+          <NemesisMark state="static" size={14} />
           <span className="sn-wordmark">Nemesis</span>
         </Link>
         <nav className="sn-nav" aria-label="Main">
@@ -103,7 +103,7 @@ export function SnFoot() {
     <footer className="sn-foot">
       <div className="sn-foot-in">
         <Link className="sn-brand" href="/" aria-label="Nemesis home">
-          <NemesisMark state="static" size={22} />
+          <NemesisMark state="static" size={16} />
           <span className="sn-wordmark">Nemesis</span>
         </Link>
         {FOOT.map((c) => (
