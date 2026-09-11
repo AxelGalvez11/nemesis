@@ -1965,3 +1965,18 @@
 .nsp .shp-pending-ic{width:32px;height:32px;border-radius:100%;display:flex;align-items:center;justify-content:center;background:var(--ca-bacIntTra);fill:var(--c-icoSec);--nsp-fill:var(--c-icoSec)}
 .nsp .ws-acct-guest{margin-left:6px;font-size:12px;color:var(--c-texTer)}
 .nsp .role-banner{flex:none;height:36px;margin:0 0 8px;border-radius:6px;background:var(--ca-bacIntTra);color:var(--c-texSec);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:16.8px}
+
+/* Inbox and presence (docs/space/PLAN.md, M6) */
+.nsp .sb-chat-row.inbox-row{height:auto}
+.nsp .inbox-row .sb-chat-row-in{height:auto;min-height:28px;padding:5px 8px;align-items:flex-start}
+.nsp .inbox-av{width:20px;height:20px;border-radius:100%;display:block}
+.nsp .inbox-text{flex:1;min-width:0}
+.nsp .inbox-text .sb-chat-title{white-space:normal;line-height:18px}
+.nsp .inbox-row:not(.unread) .sb-chat-title{color:var(--c-texSec)}
+.nsp .inbox-preview{font-size:12px;line-height:16px;color:var(--c-texTer);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nsp .inbox-row .sb-chat-date,.nsp .inbox-row .sb-chat-dot{margin-top:3px}
+.nsp .inbox-empty{padding:8px 8px 12px;font-size:12px;line-height:16px;color:var(--c-texTer)}
+.nsp .tb-people{display:flex;align-items:center;margin-right:6px}
+.nsp .tb-person{width:22px;height:22px;border-radius:100%;box-shadow:0 0 0 2px var(--c-bacPri,#fff);margin-left:-5px}
+.nsp .tb-person:first-child{margin-left:0}
+.nsp .tb-more{margin-left:4px;font-size:12px;color:var(--c-texSec)}

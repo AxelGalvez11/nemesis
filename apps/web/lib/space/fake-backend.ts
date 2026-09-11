@@ -229,6 +229,9 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
   const files = new Map<string, string>();
   // Pending invites by page, then by email. The harness has one person, so every address stays pending.
   const invites = new Map<string, Map<string, string>>();
+  // The harness inbox: the notifications ws_inbox would return, newest last.
+  const notifications: Array<Record<string, unknown>> = [];
+  const presence = new Map<string, Record<string, unknown>[]>();
   const accessOf = (page: string) => ({
     role: "full",
     section: "private",
@@ -325,6 +328,13 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
         invites.set(page, list);
         return ok({ notify, page: { id: page, title: String(server.recs.get(page)?.props.title ?? "") || "Untitled" }, inviter: me.name });
       }
+      case "ws_inbox":
+        return ok({ items: [...notifications].reverse(), unread: notifications.filter((n) => !n.read).length });
+      case "ws_mark_read": {
+        const ids = params.p_ids as string[] | null | undefined;
+        for (const n of notifications) if (!ids || ids.includes(String(n.id))) n.read = true;
+        return ok(notifications.filter((n) => !n.read).length);
+      }
       case "ws_page_access":
         return ok(accessOf(String(params.p_page)));
       case "ws_set_access": {
@@ -368,10 +378,42 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
           setTimeout(() => cb?.("SUBSCRIBED"), 0);
           return ch;
         },
+        // Presence with one person in the room: whoever tracked last.
+        async track(state: Record<string, unknown>) {
+          presence.set(topic, [state]);
+          for (const fn of handlers.get("sync") ?? []) fn({});
+          return "ok";
+        },
+        async untrack() {
+          presence.delete(topic);
+          for (const fn of handlers.get("sync") ?? []) fn({});
+          return "ok";
+        },
+        presenceState() {
+          const list = presence.get(topic) ?? [];
+          return list.length ? { [String(list[0]!.id ?? "me")]: list } : {};
+        },
       };
       return ch;
     },
     removeChannel: async () => "ok",
+    /** Harness only: a notification from someone else, delivered the way ws_notify broadcasts it on the person's channel. */
+    notify(kind: "share" | "comment" | "mention", pageId: string, preview: string, actorName = "Ana Lopez") {
+      const n: Record<string, unknown> = {
+        id: crypto.randomUUID(),
+        kind,
+        page_id: pageId,
+        record_id: null,
+        preview,
+        created_at: new Date().toISOString(),
+        read: false,
+        actor: { id: "00000000-0000-4000-8000-000000000002", name: actorName, avatar: null, role: null },
+        page: summary(pageId),
+      };
+      notifications.push(n);
+      for (const fn of channels.get(`ws:user:${userId}`)?.get("notify") ?? []) fn({ notification: n });
+      return n;
+    },
     storage: {
       from: () => ({
         upload: async (path: string, file: Blob) => {

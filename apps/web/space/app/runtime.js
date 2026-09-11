@@ -170,6 +170,8 @@ class Space {
     this.switching = null;
     this.switchTried = new Set();
     this.sharedListeners = new Set();
+    this.inbox = { items: [], unread: 0, loaded: false };
+    this.presence = new Map();
     this.sync = this.makeSync();
   }
 
@@ -275,6 +277,7 @@ class Space {
     this.savedSettings = JSON.stringify(this.settingsSnapshot());
 
     this.join('ws:user:' + this.me.id);
+    void this.loadInbox();
     if (this.info.role !== 'guest') this.join('ws:space:' + this.info.id);
     this.ready = true;
     void this.loadCalendar();
@@ -351,6 +354,54 @@ class Space {
     if (this.host) this.host.navigate(path);
   }
 
+  // -------------------------------------------------------------------------------------------- inbox and presence
+
+  /** This person's notifications (ws_inbox), newest first, with how many are unread. */
+  async loadInbox() {
+    if (!this.sb) return;
+    const { data, error } = await this.sb.rpc('ws_inbox', { p_limit: 50 });
+    if (error || !data) return;
+    this.inbox = { items: Array.isArray(data.items) ? data.items : [], unread: Number(data.unread) || 0, loaded: true };
+    this.emit();
+  }
+
+  /** A notification ws_notify broadcast on this person's channel. */
+  onNotify(payload) {
+    const n = payload && payload.notification;
+    if (!n || !n.id || this.inbox.items.some((x) => x.id === n.id)) return;
+    this.inbox = { ...this.inbox, items: [n, ...this.inbox.items], unread: this.inbox.unread + (n.read ? 0 : 1) };
+    this.emit();
+  }
+
+  /** Marks notifications read, every one when ids is null: on screen at once, then on the server. */
+  async markRead(ids) {
+    const all = !ids;
+    const items = this.inbox.items.map((n) => (all || ids.includes(n.id) ? { ...n, read: true } : n));
+    const gone = this.inbox.items.filter((n) => !n.read && (all || ids.includes(n.id))).length;
+    this.inbox = { ...this.inbox, items, unread: all ? 0 : Math.max(0, this.inbox.unread - gone) };
+    this.emit();
+    if (!this.sb) return;
+    const { data, error } = await this.sb.rpc('ws_mark_read', { p_ids: all ? null : ids });
+    if (!error && typeof data === 'number') {
+      this.inbox = { ...this.inbox, unread: data };
+      this.emit();
+    }
+  }
+
+  onPresence(pageId, ch) {
+    const people = new Map();
+    for (const metas of Object.values(ch.presenceState() || {})) {
+      for (const m of metas || []) if (m && m.id && m.id !== this.me.id) people.set(m.id, { id: m.id, name: m.name || '', avatar: m.avatar || null });
+    }
+    this.presence.set(pageId, [...people.values()]);
+    this.emit();
+  }
+
+  /** The other people looking at a page right now. */
+  presentOn(pageId) {
+    return this.presence.get(pageId) || [];
+  }
+
   // -------------------------------------------------------------------------------------------- sharing
 
   /** Whether this person can change a page: what its last load said, or yes for a page made here and not loaded yet. */
@@ -423,7 +474,7 @@ class Space {
       this.pageTopics = [];
       this.loaded.clear();
       this.childrenLoaded.clear();
-      for (const map of [this.loading, this.missing, this.roles, this.children, this.favorites, this.people]) map.clear();
+      for (const map of [this.loading, this.missing, this.roles, this.children, this.favorites, this.people, this.presence]) map.clear();
       const fresh = emptyState();
       for (const key of Object.keys(this.state)) delete this.state[key];
       Object.assign(this.state, fresh);
@@ -621,15 +672,22 @@ class Space {
 
   join(topic) {
     if (!this.sb || this.channels.has(topic)) return;
-    const ch = this.sb.channel(topic, { config: { private: true } });
+    const onPage = topic.startsWith('ws:page:');
+    // On a page channel every open copy says who is looking (presence). Everything else on a channel comes from
+    // ws_apply, ws_grant_user or ws_notify.
+    const config = onPage && this.me.id ? { private: true, presence: { key: this.me.id } } : { private: true };
+    const ch = this.sb.channel(topic, { config });
     ch.on('broadcast', { event: 'tx' }, (msg) => this.onTx(msg.payload));
     ch.on('broadcast', { event: 'tree' }, (msg) => this.onTree(msg.payload));
+    ch.on('broadcast', { event: 'notify' }, (msg) => this.onNotify(msg.payload));
+    if (onPage && ch.presenceState) ch.on('presence', { event: 'sync' }, () => this.onPresence(topic.slice(8), ch));
     let joined = false;
     ch.subscribe((status) => {
       if (status !== 'SUBSCRIBED') return;
       // Back after a drop: anything broadcast while away was missed, so read the page again.
       if (joined) this.resync(topic);
       joined = true;
+      if (onPage && ch.track && this.me.id) void Promise.resolve(ch.track({ id: this.me.id, name: this.me.name, avatar: this.me.avatar })).catch(() => {});
     });
     this.channels.set(topic, ch);
   }
@@ -638,6 +696,7 @@ class Space {
     const ch = this.channels.get(topic);
     if (!ch) return;
     this.channels.delete(topic);
+    if (topic.startsWith('ws:page:')) this.presence.delete(topic.slice(8));
     void this.sb.removeChannel(ch);
   }
 
