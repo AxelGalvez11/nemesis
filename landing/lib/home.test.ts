@@ -68,8 +68,14 @@ describe("the homepage", () => {
         /partner(?:ed)? with|official(?:ly)?|endorses?|in partnership|provided by [A-Z]/i,
       );
     }
-    // No crests or logo files: the claim is names in type, not borrowed institutional marks.
-    expect(marquee).not.toMatch(/<img|\.svg|\.png|logo/i);
+    // 🔴🔴 No real school's crest or wordmark — a licensed FILE (an <img>, a .svg/.png asset, or an
+    // external fetch) is exactly how one would sneak in. An inline, hand-drawn <svg> badge is fine
+    // as long as it is the SAME shape for every row (see Badge() in Marquee.tsx) — sameness is what
+    // keeps a generic mark from reading as any one school's actual seal.
+    expect(marquee, "a real logo file appeared").not.toMatch(/<img|\.svg["'`]|\.png|fetch\(|require\(/i);
+    const badgeDefs = [...marquee.matchAll(/function Badge\(\)[\s\S]*?\n\}/g)];
+    expect(badgeDefs.length, "the badge component is missing").toBe(1);
+    expect(marquee.match(/<Badge \/>/g)?.length ?? 0, "not every row gets the same one badge").toBeGreaterThan(0);
   });
 
   it("🔴 every Student Spaces tool named 2026-09-10 is offered on the page", () => {
