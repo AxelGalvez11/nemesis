@@ -43,6 +43,13 @@ nothing here reuses that word.
 - **Files**: private bucket `ws-files`, path `<space>/<page>/<uuid>-<name>`, storage policies call the same role check.
 - **Rollout**: `ws_rollout` decides who gets the new shell. The owner first, then `*` when every milestone is verified.
 
+## Not built yet stays hidden
+- `READY` in apps/web/space/app/main.js hides every way into a feature with no server behind it: ai, meetings, inbox,
+  invites, importExport, history, pageOps, automations, searchFilters, maps. The milestone that builds one turns its
+  flag on. lib/space/space-ready.test.ts fails when an entry point escapes its flag.
+- Controls with no handler of their own: 109 on 2026-09-11 (lib/space/dead-controls.ts). The budget only goes down.
+- Home has no page of its own until M9; it opens the page you were last on, or your first page.
+
 ## Milestones
 - [x] M1 Schema, roles, `ws_apply`, loaders, realtime policies, SQL self-test (rolled back, leaves nothing).
       Applied 2026-09-11 as three migrations (space_core_a/b/c); self-test 38 of 38 checks true.

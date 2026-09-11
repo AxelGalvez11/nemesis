@@ -724,7 +724,7 @@ class Space {
     block('sub_header', 'A few things to try');
     block('to_do', 'Type / on an empty line to add a heading, a list, a table or a database', { checked: false });
     block('to_do', 'Press + next to Private in the sidebar to make a new page', { checked: false });
-    block('to_do', 'Open Share at the top of a page to invite a classmate to edit it with you', { checked: false });
+    block('to_do', 'Open Templates in the sidebar to start a reading list or course notes', { checked: false });
     block('to_do', 'Open Canvas or Study from Apps in the sidebar', { checked: false });
     block('callout', 'Pages can hold other pages. Press + on a page in the sidebar to add one inside it.', { icon: '💡' });
     S.pages[pid] = { id: pid, kind: 'page', icon: { emoji: '👋' }, title: 'Getting started', content, parent: null, section: 'private', lastEdited: NOW() };

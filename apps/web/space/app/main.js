@@ -44,6 +44,11 @@ space.onRoute((r, prev) => {
   if (sc) { sc.scrollTop = 0; sc.scrollLeft = 0; }
 });
 
+/* ------------------------------------------------------------------ not built yet */
+// A feature whose server side does not exist yet stays out of sight rather than pretending: no canned AI answers, no
+// invite box that sends nothing (docs/space/PLAN.md). Turn a flag on in the milestone that builds it;
+// lib/space/space-ready.test.ts keeps every entry point behind its flag.
+const READY = { ai: false, meetings: false, inbox: false, invites: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
 /* ------------------------------------------------------------------ helpers */
 const svgMarkup = (n, as) => (ALL_ICONS[n] || '').replace('<svg ', `<svg class="${as || n}" `);
 const Icon = ({ n, as, cls }) => html`<span class=${'nicon ' + (cls || '')} dangerouslySetInnerHTML=${{ __html: svgMarkup(n, as) }}></span>`;
@@ -76,6 +81,14 @@ function colorStyle(c, inline) {
   return k ? `color:var(--c-${k}TexSec);fill:var(--c-${k}TexSec)` : '';
 }
 const plain = (segs) => (segs || []).map((s) => s[0]).join('');
+// A page as plain text for the clipboard: one line per block, children indented, list and to-do markers kept.
+const pageText = (page) => {
+  const out = [];
+  const mark = (b) => (b.type === 'to_do' ? (b.checked ? '[x] ' : '[ ] ') : b.type === 'bulleted_list' ? '- ' : b.type === 'numbered_list' ? '1. ' : b.type === 'header' ? '# ' : b.type === 'sub_header' ? '## ' : b.type === 'sub_sub_header' ? '### ' : '');
+  const walk = (ids, depth) => (ids || []).forEach((id) => { const b = S.blocks[id]; if (!b) return; const t = b.type === 'page' ? pageTitleText(S.pages[b.pageId] || {}) : plain(b.title); if (t || mark(b)) out.push('  '.repeat(depth) + mark(b) + t); walk(b.children, depth + 1); });
+  walk(page.content, 0);
+  return [pageTitleText(page), '', ...out].join('\n');
+};
 const CODE_STYLE = 'font-family:&quot;SFMono-Regular&quot;, Menlo, Consolas, &quot;PT Mono&quot;, &quot;Liberation Mono&quot;, Courier, monospace;line-height:normal;background:var(--ca-bacIntTra);color:var(--c-redTexSec)';
 // While a block's comment composer is open its text runs wear the yellow comment mark, one span per run.
 function richToHtml(segs, hl) { return hl ? (segs || []).map((sg) => '<span class="' + (hl === 'posted' ? 'cmt-hl posted' : 'cmt-hl') + '">' + richToHtml0([sg]) + '</span>').join('') : richToHtml0(segs); }
@@ -240,7 +253,7 @@ function indent(id) {
 /* ------------------------------------------------------------------ slash menu */
 // Sections, names, shortcut hints and icons read from the live "/" menu, in its order.
 const SLASH_SECTIONS = [
-  { g: 'Suggested', items: [{ n: 'AI Meeting Notes', ic: 'paperMicrophone' }] },
+  ...(READY.meetings ? [{ g: 'Suggested', items: [{ n: 'AI Meeting Notes', ic: 'paperMicrophone' }] }] : []),
   { g: 'Basic blocks', items: [
     { n: 'Text', ic: 'textNormal', t: 'text' }, { n: 'Heading 1', ic: 'textH1', t: 'header', sc: '#' },
     { n: 'Heading 2', ic: 'textH2', t: 'sub_header', sc: '##' }, { n: 'Heading 3', ic: 'textH3', t: 'sub_sub_header', sc: '###' },
@@ -737,7 +750,7 @@ function pageToDatabase(page, type, name) {
 function pageToMeeting(page) { const tb = newBlock('transcription', [], page.id); page.content.push(tb.id); page.lastEdited = NOW(); commit(); }
 // Measured: the strip lays out Start a draft, Research a topic, Templates, AI Meeting Notes, Database, Form, Table...
 // in one row as wide as the text column; whatever does not fit (plus Import) moves into the round more menu.
-const GS_ITEMS = [['bulb', 'Start a draft', 'draft'], ['bulb', 'Research a topic', 'research'], ['tpl', 'Templates', 'tpl'], ['meet', 'AI Meeting Notes', 'meeting'], ['viewTable', 'Database', 'db:table:Default view'], ['docPlainText', 'Form', 'db:form:Form'], ['viewTable', 'Table', 'db:table:Table'], ['viewBoard', 'Board', 'db:board:Board'], ['bulletedList', 'List', 'db:list:List'], ['viewTimeline', 'Timeline', 'db:timeline:Timeline'], ['viewCalendar', 'Calendar', 'db:calendar:Calendar view'], ['squareGrid2X2', 'Gallery', 'db:gallery:Gallery']];
+const GS_ITEMS = [...(READY.ai ? [['bulb', 'Start a draft', 'draft'], ['bulb', 'Research a topic', 'research']] : []), ['tpl', 'Templates', 'tpl'], ...(READY.meetings ? [['meet', 'AI Meeting Notes', 'meeting']] : []), ['viewTable', 'Database', 'db:table:Default view'], ['docPlainText', 'Form', 'db:form:Form'], ['viewTable', 'Table', 'db:table:Table'], ['viewBoard', 'Board', 'db:board:Board'], ['bulletedList', 'List', 'db:list:List'], ['viewTimeline', 'Timeline', 'db:timeline:Timeline'], ['viewCalendar', 'Calendar', 'db:calendar:Calendar view'], ['squareGrid2X2', 'Gallery', 'db:gallery:Gallery']];
 const gsIcon = (ic) => (ic === 'bulb' ? GsBulb() : ic === 'tpl' ? GsTemplates() : ic === 'meet' ? GsMeeting() : html`<${Icon} n=${ic} cls="gs-ic"/>`);
 const gsRun = (page, act) => { if (act === 'draft') startDraft(page); else if (act === 'research') startResearch(page); else if (act === 'tpl') go('marketplace'); else if (act === 'meeting') pageToMeeting(page); else if (act.startsWith('db:')) { const [, type, name] = act.split(':'); pageToDatabase(page, type, name); } };
 function GetStarted({ page }) {
@@ -752,7 +765,7 @@ function GetStarted({ page }) {
   const pill = ([ic, label, act], i) => html`<div class="gs-pill" role="button" key=${label} onClick=${() => gsRun(page, act)}>${gsIcon(ic)}<span>${label}</span></div>`;
   return html`<div class="gs-wrap"><div class="gs-label">Get started with</div><div class="gs-row" ref=${rowRef}>
     ${GS_ITEMS.slice(0, fit).map(pill)}
-    <div class="gs-pill gs-more" role="button" onClick=${(e) => openOverlay('gsMore', e.currentTarget, { pid: page.id, from: fit })}><${Icon} n="ellipsis20" as="ellipsis" cls="i20"/></div>
+    ${GS_ITEMS.length > fit || READY.importExport ? html`<div class="gs-pill gs-more" role="button" onClick=${(e) => openOverlay('gsMore', e.currentTarget, { pid: page.id, from: fit })}><${Icon} n="ellipsis20" as="ellipsis" cls="i20"/></div>` : ''}
     <div class="gs-measure" ref=${measRef} aria-hidden="true">${GS_ITEMS.map(pill)}</div>
   </div></div>`;
 }
@@ -762,7 +775,7 @@ function GetStartedMore() {
   const go = (act) => () => { closeOverlay(); if (page) gsRun(page, act); };
   return html`<div class="menu gs-menu" role="menu" style=${`left:${r.left}px;bottom:${innerHeight - r.top + 4}px`}>
     ${rest.map(([ic, label, act]) => html`<div class="gs-mi" role="menuitem" onClick=${go(act)}>${ic === 'bulb' ? GsBulb() : ic === 'tpl' ? GsTemplates() : ic === 'meet' ? GsMeeting() : html`<${Icon} n=${ic} cls="i20"/>`}<span>${label}</span></div>`)}
-    ${rest.length ? html`<div class="gs-div"></div>` : ''}<div class="gs-mi" role="menuitem" onClick=${closeOverlay}><${Icon} n="arrowLineDown" cls="i20"/><span>Import</span></div>
+    ${READY.importExport ? html`${rest.length ? html`<div class="gs-div"></div>` : ''}<div class="gs-mi" role="menuitem" onClick=${closeOverlay}><${Icon} n="arrowLineDown" cls="i20"/><span>Import</span></div>` : ''}
   </div>`;
 }
 function Page({ page }) {
@@ -840,14 +853,14 @@ function Database({ page }) {
   const cols = view.format.table_properties.filter((c) => c.visible);
   const shown = sortRows(rows, coll, view);
   // Measured: a map view's toolbar drops Sort.
-  const tools = [['filterSmall', 'nsp-collection-filter'], ['arrowUpDownSmall', 'nsp-collection-sort'], ['lightningSmall', 'nsp-collection-automation-edit-view'], ['magicWandSmall', ''], ['magnifyingGlassSmall', ''], ['slidersSmall', 'nsp-collection-edit-view']].filter((t) => !(view.type === 'map' && t[0] === 'arrowUpDownSmall'));
+  const tools = [['filterSmall', 'nsp-collection-filter'], ['arrowUpDownSmall', 'nsp-collection-sort'], ...(READY.automations ? [['lightningSmall', 'nsp-collection-automation-edit-view']] : []), ...(READY.ai ? [['magicWandSmall', '']] : []), ['magnifyingGlassSmall', ''], ['slidersSmall', 'nsp-collection-edit-view']].filter((t) => !(view.type === 'map' && t[0] === 'arrowUpDownSmall'));
   return html`<div class="db-page">
     <div class=${'db-head has-ctl' + (page.hideDescription ? ' no-desc' : '')}><div class="db-head-inner">
       <div class="db-controls">${hasIcon(page) ? '' : html`<button onClick=${(e) => addRandomIcon(page, e.currentTarget.closest('.db-head'))}><${Icon} n="emojiFaceFill" cls="i14"/><span>Add icon</span></button>`}<button><${Icon} n="photoFill" cls="i14"/><span>Add cover</span></button><button onClick=${() => { page.hideDescription = !page.hideDescription; commit(); }}><${Icon} n="infoCircleFill" cls="i14"/><span>${page.hideDescription ? 'Add description' : 'Hide description'}</span></button></div>
       <div class="db-title-row">${hasIcon(page) ? html`<div class="nsp-record-icon db-icon" role="button" onClick=${(e) => openOverlay('iconPicker', e.currentTarget, { pageId: page.id })}><${PageIcon} ic=${page.icon} size=${36}/></div>` : ''}<h1 class="db-title" contenteditable="true" spellcheck="true" data-ph="New database" onInput=${(e) => { page.title = e.currentTarget.textContent; persist(); }}>${page.title}</h1></div>${page.hideDescription ? '' : html`<div class="db-desc">${page.description}</div>`}</div></div>
     <div class=${'db-bar' + (view.type === 'form' ? ' formbar' : '')}>
       <div class="db-tabs">${page.views.map((id) => { const vw = S.views[id]; const on = id === vid; return S.renamingView === id ? html`<div class="nsp-collection-view-tab-button db-tab"><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><input class="db-tab-input" value=${vw.name} ref=${(el) => { if (el && document.activeElement !== el) { el.focus(); el.select(); } }} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); } }} onBlur=${(e) => { if (S.renamingView !== id) return; vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); }}/></div>` : html`<div class=${'nsp-collection-view-tab-button db-tab' + (on ? '' : ' off')} role="button" onClick=${(e) => { if (on) openOverlay('viewMenu', e.currentTarget, { vid: id }); else { page.activeView = id; commit(); } }}><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><span class="lbl">${vw.name}</span></div>`; })}<div class="db-addview" role="button" aria-label="Add view" onClick=${(e) => openOverlay('addView', e.currentTarget)}><${Icon} n="plusSmall" cls="i16"/></div></div>${dbSel.size ? html`<div class="db-selbar"><span class="db-selcount">${dbSel.size} selected</span><div class="db-selbtn" role="button" onClick=${() => { const keep = rows.filter((x) => !dbSel.has(x.id)); rows.splice(0, rows.length, ...keep); dbSel.clear(); commit(); }}><${Icon} n="trash" cls="i16"/></div><div class="db-selbtn" role="button" onClick=${() => { dbSel.clear(); refresh(); }}><${Icon} n="xMarkSmall" cls="i16"/></div></div>` : ''}
-      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools"><div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div><div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div><div class="ft-ic" role="button" aria-label="Edit form, add questions and more…"><${Icon} n="slidersSmall" cls="i16"/></div><div class="ft-preview" role="button"><${Icon} n="eye" cls="i20"/><span>Preview</span></div><div class="ft-share" role="button">Share form</div></div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && rows.some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button">No date (${rows.filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift({ id: uid(), title: '', created: NOW() }); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
+      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools">${READY.automations ? html`<div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div>` : ''}${READY.ai ? html`<div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div>` : ''}<div class="ft-ic" role="button" aria-label="Edit form, add questions and more…"><${Icon} n="slidersSmall" cls="i16"/></div><div class="ft-preview" role="button"><${Icon} n="eye" cls="i20"/><span>Preview</span></div>${READY.invites ? html`<div class="ft-share" role="button">Share form</div>` : ''}</div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && rows.some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button">No date (${rows.filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift({ id: uid(), title: '', created: NOW() }); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
     </div>
     ${view.sort && coll.schema[view.sort.pid] ? html`<div class="db-sortbar"><div class="db-chip" role="button" onClick=${() => { delete view.sort; commit(); }}><${Icon} n=${view.sort.dir === 'desc' ? 'arrowStraightDown' : 'arrowStraightUp'} cls="i14"/><span>${coll.schema[view.sort.pid].name}</span><${Icon} n="xMarkSmall" cls="i12"/></div></div>` : ''}
     ${viewSettings && S.views[viewSettings.vid] && page.views.includes(viewSettings.vid) ? (viewSettings.chartEdit ? html`<${ChartSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>` : html`<${ViewSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>`) : ''}
@@ -870,13 +883,13 @@ function RowIcon({ page }) {
   return html`<${Icon} n="page" cls="i18"/>`;
 }
 const SECTION_DEFS = [
-  { key: 'meetings', label: 'Meetings', actions: ['ellipsisSmall'] },
+  ...(READY.meetings ? [{ key: 'meetings', label: 'Meetings', actions: ['ellipsisSmall'] }] : []),
   { key: 'recents', label: 'Recents', actions: ['ellipsisSmall'] },
   // Favorites, Shared and Workspace appear only once they hold something.
   { key: 'favorites', label: 'Favorites', actions: ['ellipsisSmall'] },
   { key: 'shared', label: 'Shared', actions: ['ellipsisSmall'] },
   { key: 'workspace', label: 'Workspace', actions: ['plusSmall', 'ellipsisSmall'] },
-  { key: 'agents', label: 'Agents', actions: ['arrowDiagonalUpRightSmall', 'ellipsisSmall'] },
+  ...(READY.ai ? [{ key: 'agents', label: 'Agents', actions: ['arrowDiagonalUpRightSmall', 'ellipsisSmall'] }] : []),
   { key: 'private', label: 'Private', actions: ['arrowDiagonalUpRightSmall', 'plusSmall', 'ellipsisSmall'] },
   { key: 'apps', label: 'Apps', actions: ['ellipsisSmall'] },
 ];
@@ -915,18 +928,18 @@ function PageRow({ pid, current, depth }) {
   const label = titlePartsOf(p) || [p.title || (p.kind === 'database' ? 'New database' : 'New page')];
   return html`<a class=${'sb-item page' + (pid === current ? ' active' : '')} onClick=${() => { if (p.kind !== 'stub') go(pid); }}><div class="sb-item-inner" style=${d ? `padding-left:${8 + d * 8}px` : ''}><div class="sb-item-icon"><span class="sb-ic-page"><${RowIcon} page=${p}/></span><span class=${'sb-ic-tog' + (open ? ' open' : '')} role="button" aria-label="Open" onClick=${toggle}><${Icon} n="arrowChevronSingleDownFillSmall" cls="i12"/></span></div><div class="sb-item-label">${label.map((t) => html`<span>${t}</span>`)}</div><div class="sb-row-actions"><div class="sb-act" role="button" aria-label="Add a page inside" onClick=${(e) => { e.stopPropagation(); e.preventDefault(); if (p.kind === 'page') createPage(pid); }}><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-act" role="button" aria-label="Delete, duplicate, and more…" onClick=${(e) => { e.stopPropagation(); e.preventDefault(); openOverlay('rowMenu', e.currentTarget, { pid }); }}><${Icon} n="ellipsisSmall" cls="i16"/></div></div></div></a>${open ? (kids.length ? kids.map((k) => html`<${PageRow} key=${k} pid=${k} current=${current} depth=${d + 1}/>`) : html`<div class="sb-item sb-empty"><div class="sb-item-inner" style=${`padding-left:${38 + (d + 1) * 8}px`}><div class="sb-item-label">No pages inside</div></div></div>`) : ''}`;
 }
-const MoreRow = () => html`<a class="sb-item more"><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="ellipsis20" as="ellipsis" cls="i20"/></div><div class="sb-item-label">More</div></div></a>`;
+const MoreRow = ({ k }) => html`<a class="sb-item more" onClick=${() => { S.sidebar.show = { ...(S.sidebar.show || {}), [k]: showCount(k) + 10 }; commit(); }}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="ellipsis20" as="ellipsis" cls="i20"/></div><div class="sb-item-label">More</div></div></a>`;
 const favPages = () => Object.values(S.pages).filter((p) => p.favorite && !p.trashed && p.kind !== 'stub').sort((a, b) => (a.favoritedAt || 0) - (b.favoritedAt || 0)).map((p) => p.id);
 function SectionBody({ k, current }) {
   const sb = S.sidebar;
   if (k === 'favorites') return html`<div class="sb-list">${favPages().map((pid) => html`<${PageRow} key=${pid} pid=${pid} current=${current}/>`)}</div>`;
   if (k === 'meetings') return html`<div class="sb-list tight">${sb.meetings.map((m) => html`<div class="sb-meet" role="button"><div class="sb-meet-ic"><i style=${m.color ? `background:${m.color}` : null}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`)}<div class="sb-meet muted" role="button" onClick=${() => openMeetingNote('', true)}><div class="sb-meet-ic"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-meet-title">New AI meeting note</div></div><div class="sb-meet muted" role="button"><div class="sb-meet-ic"><${Icon} n="arrowDiagonalUpRight" cls="i20"/></div><div class="sb-meet-title">View all</div></div></div>`;
-  if (k === 'recents') return html`<div class="sb-list">${S.recents.filter((x) => (String(x).startsWith('chat:') ? S.aiChats && S.aiChats[x.slice(5)] : S.pages[x] && !S.pages[x].trashed)).slice(0, showCount('recents')).map((x) => (String(x).startsWith('chat:') ? html`<${ChatRecentRow} key=${x} id=${x.slice(5)}/>` : html`<${PageRow} key=${x} pid=${x} current=${current}/>`))}</div><${MoreRow}/>`;
+  if (k === 'recents') return html`<div class="sb-list">${S.recents.filter((x) => (String(x).startsWith('chat:') ? S.aiChats && S.aiChats[x.slice(5)] : S.pages[x] && !S.pages[x].trashed)).slice(0, showCount('recents')).map((x) => (String(x).startsWith('chat:') ? html`<${ChatRecentRow} key=${x} id=${x.slice(5)}/>` : html`<${PageRow} key=${x} pid=${x} current=${current}/>`))}</div>${S.recents.length > showCount('recents') ? html`<${MoreRow} k="recents"/>` : ''}`;
   if (k === 'agents') return html`<div class="sb-list">${sb.agents.map((ag) => html`<a class="sb-item link"><div class="sb-item-inner"><div class="sb-item-icon"><i class="sb-agent-img"></i></div><div class="sb-item-label">${ag.title}</div></div></a>`)}<a class="sb-item link muted"><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New agent</div></div></a></div>`;
-  if (k === 'private' || k === 'workspace' || k === 'shared') return html`<div class="sb-list">${sb[k].slice(0, showCount(k)).map((pid) => html`<${PageRow} key=${pid} pid=${pid} current=${current}/>`)}</div>${sb[k].length > showCount(k) ? html`<${MoreRow}/>` : ''}`;
+  if (k === 'private' || k === 'workspace' || k === 'shared') return html`<div class="sb-list">${sb[k].slice(0, showCount(k)).map((pid) => html`<${PageRow} key=${pid} pid=${pid} current=${current}/>`)}</div>${sb[k].length > showCount(k) ? html`<${MoreRow} k=${k}/>` : ''}`;
   return html`<div class="sb-list sb-apps">${APPS.map(([ic, label, path]) => html`<a class=${'sb-item link' + (location.pathname.startsWith(path) ? ' active' : '')} onClick=${() => space.openApp(path)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n=${ic} cls="i20"/></div><div class="sb-item-label">${label}</div></div></a>`)}</div>`;
 }
-const SB_TABS = [['home', 'home', 'Home'], ['chat', 'chatBubble', 'Chat'], ['meetings', 'paperMicrophone', 'Meetings'], ['inbox', 'inbox', 'Inbox']];
+const SB_TABS = [['home', 'home', 'Home'], ...(READY.ai ? [['chat', 'chatBubble', 'Chat']] : []), ...(READY.meetings ? [['meetings', 'paperMicrophone', 'Meetings']] : []), ...(READY.inbox ? [['inbox', 'inbox', 'Inbox']] : [])];
 // Measured on the live Chat tab: agent tiles, then chats grouped by last update (Today, Yesterday, Past week, Past 30 days,
 // Older) in 30px rows on a 31px pitch. Today's rows carry an ultra-compact age (Just now, 5m, 2h), older rows a short date,
 // unread chats a blue dot, and the open chat a filled row. Only the first group header carries search, read-all and new.
@@ -977,12 +990,12 @@ function ChatBody() {
 }
 function MeetingsBody() {
   const sb = S.sidebar;
-  return html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Upcoming</span></div><div class="sb-list tight">${sb.upcoming.map((m) => html`<div class="sb-meet" role="button"><div class="sb-meet-ic"><i style=${`background:${m.color}`}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`)}</div><${MoreRow}/></div>
+  return html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Upcoming</span></div><div class="sb-list tight">${sb.upcoming.map((m) => html`<div class="sb-meet" role="button"><div class="sb-meet-ic"><i style=${`background:${m.color}`}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`)}</div><${MoreRow} k="upcoming"/></div>
   ${sb.notes.map((grp) => html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">${grp.label}</span></div><div class="sb-notes">${grp.label === 'Today' ? html`<a class="sb-item muted first" onClick=${() => openMeetingNote('', true)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New AI meeting note</div></div></a>` : ''}${grp.items.map((title) => html`<a class="sb-item" onClick=${() => openMeetingNote(title, false, grp.label)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="paperMicrophone" cls="i20"/></div><div class="sb-item-label">${title}</div></div></a>`)}</div></div>`)}`;
 }
 const InboxBody = () => html`<div class="sb-inbox"><section class="sb-inbox-sec"><div class="sb-inbox-head"><div class="sb-chat-label">Older</div><div class="sb-chat-acts">${['aiFaceSmall', 'checkmarkSmall', 'archiveBoxSmall', 'filterSmall'].map((ic) => html`<div class="sb-act24" role="button"><${Icon} n=${ic} cls="i16"/></div>`)}</div></div></section></div>`;
 function Sidebar({ current }) {
-  const tab = S.sidebar.tab || 'home';
+  const tab = SB_TABS.some(([k]) => k === S.sidebar.tab) ? S.sidebar.tab : 'home';
   const links = [['bookshelf', 'Library'], ['checkmarkSquare', 'My Tasks'], ['templates', 'Templates'], ['questionMarkCircle', 'Help'], ['trash', 'Trash']];
   return html`<div ref=${sidebarRef} class=${'nsp-sidebar-container' + (S.sidebar.collapsed ? ' collapsed' : '')}><div class="nsp-sidebar">
     <div class="sb-ws" role="button" onClick=${(e) => openOverlay('workspace', e.currentTarget)}><div class="sb-ws-inner"><div class="sb-av"><img src=${space.avatar()} alt=""/></div><div class="sb-ws-name">${S.workspace}</div><span class="sb-ws-chev"><${Icon} n="arrowChevronSingleDownFillSmall" cls="i14"/></span></div></div>
@@ -997,7 +1010,7 @@ function Sidebar({ current }) {
       ${tab !== 'home' ? '' : html`<div class="sb-links">${links.map(([ic, label, dot]) => html`<a class=${'sb-item link' + ((label === 'Library' && route().startsWith('library')) || (label === 'My Tasks' && route() === 'tasks') || (label === 'Templates' && route().startsWith('marketplace')) ? ' active' : '')} onClick=${(e) => sidebarLink(label, e.currentTarget)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n=${ic} cls="i22"/>${dot ? html`<span class="sb-dot"></span>` : ''}</div><div class="sb-item-label">${label}</div></div></a>`)}</div>`}
     </div>
     <div class="sb-bottom">
-      <div class="sb-newchat" role="button" onClick=${openNewChat}><${Icon} n="aiFace" cls="i20"/><span class="label">New chat</span><kbd>⌘O</kbd></div>
+      ${READY.ai ? html`<div class="sb-newchat" role="button" onClick=${openNewChat}><${Icon} n="aiFace" cls="i20"/><span class="label">New chat</span><kbd>⌘O</kbd></div>` : ''}
       <div class=${'sb-compose' + (overlay && overlay.kind === 'composeMenu' ? ' open' : '')} role="button" aria-label="New page" onClick=${(e) => openOverlay('composeMenu', e.currentTarget)}><${Icon} n=${overlay && overlay.kind === 'composeMenu' ? 'xMark' : 'compose'} cls=${overlay && overlay.kind === 'composeMenu' ? 'i20' : 'i22'}/></div>
     </div>
   </div></div>`;
@@ -1165,7 +1178,7 @@ function WorkspaceMenu() {
     <div class="ws-rule"><div></div></div>
     <div class="ws-item blue" role="menuitem" onClick=${() => { closeOverlay(); space.openApp('/pricing'); }}><div class="ws-ic"><${Icon} n="arrowInCircleUp" cls="i20"/></div><span>Upgrade</span></div>
     <div class="ws-item" role="menuitem" onClick=${() => openOverlay('settings', null, { page: 'Preferences' })}><div class="ws-ic"><${Icon} n="gear" cls="i20"/></div><span>Settings</span></div>
-    <div class="ws-item" role="menuitem" onClick=${() => openOverlay('settings', null, { page: 'People' })}><div class="ws-ic"><${Icon} n="envelope" cls="i20"/></div><span>Invite members</span></div>
+    ${READY.invites ? html`<div class="ws-item" role="menuitem" onClick=${() => openOverlay('settings', null, { page: 'People' })}><div class="ws-ic"><${Icon} n="envelope" cls="i20"/></div><span>Invite members</span></div>` : ''}
     <div class="ws-rule2"><div></div></div>
     <div class="ws-acct"><div class="ws-acct-head"><span>${space.me.email}</span></div>
       ${(space.info.spaces || []).map((sp) => html`<div class="ws-acct-row" role="menuitem"><div class="ws-acct-ic"><img src=${space.avatar()} alt=""/></div><span class="ws-acct-name">${sp.name}</span>${sp.id === space.info.id ? html`<span class="ws-check"><${Icon} n="checkmark" cls="i20"/></span>` : ''}</div>`)}
@@ -1186,15 +1199,14 @@ function RowMenu({ data }) {
       <${MenuItem} ic="eyeSlash" label="Remove from Recents" onClick=${() => { S.recents = S.recents.filter((x) => x !== data.pid); commit(); closeOverlay(); }}/></div>
     <div class="menu-group">
       <${MenuItem} ic="link" label="Copy link" onClick=${() => { try { navigator.clipboard.writeText(space.pageUrl(data.pid)); } catch (e) {} closeOverlay(); }}/>
-      <${MenuItem} ic="duplicate" label="Duplicate" chev/>
-      <${MenuItem} ic="compose" label="Rename" sc="⌘⇧R"/>
-      <${MenuItem} ic="arrowTurnUpRight" label="Move to" sc="⌘⇧P"/>
+      ${READY.pageOps ? html`<${MenuItem} ic="duplicate" label="Duplicate" chev/>` : ''}
+      ${READY.pageOps ? html`<${MenuItem} ic="compose" label="Rename" sc="⌘⇧R"/>` : ''}
+      ${READY.pageOps ? html`<${MenuItem} ic="arrowTurnUpRight" label="Move to" sc="⌘⇧P"/>` : ''}
       <${MenuItem} ic="trash" label="Move to Trash" onClick=${() => { closeOverlay(); trashPage(data.pid); }}/></div>
     <div class="menu-group">
       <${MenuItem} ic="arrowDiagonalUpRight" label="Open in new tab" sc="⌘⇧↵" onClick=${() => { open(space.pageUrl(data.pid), '_blank'); closeOverlay(); }}/>
-      <${MenuItem} ic="peekSide" label="Open in side peek" sc="⌥Click"/></div>
+      ${READY.pageOps ? html`<${MenuItem} ic="peekSide" label="Open in side peek" sc="⌥Click"/>` : ''}</div>
     <div class="menu-group"><div class="menu-meta"><div>Last edited by ${space.editedBy(data.pid)}</div><div>${fmtWhen(p.lastEdited || NOW())}</div></div></div>
-    <div class="menu-group"><${MenuItem} ic="questionMarkCircle" label=${isDb ? 'Learn about databases' : 'Learn about pages'} tone="muted"/></div>
   </div>`;
 }
 /* Search, measured on the live app: the recents list, the results list, and the page preview. */
@@ -1328,11 +1340,11 @@ function SearchModal() {
   const badge = (t) => html`<div class="sr-badge"><div>${t}</div></div>`;
   const cur = pageAt(sel);
   const list = query
-    ? html`<div class="search-head res"><span>Search results (${rows.length})</span><div class="sr-sort" role="button"><span>Best matches</span><${Icon} n="arrowChevronSingleDownSmall" cls="sr-sort-ic"/></div></div>${rows.length ? rows.map((r, i) => html`<a class=${rowCls(i, ' res')} key=${r.p.id} onMouseMove=${hover(i)} onClick=${() => pick(r.p)}><div class="sr-in"><div class="sr-ic"><${RowIcon} page=${r.p}/></div><div class="sr-col"><div class="sr-line"><div class="sr-title">${hlParts(r.title, re)}</div>${r.cur ? badge('Current Page') : r.p.collection ? badge('Database') : ''}</div><div class="sr-meta">${r.parent ? html`<span class="sr-path">${hlParts(r.parent, re)}</span><span>•</span>` : ''}<span>${space.editedBy(r.p.id)}</span><span>•</span><span>${ago(r.p.lastEdited || NOW() - 86400000)}</span></div>${r.snip ? html`<div class="sr-snip">${hlParts(r.snip, re)}</div>` : ''}</div></div></a>`) : html`<div class="search-empty">No results</div>`}`
+    ? html`<div class="search-head res"><span>Search results (${rows.length})</span>${READY.searchFilters ? html`<div class="sr-sort" role="button"><span>Best matches</span><${Icon} n="arrowChevronSingleDownSmall" cls="sr-sort-ic"/></div>` : ''}</div>${rows.length ? rows.map((r, i) => html`<a class=${rowCls(i, ' res')} key=${r.p.id} onMouseMove=${hover(i)} onClick=${() => pick(r.p)}><div class="sr-in"><div class="sr-ic"><${RowIcon} page=${r.p}/></div><div class="sr-col"><div class="sr-line"><div class="sr-title">${hlParts(r.title, re)}</div>${r.cur ? badge('Current Page') : r.p.collection ? badge('Database') : ''}</div><div class="sr-meta">${r.parent ? html`<span class="sr-path">${hlParts(r.parent, re)}</span><span>•</span>` : ''}<span>${space.editedBy(r.p.id)}</span><span>•</span><span>${ago(r.p.lastEdited || NOW() - 86400000)}</span></div>${r.snip ? html`<div class="sr-snip">${hlParts(r.snip, re)}</div>` : ''}</div></div></a>`) : html`<div class="search-empty">No results</div>`}`
     : html`<div class="search-head">Today</div>${recents.map((p, i) => { const parent = parentTitleOf(p); return html`<a class=${rowCls(i)} key=${p.id} onMouseMove=${hover(i)} onClick=${() => pick(p)}><div class="search-row-in"><div class="search-ic"><${RowIcon} page=${p}/></div><div class="search-title">${pageTitleText(p)}</div>${parent ? html`<span class="search-dash">·</span><span class="search-parent">${parent}</span>` : ''}</div></a>`; })}`;
   return html`<div class="search" role="dialog" onKeyDown=${onKey}>
-    <div class="search-top"><div class="search-bar"><${Icon} n="magnifyingGlass" cls="i22"/><input ref=${inputRef} class="search-input" placeholder=${`Search or ask a question in ${S.workspace}…`} value=${q} onInput=${(e) => { setQ(e.currentTarget.value); setSel(0); }}/></div><div class="search-tools"><div class="search-tool" role="button"><${Icon} n="sidebarRight" cls="i22"/></div><div class="search-tool" role="button"><${Icon} n="filterCircle" cls="i22"/></div></div></div>
-    <div class="search-chips"><div class="chip" role="button"><${Icon} n="textFormat" cls="chip-ic"/><span>Title only</span></div><div class="chip" role="button"><${Icon} n="person" cls="chip-ic"/><span>Created by</span><${Icon} n="arrowChevronSingleDownSmall" cls="chip-chev"/></div><div class="chip" role="button"><${Icon} n="page" cls="chip-ic"/><span>In</span><${Icon} n="arrowChevronSingleDownSmall" cls="chip-chev"/></div><div class="chip add" role="button"><${Icon} n="plusSmall" cls="chip-plus"/><span>Filter</span></div></div>
+    <div class="search-top"><div class="search-bar"><${Icon} n="magnifyingGlass" cls="i22"/><input ref=${inputRef} class="search-input" placeholder=${READY.ai ? `Search or ask a question in ${S.workspace}…` : `Search ${S.workspace}…`} value=${q} onInput=${(e) => { setQ(e.currentTarget.value); setSel(0); }}/></div>${READY.searchFilters ? html`<div class="search-tools"><div class="search-tool" role="button"><${Icon} n="sidebarRight" cls="i22"/></div><div class="search-tool" role="button"><${Icon} n="filterCircle" cls="i22"/></div></div>` : ''}</div>
+    ${READY.searchFilters ? html`<div class="search-chips"><div class="chip" role="button"><${Icon} n="textFormat" cls="chip-ic"/><span>Title only</span></div><div class="chip" role="button"><${Icon} n="person" cls="chip-ic"/><span>Created by</span><${Icon} n="arrowChevronSingleDownSmall" cls="chip-chev"/></div><div class="chip" role="button"><${Icon} n="page" cls="chip-ic"/><span>In</span><${Icon} n="arrowChevronSingleDownSmall" cls="chip-chev"/></div><div class="chip add" role="button"><${Icon} n="plusSmall" cls="chip-plus"/><span>Filter</span></div></div>` : ''}
     <div class="search-body"><div class="search-list"><div class="search-group">${list}</div></div>
       <div class="search-preview">${cur ? html`<${PagePreview} key=${cur.id} p=${cur} top=${query ? 0 : 33.9}/>` : ''}</div></div>
     <div class="search-foot"><span class="search-foot-l"><${Icon} n="commandSmall" cls="i12"/><${Icon} n="arrowTurnDownLeftSmall" cls="i12"/><span>Open in new tab</span></span><span class="search-foot-r"><span class="sf-thumbs" style=${query ? '' : 'visibility:hidden'}><span class="sf-btn"><${Icon} n="handThumbsUpSmall" cls="i16"/></span><span class="sf-btn"><${Icon} n="handThumbsDownSmall" cls="i16"/></span></span><span class="sf-btn big"><${Icon} n="slidersSmall" cls="i16"/></span></span></div>
@@ -1351,25 +1363,22 @@ function PageMenu() {
       <div class="menu-group pm-fonts"><div class="pm-fonts-in">${FONTS.map(([k, label, family], i) => html`<div class=${'pm-font' + ((st.font || 'default') === k ? ' on' : '')} role="button" onClick=${() => set('font', k)}><div class="pm-ag" style=${`font-family:${family};font-size:${24 + i}px`}>Ag</div><div class="pm-font-label">${label}</div></div>`)}</div></div>
       <div class="menu-group">
         <${MenuItem} ic="link" label="Copy link" sc="⌘⌥L" onClick=${() => { try { navigator.clipboard.writeText(location.href); } catch (e) {} closeOverlay(); copiedToast(); }}/>
-        <${MenuItem} ic="clipboard" label="Copy page contents"/>
-        <${MenuItem} ic="duplicate" label="Duplicate" sc="⌘D"/>
-        <${MenuItem} ic="arrowTurnUpRight" label="Move to" sc="⌘⇧P"/>
+        <${MenuItem} ic="clipboard" label="Copy page contents" onClick=${() => { try { navigator.clipboard.writeText(pageText(page)); } catch (e) {} closeOverlay(); showToast({ text: 'Copied page contents' }); }}/>
+        ${READY.pageOps ? html`<${MenuItem} ic="duplicate" label="Duplicate" sc="⌘D"/>` : ''}
+        ${READY.pageOps ? html`<${MenuItem} ic="arrowTurnUpRight" label="Move to" sc="⌘⇧P"/>` : ''}
         <${MenuItem} ic="trash" label="Move to Trash" onClick=${() => { closeOverlay(); trashPage(page.id); }}/></div>
       <div class="menu-group">
         <${ToggleItem} ic="textSmall" label="Small text" on=${!!st.small} onClick=${() => set('small', !st.small)}/>
         <${ToggleItem} ic="arrowExpandHorizontal" label="Full width" on=${!!st.full} onClick=${() => set('full', !st.full)}/>
-        <${MenuItem} ic="sliders" label="Customize page"/></div>
+        ${READY.pageOps ? html`<${MenuItem} ic="sliders" label="Customize page"/>` : ''}</div>
       <div class="menu-group">
         <${ToggleItem} ic="lockFill" label="Lock page" on=${!!st.locked} onClick=${() => set('locked', !st.locked)}/>
-        <${MenuItem} ic="aiFace" label="Use with AI" chev/></div>
-      <div class="menu-group"><${MenuItem} ic="commentPencil" label="Suggest edits"/><${MenuItem} ic="textTranslate" label="Translate" chev/></div>
-      ${page.lastEdited >= SESSION_T0 ? html`<div class="menu-group"><${MenuItem} ic="arrowUTurnUpLeft" label="Undo" sc="⌘Z"/></div>` : ''}
-      <div class="menu-group"><${MenuItem} ic="arrowLineDown" label="Import"/><${MenuItem} ic="arrowLineUp" label="Export"/></div>
-      <div class="menu-group"><${MenuItem} ic="arrowSquarePathUpDown" label="Turn into wiki"/></div>
-      <div class="menu-group"><${MenuItem} ic="clock" label="Updates & analytics"/><${MenuItem} ic="stack" label="Version history" beta="Beta"/></div>
-      <div class="menu-group"><${MenuItem} ic="bell" label="Notify me" val="Comments" chev/></div>
-      <div class="menu-group"><${MenuItem} ic="squareGrid2X2" label="Connections" val="None" chev/></div>
-      <div class="menu-group"><${MenuItem} ic="arrowDiagonalUpRight" label="Open in Mac app"/></div>
+        ${READY.ai ? html`<${MenuItem} ic="aiFace" label="Use with AI" chev/>` : ''}</div>
+      ${READY.ai ? html`<div class="menu-group"><${MenuItem} ic="commentPencil" label="Suggest edits"/><${MenuItem} ic="textTranslate" label="Translate" chev/></div>` : ''}
+      ${READY.pageOps && page.lastEdited >= SESSION_T0 ? html`<div class="menu-group"><${MenuItem} ic="arrowUTurnUpLeft" label="Undo" sc="⌘Z"/></div>` : ''}
+      ${READY.importExport ? html`<div class="menu-group"><${MenuItem} ic="arrowLineDown" label="Import"/><${MenuItem} ic="arrowLineUp" label="Export"/></div>` : ''}
+      ${READY.history ? html`<div class="menu-group"><${MenuItem} ic="clock" label="Updates & analytics"/><${MenuItem} ic="stack" label="Version history" beta="Beta"/></div>` : ''}
+      ${READY.inbox ? html`<div class="menu-group"><${MenuItem} ic="bell" label="Notify me" val="Comments" chev/></div>` : ''}
       <div class="menu-group"><div class="menu-meta"><div>${plural(pageWords(page), 'word')}</div><div>Last edited by ${space.editedBy(page.id)}</div><div>${fmtWhen(page.lastEdited || NOW())}</div></div></div>
     </div>
   </div>`;
@@ -1379,13 +1388,13 @@ function SharePopover() {
   const left = Math.max(8, Math.min(overlay.r.right - 456, innerWidth - 464));
   const page = S.pages[route()];
   return html`<div class="menu share-pop" style=${`left:${left}px;top:44px`}>
-    <div class="shp-tabs"><div class="shp-tabs-l">${[['share', 'Share'], ['publish', 'Publish']].map(([k, label]) => html`<div class=${'shp-tab' + (tab === k ? ' on' : '')} onClick=${() => setTab(k)}><div class="shp-tab-in">${label}</div></div>`)}</div></div>
+    <div class="shp-tabs"><div class="shp-tabs-l">${[['share', 'Share'], ...(READY.invites ? [['publish', 'Publish']] : [])].map(([k, label]) => html`<div class=${'shp-tab' + (tab === k ? ' on' : '')} onClick=${() => setTab(k)}><div class="shp-tab-in">${label}</div></div>`)}</div></div>
     ${tab === 'share' ? html`<div>
-      <div class="shp-invite"><div class="shp-input"><input placeholder="Email, separated by commas"/></div><div class="shp-invite-btn" role="button">Invite</div></div>
-      <div class="shp-member"><div class="shp-av"><img src=${space.avatar()} alt=""/></div><div class="shp-who"><div class="shp-name">${space.me.name} <span class="shp-you">(You)</span></div><div class="shp-email">${space.me.email}</div></div><div class="shp-access" role="button"><span>Full access</span><${Icon} n="arrowChevronSingleDownSmall" cls="i14"/></div></div>
-      <div class="shp-general"><div class="shp-general-label">General access</div><div class="shp-general-row"><div class="shp-lock"><${Icon} n="lockFill" cls="i18"/></div><div class="shp-general-sel" role="button"><span>${page ? space.sectionLabel(page) === 'Private' ? 'Only people invited' : 'Everyone at ' + S.workspace : 'Only people invited'}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i16"/></div></div></div>
-      <div class="shp-bottom"><div class="shp-adv-row"><div class="shp-adv" role="button"><${Icon} n="gear" cls="i20"/><span>Advanced</span></div><div class="shp-copy" role="button" onClick=${() => { try { navigator.clipboard.writeText(page ? space.pageUrl(page.id) : location.href); } catch (e) {} }}><${Icon} n="link" cls="i16"/><span>Copy link</span></div></div></div>
-    </div>` : html`<div class="shp-publish"><div class="shp-pub-title">Publish to web</div><div class="shp-pub-sub">Anyone with the link can read it, without signing in.</div><div class="shp-invite-btn wide" role="button">Publish</div></div>`}
+      ${READY.invites ? html`<div class="shp-invite"><div class="shp-input"><input placeholder="Email, separated by commas"/></div><div class="shp-invite-btn" role="button">Invite</div></div>` : ''}
+      <div class="shp-member"><div class="shp-av"><img src=${space.avatar()} alt=""/></div><div class="shp-who"><div class="shp-name">${space.me.name} <span class="shp-you">(You)</span></div><div class="shp-email">${space.me.email}</div></div><div class="shp-access"><span>Full access</span><${Icon} n="arrowChevronSingleDownSmall" cls="i14"/></div></div>
+      <div class="shp-general"><div class="shp-general-label">General access</div><div class="shp-general-row"><div class="shp-lock"><${Icon} n="lockFill" cls="i18"/></div><div class="shp-general-sel"><span>${page ? space.sectionLabel(page) === 'Private' ? 'Only people invited' : 'Everyone at ' + S.workspace : 'Only people invited'}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i16"/></div></div></div>
+      <div class="shp-bottom"><div class="shp-adv-row">${READY.invites ? html`<div class="shp-adv" role="button"><${Icon} n="gear" cls="i20"/><span>Advanced</span></div>` : ''}<div class="shp-copy" role="button" onClick=${() => { try { navigator.clipboard.writeText(page ? space.pageUrl(page.id) : location.href); } catch (e) {} }}><${Icon} n="link" cls="i16"/><span>Copy link</span></div></div></div>
+    </div>` : READY.invites ? html`<div class="shp-publish"><div class="shp-pub-title">Publish to web</div><div class="shp-pub-sub">Anyone with the link can read it, without signing in.</div><div class="shp-invite-btn wide" role="button">Publish</div></div>` : ''}
   </div>`;
 }
 
@@ -1479,9 +1488,9 @@ function BlockMenu({ data }) {
     { n: 'Move to', ic: 'arrowTurnUpRight', sc: '⌘⇧P', g: 2, run: () => openOverlay('moveTo', null, { ids, anchor: data.anchor }) },
     { n: 'Delete', ic: 'trash', sc: 'Del', g: 2, run: () => { done(); deleteBlocks(ids); } },
     { n: 'Comment', ic: 'commentFilled', sc: '⌘⇧M', g: 3, run: () => { done(); openBlockComment(data.id); } },
-    { n: 'Suggest edits', ic: 'commentPencil', sc: '⌘⇧⌥X', g: 3, run: done },
-    { n: 'Ask AI', ic: 'aiFace', sc: '⌘J', g: 4, run: done },
-    { n: 'Skills', ic: 'paperBolt', sub: 'skills', g: 4 },
+    READY.ai && { n: 'Suggest edits', ic: 'commentPencil', sc: '⌘⇧⌥X', g: 3, run: done },
+    READY.ai && { n: 'Ask AI', ic: 'aiFace', sc: '⌘J', g: 4, run: done },
+    READY.ai && { n: 'Skills', ic: 'paperBolt', sub: 'skills', g: 4 },
   ].filter(Boolean);
   const f = norm(q);
   const turnHits = f ? TURN_INTO.filter((it) => (it.t || it.cols) && norm('turn into ' + it.n).includes(f)).map((it) => ({ n: it.n, ic: it.ic, as: it.as, run: () => { done(); turnInto(ids, it); } })) : [];
@@ -1508,7 +1517,7 @@ function BlockMenu({ data }) {
   let subBody = null;
   if (sub && sub.kind === 'turn') subBody = html`<div class="menu-group">${TURN_INTO.map((it, i) => html`<div class=${'mi' + (i === 0 && !subMoved ? ' ring' : '')} role="menuitem" onClick=${() => { if (it.t || it.cols) { done(); turnInto(ids, it); } }}><div class="mi-in"><div class="mi-ic"><${Icon} n=${it.ic} as=${it.as} cls="i20"/></div><div class="mi-label">${it.n}</div>${cur(it) ? html`<div class="mi-check"><${Icon} n="checkmarkSmall" cls="i16"/></div>` : ''}${it.chev ? html`<div class="mi-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div>` : ''}</div></div>`)}</div>`;
   if (sub && sub.kind === 'color') { const lb = lastUsed.endsWith('_background'); subBody = html`<div class="menu-group"><div class="menu-head">Last used</div>${colorRow(lb ? lastUsed.slice(0, -11) : lastUsed, lb, '⌘⇧H')}</div><div class="menu-group"><div class="menu-head">Text color</div>${COLOR_NAMES.map((c) => colorRow(c, false))}</div><div class="menu-group"><div class="menu-head">Background color</div>${COLOR_NAMES.map((c) => colorRow(c, true))}</div>`; }
-  if (sub && sub.kind === 'skills') subBody = html`<div class="menu-group">${['Improve writing', 'Proofread', 'Explain', 'Reformat'].map((n) => html`<div class="mi" role="menuitem" onClick=${done}><div class="mi-in"><div class="mi-label">${n}</div></div></div>`)}</div>`;
+  if (READY.ai && sub && sub.kind === 'skills') subBody = html`<div class="menu-group">${['Improve writing', 'Proofread', 'Explain', 'Reformat'].map((n) => html`<div class="mi" role="menuitem" onClick=${done}><div class="mi-in"><div class="mi-label">${n}</div></div></div>`)}</div>`;
   return html`<div class="menu block-menu" ref=${ref} style=${pos ? `left:${pos.left}px;top:${pos.top}px` : 'left:-9999px;top:0'} onKeyDown=${onKey}>
     <div class="bm-search"><div class="bm-search-in"><div class="bm-search-box"><input ref=${inputRef} placeholder="Search actions…" value=${q} onInput=${(e) => { setQ(e.currentTarget.value); setHi(e.currentTarget.value ? 0 : -1); setSub(null); }}/></div></div></div>
     <div class="bm-scroll">${body}</div>
@@ -1611,12 +1620,11 @@ function FmtMenu() {
     <div class="fm-row" role="button" onMouseEnter=${openSub('turn')} onClick=${openSub('turn')}><${Icon} n=${typeIt.ic} as=${typeIt.as} cls="i20"/><div class="fm-label">${b.type === 'text' ? 'Normal Text' : typeIt.n}</div><span class="fm-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></span></div>
     <div class="fm-sep"></div>
     <div class="fm-grid-row" onMouseEnter=${() => sub && sub.kind === 'turn' && setSub(null)}><div class="fm-btn" role="button" onClick=${openSub('color')}><div class="fm-sw" style=${`color:${k ? `var(--c-${k}TexSec)` : 'var(--c-texPri)'}`}>A</div></div>${btn('textBold', () => toggleMark('b'))}${btn('textItalic', () => toggleMark('i'))}${btn('textUnderline', () => toggleMark('_'))}${btn('textX', clearMarks, ' w28')}</div>
-    <div class="fm-grid-row" onMouseEnter=${() => setSub(null)}>${btn('link', () => { fmt.link = true; refresh(); })}${btn('textStrikethrough', () => toggleMark('s'))}${btn('code', () => toggleMark('c'))}${btn('squareRoot', null)}${btn('ellipsisSmall', null)}</div>
+    <div class="fm-grid-row" onMouseEnter=${() => setSub(null)}>${btn('link', () => { fmt.link = true; refresh(); })}${btn('textStrikethrough', () => toggleMark('s'))}${btn('code', () => toggleMark('c'))}</div>
     <div class="fm-sep"></div>
-    <div class="fm-cmt-row" onMouseEnter=${() => setSub(null)}><div class="fm-cmt" role="button"><${Icon} n="commentFilled" cls="i20"/><span>Comment</span></div><div class="fm-cmt-r"><div class="fm-btn" role="button"><${Icon} n="emojiFacePlus" cls="i20"/></div><div class="fm-btn" role="button"><${Icon} n="commentPencil" cls="i20"/></div></div></div>
-    <div class="fm-sep nb"></div>
-    <div class="fm-skills" onMouseEnter=${() => setSub(null)}><div class="fm-skills-head"><span>Skills</span><div class="sb-act24" role="button"><${Icon} n="sliders" cls="i16"/></div></div><div class="fm-skill-list">${['Improve writing', 'Proofread', 'Explain', 'Reformat'].map((n) => html`<div class="fm-skill" role="button"><span>${n}</span><div class="sb-act24"><${Icon} n="pencilLineSmall" cls="i16"/></div></div>`)}</div></div>
-    <div class="fm-ai"><input placeholder="Edit with AI"/><kbd>⌘⌃E</kbd></div>
+    <div class="fm-cmt-row" onMouseEnter=${() => setSub(null)}><div class="fm-cmt" role="button" onClick=${() => { const id = fmt.id; hideFmt(); openBlockComment(id); }}><${Icon} n="commentFilled" cls="i20"/><span>Comment</span></div></div>
+    ${READY.ai ? html`<div class="fm-sep nb"></div><div class="fm-skills" onMouseEnter=${() => setSub(null)}><div class="fm-skills-head"><span>Skills</span><div class="sb-act24" role="button"><${Icon} n="sliders" cls="i16"/></div></div><div class="fm-skill-list">${['Improve writing', 'Proofread', 'Explain', 'Reformat'].map((n) => html`<div class="fm-skill" role="button"><span>${n}</span><div class="sb-act24"><${Icon} n="pencilLineSmall" cls="i16"/></div></div>`)}</div></div>` : ''}
+    ${READY.ai ? html`<div class="fm-ai"><input placeholder="Edit with AI"/><kbd>⌘⌃E</kbd></div>` : ''}
   </div>${subBody ? html`<div onMouseDown=${keep}><${SubMenu} sub=${sub} cls=${sub.kind === 'color' ? 'colors' : ''}>${subBody}<//></div>` : ''}`;
 }
 
@@ -1624,7 +1632,7 @@ function FmtMenu() {
 /* ------------------------------------------------------------------ AI page */
 const AI_CHIPS = [['squareGrid2X2', 'Create Slides'], ['viewTable', 'Spreadsheets'], ['docTextMagnifyingGlass', 'Research'], ['cursorClick', 'Visualize']];
 function openNewChat() { S.aiOpen = null; commit(); go('ai'); }
-addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openNewChat(); } });
+addEventListener('keydown', (e) => { if (READY.ai && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openNewChat(); } });
 function AiComposer({ onSend }) {
   const ref = useRef(null); const [has, setHas] = useState(false); const [focus, setFocus] = useState(false);
   useEffect(() => { if (ref.current) ref.current.focus(); }, []);
@@ -1974,7 +1982,7 @@ function newDatabasePage() {
 }
 function ComposeMenu() {
   const r = overlay.r; const [hi, setHi] = useState(0);
-  const items = [['pageEmpty', 'Page', () => createPage(null)], ['chatBubble', 'Chat', openNewChat], ['microphone', 'AI Meeting Notes', () => openMeetingNote('', true)], ['viewTable', 'Database', newDatabasePage]];
+  const items = [['pageEmpty', 'Page', () => createPage(null)], ...(READY.ai ? [['chatBubble', 'Chat', openNewChat]] : []), ...(READY.meetings ? [['microphone', 'AI Meeting Notes', () => openMeetingNote('', true)]] : []), ['viewTable', 'Database', newDatabasePage]];
   return html`<div class="menu compose-menu" role="menu" style=${`left:${r.left}px;bottom:${innerHeight - r.top + 8}px`}>${items.map(([ic, label, fn], i) => html`<div class=${'cm-row' + (hi === i ? ' on' : '')} role="menuitem" onMouseEnter=${() => setHi(i)} onClick=${() => { closeOverlay(); fn(); }}><${Icon} n=${ic} cls="i20"/><span>${label}</span></div>`)}</div>`;
 }
 /* ------------------------------------------------------------------ media blocks */
@@ -2036,7 +2044,7 @@ function SettingsModal({ data }) {
   } else if (pg === 'General') {
     body = html`<div class="set-page"><div class="set-h1">Workspace</div><div class="set-sec">${row('Name', 'Shown in the sidebar and on invitations.', html`<span class="set-row-title">${S.workspace}</span>`)}${row('Your role', '', html`<span class="set-row-title">${capWord(space.info.role || 'member')}</span>`)}</div></div>`;
   } else if (pg === 'People') {
-    body = html`<div class="set-page"><div class="set-h1">People</div><div class="set-sec">${[...space.people.values()].map((p) => html`<div class="set-person"><img src=${space.avatar(p.id)} alt=""/><div><div class="set-person-name">${p.name}${p.id === space.me.id ? ' (You)' : ''}</div><div class="set-person-mail">${p.email || ''}</div></div><div class="set-person-role">${capWord(p.role || 'member')}</div></div>`)}<div class="set-note">To work on a page with someone, open Share on that page and add their email.</div></div></div>`;
+    body = html`<div class="set-page"><div class="set-h1">People</div><div class="set-sec">${[...space.people.values()].map((p) => html`<div class="set-person"><img src=${space.avatar(p.id)} alt=""/><div><div class="set-person-name">${p.name}${p.id === space.me.id ? ' (You)' : ''}</div><div class="set-person-mail">${p.email || ''}</div></div><div class="set-person-role">${capWord(p.role || 'member')}</div></div>`)}<div class="set-note">Only you can open the pages in your workspace.</div></div></div>`;
   } else if (pg === 'Plans') {
     body = html`<div class="set-page"><div class="set-h1">Plans</div><div class="set-sec">${row('Your plan', 'What each plan includes, and how to change yours.', html`<div class="set-btn primary" role="button" onClick=${() => { closeOverlay(); space.openApp('/pricing'); }}>View plans</div>`)}</div></div>`;
   } else {
@@ -2331,7 +2339,7 @@ function HelpMenu() {
     <div class="menu-group"><${MenuItem} ic="bubbleRight" label="Get support" onClick=${() => { closeOverlay(); space.openApp('/support'); }}/><${MenuItem} ic="book" label="Keyboard shortcuts" onClick=${closeOverlay}/></div>
   </div>`;
 }
-const LIB_TABS = [['recents', 'clock', 'Recents'], ['favorites', 'star', 'Favorites'], ['shared', 'people', 'Shared'], ['private', 'lock', 'Private'], ['meetings', 'paperMicrophone', 'AI Meeting Notes']];
+const LIB_TABS = [['recents', 'clock', 'Recents'], ['favorites', 'star', 'Favorites'], ['shared', 'people', 'Shared'], ['private', 'lock', 'Private'], ...(READY.meetings ? [['meetings', 'paperMicrophone', 'AI Meeting Notes']] : [])];
 const LIB_COLS = [['Page name', 420, 'font'], ['Created by', 200, 'list'], ['Source', 200, 'list'], ['Last edited time', 200, 'calendar'], ['Last visited time', 200, 'calendar']];
 function libRows(tab) {
   const ok = (p) => p && !p.trashed;
@@ -2400,7 +2408,7 @@ function PropMenu({ data }) {
     : null;
   return html`<div class="menu prop-menu" ref=${ref} style=${`left:${left}px;top:${top}px`}>
     <div class="pm2-head"><div class="pm2-row"><div class="pm2-type" role="button"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${mask}");mask-image:url("${mask}")`}></div></div><div class="bm-search-box pm2-name"><input value=${p.name} placeholder="Property name" onInput=${(e) => { p.name = e.currentTarget.value; persist(); refresh(); }}/></div><div class="pm2-info"><${Icon} n="infoCircleFill" cls="i16"/></div></div></div>
-    <div class="menu-group" onMouseEnter=${() => setSub(null)}><${MenuItem} ic="sliders" label="Edit property" chev/>${isTitle ? '' : html`<div onMouseEnter=${openSub('type')}><${MenuItem} ic="arrowSquarePathUpDown" label="Change type" chev onClick=${openSub('type')}/></div>`}<${MenuItem} ic="magicWand" label="AI Autofill" badge="Now with agents"/></div>
+    <div class="menu-group" onMouseEnter=${() => setSub(null)}><${MenuItem} ic="sliders" label="Edit property" chev/>${isTitle ? '' : html`<div onMouseEnter=${openSub('type')}><${MenuItem} ic="arrowSquarePathUpDown" label="Change type" chev onClick=${openSub('type')}/></div>`}${READY.ai ? html`<${MenuItem} ic="magicWand" label="AI Autofill" badge="Now with agents"/>` : ''}</div>
     <div class="menu-group"><div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="filter" label="Filter" onClick=${done}/></div><div onMouseEnter=${openSub('sort')}><${MenuItem} ic="arrowUpDown" label="Sort" chev onClick=${openSub('sort')}/></div><div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="squareGridBelowLines" label="Group" onClick=${done}/><${MenuItem} ic="sum" label="Calculate" chev/><${MenuItem} ic="pin" label="Freeze" onClick=${done}/>${isTitle ? '' : html`<${MenuItem} ic="eyeSlash" label="Hide" onClick=${() => { col.visible = false; done(); commit(); }}/>`}<${MenuItem} ic="arrowUTurnDownLeft" label=${col.wrap ? 'Unwrap content' : 'Wrap content'} onClick=${() => { col.wrap = !col.wrap; done(); commit(); }}/>${p.type === 'status' ? html`<${MenuItem} ic="eye" label="Display as" val="Select" valSm chev/>` : ''}</div></div>
     <div class="menu-group" onMouseEnter=${() => setSub(null)}><${MenuItem} ic="arrowRectangleLeft" label="Insert left" onClick=${() => insert(idx)}/><${MenuItem} ic="arrowRectangleRight" label="Insert right" onClick=${() => insert(idx + 1)}/><${MenuItem} ic="duplicate" label="Duplicate property" onClick=${duplicate}/>${isTitle ? '' : html`<${MenuItem} ic="trash" label="Delete property" onClick=${remove}/>`}</div>
   </div>${subBody ? html`<${SubMenu} sub=${sub}>${subBody}<//>` : ''}`;
@@ -2518,7 +2526,7 @@ function RowPeek({ page, row }) {
     return v ? String(v) : empty;
   };
   return html`<div class="peek">
-    <div class="peek-top"><div class="peek-top-l"><div class="tb-btn sq" role="button" onClick=${() => { peekRow = null; refresh(); }}><span class="mirror"><${Icon} n="arrowChevronDoubleBackward" cls="i20"/></span></div><div class="tb-btn sq" role="button" onClick=${() => { peekRow = null; openRowPage(row); }}><${Icon} n="arrowDiagonalUpRight" cls="i20"/></div></div><div class="tb-right"><div class="tb-btn tb-share" role="button"><${Icon} n="lock" cls="i-lock"/><span>Share</span></div><div class="tb-btn sq" role="button"><${Icon} n="link" cls="i20"/></div><div class="tb-btn sq" role="button"><${Icon} n="star" cls="i20"/></div><div class="tb-btn sq" role="button"><${Icon} n="ellipsis" cls="i22"/></div></div></div>
+    <div class="peek-top"><div class="peek-top-l"><div class="tb-btn sq" role="button" onClick=${() => { peekRow = null; refresh(); }}><span class="mirror"><${Icon} n="arrowChevronDoubleBackward" cls="i20"/></span></div><div class="tb-btn sq" role="button" onClick=${() => { peekRow = null; openRowPage(row); }}><${Icon} n="arrowDiagonalUpRight" cls="i20"/></div></div><div class="tb-right"></div></div>
     <div class="peek-scroll">
       <h1 class="peek-title" ref=${titleRef} contenteditable="true" spellcheck="true" data-ph="New page" onInput=${(e) => { row.title = e.currentTarget.textContent; row.edited = NOW(); persist(); refresh(); }}></h1>
       <div class="peek-props">${keys.map((k) => { const mk = MASKS[PROP_MASK[coll.schema[k].type]] || MASKS.list; return html`<div class="pk-row"><div class="pk-k"><div class="th-mask pm2-mask pk-mask" style=${`-webkit-mask-image:url("${mk}");mask-image:url("${mk}")`}></div><span>${coll.schema[k].name}</span></div><div class="pk-v" onClick=${edit(k)}>${value(k)}</div></div>`; })}</div>
@@ -2630,7 +2638,7 @@ function RowActionsMenu({ data }) {
 
 
 /* ------------------------------------------------------------------ database: Add view menu (measured 390px grid) + Kanban board view */
-const VIEW_TYPES = [['table', 'viewTable', 'Table'], ['board', 'viewBoard', 'Board'], ['gallery', 'squareGrid2X2', 'Gallery'], ['list', 'listBullet', 'List'], ['chart', 'viewChart', 'Chart'], ['dashboard', 'viewDashboard', 'Dashboard'], ['timeline', 'viewTimeline', 'Timeline'], ['feed', 'newspaper', 'Feed'], ['map', 'viewMap', 'Map'], ['calendar', 'viewCalendar', 'Calendar'], ['form', 'form', 'Form']];
+const VIEW_TYPES = [['table', 'viewTable', 'Table'], ['board', 'viewBoard', 'Board'], ['gallery', 'squareGrid2X2', 'Gallery'], ['list', 'listBullet', 'List'], ['chart', 'viewChart', 'Chart'], ['dashboard', 'viewDashboard', 'Dashboard'], ['timeline', 'viewTimeline', 'Timeline'], ['feed', 'newspaper', 'Feed'], ['map', 'viewMap', 'Map'], ['calendar', 'viewCalendar', 'Calendar'], ['form', 'form', 'Form']].filter(([t]) => READY.maps || t !== 'map');
 const groupPropOf = (coll) => Object.keys(coll.schema).find((k) => coll.schema[k].type === 'status') || Object.keys(coll.schema).find((k) => coll.schema[k].type === 'select');
 function AddViewMenu() {
   const ctx = dbCtx(); if (!ctx) return null;
@@ -2688,7 +2696,7 @@ function ListView({ coll, view, rows }) {
 
 /* ------------------------------------------------------------------ view settings sidebar (measured: 290px column, 78x56 layout tiles, toggles, blue Done) */
 let viewSettings = null;
-const VS_TYPES = [['table', 'viewTable', 'Table'], ['board', 'viewBoard', 'Board'], ['timeline', 'viewTimeline', 'Timeline'], ['calendar', 'viewCalendar', 'Calendar'], ['list', 'listBullet', 'List'], ['gallery', 'squareGrid2X2', 'Gallery'], ['chart', 'viewChart', 'Chart'], ['feed', 'newspaper', 'Feed'], ['map', 'viewMap', 'Map'], ['dashboard', 'viewDashboard', 'Dashboard']];
+const VS_TYPES = [['table', 'viewTable', 'Table'], ['board', 'viewBoard', 'Board'], ['timeline', 'viewTimeline', 'Timeline'], ['calendar', 'viewCalendar', 'Calendar'], ['list', 'listBullet', 'List'], ['gallery', 'squareGrid2X2', 'Gallery'], ['chart', 'viewChart', 'Chart'], ['feed', 'newspaper', 'Feed'], ['map', 'viewMap', 'Map'], ['dashboard', 'viewDashboard', 'Dashboard']].filter(([t]) => READY.maps || t !== 'map');
 function ViewSettings({ page, coll, vid }) {
   const vw = S.views[vid]; const [top, setTop] = useState(198.4);
   useLayoutEffect(() => { const bar = document.querySelector('.db-bar'); if (bar) { const t = bar.getBoundingClientRect().bottom; if (Math.abs(t - top) > 0.5) setTop(t); } });
@@ -3061,7 +3069,7 @@ function DiscussionsPopover({ page }) {
   walk(page.content);
   const list = all ? [...open, ...resolved] : open;
   return html`<div class=${'dz-pop' + (list.length ? ' has' : '')} ref=${ref}>
-    <div class="dz-head"><div class="dz-title">Discussions</div><div class="dz-bell" role="button" aria-label="Notification settings"><${Icon} n="bell" cls="i20"/></div></div>
+    <div class="dz-head"><div class="dz-title">Discussions</div>${READY.inbox ? html`<div class="dz-bell" role="button" aria-label="Notification settings"><${Icon} n="bell" cls="i20"/></div>` : ''}</div>
     ${list.length ? html`<div class="dz-list">${list.map(([b, c]) => html`<div class="dz-item"><div class="bt-head"><div class="pd-avatar"><img src=${space.avatar(c.authorId)} alt=""/></div><div class="bt-name">${c.author}</div><div class="bt-time">${relTime(c.time)}</div></div>${b ? html`<div class="dz-quote">${plain(b.title)}</div>` : ''}<div class="bt-text">${c.text}</div></div>`)}</div>`
       : html`<div class="dz-empty"><${Icon} n="discussionsEmpty" cls="dz-empty-ic"/><div class="dz-e1">You’re all caught up</div><div class="dz-e2">There are no open discussions</div><div class="dz-see" role="button" onClick=${() => setAll(true)}>See all</div></div>`}
   </div>`;
@@ -3069,11 +3077,11 @@ function DiscussionsPopover({ page }) {
 function Topbar({ page }) {
   return html`<div class="nsp-topbar">
     ${S.sidebar.collapsed ? html`<div class="tb-open-sb" role="button" data-tip="Open sidebar" onClick=${() => { S.sidebar.collapsed = false; commit(); }}><span class="mirror"><${Icon} n="arrowChevronDoubleBackward" cls="i20"/></span></div>` : ''}
-    ${ancestorsOf(page).map((a) => html`<div class="tb-crumb" role="button" onClick=${() => { go(a.id); }}>${hasIcon(a) ? html`<div class="tb-crumb-icon"><div class="tb-crumb-icon-in"><${PageIcon} ic=${a.icon} size=${16.2}/></div></div>` : ''}<div class="tb-crumb-title">${a.title || (a.kind === 'database' ? 'New database' : 'New page')}</div></div><span class="tb-slash">/</span>`)}<div class="tb-crumb" role="button">${hasIcon(page) ? html`<div class="tb-crumb-icon"><div class="tb-crumb-icon-in"><${PageIcon} ic=${page.icon} size=${16.2}/></div></div>` : ''}<div class=${'tb-crumb-title' + (hasIcon(page) ? '' : ' noicon')}>${(page.titleParts || [page.title]).join('') || (page.kind === 'database' ? 'New database' : 'New page')}</div></div>
+    ${ancestorsOf(page).map((a) => html`<div class="tb-crumb" role="button" onClick=${() => { go(a.id); }}>${hasIcon(a) ? html`<div class="tb-crumb-icon"><div class="tb-crumb-icon-in"><${PageIcon} ic=${a.icon} size=${16.2}/></div></div>` : ''}<div class="tb-crumb-title">${a.title || (a.kind === 'database' ? 'New database' : 'New page')}</div></div><span class="tb-slash">/</span>`)}<div class="tb-crumb">${hasIcon(page) ? html`<div class="tb-crumb-icon"><div class="tb-crumb-icon-in"><${PageIcon} ic=${page.icon} size=${16.2}/></div></div>` : ''}<div class=${'tb-crumb-title' + (hasIcon(page) ? '' : ' noicon')}>${(page.titleParts || [page.title]).join('') || (page.kind === 'database' ? 'New database' : 'New page')}</div></div>
     <div class="tb-private" role="button" onClick=${(e) => openOverlay('share', e.currentTarget)}><${Icon} n="lockFill" cls="i16"/><span class="tb-private-label">${space.sectionLabel(page)}</span><${Icon} n="arrowChevronSingleDownFill" cls="i11"/></div>
     ${cmtPanel === page.id ? html`<${DiscussionsPopover} page=${page}/>` : ''}
     <div class="tb-right">
-      <div class="tb-btn tb-edited" role="button">${ago(page.lastEdited)}</div>
+      <div class="tb-btn tb-edited">${ago(page.lastEdited)}</div>
       <div class="tb-btn tb-share" role="button" onClick=${(e) => openOverlay('share', e.currentTarget)}><${Icon} n="lock" cls="i-lock"/><span>Share</span></div>
       <div class="tb-btn sq tb-link" role="button" data-tip="Copy link" onClick=${() => { try { navigator.clipboard.writeText(location.href); } catch (e) {} copiedToast(); }}><${Icon} n="link" cls="i20"/></div>
       ${pageHasComments(page) ? html`<div class="tb-btn sq tb-cmts" role="button" data-tip="View all new discussions" onClick=${() => { cmtPanel = cmtPanel === page.id ? null : page.id; refresh(); }}><${Icon} n="cmtTopbar" cls="i20"/></div>` : ''}
@@ -3141,13 +3149,21 @@ function App() {
   const status = isUuid(r) ? space.pageStatus(r) : 'ready';
   const drawable = page && (page.kind === 'database' ? !!S.collections[page.collection] && !!S.views[page.views && page.views[0]] : Array.isArray(page.content));
   useLayoutEffect(() => { applyFocus(); applySel(); });
+  // Home has no page of its own yet (docs/space/PLAN.md, M9), so it opens the page you were last on, or your first page.
+  useEffect(() => {
+    if (r !== 'home' || !space.ready) return;
+    const alive = (id) => isUuid(id) && !(S.pages[id] && S.pages[id].trashed);
+    const target = (S.recents || []).find(alive) || S.sidebar.private.find(alive) || S.sidebar.workspace.find(alive) || S.sidebar.shared.find(alive);
+    if (target) space.go(target, { replace: true });
+  });
+  useEffect(() => { if (isAi && !READY.ai) space.go('home', { replace: true }); }, [isAi]);
   useEffect(() => { if (!isApp) document.title = isAi ? 'Nemesis AI' : isLib ? 'Library' : isTasks ? 'My Tasks' : isMarket ? 'Templates' : page ? pageTitleText(page) : 'Nemesis'; });
   const peek = page && page.kind === 'database' && peekRow && drawable ? (S.rows[page.collection] || []).find((x) => x.id === peekRow) : null;
   let main = '';
   if (isMarket) main = html`<div class="nsp-scroller vertical"><${MarketplacePage}/></div>`;
   else if (isTasks) main = html`<${TasksPage}/>`;
   else if (isLib) main = html`<div class="nsp-scroller horizontal"><${LibraryPage} tab=${r.split('/')[1]}/></div>`;
-  else if (isAi) main = html`${S.aiOpen && S.aiChats && S.aiChats[S.aiOpen] ? html`<${AiTopbar}/>` : html`<${AiFullTopbar}/>`}<div class="nsp-scroller vertical"><${AiPage}/></div>`;
+  else if (isAi && READY.ai) main = html`${S.aiOpen && S.aiChats && S.aiChats[S.aiOpen] ? html`<${AiTopbar}/>` : html`<${AiFullTopbar}/>`}<div class="nsp-scroller vertical"><${AiPage}/></div>`;
   else if (isUuid(r) && !drawable) main = html`<${PageStatus} status=${status === 'ready' ? 'loading' : status}/>`;
   else if (page) main = html`
       <${Topbar} page=${page}/>${page.trashed ? html`<div class="trash-banner"><span>This page is in Trash.</span><div class="tb-b" role="button" onClick=${() => restorePage(page.id)}>Restore page</div><div class="tb-b" role="button" onClick=${() => destroyPage(page.id)}>Delete from Trash</div></div>` : ''}
@@ -3155,7 +3171,7 @@ function App() {
   return html`<div class=${'nsp-app-inner' + (peek ? ' has-peek' : '') + (aiSideOpen() && !isAi && !isApp ? ' ais-open' : '') + (isAi ? ' ai-route' : '') + (isApp ? ' app-route' : '')}>
     <${Sidebar} current=${page ? page.id : null}/>
     <div class="nsp-frame">${main}</div>
-    ${!isAi && !isApp ? html`<${AiSidePanel} page=${drawable ? page : null}/>` : ''}
+    ${READY.ai && !isAi && !isApp ? html`<${AiSidePanel} page=${drawable ? page : null}/>` : ''}
     ${isApp ? '' : html`<div class="nsp-help" role="button" aria-label="Help" onClick=${(e) => openOverlay('help', e.currentTarget)}><${Icon} n="questionMarkCircle" cls="i20"/></div>`}
     <${SlashMenu}/>
     <${MentionMenu}/>
