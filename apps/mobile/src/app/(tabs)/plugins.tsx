@@ -1,30 +1,28 @@
-import { useEffect } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, Line, Path } from "react-native-svg";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
-import { CalendarIcon, FileIcon, type IconProps } from "@/components/icons";
+import { CalendarIcon, FileIcon, SearchIcon, type IconProps } from "@/components/icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { radius, row, space, type } from "@/theme/tokens";
 
 // Plugins — a straight port of the web app's Plugins page (apps/web/components/
 // workspace/plugins/plugins-workspace.tsx). That page is purely informational:
 // a hardcoded PLUGINS list of the tools Nemesis can use, each with a fixed
 // status label ("Connected" / "Built in" / "Coming soon"). There is no backing
 // Supabase table, API route, or edge function named "plugin" anywhere in the
-// repo, and no localStorage key either — the web page renders the same four
-// cards for every visitor, always. This screen mirrors that exactly: no
-// fetch, no auth gate (nothing here is user-specific, so a guest sees the
-// same thing a signed-in student does — same as the web, which has no auth
-// check of its own), and no toggle state. If Plugins ever grows real
-// enable/disable state, that state needs to land on the web page FIRST; this
-// screen would then need a matching read (and write, if it's phone-editable)
-// wired to wherever that state lives — deliberately not guessed at here.
-//
-// Web's grid collapses to a single column below its `md` breakpoint
-// (`max-md:grid-cols-1`), which is every phone width — so the phone-sized
-// port is just that single column, stacked top to bottom.
+// repo, and no localStorage key either — this screen still mirrors that
+// exactly: no fetch, no auth gate, no toggle state, and — 2026-09-01
+// ChatGPT-parity pass — still the SAME FOUR ENTRIES. Only the layout changed,
+// against IMG_6558 (~/Downloads/chatgptios): an "Installed" row of small tiles
+// for what's actually active, then a "Popular" list of full descriptive rows
+// for all four (the informational content the original screen existed to
+// show). No "New & Noteworthy" section: the reference's is a merchandising
+// shelf for a plugin STORE Nemesis doesn't have — inventing a third bucket to
+// fill would mean splitting four real entries into three sections of one,
+// which reads as more content than exists. Search filters the same four.
 
 type PluginIconKey = "globe" | "files" | "calendar" | "organization";
 type PluginStatus = "Connected" | "Built in" | "Coming soon";
@@ -76,69 +74,117 @@ export default function PluginsScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
-  const { setHeaderTitle } = useShell();
+  const { setHeaderCenter } = useShell();
+  const [query, setQuery] = useState("");
 
-  // Drive the TopBar's centered label (same slot Library/Study/Chat use); clear
-  // it on unmount so the title never leaks onto another screen.
+  // Coordinator simulator measurement against IMG_6558: the reference's
+  // "Plugins ⌄" sits INSIDE the shared top bar (centred at ≈y67), not as a
+  // page heading below it. The plain headerTitle slot only ever renders
+  // text, so the ⌄ next to the word needs the CENTER CONTROL slot instead
+  // (setHeaderCenter) — same fix library.tsx's folder title got.
   useEffect(() => {
-    setHeaderTitle("Plugins");
-    return () => setHeaderTitle(null);
-  }, [setHeaderTitle]);
+    setHeaderCenter(
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Plugins</Text>
+        <Text style={styles.titleChevron}>⌄</Text>
+      </View>,
+    );
+    return () => setHeaderCenter(null);
+  }, [setHeaderCenter, styles]);
+
+  const trimmed = query.trim().toLowerCase();
+  const visible = trimmed
+    ? PLUGINS.filter((p) => p.name.toLowerCase().includes(trimmed) || p.description.toLowerCase().includes(trimmed))
+    : PLUGINS;
+  const installed = visible.filter((p) => p.status !== "Coming soon");
 
   return (
-    <ScrollView
-      style={styles.flex}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={[styles.body, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
-      testID="plugins-screen"
-    >
-      <Text style={styles.subtitle}>Connect the tools Nemesis can use while you study and research.</Text>
+    <View style={styles.flex} testID="plugins-screen">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.body, { paddingTop: contentTop + space(2), paddingBottom: contentBottom + 72 }]}
+      >
+        {installed.length > 0 ? (
+          <>
+            <Text style={styles.sectionLabel}>Installed</Text>
+            <View style={styles.installedRow}>
+              {installed.map((plugin) => (
+                <View key={plugin.id} style={styles.tile} testID={`plugin-tile-${plugin.id}`}>
+                  <PluginGlyph icon={plugin.icon} color={c.text2} />
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
 
-      <View style={styles.cards}>
-        {PLUGINS.map((plugin) => (
-          <View key={plugin.id} style={styles.card} testID={`plugin-card-${plugin.id}`}>
-            <View style={styles.cardHead}>
-              <View style={styles.iconSwatch}>
+        <Text style={styles.sectionLabel}>Popular</Text>
+        <View style={styles.cards}>
+          {visible.map((plugin) => (
+            <View key={plugin.id} style={styles.row} testID={`plugin-card-${plugin.id}`}>
+              <View style={styles.logoTile}>
                 <PluginGlyph icon={plugin.icon} color={c.text2} />
               </View>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusText}>{plugin.status}</Text>
+              <View style={styles.rowText}>
+                <Text style={styles.cardTitle} numberOfLines={1}>{plugin.name}</Text>
+                <Text style={styles.cardBody} numberOfLines={2}>{plugin.description}</Text>
               </View>
+              {plugin.status === "Coming soon" ? (
+                <Text style={styles.plusGlyph} accessibilityLabel="Unavailable">+</Text>
+              ) : (
+                <DotsGlyph color={c.text3} />
+              )}
             </View>
-            <Text style={styles.cardTitle}>{plugin.name}</Text>
-            <Text style={styles.cardBody}>{plugin.description}</Text>
-            {plugin.status === "Coming soon" ? (
-              <Pressable
-                disabled
-                onPress={() => {}}
-                style={styles.unavailableBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Unavailable"
-                accessibilityState={{ disabled: true }}
-                testID={`plugin-unavailable-${plugin.id}`}
-              >
-                <Text style={styles.unavailableText}>Unavailable</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        ))}
+          ))}
+          {visible.length === 0 ? <Text style={styles.emptyText}>No plugins match "{query.trim()}".</Text> : null}
+        </View>
+      </ScrollView>
+
+      <View style={[styles.searchDock, { paddingBottom: contentBottom }]}>
+        <View style={styles.searchField}>
+          <SearchIcon size={16} color={c.text3} />
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search plugins"
+            placeholderTextColor={c.textHint}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            testID="plugins-search-input"
+          />
+        </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 function PluginGlyph({ icon, color }: { icon: PluginIconKey; color: string }) {
   switch (icon) {
     case "files":
-      return <FileIcon size={17} color={color} strokeWidth={1.7} />;
+      return <FileIcon size={19} color={color} strokeWidth={1.7} />;
     case "calendar":
-      return <CalendarIcon size={17} color={color} strokeWidth={1.7} />;
+      return <CalendarIcon size={19} color={color} strokeWidth={1.7} />;
     case "organization":
-      return <InstitutionIcon size={17} color={color} />;
+      return <InstitutionIcon size={19} color={color} />;
     case "globe":
     default:
-      return <GlobeIcon size={17} color={color} />;
+      return <GlobeIcon size={19} color={color} />;
   }
+}
+
+/** The row's trailing "…", same three-dot glyph most screens in this app
+ *  re-declare locally rather than share (see icons-settings.tsx's own DotsIcon
+ *  doc comment) — this one is sized for a 66pt info row, not a header button,
+ *  so it stays local instead of importing the 20px default. */
+function DotsGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24">
+      <Circle cx="5.6" cy="12" r="1.9" fill={color} />
+      <Circle cx="12" cy="12" r="1.9" fill={color} />
+      <Circle cx="18.4" cy="12" r="1.9" fill={color} />
+    </Svg>
+  );
 }
 
 // Local glyphs the shared icon set (components/icons.tsx) doesn't carry yet —
@@ -183,48 +229,58 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
     body: { paddingHorizontal: space(4), flexGrow: 1 },
-    subtitle: { ...type.small, color: c.text2, marginBottom: space(4) },
 
-    cards: { gap: space(3) },
-    card: {
-      minHeight: 132,
-      borderRadius: radius.xl,
+    // Now rendered INSIDE the shared top bar via setHeaderCenter, not this
+    // page's own flow — see the effect above.
+    titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(1) },
+    title: { ...type.title, color: c.text },
+    // A small dropdown mark next to the title (IMG_6558) — decorative today,
+    // same as the reference's own (it opens no menu there either in this
+    // screen's scope). 12pt per the coordinator's measurement.
+    titleChevron: { fontSize: 12, color: c.text3, marginTop: 2 },
+
+    // 17pt semibold in the page's own text color, not the old 15pt grey —
+    // coordinator measurement against IMG_6558: the reference's "Installed"/
+    // "Popular" read as row-label weight/size, not a muted section caption.
+    sectionLabel: { ...type.title, color: c.text, marginTop: space(3), marginBottom: space(2.5) },
+
+    installedRow: { flexDirection: "row", flexWrap: "wrap", gap: space(3), marginBottom: space(1) },
+    tile: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.md,
       borderWidth: 1,
       borderColor: c.line,
       backgroundColor: c.surface,
-      padding: space(4),
+      alignItems: "center",
+      justifyContent: "center",
     },
-    cardHead: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      marginBottom: space(3),
-    },
-    iconSwatch: {
-      width: 36,
-      height: 36,
+
+    cards: { backgroundColor: c.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    row: { flexDirection: "row", alignItems: "center", gap: space(3), paddingHorizontal: space(3.5), minHeight: row.twoLine },
+    logoTile: {
+      width: 40,
+      height: 40,
       borderRadius: radius.md,
       backgroundColor: c.surface2,
       alignItems: "center",
       justifyContent: "center",
     },
-    statusPill: { paddingHorizontal: space(2), paddingVertical: space(1), borderRadius: radius.pill, backgroundColor: c.raised },
-    statusText: { ...type.micro, color: c.text3 },
+    rowText: { flex: 1 },
+    cardTitle: { ...type.label, color: c.text },
+    cardBody: { ...type.micro, color: c.text2, marginTop: 1 },
+    plusGlyph: { fontSize: 20, color: c.text3, fontWeight: "300" },
+    emptyText: { ...type.small, color: c.text2, textAlign: "center", padding: space(5) },
 
-    cardTitle: { ...type.bodyStrong, color: c.text },
-    cardBody: { ...type.small, color: c.text2, marginTop: space(1) },
-
-    unavailableBtn: {
-      alignSelf: "flex-start",
-      marginTop: space(3),
-      paddingHorizontal: space(3),
-      paddingVertical: space(1.5),
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: c.line,
-      // The chip reads "disabled" through its own muted fill, NOT by fading the
-      // label — owner 2026-07-22 wants text at full strength everywhere.
+    searchDock: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: space(4), paddingTop: space(2) },
+    searchField: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(2),
       backgroundColor: c.surface2,
+      borderRadius: radius.pill,
+      paddingHorizontal: space(4),
+      height: 44,
     },
-    unavailableText: { ...type.micro, color: c.text2 },
+    searchInput: { flex: 1, ...type.label, color: c.text, paddingVertical: 0 },
   });

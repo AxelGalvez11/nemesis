@@ -51,7 +51,8 @@ export const c = {
 } as const;
 
 // Matches tokens.json radius seeds (card 8 / input 10) at radiusScalar 1.0.
-export const radius = { sm: 8, md: 10, lg: 14, xl: 18, pill: 999 } as const;
+// Measured on the reference: tiles 10, cards 16, menus 20, the composer 24.
+export const radius = { sm: 8, md: 10, lg: 16, xl: 24, pill: 999 } as const;
 
 // THE CONTROL SCALE — the same idea as the text scale below, for the round
 // icon buttons (owner 2026-07-23: "make sure all buttons and liquid glass
@@ -111,19 +112,37 @@ export const space = (n: number): number => n * 4;
 export const type = {
   // System font, same as the desktop app (tokens.json font.family = "system").
   family: undefined as string | undefined,
-  /** Big standalone figures — a Study stat, an avatar's initial. Sits between
-   *  h1 and h2 because those numbers read as ornament, not as a page heading;
-   *  it exists so they stop being ad-hoc fontSizes (owner 2026-07-23: "make
-   *  sure all text size is standardized across the app"). */
+  /** Big standalone figures — a Study stat, an avatar's initial. */
   display: { fontSize: 26, lineHeight: 32, fontWeight: "700" as const },
-  h1: { fontSize: 30, lineHeight: 37, fontWeight: "700" as const },
-  h2: { fontSize: 22, lineHeight: 29, fontWeight: "700" as const },
-  title: { fontSize: 18.5, lineHeight: 25, fontWeight: "600" as const },
-  body: { fontSize: 18, lineHeight: 28, fontWeight: "400" as const },
-  bodyStrong: { fontSize: 18, lineHeight: 28, fontWeight: "500" as const },
-  small: { fontSize: 15, lineHeight: 22, fontWeight: "400" as const },
-  micro: { fontSize: 12.5, lineHeight: 17.5, fontWeight: "500" as const },
+  /** The front door's "Learn ‹subject›". */
+  h1: { fontSize: 34, lineHeight: 40, fontWeight: "700" as const },
+  h2: { fontSize: 22, lineHeight: 28, fontWeight: "600" as const },
+  /** A page's centred title ("Projects", "Library", "Add files"): 17pt semibold. A first reading of
+   *  IMG_6538 said 20 — the band had swallowed the "+" button's glyph beside the title; "Library" on
+   *  IMG_6539, measured alone, stands 16.3pt tall with its descender, which is 17pt. */
+  pageTitle: { fontSize: 17, lineHeight: 22, fontWeight: "600" as const },
+  /** Section headers ("Pinned", "Recents"), a project's name in its header, the drawer's rows'
+   *  bold variants — 17pt semibold. */
+  title: { fontSize: 17, lineHeight: 22, fontWeight: "600" as const },
+  /** A row's label — nav rows, recents, menu rows, settings rows: 17pt regular, 48pt pitch. */
+  label: { fontSize: 17, lineHeight: 22, fontWeight: "400" as const },
+  /** Prose: an answer, a note. 17pt on a 25.5pt line — the reference's chat body, re-measured
+   *  on the simulator against IMG_6532 (our 16pt glyphs stood 15.0pt tall, the reference's 15.7–16.0). */
+  body: { fontSize: 17, lineHeight: 25.5, fontWeight: "400" as const },
+  bodyStrong: { fontSize: 17, lineHeight: 25.5, fontWeight: "600" as const },
+  /** Chips, the composer's capability chip, the "Chat" pill's label. */
+  small: { fontSize: 15, lineHeight: 20, fontWeight: "400" as const },
+  /** Second lines and stamps — "3 weeks ago", "Modified Aug 28", a menu's title. 13pt. */
+  micro: { fontSize: 13, lineHeight: 18, fontWeight: "400" as const },
 } as const;
+
+/** Row pitches, measured on the reference: nav and recents rows sit on 48pt, a project tile row
+ *  on 68, a two-line library row on 66, a settings row on 52, a menu row on 42. */
+export const row = { nav: 48, list: 48, tile: 68, twoLine: 66, settings: 52, menu: 42 } as const;
+
+/** Horizontal insets, measured: a page's content starts 20pt in; the sidebar's icons at 26 and
+ *  their labels at 61; a chat answer at 16. */
+export const inset = { page: 20, sidebarIcon: 26, sidebarLabel: 61, answer: 16 } as const;
 
 export const shadow = {
   // soft elevation for the composer + drawer (RN cross-platform shadow)

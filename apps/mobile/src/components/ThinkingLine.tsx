@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { StyleSheet, View } from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, {
   Easing,
   FadeIn,
@@ -94,11 +94,21 @@ function SweepChar({
   return <Animated.Text style={animated}>{char}</Animated.Text>;
 }
 
+/** The reference draws four favicons and folds the rest into a count. */
+const MAX_HOST_CHIPS = 4;
+
 export function ThinkingLine({
   phase,
+  label: labelOverride,
+  hosts,
   testID,
 }: {
   phase: ThinkingPhase;
+  /** The turn's own words for what it is doing right now ("Searching the web") — wins over the phase. */
+  label?: string | null;
+  /** The sites the turn has read so far, drawn as small favicons after the words — the reference's
+   *  chips (IMG_6553). Only hosts that actually came back; never a guess (thinking-phases' rule). */
+  hosts?: readonly string[];
   /** Kept out of the live row intentionally; the caller stores it for the
    * finished answer's expandable ThoughtTrail. */
   reasoning?: string;
@@ -107,7 +117,7 @@ export function ThinkingLine({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
-  const label = phaseLabel(phase) || "Thinking";
+  const label = labelOverride || phaseLabel(phase) || "Thinking";
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -146,11 +156,24 @@ export function ThinkingLine({
             char={char}
             position={index / last}
             progress={progress}
-            dim={c.textHint}
+            dim={c.text2}
             bright={c.text}
           />
         ))}
       </Animated.Text>
+      {hosts && hosts.length > 0 ? (
+        <View style={styles.chips} accessibilityLabel={`${hosts.length} sites`}>
+          {hosts.slice(0, MAX_HOST_CHIPS).map((host, index) => (
+            <Image
+              key={host}
+              source={{ uri: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32` }}
+              style={[styles.chip, index > 0 && styles.chipOverlap]}
+              accessibilityIgnoresInvertColors
+            />
+          ))}
+          {hosts.length > MAX_HOST_CHIPS ? <Text style={styles.chipMore}>+{hosts.length - MAX_HOST_CHIPS}</Text> : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -164,12 +187,20 @@ const createStyles = (c: ThemeColors) =>
       gap: space(2),
       paddingVertical: space(1),
     },
+    chips: { flexDirection: "row", alignItems: "center", marginLeft: space(2) },
+    chip: { width: 16, height: 16, borderRadius: 8, backgroundColor: c.surface2, borderWidth: 1, borderColor: c.bg },
+    chipOverlap: { marginLeft: -5 },
+    chipMore: { ...type.micro, color: c.text2, marginLeft: space(1) },
     phrase: {
-      // Body, matching the transcript around it (owner 2026-08-01). The colour
-      // here is the floor the characters animate away from and back to; each one
-      // overrides it while the band is on it.
-      ...type.body,
-      color: c.textHint,
+      // 17pt in #8F8F8F (measured, IMG_6542/6550: "Thinking" — c.text2 in light mode is
+      // exactly that hex). type.label rather than type.body: the reference's "Thinking" sits
+      // a half-size up from the 16pt prose it precedes, matching a row label's size instead —
+      // superseding the 2026-08-01 "same size as the transcript" call now that this is a
+      // measured one-to-one target rather than an in-house choice. The colour here is the
+      // floor the characters animate away from and back to; each one overrides it while the
+      // band is on it.
+      ...type.label,
+      color: c.text2,
       flexShrink: 1,
     },
   });

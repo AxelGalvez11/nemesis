@@ -8,29 +8,39 @@ import type { ThemeColors } from "./palette";
 // this map — not the type tokens).
 export const createMarkdownStyles = (c: ThemeColors) =>
   ({
-    body: { color: c.text, fontSize: 18, lineHeight: 28 },
-    paragraph: { marginTop: 0, marginBottom: 12 },
-    heading1: { color: c.text, fontSize: 27, lineHeight: 34, fontWeight: "700", marginTop: 18, marginBottom: 8 },
-    heading2: { color: c.text, fontSize: 22, lineHeight: 29, fontWeight: "700", marginTop: 18, marginBottom: 6 },
-    heading3: { color: c.text, fontSize: 19, lineHeight: 26, fontWeight: "600", marginTop: 14, marginBottom: 4 },
-    heading4: { color: c.text, fontSize: 18, lineHeight: 25, fontWeight: "700", marginTop: 12, marginBottom: 4 },
-    strong: { fontWeight: "700" as const },
+    body: { color: c.text, fontSize: 17, lineHeight: 25.5 },
+    // Measured against IMG_6532: the reference leaves ~9pt between paragraphs beyond the line pitch.
+    paragraph: { marginTop: 0, marginBottom: 9 },
+    heading1: { color: c.text, fontSize: 24, lineHeight: 30, fontWeight: "700", marginTop: 18, marginBottom: 8 },
+    heading2: { color: c.text, fontSize: 20, lineHeight: 26, fontWeight: "700", marginTop: 16, marginBottom: 6 },
+    heading3: { color: c.text, fontSize: 18, lineHeight: 24, fontWeight: "600", marginTop: 14, marginBottom: 4 },
+    heading4: { color: c.text, fontSize: 16, lineHeight: 22, fontWeight: "700", marginTop: 12, marginBottom: 4 },
+    // #111 (measured, IMG_6532: the darkest pixel under both a bold run and plain body text
+    // sampled the same #111111 — the reference's bold isn't a different colour, it's the same
+    // near-black ink at a heavier weight) — kept as its own literal rather than c.text (#0D0D0D)
+    // so the two can drift independently if a future measurement finds they should.
+    strong: { fontWeight: "700" as const, color: "#111111" },
     em: { fontStyle: "italic" as const },
     s: { textDecorationLine: "line-through" as const },
     link: { color: c.accent, textDecorationLine: "underline" as const },
     bullet_list: { marginBottom: 10 },
     ordered_list: { marginBottom: 10 },
     list_item: { marginBottom: 4 },
+    // No shaded box (owner reference, IMG_6532: pure white behind the rule — sampled, no tint)
+    // — just a rule and an indent. Measured (`blockquote_6532.png`): the rule sits at the same
+    // 16pt inset as body text and is ~3pt wide; the quoted text itself starts a further ~17pt
+    // in, so paddingLeft covers that gap once the 3pt border is subtracted.
     blockquote: {
-      backgroundColor: c.glass,
-      borderLeftColor: c.accentLine,
+      borderLeftColor: "#E5E5E5",
       borderLeftWidth: 3,
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-      borderRadius: radius.sm,
+      paddingLeft: 17,
+      paddingVertical: 2,
     },
+    // A light grey card, not the app's translucent `glass` wash — measured off IMG_6556's
+    // "output" block (`disc_zoom.png`'s surrounding card): background sampled at (246,246,246),
+    // i.e. c.surface2's light-mode value, with a hairline border.
     code_inline: {
-      backgroundColor: c.glass,
+      backgroundColor: c.surface2,
       color: c.text,
       borderRadius: 4,
       paddingHorizontal: 4,
@@ -38,7 +48,7 @@ export const createMarkdownStyles = (c: ThemeColors) =>
       fontSize: 15,
     },
     code_block: {
-      backgroundColor: c.glass,
+      backgroundColor: c.surface2,
       color: c.text,
       borderRadius: radius.sm,
       padding: 12,
@@ -48,7 +58,7 @@ export const createMarkdownStyles = (c: ThemeColors) =>
       fontSize: 14.5,
     },
     fence: {
-      backgroundColor: c.glass,
+      backgroundColor: c.surface2,
       color: c.text,
       borderRadius: radius.sm,
       padding: 12,

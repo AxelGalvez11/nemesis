@@ -1,4 +1,4 @@
-import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
+import Svg, { Circle, Line, Path, Rect, Text as SvgText } from "react-native-svg";
 
 // The phone's line-icon set — hand-drawn to match the desktop app's icon language
 // (thin strokes, round caps, monochrome; color comes from the caller, usually a
@@ -194,6 +194,22 @@ export function ChevronIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) 
   );
 }
 
+/** Map-pin outline — marks a pinned canvas/project (Projects page row, owner
+ *  spec item 8: "a pin glyph when pinned"). */
+export function PinIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 20.6c3.6-4.1 6.2-7.6 6.2-11a6.2 6.2 0 1 0-12.4 0c0 3.4 2.6 6.9 6.2 11Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        {...base}
+      />
+      <Circle cx="12" cy="9.6" r="2.1" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
 export function MailIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -342,6 +358,100 @@ export function SettingsIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps)
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d={GEAR_PATH} stroke={color} strokeWidth={strokeWidth} {...base} />
       <Circle cx="12" cy="12" r={GEAR_HUB_R} stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+// ── The composer's "+" capability icons (ComposerPlusMenu.tsx) ────────────────────────────
+//
+// One glyph per entry in COMPOSER_CAPABILITIES (src/learn/web.ts, re-exporting the web's
+// composer-capability.ts) — Course, Deep research, Web search, Document, PDF, Spreadsheet,
+// Presentation. Same hand-drawn stroke language as the rest of this file; the web's own icons
+// are Codicon names ("map", "telescope", "globe", "file", "file-pdf", "table",
+// "device-camera-video") and these are this app's line-icon equivalents, not ports of the glyphs
+// themselves — Codicon's set isn't available here.
+
+/** Folded map, for Course — a persistent learning PATH through a subject. */
+export function MapIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M3.6 6.4 9 4.2l6 2.2 5.4-2.2v13.4L15 19.8l-6-2.2-5.4 2.2Z" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="9" y1="4.2" x2="9" y2="17.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="15" y1="6.4" x2="15" y2="19.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+/** A telescope, for Deep research — going away and coming back with a report. */
+export function TelescopeIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="3.4" y="10.4" width="13" height="4.2" rx="1.4" transform="rotate(-24 9.9 12.5)" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Circle cx="16.4" cy="8.2" r="1.3" fill={color} stroke="none" />
+      <Path d="M6.6 15.6 4.4 20.2M10.2 17 8.6 21.2" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+/** A globe, for Web search — live pages, answered now. */
+export function GlobeIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="12" cy="12" r="8.2" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="3.8" y1="12" x2="20.2" y2="12" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M12 3.8c2.8 2.2 2.8 14.2 0 16.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M12 3.8c-2.8 2.2-2.8 14.2 0 16.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+/** A plain page of text, for the Document capability — kept distinct from FileIcon above,
+ *  which marks the unrelated system file picker ("Add a file"). */
+export function DocumentIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="5.2" y="3.4" width="13.6" height="17.2" rx="1.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="8.2" y1="8.4" x2="15.8" y2="8.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="8.2" y1="12" x2="15.8" y2="12" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="8.2" y1="15.6" x2="12.6" y2="15.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+/** FileIcon's folded-corner page, labelled — the PDF capability specifically. */
+export function PdfIcon({ size = 23, color, strokeWidth = 1.5 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M6.5 3.4h7L18.6 8.5V19a1.6 1.6 0 0 1-1.6 1.6H6.5A1.6 1.6 0 0 1 4.9 19V5A1.6 1.6 0 0 1 6.5 3.4Z" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M13.2 3.6v4.6a.6.6 0 0 0 .6.6h4.5" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <SvgText x="11.7" y="16.9" fontSize="6.2" fontWeight="700" fill={color} textAnchor="middle">
+        PDF
+      </SvgText>
+    </Svg>
+  );
+}
+
+/** A ruled grid, for the Spreadsheet capability. */
+export function TableIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="3.8" y="4.4" width="16.4" height="15.2" rx="1.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="3.8" y1="9.6" x2="20.2" y2="9.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="3.8" y1="14.8" x2="20.2" y2="14.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="10" y1="4.4" x2="10" y2="19.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="15.4" y1="4.4" x2="15.4" y2="19.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+/** A presentation frame with a play mark, for the Presentation (slide deck) capability. */
+export function SlidesIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="3.4" y="4.6" width="17.2" height="11.4" rx="1.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M10.2 8.4 14.6 10.3 10.2 12.2Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" fill="none" />
+      <Line x1="9" y1="19.6" x2="15" y2="19.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="12" y1="16" x2="12" y2="19.6" stroke={color} strokeWidth={strokeWidth} {...base} />
     </Svg>
   );
 }
