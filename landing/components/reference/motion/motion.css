@@ -1,0 +1,124 @@
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   Landing motion, read out of sanalabs.com's live stylesheets on 2026-09-10.
+
+   Owner, 2026-09-10: "the landing page needs more sana feel ... the landing page doesnt have any
+   animations like in sana or microanimations." That REVERSES the 2026-09-09 ruling that kept
+   Sana's motion off the landing. The Figma reconstruction at /preview keeps its own vocabulary and
+   its own guard; these classes belong to the variations.
+
+   Every curve, duration and offset below is theirs unless a comment says "ours":
+     --easeOut    cubic-bezier(0.16, 1, 0.3, 1)
+     --easeInOut  cubic-bezier(0.83, 0, 0.17, 1)
+     --dropEase   cubic-bezier(0.327, 0.023, 0.988, 0.015)   gravity: slow, then fast
+   The words, the cards and everything they carry are ours.
+
+   🔴 NOTHING IS HIDDEN UNTIL JAVASCRIPT ARMS IT, and it only arms what is still below the fold.
+   Hiding on first paint means a slow connection shows the page, blanks it at hydration, then fades
+   it back. The exception is data-nm="now": a pure-CSS load animation for the hero headline, which
+   never waits for JavaScript at all.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --nm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --nm-ease-in-out: cubic-bezier(0.83, 0, 0.17, 1);
+  --nm-drop-ease: cubic-bezier(0.327, 0.023, 0.988, 0.015);
+}
+
+/* ── words: .word-by-word. Opacity only, 2s, the first word at 0.1s and 0.1s apart ─────────── */
+@keyframes nm-word { from { opacity: 0; } to { opacity: 1; } }
+.nm-w { display: inline; }
+.nm-words[data-nm="armed"] .nm-w { opacity: 0; }
+.nm-words:is([data-nm="on"], [data-nm="now"]) .nm-w {
+  animation: nm-word 2s var(--nm-ease-out) both;
+  animation-delay: calc(0.1s + var(--w, 0) * 0.1s);
+}
+.nm-words .nm-dimw { color: var(--nm-dim, rgba(0, 0, 0, 0.54)); }
+
+/* ── type-on: .type-on. A paragraph that starts at 10% and fills in, 0.12s a word ──────────── */
+.nm-typeon .nm-w { transition: opacity 2s var(--nm-ease-out); transition-delay: calc(var(--w, 0) * 0.12s); }
+.nm-typeon[data-nm="armed"] .nm-w { opacity: 0.1; }
+
+/* ── rotator: .text-rotator. The incoming word fades in over 1.2s ───────────────────────────── */
+.nm-rot { position: relative; display: inline-block; vertical-align: bottom; white-space: nowrap;
+  /* ours: the box follows the word's width, so the rest of the line glides instead of jumping */
+  transition: width 0.6s var(--nm-ease-out); }
+.nm-rot-in { display: inline-block; animation: nm-word 1.2s var(--nm-ease-out) both; }
+.nm-rot-measure { position: absolute; left: 0; top: 0; visibility: hidden; white-space: nowrap; pointer-events: none; }
+
+/* ── tilt: .home-product-card-devices. A device lying back, then sitting flat over 1s ───────── */
+.nm-tilt { perspective: 100vw; }
+.nm-tilt-body { transform-origin: 50% 50%; }
+.nm-tilt[data-nm="armed"] .nm-tilt-body { transform: translate(0, 5%) rotateZ(7deg) rotateX(10deg); }
+.nm-tilt.nm-tilt-b[data-nm="armed"] .nm-tilt-body { transform: translate(0, 5%) rotateZ(-5deg) rotateX(20deg); }
+@keyframes nm-flat-a { from { transform: translate(0, 5%) rotateZ(7deg) rotateX(10deg); } to { transform: translate(0, 0%) rotateZ(0deg) rotateX(0deg); } }
+@keyframes nm-flat-b { from { transform: translate(0, 5%) rotateZ(-5deg) rotateX(20deg); } to { transform: translate(0, 0%) rotateZ(0deg) rotateX(0deg); } }
+.nm-tilt[data-nm="on"] .nm-tilt-body { animation: nm-flat-a 1s var(--nm-ease-in-out) both; }
+.nm-tilt.nm-tilt-b[data-nm="on"] .nm-tilt-body { animation-name: nm-flat-b; }
+
+/* ── drop: .landing-polaroids. Cards falling onto a table ───────────────────────────────────────
+   0.7s each, 0.07s apart, on the gravity curve. The card turns from --r0 to --r1 while its face
+   falls from 200px above the table and the shadow underneath tightens from a 20px blur at 30% to a
+   10px blur at 10%. (Their sheet says 20rem, 2rem and 1rem; their root font size makes 1rem 10px.) Theirs starts the face blurred; the blur clearing as it lands is ours. */
+.nm-drop { --nm-dur: 0.7s; --nm-stagger: 0.07s; }
+.nm-drop-card { position: relative; perspective: 700px; rotate: var(--r1, 0deg); }
+.nm-drop-face { position: relative; z-index: 1; }
+.nm-drop-card::after { content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit;
+  background: rgba(0, 0, 0, 0.1); filter: blur(10px); opacity: 0.5; pointer-events: none; }
+@keyframes nm-turn { from { rotate: var(--r0, 0deg); } to { rotate: var(--r1, 0deg); } }
+@keyframes nm-fall { from { opacity: 0; transform: translate3d(0, 0, 200px); filter: blur(0.5vw); }
+                     to { opacity: 1; transform: translate3d(0, 0, 0); filter: blur(0); } }
+@keyframes nm-shadow { from { filter: blur(20px); background: rgba(0, 0, 0, 0.3); scale: 1.3; opacity: 1; }
+                       to { filter: blur(10px); background: rgba(0, 0, 0, 0.1); scale: 1; opacity: 0.5; } }
+.nm-drop[data-nm="armed"] .nm-drop-card { rotate: var(--r0, 0deg); }
+.nm-drop[data-nm="armed"] .nm-drop-face,
+.nm-drop[data-nm="armed"] .nm-drop-card::after { opacity: 0; }
+.nm-drop[data-nm="on"] .nm-drop-card { animation: nm-turn var(--nm-dur) var(--nm-drop-ease) both;
+  animation-delay: calc(var(--i, 0) * var(--nm-stagger) + 0.05s); }
+.nm-drop[data-nm="on"] .nm-drop-face { animation: nm-fall var(--nm-dur) var(--nm-drop-ease) both;
+  animation-delay: calc(var(--i, 0) * var(--nm-stagger)); }
+.nm-drop[data-nm="on"] .nm-drop-card::after { animation: nm-shadow var(--nm-dur) var(--nm-drop-ease) both;
+  animation-delay: calc(var(--i, 0) * var(--nm-stagger)); }
+
+/* ── pop: their integration icons. From 0.7 scale turned -10deg, 1s, 0.3s then 0.05s apart ──── */
+.nm-pop-i { transition: opacity 1s var(--nm-ease-out), transform 1s var(--nm-ease-out);
+  transition-delay: calc(0.3s + var(--i, 0) * 0.05s); }
+.nm-pop[data-nm="armed"] .nm-pop-i { opacity: 0; transform: scale(0.7) rotate(-10deg); }
+
+/* ── rise: their popup keyframes, 20px up (2rem at their 10px rem). The 1s is ours: popup drives a dialog there. ─────── */
+.nm-rise { transition: opacity 1s var(--nm-ease-out), transform 1s var(--nm-ease-out); }
+.nm-rise[data-nm="armed"] { opacity: 0; transform: translateY(20px); }
+
+/* ── caret: .typewrap::after. 0.8s linear, hard on for 0-49% and off for 50-100% ────────────── */
+@keyframes nm-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.nm-caret::after { content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px;
+  vertical-align: -0.15em; background: currentColor; animation: nm-blink 0.8s linear infinite; }
+
+/* ── slots: their partner grid swaps one cell at a time, each fade 1s, the next cell 1.25s on ── */
+.nm-slot { transition: opacity 1s; }
+.nm-slot.nm-out { opacity: 0; }
+
+/* ── hover ─────────────────────────────────────────────────────────────────────────────────────── */
+.nm-press { transition: opacity 0.2s ease-out; } /* the 0.6 is theirs (.btn:hover); the 0.2s is ours */
+.nm-press:hover { opacity: 0.6; }
+.nm-zoom { overflow: hidden; }
+.nm-zoom .nm-zoom-bg { transition: transform 0.6s var(--nm-ease-out); } /* 1.03 theirs, 0.6s ours */
+.nm-zoom:hover .nm-zoom-bg { transform: scale(1.03); }
+
+/* ── header: .site-header. 0.4s on --easeOut after 0.1s; scrolled gains a ground and a hairline ── */
+.nm-header { position: sticky; top: 0; z-index: 60; background-color: rgba(255, 255, 255, 0);
+  border-bottom: 1px solid rgba(0, 0, 0, 0);
+  transition: background-color 0.4s var(--nm-ease-out) 0.1s, border-color 0.4s var(--nm-ease-out) 0.1s; }
+.nm-header[data-scrolled="true"] { background-color: rgb(255, 255, 255); border-bottom-color: rgba(0, 0, 0, 0.1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .nm-w, .nm-rot-in, .nm-tilt-body, .nm-drop-card, .nm-drop-face, .nm-drop-card::after, .nm-pop-i, .nm-rise, .nm-slot {
+    animation: none !important; transition: none !important; }
+  .nm-w, .nm-rot-in, .nm-drop-face, .nm-pop-i, .nm-rise, .nm-slot { opacity: 1 !important; }
+  .nm-tilt-body, .nm-drop-face, .nm-pop-i, .nm-rise { transform: none !important; filter: none !important; }
+  .nm-drop-card { rotate: var(--r1, 0deg) !important; }
+  .nm-caret::after { animation: none; }
+}
+
+/* ── draw: an outline that traces itself in. OURS, not measured: paths carry pathLength="1" ───── */
+.nm-draw :is(path, rect, circle) { stroke-dasharray: 1; stroke-dashoffset: 0; transition: stroke-dashoffset 2.4s var(--nm-ease-in-out); }
+.nm-draw[data-nm="armed"] :is(path, rect, circle) { stroke-dashoffset: 1; }
+@media (prefers-reduced-motion: reduce) { .nm-draw :is(path, rect, circle) { transition: none !important; stroke-dashoffset: 0 !important; } }
