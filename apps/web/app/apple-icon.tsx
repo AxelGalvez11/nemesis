@@ -20,7 +20,7 @@ import { ImageResponse } from "next/og";
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
-const MARK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-66 -10 232 232"><g fill="#000"><ellipse cx="50" cy="40" rx="62" ry="20" transform="rotate(-36 50 40)"/><ellipse cx="50" cy="106" rx="62" ry="20" transform="rotate(-36 50 106)"/><ellipse cx="50" cy="172" rx="62" ry="20" transform="rotate(-36 50 172)"/></g></svg>`;
+const MARK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="9.6 13.6 80.8 80.8"><g fill="#000"><circle cx="24.02" cy="35" r="10.8"/><circle cx="75.98" cy="35" r="10.8"/><circle cx="50" cy="80" r="10.8"/></g></svg>`;
 
 export default function AppleIcon() {
   return new ImageResponse(
@@ -36,7 +36,7 @@ export default function AppleIcon() {
         }}
       >
         {/* 73% of the plate. iOS rounds the corners and crops slightly, so a
-            mark run edge to edge loses its tips. */}
+            mark run edge to edge loses its outer dots. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={`data:image/svg+xml;utf8,${encodeURIComponent(MARK)}`}

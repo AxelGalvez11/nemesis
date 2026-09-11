@@ -202,11 +202,12 @@ function Thumb({ art, glyph, className }: { art: Art; glyph: GlyphKind; classNam
   );
 }
 
-const Beads = () => (
-  <svg viewBox="-66 -10 232 232" aria-hidden="true">
+// The mark in the mocked space's header: the three dots, same numbers as components/NemesisMark.tsx.
+const Dots = () => (
+  <svg viewBox="9.6 13.6 80.8 80.8" aria-hidden="true">
     <g fill="currentColor">
-      {[40, 106, 172].map((cy) => (
-        <ellipse key={cy} cx={50} cy={cy} rx={62} ry={20} transform={`rotate(-36 50 ${cy})`} />
+      {[[24.02, 35], [75.98, 35], [50, 80]].map(([cx, cy]) => (
+        <circle key={`${cx},${cy}`} cx={cx} cy={cy} r={10.8} />
       ))}
     </g>
   </svg>
@@ -226,7 +227,7 @@ export function SpaceMock() {
     <div className="ss" aria-hidden="true">
       <div className="ss-top">
         <span className="ss-logo">
-          <Beads />
+          <Dots />
           Nemesis
         </span>
         <span className="ss-vr" />
