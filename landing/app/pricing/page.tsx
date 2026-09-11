@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
-import { SiteChrome, APP_SIGN_UP } from "@/components/SiteChrome";
-import { PageGlow } from "@/components/PageGlow";
+
 import { PricingPlans } from "@/components/PricingPlans";
+import { SnFaq, SnFoot, SnHeader } from "@/components/reference/SanaChrome";
+import { Words } from "@/components/reference/motion/Motion";
+import { APP_SIGN_UP } from "@/components/SiteChrome";
+
+import "../home-sana.css";
+import "./pricing.css";
 
 export const metadata: Metadata = {
   title: "Pricing · Nemesis",
@@ -10,21 +15,22 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-// ONE PAID PRODUCT (owner, 2026-08-17), at $19.99 a month or $199.99 a year
-// (owner, 2026-08-18). The ladder this page used to sell — Free / Student $9.99 /
-// Agent Pro $19.99, with Max $99 retired above them — is gone, along with its
-// comparison table.
-//
-// Retiring the ladder is NOT forgetting it: plan_entitlements still carries the
-// old rows, planForPriceId still resolves the old Stripe prices, and a stale
-// ?plan=max link lands on the app's pricing page to choose. What no longer
-// exists is anywhere to buy one. Archiving the old Stripe prices is a live
-// billing change and remains the owner's call.
-//
-// 🔴 THE PRICES HERE COME FROM lib/pricing.ts, WHICH IS TESTED AGAINST
-// packages/shared/src/plan.ts. This is a separate application with no workspace
-// link to the shared package, so the number lives twice and the guard is what
-// keeps the two honest.
+/**
+ * Pricing, in the homepage's system. Owner, 2026-09-11: "make the pricing page follow the new design style".
+ *
+ * The header, footer, type, motion and questions are the homepage's (SanaChrome, Motion, home-sana.css); the plans
+ * sit in sana.ai's own pricing panel, measured the same day (pricing.css has every number). The old page wore the
+ * previous site's chrome, one hop from a homepage that no longer looked like it.
+ *
+ * ONE PAID PRODUCT (owner, 2026-08-17), at $19.99 a month or $199.99 a year (owner, 2026-08-18). The ladder this
+ * page used to sell (Free / Student $9.99 / Agent Pro $19.99, with Max $99 above) is gone. Retiring it is not
+ * forgetting it: plan_entitlements still carries the old rows and planForPriceId still resolves the old Stripe
+ * prices; what no longer exists is anywhere to buy one.
+ *
+ * 🔴 THE PRICES COME FROM lib/pricing.ts, WHICH IS TESTED AGAINST packages/shared/src/plan.ts. This is a separate
+ * application with no workspace link to the shared package, so the number lives twice and the guard is what keeps
+ * the two honest. pricing-page.test.ts refuses a price typed into the page.
+ */
 
 const BILLING_FAQ = [
   {
@@ -55,47 +61,31 @@ const BILLING_FAQ = [
 
 export default function PricingPage() {
   return (
-    <SiteChrome>
-      <section className="section pricing-hero" id="plans">
-        <PageGlow />
-        <div className="wrap">
-          <div className="section-head pricing-head" data-reveal="up">
-            <p className="eyebrow">Pricing</p>
-            <h2>One Nemesis. Free, or all of it.</h2>
-            <p>The free plan is the real product, with less of the month in it. Pay monthly or yearly, and cancel anytime.</p>
-          </div>
-          <PricingPlans />
-          <div className="pricing-fine">
-            <p>Monthly and yearly are the same Nemesis. The only difference is how often you pay. Cancel anytime from your account, no phone calls. Your library stays yours on any plan, forever. No ads, no selling your data, no training on your content.</p>
-          </div>
-        </div>
-      </section>
+    <div className="sn">
+      <SnHeader />
+      <main>
+        <section className="sn-hero">
+          <p className="sn-eyebrow sn-load">Pricing</p>
+          <Words as="h1" now className="sn-h1" text="One Nemesis. Free, or all of it." />
+          <p className="sn-sub sn-load sn-load-1">
+            The free plan is the real product, with less of the month in it. Pay monthly or yearly, and cancel anytime.
+          </p>
+        </section>
 
-      <section className="section alt" id="billing">
-        <div className="wrap">
-          <div className="section-head pricing-head" data-reveal="up">
-            <p className="eyebrow">Billing</p>
-            <h2>The fine print, plainly.</h2>
-          </div>
-          <div className="faq" data-reveal="soft">
-            {BILLING_FAQ.map(({ q, a }) => (
-              <details key={q}>
-                <summary>{q}</summary>
-                <p>{a}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
+        <PricingPlans />
 
-      <section className="closer" id="get">
-        <div className="wrap">
-          <h2>Try it on this week&rsquo;s classes.</h2>
-          <div className="closer-cta">
-            <a className="btn btn-primary" href={APP_SIGN_UP}>Get started free</a>
+        <SnFaq items={[...BILLING_FAQ]} title="The fine print, plainly" />
+
+        <section className="pr-close">
+          <Words as="h2" className="sn-h2" text="Try it on this week's classes." />
+          <div className="sn-actions">
+            <a className="sn-btn sn-btn-solid nm-press" href={APP_SIGN_UP}>
+              Start free
+            </a>
           </div>
-        </div>
-      </section>
-    </SiteChrome>
+        </section>
+      </main>
+      <SnFoot />
+    </div>
   );
 }

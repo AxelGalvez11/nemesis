@@ -17,14 +17,17 @@ export function PlanCta({
   interval,
   label = "Get Nemesis",
   variant = "primary",
+  className,
 }: {
   interval: BillingInterval;
   label?: string;
   variant?: "primary" | "secondary";
+  /** Replaces the old site's `btn` classes, for pages built on the homepage's system. */
+  className?: string;
 }) {
   return (
     <a
-      className={`btn btn-${variant}`}
+      className={className ?? `btn btn-${variant}`}
       href={planCheckoutUrl(interval)}
       onClick={() => captureCtaClick("pricing", `${label} (${interval})`)}
     >

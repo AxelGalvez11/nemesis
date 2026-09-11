@@ -46,10 +46,10 @@ export function SnHeader() {
   );
 }
 
-export function SnFaq({ items }: { items: { q: string; a: string }[] }) {
+export function SnFaq({ items, title = "Questions" }: { items: { q: string; a: string }[]; title?: string }) {
   return (
     <section className="sn-faq" id="faq">
-      <Words as="h2" className="sn-faq-title" text="Questions" />
+      <Words as="h2" className="sn-faq-title" text={title} />
       <div className="sn-faq-list">
         {items.map((it) => (
           <details key={it.q}>
