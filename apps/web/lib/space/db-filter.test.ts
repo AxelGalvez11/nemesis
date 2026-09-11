@@ -121,6 +121,8 @@ test("each type starts with its usual condition, and formulas offer none", () =>
   );
   assert.deepEqual(operatorsFor("checkbox"), ["is"]);
   assert.deepEqual(operatorsFor("formula"), []);
+  assert.deepEqual(operatorsFor("files"), ["is_empty", "is_not_empty"], "files are there or not");
+  assert.deepEqual(filterRows([{ id: "a", att: [{ name: "brief.pdf", ref: "ws-file:s/p/1-brief.pdf" }] }, { id: "b", att: [] }], [f("att", "is_not_empty")], { att: { name: "Files", type: "files" } }).map((r) => r.id), ["a"]);
 });
 
 test("🔴 a row made while filters are on starts with values that keep it in view", () => {

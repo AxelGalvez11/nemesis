@@ -781,6 +781,17 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cu
 .tasks-table{padding-top:8px}
 .tasks-row{cursor:pointer}
 .tasks-row:hover .nsp-table-view-cell{background:var(--ca-bacIntTra)}
+.db-calc-row{display:flex;height:34px;margin-left:8px}
+.db-calc{flex:none;height:34px;padding:0 8px;display:flex;align-items:center;justify-content:flex-end;gap:4px;overflow:hidden;white-space:nowrap;font-size:12px;line-height:16px;color:var(--c-texTer);cursor:pointer}
+.db-calc:hover{background:var(--ca-bacIntTra)}
+.db-calc .calc-hint{opacity:0}
+.db-calc-row:hover .calc-hint{opacity:1}
+.calc-value{font-size:14px;line-height:20px;font-variant-numeric:tabular-nums;color:var(--c-texPri)}
+.calc-menu{width:220px;max-height:440px;overflow-y:auto}
+.file-chips{display:flex;gap:4px;overflow:hidden}
+.file-chip{max-width:160px;height:20px;padding:0 6px;border-radius:4px;background:var(--ca-bacIntTra);font-size:12px;line-height:20px;color:var(--c-texPri);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
+.files-editor{width:300px;max-height:440px;overflow-y:auto}
+.fe-file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-texPri);text-decoration:none}
 .prop-picker{width:268px;max-height:560px;display:flex;flex-direction:column;overflow:hidden}
 .new-menu{width:290px}
 .nm-desc{padding:0 8px 8px;font-size:12px;line-height:16px;color:var(--c-texSec)}

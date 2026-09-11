@@ -62,6 +62,11 @@ test("🔴 a view from before several sorts reads its one sort; a list wins and 
   assert.deepEqual(sortsOf({}), []);
 });
 
+test("files sort by the first file's name, rows without files last", () => {
+  const list = [{ id: "a", att: [{ name: "week 10.pdf" }] }, { id: "b" }, { id: "c", att: [{ name: "Week 2.pdf" }, { name: "a.pdf" }] }];
+  assert.deepEqual(sortRowsBy(list, [s("att")], { att: { name: "Files", type: "files" } }).map((r) => r.id), ["c", "a", "b"]);
+});
+
 test("the sort chip names one sort and counts several", () => {
   assert.equal(describeSorts([s("pts")], schema), "Points");
   assert.equal(describeSorts([s("pts"), s("st")], schema), "2 sorts");

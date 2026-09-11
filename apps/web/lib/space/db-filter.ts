@@ -82,6 +82,7 @@ export function operatorsFor(type: string): FilterOp[] {
   if (MANY.includes(type)) return ["contains", "does_not_contain", "is_empty", "is_not_empty"];
   if (DATE.includes(type)) return ["is", "before", "after", "on_or_before", "on_or_after", "is_empty", "is_not_empty"];
   if (type === "checkbox") return ["is"];
+  if (type === "files") return ["is_empty", "is_not_empty"];
   return [];
 }
 

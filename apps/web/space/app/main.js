@@ -7,6 +7,7 @@ import { ICONS, MASKS } from './icons.js';
 import { splitEmails } from '../../lib/space/invite-request';
 import { describeFilter, defaultOp, filterable, filterReady, filterRows, needsValue, operatorsFor, opLabel, searchRows, seedFromFilters } from '../../lib/space/db-filter';
 import { describeSorts, groupable, groupRows, sortRowsBy, sortsOf } from '../../lib/space/db-sort';
+import { calcLabel, calcsFor, calculate } from '../../lib/space/db-calc';
 import { EMOJI_SECTIONS, EMOJI_KW } from './emoji.js';
 import { COVER_GALLERY } from './covers.js';
 import { TEMPLATES } from './templates.js';
@@ -864,6 +865,7 @@ function Cell({ row, pid, prop, col }) {
     case 'last_edited_time': return td('p75', fmtDateTime(row.edited || row.created || NOW()));
     case 'formula': return td('p75 td-num', '');
     case 'person': return td('p75', (v || []).map((x) => space.personName(x) || x).join(', '), open('cellPerson'));
+    case 'files': return td('p75', html`<div class="file-chips">${(Array.isArray(v) ? v : []).map((f) => html`<span class="file-chip">${(f && f.name) || 'File'}</span>`)}</div>`, open('cellFiles'));
     default: return td('p75', v || '', ['text', 'url', 'email', 'phone_number'].includes(prop.type) ? open('cellText') : undefined);
   }
 }
@@ -879,6 +881,7 @@ function Database({ page }) {
   const toggleGroup = (key) => { const next = collapsed.has(key) ? [...collapsed].filter((k) => k !== key) : [...collapsed, key]; if (next.length) view.collapsed = next; else delete view.collapsed; commit(); };
   const groupPill = (o) => { const [bg, fg, dot] = OPT[o.color] || OPT.default; const status = gprop.type === 'status'; return html`<div class=${'pill ' + (status ? 'status' : 'sel')} style=${`background:${bg};color:${fg}`}>${status ? html`<div class="dot" style=${`background:${dot}`}></div>` : ''}<span>${o.value}</span></div>`; };
   const tableRow = (r) => html`<div class=${'nsp-table-view-row' + (dbSel.has(r.id) ? ' sel' : '')} key=${r.id} data-row-id=${r.id}><div class="row-gutter"><div class="blk-plus" role="button" data-tip-html=${TIP_PLUS} onClick=${() => { const i = rows.indexOf(r); rows.splice(i + 1, 0, newRow(view, coll)); commit(); }}><${Icon} n="plus" cls="i20"/></div><div class="blk-drag" role="button" data-tip-html=${TIP_DRAG} onMouseDown=${(e) => rowDragDown(e, rows, r, view)}><${Icon} n="dragHandle" cls="i20"/></div><div class=${'row-check' + (dbSel.has(r.id) ? ' on' : '')} role="checkbox" onClick=${() => { if (dbSel.has(r.id)) dbSel.delete(r.id); else dbSel.add(r.id); refresh(); }}>${dbSel.has(r.id) ? html`<${Icon} n="checkmarkFillSmall" cls="tick"/>` : ''}</div></div>${cols.map((c) => html`<${Cell} row=${r} pid=${c.property} prop=${coll.schema[c.property]} col=${c}/>`)}</div>`;
+  const calcRow = (list) => html`<div class="db-calc-row">${cols.map((c) => { const res = c.calc ? calculate(c.calc, list, c.property, coll.schema[c.property], filterCtx) : null; return html`<div class=${'db-calc' + (res ? ' on' : '')} style=${`width:${c.width}px`} role="button" data-calc=${c.property} onClick=${(e) => openOverlay('calcMenu', e.currentTarget, { pid: c.property })}>${res ? html`<span class="calc-label">${res.label}</span><span class="calc-value">${res.value}</span>` : html`<span class="calc-hint">Calculate</span>`}</div>`; })}</div>`;
   // Measured: a map view's toolbar drops Sort.
   const tools = [['filterSmall', 'nsp-collection-filter'], ['arrowUpDownSmall', 'nsp-collection-sort'], ...(READY.automations ? [['lightningSmall', 'nsp-collection-automation-edit-view']] : []), ...(READY.ai ? [['magicWandSmall', '']] : []), ['magnifyingGlassSmall', 'nsp-collection-search'], ['slidersSmall', 'nsp-collection-edit-view']].filter((t) => !(view.type === 'map' && t[0] === 'arrowUpDownSmall'));
   return html`<div class="db-page">
@@ -896,8 +899,8 @@ function Database({ page }) {
       <div class="nsp-table-view-header-row">${cols.map((c) => html`<${HeaderCell} c=${c} p=${coll.schema[c.property]}/>`)}</div>
       ${groups ? groups.map((g) => html`<div class="tg" key=${'g:' + g.key}>
         <div class="tg-head"><div class=${'tg-caret' + (collapsed.has(g.key) ? '' : ' open')} role="button" aria-label=${collapsed.has(g.key) ? 'Show group' : 'Hide group'} onClick=${() => toggleGroup(g.key)}><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div><div class="tg-label">${g.option ? groupPill(g.option) : html`<span class="board-none">${g.label}</span>`}</div><div class="board-count">${g.rows.length}</div></div>
-        ${collapsed.has(g.key) ? '' : html`${g.rows.map(tableRow)}<div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push({ ...newRow(view, coll), [view.group_by]: g.value === null ? undefined : g.value }); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>`}
-      </div>`) : html`${shown.map(tableRow)}<div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push(newRow(view, coll)); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>`}
+        ${collapsed.has(g.key) ? '' : html`${g.rows.map(tableRow)}<div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push({ ...newRow(view, coll), [view.group_by]: g.value === null ? undefined : g.value }); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>${calcRow(g.rows)}`}
+      </div>`) : html`${shown.map(tableRow)}<div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push(newRow(view, coll)); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>${calcRow(shown)}`}
     </div>`}
   </div>`;
 }
@@ -2520,7 +2523,7 @@ function addFilter(view, pid, prop) {
   setTimeout(() => { const el = document.querySelector(`[data-filter="${f.id}"]`); if (el) openOverlay('filterEditor', el, { fid: f.id }); }, 0);
 }
 const dbCtx = () => { const page = S.pages[route()]; if (!page || !page.collection) return null; return { page, coll: S.collections[page.collection], view: S.views[page.activeView && page.views.includes(page.activeView) ? page.activeView : page.views[0]] }; };
-const PROP_TYPES = [['text', 'Text'], ['number', 'Number'], ['select', 'Select'], ['multi_select', 'Multi-select'], ['status', 'Status'], ['date', 'Date'], ['person', 'Person'], ['checkbox', 'Checkbox'], ['url', 'URL'], ['email', 'Email'], ['phone_number', 'Phone']];
+const PROP_TYPES = [['text', 'Text'], ['number', 'Number'], ['select', 'Select'], ['multi_select', 'Multi-select'], ['status', 'Status'], ['date', 'Date'], ['person', 'Person'], ['checkbox', 'Checkbox'], ['url', 'URL'], ['email', 'Email'], ['phone_number', 'Phone'], ['files', 'Files & media']];
 function PropMenu({ data }) {
   const ctx = dbCtx(); const ref = useRef(null); const [sub, setSub] = useState(null);
   if (!ctx) return null;
@@ -2541,7 +2544,7 @@ function PropMenu({ data }) {
   return html`<div class="menu prop-menu" ref=${ref} style=${`left:${left}px;top:${top}px`}>
     <div class="pm2-head"><div class="pm2-row"><div class="pm2-type" role=${isTitle ? undefined : 'button'} onClick=${isTitle ? undefined : openSub('type')}><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${mask}");mask-image:url("${mask}")`}></div></div><div class="bm-search-box pm2-name"><input value=${p.name} placeholder="Property name" onInput=${(e) => { p.name = e.currentTarget.value; persist(); refresh(); }}/></div><div class="pm2-info"><${Icon} n="infoCircleFill" cls="i16"/></div></div></div>
     <div class="menu-group" onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<div onMouseEnter=${openSub('type')}><${MenuItem} ic="arrowSquarePathUpDown" label="Change type" chev onClick=${openSub('type')}/></div>`}${READY.ai ? html`<${MenuItem} ic="magicWand" label="AI Autofill" badge="Now with agents"/>` : ''}</div>
-    <div class="menu-group"><div onMouseEnter=${() => setSub(null)}>${filterable(p.type) ? html`<${MenuItem} ic="filter" label="Filter" onClick=${() => addFilter(view, data.pid, p)}/>` : ''}</div><div onMouseEnter=${openSub('sort')}><${MenuItem} ic="arrowUpDown" label="Sort" chev onClick=${openSub('sort')}/></div>${(view.type || 'table') === 'table' && groupable(p.type) ? html`<div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="squareGridBelowLines" label=${view.group_by === data.pid ? 'Ungroup' : 'Group'} onClick=${() => { if (view.group_by === data.pid) { delete view.group_by; delete view.collapsed; } else { view.group_by = data.pid; delete view.collapsed; } done(); commit(); }}/></div>` : ''}<div onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<${MenuItem} ic="eyeSlash" label="Hide" onClick=${() => { col.visible = false; done(); commit(); }}/>`}<${MenuItem} ic="arrowUTurnDownLeft" label=${col.wrap ? 'Unwrap content' : 'Wrap content'} onClick=${() => { col.wrap = !col.wrap; done(); commit(); }}/></div></div>
+    <div class="menu-group"><div onMouseEnter=${() => setSub(null)}>${filterable(p.type) ? html`<${MenuItem} ic="filter" label="Filter" onClick=${() => addFilter(view, data.pid, p)}/>` : ''}</div><div onMouseEnter=${openSub('sort')}><${MenuItem} ic="arrowUpDown" label="Sort" chev onClick=${openSub('sort')}/></div>${(view.type || 'table') === 'table' && groupable(p.type) ? html`<div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="squareGridBelowLines" label=${view.group_by === data.pid ? 'Ungroup' : 'Group'} onClick=${() => { if (view.group_by === data.pid) { delete view.group_by; delete view.collapsed; } else { view.group_by = data.pid; delete view.collapsed; } done(); commit(); }}/></div>` : ''}${(view.type || 'table') === 'table' ? html`<div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="sum" label="Calculate" onClick=${() => { done(); setTimeout(() => { const el = document.querySelector(`[data-calc="${data.pid}"]`); if (el) openOverlay('calcMenu', el, { pid: data.pid }); }, 0); }}/></div>` : ''}<div onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<${MenuItem} ic="eyeSlash" label="Hide" onClick=${() => { col.visible = false; done(); commit(); }}/>`}<${MenuItem} ic="arrowUTurnDownLeft" label=${col.wrap ? 'Unwrap content' : 'Wrap content'} onClick=${() => { col.wrap = !col.wrap; done(); commit(); }}/></div></div>
     <div class="menu-group" onMouseEnter=${() => setSub(null)}><${MenuItem} ic="arrowRectangleLeft" label="Insert left" onClick=${() => insert(idx)}/><${MenuItem} ic="arrowRectangleRight" label="Insert right" onClick=${() => insert(idx + 1)}/><${MenuItem} ic="duplicate" label="Duplicate property" onClick=${duplicate}/>${isTitle ? '' : html`<${MenuItem} ic="trash" label="Delete property" onClick=${remove}/>`}</div>
   </div>${subBody ? html`<${SubMenu} sub=${sub}>${subBody}<//>` : ''}`;
 }
@@ -2608,6 +2611,14 @@ function SortEditor() {
       <div class="menu-group"><${MenuItem} ic="plusSmall" label="Add sort" onClick=${() => setPick({ kind: 'add' })}/><${MenuItem} ic="xMarkSmall" label="Delete sort" onClick=${() => save([])}/></div>`;
   }
   return html`<div class="menu sort-editor" style=${`left:${left}px;top:${top}px`}>${body}</div>`;
+}
+function CalcMenu({ data }) {
+  const ctx = dbCtx(); if (!ctx) return null;
+  const { coll, view } = ctx; const col = (view.format.table_properties || []).find((c) => c.property === data.pid); const p = coll.schema[data.pid];
+  if (!col || !p) return null;
+  const pick = (fn) => { if (fn) col.calc = fn; else delete col.calc; closeOverlay(); commit(); };
+  const r = overlay.r; const left = Math.max(8, Math.min(r.right - 220, innerWidth - 228)); const top = Math.max(8, Math.min(r.bottom + 4, innerHeight - 440));
+  return html`<div class="menu calc-menu" style=${`left:${left}px;top:${top}px`}><div class="menu-group">${[[null, 'None'], ...calcsFor(p.type).map((fn) => [fn, calcLabel(fn)])].map(([fn, label]) => html`<div class="mi" role="menuitem" onClick=${() => pick(fn)}><div class="mi-in"><div class="mi-label">${label}</div>${(col.calc || null) === fn ? html`<span class="fe-check"><${Icon} n="checkmarkFillSmall" cls="i16"/></span>` : ''}</div></div>`)}</div></div>`;
 }
 function NoDateMenu({ data }) {
   const ctx = dbCtx(); if (!ctx) return null;
@@ -2699,6 +2710,27 @@ function PersonEditor({ data }) {
     <div class="se-list"><div class="menu-group">${list.map((p) => html`<div class="mi se-row" role="menuitem" onClick=${() => flip(p.id)}><div class="mi-in"><img class="pe-av" src=${space.avatar(p.id)} alt=""/><div class="mi-label">${p.name}${p.you ? html`<span class="mn-you"> (You)</span>` : ''}</div>${cur.includes(p.id) ? html`<span class="fe-check"><${Icon} n="checkmarkFillSmall" cls="i16"/></span>` : ''}</div></div>`)}${list.length ? '' : html`<div class="fe-none">No people found</div>`}</div></div>
   </div>`;
 }
+function FilesEditor({ data }) {
+  const ctx = dbRow(data.rowId); const fileRef = useRef(null); const [busy, setBusy] = useState(0);
+  if (!ctx || !ctx.row || !ctx.coll.schema[data.pid]) return null;
+  const { row, page } = ctx; const list = Array.isArray(row[data.pid]) ? row[data.pid] : [];
+  const save = (next) => { if (next.length) row[data.pid] = next; else delete row[data.pid]; row.edited = NOW(); commit(); };
+  // Several files can be on their way at once, so each one lands on the list as it stands when its upload finishes.
+  const onFile = (e) => {
+    const files = [...(e.currentTarget.files || [])]; e.currentTarget.value = '';
+    for (const file of files) {
+      setBusy((n) => n + 1);
+      space.upload(file, page.id)
+        .then((ref) => save([...(Array.isArray(row[data.pid]) ? row[data.pid] : []), { name: file.name, ref }]), () => showToast({ warn: true, text: `${file.name} could not be uploaded. Try again.` }))
+        .finally(() => setBusy((n) => n - 1));
+    }
+  };
+  const r = overlay.r; const left = Math.max(8, Math.min(r.left - 1, innerWidth - 308)); const top = Math.max(8, Math.min(r.top - 1, innerHeight - 260));
+  return html`<div class="menu files-editor" style=${`left:${left}px;top:${top}px`}>
+    <div class="menu-group">${list.map((f, i) => html`<div class="mi fe-file" key=${f.ref || i}><div class="mi-in"><div class="mi-ic"><${Icon} n="paperClip" cls="i16"/></div><a class="mi-label fe-file-name" href=${space.fileUrl(f.ref) || undefined} target="_blank" rel="noopener">${f.name || 'File'}</a><div class="fe-del" role="button" aria-label=${`Remove ${f.name || 'file'}`} onClick=${() => save(list.filter((_, j) => j !== i))}><${Icon} n="xMarkSmall" cls="i16"/></div></div></div>`)}${list.length ? '' : html`<div class="fe-none">No files yet</div>`}</div>
+    <div class="menu-group"><${MenuItem} ic="plusSmall" label=${busy ? 'Uploading…' : 'Upload a file'} onClick=${() => fileRef.current && fileRef.current.click()}/><input ref=${fileRef} type="file" multiple hidden onChange=${onFile}/></div>
+  </div>`;
+}
 function RowProps({ page }) {
   const coll = S.collections[page.rowOf.coll]; const row = (S.rows[page.rowOf.coll] || []).find((x) => x.id === page.rowOf.row); if (!coll || !row) return null;
   const view = Object.values(S.views).find((vw) => vw.format && vw.format.table_properties.some((c) => coll.schema[c.property]));
@@ -2715,7 +2747,7 @@ function RowPeek({ page, row }) {
   const coll = S.collections[page.collection]; const titleRef = useRef(null);
   useLayoutEffect(() => { const el = titleRef.current; if (el && document.activeElement !== el && el.textContent !== (row.title || '')) el.textContent = row.title || ''; });
   const keys = Object.keys(coll.schema).filter((k) => coll.schema[k].type !== 'title').sort((a, b) => coll.schema[a].name.localeCompare(coll.schema[b].name));
-  const edit = (pid) => (e) => { const t = coll.schema[pid].type; const kind = t === 'select' || t === 'status' || t === 'multi_select' ? 'cellSelect' : t === 'date' ? 'cellDate' : t === 'person' ? 'cellPerson' : ['text', 'number', 'url', 'email', 'phone_number'].includes(t) ? 'cellText' : null; if (kind) openOverlay(kind, e.currentTarget, { rowId: row.id, pid }); };
+  const edit = (pid) => (e) => { const t = coll.schema[pid].type; const kind = t === 'select' || t === 'status' || t === 'multi_select' ? 'cellSelect' : t === 'date' ? 'cellDate' : t === 'person' ? 'cellPerson' : t === 'files' ? 'cellFiles' : ['text', 'number', 'url', 'email', 'phone_number'].includes(t) ? 'cellText' : null; if (kind) openOverlay(kind, e.currentTarget, { rowId: row.id, pid }); };
   const empty = html`<span class="pk-empty">Empty</span>`;
   const pillOf = (o, status) => { const [bg, fg, dot] = OPT[o.color] || OPT.default; return html`<div class=${'pill ' + (status ? 'status' : 'sel')} style=${`background:${bg};color:${fg}`}>${status ? html`<div class="dot" style=${`background:${dot}`}></div>` : ''}<span>${o.value}</span></div>`; };
   const value = (pid) => {
@@ -2730,6 +2762,7 @@ function RowPeek({ page, row }) {
     if (pr.type === 'formula') return empty;
     if (pr.type === 'person') return (v || []).length ? html`<span class="pk-person"><img src=${space.avatar(v[0])} alt=""/>${v.map((x) => space.personName(x) || x).join(', ')}</span>` : empty;
     if (pr.type === 'file') return empty;
+    if (pr.type === 'files') { const list = Array.isArray(v) ? v : []; return list.length ? html`<div class="file-chips">${list.map((f) => html`<a class="file-chip" href=${space.fileUrl(f.ref) || undefined} target="_blank" rel="noopener" onClick=${(e) => e.stopPropagation()}>${f.name || 'File'}</a>`)}</div>` : empty; }
     return v ? String(v) : empty;
   };
   return html`<div class="peek">
@@ -3252,7 +3285,7 @@ function cardDragDown(e, rows, r, gp) {
 function Overlay() {
   useStore();
   if (!overlay) return null;
-  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'cellPerson' ? html`<${PersonEditor} data=${overlay.data}/>` : overlay.kind === 'filterEditor' ? html`<${FilterEditor} data=${overlay.data}/>` : overlay.kind === 'noDate' ? html`<${NoDateMenu} data=${overlay.data}/>` : overlay.kind === 'sortEditor' ? html`<${SortEditor}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : null;
+  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'cellPerson' ? html`<${PersonEditor} data=${overlay.data}/>` : overlay.kind === 'cellFiles' ? html`<${FilesEditor} data=${overlay.data}/>` : overlay.kind === 'calcMenu' ? html`<${CalcMenu} data=${overlay.data}/>` : overlay.kind === 'filterEditor' ? html`<${FilterEditor} data=${overlay.data}/>` : overlay.kind === 'noDate' ? html`<${NoDateMenu} data=${overlay.data}/>` : overlay.kind === 'sortEditor' ? html`<${SortEditor}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : null;
   return html`<div class="ov-root"><div class=${'ov-catch' + (overlay.kind === 'search' || overlay.kind === 'settings' || overlay.kind === 'formSetup' ? ' dim' : '') + (overlay.kind === 'settings' ? ' scrim' : '')} onMouseDown=${closeOverlay}></div>${body}</div>`;
 }
 // Measured: once a page holds any discussion, open or resolved, the topbar grows a Comments button after Copy link.
