@@ -9,7 +9,7 @@ import "katex/dist/katex.min.css";
 import { Inter } from "next/font/google";
 import { useEffect, useRef } from "react";
 
-import { createFakeSupabase, fakeChatEngine, fakeMeetingDeps } from "@/lib/space/fake-backend";
+import { createFakeSupabase, fakeChatEngine, fakeMeetingDeps, fakeSourceReader } from "@/lib/space/fake-backend";
 import { setBasePath, space } from "@/space/app/runtime.js";
 
 const BASE = "/dev-preview/space";
@@ -29,7 +29,7 @@ export default function SpacePreview() {
     // No model here: chats answer with a stand-in that streams the way the real answer does.
     (space as unknown as { chatEngine: unknown }).chatEngine = fakeChatEngine;
     // No microphone or recording worker either: meeting notes record into a stand-in that writes up a sample meeting.
-    Object.assign(space as unknown as Record<string, unknown>, { meetingDeps: fakeMeetingDeps(fake), meetingPollMs: 1000 });
+    Object.assign(space as unknown as Record<string, unknown>, { meetingDeps: fakeMeetingDeps(fake), meetingPollMs: 1000, sourceReader: fakeSourceReader });
     void import("@/space/app/main.js").then(({ mountSpace }) => {
       if (!alive || !root.current) return;
       unmount = mountSpace(root.current, {

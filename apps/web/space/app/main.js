@@ -798,13 +798,62 @@ function pageToMeeting(page) { const tb = newBlock('transcription', [], page.id)
 const GS_ITEMS = [...(READY.ai ? [['bulb', 'Start a draft', 'draft'], ['bulb', 'Research a topic', 'research']] : []), ['tpl', 'Templates', 'tpl'], ...(READY.meetings ? [['meet', 'AI Meeting Notes', 'meeting']] : []), ['viewTable', 'Database', 'db:table:Default view'], ['docPlainText', 'Form', 'db:form:Form'], ['viewTable', 'Table', 'db:table:Table'], ['viewBoard', 'Board', 'db:board:Board'], ['bulletedList', 'List', 'db:list:List'], ['viewTimeline', 'Timeline', 'db:timeline:Timeline'], ['viewCalendar', 'Calendar', 'db:calendar:Calendar view'], ['squareGrid2X2', 'Gallery', 'db:gallery:Gallery']];
 const gsIcon = (ic) => (ic === 'bulb' ? GsBulb() : ic === 'tpl' ? GsTemplates() : ic === 'meet' ? GsMeeting() : html`<${Icon} n=${ic} cls="gs-ic"/>`);
 const gsRun = (page, act) => { if (act === 'draft') startDraft(page); else if (act === 'research') startResearch(page); else if (act === 'tpl') go('marketplace'); else if (act === 'meeting') pageToMeeting(page); else if (act.startsWith('db:')) { const [, type, name] = act.split(':'); pageToDatabase(page, type, name); } };
-// An empty workspace offers the two things a workspace holds today, rather than the page templates: a chat that lives
-// in this workspace, and a note inside it. Sources, the Create tiles and Made here arrive with M13.
+// An empty workspace offers the three things a workspace holds, rather than the page templates: sources, a chat that
+// lives in this workspace, and a note inside it. The Create tiles and Made here arrive with the rest of M13.
 function WorkspaceStart({ page }) {
   return html`<div class="gs-wrap"><div class="gs-label">In this workspace</div><div class="gs-row">
+    <div class="gs-pill" role="button" onClick=${() => pickSourceFiles(page.id)}><${Icon} n="plus" cls="i20"/><span>Add sources</span></div>
     <div class="gs-pill" role="button" onClick=${() => openNewChat(page.id)}><${Icon} n="chatBubblePlus" cls="i20"/><span>New chat here</span></div>
     <div class="gs-pill" role="button" onClick=${() => createPage(page.id)}><${Icon} n="pageEmpty" cls="i20"/><span>New note</span></div>
   </div></div>`;
+}
+
+/* ------------------------------------------------------------------ a workspace's sources */
+// Owner, 2026-09-11: a workspace keeps the sources, the chats and the notes in one place, and its chats read the
+// sources. The reading itself is the app's own upload lane (runtime.js, addSourceFile); this is the list.
+function pickSourceFiles(pageId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.onchange = () => {
+    for (const file of Array.from(input.files || [])) void space.addSourceFile(pageId, file);
+  };
+  input.click();
+}
+const SIZES = ['bytes', 'KB', 'MB', 'GB'];
+function fileSize(bytes) {
+  if (!bytes && bytes !== 0) return '';
+  let n = Number(bytes);
+  let step = 0;
+  while (n >= 1024 && step < SIZES.length - 1) { n /= 1024; step += 1; }
+  return `${step === 0 ? Math.round(n) : n.toFixed(n < 10 ? 1 : 0)} ${SIZES[step]}`;
+}
+const sourceIcon = (s) => (/^image\//i.test(s.mime || '') ? 'photo' : /pdf/i.test(s.mime || '') || /\.pdf$/i.test(s.name || '') ? 'pageEmpty' : 'page');
+// What a row says under its name: the trouble if there was any, otherwise how big it is and that it has been read.
+function sourceLine(s) {
+  if (s.status === 'reading') return 'Reading it now…';
+  if (s.status === 'failed') return s.error || 'This one could not be read.';
+  const size = fileSize(s.bytes);
+  return size ? `${size} · read` : 'Read';
+}
+function WorkspaceSources({ page }) {
+  useEffect(() => { void space.loadSources(page.id); }, [page.id]);
+  const { items, loaded } = space.sourcesOf(page.id);
+  const editable = space.canEdit(page.id);
+  return html`<div class="ws-sources">
+    <div class="ws-sec">
+      <span class="ws-sec-label">Sources</span>
+      ${items.length ? html`<span class="ws-sec-n">${items.length}</span>` : ''}
+      ${editable ? html`<div class="ws-sec-add" role="button" onClick=${() => pickSourceFiles(page.id)}><${Icon} n="plusSmall" cls="i16"/><span>Add</span></div>` : ''}
+    </div>
+    ${items.length
+      ? html`<div class="ws-srcs">${items.map((s) => html`<div class=${'ws-src' + (s.status === 'failed' ? ' bad' : '')} key=${s.id}>
+          <div class="ws-src-ic">${s.status === 'reading' ? html`<span class="ais-spin"></span>` : html`<${Icon} n=${sourceIcon(s)} cls="i20"/>`}</div>
+          <div class="ws-src-tx"><div class="ws-src-name">${s.name}</div><div class="ws-src-line">${sourceLine(s)}</div></div>
+          ${editable && s.status !== 'reading' ? html`<div class="ws-src-x" role="button" aria-label=${'Remove ' + s.name} onClick=${() => space.removeSource(page.id, s.id)}><${Icon} n="xMarkSmall" cls="i16"/></div>` : ''}
+        </div>`)}</div>`
+      : html`<div class="ws-src-none">${loaded ? 'Add your lectures, slides or notes here, and every chat in this workspace reads them.' : 'Loading…'}</div>`}
+  </div>`;
 }
 function GetStarted({ page }) {
   const rowRef = useRef(null); const measRef = useRef(null);
@@ -866,6 +915,7 @@ function Page({ page }) {
       <div class="nsp-page-controls page-controls">${hasIcon(page) ? '' : html`<button onClick=${(e) => addRandomIcon(page, e.currentTarget.closest('.page-header'))}><${Icon} n="emojiFaceFill" cls="i14"/><span>Add icon</span></button>`}${page.cover ? '' : html`<button onClick=${() => addRandomCover(page)}><${Icon} n="photoFill" cls="i14"/><span>Add cover</span></button>`}${commentOpen === page.id ? '' : html`<button onClick=${() => openComment(page)}><${Icon} n="commentFilledFill" cls="i14"/><span>Add comment</span></button>`}</div>
       <h1 ref=${titleRef} class="nsp-page-block-title" contenteditable=${editable ? 'true' : 'false'} spellcheck="true" data-ph="New page" onInput=${(e) => { page.title = e.currentTarget.textContent; page.lastEdited = NOW(); if (page.rowOf) { const rr = (S.rows[page.rowOf.coll] || []).find((x) => x.id === page.rowOf.row); if (rr) rr.title = page.title; } persist(); refresh(); }} onKeyDown=${onKey}></h1>
     </div>
+    ${page.workspace ? html`<${WorkspaceSources} key=${'src' + page.id} page=${page}/>` : ''}
     ${commentOpen === page.id || (page.comments && page.comments.length) ? html`<${PageDiscussion} key=${'d' + page.id} page=${page}/>` : ''}${page.rowOf ? html`<${RowProps} page=${page}/>` : ''}${editable ? '' : html`<div class="role-banner">${space.roleOf(page.id) === 'comment' ? 'You can comment on this page.' : 'You can view this page.'}</div>`}<div class="nsp-page-content" onBeforeInputCapture=${editable ? null : stopEdit} onPasteCapture=${editable ? null : stopEdit} onDropCapture=${editable ? null : stopEdit} onKeyDownCapture=${editable ? null : stopKeys}><${Children} ids=${page.content}/></div>${gsEmpty ? (page.workspace ? html`<${WorkspaceStart} page=${page}/>` : html`<${GetStarted} page=${page}/>`) : ''}${cmtHere ? html`<${BlockCommentCard} key=${blockCmt.id} id=${blockCmt.id}/>` : ''}${threads.map((b) => html`<${BlockThread} key=${'t' + b.id} b=${b}/>`)}
   </div>`;
 }

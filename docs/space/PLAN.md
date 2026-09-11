@@ -196,6 +196,17 @@ style and he likes the tests and the blocks that are live now.
       nothing queries by it). The Workspaces tab lists them with a colour square taken from the page's own id, opens
       them, and makes new ones; a workspace's own page offers a chat here and a note rather than the page templates.
       Left: sources and the chats that read them, the Create tiles, Made here, and the workspace overview.
+      2026-09-11, part two: 20260911T17_space_sources.sql is live (self test 13 of 13, rolled back, against the applied
+      schema, including a stranger seeing nothing and a reader being refused). A workspace holds sources now. The file
+      goes up the app's own upload lane (lib/workspace/chat-attachments.ts: the same route, the same measured limits,
+      the same readers and vision fallback as the chat and the canvas), and `ws_sources` keeps what it turned out to
+      say against the page, so everyone the workspace is shared with can read it while the bytes stay in the uploader's
+      own bucket. ws_add_source, ws_set_source_text and ws_remove_source need edit; ws_page_sources and
+      ws_source_bodies need read, and the list never carries the text, because a term of lectures does not belong in a
+      sidebar. Every chat started inside a workspace reads them (runtime.sourcesForTurn), so its answers are grounded
+      in that workspace's own material and cite it. A file nothing could be read out of says so on its row rather than
+      disappearing. Left: opening the original file as a classmate, telling other people's open tabs that a source
+      arrived, the Create tiles, Made here, and the workspace overview.
 - [ ] M14 **Canvas**, reset to the spatial board of #1141 and given the card kinds a canvas should hold: notes,
       images, links, groups and labelled arrows, drawn in the new design and collaborative over the workspace's
       realtime channels. No documents, no deliverables, no Office files on the board.
