@@ -87,9 +87,9 @@
 
 /* ── THE LAPTOP PANEL ────────────────────────────────────────────────────────────────────────────────
    Measured: a 706.3x720 section at radius 18 on its own near-black, rgb(23,24,26), 62px from the right
-   edge and 62px from the bottom at 1440x900 (so top 118). The art inside is LARGER than the panel,
-   731.9x751.1 at -12.8/-15.5, so it bleeds past every edge: art sized to fit reads as a framed
-   screenshot, art that runs off the edges reads as a window onto something bigger.
+   edge and 62px from the bottom at 1440x900 (so top 118). The art inside is LARGER than the panel, so
+   it bleeds past every edge: art sized to fit reads as a framed screenshot, art that runs off the edges
+   reads as a window onto something bigger.
 
    🔴🔴 RE-MEASURED 2026-09-11 ON THE LIVE PAGE, NOT JUST THE 2026-09-08 TEARDOWN — the panel and the
    form column are NOT independently centred. Sana's `<section>` that HOLDS the form (the whole thing:
@@ -112,6 +112,18 @@
   display: none;
   isolation: isolate;
   overflow: hidden;
+  /* 🔴🔴 THE REAL BUG, FOUND 2026-09-11 CHASING "still doesn't match the sizing": removing
+     `position: fixed` (see the note above) also removed the ONLY thing that made this element a
+     CONTAINING BLOCK for its absolutely-positioned child, `.nemesis-auth-art`. `position: static`
+     (the default, and what this had after the split-layout rewrite) does not establish one, so that
+     child's percentage left/top/width/height fell through to `.nemesis-auth-shell` — the whole page,
+     ~1430x900 — instead of this 706.3x720 panel. The video was still being cropped to the correct
+     panel-sized WINDOW (this element's own `overflow: hidden`), but the crop being windowed was now
+     a slice of a video sized and positioned relative to the entire page, not to its own frame — so it
+     rendered oversized and shifted, worse at every viewport size. `position: relative` costs nothing
+     else here (this element already has no `top`/`left`/`right`/`bottom` of its own) and restores the
+     panel as the frame its own art is measured against. */
+  position: relative;
   z-index: 1;
   /* Measured: Sana's panel section fades in over 0.55s on cubic-bezier(0.32, 0.72, 0, 1). The 3D
      swing is in the film itself. */
@@ -119,6 +131,15 @@
 }
 @keyframes nemesis-auth-panel-in { from { opacity: 0; } to { opacity: 1; } }
 [data-theme="dark"] .nemesis-auth-field { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06); }
+/* 🔴🔴 RE-MEASURED 2026-09-11 directly on sana.ai/sign-in-to-sana (the exact page the owner linked).
+   The PANEL box (706.3x720, radius 18, 62px off two edges) is unchanged and confirmed exact — that
+   is real page anatomy and it matters. How far the ART bleeds past that box is NOT anatomy: Sana's
+   own hero asset is literally named "landing-page-hero-new-hq.webp" — a flat photo whose crop is a
+   choice their photographer made for THAT picture. Porting its bleed percentage here (tried: -2.83%
+   / -7.94% / 105.7% / 115.9%) cropped OUR scene — a live 3D composition, not a flat photo — into the
+   laptop's own keyboard and cut the left edge off. The right amount of overhang is whatever frames
+   OUR laptop well, which is what these numbers already do; changing them chased a measurement that
+   was never meant to transfer. */
 .nemesis-auth-art { position: absolute; left: -1.812%; top: -2.153%; width: 103.63%; height: 104.32%; }
 .nemesis-auth-art > img,
 .nemesis-auth-art > video {
