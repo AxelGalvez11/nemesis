@@ -83,6 +83,11 @@ nothing here reuses that word.
       calculates a column over the rows the view shows: counts, shares, sum, average, median, min, max, range and date
       spans (lib/space/db-calc.ts). Filters handle files as empty or not, and sorts by the first file's name. Left: forms
       people fill in, unique ids, relations and rollups, grouping by other property types, and the chart settings.
+      2026-09-11, part five: 20260911T14_space_forms.sql is live (self-test 12 of 12, rolled back, before and after
+      applying). Anyone who can open a database can fill in its forms: ws_submit_form keeps the form's own questions and
+      the answers that fit them, adds the row at the end and broadcasts it, 60 responses an hour at most. Readers see
+      the form itself; editors see the builder and a Preview. Left: unique ids, relations and rollups, grouping by other
+      property types, file questions in forms, forms for people outside the workspace (publish), and chart settings.
 - [ ] M5 Sharing and people: invites by email, roles, guests, page share, publish to web, teamspaces
       2026-09-11, part one: 20260911T11_space_invites.sql is live (self-test 30 of 30, rolled back). Share a page by
       email with a role; an address without an account waits as an invite that only a confirmed email can claim; guests

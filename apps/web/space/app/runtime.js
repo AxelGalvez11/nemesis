@@ -697,6 +697,17 @@ class Space {
     return [...(this.children.get(pid) || [])].filter((id) => alive(id) && S.pages[id].parent === pid);
   }
 
+  /**
+   * Records a response to a form (ws_submit_form). Anyone who can open the database may; the server keeps only answers
+   * that fit their questions, and the new row reaches open pages over realtime.
+   */
+  async submitForm(viewId, answers) {
+    if (!this.sb) throw new Error('Sign in to answer this form.');
+    const { data, error } = await this.sb.rpc('ws_submit_form', { p_view: viewId, p_answers: answers });
+    if (error) throw toError(error);
+    return data;
+  }
+
   /** Rows assigned to this person in every database they can open, not done yet (ws_my_tasks), soonest due first. */
   async loadTasks() {
     if (!this.ready || !this.sb) return;

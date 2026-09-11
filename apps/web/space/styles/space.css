@@ -813,6 +813,21 @@
 .nsp .file-chip{max-width:160px;height:20px;padding:0 6px;border-radius:4px;background:var(--ca-bacIntTra);font-size:12px;line-height:20px;color:var(--c-texPri);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
 .nsp .files-editor{width:300px;max-height:440px;overflow-y:auto}
 .nsp .fe-file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-texPri);text-decoration:none}
+.nsp .fv-filling .fv-title{margin-top:32px}
+.nsp .fv-filling .fv-q-name{height:auto;margin-top:6px;padding:0 4px;font-size:16px;line-height:24px}
+.nsp .fv-opts{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px}
+.nsp .fv-opt{padding:3px;border-radius:6px;box-shadow:var(--ca-palTraGra400) 0 0 0 1px inset;cursor:pointer}
+.nsp .fv-opt:hover{background:var(--ca-butHovBac)}
+.nsp .fv-opt.on{box-shadow:#2383e2 0 0 0 2px inset}
+.nsp .fv-person{height:30px;padding:0 8px;display:flex;align-items:center;gap:6px;font-size:14px;line-height:20px;color:var(--c-texPri)}
+.nsp .fv-person img{width:20px;height:20px;border-radius:50%}
+.nsp .fv-cb{margin:14px 0 2px 4px}
+.nsp .fv-note{margin-top:12px;font-size:14px;line-height:20px;color:var(--c-texSec)}
+.nsp .fv-preview-note{margin:16px 0 0 21px}
+.nsp .fv-done{margin:16px 0 0 23px;font-size:16px;line-height:24px;color:var(--c-texPri)}
+.nsp .fv-submit{margin-top:24px;width:max-content;height:36px;padding:0 16px;border-radius:8px;background:#2383e2;color:#fff;display:flex;align-items:center;font-size:14px;font-weight:500;cursor:pointer}
+.nsp .fv-submit:hover{background:#0077d4}
+.nsp .fv-submit.busy{opacity:.6;cursor:default}
 .nsp .prop-picker{width:268px;max-height:560px;display:flex;flex-direction:column;overflow:hidden}
 .nsp .new-menu{width:290px}
 .nsp .nm-desc{padding:0 8px 8px;font-size:12px;line-height:16px;color:var(--c-texSec)}
