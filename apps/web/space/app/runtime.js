@@ -6,6 +6,7 @@
 
 import { SpaceSync } from '../../lib/space/sync-engine';
 import { chatHistory, chatTitle, createChat, listChats, loadChatLines, saveChatLine, touchChat } from '../../lib/space/chats';
+import { meetingProgress, transcriptLines } from '../../lib/space/meeting-notes';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (s) => typeof s === 'string' && UUID_RE.test(s);
@@ -187,6 +188,13 @@ class Space {
     // Tests and the preview harness answer chats without a model; in the app this stays empty (answerChat).
     this.chatEngine = null;
     this.emitTimer = 0;
+    // AI Meeting Notes: the recording running in this tab, by block (startMeeting); a take whose upload failed, kept for
+    // Try again; and what tests and the preview harness use in place of the microphone and the recording route.
+    this.meetings = new Map();
+    this.meetingTakes = new Map();
+    this.meetingDeps = null;
+    this.meetingPoll = 0;
+    this.meetingPollMs = 5000;
     this.sync = this.makeSync();
   }
 
@@ -674,6 +682,7 @@ class Space {
       for (const c of data.children || []) this.addChild(id, c.id);
       this.roles.set(id, data.role);
       this.loaded.add(id);
+      this.noticeMeetings();
     })()
       .catch((err) => {
         this.missing.set(id, 'error');
@@ -762,9 +771,251 @@ class Space {
     const live = data.filter((e) => e.status !== 'cancelled');
     const day = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const S = this.state;
-    S.sidebar.meetings = live.filter((e) => e.date === today).slice(0, 8).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: eventTime(e), color: '#5e9fe8' }));
-    S.sidebar.upcoming = live.slice(0, 12).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: e.date === today ? eventTime(e) : `${day(e.date)} ${eventTime(e)}`, color: '#5e9fe8' }));
+    S.sidebar.meetings = live.filter((e) => e.date === today).slice(0, 8).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: eventTime(e), date: e.date, color: '#5e9fe8' }));
+    S.sidebar.upcoming = live.slice(0, 12).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: e.date === today ? eventTime(e) : `${day(e.date)} ${eventTime(e)}`, date: e.date, color: '#5e9fe8' }));
     this.emit();
+  }
+
+  // -------------------------------------------------------------------------------------------- AI meeting notes
+
+  /** The page a block sits on, or null when it is not in this browser. */
+  pageOfBlock(id) {
+    let block = this.state.blocks[id];
+    for (let hops = 0; block && hops < 64; hops++) {
+      if (this.state.pages[block.parent]) return block.parent;
+      block = this.state.blocks[block.parent];
+    }
+    return null;
+  }
+
+  /** The microphone and the recording route (lib/space/meeting-recorder.ts); tests and the preview harness bring their own. */
+  meetingKit() {
+    return this.meetingDeps || import('../../lib/space/meeting-recorder');
+  }
+
+  /**
+   * Starts recording into an AI Meeting Notes block, one recording per tab. The block says it is recording, with a
+   * heartbeat every 30 seconds, so everyone on the page sees it and a recording lost to a reload can be told apart from
+   * one still going in another tab.
+   */
+  async startMeeting(blockId) {
+    const b = this.state.blocks[blockId];
+    if (!b || b.type !== 'transcription' || this.meetings.has(blockId)) return;
+    if (this.meetings.size) throw new Error('A meeting is already being recorded in this tab. Stop it first.');
+    const kit = await this.meetingKit();
+    const recorder = await kit.startMeetingRecorder();
+    let seconds = 0;
+    const tick = setInterval(() => {
+      const live = this.state.blocks[blockId];
+      if (!live) {
+        this.discardMeeting(blockId);
+        return;
+      }
+      if (++seconds % 30 === 0 && live.rec && live.rec.status === 'recording') {
+        live.rec = { ...live.rec, beat: Date.now() };
+        this.schedule();
+      }
+      this.emit();
+    }, 1000);
+    if (tick && typeof tick.unref === 'function') tick.unref();
+    this.meetings.set(blockId, { recorder, tick });
+    this.meetingTakes.delete(blockId);
+    b.rec = { status: 'recording', by: this.me.id, startedAt: Date.now(), beat: Date.now() };
+    this.schedule();
+    this.emit();
+  }
+
+  /** Stops the microphone and hands the recording to the pipeline; the notes arrive when the worker has written them. */
+  async stopMeeting(blockId) {
+    const run = this.meetings.get(blockId);
+    if (!run) return;
+    this.meetings.delete(blockId);
+    clearInterval(run.tick);
+    const take = await run.recorder.stop();
+    const b = this.state.blocks[blockId];
+    if (!b) return;
+    if (!take || !take.blob.size || take.seconds <= 0) {
+      if (take && take.wallSeconds > 5) b.rec = { status: 'failed', by: this.me.id, error: 'Nemesis did not hear anything. Check that the microphone is not muted and try again.' };
+      else delete b.rec;
+      this.schedule();
+      this.emit();
+      return;
+    }
+    this.meetingTakes.set(blockId, take);
+    await this.fileMeeting(blockId);
+  }
+
+  /** Closes the microphone and keeps nothing: no upload, no transcription, no charge. */
+  discardMeeting(blockId) {
+    const run = this.meetings.get(blockId);
+    if (run) {
+      this.meetings.delete(blockId);
+      clearInterval(run.tick);
+      run.recorder.discard();
+    }
+    const b = this.state.blocks[blockId];
+    if (b && b.rec && b.rec.status === 'recording' && b.rec.by === this.me.id) {
+      delete b.rec;
+      this.schedule();
+    }
+    this.emit();
+  }
+
+  /** Uploads the take this tab holds and files its job. */
+  async fileMeeting(blockId) {
+    const b = this.state.blocks[blockId];
+    const take = this.meetingTakes.get(blockId);
+    const pageId = this.pageOfBlock(blockId);
+    if (!b || !take || !pageId) return;
+    b.rec = { status: 'uploading', by: this.me.id, at: Date.now(), seconds: take.seconds };
+    this.schedule();
+    this.emit();
+    try {
+      // The page and its block reach the server first, so the job never names a block the page does not have yet.
+      await this.sync.saved();
+      const kit = await this.meetingKit();
+      const { data } = await this.sb.auth.getSession();
+      const job = await kit.fileMeetingRecording({
+        storage: this.sb.storage,
+        token: data && data.session ? data.session.access_token : null,
+        userId: this.me.id,
+        take,
+        blockId,
+        pageId,
+      });
+      this.meetingTakes.delete(blockId);
+      b.rec = { status: 'processing', by: this.me.id, job: job.jobId, artifact: job.artifactId, label: 'Getting the recording ready', seconds: take.seconds };
+    } catch (err) {
+      b.rec = { status: 'failed', by: this.me.id, error: (err && err.message) || 'The recording could not be saved. Try again.' };
+    }
+    this.schedule();
+    this.emit();
+    this.watchMeetings();
+  }
+
+  /** Tries a failed recording again: the upload, while this tab still holds the audio, or the worker from the stage that failed. */
+  async retryMeeting(blockId) {
+    const b = this.state.blocks[blockId];
+    if (!b || !b.rec || b.rec.status !== 'failed' || b.rec.by !== this.me.id) return;
+    if (this.meetingTakes.has(blockId)) return this.fileMeeting(blockId);
+    if (!b.rec.job) {
+      delete b.rec;
+      this.schedule();
+      this.emit();
+      return;
+    }
+    const job = b.rec.job;
+    const { error } = await this.sb.rpc('retry_recording_job', { p_job_id: job });
+    if (error) throw new Error('This recording could not be tried again. Try again in a moment.');
+    b.rec = { status: 'processing', by: this.me.id, job, artifact: b.rec.artifact, label: 'Getting the recording ready', seconds: b.rec.seconds };
+    this.schedule();
+    this.emit();
+    void this.kickMeeting(job);
+    this.watchMeetings();
+  }
+
+  /** Asks the worker to look at a job now rather than on its next minute. */
+  async kickMeeting(jobId) {
+    if (this.meetingDeps || typeof fetch !== 'function') return;
+    try {
+      const { data } = await this.sb.auth.getSession();
+      const token = data && data.session ? data.session.access_token : null;
+      if (token) await fetch(`/api/recordings/jobs/${encodeURIComponent(jobId)}/kick`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    } catch {
+      // The worker's cron picks the job up within a minute anyway.
+    }
+  }
+
+  /**
+   * Looks over the meeting blocks this browser has: follows this person's recordings that are still being written up,
+   * and marks as failed a recording whose tab went away before it was saved (no heartbeat for 90 seconds).
+   */
+  noticeMeetings() {
+    if (!this.me.id) return;
+    const stale = Date.now() - 90_000;
+    let touched = false;
+    let waiting = false;
+    for (const b of Object.values(this.state.blocks)) {
+      if (!b || b.type !== 'transcription' || !b.rec || b.rec.by !== this.me.id) continue;
+      const { status } = b.rec;
+      if (status === 'processing') waiting = true;
+      else if ((status === 'recording' || status === 'uploading') && !this.meetings.has(b.id) && !this.meetingTakes.has(b.id) && (b.rec.beat || b.rec.at || b.rec.startedAt || 0) < stale) {
+        b.rec = { status: 'failed', by: this.me.id, error: 'The recording stopped before it was saved, because its page was closed or reloaded.' };
+        touched = true;
+      }
+    }
+    if (touched) {
+      this.schedule();
+      this.emit();
+    }
+    if (waiting) this.watchMeetings();
+  }
+
+  watchMeetings() {
+    if (this.meetingPoll) return;
+    this.meetingPoll = setTimeout(async () => {
+      try {
+        await this.checkMeetings();
+      } catch (err) {
+        console.warn('Space: could not check meeting recordings', err);
+      } finally {
+        this.meetingPoll = 0;
+      }
+      if (Object.values(this.state.blocks).some((x) => x && x.type === 'transcription' && x.rec && x.rec.status === 'processing' && x.rec.by === this.me.id)) this.watchMeetings();
+    }, this.meetingPollMs);
+    if (this.meetingPoll && typeof this.meetingPoll.unref === 'function') this.meetingPoll.unref();
+  }
+
+  async checkMeetings() {
+    const waiting = Object.values(this.state.blocks).filter((x) => x && x.type === 'transcription' && x.rec && x.rec.status === 'processing' && x.rec.by === this.me.id && x.rec.job);
+    if (!waiting.length) return;
+    const { data, error } = await this.sb
+      .from('recording_jobs')
+      .select('id,status,stage,error,artifact_id')
+      .in('id', waiting.map((x) => x.rec.job));
+    if (error || !Array.isArray(data)) return;
+    let touched = false;
+    for (const b of waiting) {
+      const row = data.find((r) => r.id === b.rec.job);
+      if (!row) continue;
+      const progress = meetingProgress(row);
+      if (progress.status === 'processing') {
+        if (b.rec.label !== progress.label) {
+          b.rec = { ...b.rec, label: progress.label };
+          touched = true;
+        }
+      } else if (progress.status === 'failed') {
+        b.rec = { ...b.rec, status: 'failed', error: progress.error };
+        touched = true;
+      } else if (await this.fillMeeting(b, row.artifact_id || b.rec.artifact)) {
+        touched = true;
+      }
+    }
+    if (touched) {
+      this.schedule();
+      this.emit();
+    }
+  }
+
+  /** Writes a finished recording into its block: the notes as its summary, the transcript, and a name when it has none. */
+  async fillMeeting(b, artifactId) {
+    if (!artifactId || !b.rec || !b.rec.job) return false;
+    const { data, error } = await this.sb.from('chat_recording_artifacts').select('id,title,transcript,notes').eq('id', artifactId).limit(1);
+    const art = !error && Array.isArray(data) ? data[0] : null;
+    if (!art) return false;
+    const { summaryBlocks } = await import('../../lib/space/meeting-summary');
+    const S = this.state;
+    const made = summaryBlocks(String(art.notes || ''), b.id, b.rec.job);
+    for (const block of made.blocks) if (!S.blocks[block.id]) S.blocks[block.id] = block;
+    const had = b.children || [];
+    b.children = [...made.content.filter((id) => !had.includes(id)), ...had];
+    b.transcript = transcriptLines(String(art.transcript || ''), `${this.me.firstName || this.me.name || 'Your'}'s audio`);
+    const named = (b.title || []).map((seg) => (Array.isArray(seg) ? seg[0] : '')).join('').trim();
+    if (!named && typeof art.title === 'string' && art.title.trim() && !/^Recording ·/.test(art.title)) b.title = [[art.title.trim()]];
+    b.tab = 'summary';
+    b.share = false;
+    b.rec = { status: 'ready', by: b.rec.by, job: b.rec.job, seconds: b.rec.seconds };
+    return true;
   }
 
   // -------------------------------------------------------------------------------------------- chats

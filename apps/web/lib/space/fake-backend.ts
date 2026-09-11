@@ -332,6 +332,13 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
         invites.set(page, list);
         return ok({ notify, page: { id: page, title: String(server.recs.get(page)?.props.title ?? "") || "Untitled" }, inviter: me.name });
       }
+      case "retry_recording_job": {
+        // The real RPC checks the job is the caller's and resets it to the stage that failed.
+        const job = tables.get("recording_jobs")!.find((r) => r.id === params.p_job_id);
+        if (!job || job.status !== "failed") return { data: null, error: { message: "That recording cannot be retried." } };
+        Object.assign(job, { status: "processing", error: null, updated_at: new Date().toISOString() });
+        return { data: null, error: null };
+      }
       case "ws_submit_form": {
         // As ws_submit_form does, closely enough for tests and the harness: the form's own questions only, one row at the
         // end of its database, broadcast like any write.
@@ -412,6 +419,8 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
   const tables = new Map<string, Array<Record<string, unknown>>>([
     ["chat_threads", []],
     ["chat_messages", []],
+    ["recording_jobs", []],
+    ["chat_recording_artifacts", []],
   ]);
   const query = (table: string) => {
     const rows = tables.get(table);
@@ -543,4 +552,56 @@ export async function fakeChatEngine(input: { message: string; signal?: AbortSig
     await new Promise((resolve) => setTimeout(resolve, 12));
   }
   return { content: shown, citations: [], suggestions: { followUps: [], branches: [], newThreads: [] }, title: input.message.slice(0, 60), truncated: false, error: null };
+}
+
+/**
+ * Harness only: a microphone and a recording worker with nothing behind them. Recording runs a clock, stopping files a
+ * job in the plain tables, and a moment later the job is written up with a short transcript and notes, the way the
+ * worker leaves them, so AI Meeting Notes can be driven on /dev-preview/space.
+ */
+export function fakeMeetingDeps(fake: { tables: Map<string, Array<Record<string, unknown>>> }, delayMs = 4000) {
+  return {
+    async startMeetingRecorder() {
+      const started = Date.now();
+      let finished = false;
+      return {
+        elapsed: () => Math.round((Date.now() - started) / 1000),
+        async stop() {
+          if (finished) return null;
+          finished = true;
+          const wallSeconds = Math.max(1, Math.round((Date.now() - started) / 1000));
+          return { blob: new Blob(["preview audio"], { type: "audio/webm" }), seconds: wallSeconds, wallSeconds, silenceSkipped: null };
+        },
+        discard() {
+          finished = true;
+        },
+      };
+    },
+    async fileMeetingRecording(input: { userId: string; blockId: string; pageId: string; take: { seconds: number } }) {
+      const jobId = crypto.randomUUID();
+      const artifactId = crypto.randomUUID();
+      const at = new Date().toISOString();
+      const job: Record<string, unknown> = {
+        id: jobId, user_id: input.userId, status: "processing", stage: "transcribing", error: null, artifact_id: artifactId,
+        surface: "space", context_id: input.blockId, message_id: input.pageId, created_at: at, updated_at: at,
+      };
+      const artifact: Record<string, unknown> = {
+        id: artifactId, user_id: input.userId, surface: "space", context_id: input.blockId, title: "Recording", transcript: "", notes: "",
+        duration_seconds: input.take.seconds, created_at: at,
+      };
+      fake.tables.get("recording_jobs")!.push(job);
+      fake.tables.get("chat_recording_artifacts")!.push(artifact);
+      const done = setTimeout(() => {
+        if (job.status !== "processing") return;
+        Object.assign(artifact, {
+          title: "Project check-in",
+          transcript: "We went through the plan for the week.\n\nThe draft goes out on Friday.",
+          notes: "## Summary\n\nThe group agreed the plan for the week.\n\n## Action items\n\n- Send the draft on Friday\n- Book a review",
+        });
+        Object.assign(job, { status: "ready", stage: "ready", updated_at: new Date().toISOString() });
+      }, delayMs);
+      (done as unknown as { unref?: () => void }).unref?.();
+      return { jobId, artifactId };
+    },
+  };
 }

@@ -81,7 +81,7 @@ test("🔴 no text tells a learner to use a feature that is switched off", () =>
  * 🔴 THE COUNT ONLY GOES DOWN. Buttons and menu items with no handler of their own, most of them in screens whose
  * milestone has not come yet (docs/space/PLAN.md). Wiring or removing one means lowering BUDGET; adding one fails.
  */
-const BUDGET = 74;
+const BUDGET = 71;
 
 test("🔴 the number of controls that do nothing does not grow", () => {
   const dead = deadControls(main);

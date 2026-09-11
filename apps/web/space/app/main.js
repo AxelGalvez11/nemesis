@@ -8,6 +8,7 @@ import { splitEmails } from '../../lib/space/invite-request';
 import { describeFilter, defaultOp, filterable, filterReady, filterRows, needsValue, operatorsFor, opLabel, searchRows, seedFromFilters } from '../../lib/space/db-filter';
 import { describeSorts, groupable, groupRows, sortRowsBy, sortsOf } from '../../lib/space/db-sort';
 import { calcLabel, calcsFor, calculate } from '../../lib/space/db-calc';
+import { clockOf } from '../../lib/space/meeting-notes';
 import { EMOJI_SECTIONS, EMOJI_KW } from './emoji.js';
 import { COVER_GALLERY } from './covers.js';
 import { TEMPLATES } from './templates.js';
@@ -59,7 +60,7 @@ space.onRoute((r, prev) => {
 // A feature whose server side does not exist yet stays out of sight rather than pretending: no canned AI answers, no
 // invite box that sends nothing (docs/space/PLAN.md). Turn a flag on in the milestone that builds it;
 // lib/space/space-ready.test.ts keeps every entry point behind its flag.
-const READY = { ai: false, chat: true, meetings: false, inbox: true, notifyPrefs: false, invites: true, publish: false, members: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
+const READY = { ai: false, chat: true, meetings: true, inbox: true, notifyPrefs: false, invites: true, publish: false, members: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
 /* ------------------------------------------------------------------ helpers */
 const svgMarkup = (n, as) => (ALL_ICONS[n] || '').replace('<svg ', `<svg class="${as || n}" `);
 const Icon = ({ n, as, cls }) => html`<span class=${'nicon ' + (cls || '')} dangerouslySetInnerHTML=${{ __html: svgMarkup(n, as) }}></span>`;
@@ -505,6 +506,38 @@ function Equation({ b }) {
   return html`<div class="eq-box" ref=${ref} role="button"></div>`;
 }
 const TR_TABS = [['summary', 'checklist', 'Summary'], ['notes', 'pencilLine', 'Notes'], ['transcript', 'microphoneText', 'Transcript']];
+// The recording line of an AI Meeting Notes block (runtime.js startMeeting): start, a live clock with stop, then the
+// recording worker's progress until the summary and transcript arrive, or its reason when it could not finish.
+const meetingWaiting = (b) => !!(b.rec && ['recording', 'uploading', 'processing'].includes(b.rec.status));
+function MeetingBar({ b }) {
+  const rec = b.rec;
+  const pid = pageOfBlock(b.id);
+  const mine = !!(rec && rec.by === space.me.id);
+  const run = (fn) => () => { Promise.resolve().then(fn).catch((err) => showToast({ warn: true, text: (err && err.message) || 'That did not work. Try again.' })); };
+  if (!rec) return pid && S.pages[pid] && space.canEdit(pid) ? html`<div class="tr-rec-bar"><div class="tr-btn" role="button" onClick=${run(() => space.startMeeting(b.id))}><${Icon} n="microphone" cls="i20"/><span>Start transcribing</span></div><span class="tr-rec-hint">Nemesis writes the summary when you stop.</span></div>` : '';
+  if (rec.status === 'recording') {
+    const live = space.meetings.get(b.id);
+    if (!live) return html`<div class="tr-rec-bar"><span class="tr-live"><i></i>${mine ? 'Recording in another tab' : `${space.personName(rec.by) || 'Someone'} is recording`}</span></div>`;
+    return html`<div class="tr-rec-bar"><span class="tr-live"><i></i>Transcribing ${clockOf(live.recorder.elapsed())}</span><div class="tr-btn" role="button" onClick=${run(() => space.stopMeeting(b.id))}><${Icon} n="mediaStopFillSmall" cls="i16"/><span>Stop</span></div><div class="tr-btn quiet" role="button" onClick=${run(() => space.discardMeeting(b.id))}><span>Discard</span></div></div>`;
+  }
+  if (rec.status === 'uploading') return html`<div class="tr-rec-bar"><span class="ais-spin"></span><span>Saving the recording</span></div>`;
+  if (rec.status === 'processing') return html`<div class="tr-rec-bar"><span class="ais-spin"></span><span>${rec.label || 'Writing up the meeting'}</span><span class="tr-rec-hint">You can close this page.</span></div>`;
+  if (rec.status === 'failed') return html`<div class="tr-rec-bar failed"><span>${rec.error || 'This recording could not be written up.'}</span>${mine ? html`<div class="tr-btn" role="button" onClick=${run(() => space.retryMeeting(b.id))}><span>${rec.job || space.meetingTakes.has(b.id) ? 'Try again' : 'Start again'}</span></div>` : ''}</div>`;
+  return '';
+}
+// Pages holding an AI Meeting Notes block, newest first, grouped the way the Chat tab groups chats.
+function meetingNoteGroups() {
+  const pages = Object.values(S.pages).filter((p) => p && !p.trashed && p.kind === 'page' && (p.content || []).some((id) => S.blocks[id] && S.blocks[id].type === 'transcription')).sort((x, y) => (y.lastEdited || 0) - (x.lastEdited || 0));
+  return CHAT_GROUPS.map(([k, label]) => [label, pages.filter((p) => chatGroup(p.lastEdited || 0) === k)]).filter(([, list]) => list.length);
+}
+// A calendar event's meeting note: the one already made for it on a loaded page, or a new one named after the event.
+function openEventNote(m) {
+  const made = Object.values(S.blocks).find((x) => x && x.type === 'transcription' && x.event === m.id);
+  const pid = made ? pageOfBlock(made.id) : null;
+  if (pid && S.pages[pid] && !S.pages[pid].trashed) { go(pid); return; }
+  const today = isoDate(new Date(NOW()));
+  openMeetingNote(m.title, { event: m.id, when: m.date && m.date !== today ? new Date(m.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today' });
+}
 // Measured: a 432px scroller pinned to the newest line, a sticky speaker bar, runs grouped by speaker with a rail.
 function Transcript({ b }) {
   const [open, setOpen] = useState(false); const ref = useRef(null);
@@ -513,7 +546,7 @@ function Transcript({ b }) {
   useLayoutEffect(() => { if (ref.current && !open) ref.current.scrollTop = ref.current.scrollHeight; }, [open]);
   const speakerRow = (name) => html`<div class="tr-speaker"><span class="tr-rec"><${Icon} n="recordCircle" cls="i14"/></span><div>${name}</div></div>`;
   return html`<div class="tr-script"><div class=${'tr-scroll' + (open ? ' open' : '')} ref=${ref}><div class="tr-script-in">
-    <div class="tr-script-top">${speakerRow(`${space.me.firstName || 'Your'}'s audio`)}<div class="tr-expand" role="button" onClick=${() => setOpen(!open)}><span>${open ? 'Collapse transcript' : 'Expand transcript'}</span><${Icon} n="arrowChevronDoubleUpAndDownSmall" cls="i14"/></div></div>
+    <div class="tr-script-top">${speakerRow(groups.length ? groups[0].speaker : `${space.me.firstName || 'Your'}'s audio`)}<div class="tr-expand" role="button" onClick=${() => setOpen(!open)}><span>${open ? 'Collapse transcript' : 'Expand transcript'}</span><${Icon} n="arrowChevronDoubleUpAndDownSmall" cls="i14"/></div></div>
     <div class="tr-gap"></div>
     ${groups.map((g) => html`<div class="tr-group"><div class="tr-attr">${speakerRow(g.speaker)}</div><div class="tr-lines"><div class="tr-rail"></div><div class="tr-lines-in">${g.items.map((sg) => html`<div class="tr-time"><span>${sg.t}</span></div><div class="nsp-selectable nsp-text-block tr-line"><div class="nb-w"><div class="nb-hl"><div class="nb-text">${sg.text}</div></div></div></div>`)}</div></div></div>`)}
   </div></div></div>`;
@@ -597,9 +630,10 @@ function Block({ id, prev, next, nested, idx }) {
         <div class="tr-head"><div class="tr-head-in"><div class="tr-icon" role="button"><div class="tr-icon-in"><${Icon} n="calendarDate10" cls="i24"/><${Icon} n="arrowChevronSingleDownSmall" cls="i16 chev"/></div></div><h2 class="tr-title">${plain(b.title) || html`<span class="tr-ph">AI Meeting Notes </span>`}<span class="nsp-text-mention-token"><span class="mention-at">@</span><span class="mention-date">${b.when || 'Today'}</span></span></h2></div></div>
         <div class="tr-body">
           <div class="tr-tabs-area"><div class="tr-tabs-row"><div class="tr-tabs">${TR_TABS.map(([k, ic, label]) => html`<div class=${'tr-tab' + (tab === k ? ' on' : '')} role="button" onClick=${() => { b.tab = k; commit(); }}><${Icon} n=${ic} cls="i20"/><span>${label}</span></div>`)}</div><div class="tr-tool" role="button"><${Icon} n="sliders" cls="i20"/></div></div>
+            <${MeetingBar} b=${b}/>
             ${tab === 'summary' && b.share !== false ? html`<div class="tr-share"><div class="tr-share-label">Share this summary</div><div class="tr-share-btns"><div class="tr-btn" role="button" onClick=${() => { try { navigator.clipboard.writeText(location.href); } catch (e) {} }}><${Icon} n="link" cls="i20"/><span>Copy link</span></div><div class="tr-btn" role="button"><${Icon} n="envelope" cls="i20"/><span>Email</span></div><div class="tr-btn" role="button"><${Icon} n="squareGrid2X2" cls="i20"/><span>Slack</span></div><div class="tr-x" role="button" onClick=${() => { b.share = false; commit(); }}><${Icon} n="xMarkSmall" cls="i16"/></div></div></div>` : ''}
           </div>
-          <div class="tr-content">${tab === 'transcript' ? html`<${Transcript} b=${b}/>` : html`<${Children} ids=${kids} nested/>`}</div>
+          <div class="tr-content">${tab === 'transcript' ? ((b.transcript || []).length ? html`<${Transcript} b=${b}/>` : html`<div class="tr-empty">${meetingWaiting(b) ? 'The transcript appears here when the recording is written up.' : 'Start transcribing to get a transcript of the meeting.'}</div>`) : tab === 'summary' && !(b.children || []).length ? html`<div class="tr-empty">${meetingWaiting(b) ? 'The summary appears here when the recording is written up.' : 'Start transcribing, and Nemesis writes the summary when you stop.'}</div>` : html`<${Children} ids=${kids} nested/>`}</div>
         </div>
       </div>`;
       break;
@@ -758,7 +792,7 @@ function pageToDatabase(page, type, name) {
   Object.assign(page, { kind: 'database', description: '', hideDescription: true, collection: cid, views: [vid], lastEdited: NOW() });
   commit();
 }
-function pageToMeeting(page) { const tb = newBlock('transcription', [], page.id); page.content.push(tb.id); page.lastEdited = NOW(); commit(); }
+function pageToMeeting(page) { const tb = newBlock('transcription', [], page.id); const note = newBlock('text', [], tb.id); Object.assign(tb, { when: 'Today', tab: 'notes', share: false, notes: [note.id], transcript: [], fresh: true }); page.content.push(tb.id); page.lastEdited = NOW(); commit(); }
 // Measured: the strip lays out Start a draft, Research a topic, Templates, AI Meeting Notes, Database, Form, Table...
 // in one row as wide as the text column; whatever does not fit (plus Import) moves into the round more menu.
 const GS_ITEMS = [...(READY.ai ? [['bulb', 'Start a draft', 'draft'], ['bulb', 'Research a topic', 'research']] : []), ['tpl', 'Templates', 'tpl'], ...(READY.meetings ? [['meet', 'AI Meeting Notes', 'meeting']] : []), ['viewTable', 'Database', 'db:table:Default view'], ['docPlainText', 'Form', 'db:form:Form'], ['viewTable', 'Table', 'db:table:Table'], ['viewBoard', 'Board', 'db:board:Board'], ['bulletedList', 'List', 'db:list:List'], ['viewTimeline', 'Timeline', 'db:timeline:Timeline'], ['viewCalendar', 'Calendar', 'db:calendar:Calendar view'], ['squareGrid2X2', 'Gallery', 'db:gallery:Gallery']];
@@ -965,7 +999,7 @@ const favPages = () => Object.values(S.pages).filter((p) => p.favorite && !p.tra
 function SectionBody({ k, current }) {
   const sb = S.sidebar;
   if (k === 'favorites') return html`<div class="sb-list">${favPages().map((pid) => html`<${PageRow} key=${pid} pid=${pid} current=${current}/>`)}</div>`;
-  if (k === 'meetings') return html`<div class="sb-list tight">${sb.meetings.map((m) => html`<div class="sb-meet" role="button"><div class="sb-meet-ic"><i style=${m.color ? `background:${m.color}` : null}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`)}<div class="sb-meet muted" role="button" onClick=${() => openMeetingNote('', true)}><div class="sb-meet-ic"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-meet-title">New AI meeting note</div></div><div class="sb-meet muted" role="button"><div class="sb-meet-ic"><${Icon} n="arrowDiagonalUpRight" cls="i20"/></div><div class="sb-meet-title">View all</div></div></div>`;
+  if (k === 'meetings') return html`<div class="sb-list tight">${sb.meetings.map((m) => html`<div class="sb-meet" role="button" onClick=${() => openEventNote(m)}><div class="sb-meet-ic"><i style=${m.color ? `background:${m.color}` : null}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`)}<div class="sb-meet muted" role="button" onClick=${() => openMeetingNote('', true)}><div class="sb-meet-ic"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-meet-title">New AI meeting note</div></div><div class="sb-meet muted" role="button" onClick=${() => go('library/meetings')}><div class="sb-meet-ic"><${Icon} n="arrowDiagonalUpRight" cls="i20"/></div><div class="sb-meet-title">View all</div></div></div>`;
   if (k === 'recents') return html`<div class="sb-list">${S.recents.filter((x) => (String(x).startsWith('chat:') ? S.aiChats && S.aiChats[x.slice(5)] : S.pages[x] && !S.pages[x].trashed)).slice(0, showCount('recents')).map((x) => (String(x).startsWith('chat:') ? html`<${ChatRecentRow} key=${x} id=${x.slice(5)}/>` : html`<${PageRow} key=${x} pid=${x} current=${current}/>`))}</div>${S.recents.length > showCount('recents') ? html`<${MoreRow} k="recents"/>` : ''}`;
   if (k === 'agents') return html`<div class="sb-list">${sb.agents.map((ag) => html`<a class="sb-item link"><div class="sb-item-inner"><div class="sb-item-icon"><i class="sb-agent-img"></i></div><div class="sb-item-label">${ag.title}</div></div></a>`)}<a class="sb-item link muted"><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New agent</div></div></a></div>`;
   if (k === 'private' || k === 'workspace' || k === 'shared') return html`<div class="sb-list">${sb[k].slice(0, showCount(k)).map((pid) => html`<${PageRow} key=${pid} pid=${pid} current=${current}/>`)}</div>${sb[k].length > showCount(k) ? html`<${MoreRow} k=${k}/>` : ''}`;
@@ -1022,8 +1056,11 @@ function ChatBody() {
 }
 function MeetingsBody() {
   const sb = S.sidebar;
-  return html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Upcoming</span></div><div class="sb-list tight">${sb.upcoming.map((m) => html`<div class="sb-meet" role="button"><div class="sb-meet-ic"><i style=${`background:${m.color}`}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`)}</div><${MoreRow} k="upcoming"/></div>
-  ${sb.notes.map((grp) => html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">${grp.label}</span></div><div class="sb-notes">${grp.label === 'Today' ? html`<a class="sb-item muted first" onClick=${() => openMeetingNote('', true)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New AI meeting note</div></div></a>` : ''}${grp.items.map((title) => html`<a class="sb-item" onClick=${() => openMeetingNote(title, false, grp.label)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="paperMicrophone" cls="i20"/></div><div class="sb-item-label">${title}</div></div></a>`)}</div></div>`)}`;
+  const upcoming = sb.upcoming.slice(0, showCount('upcoming'));
+  const groups = meetingNoteGroups();
+  const newRow = html`<a class="sb-item muted first" onClick=${() => openMeetingNote('')}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New AI meeting note</div></div></a>`;
+  return html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Upcoming</span></div><div class="sb-list tight">${upcoming.length ? upcoming.map((m) => html`<div class="sb-meet" role="button" onClick=${() => openEventNote(m)}><div class="sb-meet-ic"><i style=${`background:${m.color}`}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`) : html`<div class="sb-meet muted"><div class="sb-meet-title">Nothing on your calendar this week</div></div>`}</div>${sb.upcoming.length > upcoming.length ? html`<${MoreRow} k="upcoming"/>` : ''}</div>
+  ${groups.length ? groups.map(([label, pages], gi) => html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">${label}</span></div><div class="sb-notes">${gi === 0 ? newRow : ''}${pages.map((p) => html`<a class="sb-item" onClick=${() => go(p.id)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="paperMicrophone" cls="i20"/></div><div class="sb-item-label">${pageTitleText(p) || 'Meeting'}</div></div></a>`)}</div></div>`) : html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Meeting notes</span></div><div class="sb-notes">${newRow}</div></div>`}`;
 }
 // The Inbox (docs/space/PLAN.md, M6): shares, comments and mentions for this person, newest first. Opening one marks it read
 // and goes to the page, which switches workspace when the page lives in someone else's.
@@ -2041,25 +2078,19 @@ function SectionMenu({ data }) {
 
 
 /* ------------------------------------------------------------------ meeting notes from the sidebar lists */
-function openMeetingNote(title, fresh, when) {
-  if (!S.meetingPages) S.meetingPages = {};
-  const key = fresh ? 'new-' + uid() : title;
-  let pid = S.meetingPages[key];
-  if (!pid || !S.pages[pid] || S.pages[pid].trashed) {
-    pid = uid();
-    const label = when || 'Today';
-    const time = new Date(NOW()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
-    const tb = newBlock('transcription', fresh ? [] : [[title + ' ']], pid);
-    const blk = (type, text, extra) => { const b = newBlock(type, text ? [[text]] : [], tb.id); Object.assign(b, extra || {}); return b; };
-    if (!fresh) [blk('sub_sub_header', 'Action items'), blk('to_do', 'Review the notes and confirm next steps', { checked: false }), blk('sub_sub_header', 'Discussion'), blk('bulleted_list', 'The summary appears here once the meeting is transcribed')].forEach((b) => tb.children.push(b.id));
-    const note = blk('text', '');
-    Object.assign(tb, { when: label, tab: fresh ? 'notes' : 'summary', share: !fresh, notes: [note.id], transcript: [], fresh: !!fresh });
-    const mention = fresh ? `Today ${time}` : label;
-    const hm = new Date(NOW()).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ });
-    S.pages[pid] = { id: pid, kind: 'page', icon: null, title: 'Meeting ', titleMention: mention, titleParts: ['Meeting ', '@' + mention], ...(fresh ? { titleDate: isoDate(new Date(NOW())) + 'T' + hm } : {}), content: [tb.id], lastEdited: NOW(), parent: null, section: 'private' };
-    S.sidebar.private.unshift(pid);
-    S.meetingPages[key] = pid;
-  }
+function openMeetingNote(title, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {};
+  const pid = uid();
+  const when = o.when || 'Today';
+  const time = new Date(NOW()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ });
+  const hm = new Date(NOW()).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ });
+  const tb = newBlock('transcription', title ? [[title]] : [], pid);
+  const note = newBlock('text', [], tb.id);
+  Object.assign(tb, { when, tab: 'notes', share: false, notes: [note.id], transcript: [], fresh: true, ...(o.event ? { event: o.event } : {}) });
+  const name = (title || 'Meeting') + ' ';
+  const mention = when === 'Today' ? `Today ${time}` : when;
+  S.pages[pid] = { id: pid, kind: 'page', icon: null, title: name, titleMention: mention, titleParts: [name, '@' + mention], titleDate: isoDate(new Date(NOW())) + 'T' + hm, content: [tb.id], lastEdited: NOW(), parent: null, section: 'private' };
+  S.sidebar.private.unshift(pid);
   commit(); go(pid);
 }
 

@@ -2053,3 +2053,14 @@
 .nsp .ais-error{margin-top:8px;padding:0 4px;color:#d44c47}
 .nsp .ais-round.on{fill:var(--c-bluIcoAccPri);--nsp-fill:var(--c-bluIcoAccPri)}
 .nsp .chat-settings{width:260px;padding:4px 0}
+
+/* AI Meeting Notes: the recording line (MeetingBar in main.js) and the tabs before a recording is written up. */
+.nsp .tr-rec-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;min-height:32px;padding:8px 2px 4px;color:var(--c-texSec);font-size:14px;line-height:20px}
+.nsp .tr-rec-bar.failed{color:#d44c47}
+.nsp .tr-rec-hint{color:var(--c-texSec);opacity:.8}
+.nsp .tr-live{display:inline-flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+.nsp .tr-live i{width:8px;height:8px;border-radius:50%;background:#d44c47;animation:nsp-tr-live 1.4s ease-in-out infinite}
+@keyframes nsp-tr-live{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.nsp .tr-live i{animation:none}}
+.nsp .tr-btn.quiet{background:transparent}
+.nsp .tr-empty{padding:12px 2px;color:var(--c-texSec)}
