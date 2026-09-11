@@ -20,8 +20,9 @@ const runtime = readFileSync(new URL("../../space/app/runtime.js", import.meta.u
 const ENTRY_POINTS: Array<[string, RegExp, "dead"?]> = [
   [
     "ai",
-    /\['bulb', 'Start a draft'|\['bulb', 'Research a topic'|class="sb-newchat"|\['chatBubble', 'Chat', openNewChat\]|\['chat', 'chatBubble', 'Chat'\]|key: 'agents'|(?<!-)label="Use with AI"|\{ n: 'Ask AI'|\{ n: 'Suggest edits'|(?<!-)label="Suggest edits"|(?<!-)label="Translate"|\{ n: 'Skills'|placeholder="Edit with AI"|(?<!-)label="AI Autofill"|aria-label="AI Autofill"|\['magicWandSmall', ''\]|<\$\{AiSidePanel\}|toLowerCase\(\) === 'o'/,
+    /\['bulb', 'Start a draft'|\['bulb', 'Research a topic'|key: 'agents'|aria-label="New agent"|\['New agent', 'new'\]|(?<!-)label="Use with AI"|\{ n: 'Ask AI'|\{ n: 'Suggest edits'|(?<!-)label="Suggest edits"|(?<!-)label="Translate"|\{ n: 'Skills'|placeholder="Edit with AI"|(?<!-)label="AI Autofill"|aria-label="AI Autofill"|\['magicWandSmall', ''\]|<\$\{AiSidePanel\}/,
   ],
+  ["chat", /class="sb-newchat"|\['chatBubble', 'Chat', openNewChat\]|\['chat', 'chatBubble', 'Chat'\]|toLowerCase\(\) === 'o'/],
   [
     "meetings",
     /\['meet', 'AI Meeting Notes'|\['microphone', 'AI Meeting Notes'|'paperMicrophone', 'AI Meeting Notes'\]|g: 'Suggested'|\['meetings', 'paperMicrophone', 'Meetings'\]|key: 'meetings'/,
@@ -80,7 +81,7 @@ test("🔴 no text tells a learner to use a feature that is switched off", () =>
  * 🔴 THE COUNT ONLY GOES DOWN. Buttons and menu items with no handler of their own, most of them in screens whose
  * milestone has not come yet (docs/space/PLAN.md). Wiring or removing one means lowering BUDGET; adding one fails.
  */
-const BUDGET = 76;
+const BUDGET = 74;
 
 test("🔴 the number of controls that do nothing does not grow", () => {
   const dead = deadControls(main);

@@ -8,7 +8,7 @@ import "katex/dist/katex.min.css";
 
 import { useEffect, useRef } from "react";
 
-import { createFakeSupabase } from "@/lib/space/fake-backend";
+import { createFakeSupabase, fakeChatEngine } from "@/lib/space/fake-backend";
 import { setBasePath, space } from "@/space/app/runtime.js";
 
 const BASE = "/dev-preview/space";
@@ -23,6 +23,8 @@ export default function SpacePreview() {
     const fake = createFakeSupabase();
     // Handles for inspecting the harness from the browser console; this page is never part of the product.
     Object.assign(window, { __space: space, __fakeSpace: fake });
+    // No model here: chats answer with a stand-in that streams the way the real answer does.
+    (space as unknown as { chatEngine: unknown }).chatEngine = fakeChatEngine;
     void import("@/space/app/main.js").then(({ mountSpace }) => {
       if (!alive || !root.current) return;
       unmount = mountSpace(root.current, {
