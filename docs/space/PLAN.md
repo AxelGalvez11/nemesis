@@ -78,6 +78,11 @@ nothing here reuses that word.
       the database, and My Tasks lists every row they are assigned to that is not done, soonest due first; a task opens
       its database with the row beside it. Left: calculations, grouping by other property types, forms people fill in,
       files, unique ids, relations and rollups, and the chart settings themselves.
+      2026-09-11, part four: a Files & media property (upload, open and remove files in a cell or on the row page; they
+      live in the private ws-files bucket under the database page), and a line under every table and group that
+      calculates a column over the rows the view shows: counts, shares, sum, average, median, min, max, range and date
+      spans (lib/space/db-calc.ts). Filters handle files as empty or not, and sorts by the first file's name. Left: forms
+      people fill in, unique ids, relations and rollups, grouping by other property types, and the chart settings.
 - [ ] M5 Sharing and people: invites by email, roles, guests, page share, publish to web, teamspaces
       2026-09-11, part one: 20260911T11_space_invites.sql is live (self-test 30 of 30, rolled back). Share a page by
       email with a role; an address without an account waits as an invite that only a confirmed email can claim; guests

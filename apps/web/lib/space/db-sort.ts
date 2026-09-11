@@ -53,6 +53,10 @@ function sortKey(row: Row, pid: string, prop: SortProp, ctx: SortContext): numbe
     return typeof first === "string" ? (ctx.nameOf ? ctx.nameOf(first) : first) : null;
   }
   if (t === "date") return typeof v === "string" && v ? v : null;
+  if (t === "files") {
+    const first = Array.isArray(v) ? (v[0] as { name?: unknown } | undefined) : undefined;
+    return first && typeof first === "object" && typeof first.name === "string" && first.name ? first.name : null;
+  }
   const text = Array.isArray(v) ? v.join(", ") : String(v ?? "");
   return text.trim() ? text : null;
 }
