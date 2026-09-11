@@ -97,6 +97,12 @@ test("🔴 the captcha floats, so it can never open a gap in the form", () => {
   // box drawn inside the form.
   assert.match(rule(".nemesis-auth-captcha"), /position: absolute/);
   assert.match(rule(".nemesis-auth-form"), /position: relative/);
+  // When it does show, it must not print through the legal line (production, the same day): the widget marks itself
+  // interactive only while Cloudflare needs a click, and only then does the legal line step aside.
+  const widget = read("../components/TurnstileWidget.tsx");
+  assert.match(widget, /"before-interactive-callback": \(\) => containerRef\.current\?\.setAttribute\("data-interactive", "true"\)/);
+  assert.match(widget, /"after-interactive-callback": \(\) => containerRef\.current\?\.removeAttribute\("data-interactive"\)/);
+  assert.match(css, /\.nemesis-auth-card-in:has\(\.nemesis-auth-captcha\[data-interactive="true"\]\) \.nemesis-auth-legal \{ visibility: hidden; \}/);
 });
 
 test("🔴 only the split pages carry the nav and the panel, and the panel keeps its own frame", () => {

@@ -13,6 +13,9 @@ interface TurnstileOptions {
   callback?: (token: string) => void;
   "expired-callback"?: () => void;
   "error-callback"?: () => void;
+  /** Called when Cloudflare is about to show the box because it needs a click, and when it is done. */
+  "before-interactive-callback"?: () => void;
+  "after-interactive-callback"?: () => void;
   theme?: "auto" | "light" | "dark";
   /** "interaction-only" keeps the box hidden unless Cloudflare actually needs the visitor to
    *  click something; most people never see it. "always" is the old permanent Verifying… panel. */
@@ -102,6 +105,9 @@ export function TurnstileWidget({ onToken }: TurnstileWidgetProps) {
           callback: (token) => onTokenRef.current(token),
           "expired-callback": () => onTokenRef.current(""),
           "error-callback": () => onTokenRef.current(""),
+          // Only while Cloudflare really needs a click: auth.css lets the box cover the legal line for that long.
+          "before-interactive-callback": () => containerRef.current?.setAttribute("data-interactive", "true"),
+          "after-interactive-callback": () => containerRef.current?.removeAttribute("data-interactive"),
         });
       })
       .catch(() => onTokenRef.current(""));
