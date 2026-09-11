@@ -2614,6 +2614,126 @@
   padding: 0;
 }
 
+/* ── 4c. What a workspace is built on ─────────────────────────────────────────────────────────────────────────────
+   The sources sit under the workspace's title, quietly, because they are the material rather than the work. */
+.nsp .ws-sources {
+  margin: 10px 0 6px;
+  padding: 0 8px;
+}
+.nsp .ws-sec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+}
+.nsp .ws-sec-label {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--k-t0);
+}
+.nsp .ws-sec-n {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--k-t3);
+}
+.nsp .ws-sec-add {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--k-t2);
+  fill: var(--k-i2);
+  --nsp-fill: var(--k-i2);
+  cursor: pointer;
+  transition: background-color var(--k-hover-in), color var(--k-quick);
+}
+.nsp .ws-sec-add:hover {
+  background: var(--k-hov);
+  color: var(--k-t0);
+}
+.nsp .ws-srcs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nsp .ws-src {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background-color var(--k-hover-in);
+}
+.nsp .ws-src:hover {
+  background: var(--k-hov);
+}
+.nsp .ws-src-ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--k-sel);
+  fill: var(--k-i1);
+  --nsp-fill: var(--k-i1);
+  flex: none;
+}
+.nsp .ws-src-tx {
+  flex: 1;
+  min-width: 0;
+}
+.nsp .ws-src-name {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--k-t1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nsp .ws-src-line {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--k-t3);
+}
+.nsp .ws-src.bad .ws-src-line {
+  color: #c2453d;
+}
+.nsp .ws-src-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  fill: var(--k-i2);
+  --nsp-fill: var(--k-i2);
+  opacity: 0;
+  cursor: pointer;
+  flex: none;
+}
+.nsp .ws-src:hover .ws-src-x {
+  opacity: 1;
+}
+.nsp .ws-src-x:hover {
+  background: var(--k-prs);
+}
+.nsp .ws-src-none {
+  padding: 2px 8px 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--k-t3);
+}
+
 /* ── 5. Motion ────────────────────────────────────────────────────────────────────────────────────────────────────
    The closer a change is to the pointer, the faster it resolves. A menu opens from 98 per cent, a panel travels. */
 @keyframes nsp-k-open {

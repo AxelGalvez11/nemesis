@@ -236,6 +236,14 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
   const presence = new Map<string, Record<string, unknown>[]>();
   // The old Library's notes, for the import (readable_library_documents).
   const library: Array<{ id: string; title: string; content: string }> = [];
+  // What a workspace is built on (ws_sources, docs/space/PLAN.md M13). The real functions ask the page's role first;
+  // the harness has one person who can edit everything, so what matters here is the shape: a list that carries no
+  // text, and the text only when a question asks for it.
+  const sources: Array<Record<string, unknown>> = [];
+  const listedSource = (row: Record<string, unknown>) => {
+    const { body: _body, ...rest } = row;
+    return rest;
+  };
   const accessOf = (page: string) => ({
     role: "full",
     section: "private",
@@ -410,6 +418,47 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
         }
         return ok(accessOf(page));
       }
+      case "ws_page_sources":
+        return ok(sources.filter((s) => s.page === String(params.p_page)).map(listedSource));
+      case "ws_source_bodies": {
+        const ids = params.p_ids as string[] | null | undefined;
+        return ok(
+          sources
+            .filter((s) => s.page === String(params.p_page) && s.status === "ready" && (!ids || ids.includes(String(s.id))))
+            .map((s) => ({ id: s.id, name: s.name, mime: s.mime, library: s.library ?? null, body: s.body })),
+        );
+      }
+      case "ws_add_source": {
+        const body = String(params.p_body ?? "");
+        const row: Record<string, unknown> = {
+          id: crypto.randomUUID(),
+          page: String(params.p_page),
+          name: String(params.p_name ?? "Source"),
+          mime: params.p_mime ?? null,
+          bytes: params.p_bytes ?? null,
+          library: params.p_library_source ?? null,
+          body,
+          chars: body.length,
+          status: String(params.p_status ?? "ready"),
+          error: params.p_error ?? null,
+          by: me.id,
+          at: new Date().toISOString(),
+        };
+        sources.push(row);
+        return ok(listedSource(row));
+      }
+      case "ws_set_source_text": {
+        const row = sources.find((s) => s.id === String(params.p_id));
+        if (!row) return ok(null);
+        const body = String(params.p_body ?? "");
+        Object.assign(row, { body, chars: body.length, status: String(params.p_status ?? "ready"), error: params.p_error ?? null });
+        return ok(listedSource(row));
+      }
+      case "ws_remove_source": {
+        const at = sources.findIndex((s) => s.id === String(params.p_id));
+        if (at >= 0) sources.splice(at, 1);
+        return ok(at >= 0);
+      }
       default:
         return { data: null, error: { message: `fake backend has no ${name}`, code: "42883" } };
     }
@@ -471,6 +520,8 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
     server,
     /** Tests and the harness: the plain tables behind `from()`. */
     tables,
+    /** Tests and the harness: the workspace sources, as ws_sources would hold them. */
+    sources,
     auth: {
       getSession: async () => ({ data: { session: { access_token: "fake" } } }),
       signOut: async () => ({ error: null }),
@@ -558,6 +609,23 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
  * the chat, as the board's turn does, so the Chat tab can be driven on /dev-preview/space. Stopping it rejects, as a
  * real stopped turn does.
  */
+/**
+ * Harness and tests: reading an uploaded file with no server behind it.
+ *
+ * The real lane uploads the file and has the extraction route read it (lib/workspace/chat-attachments.ts). What the
+ * harness needs is the SHAPE: a file goes in, text comes back, and the workspace saves it. An empty answer is how a
+ * file that could not be read behaves, which is why the name decides: anything called "unreadable" comes back empty.
+ */
+export async function fakeSourceReader(file: { name: string }) {
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  if (/unreadable/i.test(file.name)) return { text: "", title: file.name, sourceId: null };
+  return {
+    text: `Stand-in text for ${file.name}. The preview has no reader, so this is what a lecture would look like once it had been read.`,
+    title: file.name,
+    sourceId: null,
+  };
+}
+
 export async function fakeChatEngine(input: { message: string; signal?: AbortSignal; onContent?: (visible: string) => void }) {
   const answer = `The preview has no model, so this stands in for Nemesis. You asked: "${input.message.slice(0, 120)}"\n\n- An answer streams in as it is written\n- It is saved with the chat`;
   let shown = "";

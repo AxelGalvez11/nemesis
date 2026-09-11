@@ -190,6 +190,8 @@ class Space {
     this.chatRuns = new Map();
     // Tests and the preview harness answer chats without a model; in the app this stays empty (answerChat).
     this.chatEngine = null;
+    // The same for reading an uploaded file: empty in the app, which uses the upload lane in chat-attachments.ts.
+    this.sourceReader = null;
     this.emitTimer = 0;
     // AI Meeting Notes: the recording running in this tab, by block (startMeeting); a take whose upload failed, kept for
     // Try again; and what tests and the preview harness use in place of the microphone and the recording route.
@@ -204,6 +206,9 @@ class Space {
     // app's own tables, and the sidebar is the only thing here that reads them.
     this.canvases = { items: [], loaded: false, loading: false };
     this.due = { count: 0, at: 0, loading: false };
+    // What each workspace is built on, by page (loadSources). The text itself stays on the server until a question
+    // needs it, because a workspace can hold a term's worth of lectures.
+    this.sources = new Map();
     this.sync = this.makeSync();
   }
 
@@ -634,7 +639,9 @@ class Space {
     this.pageTopics = [];
     this.loaded.clear();
     this.childrenLoaded.clear();
-    for (const map of [this.loading, this.missing, this.roles, this.children, this.favorites, this.people, this.presence]) map.clear();
+    // 🔴 SOURCES ARE PER PAGE, SO THEY GO WITH THE WORKSPACE. Kept here, the next workspace's page would draw the
+    // last one's sources until its own list came back, which is the kind of mix-up nobody would report as a bug.
+    for (const map of [this.loading, this.missing, this.roles, this.children, this.favorites, this.people, this.presence, this.sources]) map.clear();
     const fresh = emptyState();
     for (const key of Object.keys(this.state)) delete this.state[key];
     Object.assign(this.state, fresh);
@@ -759,6 +766,154 @@ class Space {
     const { data, error } = await this.sb.rpc('ws_my_tasks', { p_limit: 200 });
     this.tasks = { items: !error && Array.isArray(data) ? data : this.tasks.items, loaded: true };
     this.emit();
+  }
+
+  // -------------------------------------------------------------------------------------------- workspace sources
+
+  /** What this workspace is built on. The list carries no text: a term of lectures does not belong in a sidebar. */
+  async loadSources(pageId, force = false) {
+    if (!pageId || !this.me.id) return;
+    const held = this.sourcesOf(pageId);
+    this.sources.set(pageId, held);
+    if (held.loading || (held.loaded && !force)) return;
+    held.loading = true;
+    try {
+      const { data, error } = await this.sb.rpc('ws_page_sources', { p_page: pageId });
+      if (error) throw toError(error);
+      held.items = Array.isArray(data) ? data : [];
+      held.loaded = true;
+    } catch (err) {
+      console.warn('Space: could not list this workspace\'s sources', err);
+    } finally {
+      held.loading = false;
+      this.emit();
+    }
+  }
+
+  sourcesOf(pageId) {
+    return this.sources.get(pageId) || { items: [], loaded: false, loading: false };
+  }
+
+  /**
+   * Adds a file to a workspace.
+   *
+   * 🔴 THE FILE GOES THROUGH THE APP'S OWN UPLOAD LANE, NOT A SECOND ONE. `extractFile` is what the chat and the
+   * canvas already use (lib/workspace/chat-attachments.ts): the same route, the same measured size limits, the same
+   * reader for PDFs, Word, PowerPoint and photographs, and the same vision fallback for a scan. `keep` files the
+   * original, so the source can be opened again later.
+   *
+   * What this adds is the workspace's half: the text it turned out to hold is saved against the page, where everyone
+   * the workspace is shared with can read it. The uploader's own rows never could be.
+   */
+  async addSourceFile(pageId, file) {
+    if (!pageId || !file || !this.me.id) return null;
+    const held = this.sourcesOf(pageId);
+    this.sources.set(pageId, held);
+    // A row of its own while it is being read, so a big lecture does not look like nothing happened.
+    const pending = { id: 'reading:' + uid(), page: pageId, name: file.name, mime: file.type || null, bytes: file.size, chars: 0, status: 'reading' };
+    held.items = [...held.items, pending];
+    this.emit();
+
+    let body = '';
+    let status = 'ready';
+    let failure = null;
+    let library = null;
+    try {
+      // Tests and the preview harness read a file without a server (`sourceReader`); the app uses the real lane.
+      const readFile = this.sourceReader || (await import('../../lib/workspace/chat-attachments')).extractFile;
+      const read = await readFile(file, this.me.id, { keep: true, folderPath: 'Workspaces' });
+      body = read && typeof read.text === 'string' ? read.text : '';
+      library = (read && read.sourceId) || null;
+      if (!body.trim()) {
+        status = 'failed';
+        failure = 'Nothing could be read out of this file.';
+      }
+    } catch (err) {
+      status = 'failed';
+      failure = (err && err.message) || 'This file could not be read.';
+    }
+
+    try {
+      const { data, error } = await this.sb.rpc('ws_add_source', {
+        p_page: pageId,
+        p_name: file.name,
+        p_mime: file.type || null,
+        p_bytes: file.size,
+        p_library_source: library,
+        p_body: body,
+        p_status: status,
+        p_error: failure,
+      });
+      if (error) throw toError(error);
+      held.items = [...held.items.filter((s) => s.id !== pending.id), ...(data ? [data] : [])];
+      this.emit();
+      return data;
+    } catch (err) {
+      console.warn('Space: could not save the source', err);
+      held.items = held.items.filter((s) => s.id !== pending.id);
+      this.emit();
+      return null;
+    }
+  }
+
+  async removeSource(pageId, id) {
+    const held = this.sourcesOf(pageId);
+    const before = held.items;
+    held.items = held.items.filter((s) => s.id !== id);
+    this.emit();
+    try {
+      const { error } = await this.sb.rpc('ws_remove_source', { p_id: id });
+      if (error) throw toError(error);
+    } catch (err) {
+      console.warn('Space: could not remove the source', err);
+      held.items = before;
+      this.emit();
+    }
+  }
+
+  /**
+   * The workspace's sources in the shape a turn reads them (lib/board/board-model.ts). The board's own grounding
+   * takes it from here: it cites what it used, the way every other answer in the app does.
+   */
+  async sourcesForTurn(pageId) {
+    if (!pageId) return [];
+    try {
+      const { data, error } = await this.sb.rpc('ws_source_bodies', { p_page: pageId, p_ids: null });
+      if (error) throw toError(error);
+      const rows = (Array.isArray(data) ? data : []).filter((s) => s && typeof s.body === 'string' && s.body.trim());
+      if (!rows.length) return [];
+      // 🔴 EACH SOURCE ARRIVES ALREADY GROUNDED, WHICH IS WHAT KEEPS A BIG WORKSPACE HONEST. With the filed document's
+      // id on it, the turn retrieves the passages the question needs (lib/board/board-grounding.ts) instead of
+      // pouring every lecture into the packet and letting a budget decide what the answer saw. A classmate's session
+      // cannot read the uploader's chunks, so for them retrieval finds nothing and the text itself is used, which is
+      // exactly why the text lives on the workspace.
+      const { buildExcerpts } = await import('../../lib/learn/canvas-grounding');
+      return rows.map((s, i) => {
+        const kind = /pdf/i.test(s.mime || '') || /\.pdf$/i.test(s.name || '') ? 'pdf' : /^image\//i.test(s.mime || '') ? 'image' : 'document';
+        const groundedId = 's' + (i + 1);
+        return {
+          id: s.id,
+          type: kind,
+          name: s.name || 'Source',
+          content: s.body,
+          status: 'ready',
+          previewUrls: [],
+          position: { x: 0, y: 0 },
+          width: 720,
+          grounded: {
+            id: groundedId,
+            title: s.name || 'Source',
+            kind,
+            excerpts: buildExcerpts(groundedId, s.body),
+            durability: s.library ? 'filed' : 'ephemeral',
+            ...(s.library ? { librarySourceId: s.library } : {}),
+          },
+        };
+      });
+    } catch (err) {
+      console.warn('Space: could not read this workspace\'s sources for the question', err);
+      return [];
+    }
   }
 
   /** The canvases this person has, newest first. The board itself is the React app's; this is only the list. */
@@ -1213,6 +1368,12 @@ class Space {
     const show = () => {
       if (!chat.messages.includes(answer)) chat.messages = [...chat.messages, answer];
     };
+    // A chat inside a workspace reads that workspace's sources, the way a chat on a board reads what is ticked there.
+    const sources = chat.workspace ? await this.sourcesForTurn(chat.workspace) : [];
+    if (sources.length && chat.running) {
+      chat.working = sources.length === 1 ? 'Reading your source' : `Reading your ${sources.length} sources`;
+      this.emitSoon();
+    }
     let result = null;
     try {
       // The board's turn: the same door, device key, budget and stance as every chat in the app (lib/board/board-turn.ts).
@@ -1222,6 +1383,7 @@ class Space {
         message: question.text,
         history,
         place: 'chat',
+        sources,
         useWebSearch: webSearch,
         signal: controller.signal,
         onSearching: (on) => {

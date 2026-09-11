@@ -531,6 +531,123 @@ a:focus-visible,
   padding: 0;
 }
 
+/* ── 4c. What a workspace is built on ─────────────────────────────────────────────────────────────────────────────
+   The sources sit under the workspace's title, quietly, because they are the material rather than the work. */
+.ws-sources {
+  margin: 10px 0 6px;
+  padding: 0 8px;
+}
+.ws-sec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+}
+.ws-sec-label {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--k-t0);
+}
+.ws-sec-n {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--k-t3);
+}
+.ws-sec-add {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--k-t2);
+  fill: var(--k-i2);
+  cursor: pointer;
+  transition: background-color var(--k-hover-in), color var(--k-quick);
+}
+.ws-sec-add:hover {
+  background: var(--k-hov);
+  color: var(--k-t0);
+}
+.ws-srcs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-src {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background-color var(--k-hover-in);
+}
+.ws-src:hover {
+  background: var(--k-hov);
+}
+.ws-src-ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--k-sel);
+  fill: var(--k-i1);
+  flex: none;
+}
+.ws-src-tx {
+  flex: 1;
+  min-width: 0;
+}
+.ws-src-name {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--k-t1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-src-line {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--k-t3);
+}
+.ws-src.bad .ws-src-line {
+  color: #c2453d;
+}
+.ws-src-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  fill: var(--k-i2);
+  opacity: 0;
+  cursor: pointer;
+  flex: none;
+}
+.ws-src:hover .ws-src-x {
+  opacity: 1;
+}
+.ws-src-x:hover {
+  background: var(--k-prs);
+}
+.ws-src-none {
+  padding: 2px 8px 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--k-t3);
+}
+
 /* ── 5. Motion ────────────────────────────────────────────────────────────────────────────────────────────────────
    The closer a change is to the pointer, the faster it resolves. A menu opens from 98 per cent, a panel travels. */
 @keyframes k-open {
