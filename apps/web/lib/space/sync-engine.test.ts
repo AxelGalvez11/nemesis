@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { FakeServer } from "./fake-backend";
 import { normalizeState, type CopyState } from "./records";
-import { SpaceSync, type ServerRecord } from "./sync-engine";
+import { MAX_OPS_PER_WRITE, SpaceSync, type ServerRecord } from "./sync-engine";
 
 function browser(server: FakeServer, name: string) {
   const S: CopyState = { pages: {}, blocks: {}, collections: {}, views: {}, rows: {} };
@@ -322,4 +322,108 @@ test("a sidebar summary moves a page even without the tx move flag", async () =>
   const moved = server.summary(server.recs.get(Q)!);
   b.sync.receive({ client: "A", items: [{ ...moved, set: {} }] });
   assert.equal(b.S.pages[Q]!.parent, P);
+});
+
+test("🔴 a write too big for one request goes in pieces and arrives whole", async () => {
+  const server = new FakeServer();
+  const sizes: number[] = [];
+  const apply = server.apply.bind(server);
+  server.apply = async (space, ops, client, userId) => {
+    sizes.push(ops.length);
+    return apply(space, ops, client, userId);
+  };
+  const a = browser(server, "A");
+  const P = randomUUID();
+  const content: string[] = [];
+  for (let i = 0; i < 1300; i++) {
+    const id = randomUUID();
+    content.push(id);
+    const children: string[] = [];
+    if (i % 100 === 0) {
+      for (let k = 0; k < 2; k++) {
+        const child = randomUUID();
+        children.push(child);
+        a.S.blocks[child] = { id: child, type: "text", parent: id, title: [[`step ${i}.${k}`]], children: [] };
+      }
+    }
+    a.S.blocks[id] = { id, type: "text", parent: P, title: [[`line ${i}`]], children };
+  }
+  a.S.pages[P] = { id: P, kind: "page", parent: null, title: "Imported notes", icon: null, content };
+  await a.sync.flush();
+  assert.ok(sizes.length >= 3, `sent in ${sizes.length} requests`);
+  assert.ok(sizes.every((n) => n <= MAX_OPS_PER_WRITE), `the largest request held ${Math.max(...sizes)} operations`);
+  const blocks = [...server.recs.values()].filter((r) => r.kind === "block");
+  assert.equal(blocks.length, 1326, "every block and every nested block arrived; none was refused for a missing parent");
+  assert.deepEqual(server.recs.get(P)!.props.content, content, "the page's blocks are in order");
+  assert.equal(a.sync.dirty(), false);
+});
+
+/** A transport whose writes wait until the test lets each one through. */
+function heldWrites(server: FakeServer) {
+  const waiting: Array<() => void> = [];
+  const apply = server.apply.bind(server);
+  server.apply = async (space, ops, client, userId) => {
+    await new Promise<void>((go) => waiting.push(go));
+    return apply(space, ops, client, userId);
+  };
+  return {
+    async release() {
+      while (!waiting.length) await new Promise((r) => setImmediate(r));
+      waiting.shift()!();
+    },
+  };
+}
+
+test("🔴 saved() waits for everything, where a flush joined to a write already out does not", async () => {
+  const server = new FakeServer();
+  const writes = heldWrites(server);
+  const a = browser(server, "A");
+  const P = randomUUID();
+  const B1 = randomUUID();
+  const B2 = randomUUID();
+  a.S.pages[P] = { id: P, kind: "page", parent: null, title: "Plan", icon: null, content: [B1] };
+  a.S.blocks[B1] = { id: B1, type: "text", parent: P, title: [["first"]], children: [] };
+  const first = a.sync.flush();
+  a.S.blocks[B2] = { id: B2, type: "text", parent: P, title: [["made while the first write was out"]], children: [] };
+  a.S.pages[P]!.content = [B1, B2];
+  const joined = a.sync.flush();
+  const all = a.sync.saved();
+  await writes.release();
+  await joined;
+  assert.equal(server.recs.has(B2), false, "the joined flush came back with the block made meanwhile still unsent");
+  await writes.release();
+  assert.equal(await all, true);
+  await first;
+  assert.equal(a.sync.dirty(), false);
+  assert.deepEqual(server.recs.get(P)!.props.content, [B1, B2]);
+});
+
+test("saved() says false when a write fails, and a retired engine writes nothing", async () => {
+  const server = new FakeServer();
+  const a = browser(server, "A");
+  const P = randomUUID();
+  a.S.pages[P] = { id: P, kind: "page", parent: null, title: "Plan", icon: null, content: [] };
+  server.failNext = 1;
+  assert.equal(await a.sync.saved(), false);
+  assert.equal(server.recs.has(P), false);
+  a.sync.dispose();
+  await a.sync.flush();
+  assert.equal(await a.sync.saved(), false);
+  assert.equal(server.recs.has(P), false, "after a workspace switch, the old engine's retry sends nothing");
+});
+
+test("🔴 the same new records made in two browsers are stored once, and neither has anything left to send", async () => {
+  const server = new FakeServer();
+  const a = browser(server, "A");
+  const b = browser(server, "B");
+  const P = randomUUID();
+  const B1 = randomUUID();
+  for (const x of [a, b]) {
+    x.S.pages[P] = { id: P, kind: "page", parent: null, title: "From your old Library", icon: null, content: [B1] };
+    x.S.blocks[B1] = { id: B1, type: "text", parent: P, title: [["One page per note."]], children: [] };
+  }
+  await a.sync.flush();
+  await b.sync.flush();
+  assert.deepEqual([server.recs.get(P)!.v, server.recs.get(B1)!.v], [1, 1], "the second browser's creates changed nothing");
+  assert.deepEqual([a.sync.dirty(), b.sync.dirty(), b.denied.length], [false, false, 0]);
 });

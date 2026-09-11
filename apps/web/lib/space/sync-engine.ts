@@ -40,6 +40,12 @@ import {
 } from "./records";
 import { mergeRich, mergeText, type RichText } from "./text-merge";
 
+/**
+ * The most operations one write sends. ws_apply refuses more than 2,000 in one call, and an import or a large paste can
+ * hold more, so a flush sends them in pieces.
+ */
+export const MAX_OPS_PER_WRITE = 500;
+
 export interface ServerRecord extends RecordMeta {
   id: string;
   kind: Kind;
@@ -201,6 +207,7 @@ export class SpaceSync {
   private seen = new Set<string>();
   private flushing: Promise<void> | null = null;
   private again = false;
+  private disposed = false;
   private timer: unknown = null;
   private retryDelay = 0;
   status: SyncStatus = "saved";
@@ -280,15 +287,19 @@ export class SpaceSync {
 
   /** Send everything that differs from the server, and keep going until nothing does (or the network is gone). */
   async flush(): Promise<void> {
+    if (this.disposed) return;
     if (this.flushing) {
       this.again = true;
       return this.flushing;
     }
-    const batch = this.diff(this.current());
-    if (!batch.ops.length) {
+    const full = this.diff(this.current());
+    if (!full.ops.length) {
       this.setStatus("saved");
       return;
     }
+    // Only the first slice goes now. Whatever did not fit is still different from the base, so the next diff, right
+    // after this one lands, picks it up; creates stay parents first across the slices.
+    const batch = full.ops.length > MAX_OPS_PER_WRITE ? { ops: full.ops.slice(0, MAX_OPS_PER_WRITE), snaps: full.snaps } : full;
     this.setStatus("saving");
     let failed = false;
     this.flushing = (async () => {
@@ -296,7 +307,7 @@ export class SpaceSync {
         const res = await this.o.transport.apply(this.o.space(), batch.ops, this.o.client);
         this.retryDelay = 0;
         this.lastError = null;
-        if (this.ack(res, batch)) this.again = true;
+        if (this.ack(res, batch) || batch !== full) this.again = true;
       } catch (err) {
         failed = true;
         this.lastError = err;
@@ -324,6 +335,30 @@ export class SpaceSync {
   /** True when S holds something the server has not acknowledged. */
   dirty(): boolean {
     return this.diff(this.current()).ops.length > 0;
+  }
+
+  /**
+   * Resolves true once the server holds everything in S, false when a write failed (its retry is already scheduled) or
+   * this engine was retired. flush() is not enough for that: called while a write is out, it hands back that write and
+   * returns before whatever was waiting behind it has gone.
+   */
+  async saved(): Promise<boolean> {
+    for (let round = 0; round < 100; round++) {
+      if (this.disposed) return false;
+      if (this.flushing) {
+        await this.flushing;
+        continue;
+      }
+      if (!this.dirty()) return true;
+      await this.flush();
+      if (this.status === "offline") return false;
+    }
+    return false;
+  }
+
+  /** Retires this engine for good. Switching workspace replaces it, and a retry it scheduled must not write after that. */
+  dispose(): void {
+    this.disposed = true;
   }
 
   // ------------------------------------------------------------------------------------------------ internals
