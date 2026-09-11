@@ -5,8 +5,8 @@ import { DeviceShot, LoopVideo } from "@/components/reference/device/DeviceShot"
 import { DEVICE_PHOTOS } from "@/components/reference/device/photos";
 import { CharacterMark } from "@/components/reference/agents";
 import { Marquee } from "@/components/reference/Marquee";
-import { Deliverables } from "@/components/reference/StudyTools";
-import { DeckMock, WorkspaceMock } from "@/components/reference/mockups/Mockups";
+import { Collaborate, Deliverables } from "@/components/reference/StudyTools";
+import { DeckMock } from "@/components/reference/mockups/Mockups";
 import { Reveal, Slots, TypeOn, Words } from "@/components/reference/motion/Motion";
 import { SnFaq, SnFoot, SnHeader } from "@/components/reference/SanaChrome";
 
@@ -31,6 +31,16 @@ import "./home-sana.css";
  * ideas stay connected, slides and guides) "do not fit"; "Remove video summary and study packet and podcast and course
  * map"; "Make lecture notes its own section with a cool animation", "similar to launch video style". The lecture clip is
  * a HyperFrames render (~/Desktop/nemesis-reel/showcase-lecture.html) in the same kit as the other two.
+ *
+ * OWNER, LATER 2026-09-11: the hero film "looks glitchy in beginning, it should showcase chat (using our new sana inspired
+ * design)", so the laptop plays showcase-chat.html; remove "the your deck remembers what you missed section" and "that
+ * rules every output passes card"; "add a section in deliverables for collaborate with friends and agents ... Use actual
+ * agent logos"; the agents section becomes "connect to apps you already use ... include Gmail, Google Calendar"; and
+ * Before and after talks about "the quality of source grounded notes and flashcards, and special skills for notes and
+ * others for premium promise". WHAT IS REAL there: every app shown is in the connector catalogue
+ * (apps/web/lib/workspace/composio-apps.ts), but since 2026-09-07 the app offers only Google Calendar; sharing a deck is
+ * built (app/shared/[token]), agents working inside a shared deck are not; the skills exist for everyone today
+ * (lib/workspace/chat-skills.ts), and putting them on the paid plan is the promise.
  *
  * 🔴 NO INVENTED TESTIMONIALS. Sana's own page runs quotes from named customers; Nemesis has none to
  * quote, and a made-up quote with a made-up name is a fake review, so the sections that carry quotes
@@ -79,9 +89,10 @@ const SCHOOLS = [
   "National University of Singapore",
 ];
 
-type Who = { label: string; tone: string; character?: boolean };
-const CLAUDE: Who = { label: "C", tone: TONE.violet };
-const GPT: Who = { label: "G", tone: TONE.azure };
+type Who = { label: string; tone: string; character?: boolean; logo?: string };
+// Agents are their companies' own marks (public/brand/agents, see PROVENANCE.md). Owner, 2026-09-11: "Use actual agent logos".
+const CLAUDE: Who = { label: "C", tone: TONE.violet, logo: "/brand/agents/claude.svg" };
+const GPT: Who = { label: "G", tone: TONE.azure, logo: "/brand/agents/chatgpt.svg" };
 const YOU: Who = { label: "Y", tone: TONE.ink };
 // Nemesis is the character itself, never a letter in a circle (owner, 2026-09-10: the mascot "needs to look a little bit better").
 const NEMESIS: Who = { label: "N", tone: "transparent", character: true };
@@ -94,28 +105,66 @@ const PILE: { q: string; by: Who; meta: string; x: string; y: number; r0: number
   { q: "What does a unilateral offer need before it can be accepted?", by: NEMESIS, meta: "Suggested by Nemesis from the cards you missed", x: "18%", y: 420, r0: -12, r1: 2 },
 ];
 
-const ORBIT: { name: string; who: Who; x: number; y: number; d: string; dd: string }[] = [
-  { name: "Claude", who: CLAUDE, x: 16, y: 30, d: "6.2s", dd: "0s" },
-  { name: "ChatGPT", who: GPT, x: 22, y: 74, d: "7s", dd: "-2s" },
-  { name: "Cursor", who: { label: "C", tone: TONE.emerald }, x: 80, y: 28, d: "6.6s", dd: "-1s" },
-  { name: "Your own notes", who: { label: "+", tone: "rgba(0,0,0,0.3)" }, x: 78, y: 74, d: "7.4s", dd: "-3s" },
+/**
+ * The apps and agents around Nemesis. Owner, 2026-09-11: "make it more about connect to apps you already use and also
+ * include Gmail, Google Calendar, add other related apps so it feels like a lot". 🔴 ONLY APPS IN THE CONNECTOR
+ * CATALOGUE (apps/web/lib/workspace/composio-apps.ts) and the three agents, each with its owner's own mark from
+ * public/brand (the app's own copies, see each folder's PROVENANCE.md). lib/home.test.ts holds both.
+ */
+const APP_RINGS: { name: string; logo: string }[][] = [
+  [
+    { name: "Claude", logo: "/brand/agents/claude.svg" },
+    { name: "Gmail", logo: "/brand/google/gmail.svg" },
+    { name: "ChatGPT", logo: "/brand/agents/chatgpt.svg" },
+    { name: "Google Calendar", logo: "/brand/google/calendar.svg" },
+    { name: "Cursor", logo: "/brand/agents/cursor.svg" },
+    { name: "Google Drive", logo: "/brand/google/drive.svg" },
+  ],
+  [
+    { name: "Canvas LMS", logo: "/brand/apps/canvas.svg" },
+    { name: "Notion", logo: "/brand/apps/notion.svg" },
+    { name: "Google Docs", logo: "/brand/google/docs.svg" },
+    { name: "Zoom", logo: "/brand/apps/zoom.svg" },
+    { name: "Google Sheets", logo: "/brand/apps/googlesheets.svg" },
+    { name: "Outlook", logo: "/brand/apps/outlook.svg" },
+    { name: "Google Classroom", logo: "/brand/apps/google_classroom.svg" },
+    { name: "OneDrive", logo: "/brand/apps/one_drive.svg" },
+  ],
 ];
-
-const RULES = [
-  "One idea per card",
-  "Every card cites its source",
-  "Scheduled with FSRS",
-  "Checked before you see it",
-  "Slides export to .pptx",
-  "Guides export to .docx",
+/** Two ellipses around the hub, in percent of the panel. 🔴 The inner ring starts at -60 degrees so none of its six sits
+ *  straight above or below the hub: at -90 the bottom one crowded the hub's own "Nemesis" label. The outer ring's top and
+ *  bottom are far enough away to take the vertical slots. */
+const RINGS = [
+  { rx: 23, ry: 24, from: -60 },
+  { rx: 41, ry: 36, from: -90 },
 ];
+const APPS = APP_RINGS.flatMap((ring, r) =>
+  ring.map((app, i) => {
+    const a = ((RINGS[r].from + (360 / ring.length) * i) * Math.PI) / 180;
+    const k = r * 6 + i;
+    return {
+      ...app,
+      x: Math.round((50 + RINGS[r].rx * Math.cos(a)) * 10) / 10,
+      y: Math.round((50 + RINGS[r].ry * Math.sin(a)) * 10) / 10,
+      d: `${(6 + (k % 4) * 0.4).toFixed(1)}s`,
+      dd: `-${((k * 0.7) % 5).toFixed(1)}s`,
+    };
+  }),
+);
 
-const TABLE: [string, string, string][] = [
-  ["Flashcards", "Typed into Anki one at a time, the night before", "Drafted from the lecture by your agent, each card linked to its slide"],
-  ["When to review", "A guess, or whenever there is time", "FSRS schedules each card for just before you would forget it"],
-  ["Slides", "Copied into a template by hand", "A 12-slide summary, exported to .pptx"],
-  ["Study guides", "Notes rewritten from scratch", "A guide where every claim points to its source, exported to .docx"],
-  ["Trusting the output", "Hoping the AI got it right", "Every card is checked against the deck rules before it reaches you"],
+/**
+ * Owner, 2026-09-11: "talk about the quality of source grounded notes and flashcards, and special skills for notes and
+ * others for premium promise". The skills are real (apps/web/lib/workspace/chat-skills.ts: Lecture intake, Syllabus
+ * intake, Socratic tutoring, Quantitative check; test craft for exam questions); keeping them for the paid plan is the
+ * promise, and it is not built.
+ */
+const TABLE: { what: string; before: string; after: string; premium?: true }[] = [
+  { what: "Notes", before: "A summary that sounds right, with nothing to check it against", after: "Notes from your own lectures and readings, every line linked to the page it came from" },
+  { what: "Flashcards", before: "Vague cards that mix three ideas", after: "One idea per card, each linked to its source and checked before you see it" },
+  { what: "When your sources are silent", before: "A plausible guess, stated as fact", after: "Nemesis tells you your sources do not cover it" },
+  { what: "Review", before: "Whenever there is time", after: "FSRS brings each card back just before you would forget it" },
+  { what: "Skills for notes", before: "One way of writing for every class", after: "Lecture notes and syllabus breakdowns written the way your course needs", premium: true },
+  { what: "Skills for studying", before: "The answer, handed over", after: "A Socratic tutor, step-by-step maths checks and exam-style questions", premium: true },
 ];
 
 const FAQ = [
@@ -136,18 +185,18 @@ function Initial({ who, className = "sn-who" }: { who: Who; className?: string }
       </span>
     );
   }
+  if (who.logo) {
+    return (
+      <span className={`${className} sn-who-logo`} aria-hidden="true">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={who.logo} alt="" loading="lazy" decoding="async" />
+      </span>
+    );
+  }
   return (
     <span className={className} style={{ background: who.tone }} aria-hidden="true">
       {who.label}
     </span>
-  );
-}
-
-function Tick() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
@@ -185,9 +234,9 @@ export default function Home() {
               eager
             >
               <LoopVideo
-                src="/showcase/together.mp4"
-                poster="/showcase/together.webp"
-                label="A student and Claude building a flashcard deck together in Nemesis"
+                src="/showcase/chat.mp4"
+                poster="/showcase/chat.webp"
+                label="A student asks Nemesis why the Roman Republic fell, gets an answer that cites its sources, and checks a flashcard made from it"
               />
             </DeviceShot>
           </div>
@@ -248,6 +297,7 @@ export default function Home() {
             text="Drop in a lecture, a reading or an exam date. Nemesis makes what you need to study, and every piece points back to its source."
           />
           <Deliverables />
+          <Collaborate />
         </section>
 
         {/* ── think together: cards from every author fall into one pile ────────────────────── */}
@@ -279,23 +329,23 @@ export default function Home() {
           </Reveal>
         </section>
 
-        {/* ── agents: bubbles around Nemesis, and the rules everything passes ──────────────── */}
+        {/* ── apps and agents: connect the apps you already use (owner, 2026-09-11) ───────────────── */}
         <section className="sn-band" id="agents" style={{ marginTop: 0 }}>
-          <p className="sn-kicker">Bring your own agent</p>
-          <Words as="h2" className="sn-h2" text="Works with the agent you already use" />
+          <p className="sn-kicker">Apps and agents</p>
+          <Words as="h2" className="sn-h2" text="Connect the apps you already use" />
           <TypeOn
             className="sn-lead"
-            text="Claude, ChatGPT and Cursor connect to Nemesis and use its tools: the reader, the deck builder, slides and study guides. Or use Nemesis AI on its own."
+            text="Bring in your mail, calendar, drive, class pages and notes, and bring Claude, ChatGPT or Cursor to work in Nemesis with you."
           />
-          <Reveal kind="pop" className="sn-orbit sn-orbit-art">
+          <Reveal kind="pop" className="sn-orbit sn-orbit-art sn-apps">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="sn-art-img" src="/gradients/lime.webp" alt="" loading="lazy" decoding="async" />
             <svg className="sn-orbit-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              {ORBIT.map((o) => (
-                <line key={o.name} x1={o.x} y1={o.y} x2={50} y2={50} />
+              {APPS.map((a) => (
+                <line key={a.name} x1={a.x} y1={a.y} x2={50} y2={50} />
               ))}
             </svg>
-            <div className="sn-bubble-at" style={{ left: "50%", top: "50%" }}>
+            <div className="sn-bubble-at sn-apps-hub" style={{ left: "50%", top: "50%" }}>
               <div className="nm-pop-i" style={{ "--i": 0 } as CSSProperties}>
                 <div className="sn-bubble sn-bubble-hub" style={{ "--d": "8s" } as CSSProperties}>
                   <Mascot size={64} />
@@ -303,67 +353,38 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            {ORBIT.map((o, i) => (
-              <div key={o.name} className="sn-bubble-at" style={{ left: `${o.x}%`, top: `${o.y}%` }}>
+            {APPS.map((a, i) => (
+              <div key={a.name} className="sn-bubble-at" style={{ left: `${a.x}%`, top: `${a.y}%` }}>
                 <div className="nm-pop-i" style={{ "--i": i + 1 } as CSSProperties}>
-                  <div className="sn-bubble" style={{ "--d": o.d, "--dd": o.dd } as CSSProperties}>
-                    <Initial who={o.who} className="sn-initial" />
-                    <span className="sn-bubble-label">{o.name}</span>
+                  <div className="sn-bubble is-app" style={{ "--d": a.d, "--dd": a.dd } as CSSProperties}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className="sn-app-logo" src={a.logo} alt="" loading="lazy" decoding="async" />
+                    <span className="sn-bubble-label">{a.name}</span>
                   </div>
                 </div>
               </div>
             ))}
           </Reveal>
-          <Reveal kind="rise" className="sn-rules">
-            <p className="sn-rules-title">Rules every output passes</p>
-            <ul className="sn-rules-list">
-              {RULES.map((r) => (
-                <li key={r}>
-                  <Tick />
-                  {r}
-                </li>
-              ))}
-            </ul>
-          </Reveal>
-        </section>
-
-        {/* ── two windows lying back, then settling flat ────────────────────────────────────── */}
-        <section className="sn-devices">
-          <p className="sn-kicker">Built for the whole term</p>
-          <Words as="h2" className="sn-h2" text="Your deck remembers what you missed" />
-          <div className="sn-art sn-devices-art">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="sn-art-img" src="/gradients/azure.webp" alt="" loading="lazy" decoding="async" />
-            <div className="sn-devices-stage">
-              <Reveal kind="tilt" className="sn-dev-1">
-                <div className="nm-tilt-body">
-                  <WorkspaceMock />
-                </div>
-              </Reveal>
-              <Reveal kind="tilt-b" className="sn-dev-2">
-                <div className="nm-tilt-body">
-                  <DeckMock />
-                </div>
-              </Reveal>
-            </div>
-          </div>
         </section>
 
         {/* ── what changes ──────────────────────────────────────────────────────────────────── */}
         <section className="sn-table-sec">
           <p className="sn-kicker">Before and after</p>
-          <Words as="h2" className="sn-h2" text="What changes when your agent can use Nemesis" />
+          <Words as="h2" className="sn-h2" text="Notes and flashcards that come from your sources" />
           <div className="sn-table">
             <div className="sn-row sn-row-h">
               <span />
-              <span>On your own</span>
-              <span>With your agent and Nemesis</span>
+              <span>A general AI chat</span>
+              <span>Nemesis</span>
             </div>
-            {TABLE.map(([what, before, after], i) => (
-              <Reveal key={what} kind="rise" className="sn-row" style={{ transitionDelay: `${i * 70}ms` }}>
-                <b>{what}</b>
-                <span className="sn-old">{before}</span>
-                <span>{after}</span>
+            {TABLE.map((row, i) => (
+              <Reveal key={row.what} kind="rise" className="sn-row" style={{ transitionDelay: `${i * 70}ms` }}>
+                <b>{row.what}</b>
+                <span className="sn-old">{row.before}</span>
+                <span>
+                  {row.premium ? <span className="sn-tag">Premium</span> : null}
+                  {row.after}
+                </span>
               </Reveal>
             ))}
           </div>

@@ -44,15 +44,20 @@ test("🔴🔴 the laptop's three files exist and are light enough for a sign-in
   }
 });
 
-test("🔴🔴 a phone never downloads the film", () => {
-  // Under 821px the panel is a square above the form, as on Sana's page. It shows the resting frame there;
-  // 3.5MB of video is not a cost to put on a data plan.
+test("🔴🔴 the laptop moves at every size: a phone gets the light loop, never the 3.5MB film", () => {
+  // Owner, 2026-09-11: "sign in page does not animate the computer". Under 821px the panel is a square above the form,
+  // as on Sana's page, and it used to show only the resting frame there. A phone now plays the 720px loop.
   assert.match(laptop, /LAPTOP_PANEL_QUERY = "\(min-width: 821px\)"/);
   assert.match(css, /@media \(min-width: 821px\) \{\s*\.nemesis-auth-main \{ flex-direction: row;/);
-  const phoneBranch = laptop.indexOf("if (!shown || calm) {");
-  assert.ok(phoneBranch >= 0, "AuthLaptop no longer checks the query before choosing media");
-  assert.ok(laptop.indexOf("return (", phoneBranch) < laptop.indexOf("<video"), "a <video> renders before the query is checked");
+  assert.match(laptop, /LOOP_SMALL = "\/sign-in\/laptop-loop-sm\.mp4"/);
+  const small = new URL("../public/sign-in/laptop-loop-sm.mp4", import.meta.url);
+  assert.ok(existsSync(small), "the phone loop is missing");
+  assert.ok(statSync(small).size < 1_000_000, "the phone loop is too heavy for a data plan");
+  assert.match(laptop, /src=\{shown \? LOOP : LOOP_SMALL\}/, "a phone would download the full loop");
+  assert.match(laptop, /\{shown \? <video ref=\{introRef\}/, "a phone would download the intro");
   assert.match(laptop, /prefers-reduced-motion: reduce/, "reduced motion no longer gets the still");
+  assert.ok(!/canplaythrough/.test(laptop), "the intro waits for canplaythrough again, which some browsers never fire");
+  assert.match(laptop, /retryOnGesture/, "a refused autoplay no longer retries on the first touch");
 });
 
 test("🔴🔴 the page is built on Sana's container rules, not on boxes measured at one size", () => {
