@@ -171,6 +171,7 @@ class Space {
     this.switchTried = new Set();
     this.sharedListeners = new Set();
     this.inbox = { items: [], unread: 0, loaded: false };
+    this.tasks = { items: [], loaded: false };
     this.presence = new Map();
     this.libraryImport = null;
     this.importJob = null;
@@ -462,6 +463,8 @@ class Space {
     const n = payload && payload.notification;
     if (!n || !n.id || this.inbox.items.some((x) => x.id === n.id)) return;
     this.inbox = { ...this.inbox, items: [n, ...this.inbox.items], unread: this.inbox.unread + (n.read ? 0 : 1) };
+    // Someone put this person in a Person column: My Tasks, if it has been opened, lists the row.
+    if (n.kind === 'assign' && this.tasks.loaded) void this.loadTasks();
     this.emit();
   }
 
@@ -692,6 +695,14 @@ class Space {
       return p.content.map((x) => S.blocks[x]).filter((b) => b && b.type === 'page' && alive(b.pageId)).map((b) => b.pageId);
     }
     return [...(this.children.get(pid) || [])].filter((id) => alive(id) && S.pages[id].parent === pid);
+  }
+
+  /** Rows assigned to this person in every database they can open, not done yet (ws_my_tasks), soonest due first. */
+  async loadTasks() {
+    if (!this.ready || !this.sb) return;
+    const { data, error } = await this.sb.rpc('ws_my_tasks', { p_limit: 200 });
+    this.tasks = { items: !error && Array.isArray(data) ? data : this.tasks.items, loaded: true };
+    this.emit();
   }
 
   async loadTrash() {

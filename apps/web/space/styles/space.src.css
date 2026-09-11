@@ -778,6 +778,9 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cu
 .tg-caret.open{transform:rotate(90deg)}
 .tg-caret:hover{background:var(--ca-bacIntTra)}
 .tg-label{display:flex;align-items:center}
+.tasks-table{padding-top:8px}
+.tasks-row{cursor:pointer}
+.tasks-row:hover .nsp-table-view-cell{background:var(--ca-bacIntTra)}
 .prop-picker{width:268px;max-height:560px;display:flex;flex-direction:column;overflow:hidden}
 .new-menu{width:290px}
 .nm-desc{padding:0 8px 8px;font-size:12px;line-height:16px;color:var(--c-texSec)}

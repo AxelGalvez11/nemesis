@@ -799,6 +799,9 @@
 .nsp .tg-caret.open{transform:rotate(90deg)}
 .nsp .tg-caret:hover{background:var(--ca-bacIntTra)}
 .nsp .tg-label{display:flex;align-items:center}
+.nsp .tasks-table{padding-top:8px}
+.nsp .tasks-row{cursor:pointer}
+.nsp .tasks-row:hover .nsp-table-view-cell{background:var(--ca-bacIntTra)}
 .nsp .prop-picker{width:268px;max-height:560px;display:flex;flex-direction:column;overflow:hidden}
 .nsp .new-menu{width:290px}
 .nsp .nm-desc{padding:0 8px 8px;font-size:12px;line-height:16px;color:var(--c-texSec)}
