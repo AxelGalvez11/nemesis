@@ -439,6 +439,11 @@
   z-index: 5;
 }
 .nemesis-auth-captcha:empty { display: none; }
+/* 🔴 While Cloudflare asks for a click the box sits on the page's own ground and the legal line under it steps
+   aside, so the two never print through each other. Seen on production 2026-09-11, the day the box started
+   floating. Silent checks never set the attribute, so nothing is covered for anyone who never sees the box. */
+.nemesis-auth-captcha[data-interactive="true"] { background: var(--auth-ground); }
+.nemesis-auth-card-in:has(.nemesis-auth-captcha[data-interactive="true"]) .nemesis-auth-legal { visibility: hidden; }
 .nemesis-auth-captcha iframe { border-radius: 14px; }
 
 .nemesis-auth-nav a:focus-visible,
