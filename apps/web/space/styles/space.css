@@ -2066,7 +2066,7 @@
 .nsp .tr-empty{padding:12px 2px;color:var(--c-texSec)}
 
 /* Agents (M11): outside AI tools connected to this person, and how to connect one. */
-.nsp .agents-connect{width:340px}
+.nsp .agents-connect{width:360px}
 .nsp .ac-body{padding:14px 14px 12px;display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:20px}
 .nsp .ac-title{font-weight:600}
 .nsp .ac-text,.nsp .ac-steps{color:var(--c-texSec)}
