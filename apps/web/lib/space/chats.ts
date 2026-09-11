@@ -18,6 +18,8 @@ export interface ChatSummary {
   /** Last activity, in milliseconds. */
   at: number;
   pinned: boolean;
+  /** The workspace page this chat was started in, or null for a general chat (docs/space/PLAN.md, M13). */
+  workspace: string | null;
 }
 
 export interface ChatCitation {
@@ -78,18 +80,37 @@ export function citationsOf(meta: unknown): ChatCitation[] {
   });
 }
 
+/**
+ * The workspace a chat was started in.
+ *
+ * 🔴 IT LIVES IN THE THREAD'S OWN `meta`, NOT IN A NEW COLUMN. A chat belongs to at most one workspace and nothing
+ * queries by it, so a column and a migration would buy nothing that a field on the row does not already give.
+ */
+export function workspaceOf(meta: unknown): string | null {
+  const value = meta && typeof meta === "object" ? (meta as { workspace?: unknown }).workspace : null;
+  return typeof value === "string" && value ? value : null;
+}
+
 /** The person's chats, most recently active first. */
 export async function listChats(db: ChatDb, userId: string, limit = 200): Promise<ChatSummary[]> {
   const { data, error } = await db
     .from("chat_threads")
-    .select("id,title,pinned,updated_at")
+    .select("id,title,pinned,updated_at,meta")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(limit);
   if (error) fail(error, "chats could not be listed");
   return (data ?? []).flatMap((r) =>
     typeof r.id === "string"
-      ? [{ id: r.id, title: typeof r.title === "string" && r.title.trim() ? r.title : "New chat", at: millis(r.updated_at), pinned: r.pinned === true }]
+      ? [
+          {
+            id: r.id,
+            title: typeof r.title === "string" && r.title.trim() ? r.title : "New chat",
+            at: millis(r.updated_at),
+            pinned: r.pinned === true,
+            workspace: workspaceOf(r.meta),
+          },
+        ]
       : [],
   );
 }
@@ -110,8 +131,14 @@ export async function loadChatLines(db: ChatDb, chatId: string): Promise<ChatLin
   );
 }
 
-export async function createChat(db: ChatDb, userId: string, chatId: string, title: string): Promise<void> {
-  const { error } = await db.from("chat_threads").insert({ id: chatId, user_id: userId, title: title.slice(0, CHAT_TITLE_MAX), pinned: false });
+export async function createChat(db: ChatDb, userId: string, chatId: string, title: string, workspace: string | null = null): Promise<void> {
+  const { error } = await db.from("chat_threads").insert({
+    id: chatId,
+    user_id: userId,
+    title: title.slice(0, CHAT_TITLE_MAX),
+    pinned: false,
+    ...(workspace ? { meta: { workspace } } : {}),
+  });
   if (error) fail(error, "the chat could not be saved");
 }
 

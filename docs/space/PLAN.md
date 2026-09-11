@@ -177,10 +177,25 @@ style and he likes the tests and the blocks that are live now.
       rule as the sidebar row (lib/space/due-cards.ts). lib/space/space-design.test.ts guards the mapping, keeps
       space.css in step with its sources, and fails if anything but the send button and the learner's bubble wears
       the accent. Left for part two: the five tabs, the bell, the Canvas tab and the review row in Workspaces.
+      2026-09-11, part two: the sidebar is the one he approved. Five tabs (Chats, Workspaces, Notes, Canvas,
+      Meetings), the inbox is a bell beside the account name with its own popover, search is a field under it, and the
+      sidebar is a column instead of three absolutely placed rows. Chats holds the chats and Agents; Notes holds the
+      page tree, All notes, My Tasks, Templates and Trash; Canvas lists this person's boards from canvas_boards and
+      opens one in the column beside the sidebar; Meetings holds the calendar, the week ahead and the meeting notes;
+      Workspaces holds "Review due cards" with its count (lib/space/due-cards.ts, counted at most once a minute) and
+      the workspaces themselves. A sidebar saved before the rename opens on the tab that replaced its own, and
+      lib/space/space-sidebar.test.ts pins the row, the rename and the fact that the old Library and Study have no
+      door. Left: the live group game's tab (M15).
 - [ ] M13 **Workspaces.** A workspace is a page that holds sources, chats, notes and what was made there: create,
       rename and share it; upload sources that its chats read; the Create tiles (flashcards, test, study guide, mind
       map); Made here; and the review row across workspaces. A note made in a workspace is the same record that shows
       under Notes.
+      2026-09-11, part one: a workspace is a top-level page carrying `workspace`, so sharing, permissions, realtime
+      and the page tree all work the day it is made, and its notes are simply the pages inside it. Its chats are
+      chat_threads whose `meta.workspace` is the page (no migration: a chat belongs to at most one workspace and
+      nothing queries by it). The Workspaces tab lists them with a colour square taken from the page's own id, opens
+      them, and makes new ones; a workspace's own page offers a chat here and a note rather than the page templates.
+      Left: sources and the chats that read them, the Create tiles, Made here, and the workspace overview.
 - [ ] M14 **Canvas**, reset to the spatial board of #1141 and given the card kinds a canvas should hold: notes,
       images, links, groups and labelled arrows, drawn in the new design and collaborative over the workspace's
       realtime channels. No documents, no deliverables, no Office files on the board.

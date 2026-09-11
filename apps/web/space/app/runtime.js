@@ -83,7 +83,8 @@ export function emptyState() {
       open: { meetings: true, recents: true, favorites: true, agents: true, private: true, workspace: true, shared: true, apps: true },
       expanded: {},
       hidden: {},
-      tab: 'home',
+      // Chats first: signing in lands on a new chat, so the sidebar opens on the tab that chat lives in.
+      tab: 'chats',
       collapsed: false,
       private: [],
       workspace: [],
@@ -199,6 +200,10 @@ class Space {
     this.meetingPollMs = 5000;
     // Outside AI tools this person connected (loadAgents); `available` is false until the OAuth server is switched on.
     this.agents = { items: [], loaded: false, available: false };
+    // The Canvas tab's list of boards and the Workspaces tab's count of cards that are due. Both live in the React
+    // app's own tables, and the sidebar is the only thing here that reads them.
+    this.canvases = { items: [], loaded: false, loading: false };
+    this.due = { count: 0, at: 0, loading: false };
     this.sync = this.makeSync();
   }
 
@@ -756,6 +761,49 @@ class Space {
     this.emit();
   }
 
+  /** The canvases this person has, newest first. The board itself is the React app's; this is only the list. */
+  async loadCanvases(force = false) {
+    if (!this.me.id || this.canvases.loading || (this.canvases.loaded && !force)) return;
+    this.canvases.loading = true;
+    try {
+      const { data, error } = await this.sb
+        .from('canvas_boards')
+        .select('id,title,updated_at')
+        .eq('deleted', false)
+        .order('updated_at', { ascending: false })
+        .limit(200);
+      if (error) throw toError(error);
+      this.canvases.items = (data || []).map((r) => ({ id: r.id, title: typeof r.title === 'string' ? r.title : '', at: Date.parse(r.updated_at) || 0 }));
+      this.canvases.loaded = true;
+    } catch (err) {
+      console.warn('Space: could not list the canvases', err);
+    } finally {
+      this.canvases.loading = false;
+      this.emit();
+    }
+  }
+
+  /**
+   * How many flashcards are due, by the same rule the review screen reviews by (lib/space/due-cards.ts), so the row
+   * and the screen can never disagree. Re-counted at most once a minute: a card becomes due on a clock, not on a change
+   * anything here would hear about.
+   */
+  async loadDueCards(force = false) {
+    if (!this.me.id || this.due.loading) return;
+    if (!force && this.due.at && NOW() - this.due.at < 60000) return;
+    this.due.loading = true;
+    try {
+      const { countDueCards } = await import('../../lib/space/due-cards');
+      this.due.count = await countDueCards(this.sb, NOW());
+      this.due.at = NOW();
+    } catch (err) {
+      console.warn('Space: could not count the cards that are due', err);
+    } finally {
+      this.due.loading = false;
+      this.emit();
+    }
+  }
+
   async loadTrash() {
     if (!this.ready) return;
     const { data, error } = await this.sb.rpc('ws_trash', { p_space: this.info.id });
@@ -1080,12 +1128,14 @@ class Space {
     S.aiChats = S.aiChats || {};
     for (const c of list) {
       const cur = S.aiChats[c.id];
-      if (cur) cur.at = Math.max(cur.at || 0, c.at);
-      else S.aiChats[c.id] = { id: c.id, title: c.title, at: c.at, messages: null, loaded: false };
+      if (cur) {
+        cur.at = Math.max(cur.at || 0, c.at);
+        cur.workspace = c.workspace || cur.workspace || null;
+      } else S.aiChats[c.id] = { id: c.id, title: c.title, at: c.at, messages: null, loaded: false, workspace: c.workspace || null };
     }
     const listed = new Set(list.map((c) => c.id));
     const madeHere = (S.sidebar.chats || []).filter((c) => c.id && !listed.has(c.id) && S.aiChats[c.id]);
-    S.sidebar.chats = [...madeHere, ...list.map((c) => ({ id: c.id, title: S.aiChats[c.id].title, at: c.at }))];
+    S.sidebar.chats = [...madeHere, ...list.map((c) => ({ id: c.id, title: S.aiChats[c.id].title, at: c.at, workspace: c.workspace || null }))];
     this.emit();
   }
 
@@ -1122,8 +1172,11 @@ class Space {
     const fresh = !chat;
     if (!chat) {
       const id = uid();
-      chat = S.aiChats[id] = { id, title: chatTitle(body), at: NOW(), messages: [], loaded: true };
-      S.sidebar.chats = [{ id, title: chat.title, at: chat.at }, ...(S.sidebar.chats || [])];
+      // A chat started inside a workspace belongs to it: the sidebar lists it under that workspace instead of beside
+      // the general chats, and M13 gives it that workspace's sources to read.
+      const workspace = typeof opts.workspace === 'string' ? opts.workspace : null;
+      chat = S.aiChats[id] = { id, title: chatTitle(body), at: NOW(), messages: [], loaded: true, workspace };
+      S.sidebar.chats = [{ id, title: chat.title, at: chat.at, workspace }, ...(S.sidebar.chats || [])];
     }
     const question = { id: uid(), role: 'user', text: body, at: NOW() };
     chat.messages = [...(chat.messages || []), question];
@@ -1146,7 +1199,7 @@ class Space {
   async answerChat(chat, question, { fresh, webSearch, controller }) {
     const S = this.state;
     const savedQuestion = (async () => {
-      if (fresh) await createChat(this.sb, this.me.id, chat.id, chat.title);
+      if (fresh) await createChat(this.sb, this.me.id, chat.id, chat.title, chat.workspace || null);
       await saveChatLine(this.sb, this.me.id, chat.id, question);
       return true;
     })().catch((err) => {
@@ -1511,7 +1564,7 @@ class Space {
     block('to_do', 'Type / on an empty line to add a heading, a list, a table or a database', { checked: false });
     block('to_do', 'Press + next to Private in the sidebar to make a new page', { checked: false });
     block('to_do', 'Open Templates in the sidebar to start a reading list or course notes', { checked: false });
-    block('to_do', 'Open Canvas from Apps in the sidebar, or press New chat to ask Nemesis', { checked: false });
+    block('to_do', 'Open the Canvas tab for a board, or Workspaces to keep one course together', { checked: false });
     block('callout', 'Pages can hold other pages. Press + on a page in the sidebar to add one inside it.', { icon: '💡' });
     S.pages[pid] = { id: pid, kind: 'page', icon: { emoji: '👋' }, title: 'Getting started', content, parent: null, section: 'private', lastEdited: NOW() };
     S.sidebar.private.unshift(pid);
