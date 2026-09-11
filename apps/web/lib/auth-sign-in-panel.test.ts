@@ -63,6 +63,21 @@ test("🔴 the panel and the column keep Sana's measured boxes", () => {
   assert.match(css, /\.nemesis-auth-art \{ position: absolute; left: -1\.812%; top: -2\.153%; width: 103\.63%; height: 104\.32%; \}/);
 });
 
+test("🔴🔴 the panel is a containing block, so its art stays scoped to its own 706.3x720 frame", () => {
+  // Found 2026-09-11, chasing "still doesn't match the sizing": moving `.nemesis-auth-field` off
+  // `position: fixed` (previous test) ALSO removed the only thing making it a containing block for
+  // its absolutely-positioned child, `.nemesis-auth-art`. `position: static` (the default) does not
+  // establish one, so the art's percentage left/top/width/height fell through to `.nemesis-auth-
+  // shell` — the whole page — instead of the 706.3x720 panel. The video still got clipped to the
+  // correct panel-sized window, but the crop being windowed was now sized and positioned relative to
+  // the entire viewport, so it rendered oversized and shifted at every screen size. `position:
+  // relative` (or any non-static value) on `.nemesis-auth-field` restores its own frame as the
+  // reference. This is the class of bug a bounding-box check on `.nemesis-auth-field` itself cannot
+  // catch — flex lays that box out correctly regardless of its own `position` value — so this test
+  // checks the ART's box against the FIELD's box directly, not just that a `position` value exists.
+  assert.match(css, /\.nemesis-auth-field \{[^}]*position: relative;/, "the panel lost its own containing block again");
+});
+
 test("🔴🔴 the column and the panel share ONE vertical centre, the way Sana's do", () => {
   // Re-measured 2026-09-11: on sana.ai/login, the <section> holding the whole form (headline through
   // the legal text) and the dark panel section are both y118/h720 at 1440x900 — one shared band, not
