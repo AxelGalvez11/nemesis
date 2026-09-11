@@ -1,0 +1,368 @@
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   The Sana-structured variations: sanalabs.com/products/sana-learn's measured page anatomy, our
+   content, our photographs.
+
+   Owner, 2026-09-10: "the landing page needs more sana feel ... lean into the 'agents and students
+   think together' vibe ... i want a good hero section". Measured the same day with Playwright and a
+   real Chrome UA: a 52px header on a 1496px well with 32px gutters; h1 66.87/400/63.53/-0.67px;
+   h2 48/500/48/-0.96px; a sand band at rgb(246, 245, 244) alternating with white; the hero film
+   1390px wide at radius 24; 443x515 photo cards; a partner grid of 224x90 cells; nav links 14/400
+   in a 36px hit area at radius 6; menus at radius 10 with a 5% ring and an 8px/16px 8% drop.
+
+   Their html font size is 62.5%, so their 1rem is 10px. Every rem read off their sheets is
+   converted to px here and in motion.css.
+
+   Values marked "ours" were not measured; everything else was.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+.sn { --sn-ink: rgb(10, 10, 10); --sn-dim: rgba(0, 0, 0, 0.54); --sn-faint: rgba(0, 0, 0, 0.4);
+  --sn-line: rgba(0, 0, 0, 0.1); --sn-sand: rgb(246, 245, 244); --sn-well: 1496px; --sn-gutter: 32px;
+  --nm-dim: rgba(0, 0, 0, 0.54);
+  min-height: 100vh; background: rgb(255, 255, 255); color: var(--sn-ink);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.sn *, .sn *::before, .sn *::after { box-sizing: border-box; }
+.sn a { color: inherit; text-decoration: none; }
+/* 🔴 ZERO SPECIFICITY. As `.sn :is(p, h1 ...)` this reset outranked every `.sn-sub { margin: auto }`, so the hero paragraph lost its centring and slid up under the headline. */
+:where(.sn) :where(p, h1, h2, h3, h4, figure) { margin: 0; }
+
+/* ── header ───────────────────────────────────────────────────────────────────────────────────── */
+.sn-head-in { display: grid; grid-template-columns: max-content 1fr max-content; align-items: center; column-gap: 20px;
+  height: 52px; max-width: var(--sn-well); margin: 0 auto; padding: 0 var(--sn-gutter); }
+.sn-brand { display: inline-flex; align-items: center; gap: 8px; margin-right: 12px; }
+.sn-wordmark { font-size: 18px; font-weight: 500; line-height: 22px; letter-spacing: -0.3px; }
+.sn-nav { display: flex; align-items: center; gap: 2px; }
+.sn-nav a, .sn-login { font-size: 14px; line-height: 19.6px; padding: 8px 12px; border-radius: 6px;
+  transition: background-color 0.2s ease-out; }
+.sn-nav a:hover, .sn-login:hover { background-color: rgba(0, 0, 0, 0.04); }
+.sn-head-right { display: flex; align-items: center; gap: 4px; }
+
+/* ── buttons: the black pill. Height and padding ours; 14/400 theirs ─────────────────────────── */
+.sn-btn { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 14px;
+  border-radius: 9999px; font-size: 14px; line-height: 19.6px; white-space: nowrap; }
+.sn-btn-solid { background: var(--sn-ink); color: rgb(255, 255, 255) !important; }
+.sn-btn-ghost { box-shadow: inset 0 0 0 1px var(--sn-line); transition: background-color 0.2s ease-out; }
+.sn-btn-ghost:hover { background-color: rgba(0, 0, 0, 0.04); }
+
+/* ── hero ─────────────────────────────────────────────────────────────────────────────────────── */
+.sn-hero { padding: 76px var(--sn-gutter) 0; text-align: center; }
+.sn-eyebrow { font-size: 13px; font-weight: 500; line-height: 18px; margin-bottom: 14px; }
+.sn-h1 { max-width: 1376px; margin: 0 auto; font-size: 66.87px; font-weight: 400; line-height: 63.53px;
+  letter-spacing: -0.67px; text-wrap: balance; }
+.sn-sub { max-width: 500px; margin: 22px auto 0; font-size: 15px; line-height: 21px; }
+.sn-actions { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
+.sn-hero-media { max-width: 1440px; margin: 56px auto 0; padding: 0 24px; }
+.sn-frame { border-radius: 24px; overflow: hidden; background: var(--sn-sand); }
+/* ours: the copy under the headline follows it in on the same curve, after the first words land */
+@keyframes sn-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+.sn-load { animation: sn-in 1.2s var(--nm-ease-out) both; }
+.sn-load-1 { animation-delay: 0.55s; }
+.sn-load-2 { animation-delay: 0.75s; }
+.sn-load-3 { animation-delay: 0.95s; }
+
+/* ── the strip under the hero: 224x90 cells in their grid, names instead of logos ────────────── */
+.sn-works { max-width: var(--sn-well); margin: 36px auto 0; padding: 0 var(--sn-gutter);
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.sn-works-cell { height: 90px; display: grid; place-items: center; font-size: 19px; font-weight: 500;
+  letter-spacing: -0.3px; color: rgba(0, 0, 0, 0.6); white-space: nowrap; }
+
+/* ── bands and heads ─────────────────────────────────────────────────────────────────────────── */
+.sn-band { background: var(--sn-sand); padding: 112px var(--sn-gutter); margin-top: 72px; }
+.sn-kicker { font-size: 13px; font-weight: 500; line-height: 18px; text-align: center; margin-bottom: 14px; }
+.sn-h2 { max-width: 920px; margin: 0 auto; text-align: center; font-size: 48px; font-weight: 500;
+  line-height: 48px; letter-spacing: -0.96px; text-wrap: balance; }
+.sn-lead { max-width: 540px; margin: 18px auto 0; text-align: center; font-size: 15px; line-height: 21px; color: var(--sn-dim); }
+.sn-show { max-width: 1200px; margin: 56px auto 0; }
+.sn-show-frame { aspect-ratio: 16 / 10; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04); }
+
+/* ── three photo cards: 443x515, radius 16, the image grows 3% under the pointer ─────────────── */
+.sn-trio { max-width: var(--sn-well); margin: 0 auto; padding: 112px var(--sn-gutter) 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.sn-card-art { position: relative; aspect-ratio: 443 / 515; border-radius: 16px; overflow: hidden; background: var(--sn-sand); }
+.sn-card-art > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.sn-card-cap { margin-top: 14px; max-width: 420px; font-size: 14px; line-height: 19.6px; }
+.sn-card-cap b { font-weight: 600; }
+/* A piece of product resting on the photograph: their menu surface (10px radius family, 5% ring,
+   8px/16px drop at 8%), at pill radius. */
+.sn-float { position: absolute; left: 16px; bottom: 16px; display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 14px 0 8px; border-radius: 9999px; background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 16px rgba(0, 0, 0, 0.08); font-size: 13px; line-height: 18px;
+  animation: sn-bob 6s ease-in-out infinite; }
+.sn-float i { width: 20px; height: 20px; border-radius: 9999px; display: grid; place-items: center; font-style: normal;
+  font-size: 10px; font-weight: 600; color: rgb(255, 255, 255); }
+/* ours: a slow 5px breath, so the product reads as live on a still photograph */
+@keyframes sn-bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+
+/* ── the pile: Sana's falling polaroids, carrying flashcards. Flashcards stay white. ─────────── */
+.sn-pair { max-width: var(--sn-well); margin: 0 auto; padding: 136px var(--sn-gutter) 120px;
+  display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 64px; align-items: center; }
+.sn-pair :is(.sn-kicker, .sn-h2, .sn-lead) { text-align: left; margin-left: 0; margin-right: 0; }
+.sn-pile { position: relative; height: 600px; }
+.sn-pile-card { position: absolute; width: min(340px, 64%); border-radius: 16px; }
+.sn-flash { border-radius: 16px; background: rgb(255, 255, 255); padding: 20px 22px 16px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.sn-flash-q { font-size: 17px; font-weight: 450; line-height: 23px; letter-spacing: -0.2px; }
+.sn-flash-meta { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 12px; line-height: 16px; color: var(--sn-dim); }
+.sn-who { width: 20px; height: 20px; border-radius: 9999px; display: grid; place-items: center; flex: 0 0 auto;
+  font-size: 10px; font-weight: 600; color: rgb(255, 255, 255); }
+
+/* ── agents: their integration bubbles, which pop in and then drift ─────────────────────────── */
+.sn-orbit { position: relative; max-width: 1200px; height: 420px; margin: 56px auto 0; border-radius: 24px;
+  background: rgb(255, 255, 255); overflow: hidden; }
+.sn-orbit-lines { position: absolute; inset: 0; width: 100%; height: 100%; color: rgba(0, 0, 0, 0.14); }
+.sn-orbit-lines line { stroke: currentColor; stroke-width: 1.2; stroke-dasharray: 3 7; vector-effect: non-scaling-stroke;
+  animation: sn-flow 1.4s linear infinite; }
+/* ours: dashes travel toward the middle, the agents' work flowing into Nemesis */
+@keyframes sn-flow { to { stroke-dashoffset: -20; } }
+.sn-bubble-at { position: absolute; width: 0; height: 0; }
+.sn-bubble { position: absolute; left: -44px; top: -44px; width: 88px; height: 88px; border-radius: 9999px;
+  background: rgb(255, 255, 255); display: grid; place-items: center;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 16px rgba(0, 0, 0, 0.08);
+  animation: sn-bob var(--d, 6s) ease-in-out infinite; animation-delay: var(--dd, 0s); }
+.sn-bubble-hub { left: -64px; top: -64px; width: 128px; height: 128px; }
+.sn-initial { width: 44px; height: 44px; border-radius: 9999px; display: grid; place-items: center;
+  font-size: 18px; font-weight: 600; color: rgb(255, 255, 255); }
+.sn-bubble-label { position: absolute; top: calc(100% + 10px); left: 50%; translate: -50% 0; white-space: nowrap;
+  font-size: 13px; line-height: 18px; color: var(--sn-dim); }
+.sn-rules { max-width: 1200px; margin: 16px auto 0; border-radius: 24px; background: rgb(255, 255, 255);
+  padding: 28px 32px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr); gap: 32px; align-items: start; }
+.sn-rules-title { font-size: 14px; font-weight: 600; line-height: 19.6px; }
+.sn-rules-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 24px; }
+.sn-rules-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 18px; }
+.sn-rules-list svg { flex: 0 0 auto; color: rgb(23, 184, 122); }
+
+/* ── devices lying back, then flat: device-1 81.71% wide, device-2 overlapping bottom-right ─── */
+.sn-devices { padding: 136px var(--sn-gutter) 64px; overflow: hidden; }
+.sn-devices-stage { position: relative; max-width: 1355px; height: 780px; margin: 72px auto 0; }
+.sn-dev-1 { position: absolute; left: 0; top: 0; width: 976px; }
+.sn-dev-2 { position: absolute; right: 24px; bottom: 0; z-index: 2; width: 460px; }
+.sn-dev-1 .mk-window { box-shadow: 0 0 0 1px rgba(37, 37, 37, 0.1), 0 30px 80px rgba(0, 0, 0, 0.12); }
+.sn-dev-2 .mk-panel { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 30px 80px rgba(0, 0, 0, 0.16); background: rgb(255, 255, 255); }
+
+/* ── the comparison: their "AI is not an add-on" table, three columns of 14px ───────────────── */
+.sn-table-sec { max-width: var(--sn-well); margin: 0 auto; padding: 96px var(--sn-gutter) 120px; }
+.sn-table { max-width: 1376px; margin: 64px auto 0; }
+.sn-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1.5fr); gap: 32px;
+  padding: 22px 0; border-top: 1px solid var(--sn-line); font-size: 14px; line-height: 19.6px; }
+.sn-row:last-child { border-bottom: 1px solid var(--sn-line); }
+.sn-row-h { border-top: 0; padding-top: 0; font-size: 12px; font-weight: 500; color: var(--sn-faint); }
+.sn-row b { font-weight: 600; }
+.sn-old { color: var(--sn-dim); }
+
+/* ── closing: copy beside a photograph ────────────────────────────────────────────────────────── */
+.sn-close { background: var(--sn-sand); padding: 112px var(--sn-gutter); }
+.sn-close-in { max-width: 1376px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: center; }
+.sn-close-in :is(.sn-h2, .sn-lead) { text-align: left; margin-left: 0; margin-right: 0; }
+.sn-close-in .sn-actions { justify-content: flex-start; }
+.sn-close-art { width: 100%; max-width: 560px; justify-self: end; }
+.sn-tablet-screen { width: 100%; height: 100%; display: grid; place-items: center; padding: 48px; background: rgb(249, 248, 246); }
+.sn-tablet-screen .mk-panel { width: 100%; background: rgb(255, 255, 255); }
+
+/* ── questions: <details>, with the body easing open where the browser can size to auto ─────── */
+.sn-faq { max-width: 1376px; margin: 0 auto; padding: 120px var(--sn-gutter); }
+.sn-faq-title { text-align: center; font-size: 48px; font-weight: 500; line-height: 48px; letter-spacing: -0.96px; }
+.sn-faq-list { margin-top: 56px; }
+.sn-faq-list details { border-top: 1px solid var(--sn-line); interpolate-size: allow-keywords; }
+.sn-faq-list details:last-child { border-bottom: 1px solid var(--sn-line); }
+.sn-faq-list summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; padding: 18px 0; font-size: 14px; font-weight: 500; line-height: 19.6px; }
+.sn-faq-list summary::-webkit-details-marker { display: none; }
+.sn-faq-list summary svg { flex: 0 0 auto; transition: rotate 0.4s var(--nm-ease-out); }
+.sn-faq-list details[open] summary svg { rotate: 180deg; }
+.sn-faq-list details::details-content { height: 0; overflow: clip;
+  transition: height 0.5s var(--nm-ease-out), content-visibility 0.5s allow-discrete; }
+.sn-faq-list details[open]::details-content { height: auto; }
+.sn-faq-a { max-width: 680px; padding-bottom: 20px; font-size: 14px; line-height: 21px; color: var(--sn-dim); }
+
+/* ── footer ───────────────────────────────────────────────────────────────────────────────────── */
+.sn-foot { border-top: 1px solid var(--sn-line); }
+.sn-foot-in { max-width: var(--sn-well); margin: 0 auto; padding: 56px var(--sn-gutter) 32px;
+  display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(0, 180px)); gap: 32px; }
+.sn-foot h4 { margin: 0 0 12px; font-size: 12px; font-weight: 600; line-height: 16px; }
+.sn-foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sn-foot li a { font-size: 12px; line-height: 16px; color: var(--sn-dim); transition: color 0.2s ease-out; }
+.sn-foot li a:hover { color: var(--sn-ink); }
+.sn-foot-base { max-width: var(--sn-well); margin: 0 auto; padding: 0 var(--sn-gutter) 40px; font-size: 12px; color: var(--sn-faint); }
+
+@media (max-width: 1100px) {
+  .sn-nav { display: none; }
+  .sn-h1 { font-size: 52px; line-height: 50px; letter-spacing: -0.52px; }
+  .sn-works { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sn-trio { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
+  .sn-pair, .sn-close-in { grid-template-columns: minmax(0, 1fr); }
+  .sn-devices-stage { height: auto; }
+  .sn-dev-1, .sn-dev-2 { position: relative; left: auto; right: auto; bottom: auto; width: 100%; margin: 0 auto 16px; }
+  .sn-dev-2 { max-width: 460px; }
+  .sn-rules { grid-template-columns: minmax(0, 1fr); }
+  .sn-rules-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sn-close-art { justify-self: center; }
+  .sn-foot-in { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .sn { --sn-gutter: 20px; }
+  .sn-login { display: none; }
+  .sn-hero { padding-top: 44px; }
+  .sn-h1 { font-size: 38px; line-height: 38px; letter-spacing: -0.4px; }
+  .sn-h2, .sn-faq-title { font-size: 32px; line-height: 34px; letter-spacing: -0.5px; }
+  .sn-hero-media { padding: 0 12px; margin-top: 36px; }
+  .sn-frame { border-radius: 16px; }
+  .sn-works { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sn-works-cell { height: 60px; font-size: 16px; }
+  .sn-band, .sn-close { padding: 80px var(--sn-gutter); }
+  .sn-trio { padding-top: 80px; }
+  .sn-pair { padding: 96px var(--sn-gutter) 72px; }
+  .sn-pair { overflow-x: clip; }
+  .sn-pile { height: auto; display: grid; gap: 12px; }
+  .sn-pile-card { position: relative; left: auto !important; top: auto !important; width: 94%; justify-self: center; }
+  .sn-orbit { height: 380px; }
+  .sn-bubble { left: -34px; top: -34px; width: 68px; height: 68px; }
+  .sn-bubble-hub { left: -48px; top: -48px; width: 96px; height: 96px; }
+  .sn-initial { width: 36px; height: 36px; font-size: 15px; }
+  .sn-rules-list { grid-template-columns: minmax(0, 1fr); }
+  .sn-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .sn-row-h { display: none; }
+  .sn-foot-in { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ══ Round three, owner 2026-09-10 ═══════════════════════════════════════════════════════════════
+   "I like the together one ... the hero to be more so 'where students and agents create together'",
+   "a Harvard, like top universities banner scrolling horizontally", "the mascot looks a little bit
+   off center", "more gradients, like the ones we made ... the good ones" (the round-one set). */
+
+/* 🔴 THE MASCOT SAT 20PX LOW IN ITS BUBBLE. art.css gives every `.mascot` a 168px min-height so the
+   old home hero does not jump while the SVG mounts. Inside the 128px bubble (a grid) that made the
+   one auto row 168px tall, anchored at the top, so the body centred 20px below the bubble's middle. */
+.sn-bubble .mascot { min-height: 0; }
+.sn-who-mark { background: transparent !important; }
+.sn-who-mark svg { display: block; }
+
+/* ── the school names: Sana's logo strip, as type ─────────────────────────────────────────────── */
+.sn-mq { max-width: var(--sn-well); margin: 64px auto 0; padding: 0 var(--sn-gutter); }
+.sn-mq-label { text-align: center; font-size: 13px; line-height: 18px; color: var(--sn-dim); }
+.sn-mq-view { position: relative; margin-top: 6px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%); }
+.sn-mq-track { display: flex; width: max-content; margin: 0; padding: 0; list-style: none;
+  animation: sn-mq var(--sn-mq-s, 64s) linear infinite; will-change: transform; }
+.sn-mq-track li { flex: 0 0 auto; padding: 0 38px; font-size: 30px; font-weight: 500; line-height: 96px;
+  letter-spacing: -0.2px; color: rgba(0, 0, 0, 0.52); white-space: nowrap; }
+@keyframes sn-mq { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
+.sn-mq-view:hover .sn-mq-track { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .sn-mq-track { animation: none; flex-wrap: wrap; justify-content: center; width: auto; }
+  .sn-mq-track li[aria-hidden] { display: none; }
+}
+
+/* ── gradient grounds: the approved round-one art (Recraft utility, one colour family each) ──── */
+.sn-art { position: relative; border-radius: 28px; overflow: hidden; isolation: isolate; background: var(--sn-sand); }
+.sn-art-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; z-index: -1; }
+.sn-show-art { max-width: 1320px; margin: 56px auto 0; padding: 56px; }
+.sn-show-art .sn-show { max-width: none; margin: 0; }
+.sn-show-art .sn-show-frame { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 40px 90px rgba(28, 8, 80, 0.3); }
+.sn-band .sn-works-band { margin-top: 44px; }
+/* isolation, or the art (z-index -1) falls behind the sand band and the orbit reads grey */
+.sn-orbit-art { background: transparent; isolation: isolate; }
+.sn-orbit-art .sn-orbit-lines { color: rgba(255, 255, 255, 0.8); }
+.sn-orbit-art .sn-bubble-label { color: rgba(0, 0, 0, 0.72); font-weight: 500; }
+.sn-devices-art { max-width: 1480px; margin: 72px auto 0; padding: 64px 62px 0; }
+.sn-devices-art .sn-devices-stage { margin-top: 0; }
+@media (max-width: 1100px) {
+  .sn-devices-art { padding: 32px 24px 16px; }
+}
+@media (max-width: 720px) {
+  .sn-mq { margin-top: 40px; }
+  .sn-mq-track li { font-size: 22px; line-height: 64px; padding: 0 22px; }
+  .sn-art { border-radius: 20px; }
+  .sn-show-art { padding: 14px; }
+  .sn-devices-art { padding: 20px 12px 8px; }
+}
+
+/* ── study tools: a space in Student Spaces' shape (measured 2026-09-10 in the owner's own space:
+   ground rgb(245,245,245), Create pill 32px r16, tiles 158x48 r10 with a 1px near-white border and
+   a 0 2px 8px 8% shadow, composer 864x108 r24 with a 0 -8px 36px 10% shadow, 14px/700 labels) ─── */
+.sn-tools { max-width: var(--sn-well); margin: 0 auto; padding: 128px var(--sn-gutter) 16px; }
+.sn-space { max-width: 1200px; margin: 56px auto 0; }
+.ss { position: relative; height: 664px; border-radius: 24px; background: rgb(245, 245, 245); overflow: hidden; text-align: left;
+  font-size: 14px; line-height: 20px; color: rgb(34, 34, 34); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 30px 80px rgba(0, 0, 0, 0.1); }
+.ss-i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.ss-top { position: absolute; left: 0; right: 0; top: 0; height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 18px 0 22px; }
+.ss-logo { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: #111; }
+.ss-logo svg { width: 22px; height: 22px; }
+.ss-vr { width: 1px; height: 22px; background: #dcdcdc; }
+.ss-space { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
+.ss-space .ss-i { width: 15px; height: 15px; }
+.ss-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.ss-stack { display: flex; }
+.ss-stack > * { box-shadow: 0 0 0 2px rgb(245, 245, 245); }
+.ss-stack > * + * { margin-left: -6px; }
+.ss-av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; }
+.ss-me { background: #fff; }
+.ss-pill { height: 32px; border-radius: 16px; padding: 0 16px; display: inline-flex; align-items: center; font-size: 13.5px; font-weight: 700; }
+.ss-dark { background: rgb(34, 34, 34); color: #fff; }
+.ss-line { border: 1.5px solid #cfcfcf; background: #fff; }
+.ss-rail { position: absolute; left: 0; top: 60px; bottom: 0; width: 168px; }
+.ss-create { position: absolute; left: 12px; top: 14px; height: 34px; padding: 0 16px 0 12px; border-radius: 17px; background: #1d6fd6; color: #fff;
+  font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+.ss-create .ss-i { width: 16px; height: 16px; stroke-width: 2; }
+.ss-nav { position: absolute; left: 0; right: 0; top: 66px; display: grid; }
+.ss-nav span { position: relative; height: 44px; display: flex; align-items: center; gap: 12px; padding-left: 26px; }
+.ss-nav .ss-i { width: 20px; height: 20px; color: #333; }
+.ss-nav .on { font-weight: 700; }
+.ss-nav .on::before { content: ""; position: absolute; left: 12px; top: 11px; bottom: 11px; width: 2px; border-radius: 2px; background: #222; }
+.ss-panel { position: absolute; left: 168px; right: 12px; top: 60px; bottom: 12px; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.035); }
+.ss-col { position: absolute; left: 50%; top: 48px; width: min(780px, calc(100% - 64px)); translate: -50% 0; }
+.ss-hello { font-size: 16px; line-height: 28px; }
+.ss-hello b { font-weight: 700; color: #000; }
+.ss-ask { margin-top: 22px; font-size: 16px; line-height: 28px; }
+.ss-tiles { margin-top: 12px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.ss-tile { position: relative; height: 56px; border-radius: 10px; background: rgb(253, 253, 253); border: 1px solid rgb(243, 243, 243);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); overflow: hidden;
+  transition: translate 0.3s var(--nm-ease-out), box-shadow 0.3s var(--nm-ease-out); }
+.ss-tile:hover { translate: 0 -2px; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12); }
+.ss-tile b { position: absolute; left: 14px; top: 50%; translate: 0 -50%; max-width: 92px; font-size: 14px; line-height: 16px; font-weight: 700; }
+.ss-thumb { position: absolute; right: 4px; top: 4px; bottom: 4px; width: 66px; border-radius: 8px; overflow: hidden; }
+.ss-thumb img, .ss-thumb svg, .sn-feat-ic img, .sn-feat-ic svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ss-thumb img, .sn-feat-ic img { object-fit: cover; }
+/* the tiles deal in once the space scrolls into view; before JavaScript arms it they simply show */
+[data-nm="armed"] .ss-tile { opacity: 0; }
+[data-nm="on"] .ss-tile { animation: ss-tile 0.8s var(--nm-ease-out) backwards; animation-delay: calc(0.35s + var(--i, 0) * 0.05s); }
+@keyframes ss-tile { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+.ss-chips { position: absolute; left: 50%; bottom: 150px; translate: -50% 0; display: flex; gap: 8px; white-space: nowrap; }
+.ss-chip { height: 30px; border-radius: 15px; background: #e8f0fc; color: #1f3f73; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px 0 10px; font-size: 13px; }
+.ss-chip .ss-i { width: 14px; height: 14px; }
+.ss-composer { position: absolute; left: 50%; bottom: 26px; width: min(864px, calc(100% - 48px)); height: 108px; translate: -50% 0; border-radius: 24px;
+  background: rgb(253, 253, 253); border: 1px solid rgb(230, 230, 230); box-shadow: 0 -8px 36px 1px rgba(0, 0, 0, 0.08); }
+.ss-box { position: absolute; inset: 14px 16px; border-radius: 14px; background: #f3f3f4; }
+.ss-ph { position: absolute; left: 16px; top: 12px; right: 60px; height: 20px; }
+.ss-ph span { position: absolute; left: 0; top: 0; white-space: nowrap; color: #6e6e73; opacity: 0; animation: ss-ph 12s linear infinite; animation-delay: calc(var(--i) * 3s); }
+@keyframes ss-ph { 0% { opacity: 0; translate: 0 6px; } 3%, 22% { opacity: 1; translate: 0 0; } 25%, 100% { opacity: 0; translate: 0 -6px; } }
+.ss-plus { position: absolute; left: 14px; bottom: 6px; font-size: 22px; line-height: 22px; color: #444; }
+.ss-send { position: absolute; right: 10px; bottom: 8px; width: 30px; height: 30px; border-radius: 50%; background: #222; color: #fff; display: grid; place-items: center; }
+.ss-send .ss-i { width: 15px; height: 15px; stroke-width: 2; }
+.sn-feats { max-width: 1200px; margin: 44px auto 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 36px; }
+.sn-feat { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 14px; align-items: start; text-align: left; }
+.sn-feat-ic { position: relative; width: 46px; height: 46px; border-radius: 12px; overflow: hidden; }
+.sn-feat p { font-size: 14px; line-height: 20px; color: var(--sn-dim); }
+.sn-feat b { display: block; margin-bottom: 2px; font-weight: 600; color: var(--sn-ink); }
+@media (prefers-reduced-motion: reduce) {
+  .ss-ph span { animation: none; }
+  .ss-ph span:first-child { opacity: 1; }
+}
+@media (max-width: 1100px) {
+  .ss-rail, .ss-chips, .ss-line { display: none; }
+  .ss-panel { left: 12px; }
+  .ss-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sn-feats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .sn-tools { padding-top: 88px; }
+  .ss { height: 780px; border-radius: 20px; }
+  .ss-top { padding: 0 12px 0 14px; }
+  .ss-vr, .ss-stack, .ss-space .ss-i { display: none; }
+  .ss-col { top: 22px; width: calc(100% - 28px); }
+  .ss-hello { font-size: 14px; line-height: 22px; }
+  .ss-ask { margin-top: 12px; font-size: 14px; line-height: 22px; }
+  .ss-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .ss-tile b { left: 12px; max-width: 70px; font-size: 13px; }
+  .ss-thumb { width: 52px; }
+  .ss-composer { bottom: 14px; height: 92px; width: calc(100% - 28px); }
+  .sn-feats { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+}

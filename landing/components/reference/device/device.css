@@ -1,0 +1,23 @@
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   A photographed device with our product on its screen.
+
+   The photograph is a Higgsfield still shot on a flat green screen, keyed to a transparent hole
+   (research/design-references/PHOTO_RECIPE.md). The screen layer sits UNDER the photo and is bent
+   into the screen's four corners with a projective matrix, so the bezel, the notch and the rounded
+   corners of the glass all stay the photograph's own and the product is really behind them.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+.dv { position: relative; width: 100%; overflow: hidden; isolation: isolate; }
+/* The screen while it is off: clipped to the same quad in plain CSS, so the hole is never a white
+   window onto the page before JavaScript has placed the content. */
+.dv-off { position: absolute; inset: 0; z-index: 0; background: rgb(12, 13, 15); }
+.dv-screen { position: absolute; left: 0; top: 0; z-index: 1; overflow: hidden; transform-origin: 0 0;
+  background: rgb(251, 251, 250); opacity: 0;
+  /* ours: the screen wakes up a beat after the photo lands */
+  transition: opacity 0.9s var(--nm-ease-out, ease-out) 0.2s; }
+.dv[data-ready="true"] .dv-screen { opacity: 1; }
+/* A faint sheen across the glass, so the screen reads as lit glass in daylight and not a sticker. */
+.dv-glare { position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 32%, rgba(255, 255, 255, 0) 52%); }
+.dv-photo { position: absolute; inset: 0; z-index: 2; display: block; width: 100%; height: 100%;
+  pointer-events: none; user-select: none; }
+.dv-video { display: block; width: 100%; height: 100%; object-fit: cover; background: rgb(251, 251, 250); }
