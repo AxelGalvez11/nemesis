@@ -1,21 +1,23 @@
 /**
- * The deliverables section's cards.
+ * The deliverables section's cards, and the card for studying with other people.
  *
  * Owner, 2026-09-11: "make section for the note taker and one for deliverables like Quizlet does, basically
  * deliverables should be background gradient card with UI mockup (skeleton load etc) for flashcards (use only x and
  * check for flashcard) and tests and slides and mind map". Earlier the same day: "just show the deliverables" and
- * "Remove video summery and study packet and podcast and course Map".
+ * "Remove video summery and study packet and podcast and course Map". Then: "Go to Quizlet com but not the webapp,
+ * look at the landing page". Its "How do you want to study?" row, measured that day at 1470 wide: cards 310x390,
+ * radius 24, 32px apart, the title 24/32 bold and centred 19px from the top, the art filling the card from 70px down.
  *
- * Then: "Go to Quizlet com but not the webapp, look at the landing page". Its "How do you want to study?" row, measured
- * that day at 1470 wide: cards 310x390, radius 24, 32px apart, the title 24/32 bold and centred 19px from the top, the
- * art filling the card from 70px down. Ours keep that shape with one approved rendered gradient (public/gradients) as
- * the ground and a wordless mock of the tool, drawn in skeleton bars that shimmer as if loading. Wordless on purpose:
- * invented text inside a mock reads as a screenshot of a lecture that does not exist.
+ * Then: "don't just use skeleton loaders also use text", and "add a section in deliverables for collaborate with
+ * friends and agents ... Use actual agent logos". So each mock carries real words (a question, a test's options, a
+ * slide title, a map's nodes) with skeleton bars for what is still loading, one subject per card so the row reads
+ * across fields; and a wide card under the row shows a shared deck with classmates and agents in it.
  *
- * 🔴 A FLASHCARD IS GRADED WITH ✗ OR ✓ AND NOTHING ELSE. No Again/Hard/Good/Easy row. lib/home.test.ts holds it.
+ * 🔴 A FLASHCARD IS GRADED WITH ✗ OR ✓ AND NOTHING ELSE. lib/home.test.ts holds it.
  * 🔴 EVERY ANIMATION IS CSS AND STOPS UNDER prefers-reduced-motion, so the resting state is the finished picture.
+ * 🔴 AGENT MARKS ARE THE COMPANIES' OWN FILES (public/brand/agents, see PROVENANCE.md), drawn with <img>.
  */
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 
 import { Reveal } from "./motion/Motion";
 
@@ -32,9 +34,9 @@ function FlashcardsMock() {
         <span className="sn-mk-card sn-mk-card-3" />
         <span className="sn-mk-card sn-mk-card-2" />
         <div className="sn-mk-card sn-mk-card-1">
-          <Sk w="26%" className="sn-sk-sm" />
-          <Sk w="84%" />
-          <Sk w="60%" />
+          <p className="sn-mk-label">Cell biology · 4 of 20</p>
+          <p className="sn-mk-q">Where in the cell does the Krebs cycle happen?</p>
+          <Sk w="52%" className="sn-sk-sm" />
         </div>
       </div>
       <div className="sn-mk-grade">
@@ -53,24 +55,33 @@ function FlashcardsMock() {
   );
 }
 
-const OPTIONS = ["64%", "48%", "72%", "55%"];
+const OPTIONS = [
+  { text: "Treaty of Utrecht" },
+  { text: "Peace of Westphalia", right: true },
+  { text: "Treaty of Versailles" },
+  { text: "Congress of Vienna" },
+];
 
 function TestMock() {
   return (
     <div className="sn-mk sn-mk-test" aria-hidden="true">
-      <span className="sn-mk-prog">
-        <i />
-      </span>
-      <Sk w="90%" />
-      <Sk w="56%" />
+      <div className="sn-mk-test-hd">
+        <span className="sn-mk-label">Question 3 of 10</span>
+        <span className="sn-mk-prog">
+          <i />
+        </span>
+      </div>
+      <p className="sn-mk-q">Which treaty ended the Thirty Years’ War?</p>
       <ul className="sn-mk-opts">
-        {OPTIONS.map((w, i) => (
-          <li key={w} className={i === 2 ? "sn-mk-opt is-right" : "sn-mk-opt"}>
+        {OPTIONS.map((o) => (
+          <li key={o.text} className={o.right ? "sn-mk-opt is-right" : "sn-mk-opt"}>
             <i className="sn-mk-radio" />
-            <Sk w={w} />
+            <span>{o.text}</span>
           </li>
         ))}
       </ul>
+      <Sk w="74%" className="sn-sk-sm" />
+      <Sk w="48%" className="sn-sk-sm" />
     </div>
   );
 }
@@ -79,14 +90,19 @@ function SlidesMock() {
   return (
     <div className="sn-mk sn-mk-slides" aria-hidden="true">
       <div className="sn-mk-slide">
-        <Sk w="52%" className="sn-sk-lg" />
+        <p className="sn-mk-slide-title">Supply and demand</p>
         <div className="sn-mk-slide-body">
           <div className="sn-mk-slide-lines">
-            <Sk w="94%" />
-            <Sk w="76%" />
-            <Sk w="86%" />
+            <p>Prices rise when demand outruns supply</p>
+            <Sk w="88%" className="sn-sk-sm" />
+            <Sk w="64%" className="sn-sk-sm" />
           </div>
-          <span className="sn-mk-slide-img" />
+          <span className="sn-mk-slide-img">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
         </div>
       </div>
       <div className="sn-mk-thumbs">
@@ -102,10 +118,10 @@ function SlidesMock() {
 
 /** Branch nodes in percent of the map box; the links are drawn in a 100 by 90 box, the same 10:9 shape. */
 const BRANCHES = [
-  { x: 24, y: 17, w: "38px" },
-  { x: 76, y: 24, w: "46px" },
-  { x: 22, y: 80, w: "44px" },
-  { x: 77, y: 84, w: "34px" },
+  { x: 26, y: 17, text: "Inertia" },
+  { x: 74, y: 25, text: "F = ma" },
+  { x: 27, y: 80, text: "Action and reaction" },
+  { x: 76, y: 84, text: "Friction" },
 ];
 
 function MindMapMock() {
@@ -115,15 +131,15 @@ function MindMapMock() {
         {BRANCHES.map((b) => {
           const y = (b.y / 100) * 90;
           const mid = (50 + b.x) / 2;
-          return <path key={b.x} pathLength={1} d={`M50 45C${mid} 45 ${mid} ${y} ${b.x} ${y}`} />;
+          return <path key={b.text} pathLength={1} d={`M50 45C${mid} 45 ${mid} ${y} ${b.x} ${y}`} />;
         })}
       </svg>
       <span className="sn-mk-node is-root" style={{ left: "50%", top: "50%" }}>
-        <Sk w="54px" />
+        <span className="sn-mk-t">Newton’s laws</span>
       </span>
       {BRANCHES.map((b, i) => (
-        <span key={b.x} className="sn-mk-node" style={{ left: `${b.x}%`, top: `${b.y}%`, animationDelay: `${0.3 + i * 0.18}s` }}>
-          <Sk w={b.w} />
+        <span key={b.text} className="sn-mk-node" style={{ left: `${b.x}%`, top: `${b.y}%`, animationDelay: `${0.3 + i * 0.18}s` }}>
+          <span className="sn-mk-t">{b.text}</span>
         </span>
       ))}
     </div>
@@ -153,5 +169,84 @@ export function Deliverables() {
         </Reveal>
       ))}
     </ul>
+  );
+}
+
+const AGENT_MARKS = [
+  { who: "Claude", logo: "/brand/agents/claude.svg" },
+  { who: "ChatGPT", logo: "/brand/agents/chatgpt.svg" },
+  { who: "Cursor", logo: "/brand/agents/cursor.svg" },
+];
+
+/** A shared deck's activity. Classmates are initials in a tone; agents are their own marks. */
+const FEED: { who: string; logo?: string; tone?: string; did: string; when: string; live?: true }[] = [
+  { who: "Claude", logo: "/brand/agents/claude.svg", did: "added 12 cards from Lecture 4", when: "2m" },
+  { who: "Maya", tone: "#8A63F0", did: "fixed a card about chlorophyll", when: "5m" },
+  { who: "ChatGPT", logo: "/brand/agents/chatgpt.svg", did: "made a practice test from the deck", when: "9m" },
+  { who: "Leo", tone: "#2A8CCD", did: "is reviewing, 18 of 30 done", when: "now", live: true },
+];
+
+function Mark({ who, logo, tone, className }: { who: string; logo?: string; tone?: string; className: string }) {
+  if (logo) {
+    return (
+      <span className={className}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={logo} alt="" loading="lazy" decoding="async" />
+      </span>
+    );
+  }
+  return (
+    <span className={className} style={{ background: tone, color: "#fff" }}>
+      {who[0]}
+    </span>
+  );
+}
+
+export function Collaborate() {
+  return (
+    <Reveal kind="rise" className="sn-co">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="sn-co-art" src="/gradients/orange.webp" alt="" loading="lazy" decoding="async" />
+      <div className="sn-co-copy">
+        <p className="sn-co-title">Study with friends and agents</p>
+        <p className="sn-co-line">
+          Share a deck with your study group, and bring Claude, ChatGPT or Cursor in to add cards, tests and slides beside you.
+        </p>
+        <div className="sn-co-logos">
+          {AGENT_MARKS.map((a) => (
+            <Mark key={a.who} who={a.who} logo={a.logo} className="sn-co-logo" />
+          ))}
+        </div>
+      </div>
+      <div className="sn-mk sn-co-mock" aria-hidden="true">
+        <div className="sn-co-hd">
+          <div>
+            <p className="sn-mk-label">Shared deck</p>
+            <p className="sn-co-deck">Week 4: Photosynthesis</p>
+          </div>
+          <span className="sn-co-stack">
+            <Mark who="Maya" tone="#8A63F0" className="sn-co-av" />
+            <Mark who="Leo" tone="#2A8CCD" className="sn-co-av" />
+            <Mark who="Claude" logo="/brand/agents/claude.svg" className="sn-co-av" />
+            <Mark who="ChatGPT" logo="/brand/agents/chatgpt.svg" className="sn-co-av" />
+          </span>
+          <span className="sn-co-share">Share</span>
+        </div>
+        <ul className="sn-co-feed">
+          {FEED.map((f, i) => (
+            <li key={f.who} style={{ "--i": i } as CSSProperties}>
+              <Mark who={f.who} logo={f.logo} tone={f.tone} className="sn-co-av" />
+              <span className="sn-co-did">
+                <b>{f.who}</b> {f.did}
+              </span>
+              <em>
+                {f.live ? <i className="sn-co-live" /> : null}
+                {f.when}
+              </em>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Reveal>
   );
 }

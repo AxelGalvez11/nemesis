@@ -114,6 +114,62 @@ describe("the homepage", () => {
     expect(page).toMatch(/poster="\/showcase\/lecture\.webp"/);
   });
 
+  it("🔴 the hero laptop plays the chat film", () => {
+    // Owner, 2026-09-11: the hero film "looks glitchy in beginning, it should showcase chat".
+    expect(page).toMatch(/src="\/showcase\/chat\.mp4"/);
+    expect(page).toMatch(/poster="\/showcase\/chat\.webp"/);
+    expect(page).not.toMatch(/src="\/showcase\/together\.mp4"/);
+  });
+
+  it("🔴 the rules card and the deck-memory section stay gone", () => {
+    // Owner, 2026-09-11: remove "the your deck remembers what you missed section" and "that rules every output passes card".
+    expect(page).not.toMatch(/<p className="sn-rules-title">|RULES\.map/);
+    expect(page).not.toMatch(/text="Your deck remembers what you missed"|<WorkspaceMock/);
+  });
+
+  it("🔴 the apps section shows only apps Nemesis can connect, each with its owner's own mark", () => {
+    // Owner, 2026-09-11: "connect to apps you already use and also include Gmail, Google Calendar, add other related apps".
+    expect(page).toMatch(/text="Connect the apps you already use"/);
+    const apps = [...page.matchAll(/\{ name: "([^"]+)", logo: "(\/brand\/[a-z]+\/[a-z_]+\.svg)" \}/g)].map((m) => ({ name: m[1], logo: m[2] }));
+    expect(apps.length, "fewer apps than the owner asked for").toBeGreaterThanOrEqual(14);
+    for (const name of ["Gmail", "Google Calendar", "Claude", "ChatGPT", "Cursor"]) expect(apps.map((a) => a.name)).toContain(name);
+    const catalogue = readFileSync(new URL("../../apps/web/lib/workspace/composio-apps.ts", import.meta.url), "utf8");
+    for (const { name, logo } of apps) {
+      expect(existsSync(new URL(`../public${logo}`, import.meta.url)), `${logo} is missing`).toBe(true);
+      if (logo.startsWith("/brand/agents/")) continue;
+      expect(catalogue, `${name} is on the page but Nemesis has no connector for it`).toContain(`label: "${name}"`);
+    }
+  });
+
+  it("🔴 agents are drawn with their real marks, from files with a stated source", () => {
+    // Owner, 2026-09-11: "Use actual agent logos".
+    for (const agent of ["claude", "chatgpt", "cursor"]) {
+      expect(existsSync(new URL(`../public/brand/agents/${agent}.svg`, import.meta.url)), `${agent}.svg is missing`).toBe(true);
+    }
+    expect(existsSync(new URL("../public/brand/agents/PROVENANCE.md", import.meta.url))).toBe(true);
+    expect(page).toMatch(/logo: "\/brand\/agents\/claude\.svg"/);
+  });
+
+  it("🔴 the deliverables carry words as well as skeleton bars, and a card for studying together", () => {
+    // Owner, 2026-09-11: "don't just use skeleton loaders also use text", "add a section in deliverables for collaborate
+    // with friends and agents".
+    expect(studyTools.match(/className="sn-mk-q"/g)?.length ?? 0, "the mocks lost their questions").toBeGreaterThanOrEqual(2);
+    expect(studyTools).toMatch(/Peace of Westphalia/);
+    expect(studyTools).toMatch(/className="sn-mk-t"/);
+    expect(studyTools, "the mocks stopped loading").toMatch(/className=\{`sn-sk/);
+    expect(studyTools).toMatch(/Study with friends and agents/);
+    expect(page).toMatch(/<Deliverables \/>\s*<Collaborate \/>/);
+  });
+
+  it("🔴 before and after is about notes and flashcards grounded in sources, and skills as the paid plan's promise", () => {
+    // Owner, 2026-09-11: "the quality of source grounded notes and flashcards, and special skills for notes and others
+    // for premium promise".
+    expect(page).toMatch(/text="Notes and flashcards that come from your sources"/);
+    expect(page).not.toMatch(/What changes when your agent can use Nemesis/);
+    expect(page.match(/premium: true/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(page).toMatch(/linked to the page it came from/);
+  });
+
   it("the photo section is gone, and the Decks link still lands on a section", () => {
     // Owner, 2026-09-11, of the three photographs (FSRS, ideas stay connected, slides and guides): they "do not fit".
     expect(page).not.toMatch(/sn-trio|hourglass-cards|card-board|slides-print/);
