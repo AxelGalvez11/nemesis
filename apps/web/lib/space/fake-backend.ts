@@ -332,6 +332,33 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
         invites.set(page, list);
         return ok({ notify, page: { id: page, title: String(server.recs.get(page)?.props.title ?? "") || "Untitled" }, inviter: me.name });
       }
+      case "ws_submit_form": {
+        // As ws_submit_form does, closely enough for tests and the harness: the form's own questions only, one row at the
+        // end of its database, broadcast like any write.
+        const view = server.recs.get(String(params.p_view));
+        if (!view || view.kind !== "view" || !view.alive || view.type !== "form") return { data: null, error: { message: "no such form", code: "22023" } };
+        const coll = [...server.recs.values()].find((r) => r.kind === "collection" && r.alive && r.page_id === view.page_id);
+        if (!coll) return { data: null, error: { message: "this form has no database", code: "22023" } };
+        const answers = (params.p_answers ?? {}) as Record<string, unknown>;
+        const questions = (view.props.form as { questions?: unknown } | undefined)?.questions;
+        const props: Props = {};
+        for (const q of Array.isArray(questions) ? questions : []) {
+          if (typeof q === "string" && coll.props[`s:${q}`] && answers[q] !== undefined && answers[q] !== "") props[q] = answers[q];
+        }
+        const id = crypto.randomUUID();
+        const rows = Array.isArray(coll.props.rows) ? (coll.props.rows as string[]) : [];
+        await server.apply(
+          spaceId,
+          [
+            { op: "create", id, kind: "row", type: "", parent_id: coll.id, props },
+            { op: "update", id: coll.id, base: coll.v, lists: { rows: { ins: [[id, rows[rows.length - 1] ?? null]] } } },
+          ] as Op[],
+          "form",
+          userId,
+        );
+        setTimeout(deliver, 30);
+        return ok({ ok: true, row: id });
+      }
       case "ws_my_tasks": {
         // As ws_my_tasks does: live rows whose Person properties list this person and whose Status is not complete.
         type SchemaEntry = { type?: string; options?: Array<{ value?: string; color?: string; group?: string }> };
