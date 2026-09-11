@@ -59,7 +59,7 @@ space.onRoute((r, prev) => {
 // A feature whose server side does not exist yet stays out of sight rather than pretending: no canned AI answers, no
 // invite box that sends nothing (docs/space/PLAN.md). Turn a flag on in the milestone that builds it;
 // lib/space/space-ready.test.ts keeps every entry point behind its flag.
-const READY = { ai: false, meetings: false, inbox: true, notifyPrefs: false, invites: true, publish: false, members: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
+const READY = { ai: false, chat: true, meetings: false, inbox: true, notifyPrefs: false, invites: true, publish: false, members: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
 /* ------------------------------------------------------------------ helpers */
 const svgMarkup = (n, as) => (ALL_ICONS[n] || '').replace('<svg ', `<svg class="${as || n}" `);
 const Icon = ({ n, as, cls }) => html`<span class=${'nicon ' + (cls || '')} dangerouslySetInnerHTML=${{ __html: svgMarkup(n, as) }}></span>`;
@@ -971,7 +971,7 @@ function SectionBody({ k, current }) {
   if (k === 'private' || k === 'workspace' || k === 'shared') return html`<div class="sb-list">${sb[k].slice(0, showCount(k)).map((pid) => html`<${PageRow} key=${pid} pid=${pid} current=${current}/>`)}</div>${sb[k].length > showCount(k) ? html`<${MoreRow} k=${k}/>` : ''}`;
   return html`<div class="sb-list sb-apps">${APPS.map(([ic, label, path]) => html`<a class=${'sb-item link' + (location.pathname.startsWith(path) ? ' active' : '')} onClick=${() => space.openApp(path)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n=${ic} cls="i20"/></div><div class="sb-item-label">${label}</div></div></a>`)}</div>`;
 }
-const SB_TABS = [['home', 'home', 'Home'], ...(READY.ai ? [['chat', 'chatBubble', 'Chat']] : []), ...(READY.meetings ? [['meetings', 'paperMicrophone', 'Meetings']] : []), ...(READY.inbox ? [['inbox', 'inbox', 'Inbox']] : [])];
+const SB_TABS = [['home', 'home', 'Home'], ...(READY.chat ? [['chat', 'chatBubble', 'Chat']] : []), ...(READY.meetings ? [['meetings', 'paperMicrophone', 'Meetings']] : []), ...(READY.inbox ? [['inbox', 'inbox', 'Inbox']] : [])];
 // Measured on the live Chat tab: agent tiles, then chats grouped by last update (Today, Yesterday, Past week, Past 30 days,
 // Older) in 30px rows on a 31px pitch. Today's rows carry an ultra-compact age (Just now, 5m, 2h), older rows a short date,
 // unread chats a blue dot, and the open chat a filled row. Only the first group header carries search, read-all and new.
@@ -998,20 +998,20 @@ function chatRows() {
   return (S.sidebar.chats || []).map((c) => {
     const ch = c.id && S.aiChats ? S.aiChats[c.id] : null;
     const ms = ch && ch.messages && ch.messages.length ? ch.messages[ch.messages.length - 1].at || ch.messages[0].at : null;
-    return { ...c, chat: ch, at: ms || c.at || NOW() };
+    return { ...c, chat: ch, at: Math.max(ms || 0, (ch && ch.at) || 0, c.at || 0) || NOW() };
   }).filter((c) => !c.id || c.chat).sort((x, y) => y.at - x.at);
 }
 const unreadChats = () => Object.values(S.aiChats || {}).filter((c) => c.unread).length;
 function ChatBody() {
-  const tiles = [['Nemesis AI', 'ai'], ['New agent', 'new']];
+  const tiles = [['Nemesis AI', 'ai'], ...(READY.ai ? [['New agent', 'new']] : [])];
   const rows = chatRows();
   const groups = CHAT_GROUPS.map(([k, label]) => [label, rows.filter((r) => chatGroup(r.at) === k)]).filter(([, list]) => list.length);
   const cur = route() === 'ai' ? S.aiOpen : null;
-  const openChat = (c) => { if (!c.chat) return; c.chat.unread = false; S.aiOpen = c.id; commit(); go('ai'); };
+  const openChat = (c) => { if (!c.chat) return; c.chat.unread = false; S.aiOpen = c.id; void space.openChat(c.id); commit(); go('ai'); };
   const readAll = () => { Object.values(S.aiChats || {}).forEach((c) => { c.unread = false; }); commit(); };
   return html`<div class="sb-chat"><div class="sb-chat-group">
     <div class="sb-chat-in">
-      <div class="sb-chat-head"><div class="sb-chat-label">Nemesis AI</div><div class="sb-act24 hov" role="button" aria-label="New agent"><${Icon} n="plusSmall" cls="i16"/></div></div>
+      <div class="sb-chat-head"><div class="sb-chat-label">Nemesis AI</div>${READY.ai ? html`<div class="sb-act24 hov" role="button" aria-label="New agent"><${Icon} n="plusSmall" cls="i16"/></div>` : ''}</div>
       <div class="sb-tiles">${tiles.map(([label, kind]) => html`<a class="sb-tile" role="button" onClick=${() => { if (kind === 'ai') openNewChat(); }}><div class=${'sb-tile-av ' + kind}>${kind === 'new' ? html`<${Icon} n="plusSmall" cls="i20"/>` : kind === 'ai' ? html`<div class="sb-tile-in"><span class="ais-mark" dangerouslySetInnerHTML=${{ __html: ICONS.nemesisMark }}></span></div>` : html`<${Icon} n="book" cls="i20"/>`}</div><div class="sb-tile-label">${label}</div></a>`)}</div>
     </div>
     ${groups.map(([label, list], gi) => html`<div class="sb-chat-in older" key=${label}>
@@ -1057,7 +1057,7 @@ function Sidebar({ current }) {
       ${tab !== 'home' ? '' : html`<div class="sb-links">${links.map(([ic, label, dot]) => html`<a class=${'sb-item link' + ((label === 'Library' && route().startsWith('library')) || (label === 'My Tasks' && route() === 'tasks') || (label === 'Templates' && route().startsWith('marketplace')) ? ' active' : '')} onClick=${(e) => sidebarLink(label, e.currentTarget)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n=${ic} cls="i22"/>${dot ? html`<span class="sb-dot"></span>` : ''}</div><div class="sb-item-label">${label}</div></div></a>`)}</div>`}
     </div>
     <div class="sb-bottom">
-      ${READY.ai ? html`<div class="sb-newchat" role="button" onClick=${openNewChat}><${Icon} n="aiFace" cls="i20"/><span class="label">New chat</span><kbd>⌘O</kbd></div>` : ''}
+      ${READY.chat ? html`<div class="sb-newchat" role="button" onClick=${openNewChat}><${Icon} n="aiFace" cls="i20"/><span class="label">New chat</span><kbd>⌘O</kbd></div>` : ''}
       <div class=${'sb-compose' + (overlay && overlay.kind === 'composeMenu' ? ' open' : '')} role="button" aria-label="New page" onClick=${(e) => openOverlay('composeMenu', e.currentTarget)}><${Icon} n=${overlay && overlay.kind === 'composeMenu' ? 'xMark' : 'compose'} cls=${overlay && overlay.kind === 'composeMenu' ? 'i20' : 'i22'}/></div>
     </div>
   </div></div>`;
@@ -1726,7 +1726,13 @@ function FmtMenu() {
 /* ------------------------------------------------------------------ AI page */
 const AI_CHIPS = [['squareGrid2X2', 'Create Slides'], ['viewTable', 'Spreadsheets'], ['docTextMagnifyingGlass', 'Research'], ['cursorClick', 'Visualize']];
 function openNewChat() { S.aiOpen = null; commit(); go('ai'); }
-addEventListener('keydown', (e) => { if (READY.ai && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openNewChat(); } });
+// A question to Nemesis from any chat screen. The runtime saves it and streams the answer in (runtime.js, sendChat).
+function askNemesis(chatId, text) {
+  const id = space.sendChat(chatId, text, { webSearch: !!S.chatWebSearch });
+  if (id) S.recents = ['chat:' + id, ...(S.recents || []).filter((x) => x !== 'chat:' + id)];
+  return id;
+}
+addEventListener('keydown', (e) => { if (READY.chat && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openNewChat(); } });
 function AiComposer({ onSend }) {
   const ref = useRef(null); const [has, setHas] = useState(false); const [focus, setFocus] = useState(false);
   useEffect(() => { if (ref.current) ref.current.focus(); }, []);
@@ -1740,27 +1746,28 @@ function AiComposer({ onSend }) {
 // share, pin and more on a 30px pitch at the right.
 function AiTopbar() {
   const chat = S.aiChats[S.aiOpen];
-  return html`<div class="nsp-topbar ai-full-bar"><div class="ai-crumbs"><div class="ais-av" role="button"><${AiFace} size=${24}/></div><div class="ai-crumb" role="button" onClick=${openNewChat}>Nemesis AI</div><span class="ai-slash">/</span><div class="ai-crumb" role="button"><span class="ai-crumb-t">${chat.title}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i16"/></div></div><div class="ai-bar-r">${[['chatBubblePlus', 'New chat', openNewChat], ['squareAndArrowUp', 'Share'], ['pin', 'Pin chat'], ['ellipsis', 'More actions']].map(([ic, label, fn]) => html`<div class="ais-hb" role="button" aria-label=${label} onClick=${fn}><${Icon} n=${ic} cls="i20"/></div>`)}</div></div>`;
+  return html`<div class="nsp-topbar ai-full-bar"><div class="ai-crumbs"><div class="ais-av" role="button"><${AiFace} size=${24}/></div><div class="ai-crumb" role="button" onClick=${openNewChat}>Nemesis AI</div><span class="ai-slash">/</span><div class="ai-crumb" role="button"><span class="ai-crumb-t">${chat.title}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i16"/></div></div><div class="ai-bar-r">${[['chatBubblePlus', 'New chat', openNewChat]].map(([ic, label, fn]) => html`<div class="ais-hb" role="button" aria-label=${label} onClick=${fn}><${Icon} n=${ic} cls="i20"/></div>`)}</div></div>`;
 }
 // The new-chat page: a 44px bar (AI / New AI chat, a new-chat button), then a 694px column centred in
 // the frame and pinned 24px off the bottom: a 64px avatar with the Personalize pill, a 17px heading, four 32px suggestion
 // rows on a 35px pitch, and a 100px composer with no page chip.
-const AI_FULL_ROWS = [['magnifyingGlass', 'Search this workspace'], ['aiDescription', 'Summarize this page'], ['listBullet', 'Make a study plan'], ['filePdf', 'Explain a PDF or image']];
+const AI_FULL_ROWS = [['bulb', 'Explain a hard idea simply'], ['listBullet', 'Make a study plan'], ['questionMarkCircle', 'Quiz me on a topic'], ['pencilLine', 'Help me outline a paper or report']];
 function AiFullTopbar() {
   return html`<div class="nsp-topbar ai-full-bar"><div class="ai-crumbs"><div class="ai-crumb" role="button" onClick=${openNewChat}>Nemesis AI</div><span class="ai-slash">/</span><div class="ai-crumb" role="button"><span>New AI chat</span><${Icon} n="arrowChevronSingleDownSmall" cls="i16"/></div></div><div class="ais-hb" role="button" aria-label="New chat" onClick=${openNewChat}><${Icon} n="chatBubblePlus" cls="i20"/></div></div>`;
 }
 function AiPage() {
   const chat = S.aiChats && S.aiOpen ? S.aiChats[S.aiOpen] : null;
   if (chat && chat.unread && !chat.running) chat.unread = false; // a chat read in full page is read
-  const start = (t) => { S.aiChats = S.aiChats || {}; const id = 'c' + uid(); S.aiChats[id] = { id, title: t.slice(0, 80), messages: [{ role: 'user', text: t, at: NOW() }] }; S.aiOpen = id; S.sidebar.chats = [{ id, title: t.slice(0, 80), date: 'Today' }, ...S.sidebar.chats]; commit(); };
-  const startFull = (t) => { const id = newSideChat(t, null); S.aiSide = { open: false, chat: id }; S.aiOpen = id; S.aiChats[id].working = 'Thinking'; commit(); aiLater(id, 1200, (c) => { c.messages.push({ role: 'assistant', kind: 'text', text: 'Nemesis AI is not answering in this workspace yet.' }, { role: 'assistant', kind: 'actions' }); c.running = false; c.working = null; }); };
+  const startFull = (t) => { const id = askNemesis(null, t); if (id) { S.aiOpen = id; commit(); } };
+  if (chat && !chat.loaded && !chat.loading && !chat.failed) void space.openChat(chat.id);
   if (!chat) return html`<div class="ai-page ai-full"><div class="ai-full-col">
     <div class="ai-full-sp"></div>
     <div class="ai-full-top"><div class="aish-avw ai64"><div class="aish-av ai64"><${AiFace} size=${64}/></div><div class="aish-pz" role="button"><${Icon} n="pencilLine" cls="i14"/><span>Personalize</span></div></div><div class="ai-full-h">How can I help you today?</div></div>
     <div class="ai-full-menu"><div class="aish-menu-in" role="menu">${AI_FULL_ROWS.map(([ic, label, badge]) => html`<div class="aish-row" role="menuitem" onClick=${() => startFull(label)}><${Icon} n=${ic} cls="i20"/><span>${label}</span>${badge ? html`<span class="aish-new">${badge}</span>` : ''}</div>`)}</div></div>
     <div class="ai-full-dock"><${AiSideComposer} chat=${null} page=${null} onSend=${startFull}/></div>
   </div></div>`;
-  return html`<div class="ai-page thread"><div class="ai-thread ais-full">${chat.messages.map((m, i) => html`<${AiSideItem} key=${i} chat=${chat} m=${m} last=${i === chat.messages.length - 1 && !chat.running && !chat.form}/>`)}${chat.running && chat.working ? html`<div class="ais-working"><span class="ais-spin"></span><span>${chat.working}</span></div>` : ''}</div><div class="ai-dock">${chat.form ? html`<${AiQuestionCard} key=${chat.id + ':' + chat.form.step} chat=${chat}/>` : html`<${AiSideComposer} chat=${chat} page=${null} onSend=${(t) => sendSideMessage(chat.id, t, null)}/>`}</div></div>`;
+  if (!chat.loaded) return html`<div class="ai-page thread"><div class="ai-thread ais-full"><div class="ais-working">${chat.failed ? '' : html`<span class="ais-spin"></span>`}<span>${chat.failed ? 'This chat could not be opened. Try again in a moment.' : 'Opening chat'}</span></div></div></div>`;
+  return html`<div class="ai-page thread"><div class="ai-thread ais-full">${chat.messages.map((m, i) => html`<${AiSideItem} key=${i} chat=${chat} m=${m} last=${i === chat.messages.length - 1 && !chat.running && !chat.form}/>`)}${chat.running && chat.working ? html`<div class="ais-working"><span class="ais-spin"></span><span>${chat.working}</span></div>` : ''}</div><div class="ai-dock">${chat.form ? html`<${AiQuestionCard} key=${chat.id + ':' + chat.form.step} chat=${chat}/>` : html`<${AiSideComposer} chat=${chat} page=${null} onSend=${(t) => askNemesis(chat.id, t)}/>`}</div></div>`;
 }
 
 
@@ -1806,12 +1813,11 @@ function startResearch(page) {
   S.aiChats[id].working = 'Thinking'; commit();
   aiLater(id, 1600, (c) => { c.messages.push({ role: 'assistant', kind: 'research' }, { role: 'assistant', kind: 'actions' }); c.running = false; c.working = null; });
 }
-function sendSideMessage(chatId, text, page) {
-  let id = chatId && S.aiChats && S.aiChats[chatId] ? chatId : null;
-  if (!id) id = newSideChat(text, page && page.id);
-  else { const c = S.aiChats[id]; c.messages.push({ role: 'user', text, at: NOW() }); c.running = true; S.recents = ['chat:' + id, ...S.recents.filter((x) => x !== 'chat:' + id)]; }
-  S.aiChats[id].working = 'Thinking'; commit();
-  aiLater(id, 1200, (c) => { c.messages.push({ role: 'assistant', kind: 'text', text: 'Nemesis AI is not answering in this workspace yet.' }, { role: 'assistant', kind: 'actions' }); c.running = false; c.working = null; });
+function sendSideMessage(chatId, text) {
+  const known = chatId && S.aiChats && S.aiChats[chatId] ? chatId : null;
+  const id = askNemesis(known, text);
+  if (id && !known) S.aiSide = { open: true, chat: id };
+  commit();
 }
 const rB = (t) => [t, [['b']]];
 const rT = (t) => [t];
@@ -1893,6 +1899,18 @@ function undoDraft(m) {
   ch.ids.forEach((x) => { delete S.blocks[x]; });
   ch.undone = true; commit();
 }
+function copyChatText(text) {
+  try { void navigator.clipboard.writeText(text || ''); showToast({ text: 'Copied' }); } catch (e) { showToast({ warn: true, text: 'That could not be copied.' }); }
+}
+// Nemesis's answers draw with the app's own renderer (lib/space/answer-render.tsx), loaded the first time one is shown.
+let answerRenderer = null;
+const loadAnswerRenderer = () => (answerRenderer = answerRenderer || import('../../lib/space/answer-render'));
+function Answer({ m }) {
+  const ref = useRef(null);
+  useEffect(() => { const el = ref.current; return () => { if (el) void loadAnswerRenderer().then((r) => r.removeAnswer(el)); }; }, []);
+  useEffect(() => { const el = ref.current; if (el) void loadAnswerRenderer().then((r) => { if (el.isConnected) r.renderAnswer(el, m.text || '', m.sources || []); }); }, [m.text, (m.sources || []).length]);
+  return html`<div class="ais-answer" ref=${ref}></div>`;
+}
 function AiFace({ size }) {
   return html`<div class="ais-face" style=${`width:${size}px;height:${size}px`}><span class="ais-mark" dangerouslySetInnerHTML=${{ __html: ICONS.nemesisMark }}></span></div>`;
 }
@@ -1915,9 +1933,9 @@ function AiSideThread({ chat }) {
 }
 const AI_ACTS = [['duplicateSmall', 'Copy response'], ['plusSmall', 'Insert into this page'], ['handThumbsUpSmall', 'Share positive feedback'], ['handThumbsDownSmall', 'Share negative feedback']];
 function AiSideItem({ chat, m, last }) {
-  if (m.role === 'user') return html`<div class="ais-user"><div class="ais-bubble-w"><div class="ais-bubble">${m.text}</div></div><div class="ais-user-meta"><span class="ais-time">${aiTime(m.at)}</span><div class="ais-ib" role="button" aria-label="Edit"><${Icon} n="pencilLineSmall" cls="i16"/></div><div class="ais-ib" role="button" aria-label="Copy text"><${Icon} n="duplicateSmall" cls="i16"/></div></div></div>`;
+  if (m.role === 'user') return html`<div class="ais-user"><div class="ais-bubble-w"><div class="ais-bubble">${m.text}</div></div><div class="ais-user-meta"><span class="ais-time">${aiTime(m.at)}</span><div class="ais-ib" role="button" aria-label="Edit"><${Icon} n="pencilLineSmall" cls="i16"/></div><div class="ais-ib" role="button" aria-label="Copy text" onClick=${() => copyChatText(m.text)}><${Icon} n="duplicateSmall" cls="i16"/></div></div></div>`;
   if (m.kind === 'thought') return html`<div class="ais-c"><div class="ais-toggle" role="button"><span>Thought</span><${Icon} n="arrowChevronSingleRight" cls="i14"/></div></div>`;
-  if (m.kind === 'text') return html`<div class="ais-c ais-text"><div>${m.text}</div>${m.change ? html`<div class=${'ais-change' + (m.change.undone ? ' undone' : '')} onClick=${() => { go(m.change.page); }}><div class="ais-change-t">${m.change.title}</div><div class="ais-change-acts"><div class="ais-show" role="button">Show changes</div><div class="ais-ib" role="button" aria-label="Undo" onClick=${(e) => { e.stopPropagation(); undoDraft(m); }}><${Icon} n="arrowUTurnUpLeftSmall" cls="i16"/></div></div></div>` : ''}</div>`;
+  if (m.kind === 'text') return html`<div class=${'ais-c ais-text' + (m.md ? ' md' : '')}>${m.md ? html`<${Answer} m=${m}/>` : html`<div>${m.text}</div>`}${m.error ? html`<div class="ais-error">${m.error}</div>` : ''}${m.md && m.text && !m.error ? html`<div class=${'ais-acts' + (last ? ' on' : '')}><div class="ais-acts-l"><div class="ais-ib" role="button" aria-label="Copy response" onClick=${() => copyChatText(m.text)}><${Icon} n="duplicateSmall" cls="i16"/></div></div></div>` : ''}${m.change ? html`<div class=${'ais-change' + (m.change.undone ? ' undone' : '')} onClick=${() => { go(m.change.page); }}><div class="ais-change-t">${m.change.title}</div><div class="ais-change-acts"><div class="ais-show" role="button">Show changes</div><div class="ais-ib" role="button" aria-label="Undo" onClick=${(e) => { e.stopPropagation(); undoDraft(m); }}><${Icon} n="arrowUTurnUpLeftSmall" cls="i16"/></div></div></div>` : ''}</div>`;
   if (m.kind === 'research') return html`<${AiResearchReply}/>`;
   if (m.kind === 'qa') return html`<div class="ais-qa">${m.items.map(([q, a], i) => html`${i ? html`<div class="ais-qa-div"></div>` : ''}<div class="ais-qa-item"><div class="ais-qa-q">${q}</div><div class="ais-qa-a">${a}</div></div>`)}</div>`;
   if (m.kind === 'steps') return html`<${AiSteps} m=${m}/>`;
@@ -1978,11 +1996,11 @@ function AiSideComposer({ chat, page, onSend }) {
   const ref = useRef(null); const [has, setHas] = useState(false); const [focus, setFocus] = useState(false);
   useEffect(() => { if (ref.current && (!chat || chat.messages.length <= 1)) ref.current.focus(); }, []);
   const send = () => { const el = ref.current; const t = el ? el.innerText.trim() : ''; if (!t) return; el.textContent = ''; setHas(false); if (onSend) onSend(t); else sendSideMessage(chat && chat.id, t, page); };
-  const stop = () => { chat.stopped = Date.now(); chat.running = false; chat.working = null; chat.messages.forEach((x) => { if (x.kind === 'steps') x.running = false; }); commit(); };
+  const stop = () => { if (space.chatRuns.has(chat.id)) { space.stopChat(chat.id); return; } chat.stopped = Date.now(); chat.running = false; chat.working = null; chat.messages.forEach((x) => { if (x.kind === 'steps') x.running = false; }); commit(); };
   return html`<div class=${'aisc' + (focus ? ' focus' : '')}>
     ${page ? html`<div class="aisc-chips"><div class="aisc-chip" role="button"><div class="aisc-chip-ic">${page.icon && page.icon.emoji ? html`<span class="aisc-emoji">${page.icon.emoji}</span>` : html`<${Icon} n="page" cls="i16"/>`}</div><div class="aisc-chip-t">${pageTitleText(page) || 'New page'}</div></div></div>` : ''}
     <div class="aisc-input" ref=${ref} contenteditable="true" data-ph="Do anything with AI…" onInput=${(e) => setHas(!!e.currentTarget.textContent.trim())} onFocus=${() => setFocus(true)} onBlur=${() => setFocus(false)} onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></div>
-    <div class="aisc-bar"><div class="aisc-l"><div class="ais-round" role="button" aria-label="Give context"><${Icon} n="plus" cls="i20"/></div><div class="ais-round" role="button" aria-label="Settings"><${Icon} n="sliders" cls="i20"/></div></div>
+    <div class="aisc-bar"><div class="aisc-l"><div class="ais-round" role="button" aria-label="Give context"><${Icon} n="plus" cls="i20"/></div><div class=${'ais-round' + (S.chatWebSearch ? ' on' : '')} role="button" aria-label="Settings" onClick=${(e) => openOverlay('chatSettings', e.currentTarget)}><${Icon} n="sliders" cls="i20"/></div></div>
       <div class="aisc-r"><div class="ais-model" role="button">Auto</div>${chat && chat.running ? html`<div class="ais-send stop" role="button" aria-label="Stop AI message" onClick=${stop}><${Icon} n="mediaStopFillSmall" cls="i16"/></div>` : html`<div class=${'ais-send' + (has ? ' on' : '')} role="button" aria-label="Send" onClick=${send}><${Icon} n="arrowStraightUpFillSmall" cls="i16"/></div>`}</div></div>
   </div>`;
 }
@@ -2000,7 +2018,7 @@ function AiSidePanel({ page }) {
 }
 function ChatRecentRow({ id }) {
   const c = S.aiChats && S.aiChats[id]; if (!c) return null;
-  return html`<a class="sb-item page chat" onClick=${() => { c.unread = false; S.aiSide = { open: true, chat: id }; commit(); }}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="chatBubble" cls="i20"/></div><div class="sb-item-label"><span>${c.title}</span></div>${c.unread ? html`<i class="sb-unread"></i>` : ''}</div></a>`;
+  return html`<a class="sb-item page chat" onClick=${() => { c.unread = false; S.aiOpen = id; void space.openChat(id); commit(); go('ai'); }}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="chatBubble" cls="i20"/></div><div class="sb-item-label"><span>${c.title}</span></div>${c.unread ? html`<i class="sb-unread"></i>` : ''}</div></a>`;
 }
 
 /* ------------------------------------------------------------------ sidebar section "…" menus (measured: 220px, same rows as every menu) */
@@ -2076,7 +2094,7 @@ function newDatabasePage() {
 }
 function ComposeMenu() {
   const r = overlay.r; const [hi, setHi] = useState(0);
-  const items = [['pageEmpty', 'Page', () => createPage(null)], ...(READY.ai ? [['chatBubble', 'Chat', openNewChat]] : []), ...(READY.meetings ? [['microphone', 'AI Meeting Notes', () => openMeetingNote('', true)]] : []), ['viewTable', 'Database', newDatabasePage]];
+  const items = [['pageEmpty', 'Page', () => createPage(null)], ...(READY.chat ? [['chatBubble', 'Chat', openNewChat]] : []), ...(READY.meetings ? [['microphone', 'AI Meeting Notes', () => openMeetingNote('', true)]] : []), ['viewTable', 'Database', newDatabasePage]];
   return html`<div class="menu compose-menu" role="menu" style=${`left:${r.left}px;bottom:${innerHeight - r.top + 8}px`}>${items.map(([ic, label, fn], i) => html`<div class=${'cm-row' + (hi === i ? ' on' : '')} role="menuitem" onMouseEnter=${() => setHi(i)} onClick=${() => { closeOverlay(); fn(); }}><${Icon} n=${ic} cls="i20"/><span>${label}</span></div>`)}</div>`;
 }
 /* ------------------------------------------------------------------ media blocks */
@@ -2431,6 +2449,13 @@ function TrashPopover() {
 function HelpMenu() {
   return html`<div class="menu help-menu" style=${`left:247px;top:${Math.max(8, innerHeight - 12 - 110)}px`}>
     <div class="menu-group"><${MenuItem} ic="bubbleRight" label="Get support" onClick=${() => { closeOverlay(); space.openApp('/support'); }}/><${MenuItem} ic="book" label="Keyboard shortcuts" onClick=${closeOverlay}/></div>
+  </div>`;
+}
+// The chat composer's settings. Web search works as it does on the canvas board: off until switched on, then remembered.
+function ChatSettingsMenu() {
+  const left = Math.max(8, Math.min(overlay.r.left, innerWidth - 268));
+  return html`<div class="menu chat-settings" style=${`left:${left}px;bottom:${Math.max(8, innerHeight - overlay.r.top + 6)}px`}>
+    <div class="menu-group"><${ToggleItem} ic="globe" label="Web search" on=${!!S.chatWebSearch} onClick=${() => { S.chatWebSearch = !S.chatWebSearch; commit(); }}/></div>
   </div>`;
 }
 const LIB_TABS = [['recents', 'clock', 'Recents'], ['favorites', 'star', 'Favorites'], ['shared', 'people', 'Shared'], ['private', 'lock', 'Private'], ...(READY.meetings ? [['meetings', 'paperMicrophone', 'AI Meeting Notes']] : [])];
@@ -3326,7 +3351,7 @@ function cardDragDown(e, rows, r, gp) {
 function Overlay() {
   useStore();
   if (!overlay) return null;
-  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'cellPerson' ? html`<${PersonEditor} data=${overlay.data}/>` : overlay.kind === 'cellFiles' ? html`<${FilesEditor} data=${overlay.data}/>` : overlay.kind === 'calcMenu' ? html`<${CalcMenu} data=${overlay.data}/>` : overlay.kind === 'filterEditor' ? html`<${FilterEditor} data=${overlay.data}/>` : overlay.kind === 'noDate' ? html`<${NoDateMenu} data=${overlay.data}/>` : overlay.kind === 'sortEditor' ? html`<${SortEditor}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : null;
+  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'cellPerson' ? html`<${PersonEditor} data=${overlay.data}/>` : overlay.kind === 'cellFiles' ? html`<${FilesEditor} data=${overlay.data}/>` : overlay.kind === 'calcMenu' ? html`<${CalcMenu} data=${overlay.data}/>` : overlay.kind === 'filterEditor' ? html`<${FilterEditor} data=${overlay.data}/>` : overlay.kind === 'noDate' ? html`<${NoDateMenu} data=${overlay.data}/>` : overlay.kind === 'sortEditor' ? html`<${SortEditor}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : overlay.kind === 'chatSettings' ? html`<${ChatSettingsMenu}/>` : null;
   return html`<div class="ov-root"><div class=${'ov-catch' + (overlay.kind === 'search' || overlay.kind === 'settings' || overlay.kind === 'formSetup' ? ' dim' : '') + (overlay.kind === 'settings' ? ' scrim' : '')} onMouseDown=${closeOverlay}></div>${body}</div>`;
 }
 // Measured: once a page holds any discussion, open or resolved, the topbar grows a Comments button after Copy link.
@@ -3430,14 +3455,14 @@ function App() {
   const status = isUuid(r) ? space.pageStatus(r) : 'ready';
   const drawable = page && (page.kind === 'database' ? !!S.collections[page.collection] && !!S.views[page.views && page.views[0]] : Array.isArray(page.content));
   useLayoutEffect(() => { applyFocus(); applySel(); });
-  useEffect(() => { if (isAi && !READY.ai) space.go('home', { replace: true }); }, [isAi]);
+  useEffect(() => { if (isAi && !READY.chat) space.go('home', { replace: true }); }, [isAi]);
   useEffect(() => { if (!isApp) document.title = isAi ? 'Nemesis AI' : isLib ? 'Library' : isTasks ? 'My Tasks' : isMarket ? 'Templates' : page ? pageTitleText(page) : 'Nemesis'; });
   const peek = page && page.kind === 'database' && peekRow && drawable ? (S.rows[page.collection] || []).find((x) => x.id === peekRow) : null;
   let main = '';
   if (isMarket) main = html`<div class="nsp-scroller vertical"><${MarketplacePage}/></div>`;
   else if (isTasks) main = html`<${TasksPage}/>`;
   else if (isLib) main = html`<div class="nsp-scroller horizontal"><${LibraryPage} tab=${r.split('/')[1]}/></div>`;
-  else if (isAi && READY.ai) main = html`${S.aiOpen && S.aiChats && S.aiChats[S.aiOpen] ? html`<${AiTopbar}/>` : html`<${AiFullTopbar}/>`}<div class="nsp-scroller vertical"><${AiPage}/></div>`;
+  else if (isAi && READY.chat) main = html`${S.aiOpen && S.aiChats && S.aiChats[S.aiOpen] ? html`<${AiTopbar}/>` : html`<${AiFullTopbar}/>`}<div class="nsp-scroller vertical"><${AiPage}/></div>`;
   else if (isUuid(r) && !drawable) main = html`<${PageStatus} status=${status === 'ready' ? 'loading' : status}/>`;
   else if (page) main = html`
       <${Topbar} page=${page}/>${page.trashed ? html`<div class="trash-banner"><span>This page is in Trash.</span><div class="tb-b" role="button" onClick=${() => restorePage(page.id)}>Restore page</div><div class="tb-b" role="button" onClick=${() => destroyPage(page.id)}>Delete from Trash</div></div>` : ''}

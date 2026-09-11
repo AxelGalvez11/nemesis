@@ -2046,3 +2046,10 @@
 .nsp .tb-person{width:22px;height:22px;border-radius:100%;box-shadow:0 0 0 2px var(--c-bacPri,#fff);margin-left:-5px}
 .nsp .tb-person:first-child{margin-left:0}
 .nsp .tb-more{margin-left:4px;font-size:12px;color:var(--c-texSec)}
+
+/* Chat answers from Nemesis (runtime.js sendChat): drawn by the app's markdown renderer inside the copied thread. */
+.nsp .ais-text.md{white-space:normal}
+.nsp .ais-answer{min-width:0}
+.nsp .ais-error{margin-top:8px;padding:0 4px;color:#d44c47}
+.nsp .ais-round.on{fill:var(--c-bluIcoAccPri);--nsp-fill:var(--c-bluIcoAccPri)}
+.nsp .chat-settings{width:260px;padding:4px 0}

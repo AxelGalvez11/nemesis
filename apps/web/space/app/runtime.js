@@ -5,6 +5,7 @@
 // address bar points at, and whether the app is dark. Nothing in here draws.
 
 import { SpaceSync } from '../../lib/space/sync-engine';
+import { chatHistory, chatTitle, createChat, listChats, loadChatLines, saveChatLine, touchChat } from '../../lib/space/chats';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (s) => typeof s === 'string' && UUID_RE.test(s);
@@ -59,6 +60,12 @@ const routeFromLocation = () => (typeof location === 'undefined' ? APP_ROUTE : r
 // left a blank page with nothing to redraw it. A real change of address still arrives through routeChanged.
 export const route = () => (space.lastRoute != null ? space.lastRoute : routeFromLocation());
 
+/** A saved chat line as the chat screens draw it: an answer is markdown (`md`), a question is plain text. */
+const chatMessage = (line) =>
+  line.role === 'assistant'
+    ? { id: line.id, role: 'assistant', kind: 'text', md: true, text: line.text, at: line.at, sources: line.sources }
+    : { id: line.id, role: 'user', text: line.text, at: line.at };
+
 // ------------------------------------------------------------------------------------------------ state
 
 export function emptyState() {
@@ -98,7 +105,7 @@ export function emptyState() {
 }
 
 // One person's view of the app, saved to ws_user_settings rather than to any page.
-const UI_KEYS = ['contrastPref', 'emojiFrecency', 'recentEmoji', 'recentIcons', 'skinTone', 'iconColor', 'iconAsk', 'lastColor'];
+const UI_KEYS = ['contrastPref', 'emojiFrecency', 'recentEmoji', 'recentIcons', 'skinTone', 'iconColor', 'iconAsk', 'lastColor', 'chatWebSearch'];
 const SIDEBAR_KEYS = ['open', 'expanded', 'hidden', 'order', 'show', 'tab', 'collapsed', 'private'];
 
 function toError(error) {
@@ -176,6 +183,10 @@ class Space {
     this.libraryImport = null;
     this.importJob = null;
     this.importListeners = new Set();
+    this.chatRuns = new Map();
+    // Tests and the preview harness answer chats without a model; in the app this stays empty (answerChat).
+    this.chatEngine = null;
+    this.emitTimer = 0;
     this.sync = this.makeSync();
   }
 
@@ -286,6 +297,7 @@ class Space {
     if (this.info.role !== 'guest') this.join('ws:space:' + this.info.id);
     this.ready = true;
     void this.loadCalendar();
+    void this.loadChats();
     if (!mine.length && !S.sidebar.workspace.length && !S.sidebar.shared.length && !this.welcomed) this.createWelcome();
     if (this.info.role === 'owner') void this.importLibrary();
     this.routeChanged(true);
@@ -306,6 +318,15 @@ class Space {
       this.emitQueued = false;
       this.listeners.forEach((fn) => fn());
     });
+  }
+
+  /** For streaming answers: one redraw every 50ms at most, however fast the words arrive. */
+  emitSoon() {
+    if (this.emitTimer) return;
+    this.emitTimer = setTimeout(() => {
+      this.emitTimer = 0;
+      this.emit();
+    }, 50);
   }
 
   /** main.js calls this from persist(): a save soon, settings a little later, favourites now. */
@@ -744,6 +765,162 @@ class Space {
     S.sidebar.meetings = live.filter((e) => e.date === today).slice(0, 8).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: eventTime(e), color: '#5e9fe8' }));
     S.sidebar.upcoming = live.slice(0, 12).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: e.date === today ? eventTime(e) : `${day(e.date)} ${eventTime(e)}`, color: '#5e9fe8' }));
     this.emit();
+  }
+
+  // -------------------------------------------------------------------------------------------- chats
+
+  /** The person's chats for the Chat tab, newest first (lib/space/chats.ts). A chat's messages load when it opens. */
+  async loadChats() {
+    if (!this.me.id) return;
+    let list;
+    try {
+      list = await listChats(this.sb, this.me.id);
+    } catch (err) {
+      console.warn('Space: could not list chats', err);
+      return;
+    }
+    const S = this.state;
+    S.aiChats = S.aiChats || {};
+    for (const c of list) {
+      const cur = S.aiChats[c.id];
+      if (cur) cur.at = Math.max(cur.at || 0, c.at);
+      else S.aiChats[c.id] = { id: c.id, title: c.title, at: c.at, messages: null, loaded: false };
+    }
+    const listed = new Set(list.map((c) => c.id));
+    const madeHere = (S.sidebar.chats || []).filter((c) => c.id && !listed.has(c.id) && S.aiChats[c.id]);
+    S.sidebar.chats = [...madeHere, ...list.map((c) => ({ id: c.id, title: S.aiChats[c.id].title, at: c.at }))];
+    this.emit();
+  }
+
+  /** A chat's questions and answers, fetched the first time the chat is shown. */
+  async openChat(id) {
+    const chat = this.state.aiChats && this.state.aiChats[id];
+    if (!chat || chat.loaded || chat.loading) return;
+    chat.loading = true;
+    try {
+      const lines = await loadChatLines(this.sb, id);
+      chat.messages = [...lines.map(chatMessage), ...(chat.messages || [])];
+      chat.loaded = true;
+      chat.failed = false;
+    } catch (err) {
+      chat.failed = true;
+      console.warn('Space: could not open chat', id, err);
+    } finally {
+      chat.loading = false;
+      this.emit();
+    }
+  }
+
+  /**
+   * Asks Nemesis: in a chat, or in a new chat when `chatId` is null. Returns the chat's id at once; the answer streams
+   * into the chat as it is written, and the question and the answer are both saved.
+   */
+  sendChat(chatId, text, opts = {}) {
+    const S = this.state;
+    S.aiChats = S.aiChats || {};
+    const body = String(text || '').trim();
+    let chat = chatId ? S.aiChats[chatId] : null;
+    if (chat && (chat.running || !body)) return chat.id;
+    if (!body) return null;
+    const fresh = !chat;
+    if (!chat) {
+      const id = uid();
+      chat = S.aiChats[id] = { id, title: chatTitle(body), at: NOW(), messages: [], loaded: true };
+      S.sidebar.chats = [{ id, title: chat.title, at: chat.at }, ...(S.sidebar.chats || [])];
+    }
+    const question = { id: uid(), role: 'user', text: body, at: NOW() };
+    chat.messages = [...(chat.messages || []), question];
+    chat.running = true;
+    chat.working = opts.webSearch ? 'Searching the web' : 'Thinking';
+    chat.at = question.at;
+    const controller = new AbortController();
+    this.chatRuns.set(chat.id, controller);
+    this.emit();
+    void this.answerChat(chat, question, { fresh, webSearch: !!opts.webSearch, controller });
+    return chat.id;
+  }
+
+  /** Stops an answer mid-sentence. What was written stays, and is saved. */
+  stopChat(id) {
+    const run = this.chatRuns.get(id);
+    if (run) run.abort();
+  }
+
+  async answerChat(chat, question, { fresh, webSearch, controller }) {
+    const S = this.state;
+    const savedQuestion = (async () => {
+      if (fresh) await createChat(this.sb, this.me.id, chat.id, chat.title);
+      await saveChatLine(this.sb, this.me.id, chat.id, question);
+      return true;
+    })().catch((err) => {
+      console.warn('Space: could not save the question', err);
+      return false;
+    });
+    if (!chat.loaded) await this.openChat(chat.id);
+    const before = chat.messages.slice(0, Math.max(0, chat.messages.indexOf(question)));
+    const history = chatHistory(before.filter((m) => m.role === 'user' || m.md));
+    const answer = { id: uid(), role: 'assistant', kind: 'text', md: true, text: '', at: NOW(), sources: [] };
+    const show = () => {
+      if (!chat.messages.includes(answer)) chat.messages = [...chat.messages, answer];
+    };
+    let result = null;
+    try {
+      // The board's turn: the same door, device key, budget and stance as every chat in the app (lib/board/board-turn.ts).
+      const engine = this.chatEngine || (await import('../../lib/board/board-turn')).runBoardTurn;
+      result = await engine({
+        uid: this.me.id,
+        message: question.text,
+        history,
+        place: 'chat',
+        useWebSearch: webSearch,
+        signal: controller.signal,
+        onSearching: (on) => {
+          chat.working = on ? 'Searching the web' : 'Thinking';
+          this.emitSoon();
+        },
+        onContent: (visible) => {
+          show();
+          answer.text = visible;
+          chat.working = null;
+          this.emitSoon();
+        },
+      });
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        console.warn('Space: the answer failed', err);
+        result = { error: 'Nemesis could not answer just now. Try again.' };
+      }
+    }
+    this.chatRuns.delete(chat.id);
+    if (result && result.error) {
+      show();
+      answer.error = result.error;
+    } else if (result) {
+      show();
+      answer.text = result.content || answer.text;
+      answer.sources = (result.citations || []).map((c) => ({ title: c.title, url: c.url }));
+      if (fresh && result.title) chat.title = String(result.title).slice(0, 200);
+    }
+    chat.running = false;
+    chat.working = null;
+    chat.at = NOW();
+    const row = (S.sidebar.chats || []).find((c) => c.id === chat.id);
+    if (row) Object.assign(row, { title: chat.title, at: chat.at });
+    let reading = false;
+    try {
+      reading = route() === 'ai' && S.aiOpen === chat.id;
+    } catch {
+      reading = false;
+    }
+    if (!reading) chat.unread = true;
+    this.emit();
+    if (!(await savedQuestion)) return;
+    try {
+      if (answer.text.trim() && !answer.error) await saveChatLine(this.sb, this.me.id, chat.id, answer);
+      await touchChat(this.sb, chat.id, fresh ? chat.title : undefined);
+    } catch (err) {
+      console.warn('Space: could not save the answer', err);
+    }
   }
 
   // -------------------------------------------------------------------------------------------- saving

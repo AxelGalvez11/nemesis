@@ -30,6 +30,9 @@ export const DIVE_DEEPER_MESSAGE =
 
 export type BoardResponseMode = "answer" | "lesson";
 
+/** Where the conversation lives: a card on the canvas board, or a chat in the workspace's Chat tab (space/app). */
+export type TurnPlace = "board" | "chat";
+
 export interface BoardTurnInput {
   uid: string;
   message: string;
@@ -37,6 +40,7 @@ export interface BoardTurnInput {
   contextExcerpt?: string;
   sources?: readonly BoardSource[];
   responseMode?: BoardResponseMode;
+  place?: TurnPlace;
   useWebSearch?: boolean;
   cardTitle?: string;
   cardSummary?: string;
@@ -56,13 +60,21 @@ export interface BoardTurnResult {
   error: string | null;
 }
 
+const BOARD_PLACE =
+  "This conversation is one card on a visual board where the learner explores several threads side by side; keep each answer self-contained and readable on its own. ";
+const CHAT_PLACE = "This is a conversation in the learner's workspace, one question after another; keep each answer readable on its own. ";
+
+/** The workspace chat has no test card beside it, so being tested happens in the conversation itself. */
+const CHAT_TESTING =
+  "When the learner asks to be tested, ask one question at a time and wait for their answer before the next, never write the answers out ahead of them, and never announce a quiz before asking. ";
+
 const SYSTEM_HEAD =
   "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
   "Never assume the learner's field or level; infer it from context and adapt. Answer directly before expanding. " +
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
   "Never use emojis. Never use em dashes; use a comma, a colon, or a new sentence. " +
-  "This conversation is one card on a visual board where the learner explores several threads side by side; keep each answer self-contained and readable on its own. " +
+  BOARD_PLACE +
   // 🔴 THE STANCE RIDES EVERY SURFACE THAT SPEAKS AS NEMESIS (every-surface-has-a-stance.test.ts).
   THINKING_STANCE;
 
@@ -83,11 +95,12 @@ export function boardWireMessages(input: {
   /** The material packet (lib/board/board-grounding.ts), already assembled for this question. */
   materialContext?: string;
   responseMode?: BoardResponseMode;
+  place?: TurnPlace;
   cardTitle?: string;
   cardSummary?: string;
   webContext?: string;
 }): WireMsg[] {
-  const system: string[] = [SYSTEM_HEAD];
+  const system: string[] = [input.place === "chat" ? SYSTEM_HEAD.replace(BOARD_PLACE, CHAT_PLACE) : SYSTEM_HEAD];
   if (input.responseMode === "lesson") system.push(LESSON_MODE);
   if (input.cardTitle) system.push(`This card is titled "${input.cardTitle}".${input.cardSummary ? ` So far: ${input.cardSummary}` : ""}`);
   const material = input.materialContext?.trim() ?? "";
@@ -116,10 +129,12 @@ export function boardWireMessages(input: {
   // is the first:" and asked it, beside a test card holding the same six questions. The chat's
   // prompt has carried the no-announcing sentence since 2026-08-24 for exactly this.
   system.push(
-    "Never put questions to the learner as a numbered list in your answer, never write out a quiz or its answers, and never announce one: "
+    (input.place === "chat"
+      ? CHAT_TESTING
+      : "Never put questions to the learner as a numbered list in your answer, never write out a quiz or its answers, and never announce one: "
     + "no \"here is your first question\", no \"I will ask you one at a time\", no describing what is about to be asked. "
     + "When they ask to be tested, their questions are prepared for them separately, so teach the material in your reply and stop. "
-    + "A question inside your teaching is fine where it is part of the explanation, never as the opening of a quiz. "
+    + "A question inside your teaching is fine where it is part of the explanation, never as the opening of a quiz. ")
     // 🔴🔴 AND NEVER EXPLAIN THE ARRANGEMENT, which is `screen-positions.ts`'s rule ("NEVER SAY
     // WHERE SOMETHING IS ON SCREEN") reaching a new surface. Measured on production 2026-09-04:
     // told that a test card is made beside this one, the model told the learner so, in the answer,
@@ -179,6 +194,7 @@ export async function runBoardTurn(input: BoardTurnInput): Promise<BoardTurnResu
     contextExcerpt: input.contextExcerpt,
     materialContext,
     responseMode: input.responseMode,
+    place: input.place,
     cardTitle: input.cardTitle,
     cardSummary: input.cardSummary,
     webContext,

@@ -408,17 +408,58 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
     }
   };
 
+  // Plain tables for what the runtime reads and writes directly rather than through an RPC: chats.
+  const tables = new Map<string, Array<Record<string, unknown>>>([
+    ["chat_threads", []],
+    ["chat_messages", []],
+  ]);
   const query = (table: string) => {
+    const rows = tables.get(table);
+    const filters: Array<[string, unknown]> = [];
+    let sort: { column: string; ascending: boolean } | null = null;
+    let max = Number.POSITIVE_INFINITY;
     const q: Record<string, unknown> = {};
     const chain = () => q;
-    for (const m of ["select", "eq", "neq", "gte", "lte", "order", "limit", "in", "range"]) q[m] = chain;
-    q.then = (resolve: (v: unknown) => void) =>
-      resolve({ data: table === "readable_library_documents" ? structuredClone(library) : [], error: null });
+    for (const m of ["select", "neq", "gte", "lte", "in", "range"]) q[m] = chain;
+    q.eq = (column: string, value: unknown) => {
+      filters.push([column, value]);
+      return q;
+    };
+    q.order = (column: string, options?: { ascending?: boolean }) => {
+      // The first order decides; the calls here only ever add a tiebreak after it.
+      sort ??= { column, ascending: options?.ascending !== false };
+      return q;
+    };
+    q.limit = (count: number) => {
+      max = count;
+      return q;
+    };
+    q.insert = async (row: Record<string, unknown>) => {
+      if (!rows) return { data: null, error: { message: `no table ${table}` } };
+      const at = new Date().toISOString();
+      rows.push({ created_at: at, updated_at: at, ...structuredClone(row) });
+      return { data: null, error: null };
+    };
+    q.update = (patch: Record<string, unknown>) => ({
+      eq: async (column: string, value: unknown) => {
+        for (const r of rows ?? []) if (r[column] === value) Object.assign(r, structuredClone(patch));
+        return { data: null, error: null };
+      },
+    });
+    q.then = (resolve: (v: unknown) => void) => {
+      if (table === "readable_library_documents") return resolve({ data: structuredClone(library), error: null });
+      let out = (rows ?? []).filter((r) => filters.every(([column, value]) => r[column] === value));
+      const order = sort as { column: string; ascending: boolean } | null;
+      if (order) out = [...out].sort((a, b) => String(a[order.column] ?? "").localeCompare(String(b[order.column] ?? "")) * (order.ascending ? 1 : -1));
+      return resolve({ data: structuredClone(out.slice(0, max)), error: null });
+    };
     return q;
   };
 
   return {
     server,
+    /** Tests and the harness: the plain tables behind `from()`. */
+    tables,
     auth: { getSession: async () => ({ data: { session: { access_token: "fake" } } }), signOut: async () => ({ error: null }) },
     realtime: { setAuth: () => {} },
     rpc,
@@ -485,4 +526,21 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
       }),
     },
   };
+}
+
+/**
+ * Harness only: Nemesis's side of a chat with no model behind it. The answer streams in a few words at a time and names
+ * the chat, as the board's turn does, so the Chat tab can be driven on /dev-preview/space. Stopping it rejects, as a
+ * real stopped turn does.
+ */
+export async function fakeChatEngine(input: { message: string; signal?: AbortSignal; onContent?: (visible: string) => void }) {
+  const answer = `The preview has no model, so this stands in for Nemesis. You asked: "${input.message.slice(0, 120)}"\n\n- An answer streams in as it is written\n- It is saved with the chat`;
+  let shown = "";
+  for (const word of answer.split(/(?<=\s)/)) {
+    if (input.signal?.aborted) throw new DOMException("The turn was stopped.", "AbortError");
+    shown += word;
+    input.onContent?.(shown);
+    await new Promise((resolve) => setTimeout(resolve, 12));
+  }
+  return { content: shown, citations: [], suggestions: { followUps: [], branches: [], newThreads: [] }, title: input.message.slice(0, 60), truncated: false, error: null };
 }
