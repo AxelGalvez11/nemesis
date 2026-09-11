@@ -38,6 +38,8 @@ const pageOfBlock = (id) => { let b = S.blocks[id]; for (let i = 0; b && i < 60;
 const sidebarRef = (el) => space.observeSidebar(el);
 // Someone shared a page: say so, with a way straight to it. Open also switches workspace when the page lives in theirs.
 space.onShared((it) => showToast({ text: `${(it.props && it.props.title) || 'A page'} was shared with you`, action: 'Open', onAction: () => go(it.id) }));
+// The old Library's notes arrived as pages: say how many, with a way to them.
+space.onImported(({ parentId, count }) => showToast({ text: `${count} Library ${count === 1 ? 'note is' : 'notes are'} now pages`, action: 'Open', onAction: () => go(parentId) }));
 
 // The page you leave moves to the top of Recents.
 let recentPin = null; // a page made this session stays first in Recents

@@ -172,6 +172,9 @@ class Space {
     this.sharedListeners = new Set();
     this.inbox = { items: [], unread: 0, loaded: false };
     this.presence = new Map();
+    this.libraryImport = null;
+    this.importJob = null;
+    this.importListeners = new Set();
     this.sync = this.makeSync();
   }
 
@@ -254,6 +257,7 @@ class Space {
     const side = settings.sidebar || {};
     for (const k of SIDEBAR_KEYS) if (k in side && k !== 'private') S.sidebar[k] = side[k];
     this.welcomed = !!settings.welcomed;
+    this.libraryImport = settings.libraryImport && typeof settings.libraryImport === 'object' ? settings.libraryImport : null;
 
     const byId = new Map();
     for (const r of [...(b.roots || []), ...(b.shared || []), ...(b.favorites || []), ...(b.recents || [])]) if (!byId.has(r.id)) byId.set(r.id, r);
@@ -282,6 +286,7 @@ class Space {
     this.ready = true;
     void this.loadCalendar();
     if (!mine.length && !S.sidebar.workspace.length && !S.sidebar.shared.length && !this.welcomed) this.createWelcome();
+    if (this.info.role === 'owner') void this.importLibrary();
     this.routeChanged(true);
     this.emit();
   }
@@ -352,6 +357,93 @@ class Space {
   /** Canvas, Study and Calendar are the React app's; the sidebar stays and the main column changes hands. */
   openApp(path) {
     if (this.host) this.host.navigate(path);
+  }
+
+  // -------------------------------------------------------------------------------------------- the old Library
+
+  /** This person's Library notes as the Library lists them: live notes, most recently changed first. */
+  async fetchLibraryNotes() {
+    const notes = [];
+    for (let from = 0; ; from += 500) {
+      const { data, error } = await this.sb
+        .from('readable_library_documents')
+        .select('id,title,content')
+        .eq('user_id', this.me.id)
+        .eq('deleted', false)
+        .eq('kind', 'note')
+        .order('updated_at', { ascending: false })
+        .order('id')
+        .range(from, from + 499);
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      for (const r of rows) notes.push({ id: String(r.id), title: typeof r.title === 'string' ? r.title : '', content: typeof r.content === 'string' ? r.content : '' });
+      if (rows.length < 500) return notes;
+    }
+  }
+
+  /**
+   * Brings the old Library's notes into this person's own workspace (docs/space/PLAN.md, M10; the owner: the new library
+   * "should supersede" the old one). It runs on each load until settings say it finished. Every record's id comes from
+   * the note (importIds), so a run cut short by a closed tab, or two tabs at once, never makes anything twice: what an
+   * earlier run saved is loaded and kept as it is, and only what is missing is added. The Library's notes are not touched.
+   */
+  importLibrary() {
+    if (this.importJob) return this.importJob;
+    if (!this.ready || !this.sb || !this.me.id || this.info.role !== 'owner' || (this.libraryImport && this.libraryImport.done)) return Promise.resolve();
+    const spaceId = this.info.id;
+    const sync = this.sync;
+    const here = () => this.info.id === spaceId && this.sync === sync;
+    this.importJob = (async () => {
+      try {
+        const notes = await this.fetchLibraryNotes();
+        const { importIds, placeLibraryImport, planLibraryImport } = await import('../../lib/space/library-import');
+        if (!here()) return;
+        const plan = planLibraryImport(notes, new Set(), importIds(spaceId, this.me.id), NOW());
+        if (!plan) {
+          await this.saveLibraryImport({ done: true, count: 0, at: new Date().toISOString() });
+          return;
+        }
+        const holder = plan.parent.id;
+        await this.ensurePage(holder, true);
+        if (this.sync.known(holder)) {
+          const saved = plan.pages.map((p) => p.id).filter((id) => this.sync.known(id));
+          for (let i = 0; i < saved.length; i += 8) await Promise.all(saved.slice(i, i + 8).map((id) => this.ensurePage(id, true)));
+          // A page that would not load cannot say which of its blocks are missing: try again on the next load.
+          if (![holder, ...saved].every((id) => this.loaded.has(id))) return;
+        } else if (this.missing.get(holder) === 'not_found') {
+          this.missing.delete(holder);
+        } else {
+          return;
+        }
+        if (!here()) return;
+        const placed = placeLibraryImport(this.state, plan);
+        for (const id of placed.pages) this.addChild(holder, id);
+        if (placed.holder && !this.state.sidebar.private.includes(holder)) this.state.sidebar.private.unshift(holder);
+        this.emit();
+        // Offline, or the workspace changed: the next load finds whatever arrived and adds the rest.
+        if (!(await sync.saved()) || !here()) return;
+        await this.saveLibraryImport({ parent: holder, count: plan.count, at: new Date().toISOString(), done: true });
+        if (placed.records) this.importListeners.forEach((fn) => fn({ parentId: holder, count: plan.count }));
+      } catch (err) {
+        console.warn('Space: could not bring in the Library', err);
+      } finally {
+        this.importJob = null;
+        this.emit();
+      }
+    })();
+    return this.importJob;
+  }
+
+  async saveLibraryImport(value) {
+    const { error } = await this.sb.rpc('ws_save_settings', { p_patch: { libraryImport: value } });
+    if (error) throw error;
+    this.libraryImport = value;
+  }
+
+  /** Called once the Library's notes are pages, with the page that holds them and how many there were. */
+  onImported(fn) {
+    this.importListeners.add(fn);
+    return () => this.importListeners.delete(fn);
   }
 
   // -------------------------------------------------------------------------------------------- inbox and presence
@@ -470,16 +562,7 @@ class Space {
     this.switching = id;
     try {
       await this.sync.flush().catch(() => {});
-      for (const topic of [...this.channels.keys()]) this.leave(topic);
-      this.pageTopics = [];
-      this.loaded.clear();
-      this.childrenLoaded.clear();
-      for (const map of [this.loading, this.missing, this.roles, this.children, this.favorites, this.people, this.presence]) map.clear();
-      const fresh = emptyState();
-      for (const key of Object.keys(this.state)) delete this.state[key];
-      Object.assign(this.state, fresh);
-      this.sync = this.makeSync();
-      this.ready = false;
+      this.resetState();
       this.info = { ...this.info, id };
       if (!opts.keepRoute) this.go('home', { replace: true });
       this.emit();
@@ -493,6 +576,24 @@ class Space {
     } finally {
       this.switching = null;
     }
+  }
+
+  /**
+   * Forgets every loaded page, record and subscription, the way a fresh tab starts. The old engine is retired, so a retry
+   * it scheduled cannot write into the next workspace.
+   */
+  resetState() {
+    for (const topic of [...this.channels.keys()]) this.leave(topic);
+    this.pageTopics = [];
+    this.loaded.clear();
+    this.childrenLoaded.clear();
+    for (const map of [this.loading, this.missing, this.roles, this.children, this.favorites, this.people, this.presence]) map.clear();
+    const fresh = emptyState();
+    for (const key of Object.keys(this.state)) delete this.state[key];
+    Object.assign(this.state, fresh);
+    this.sync.dispose();
+    this.sync = this.makeSync();
+    this.ready = false;
   }
 
   goHome() {

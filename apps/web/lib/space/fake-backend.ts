@@ -42,6 +42,8 @@ export class FakeServer implements Transport {
       this.failNext--;
       throw new Error("network down");
     }
+    // The same ceiling as ws_apply.
+    if (ops.length > 2000) throw Object.assign(new Error("too many ops in one write"), { retryable: false });
     const results: ApplyResult["results"] = [];
     const conflicts: ApplyResult["conflicts"] = [];
     const denied: string[] = [];
@@ -232,6 +234,8 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
   // The harness inbox: the notifications ws_inbox would return, newest last.
   const notifications: Array<Record<string, unknown>> = [];
   const presence = new Map<string, Record<string, unknown>[]>();
+  // The old Library's notes, for the import (readable_library_documents).
+  const library: Array<{ id: string; title: string; content: string }> = [];
   const accessOf = (page: string) => ({
     role: "full",
     section: "private",
@@ -352,11 +356,12 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
     }
   };
 
-  const query = () => {
+  const query = (table: string) => {
     const q: Record<string, unknown> = {};
     const chain = () => q;
-    for (const m of ["select", "eq", "neq", "gte", "lte", "order", "limit", "in"]) q[m] = chain;
-    q.then = (resolve: (v: unknown) => void) => resolve({ data: [], error: null });
+    for (const m of ["select", "eq", "neq", "gte", "lte", "order", "limit", "in", "range"]) q[m] = chain;
+    q.then = (resolve: (v: unknown) => void) =>
+      resolve({ data: table === "readable_library_documents" ? structuredClone(library) : [], error: null });
     return q;
   };
 
@@ -365,7 +370,7 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
     auth: { getSession: async () => ({ data: { session: { access_token: "fake" } } }), signOut: async () => ({ error: null }) },
     realtime: { setAuth: () => {} },
     rpc,
-    from: () => query(),
+    from: (table: string) => query(table),
     channel(topic: string) {
       const handlers = channels.get(topic) ?? new Map<string, Handler[]>();
       channels.set(topic, handlers);
@@ -397,6 +402,10 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
       return ch;
     },
     removeChannel: async () => "ok",
+    /** Harness and tests: the notes an old Library holds. */
+    seedLibrary(notes: Array<{ id: string; title: string; content: string }>) {
+      library.splice(0, library.length, ...notes);
+    },
     /** Harness only: a notification from someone else, delivered the way ws_notify broadcasts it on the person's channel. */
     notify(kind: "share" | "comment" | "mention", pageId: string, preview: string, actorName = "Ana Lopez") {
       const n: Record<string, unknown> = {

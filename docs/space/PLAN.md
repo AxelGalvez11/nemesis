@@ -78,3 +78,7 @@ nothing here reuses that word.
 - [ ] M9 AI panel and chats on nemesis-llm with page tools; Meetings on the recording pipeline; Home; Calendar
 - [ ] M10 Old Library migrates in (notes to pages, sources stay sources); Canvas and Study inside the shell;
       front door flips for everyone; `/library` redirects; account deletion cleans space data
+      2026-09-11, part one: each person's live Library notes become pages once, under "From your old Library"
+      (lib/space/library-import.ts), and the sync engine sends at most 500 operations per write. Ids come from the notes,
+      so an import cut short finishes on the next load and two tabs never make it twice. Left: sources, the
+      /library redirect, Canvas and Study inside the shell, the front door for everyone, account deletion.
