@@ -9,6 +9,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { CourseworkImportGate } from "@/components/workspace/onboarding/coursework-import-gate";
+import { SPACE_LANDED_KEY, spaceLanding } from "@/components/space/space-landing";
+import { SpaceShell } from "@/components/space/space-shell";
+import { useSpaceEnabled } from "@/components/space/use-space-enabled";
 import { OnboardingGate } from "@/components/workspace/onboarding/onboarding-gate";
 import { TermsReconsentGate } from "@/components/workspace/onboarding/terms-reconsent-gate";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
@@ -20,6 +23,9 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   const { loading, session } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const signedIn = Boolean(session);
+  // The Space workspace replaces this shell for accounts in ws_rollout (docs/space/PLAN.md).
+  const spaceEnabled = useSpaceEnabled(session?.user.id ?? null);
 
   /**
    * When the session went away, and whether there was ever one to go.
@@ -71,6 +77,20 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     router.replace(signInRedirect(pathname, window.location.search));
   }, [gate, pathname, router]);
 
+  // An account on the Space workspace lands in it rather than on the canvas; see components/space/space-landing.ts.
+  useEffect(() => {
+    if (!spaceEnabled || !signedIn) return;
+    let firstInTab = false;
+    try {
+      firstInTab = !sessionStorage.getItem(SPACE_LANDED_KEY);
+      sessionStorage.setItem(SPACE_LANDED_KEY, "1");
+    } catch {
+      /* no storage: stay where the address points */
+    }
+    const to = spaceLanding({ firstInTab, pathname, search: window.location.search });
+    if (to) router.replace(to);
+  }, [spaceEnabled, signedIn, pathname, router]);
+
   // 🔴🔴 NOT `nemesis-account-loading` ANY MORE, AND THAT CLASS WAS THE WHOLE OF THE OWNER'S
   // "the screen goes blank" (2026-08-30). It is the ACCOUNT PORTAL's screen — a full-viewport
   // #080809 ground with the word LOADING at 11px — borrowed by the product, and it is also
@@ -84,6 +104,22 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   // refreshed keeps every child mounted and keeps working; painting this over it would unmount
   // them just as surely as returning early did.
   if (gate === "waiting" || gate === "sign-in") return <WorkspaceWaiting />;
+
+  if (spaceEnabled) {
+    return (
+      <SpaceShell
+        gates={
+          <>
+            <OnboardingGate />
+            <TermsReconsentGate />
+            <CourseworkImportGate />
+          </>
+        }
+      >
+        {children}
+      </SpaceShell>
+    );
+  }
 
   return (
     <WorkspaceShell>

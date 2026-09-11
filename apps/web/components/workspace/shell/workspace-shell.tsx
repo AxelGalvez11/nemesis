@@ -82,20 +82,24 @@ const SHELL_VARS: React.CSSProperties = {
  * down. A surface inside `children` claims the viewport (§38.1) and `WorkspaceChrome` reads the
  * claim — both need the same context, and a provider cannot read its own value.
  */
-export function WorkspaceShell({ children }: { children: React.ReactNode }) {
+/**
+ * `navless` is for the Space workspace (components/space/space-shell.tsx): its own sidebar sits beside this shell,
+ * so the shell keeps its providers and surfaces and drops its sidebar, rail and toggle.
+ */
+export function WorkspaceShell({ children, navless = false }: { children: React.ReactNode; navless?: boolean }) {
   return (
     <ImmersiveSurfaceProvider>
       {/* 🔴 OUTSIDE `WorkspaceChrome`, because the chrome is what READS the claim. A provider
           mounted inside the component that consumes it is a context nobody can see, and the
           symptom is silent: the sidebar simply never collapses and nothing errors. */}
       <SidePanelProvider>
-        <WorkspaceChrome>{children}</WorkspaceChrome>
+        <WorkspaceChrome navless={navless}>{children}</WorkspaceChrome>
       </SidePanelProvider>
     </ImmersiveSurfaceProvider>
   );
 }
 
-function WorkspaceChrome({ children }: { children: React.ReactNode }) {
+function WorkspaceChrome({ children, navless }: { children: React.ReactNode; navless: boolean }) {
   const preview = useWorkspacePreview();
   const { session } = useAuth();
   const router = useRouter();
@@ -175,7 +179,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
   // A document docked on the right collapses the sidebar to the rail while it is open. Transient:
   // the learner's stored preference is neither read nor written — see side-panel.tsx.
   const sidePanelOpen = useSidePanelOpen();
-  const { focusMode, navToggleShowing, railVisible, sidebarVisible } = shellNavigation({
+  const nav = shellNavigation({
     canvasRunning: canvasRunning && !reopenedOverCanvas,
     libraryFullScreen,
     narrowViewport,
@@ -184,6 +188,10 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
     sidePanelOpen,
     surfaceFullBleed,
   });
+  const focusMode = nav.focusMode;
+  const navToggleShowing = !navless && nav.navToggleShowing;
+  const railVisible = !navless && nav.railVisible;
+  const sidebarVisible = !navless && nav.sidebarVisible;
 
   // 🔴🔴 THE TRANSITION IS OFF UNTIL AFTER THE FIRST PAINT, AND THAT IS NOT BELT AND BRACES.
   // `useResponsiveSidebar` seeds its state from a default and reads the learner's stored preference
@@ -223,7 +231,9 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
    * no gutter to leave, and leaving one would strand a phone's reader 84vw to the right.
    */
   useEffect(() => {
-    const column = narrowViewport
+    const column = navless
+      ? "var(--nsp-sidebar-w, 0px)"
+      : narrowViewport
       ? "0px"
       : sidebarVisible
         ? "var(--nav-sidebar-width)"
@@ -234,7 +244,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
     return () => {
       document.documentElement.style.removeProperty("--nav-column");
     };
-  }, [narrowViewport, railVisible, sidebarVisible]);
+  }, [navless, narrowViewport, railVisible, sidebarVisible]);
 
   useEffect(() => {
     const addHoverDescriptions = (root: ParentNode) => {
@@ -313,11 +323,12 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
           // only be a promise nothing keeps.
           data-pane-shell=""
           data-pane-shell-animate={animateNav && !narrowViewport ? "true" : undefined}
-          style={{ gridTemplateColumns: narrowViewport ? "minmax(0,1fr)" : "var(--pane-chat-sidebar-width) minmax(0,1fr)" }}
+          style={{ gridTemplateColumns: narrowViewport || navless ? "minmax(0,1fr)" : "var(--pane-chat-sidebar-width) minmax(0,1fr)" }}
         >
           {narrowViewport && sidebarVisible && (
             <button aria-label="Close sidebar" className="absolute inset-0 z-50 bg-black/35 backdrop-blur-[1px]" onClick={collapseSidebar} type="button" />
           )}
+          {!navless && (
           <div
             className={cn(
               "relative min-h-0 min-w-0 overflow-hidden",
@@ -386,6 +397,7 @@ function WorkspaceChrome({ children }: { children: React.ReactNode }) {
               </>
             )}
           </div>
+          )}
           <div className="relative min-h-0 min-w-0 overflow-hidden">{children}</div>
         </div>
       </main>

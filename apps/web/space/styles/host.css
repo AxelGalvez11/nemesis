@@ -1,0 +1,3 @@
+/* The React app's column beside the Space sidebar. Outside .nsp on purpose: nothing in the Space stylesheet reaches it. */
+.nsp-app-column { position: fixed; top: 0; right: 0; bottom: 0; left: var(--nsp-sidebar-w, 240px); z-index: 1; }
+.nsp-app-column[data-hidden] { visibility: hidden; pointer-events: none; }
