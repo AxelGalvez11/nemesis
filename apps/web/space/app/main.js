@@ -8,7 +8,7 @@ import { splitEmails } from '../../lib/space/invite-request';
 import { EMOJI_SECTIONS, EMOJI_KW } from './emoji.js';
 import { COVER_GALLERY } from './covers.js';
 import { TEMPLATES } from './templates.js';
-import { space, uid, route, pathFor, isUuid, NOW, APP_ROUTE } from './runtime.js';
+import { space, uid, route, pathFor, isUuid, NOW, APP_ROUTE, initialsAvatar } from './runtime.js';
 
 const html = htm.bind(h);
 
@@ -54,7 +54,7 @@ space.onRoute((r, prev) => {
 // A feature whose server side does not exist yet stays out of sight rather than pretending: no canned AI answers, no
 // invite box that sends nothing (docs/space/PLAN.md). Turn a flag on in the milestone that builds it;
 // lib/space/space-ready.test.ts keeps every entry point behind its flag.
-const READY = { ai: false, meetings: false, inbox: false, invites: true, publish: false, members: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
+const READY = { ai: false, meetings: false, inbox: true, notifyPrefs: false, invites: true, publish: false, members: false, importExport: false, history: false, pageOps: false, automations: false, searchFilters: false, maps: false };
 /* ------------------------------------------------------------------ helpers */
 const svgMarkup = (n, as) => (ALL_ICONS[n] || '').replace('<svg ', `<svg class="${as || n}" `);
 const Icon = ({ n, as, cls }) => html`<span class=${'nicon ' + (cls || '')} dangerouslySetInnerHTML=${{ __html: svgMarkup(n, as) }}></span>`;
@@ -1008,7 +1008,22 @@ function MeetingsBody() {
   return html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Upcoming</span></div><div class="sb-list tight">${sb.upcoming.map((m) => html`<div class="sb-meet" role="button"><div class="sb-meet-ic"><i style=${`background:${m.color}`}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`)}</div><${MoreRow} k="upcoming"/></div>
   ${sb.notes.map((grp) => html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">${grp.label}</span></div><div class="sb-notes">${grp.label === 'Today' ? html`<a class="sb-item muted first" onClick=${() => openMeetingNote('', true)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New AI meeting note</div></div></a>` : ''}${grp.items.map((title) => html`<a class="sb-item" onClick=${() => openMeetingNote(title, false, grp.label)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="paperMicrophone" cls="i20"/></div><div class="sb-item-label">${title}</div></div></a>`)}</div></div>`)}`;
 }
-const InboxBody = () => html`<div class="sb-inbox"><section class="sb-inbox-sec"><div class="sb-inbox-head"><div class="sb-chat-label">Older</div><div class="sb-chat-acts">${['aiFaceSmall', 'checkmarkSmall', 'archiveBoxSmall', 'filterSmall'].map((ic) => html`<div class="sb-act24" role="button"><${Icon} n=${ic} cls="i16"/></div>`)}</div></div></section></div>`;
+// The Inbox (docs/space/PLAN.md, M6): shares, comments and mentions for this person, newest first. Opening one marks it read
+// and goes to the page, which switches workspace when the page lives in someone else's.
+const inboxLine = (n) => {
+  const who = (n.actor && n.actor.name) || 'Someone';
+  // The title this browser knows is newer than the one sent with the notification, so it wins when the page is here.
+  const title = (S.pages[n.page_id] && pageTitleText(S.pages[n.page_id])) || (n.page && n.page.props && n.page.props.title) || 'Untitled';
+  return n.kind === 'share' ? `${who} shared ${title} with you` : n.kind === 'mention' ? `${who} mentioned you in ${title}` : `${who} commented on ${title}`;
+};
+function InboxBody() {
+  const box = space.inbox;
+  const open = (n) => { if (!n.read) void space.markRead([n.id]); go(n.page_id); };
+  return html`<div class="sb-inbox"><section class="sb-inbox-sec">
+    <div class="sb-inbox-head"><div class="sb-chat-label">Inbox</div><div class="sb-chat-acts">${box.unread ? html`<div class="sb-act24" role="button" aria-label="Mark all as read" data-tip="Mark all as read" onClick=${() => void space.markRead(null)}><${Icon} n="checkmarkSmall" cls="i16"/></div>` : ''}</div></div>
+    ${box.items.length ? box.items.map((n) => html`<a class=${'sb-chat-row inbox-row' + (n.read ? '' : ' unread')} key=${n.id} role="menuitem" onClick=${() => open(n)}><div class="sb-chat-row-in"><div class="sb-chat-ic"><img class="inbox-av" src=${(n.actor && n.actor.avatar) || initialsAvatar((n.actor && n.actor.name) || '?')} alt=""/></div><div class="inbox-text"><div class="sb-chat-title">${inboxLine(n)}</div>${n.preview && n.kind !== 'share' ? html`<div class="inbox-preview">${n.preview}</div>` : ''}</div><div class="sb-chat-date">${chatLabel(Date.parse(n.created_at))}</div>${n.read ? '' : html`<i class="sb-chat-dot"></i>`}</div></a>`) : html`<div class="inbox-empty">${box.loaded ? 'Nothing here yet. Pages shared with you, comments in your conversations and mentions of you show up here.' : 'Loading…'}</div>`}
+  </section></div>`;
+}
 function Sidebar({ current }) {
   const tab = SB_TABS.some(([k]) => k === S.sidebar.tab) ? S.sidebar.tab : 'home';
   const links = [['bookshelf', 'Library'], ['checkmarkSquare', 'My Tasks'], ['templates', 'Templates'], ['questionMarkCircle', 'Help'], ['trash', 'Trash']];
@@ -1016,7 +1031,7 @@ function Sidebar({ current }) {
     <div class="sb-ws" role="button" onClick=${(e) => openOverlay('workspace', e.currentTarget)}><div class="sb-ws-inner"><div class="sb-av"><img src=${space.avatar()} alt=""/></div><div class="sb-ws-name">${S.workspace}</div><span class="sb-ws-chev"><${Icon} n="arrowChevronSingleDownFillSmall" cls="i14"/></span></div></div>
     <div class="sb-collapse" role="button" data-tip="Close sidebar" onClick=${() => { S.sidebar.collapsed = true; commit(); }}><${Icon} n="arrowChevronDoubleBackward" cls="i20"/></div>
     <div class="sb-iconrow">
-      <div class=${'sb-tabs' + (tab === 'home' ? '' : ' shifted')} role="tablist">${SB_TABS.map(([k, ic, label]) => html`<div class=${'sb-tab' + (tab === k ? ' active' : '')} role="tab" key=${k} onClick=${() => { S.sidebar.tab = k; commit(); }}><${Icon} n=${ic} cls="i22"/><div class="sb-tab-label"><span><span>${label}</span></span></div>${k === 'chat' && unreadChats() ? html`<span class="sb-badge">${unreadChats()}</span>` : ''}</div>`)}</div>
+      <div class=${'sb-tabs' + (tab === 'home' ? '' : ' shifted')} role="tablist">${SB_TABS.map(([k, ic, label]) => html`<div class=${'sb-tab' + (tab === k ? ' active' : '')} role="tab" key=${k} onClick=${() => { S.sidebar.tab = k; commit(); }}><${Icon} n=${ic} cls="i22"/><div class="sb-tab-label"><span><span>${label}</span></span></div>${k === 'chat' && unreadChats() ? html`<span class="sb-badge">${unreadChats()}</span>` : ''}${k === 'inbox' && space.inbox.unread ? html`<span class="sb-badge">${space.inbox.unread > 9 ? '9+' : space.inbox.unread}</span>` : ''}</div>`)}</div>
       <div class="sb-search"><div class="sb-tab" role="button" onClick=${(e) => openOverlay('search', e.currentTarget)}><${Icon} n="magnifyingGlass" cls="i22"/></div></div>
     </div>
     <div class=${'sb-scroll tab-' + tab}>
@@ -1393,7 +1408,7 @@ function PageMenu() {
       ${READY.pageOps && page.lastEdited >= SESSION_T0 ? html`<div class="menu-group"><${MenuItem} ic="arrowUTurnUpLeft" label="Undo" sc="⌘Z"/></div>` : ''}
       ${READY.importExport ? html`<div class="menu-group"><${MenuItem} ic="arrowLineDown" label="Import"/><${MenuItem} ic="arrowLineUp" label="Export"/></div>` : ''}
       ${READY.history ? html`<div class="menu-group"><${MenuItem} ic="clock" label="Updates & analytics"/><${MenuItem} ic="stack" label="Version history" beta="Beta"/></div>` : ''}
-      ${READY.inbox ? html`<div class="menu-group"><${MenuItem} ic="bell" label="Notify me" val="Comments" chev/></div>` : ''}
+      ${READY.notifyPrefs ? html`<div class="menu-group"><${MenuItem} ic="bell" label="Notify me" val="Comments" chev/></div>` : ''}
       <div class="menu-group"><div class="menu-meta"><div>${plural(pageWords(page), 'word')}</div><div>Last edited by ${space.editedBy(page.id)}</div><div>${fmtWhen(page.lastEdited || NOW())}</div></div></div>
     </div>
   </div>`;
@@ -3131,7 +3146,7 @@ function DiscussionsPopover({ page }) {
   walk(page.content);
   const list = all ? [...open, ...resolved] : open;
   return html`<div class=${'dz-pop' + (list.length ? ' has' : '')} ref=${ref}>
-    <div class="dz-head"><div class="dz-title">Discussions</div>${READY.inbox ? html`<div class="dz-bell" role="button" aria-label="Notification settings"><${Icon} n="bell" cls="i20"/></div>` : ''}</div>
+    <div class="dz-head"><div class="dz-title">Discussions</div>${READY.notifyPrefs ? html`<div class="dz-bell" role="button" aria-label="Notification settings"><${Icon} n="bell" cls="i20"/></div>` : ''}</div>
     ${list.length ? html`<div class="dz-list">${list.map(([b, c]) => html`<div class="dz-item"><div class="bt-head"><div class="pd-avatar"><img src=${space.avatar(c.authorId)} alt=""/></div><div class="bt-name">${c.author}</div><div class="bt-time">${relTime(c.time)}</div></div>${b ? html`<div class="dz-quote">${plain(b.title)}</div>` : ''}<div class="bt-text">${c.text}</div></div>`)}</div>`
       : html`<div class="dz-empty"><${Icon} n="discussionsEmpty" cls="dz-empty-ic"/><div class="dz-e1">You’re all caught up</div><div class="dz-e2">There are no open discussions</div><div class="dz-see" role="button" onClick=${() => setAll(true)}>See all</div></div>`}
   </div>`;
@@ -3143,6 +3158,7 @@ function Topbar({ page }) {
     <div class="tb-private" role="button" onClick=${(e) => openOverlay('share', e.currentTarget)}><${Icon} n="lockFill" cls="i16"/><span class="tb-private-label">${space.sectionLabel(page)}</span><${Icon} n="arrowChevronSingleDownFill" cls="i11"/></div>
     ${cmtPanel === page.id ? html`<${DiscussionsPopover} page=${page}/>` : ''}
     <div class="tb-right">
+      ${space.presentOn(page.id).length ? html`<div class="tb-people" aria-label="Also on this page">${space.presentOn(page.id).slice(0, 3).map((p) => html`<img class="tb-person" src=${p.avatar || initialsAvatar(p.name || '?')} alt=${p.name} data-tip=${p.name}/>`)}${space.presentOn(page.id).length > 3 ? html`<span class="tb-more">+${space.presentOn(page.id).length - 3}</span>` : ''}</div>` : ''}
       <div class="tb-btn tb-edited">${ago(page.lastEdited)}</div>
       <div class="tb-btn tb-share" role="button" onClick=${(e) => openOverlay('share', e.currentTarget)}><${Icon} n="lock" cls="i-lock"/><span>Share</span></div>
       <div class="tb-btn sq tb-link" role="button" data-tip="Copy link" onClick=${() => { try { navigator.clipboard.writeText(location.href); } catch (e) {} copiedToast(); }}><${Icon} n="link" cls="i20"/></div>

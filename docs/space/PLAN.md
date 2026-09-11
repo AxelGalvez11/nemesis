@@ -45,9 +45,9 @@ nothing here reuses that word.
 
 ## Not built yet stays hidden
 - `READY` in apps/web/space/app/main.js hides every way into a feature with no server behind it: ai, meetings, inbox,
-  publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5. The milestone that builds one turns its
+  notifyPrefs, publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5, the inbox with M6. The milestone that builds one turns its
   flag on. lib/space/space-ready.test.ts fails when an entry point escapes its flag.
-- Controls with no handler of their own: 107 on 2026-09-11 (lib/space/dead-controls.ts). The budget only goes down.
+- Controls with no handler of their own: 106 on 2026-09-11 (lib/space/dead-controls.ts). The budget only goes down.
 - Home has no page of its own until M9; it opens the page you were last on, or your first page.
 
 ## Milestones
@@ -69,6 +69,10 @@ nothing here reuses that word.
       workspace switcher works, a shared page opens in its own workspace, view and comment roles cannot type, and
       /api/space/invite emails each person. Left: publish to web, workspace members, teamspaces.
 - [ ] M6 Comments, discussions, mentions, inbox notifications, presence avatars
+      2026-09-11, part one: 20260911T12_space_inbox.sql is live (self-test 12 of 12, rolled back). A share, a new
+      comment in a conversation or a new mention notifies the people it concerns, never the person acting and never
+      anyone who cannot open the page. The Inbox lists them with an unread count and marks them read, and the people
+      looking at a page show as avatars in its top bar. Left: per-page notification settings, email digests.
 - [ ] M7 Search, templates gallery (ours), duplicate, import (Markdown, CSV), export
 - [ ] M8 Real settings (account, preferences, notifications, connections, workspace, people, teamspaces, billing)
 - [ ] M9 AI panel and chats on nemesis-llm with page tools; Meetings on the recording pipeline; Home; Calendar
