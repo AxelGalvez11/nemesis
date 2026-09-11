@@ -80,7 +80,7 @@ export function emptyState() {
     sidebar: {
       open: { meetings: true, recents: true, favorites: true, private: true, workspace: true, shared: true, apps: true },
       expanded: {},
-      hidden: { agents: true },
+      hidden: {},
       tab: 'home',
       collapsed: false,
       private: [],
@@ -106,7 +106,7 @@ export function emptyState() {
 }
 
 // One person's view of the app, saved to ws_user_settings rather than to any page.
-const UI_KEYS = ['contrastPref', 'emojiFrecency', 'recentEmoji', 'recentIcons', 'skinTone', 'iconColor', 'iconAsk', 'lastColor', 'chatWebSearch'];
+const UI_KEYS = ['contrastPref', 'emojiFrecency', 'recentEmoji', 'recentIcons', 'skinTone', 'iconColor', 'iconAsk', 'lastColor', 'chatWebSearch', 'agentsShown'];
 const SIDEBAR_KEYS = ['open', 'expanded', 'hidden', 'order', 'show', 'tab', 'collapsed', 'private'];
 
 function toError(error) {
@@ -195,6 +195,8 @@ class Space {
     this.meetingDeps = null;
     this.meetingPoll = 0;
     this.meetingPollMs = 5000;
+    // Outside AI tools this person connected (loadAgents); `available` is false until the OAuth server is switched on.
+    this.agents = { items: [], loaded: false, available: false };
     this.sync = this.makeSync();
   }
 
@@ -276,6 +278,11 @@ class Space {
     for (const k of UI_KEYS) if (k in ui) S[k] = ui[k];
     const side = settings.sidebar || {};
     for (const k of SIDEBAR_KEYS) if (k in side && k !== 'private') S.sidebar[k] = side[k];
+    // Agents stayed hidden by default until outside AI tools could connect (M11), so a hide saved before then was not a choice.
+    if (!S.agentsShown) {
+      if (S.sidebar.hidden && S.sidebar.hidden.agents) S.sidebar.hidden = { ...S.sidebar.hidden, agents: false };
+      S.agentsShown = true;
+    }
     this.welcomed = !!settings.welcomed;
     this.libraryImport = settings.libraryImport && typeof settings.libraryImport === 'object' ? settings.libraryImport : null;
 
@@ -306,6 +313,7 @@ class Space {
     this.ready = true;
     void this.loadCalendar();
     void this.loadChats();
+    void this.loadAgents();
     if (!mine.length && !S.sidebar.workspace.length && !S.sidebar.shared.length && !this.welcomed) this.createWelcome();
     if (this.info.role === 'owner') void this.importLibrary();
     this.routeChanged(true);
@@ -773,6 +781,42 @@ class Space {
     const S = this.state;
     S.sidebar.meetings = live.filter((e) => e.date === today).slice(0, 8).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: eventTime(e), date: e.date, color: '#5e9fe8' }));
     S.sidebar.upcoming = live.slice(0, 12).map((e) => ({ id: e.id, title: e.title || 'Untitled event', time: e.date === today ? eventTime(e) : `${day(e.date)} ${eventTime(e)}`, date: e.date, color: '#5e9fe8' }));
+    this.emit();
+  }
+
+  // -------------------------------------------------------------------------------------------- agents
+
+  /** AI tools this person connected (docs/space/PLAN.md, M11): the grants Supabase Auth holds for them. */
+  async loadAgents() {
+    const oauth = this.sb && this.sb.auth ? this.sb.auth.oauth : null;
+    if (!oauth || typeof oauth.listGrants !== 'function') {
+      this.agents = { items: [], loaded: true, available: false };
+      this.emit();
+      return;
+    }
+    try {
+      const { data, error } = await oauth.listGrants();
+      if (error) throw error;
+      const items = (Array.isArray(data) ? data : [])
+        .filter((grant) => grant && grant.client && grant.client.id)
+        .map((grant) => ({ id: grant.client.id, name: grant.client.name || 'AI tool', site: grant.client.uri || '', since: grant.granted_at || null }));
+      this.agents = { items, loaded: true, available: true };
+    } catch (err) {
+      // Until the OAuth server is switched on, Supabase answers that the feature is disabled.
+      const off = /disabled/i.test(String((err && (err.message || err.msg)) || ''));
+      this.agents = { items: [], loaded: true, available: !off };
+      if (!off) console.warn('Space: could not list connected AI tools', err);
+    }
+    this.emit();
+  }
+
+  /** Ends an AI tool's access: Supabase revokes the grant, ends its sessions and invalidates its refresh tokens. */
+  async disconnectAgent(clientId) {
+    const oauth = this.sb && this.sb.auth ? this.sb.auth.oauth : null;
+    if (!oauth || typeof oauth.revokeGrant !== 'function') return;
+    const { error } = await oauth.revokeGrant({ clientId });
+    if (error) throw new Error('That tool could not be disconnected. Try again in a moment.');
+    this.agents = { ...this.agents, items: this.agents.items.filter((agent) => agent.id !== clientId) };
     this.emit();
   }
 

@@ -2064,3 +2064,13 @@
 @media (prefers-reduced-motion:reduce){.nsp .tr-live i{animation:none}}
 .nsp .tr-btn.quiet{background:transparent}
 .nsp .tr-empty{padding:12px 2px;color:var(--c-texSec)}
+
+/* Agents (M11): outside AI tools connected to this person, and how to connect one. */
+.nsp .agents-connect{width:340px}
+.nsp .ac-body{padding:14px 14px 12px;display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:20px}
+.nsp .ac-title{font-weight:600}
+.nsp .ac-text,.nsp .ac-steps{color:var(--c-texSec)}
+.nsp .ac-address{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--ca-bacTerTra)}
+.nsp .ac-url{flex:1;min-width:0;overflow-wrap:anywhere;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.nsp .ac-copy{flex:none;cursor:pointer;font-weight:500}
+.nsp .ac-steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}

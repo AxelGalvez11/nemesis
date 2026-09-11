@@ -415,6 +415,8 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
     }
   };
 
+  // AI tools this person has connected, as Supabase Auth's OAuth server lists them (auth.oauth.listGrants).
+  const grants: Array<{ client: { id: string; name: string; uri: string; logo_uri: string }; scopes: string[]; granted_at: string }> = [];
   // Plain tables for what the runtime reads and writes directly rather than through an RPC: chats.
   const tables = new Map<string, Array<Record<string, unknown>>>([
     ["chat_threads", []],
@@ -469,7 +471,17 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
     server,
     /** Tests and the harness: the plain tables behind `from()`. */
     tables,
-    auth: { getSession: async () => ({ data: { session: { access_token: "fake" } } }), signOut: async () => ({ error: null }) },
+    auth: {
+      getSession: async () => ({ data: { session: { access_token: "fake" } } }),
+      signOut: async () => ({ error: null }),
+      oauth: {
+        listGrants: async () => ({ data: structuredClone(grants), error: null }),
+        revokeGrant: async ({ clientId }: { clientId: string }) => {
+          grants.splice(0, grants.length, ...grants.filter((grant) => grant.client.id !== clientId));
+          return { data: {}, error: null };
+        },
+      },
+    },
     realtime: { setAuth: () => {} },
     rpc,
     from: (table: string) => query(table),
@@ -504,6 +516,10 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
       return ch;
     },
     removeChannel: async () => "ok",
+    /** Harness and tests: AI tools this person has connected. */
+    seedAgents(list: Array<{ id: string; name: string; uri?: string }>) {
+      grants.splice(0, grants.length, ...list.map((a) => ({ client: { id: a.id, name: a.name, uri: a.uri ?? "", logo_uri: "" }, scopes: ["email"], granted_at: new Date().toISOString() })));
+    },
     /** Harness and tests: the notes an old Library holds. */
     seedLibrary(notes: Array<{ id: string; title: string; content: string }>) {
       library.splice(0, library.length, ...notes);

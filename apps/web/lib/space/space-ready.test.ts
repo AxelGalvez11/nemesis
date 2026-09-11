@@ -20,8 +20,9 @@ const runtime = readFileSync(new URL("../../space/app/runtime.js", import.meta.u
 const ENTRY_POINTS: Array<[string, RegExp, "dead"?]> = [
   [
     "ai",
-    /\['bulb', 'Start a draft'|\['bulb', 'Research a topic'|key: 'agents'|aria-label="New agent"|\['New agent', 'new'\]|(?<!-)label="Use with AI"|\{ n: 'Ask AI'|\{ n: 'Suggest edits'|(?<!-)label="Suggest edits"|(?<!-)label="Translate"|\{ n: 'Skills'|placeholder="Edit with AI"|(?<!-)label="AI Autofill"|aria-label="AI Autofill"|\['magicWandSmall', ''\]|<\$\{AiSidePanel\}/,
+    /\['bulb', 'Start a draft'|\['bulb', 'Research a topic'|aria-label="New agent"|\['New agent', 'new'\]|(?<!-)label="Use with AI"|\{ n: 'Ask AI'|\{ n: 'Suggest edits'|(?<!-)label="Suggest edits"|(?<!-)label="Translate"|\{ n: 'Skills'|placeholder="Edit with AI"|(?<!-)label="AI Autofill"|aria-label="AI Autofill"|\['magicWandSmall', ''\]|<\$\{AiSidePanel\}/,
   ],
+  ["agents", /key: 'agents'/],
   ["chat", /class="sb-newchat"|\['chatBubble', 'Chat', openNewChat\]|\['chat', 'chatBubble', 'Chat'\]|toLowerCase\(\) === 'o'/],
   [
     "meetings",
