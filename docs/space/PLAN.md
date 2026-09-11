@@ -108,3 +108,7 @@ nothing here reuses that word.
       (lib/space/library-import.ts), and the sync engine sends at most 500 operations per write. Ids come from the notes,
       so an import cut short finishes on the next load and two tabs never make it twice. Left: sources, the
       /library redirect, Canvas and Study inside the shell, the front door for everyone, account deletion.
+      2026-09-11, part two: 20260911T15_space_account_cleanup.sql is live (self-test 9 of 9, rolled back, before and
+      after applying). Deleting an account (/api/account/delete) now removes the workspaces no one else owns or is a
+      member of, with their files in ws-files, and the person's private pages and their files in workspaces others keep.
+      Left: sources, the /library redirect, Canvas and Study inside the shell, the front door for everyone.

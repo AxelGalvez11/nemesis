@@ -1,6 +1,7 @@
 import { adminClient, json, verifyBearer, withRouteLog } from "@/lib/server";
 import { stripe, stripeFailureDetail } from "@/lib/stripe";
 import { stripeSecretKey } from "@/lib/env";
+import { removeFolders } from "@/lib/space/account-cleanup";
 
 // POST /api/account/delete: the learner deletes their own account.
 //
@@ -78,7 +79,20 @@ async function POSTHandler(req: Request) {
     }
   }
 
-  // 3. The login. Everything user-owned in Postgres cascades from here.
+  // 3. The workspace. Its files are kept under the workspace, not the person, so the loop above never sees them.
+  //    ws_account_cleanup deletes the workspaces that were only theirs and names the ws-files folders to empty: those
+  //    workspaces', and their private pages' in workspaces others keep (the pages themselves go with the login below).
+  try {
+    const { data, error } = await admin.rpc("ws_account_cleanup", { p_user: user.id });
+    if (error) throw error;
+    const folders = (data as { folders?: unknown } | null)?.folders;
+    await removeFolders(admin.storage.from("ws-files"), Array.isArray(folders) ? folders.filter((f): f is string => typeof f === "string") : []);
+  } catch (error) {
+    left.push("workspace");
+    console.error("account_delete_workspace_failed", { user_id: user.id, message: error instanceof Error ? error.message : String(error) });
+  }
+
+  // 4. The login. Everything user-owned in Postgres cascades from here.
   const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);
   if (deleteError) {
     console.error("account_delete_failed", { user_id: user.id, message: deleteError.message, left });
