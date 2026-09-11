@@ -45,9 +45,9 @@ nothing here reuses that word.
 
 ## Not built yet stays hidden
 - `READY` in apps/web/space/app/main.js hides every way into a feature with no server behind it: ai, meetings, inbox,
-  notifyPrefs, publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5, the inbox with M6, chat with M9. The milestone that builds one turns its
+  notifyPrefs, publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5, the inbox with M6, chat and meeting notes with M9. The milestone that builds one turns its
   flag on. lib/space/space-ready.test.ts fails when an entry point escapes its flag.
-- Controls with no handler of their own: 74 on 2026-09-11, down from 106 (lib/space/dead-controls.ts). The budget only goes down.
+- Controls with no handler of their own: 71 on 2026-09-11, down from 106 (lib/space/dead-controls.ts). The budget only goes down.
 - Home has no page of its own until M9; it opens the page you were last on, or your first page.
 
 ## Milestones
@@ -107,6 +107,13 @@ nothing here reuses that word.
       renderer (lib/space/answer-render.tsx) and is saved with its answer in chat_threads and chat_messages
       (lib/space/chats.ts), so chats from before the canvas come back in the list. Web search is a switch in the
       composer's settings. Left: the AI side panel and page tools, agents, Meetings, Home, Calendar.
+      2026-09-11, part two: 20260911T16_space_meetings.sql is live (dry run 3 of 3, rolled back, then applied). AI
+      Meeting Notes record: the block starts and stops the microphone (lib/space/meeting-recorder.ts, with the app's
+      formats and silence gate), the audio goes through /api/recordings/jobs as surface "space" with no Library note,
+      and the worker's transcript and notes are written into the block when it is done (lib/space/meeting-notes.ts).
+      The Meetings tab lists the next week of the calendar and the meeting notes, and an event opens its own note.
+      Left: the AI side panel and page tools, agents, Home, Calendar, and saving the audio in parts so a recording
+      cut off by a closed tab can be recovered.
 - [ ] M10 Old Library migrates in (notes to pages, sources stay sources); Canvas and Study inside the shell;
       front door flips for everyone; `/library` redirects; account deletion cleans space data
       2026-09-11, part one: each person's live Library notes become pages once, under "From your old Library"

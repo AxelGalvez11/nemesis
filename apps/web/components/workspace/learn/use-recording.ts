@@ -47,7 +47,7 @@ export interface RecordingTarget {
   messageId: string;
   /** Which chat this belongs to. Defaults to the main Sessions chat; notebooks
    *  keep their artifacts under their own context. */
-  surface?: "sessions" | "notebook";
+  surface?: "sessions" | "notebook" | "space";
   /** "12 minutes of quiet skipped", when the silence gate saved enough to be
    *  worth saying. Filled in by the hook, not the caller. */
   silenceSkipped?: string;

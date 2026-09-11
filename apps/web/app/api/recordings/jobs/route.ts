@@ -66,7 +66,8 @@ async function POSTHandler(req: NextRequest) {
   const durationSeconds = Math.round(Number(body.durationSeconds));
   const contextId = typeof body.contextId === "string" ? body.contextId.slice(0, 200) : "";
   const messageId = typeof body.messageId === "string" ? body.messageId.slice(0, 200) : "";
-  const surface = body.surface === "notebook" ? "notebook" : "sessions";
+  // "space" is a workspace meeting note (lib/space/meeting-notes.ts): its notes land on the page, not in the Library.
+  const surface = body.surface === "notebook" ? "notebook" : body.surface === "space" ? "space" : "sessions";
   const silenceSkipped = typeof body.silenceSkipped === "string" ? body.silenceSkipped.slice(0, 200) : null;
 
   // The same ownership rule the transcription function enforces: you can only
@@ -156,8 +157,8 @@ async function POSTHandler(req: NextRequest) {
     return json({ error: "This recording could not be queued. Try again in a moment." }, 502);
   }
 
-  // 3. The Library note, already visible and already saying what is happening.
-  const note = await createPlaceholderNote(admin, auth.id, title, jobRow.id);
+  // 3. The Library note, already visible and already saying what is happening. A workspace meeting has its page instead.
+  const note = surface === "space" ? null : await createPlaceholderNote(admin, auth.id, title, jobRow.id);
   if (note) {
     await admin
       .from("recording_jobs")

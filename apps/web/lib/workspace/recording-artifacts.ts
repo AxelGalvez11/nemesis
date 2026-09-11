@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
-export type RecordingSurface = "sessions" | "notebook";
+export type RecordingSurface = "sessions" | "notebook" | "space";
 
 export interface RecordingArtifact {
   id: string;
