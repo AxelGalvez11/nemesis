@@ -78,7 +78,9 @@ export function emptyState() {
     views: {},
     rows: {},
     sidebar: {
-      open: { meetings: true, recents: true, favorites: true, private: true, workspace: true, shared: true, apps: true },
+      // A section with no saved choice draws open (main.js), so one added later is not folded away for people whose
+      // saved sidebar predates it.
+      open: { meetings: true, recents: true, favorites: true, agents: true, private: true, workspace: true, shared: true, apps: true },
       expanded: {},
       hidden: {},
       tab: 'home',
