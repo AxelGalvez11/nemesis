@@ -5,6 +5,7 @@ import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { ICONS, MASKS } from './icons.js';
 import { splitEmails } from '../../lib/space/invite-request';
+import { describeFilter, defaultOp, filterable, filterReady, filterRows, needsValue, operatorsFor, opLabel, searchRows, seedFromFilters } from '../../lib/space/db-filter';
 import { EMOJI_SECTIONS, EMOJI_KW } from './emoji.js';
 import { COVER_GALLERY } from './covers.js';
 import { TEMPLATES } from './templates.js';
@@ -861,31 +862,31 @@ function Cell({ row, pid, prop, col }) {
     case 'created_time': return td('p75', fmtDateTime(row.created || NOW()));
     case 'last_edited_time': return td('p75', fmtDateTime(row.edited || row.created || NOW()));
     case 'formula': return td('p75 td-num', '');
-    case 'person': return td('p75', (v || []).map((x) => space.personName(x) || x).join(', '));
+    case 'person': return td('p75', (v || []).map((x) => space.personName(x) || x).join(', '), open('cellPerson'));
     default: return td('p75', v || '', ['text', 'url', 'email', 'phone_number'].includes(prop.type) ? open('cellText') : undefined);
   }
 }
 function Database({ page }) {
   const coll = S.collections[page.collection]; const vid = page.activeView && page.views.includes(page.activeView) ? page.activeView : page.views[0]; const view = S.views[vid]; const rows = S.rows[page.collection];
   const cols = view.format.table_properties.filter((c) => c.visible);
-  const shown = sortRows(rows, coll, view);
+  const shown = viewRows(rows, coll, view);
   // Measured: a map view's toolbar drops Sort.
-  const tools = [['filterSmall', 'nsp-collection-filter'], ['arrowUpDownSmall', 'nsp-collection-sort'], ...(READY.automations ? [['lightningSmall', 'nsp-collection-automation-edit-view']] : []), ...(READY.ai ? [['magicWandSmall', '']] : []), ['magnifyingGlassSmall', ''], ['slidersSmall', 'nsp-collection-edit-view']].filter((t) => !(view.type === 'map' && t[0] === 'arrowUpDownSmall'));
+  const tools = [['filterSmall', 'nsp-collection-filter'], ['arrowUpDownSmall', 'nsp-collection-sort'], ...(READY.automations ? [['lightningSmall', 'nsp-collection-automation-edit-view']] : []), ...(READY.ai ? [['magicWandSmall', '']] : []), ['magnifyingGlassSmall', 'nsp-collection-search'], ['slidersSmall', 'nsp-collection-edit-view']].filter((t) => !(view.type === 'map' && t[0] === 'arrowUpDownSmall'));
   return html`<div class="db-page">
     <div class=${'db-head has-ctl' + (page.hideDescription ? ' no-desc' : '')}><div class="db-head-inner">
       <div class="db-controls">${hasIcon(page) ? '' : html`<button onClick=${(e) => addRandomIcon(page, e.currentTarget.closest('.db-head'))}><${Icon} n="emojiFaceFill" cls="i14"/><span>Add icon</span></button>`}<button><${Icon} n="photoFill" cls="i14"/><span>Add cover</span></button><button onClick=${() => { page.hideDescription = !page.hideDescription; commit(); }}><${Icon} n="infoCircleFill" cls="i14"/><span>${page.hideDescription ? 'Add description' : 'Hide description'}</span></button></div>
       <div class="db-title-row">${hasIcon(page) ? html`<div class="nsp-record-icon db-icon" role="button" onClick=${(e) => openOverlay('iconPicker', e.currentTarget, { pageId: page.id })}><${PageIcon} ic=${page.icon} size=${36}/></div>` : ''}<h1 class="db-title" contenteditable="true" spellcheck="true" data-ph="New database" onInput=${(e) => { page.title = e.currentTarget.textContent; persist(); }}>${page.title}</h1></div>${page.hideDescription ? '' : html`<div class="db-desc">${page.description}</div>`}</div></div>
     <div class=${'db-bar' + (view.type === 'form' ? ' formbar' : '')}>
       <div class="db-tabs">${page.views.map((id) => { const vw = S.views[id]; const on = id === vid; return S.renamingView === id ? html`<div class="nsp-collection-view-tab-button db-tab"><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><input class="db-tab-input" value=${vw.name} ref=${(el) => { if (el && document.activeElement !== el) { el.focus(); el.select(); } }} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); } }} onBlur=${(e) => { if (S.renamingView !== id) return; vw.name = e.currentTarget.value || vw.name; S.renamingView = null; commit(); }}/></div>` : html`<div class=${'nsp-collection-view-tab-button db-tab' + (on ? '' : ' off')} role="button" onClick=${(e) => { if (on) openOverlay('viewMenu', e.currentTarget, { vid: id }); else { page.activeView = id; commit(); } }}><${Icon} n=${VIEW_ICON[vw.type] || 'viewTable'} cls="i20"/><span class="lbl">${vw.name}</span></div>`; })}<div class="db-addview" role="button" aria-label="Add view" onClick=${(e) => openOverlay('addView', e.currentTarget)}><${Icon} n="plusSmall" cls="i16"/></div></div>${dbSel.size ? html`<div class="db-selbar"><span class="db-selcount">${dbSel.size} selected</span><div class="db-selbtn" role="button" onClick=${() => { const keep = rows.filter((x) => !dbSel.has(x.id)); rows.splice(0, rows.length, ...keep); dbSel.clear(); commit(); }}><${Icon} n="trash" cls="i16"/></div><div class="db-selbtn" role="button" onClick=${() => { dbSel.clear(); refresh(); }}><${Icon} n="xMarkSmall" cls="i16"/></div></div>` : ''}
-      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools">${READY.automations ? html`<div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div>` : ''}${READY.ai ? html`<div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div>` : ''}<div class="ft-ic" role="button" aria-label="Edit form, add questions and more…"><${Icon} n="slidersSmall" cls="i16"/></div><div class="ft-preview" role="button"><${Icon} n="eye" cls="i20"/><span>Preview</span></div>${READY.publish ? html`<div class="ft-share" role="button">Share form</div>` : ''}</div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && rows.some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button">No date (${rows.filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift({ id: uid(), title: '', created: NOW() }); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
+      <div class="db-tools">${view.type === 'map' ? html`<div class="db-noplace" role="button" onClick=${(e) => openOverlay('noPlace', e.currentTarget, { coll: page.collection })}>No place (${rows.length})</div>` : ''}${view.type === 'form' ? html`<div class="form-tools">${READY.automations ? html`<div class="ft-ic" role="button" aria-label="Automations"><${Icon} n="lightningSmall" cls="i16"/></div>` : ''}${READY.ai ? html`<div class="ft-ic" role="button" aria-label="AI Autofill"><${Icon} n="magicWandSmall" cls="i16"/></div>` : ''}<div class="ft-ic" role="button" aria-label="Edit form, add questions and more…" onClick=${() => { viewSettings = viewSettings ? null : { vid }; refresh(); }}><${Icon} n="slidersSmall" cls="i16"/></div>${READY.publish ? html`<div class="ft-share" role="button">Share form</div>` : ''}</div>` : ''}${(view.type === 'calendar' || view.type === 'timeline') && viewRows(rows, coll, view).some((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }) ? html`<div class="cal-nodate" role="button" onClick=${(e) => openOverlay('noDate', e.currentTarget, { vid })}>No date (${viewRows(rows, coll, view).filter((x) => { const dp = datePropOf(view, coll); return dp && !x[dp]; }).length})</div>` : ''}${tools.map(([n, c]) => c === 'nsp-collection-search' && dbSearchOpen.has(view.id) ? html`<div class="db-search"><${Icon} n="magnifyingGlassSmall" cls="i16"/><input placeholder="Type to search…" value=${dbSearch.get(view.id) || ''} ref=${(el) => { if (el && !el.dataset.on) { el.dataset.on = '1'; el.focus(); } }} onInput=${(e) => { dbSearch.set(view.id, e.currentTarget.value); refresh(); }} onBlur=${(e) => { if (!e.currentTarget.value) { dbSearchOpen.delete(view.id); refresh(); } }} onKeyDown=${(e) => { if (e.key === 'Escape') { e.stopPropagation(); dbSearch.delete(view.id); dbSearchOpen.delete(view.id); refresh(); } }}/></div>` : html`<div class=${'db-tool ' + c} role="button" onClick=${(e) => { if (c === 'nsp-collection-sort' || c === 'nsp-collection-filter') openOverlay('propPicker', e.currentTarget, { mode: c.endsWith('sort') ? 'sort' : 'filter' }); if (c === 'nsp-collection-edit-view') { viewSettings = viewSettings ? null : { vid }; refresh(); } if (c === 'nsp-collection-search') { dbSearchOpen.add(view.id); refresh(); } }}><${Icon} n=${n} cls="i16"/></div>`)}<div class="nsp-collection-view-item-add db-new"><div class="db-new-main" role="button" onClick=${() => { rows.unshift(newRow(view, coll)); commit(); }}>New</div><div class="db-new-more" role="button" onClick=${(e) => openOverlay('newMenu', e.currentTarget)}><${Icon} n="chevronDown20" as="arrowChevronSingleDownFill" cls="i16"/></div></div></div>
     </div>
-    ${view.sort && coll.schema[view.sort.pid] ? html`<div class="db-sortbar"><div class="db-chip" role="button" onClick=${() => { delete view.sort; commit(); }}><${Icon} n=${view.sort.dir === 'desc' ? 'arrowStraightDown' : 'arrowStraightUp'} cls="i14"/><span>${coll.schema[view.sort.pid].name}</span><${Icon} n="xMarkSmall" cls="i12"/></div></div>` : ''}
+    ${(view.sort && coll.schema[view.sort.pid]) || (view.filters || []).length ? html`<div class="db-sortbar">${(view.filters || []).map((f) => { const fp = coll.schema[f.pid]; const fm = (fp && MASKS[PROP_MASK[fp.type]]) || MASKS.list; return html`<div class=${'db-chip db-fchip' + (filterReady(f, fp) ? '' : ' idle')} role="button" data-filter=${f.id} onClick=${(e) => openOverlay('filterEditor', e.currentTarget, { fid: f.id })}><div class="th-mask db-fmask" style=${`-webkit-mask-image:url("${fm}");mask-image:url("${fm}")`}></div><span>${describeFilter(f, fp, (id) => space.personName(id))}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div>`; })}${view.sort && coll.schema[view.sort.pid] ? html`<div class="db-chip" role="button" onClick=${() => { delete view.sort; commit(); }}><${Icon} n=${view.sort.dir === 'desc' ? 'arrowStraightDown' : 'arrowStraightUp'} cls="i14"/><span>${coll.schema[view.sort.pid].name}</span><${Icon} n="xMarkSmall" cls="i12"/></div>` : ''}</div>` : ''}
     ${viewSettings && S.views[viewSettings.vid] && page.views.includes(viewSettings.vid) ? (viewSettings.chartEdit ? html`<${ChartSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>` : html`<${ViewSettings} page=${page} coll=${coll} vid=${viewSettings.vid}/>`) : ''}
     ${view.type === 'board' ? html`<${BoardView} page=${page} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'gallery' ? html`<${GalleryView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'list' ? html`<${ListView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'calendar' ? html`<${CalendarView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'timeline' ? html`<${TimelineView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'feed' ? html`<${FeedView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'chart' ? html`<${ChartView} coll=${coll} view=${view} rows=${rows}/>` : view.type === 'dashboard' ? html`<${DashboardView}/>` : view.type === 'form' ? html`<${FormView} coll=${coll} view=${view}/>` : view.type === 'map' ? html`<${MapView} coll=${coll} view=${view} rows=${rows}/>` : html`
     <div class=${'nsp-table-view' + (view.lines === false ? ' nolines' : '') + (view.hideIcon ? ' noicon' : '') + (view.wrapAll ? ' wrapall' : '')}>
       <div class="nsp-table-view-header-row">${cols.map((c) => html`<${HeaderCell} c=${c} p=${coll.schema[c.property]}/>`)}</div>
-      ${shown.map((r) => html`<div class=${'nsp-table-view-row' + (dbSel.has(r.id) ? ' sel' : '')} key=${r.id} data-row-id=${r.id}><div class="row-gutter"><div class="blk-plus" role="button" data-tip-html=${TIP_PLUS} onClick=${() => { const i = rows.indexOf(r); rows.splice(i + 1, 0, { id: uid(), title: '', created: NOW() }); commit(); }}><${Icon} n="plus" cls="i20"/></div><div class="blk-drag" role="button" data-tip-html=${TIP_DRAG} onMouseDown=${(e) => rowDragDown(e, rows, r, view)}><${Icon} n="dragHandle" cls="i20"/></div><div class=${'row-check' + (dbSel.has(r.id) ? ' on' : '')} role="checkbox" onClick=${() => { if (dbSel.has(r.id)) dbSel.delete(r.id); else dbSel.add(r.id); refresh(); }}>${dbSel.has(r.id) ? html`<${Icon} n="checkmarkFillSmall" cls="tick"/>` : ''}</div></div>${cols.map((c) => html`<${Cell} row=${r} pid=${c.property} prop=${coll.schema[c.property]} col=${c}/>`)}</div>`)}
-      <div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push({ id: uid(), title: '', created: NOW() }); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>
+      ${shown.map((r) => html`<div class=${'nsp-table-view-row' + (dbSel.has(r.id) ? ' sel' : '')} key=${r.id} data-row-id=${r.id}><div class="row-gutter"><div class="blk-plus" role="button" data-tip-html=${TIP_PLUS} onClick=${() => { const i = rows.indexOf(r); rows.splice(i + 1, 0, newRow(view, coll)); commit(); }}><${Icon} n="plus" cls="i20"/></div><div class="blk-drag" role="button" data-tip-html=${TIP_DRAG} onMouseDown=${(e) => rowDragDown(e, rows, r, view)}><${Icon} n="dragHandle" cls="i20"/></div><div class=${'row-check' + (dbSel.has(r.id) ? ' on' : '')} role="checkbox" onClick=${() => { if (dbSel.has(r.id)) dbSel.delete(r.id); else dbSel.add(r.id); refresh(); }}>${dbSel.has(r.id) ? html`<${Icon} n="checkmarkFillSmall" cls="tick"/>` : ''}</div></div>${cols.map((c) => html`<${Cell} row=${r} pid=${c.property} prop=${coll.schema[c.property]} col=${c}/>`)}</div>`)}
+      <div class="db-add"><div class="nsp-table-view-add-row" role="button" onClick=${() => { rows.push(newRow(view, coll)); commit(); }}><span><${Icon} n="plusSmall" cls="i16"/>New page</span></div></div>
     </div>`}
   </div>`;
 }
@@ -2466,6 +2467,24 @@ function sortRows(rows, coll, view) {
   const val = (r) => { const v = r[st.pid]; if (prop.type === 'number' || prop.type === 'auto_increment_id') return v ?? -Infinity; if (prop.type === 'checkbox') return v ? 1 : 0; if (prop.type === 'select' || prop.type === 'status') { const i = (prop.options || []).findIndex((o) => o.value === v); return i < 0 ? 999 : i; } if (prop.type === 'created_time' || prop.type === 'last_edited_time') return r.created || 0; return String(Array.isArray(v) ? v.join(',') : v || '').toLowerCase(); };
   return rows.slice().sort((a, b) => { const x = val(a); const y = val(b); return x < y ? -dir : x > y ? dir : 0; });
 }
+// Filters live on the view and sync with it (lib/space/db-filter.ts); the search box is this browser's own, per view.
+const dbSearch = new Map();
+const dbSearchOpen = new Set();
+// A row made in this browser stays in view until the page reloads, even where a filter would hide it: it starts empty.
+const madeHere = new Set();
+const filterCtx = { dayOf: (ms) => isoDate(new Date(ms)) };
+function viewRows(rows, coll, view) {
+  const kept = new Set(searchRows(filterRows(rows, view.filters, coll.schema, filterCtx), dbSearch.get(view.id) || '', coll.schema).map((r) => r.id));
+  return sortRows(rows.filter((r) => kept.has(r.id) || madeHere.has(r.id)), coll, view);
+}
+const newRow = (view, coll) => { const id = uid(); madeHere.add(id); return { ...seedFromFilters(view.filters, coll.schema), id, title: '', created: NOW() }; };
+function addFilter(view, pid, prop) {
+  const f = { id: uid(), pid, op: defaultOp(prop.type), ...(prop.type === 'checkbox' ? { value: true } : {}) };
+  view.filters = [...(view.filters || []), f];
+  closeOverlay(); commit();
+  // The chip is drawn by the render this commit started: open its editor under it.
+  setTimeout(() => { const el = document.querySelector(`[data-filter="${f.id}"]`); if (el) openOverlay('filterEditor', el, { fid: f.id }); }, 0);
+}
 const dbCtx = () => { const page = S.pages[route()]; if (!page || !page.collection) return null; return { page, coll: S.collections[page.collection], view: S.views[page.activeView && page.views.includes(page.activeView) ? page.activeView : page.views[0]] }; };
 const PROP_TYPES = [['text', 'Text'], ['number', 'Number'], ['select', 'Select'], ['multi_select', 'Multi-select'], ['status', 'Status'], ['date', 'Date'], ['person', 'Person'], ['checkbox', 'Checkbox'], ['url', 'URL'], ['email', 'Email'], ['phone_number', 'Phone']];
 function PropMenu({ data }) {
@@ -2486,9 +2505,9 @@ function PropMenu({ data }) {
     : sub.kind === 'type' ? html`<div class="menu-group"><div class="menu-head">Type</div>${PROP_TYPES.map(([t, n]) => html`<div class="mi" role="menuitem" onClick=${() => { p.type = t; if ((t === 'select' || t === 'multi_select' || t === 'status') && !p.options) p.options = []; done(); commit(); }}><div class="mi-in"><div class="mi-ic"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${MASKS[PROP_MASK[t]] || MASKS.list}");mask-image:url("${MASKS[PROP_MASK[t]] || MASKS.list}")`}></div></div><div class="mi-label">${n}</div>${p.type === t ? html`<div class="mi-check"><${Icon} n="checkmarkSmall" cls="i16"/></div>` : ''}</div></div>`)}</div>`
     : null;
   return html`<div class="menu prop-menu" ref=${ref} style=${`left:${left}px;top:${top}px`}>
-    <div class="pm2-head"><div class="pm2-row"><div class="pm2-type" role="button"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${mask}");mask-image:url("${mask}")`}></div></div><div class="bm-search-box pm2-name"><input value=${p.name} placeholder="Property name" onInput=${(e) => { p.name = e.currentTarget.value; persist(); refresh(); }}/></div><div class="pm2-info"><${Icon} n="infoCircleFill" cls="i16"/></div></div></div>
-    <div class="menu-group" onMouseEnter=${() => setSub(null)}><${MenuItem} ic="sliders" label="Edit property" chev/>${isTitle ? '' : html`<div onMouseEnter=${openSub('type')}><${MenuItem} ic="arrowSquarePathUpDown" label="Change type" chev onClick=${openSub('type')}/></div>`}${READY.ai ? html`<${MenuItem} ic="magicWand" label="AI Autofill" badge="Now with agents"/>` : ''}</div>
-    <div class="menu-group"><div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="filter" label="Filter" onClick=${done}/></div><div onMouseEnter=${openSub('sort')}><${MenuItem} ic="arrowUpDown" label="Sort" chev onClick=${openSub('sort')}/></div><div onMouseEnter=${() => setSub(null)}><${MenuItem} ic="squareGridBelowLines" label="Group" onClick=${done}/><${MenuItem} ic="sum" label="Calculate" chev/><${MenuItem} ic="pin" label="Freeze" onClick=${done}/>${isTitle ? '' : html`<${MenuItem} ic="eyeSlash" label="Hide" onClick=${() => { col.visible = false; done(); commit(); }}/>`}<${MenuItem} ic="arrowUTurnDownLeft" label=${col.wrap ? 'Unwrap content' : 'Wrap content'} onClick=${() => { col.wrap = !col.wrap; done(); commit(); }}/>${p.type === 'status' ? html`<${MenuItem} ic="eye" label="Display as" val="Select" valSm chev/>` : ''}</div></div>
+    <div class="pm2-head"><div class="pm2-row"><div class="pm2-type" role=${isTitle ? undefined : 'button'} onClick=${isTitle ? undefined : openSub('type')}><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${mask}");mask-image:url("${mask}")`}></div></div><div class="bm-search-box pm2-name"><input value=${p.name} placeholder="Property name" onInput=${(e) => { p.name = e.currentTarget.value; persist(); refresh(); }}/></div><div class="pm2-info"><${Icon} n="infoCircleFill" cls="i16"/></div></div></div>
+    <div class="menu-group" onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<div onMouseEnter=${openSub('type')}><${MenuItem} ic="arrowSquarePathUpDown" label="Change type" chev onClick=${openSub('type')}/></div>`}${READY.ai ? html`<${MenuItem} ic="magicWand" label="AI Autofill" badge="Now with agents"/>` : ''}</div>
+    <div class="menu-group"><div onMouseEnter=${() => setSub(null)}>${filterable(p.type) ? html`<${MenuItem} ic="filter" label="Filter" onClick=${() => addFilter(view, data.pid, p)}/>` : ''}</div><div onMouseEnter=${openSub('sort')}><${MenuItem} ic="arrowUpDown" label="Sort" chev onClick=${openSub('sort')}/></div><div onMouseEnter=${() => setSub(null)}>${isTitle ? '' : html`<${MenuItem} ic="eyeSlash" label="Hide" onClick=${() => { col.visible = false; done(); commit(); }}/>`}<${MenuItem} ic="arrowUTurnDownLeft" label=${col.wrap ? 'Unwrap content' : 'Wrap content'} onClick=${() => { col.wrap = !col.wrap; done(); commit(); }}/></div></div>
     <div class="menu-group" onMouseEnter=${() => setSub(null)}><${MenuItem} ic="arrowRectangleLeft" label="Insert left" onClick=${() => insert(idx)}/><${MenuItem} ic="arrowRectangleRight" label="Insert right" onClick=${() => insert(idx + 1)}/><${MenuItem} ic="duplicate" label="Duplicate property" onClick=${duplicate}/>${isTitle ? '' : html`<${MenuItem} ic="trash" label="Delete property" onClick=${remove}/>`}</div>
   </div>${subBody ? html`<${SubMenu} sub=${sub}>${subBody}<//>` : ''}`;
 }
@@ -2497,11 +2516,47 @@ function PropPicker({ data }) {
   useEffect(() => { if (inputRef.current) inputRef.current.focus(); }, []);
   if (!ctx) return null;
   const { coll, view } = ctx;
-  const props = view.format.table_properties.map((c) => [c.property, coll.schema[c.property]]).filter(([, p]) => p && (!q || p.name.toLowerCase().includes(q.toLowerCase()))).sort((a, b) => (a[1].type === 'title' ? -1 : b[1].type === 'title' ? 1 : a[1].name.localeCompare(b[1].name)));
+  const props = view.format.table_properties.map((c) => [c.property, coll.schema[c.property]]).filter(([, p]) => p && (!q || p.name.toLowerCase().includes(q.toLowerCase())) && (data.mode !== 'filter' || filterable(p.type))).sort((a, b) => (a[1].type === 'title' ? -1 : b[1].type === 'title' ? 1 : a[1].name.localeCompare(b[1].name)));
   const left = Math.max(8, Math.min(overlay.r.right - 268, innerWidth - 276)); const top = Math.min(overlay.r.bottom + 4, innerHeight - 300);
   return html`<div class="menu prop-picker" style=${`left:${left}px;top:${top}px`}>
     <div class="bm-search"><div class="bm-search-in"><div class="bm-search-box"><input ref=${inputRef} placeholder=${data.mode === 'sort' ? 'Sort by…' : 'Filter by…'} value=${q} onInput=${(e) => setQ(e.currentTarget.value)}/></div></div></div>
-    <div class="bm-scroll"><div class="menu-group">${props.map(([pid, p]) => html`<div class="mi" role="menuitem" onClick=${() => { if (data.mode === 'sort') view.sort = { pid, dir: 'asc' }; closeOverlay(); commit(); }}><div class="mi-in"><div class="mi-ic"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}");mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}")`}></div></div><div class="mi-label">${p.name}</div></div></div>`)}</div></div>
+    <div class="bm-scroll"><div class="menu-group">${props.map(([pid, p]) => html`<div class="mi" role="menuitem" onClick=${() => { if (data.mode === 'filter') { addFilter(view, pid, p); return; } view.sort = { pid, dir: 'asc' }; closeOverlay(); commit(); }}><div class="mi-in"><div class="mi-ic"><div class="th-mask pm2-mask" style=${`-webkit-mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}");mask-image:url("${MASKS[PROP_MASK[p.type]] || MASKS.list}")`}></div></div><div class="mi-label">${p.name}</div></div></div>`)}</div></div>
+  </div>`;
+}
+function FilterEditor({ data }) {
+  const ctx = dbCtx(); const [ops, setOps] = useState(false); const [q, setQ] = useState(''); const inputRef = useRef(null);
+  useEffect(() => { const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 0); return () => clearTimeout(t); }, [ops]);
+  if (!ctx) return null;
+  const { coll, view } = ctx; const f = (view.filters || []).find((x) => x.id === data.fid); const prop = f && coll.schema[f.pid];
+  if (!f || !prop) return null;
+  const t = prop.type;
+  const set = (patch) => { for (const [k, v] of Object.entries(patch)) { if (v === undefined) delete f[k]; else f[k] = v; } commit(); };
+  const remove = () => { view.filters = view.filters.filter((x) => x.id !== f.id); if (!view.filters.length) delete view.filters; closeOverlay(); commit(); };
+  const choices = t === 'person' ? [{ v: space.me.id, label: space.me.name, you: true }, ...[...space.people.values()].filter((p) => p.id !== space.me.id).map((p) => ({ v: p.id, label: p.name }))] : ['select', 'status', 'multi_select'].includes(t) ? (prop.options || []).map((o) => ({ v: o.value, label: o.value, o })) : null;
+  const picked = Array.isArray(f.value) ? f.value : [];
+  const toggle = (v) => set({ value: picked.includes(v) ? picked.filter((x) => x !== v) : [...picked, v] });
+  const shown = (choices || []).filter((c) => !q || String(c.label).toLowerCase().includes(q.toLowerCase()));
+  const r = overlay.r; const left = Math.max(8, Math.min(r.left, innerWidth - 298)); const top = Math.max(8, Math.min(r.bottom + 4, innerHeight - 360));
+  const tick = (on) => (on ? html`<span class="fe-check"><${Icon} n="checkmarkFillSmall" cls="i16"/></span>` : '');
+  let body = '';
+  if (ops) body = html`<div class="menu-group">${operatorsFor(t).map((op) => html`<div class="mi" role="menuitem" onClick=${() => { setOps(false); set(needsValue(op) ? { op } : { op, value: undefined }); }}><div class="mi-in"><div class="mi-label">${opLabel(op)}</div>${tick(op === f.op)}</div></div>`)}</div>`;
+  else if (!needsValue(f.op)) body = '';
+  else if (t === 'checkbox') body = html`<div class="menu-group">${[[true, 'Checked'], [false, 'Unchecked']].map(([v, label]) => html`<div class="mi" role="menuitem" onClick=${() => set({ value: v })}><div class="mi-in"><div class="mi-label">${label}</div>${tick(f.value === v)}</div></div>`)}</div>`;
+  else if (choices) body = html`<div class="fe-search"><div class="bm-search-box"><input ref=${inputRef} placeholder=${t === 'person' ? 'Search for people…' : 'Search for an option…'} value=${q} onInput=${(e) => setQ(e.currentTarget.value)}/></div></div><div class="menu-group fe-list">${shown.map((c) => html`<div class="mi" role="menuitem" onClick=${() => toggle(c.v)}><div class="mi-in"><div class=${'fe-box' + (picked.includes(c.v) ? ' on' : '')}>${picked.includes(c.v) ? html`<${Icon} n="checkmarkFillSmall" cls="i12"/>` : ''}</div>${c.o ? html`<${SePill} o=${c.o}/>` : html`<img class="fe-av" src=${space.avatar(c.v)} alt=""/><div class="mi-label">${c.label}${c.you ? html`<span class="mn-you"> (You)</span>` : ''}</div>`}</div></div>`)}${shown.length ? '' : html`<div class="fe-none">${choices.length ? 'No results' : 'No options yet'}</div>`}</div>`;
+  else body = html`<div class="fe-value"><div class="bm-search-box"><input ref=${inputRef} type=${['date', 'created_time', 'last_edited_time'].includes(t) ? 'date' : ['number', 'auto_increment_id'].includes(t) ? 'number' : 'text'} placeholder="Type a value…" value=${f.value ?? ''} onInput=${(e) => set({ value: e.currentTarget.value })}/></div></div>`;
+  return html`<div class="menu filter-editor" style=${`left:${left}px;top:${top}px`}>
+    <div class="fe-head"><span class="fe-name">${prop.name}</span><div class="fe-op" role="button" onClick=${() => setOps(!ops)}><span>${opLabel(f.op)}</span><${Icon} n="arrowChevronSingleDownSmall" cls="i12"/></div><div class="fe-del" role="button" aria-label="Delete filter" onClick=${remove}><${Icon} n="xMarkSmall" cls="i16"/></div></div>
+    ${body}
+  </div>`;
+}
+function NoDateMenu({ data }) {
+  const ctx = dbCtx(); if (!ctx) return null;
+  const { page, coll } = ctx; const view = S.views[data.vid]; if (!view) return null;
+  const dp = datePropOf(view, coll); if (!dp) return null;
+  const rows = viewRows(S.rows[page.collection] || [], coll, view).filter((row) => !row[dp]);
+  const r = overlay.r; const left = Math.max(8, Math.min(r.left, innerWidth - 268)); const top = Math.max(8, Math.min(r.bottom + 4, innerHeight - 320));
+  return html`<div class="menu np-menu" role="menu" style=${`left:${left}px;top:${top}px`}>
+    <div class="menu-group"><div class="menu-head">No ${coll.schema[dp].name}</div>${rows.map((row) => html`<div class="mi" role="menuitem" onClick=${() => openRowPage(row)}><div class="mi-in"><div class="mi-ic np-ic"><${Icon} n="page" cls="i18"/></div><div class="mi-label">${row.title || 'Untitled'}</div></div></div>`)}</div>
   </div>`;
 }
 function NewRowMenu() {
@@ -2562,13 +2617,26 @@ function DateEditor({ data }) {
   const pick = (d) => { row[data.pid] = isoDate(d); row.edited = NOW(); commit(); };
   const shown = val ? new Date(val + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const r = overlay.r; const left = Math.max(8, Math.min(r.left - 4, innerWidth - 256)); const top = Math.max(8, Math.min(r.top - 3, innerHeight - 508));
-  const opt = (label, right) => html`<div class="mi" role="menuitem"><div class="mi-in"><div class="mi-label">${label}</div>${right}</div></div>`;
   return html`<div class="menu date-editor" style=${`left:${left}px;top:${top}px`}>
     <div class="menu-group"><div class="de-input-row"><div class="bm-search-box de-input"><input value=${shown} placeholder="Type a date" onKeyDown=${(e) => { if (e.key === 'Enter') { const d = new Date(e.currentTarget.value); if (!isNaN(d)) { setMonth(null); pick(d); } } }}/></div></div>
       <div class="de-cal"><div class="de-cap"><h2>${base.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</h2><div class="de-cap-r"><div class="de-today" role="button" onClick=${() => { setMonth(null); pick(today); }}>Today</div><div class="de-nav" role="button" onClick=${() => setMonth(new Date(y, m - 1, 1))}><${Icon} n="arrowChevronSingleRightSmall" cls="i16 flipx"/></div><div class="de-nav" role="button" onClick=${() => setMonth(new Date(y, m + 1, 1))}><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div></div></div>
       <table class="de-table"><thead><tr>${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => html`<th>${d}</th>`)}</tr></thead><tbody>${[0, 1, 2, 3, 4, 5].map((w) => html`<tr>${days.slice(w * 7, w * 7 + 7).map((d) => { const iso = isoDate(d); return html`<td><button class=${'de-day' + (d.getMonth() !== m ? ' out' : '') + (iso === todayIso ? ' today' : '') + (iso === val ? ' sel' : '')} onClick=${() => pick(d)}>${d.getDate()}</button></td>`; })}</tr>`)}</tbody></table></div></div>
-    <div class="menu-group">${opt('End date', html`<span class="toggle"></span>`)}${opt('Date format', html`<div class="mi-val sm">Full date</div><div class="mi-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div>`)}${opt('Include time', html`<span class="toggle"></span>`)}${opt('Remind', html`<div class="mi-val sm">None</div><div class="mi-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div>`)}</div>
-    <div class="menu-group"><div class="mi" role="menuitem" onClick=${() => { row[data.pid] = undefined; row.edited = NOW(); closeOverlay(); commit(); }}><div class="mi-in"><div class="mi-label">Clear</div></div></div><${MenuItem} ic="questionMarkCircle" label="Learn about reminders" tone="muted"/></div>
+    <div class="menu-group"><div class="mi" role="menuitem" onClick=${() => { row[data.pid] = undefined; row.edited = NOW(); closeOverlay(); commit(); }}><div class="mi-in"><div class="mi-label">Clear</div></div></div></div>
+  </div>`;
+}
+function PersonEditor({ data }) {
+  const ctx = dbRow(data.rowId); const [q, setQ] = useState(''); const inputRef = useRef(null);
+  useEffect(() => { if (inputRef.current) inputRef.current.focus(); }, []);
+  if (!ctx || !ctx.row || !ctx.coll.schema[data.pid]) return null;
+  const { row } = ctx; const cur = Array.isArray(row[data.pid]) ? row[data.pid] : [];
+  const people = [{ id: space.me.id, name: space.me.name, you: true }, ...[...space.people.values()].filter((p) => p.id !== space.me.id)];
+  const save = (ids) => { if (ids.length) row[data.pid] = ids; else delete row[data.pid]; row.edited = NOW(); commit(); };
+  const flip = (id) => save(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+  const list = people.filter((p) => !q || String(p.name || '').toLowerCase().includes(q.toLowerCase()));
+  const r = overlay.r; const left = Math.max(8, Math.min(r.left - 1, innerWidth - 308)); const top = Math.max(8, Math.min(r.top - 1, innerHeight - 260));
+  return html`<div class="menu sel-editor person-editor" style=${`left:${left}px;top:${top}px`}>
+    <div class="se-top"><div class="se-top-in">${cur.map((id) => html`<div class="se-pill pe-chip"><img src=${space.avatar(id)} alt=""/><span>${space.personName(id)}</span><div class="se-x" role="button" onClick=${(e) => { e.stopPropagation(); flip(id); }}><${Icon} n="xMark" cls="i16"/></div></div>`)}<input ref=${inputRef} class="se-input" value=${q} placeholder=${cur.length ? '' : 'Search for people…'} onInput=${(e) => setQ(e.currentTarget.value)} onKeyDown=${(e) => { if (e.key === 'Enter' && list[0]) { e.preventDefault(); flip(list[0].id); setQ(''); } if (e.key === 'Backspace' && !q && cur.length) save(cur.slice(0, -1)); }}/></div></div>
+    <div class="se-list"><div class="menu-group">${list.map((p) => html`<div class="mi se-row" role="menuitem" onClick=${() => flip(p.id)}><div class="mi-in"><img class="pe-av" src=${space.avatar(p.id)} alt=""/><div class="mi-label">${p.name}${p.you ? html`<span class="mn-you"> (You)</span>` : ''}</div>${cur.includes(p.id) ? html`<span class="fe-check"><${Icon} n="checkmarkFillSmall" cls="i16"/></span>` : ''}</div></div>`)}${list.length ? '' : html`<div class="fe-none">No people found</div>`}</div></div>
   </div>`;
 }
 function RowProps({ page }) {
@@ -2587,7 +2655,7 @@ function RowPeek({ page, row }) {
   const coll = S.collections[page.collection]; const titleRef = useRef(null);
   useLayoutEffect(() => { const el = titleRef.current; if (el && document.activeElement !== el && el.textContent !== (row.title || '')) el.textContent = row.title || ''; });
   const keys = Object.keys(coll.schema).filter((k) => coll.schema[k].type !== 'title').sort((a, b) => coll.schema[a].name.localeCompare(coll.schema[b].name));
-  const edit = (pid) => (e) => { const t = coll.schema[pid].type; const kind = t === 'select' || t === 'status' || t === 'multi_select' ? 'cellSelect' : t === 'date' ? 'cellDate' : ['text', 'number', 'url', 'email', 'phone_number'].includes(t) ? 'cellText' : null; if (kind) openOverlay(kind, e.currentTarget, { rowId: row.id, pid }); };
+  const edit = (pid) => (e) => { const t = coll.schema[pid].type; const kind = t === 'select' || t === 'status' || t === 'multi_select' ? 'cellSelect' : t === 'date' ? 'cellDate' : t === 'person' ? 'cellPerson' : ['text', 'number', 'url', 'email', 'phone_number'].includes(t) ? 'cellText' : null; if (kind) openOverlay(kind, e.currentTarget, { rowId: row.id, pid }); };
   const empty = html`<span class="pk-empty">Empty</span>`;
   const pillOf = (o, status) => { const [bg, fg, dot] = OPT[o.color] || OPT.default; return html`<div class=${'pill ' + (status ? 'status' : 'sel')} style=${`background:${bg};color:${fg}`}>${status ? html`<div class="dot" style=${`background:${dot}`}></div>` : ''}<span>${o.value}</span></div>`; };
   const value = (pid) => {
@@ -2623,7 +2691,7 @@ function ViewMenu({ data }) {
   const { page } = ctx; const vw = S.views[data.vid]; if (!vw) return null;
   const done = () => closeOverlay();
   return html`<div class="menu view-menu" style=${`left:${Math.max(8, overlay.r.left)}px;top:${overlay.r.bottom + 4}px`}>
-    <div class="menu-group"><${MenuItem} ic="pencilLine" label="Rename" onClick=${() => { S.renamingView = data.vid; done(); commit(); }}/><${MenuItem} ic="paintBrush" label="Display as" chev/><${MenuItem} ic="sliders" label="Edit view" onClick=${() => { viewSettings = { vid: data.vid }; done(); refresh(); }}/><${MenuItem} ic="pathRoundEnds" label="Source" val=${page.title} valSm tone="muted"/></div>
+    <div class="menu-group"><${MenuItem} ic="pencilLine" label="Rename" onClick=${() => { S.renamingView = data.vid; done(); commit(); }}/><${MenuItem} ic="sliders" label="Edit view" onClick=${() => { viewSettings = { vid: data.vid }; done(); refresh(); }}/><${MenuItem} ic="pathRoundEnds" label="Source" val=${page.title} valSm tone="muted"/></div>
     <div class="menu-group"><${MenuItem} ic="link" label="Copy link to view" onClick=${() => { try { navigator.clipboard.writeText(location.href); } catch (e) {} done(); }}/></div>
     <div class="menu-group"><${MenuItem} ic="duplicate" label="Duplicate view" onClick=${() => { const nid = uid(); S.views[nid] = JSON.parse(JSON.stringify(vw)); S.views[nid].id = nid; S.views[nid].name = vw.name + ' (1)'; page.views.splice(page.views.indexOf(data.vid) + 1, 0, nid); page.activeView = nid; done(); commit(); }}/>${page.views.length > 1 ? html`<${MenuItem} ic="trash" label="Delete view" onClick=${() => { page.views = page.views.filter((x) => x !== data.vid); delete S.views[data.vid]; page.activeView = page.views[0]; done(); commit(); showToast({ text: `Deleted ${vw.name} view` }); }}/>` : ''}</div>
     <div class="menu-group"><${MenuItem} ic="calendarDate10" label="Open Calendar" onClick=${() => { done(); space.openApp('/calendar'); }}/></div>
@@ -2736,14 +2804,14 @@ function BoardView({ page, coll, view, rows }) {
   const gp = view.group_by && coll.schema[view.group_by] ? view.group_by : groupPropOf(coll);
   if (!gp) return html`<div class="lib-empty">Add a Status or Select property to group this board.</div>`;
   const prop = coll.schema[gp]; const options = prop.options || [];
-  const ordered = sortRows(rows, coll, view);
+  const ordered = viewRows(rows, coll, view);
   const groups = [{ value: null, label: 'No ' + prop.name }, ...options.map((o) => ({ value: o.value, label: o.value, o }))].filter((g) => g.value !== null || ordered.some((r) => !r[gp]));
   const pillOf = (o, status) => { const [bg, fg, dot] = OPT[o.color] || OPT.default; return html`<div class=${'pill ' + (status ? 'status' : 'sel')} style=${`background:${bg};color:${fg}`}>${status ? html`<div class="dot" style=${`background:${dot}`}></div>` : ''}<span>${o.value}</span></div>`; };
-  const addCard = (g) => { rows.push({ id: uid(), title: '', created: NOW(), [gp]: g.value || undefined }); commit(); };
+  const addCard = (g) => { rows.push({ ...newRow(view, coll), [gp]: g.value || undefined }); commit(); };
   const tint = (g) => (view.colorColumns === false ? 'transparent' : BOARD_TINT[(g.o && g.o.color) || 'default'] || BOARD_TINT.default);
   const stop = (e) => e.stopPropagation();
   return html`<div class="nsp-board-view board">${groups.map((g) => { const items = ordered.filter((r) => (r[gp] || null) === g.value); return html`<div class="board-col" data-group=${g.value === null ? '' : g.value}>
-      <div class="board-head" style=${`background:${tint(g)}`}><div class="board-pillbtn" role="button">${g.o ? pillOf(g.o, prop.type === 'status') : html`<span class="board-none">${g.label}</span>`}</div><div class="board-count">${items.length}</div><div class="board-head-acts"><div class="board-hbtn" role="button"><${Icon} n="ellipsisSmall" cls="i16"/></div><div class="board-hbtn" role="button" onClick=${() => addCard(g)}><${Icon} n="plusSmall" cls="i16"/></div></div></div>
+      <div class="board-head" style=${`background:${tint(g)}`}><div class="board-pillbtn">${g.o ? pillOf(g.o, prop.type === 'status') : html`<span class="board-none">${g.label}</span>`}</div><div class="board-count">${items.length}</div><div class="board-head-acts"><div class="board-hbtn" role="button" onClick=${() => addCard(g)}><${Icon} n="plusSmall" cls="i16"/></div></div></div>
       <div class="nsp-board-group board-body" style=${`background:${tint(g)}`}><div class="board-cards">${items.map((r) => html`<div class=${'board-card' + (peekRow === r.id ? ' on' : '')} key=${r.id} data-row-id=${r.id} onMouseDown=${(e) => { if (renamingCard !== r.id) cardDragDown(e, rows, r, gp); }}>
           <div class="bc-acts" onMouseDown=${stop}><div class="bc-act" role="button" onClick=${() => { renamingCard = r.id; refresh(); }}><${Icon} n="pencilLineSmall" cls="i16"/></div><div class="bc-act" role="button" onClick=${(e) => openOverlay('rowActions', e.currentTarget, { rowId: r.id })}><${Icon} n="ellipsisSmall" cls="i16"/></div></div>
           <div class="bc-in">${renamingCard === r.id ? html`<div key="edit" class="bc-title editing" contenteditable="true" ref=${(el) => { if (el && document.activeElement !== el) { el.textContent = r.title || ''; el.focus(); setCaret(el, 'end'); } }} onMouseDown=${stop} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); r.title = e.currentTarget.textContent; renamingCard = null; commit(); } }} onBlur=${(e) => { if (renamingCard === r.id) { r.title = e.currentTarget.textContent; renamingCard = null; commit(); } }}></div>` : html`<div key="view" class="bc-title">${r.title || html`<span class="bc-untitled">Untitled</span>`}</div>`}</div>
@@ -2755,7 +2823,7 @@ function BoardView({ page, coll, view, rows }) {
 
 /* ------------------------------------------------------------------ database gallery view (measured: 315px cards on a 16px grid, 146px tinted preview, 15px/500 title) */
 function GalleryView({ coll, view, rows }) {
-  const ordered = sortRows(rows, coll, view);
+  const ordered = viewRows(rows, coll, view);
   const stop = (e) => e.stopPropagation();
   return html`<div class="nsp-gallery-view gallery"><div class="gal-grid" style=${`grid-template-columns:repeat(auto-fill,minmax(${{ small: 180, medium: 260, large: 320 }[view.cardSize || 'medium']}px,1fr))`}>${ordered.map((r) => html`<div class=${'gal-card' + (peekRow === r.id ? ' on' : '')} key=${r.id} onClick=${() => { if (renamingCard !== r.id) { peekRow = peekRow === r.id ? null : r.id; refresh(); } }}>
       <div class="gal-preview"></div>
@@ -2768,7 +2836,7 @@ function GalleryView({ coll, view, rows }) {
 /* ------------------------------------------------------------------ database list view (measured: 30px rows 2px apart, 22px icon box, 14px/500 title) */
 const VIEW_ICON = { map: 'viewMap', table: 'viewTable', board: 'viewBoard', gallery: 'squareGrid2X2', list: 'listBullet', calendar: 'viewCalendar', timeline: 'viewTimeline', feed: 'newspaper', chart: 'viewChart', dashboard: 'viewDashboard', form: 'form' };
 function ListView({ coll, view, rows }) {
-  const ordered = sortRows(rows, coll, view);
+  const ordered = viewRows(rows, coll, view);
   return html`<div class=${'nsp-list-view listv' + (view.hideIcon ? ' noicon' : '')}><div class="lv-items">${ordered.map((r) => html`<div class=${'lv-item' + (peekRow === r.id ? ' on' : '')} key=${r.id} role="button" onClick=${() => { peekRow = peekRow === r.id ? null : r.id; refresh(); }}><div class="lv-in"><div class="lv-ic"><${Icon} n="pageEmpty" cls="i18"/></div><div class="lv-title">${r.title || html`<span class="bc-untitled">Untitled</span>`}</div></div></div>`)}<div class="lv-new" role="button" onClick=${() => { rows.push({ id: uid(), title: '', created: NOW() }); commit(); }}><${Icon} n="plusSmall" cls="i16"/><span>New page</span></div></div></div>`;
 }
 
@@ -2811,8 +2879,8 @@ function ViewSettings({ page, coll, vid }) {
       ${type === 'gallery' ? valueRow('Card preview', 'Page content', () => {}) : ''}
       ${type === 'gallery' ? valueRow('Card size', sizes[vw.cardSize || 'medium'], () => set('cardSize', { small: 'medium', medium: 'large', large: 'small' }[vw.cardSize || 'medium'])) : ''}
     </div>`}
-    <div class="vs-group vs-src-group"><div class="mi vs-row" role="menuitem"><div class="mi-in"><div class="mi-ic"><${Icon} n="pathRoundEnds" cls="i20"/></div><div class="mi-label vs-src">Source</div><div class="mi-val vs-src-val">${page.title}</div><div class="mi-chev"><${Icon} n="arrowChevronSingleRightSmall" cls="i16"/></div></div></div></div>
-    ${type === 'chart' ? html`<div class="vs-done" role="button" onClick=${() => { viewSettings = { vid, chartEdit: true }; refresh(); }}>Edit chart</div><div class="vs-group vs-learn"><div class="mi vs-row" role="menuitem"><div class="mi-in"><div class="mi-ic"><${Icon} n="questionMarkCircle" cls="i20"/></div><div class="mi-label">Learn about charts</div></div></div></div>` : html`<div class="vs-done" role="button" onClick=${close}>Done</div>`}
+    <div class="vs-group vs-src-group"><div class="mi vs-row static"><div class="mi-in"><div class="mi-ic"><${Icon} n="pathRoundEnds" cls="i20"/></div><div class="mi-label vs-src">Source</div><div class="mi-val vs-src-val">${page.title}</div></div></div></div>
+    ${type === 'chart' ? html`<div class="vs-done" role="button" onClick=${() => { viewSettings = { vid, chartEdit: true }; refresh(); }}>Edit chart</div>` : html`<div class="vs-done" role="button" onClick=${close}>Done</div>`}
   </div>`;
 }
 
@@ -2849,10 +2917,8 @@ function ChartSettings({ page, coll, vid }) {
     ${row(592.6, 'pathRoundEnds', 'Source', page.title, () => {})}
     ${row(621.6, 'filter', 'Filter', '', () => openOverlay('propPicker', document.querySelector('.nsp-collection-filter'), { mode: 'filter' }))}
     ${row(666.6, 'arrowLineDown', 'Save chart as…', '', () => {})}
-    <div class="mi vs-row cs-abs" role="menuitem" style="top:695.6px"><div class="mi-in"><div class="mi-ic"><${Icon} n="link" cls="i20"/></div><div class="mi-label">Copy link to view</div></div></div>
+    <div class="mi vs-row cs-abs" role="menuitem" style="top:695.6px" onClick=${() => { try { navigator.clipboard.writeText(location.href); } catch (e) {} close(); }}><div class="mi-in"><div class="mi-ic"><${Icon} n="link" cls="i20"/></div><div class="mi-label">Copy link to view</div></div></div>
     ${row(740.6, 'collection', 'Manage data sources', '', () => {})}
-    <div class="mi vs-row cs-abs" role="menuitem" style="top:769.6px"><div class="mi-in"><div class="mi-ic"><${Icon} n="lock" cls="i20"/></div><div class="mi-label">Lock database</div></div></div>
-    <div class="mi vs-row cs-abs" role="menuitem" style="top:814.6px"><div class="mi-in"><div class="mi-ic"><${Icon} n="questionMarkCircle" cls="i20"/></div><div class="mi-label">Learn about charts</div></div></div>
     <div class="cs-spacer"></div>
   </div>`;
 }
@@ -2868,16 +2934,15 @@ function FormView({ coll, view }) {
   const form = (view.form = view.form || { title: '', description: '', questions: [titleKey(coll)] });
   const names = (form.names = form.names || {});
   return html`<div class="nsp-form-view formv"><div class="fv-col">
-    <div class="fv-controls"><div class="fv-ctl" role="button"><${Icon} n="emojiFaceFill" cls="i14"/><span>Form icon</span></div><div class="fv-ctl" role="button"><${Icon} n="photoFill" cls="i14"/><span>Form cover</span></div></div>
+    <div class="fv-controls"></div>
     <h1 class="fv-title" contenteditable="true" data-ph="Form title" onInput=${(e) => { form.title = e.currentTarget.textContent; persist(); }}>${form.title}</h1>
     <div class="fv-desc" contenteditable="true" data-ph="Description (optional)" onInput=${(e) => { form.description = e.currentTarget.textContent; persist(); }}>${form.description}</div>
-    <div class="fv-access"><${Icon} n="lockSmall" cls="i16"/><span class="fv-access-t">Only members at ${S.workspace} can fill out this form.</span><div class="fv-change" role="button">Change</div></div>
+    <div class="fv-access"><${Icon} n="lockSmall" cls="i16"/><span class="fv-access-t">Only members at ${S.workspace} can fill out this form.</span></div>
     ${form.questions.filter((k) => coll.schema[k]).map((k) => html`<div class="fv-q" key=${k}>
       <div class="fv-q-name" contenteditable="true" data-ph="Question name" onInput=${(e) => { names[k] = e.currentTarget.textContent; persist(); }}>${names[k] !== undefined ? names[k] : coll.schema[k].name}</div>
-      <div class="fv-q-more" role="button" aria-label="Edit question"><${Icon} n="ellipsisSmall" cls="i16"/></div>
+      
       <div class="fv-answer"><input placeholder=${FORM_PH[coll.schema[k].type] || 'Respondent’s answer'} disabled/></div>
     </div>`)}
-    <div class="fv-add" role="button" aria-label="Add page module"><${Icon} n="plus" cls="i20"/></div>
   </div></div>`;
 }
 function FormSetup({ data }) {
@@ -2934,12 +2999,12 @@ const barPath = (x0, x1, yTop, y0) => (y0 - yTop < 2 ? `M${x0} ${y0}L${x1} ${y0}
 function ChartView({ coll, view, rows }) {
   const ref = useRef(null); const [w, setW] = useState(992);
   useLayoutEffect(() => { const el = ref.current; if (el && el.clientWidth && Math.abs(el.clientWidth - w) > 0.5) setW(el.clientWidth); });
-  const { cats } = chartSeries(coll, view, rows);
+  const shownRows = viewRows(rows, coll, view); const { cats } = chartSeries(coll, view, shownRows);
   const type = view.chartType || 'bar';
   const plotW = Math.max(40, w - CH.l - CH.r); const plotH = CH.h - CH.t - CH.b; const base = CH.t + plotH;
   const max = Math.max(0, ...cats.map((c) => c.n));
   let body;
-  if (type === 'number') body = html`<div class="ch-number">${rows.length}</div>`;
+  if (type === 'number') body = html`<div class="ch-number">${shownRows.length}</div>`;
   else if (type === 'donut') {
     const total = cats.reduce((s, c) => s + c.n, 0) || 1; const cx = w / 2; const cy = CH.h / 2; const R = 140; const r0 = 90; let a = -Math.PI / 2;
     const arcs = cats.filter((c) => c.n > 0).map((c) => { const a1 = a + (c.n / total) * Math.PI * 2 - 1e-6; const big = a1 - a > Math.PI ? 1 : 0; const p = (rad, ang) => `${cx + rad * Math.cos(ang)} ${cy + rad * Math.sin(ang)}`; const d = `M${p(R, a)}A${R} ${R} 0 ${big} 1 ${p(R, a1)}L${p(r0, a1)}A${r0} ${r0} 0 ${big} 0 ${p(r0, a)}Z`; a = a1; return html`<path d=${d} style=${'fill:' + c.color}/>`; });
@@ -2978,12 +3043,12 @@ function FeedComment({ r }) {
   </div>`;
 }
 function FeedView({ coll, view, rows }) {
-  const ordered = sortRows(rows, coll, view).slice(0, view.loadLimit || 10);
+  const ordered = viewRows(rows, coll, view).slice(0, view.loadLimit || 10);
   return html`<div class="nsp-feed-view feed">${ordered.map((r) => html`<div class=${'feed-card' + (peekRow === r.id ? ' on' : '')} key=${r.id}>
     ${view.byline === false ? '' : html`<div class="feed-byline"><img class="feed-av" src=${space.avatar((space.sync.metaOf(r.id) || {}).created_by)} alt=""/><span class="feed-author">${space.personName((space.sync.metaOf(r.id) || {}).created_by || space.me.id)}</span><span class="feed-time">${ageShort(r.created)}</span></div>`}
-    <div class="feed-acts"><div class="feed-act" role="button" aria-label="React"><${Icon} n="emojiFacePlus" cls="i20"/></div><div class="feed-act" role="button" aria-label="More actions"><${Icon} n="ellipsisSmall" cls="i16"/></div></div>
+    
     <div class="feed-title" role="button" onClick=${() => { peekRow = peekRow === r.id ? null : r.id; refresh(); }}>${r.title || html`<span class="bc-untitled">Untitled</span>`}</div>
-    <div class="feed-foot"><div class="feed-react-row"><div class="feed-react" role="button" aria-label="Add reaction"><${Icon} n="emojiFacePlus" cls="i20"/></div></div><${FeedComment} r=${r}/></div>
+    <div class="feed-foot"><${FeedComment} r=${r}/></div>
   </div>`)}</div>`;
 }
 
@@ -3005,7 +3070,7 @@ function TimelineView({ coll, view, rows }) {
   // A timeline opens with today's column 565.9px into the frame.
   useLayoutEffect(() => { const sc = scroller(); if (sc && ref.current) sc.scrollLeft = xOf(TL_BACK) - 565.9; }, [view.id]);
   if (!dp) return html`<div class="lib-empty">Add a Date property to use a timeline.</div>`;
-  const dated = sortRows(rows, coll, view).filter((r) => r[dp]);
+  const dated = viewRows(rows, coll, view).filter((r) => r[dp]);
   const days = Array.from({ length: TL_SPAN }, (_, i) => { const d = new Date(start); d.setDate(d.getDate() + i); return d; });
   const H = (dated.length + 1) * 36;
   const nowX = (TL_BACK + (NOW() - today.getTime()) / 86400000) * TL_DAY;
@@ -3013,7 +3078,7 @@ function TimelineView({ coll, view, rows }) {
   return html`<div class="nsp-timeline-view tl" ref=${ref} style=${`width:${TL_SPAN * TL_DAY}px`}>
     <div class="tl-head">
       <div class="tl-bar"><div class="tl-open" role="button" aria-label="Show table" onClick=${() => { view.showTable = !view.showTable; commit(); }}><${Icon} n="arrowChevronDoubleBackward" cls="i16 flipx"/></div>
-        <div class="tl-tools"><div class="cal-manage" role="button" onClick=${() => space.openApp('/calendar')}><${Icon} n="calendarDate10" cls="i16"/><span>Open Calendar</span></div><div class="tl-zoom" role="button"><span>Month</span><${Icon} n="arrowChevronSingleDownSmall" cls="i16"/></div><div class="cal-nav" role="button" onClick=${() => { const sc = scroller(); if (sc) go(sc.scrollLeft - 30 * TL_DAY); }}><${Icon} n="arrowChevronSingleRightSmall" cls="i20 flipx"/></div><div class="cal-today" role="button" onClick=${() => go(xOf(TL_BACK) - 565.9)}>Today</div><div class="cal-nav" role="button" onClick=${() => { const sc = scroller(); if (sc) go(sc.scrollLeft + 30 * TL_DAY); }}><${Icon} n="arrowChevronSingleRightSmall" cls="i20"/></div></div></div>
+        <div class="tl-tools"><div class="cal-manage" role="button" onClick=${() => space.openApp('/calendar')}><${Icon} n="calendarDate10" cls="i16"/><span>Open Calendar</span></div><div class="cal-nav" role="button" onClick=${() => { const sc = scroller(); if (sc) go(sc.scrollLeft - 30 * TL_DAY); }}><${Icon} n="arrowChevronSingleRightSmall" cls="i20 flipx"/></div><div class="cal-today" role="button" onClick=${() => go(xOf(TL_BACK) - 565.9)}>Today</div><div class="cal-nav" role="button" onClick=${() => { const sc = scroller(); if (sc) go(sc.scrollLeft + 30 * TL_DAY); }}><${Icon} n="arrowChevronSingleRightSmall" cls="i20"/></div></div></div>
       <div class="tl-months">${days.map((d, i) => (d.getDate() === 1 ? html`<div class="tl-month" style=${`left:${i * TL_DAY}px`}>${d.toLocaleDateString('en-US', { month: 'long' })}</div>` : ''))}</div>
       <div class="tl-days">${days.map((d, i) => html`<div class="tl-day" style=${`left:${i * TL_DAY}px`}>${i === TL_BACK ? html`<span class="tl-today">${d.getDate()}</span>` : d.getDate()}</div>`)}</div>
     </div>
@@ -3058,7 +3123,7 @@ function CalendarView({ coll, view, rows }) {
   const first = new Date(y, m, 1); const start = new Date(y, m, 1 - first.getDay());
   const days = Array.from({ length: 42 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
   const weekends = view.weekends !== false;
-  const byDay = {}; rows.forEach((r) => { if (r[dp]) (byDay[r[dp]] = byDay[r[dp]] || []).push(r); });
+  const byDay = {}; viewRows(rows, coll, view).forEach((r) => { if (r[dp]) (byDay[r[dp]] = byDay[r[dp]] || []).push(r); });
   const setMonth = (d) => { view.calMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; commit(); };
   const label = (d) => (d.getDate() === 1 ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : String(d.getDate()));
   const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -3125,7 +3190,7 @@ function cardDragDown(e, rows, r, gp) {
 function Overlay() {
   useStore();
   if (!overlay) return null;
-  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : null;
+  const body = overlay.kind === 'noPlace' ? html`<${NoPlaceMenu}/>` : overlay.kind === 'gsMore' ? html`<${GetStartedMore}/>` : overlay.kind === 'workspace' ? html`<${WorkspaceMenu}/>` : overlay.kind === 'rowMenu' ? html`<${RowMenu} data=${overlay.data}/>` : overlay.kind === 'search' ? html`<${SearchModal}/>` : overlay.kind === 'pageMenu' ? html`<${PageMenu}/>` : overlay.kind === 'share' ? html`<${SharePopover}/>` : overlay.kind === 'addView' ? html`<${AddViewMenu}/>` : overlay.kind === 'rowActions' ? html`<${RowActionsMenu} data=${overlay.data}/>` : overlay.kind === 'linkPage' ? html`<${LinkPageMenu} data=${overlay.data}/>` : overlay.kind === 'viewMenu' ? html`<${ViewMenu} data=${overlay.data}/>` : overlay.kind === 'cellSelect' ? html`<${SelectEditor} data=${overlay.data}/>` : overlay.kind === 'cellText' ? html`<${TextEditor} data=${overlay.data}/>` : overlay.kind === 'cellDate' ? html`<${DateEditor} data=${overlay.data}/>` : overlay.kind === 'cellPerson' ? html`<${PersonEditor} data=${overlay.data}/>` : overlay.kind === 'filterEditor' ? html`<${FilterEditor} data=${overlay.data}/>` : overlay.kind === 'noDate' ? html`<${NoDateMenu} data=${overlay.data}/>` : overlay.kind === 'propMenu' ? html`<${PropMenu} data=${overlay.data}/>` : overlay.kind === 'propPicker' ? html`<${PropPicker} data=${overlay.data}/>` : overlay.kind === 'newMenu' ? html`<${NewRowMenu}/>` : overlay.kind === 'trash' ? html`<${TrashPopover}/>` : overlay.kind === 'help' ? html`<${HelpMenu}/>` : overlay.kind === 'sectionMenu' ? html`<${SectionMenu} data=${overlay.data}/>` : overlay.kind === 'blockMenu' ? html`<${BlockMenu} data=${overlay.data}/>` : overlay.kind === 'moveTo' ? html`<${MoveToMenu} data=${overlay.data}/>` : overlay.kind === 'iconPicker' ? html`<${IconPicker} data=${overlay.data}/>` : overlay.kind === 'coverPicker' ? html`<${CoverPicker} data=${overlay.data}/>` : overlay.kind === 'settings' ? html`<${SettingsModal} data=${overlay.data}/>` : overlay.kind === 'mediaPicker' ? html`<${MediaPicker} data=${overlay.data}/>` : overlay.kind === 'composeMenu' ? html`<${ComposeMenu}/>` : overlay.kind === 'formSetup' ? html`<${FormSetup} data=${overlay.data}/>` : null;
   return html`<div class="ov-root"><div class=${'ov-catch' + (overlay.kind === 'search' || overlay.kind === 'settings' || overlay.kind === 'formSetup' ? ' dim' : '') + (overlay.kind === 'settings' ? ' scrim' : '')} onMouseDown=${closeOverlay}></div>${body}</div>`;
 }
 // Measured: once a page holds any discussion, open or resolved, the topbar grows a Comments button after Copy link.
