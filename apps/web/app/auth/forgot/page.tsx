@@ -67,10 +67,8 @@ export default function ForgotPasswordPage() {
       footer={<p>Remembered it? <Link className="nemesis-auth-link" href="/sign-in">Sign in.</Link></p>}
     >
       <form onSubmit={onSubmit} className="nemesis-auth-form">
-        <div className="nemesis-auth-field-group">
-          <input autoFocus id="forgot-email" type="email" autoComplete="email" required placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
-          <label htmlFor="forgot-email">Account email</label>
-        </div>
+        <label className="nemesis-auth-sr" htmlFor="forgot-email">Account email</label>
+        <input autoFocus id="forgot-email" type="email" autoComplete="email" required placeholder="name@school.edu" value={email} onChange={(e) => setEmail(e.target.value)} />
         <TurnstileWidget key={captcha.key} onToken={captcha.setToken} />
         <button className="nemesis-auth-submit" disabled={busy} type="submit">{busy ? "Sending…" : "Send reset link"}</button>
       </form>

@@ -19,14 +19,14 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
  * paused on its first frame, so the moment the intro ends there is already an identical picture
  * beneath it. Swapping only after `play()` resolves means the loop is moving before the intro goes.
  *
- * 🔴 NOTHING IS FETCHED WHERE THE PANEL IS HIDDEN. auth.css hides the panel below 1080px, and a phone
- * signing in on a data plan must not download 4MB of laptop it cannot see.
+ * 🔴 A PHONE NEVER DOWNLOADS THE FILM. Under 821px Sana stacks its panel above the form as a square, and
+ * so does auth.css; there the panel shows the 80KB resting frame, never the 3.5MB of video.
  */
 const INTRO = "/sign-in/laptop-intro.mp4";
 const LOOP = "/sign-in/laptop-loop.mp4";
 const STILL = "/sign-in/laptop.webp";
-/** Keep in step with the `min-width` that shows `.nemesis-auth-field` in auth.css. */
-export const LAPTOP_PANEL_QUERY = "(min-width: 1080px)";
+/** Keep in step with the `min-width` at which auth.css puts the panel beside the column. */
+export const LAPTOP_PANEL_QUERY = "(min-width: 821px)";
 const CALM_QUERY = "(prefers-reduced-motion: reduce)";
 
 type Phase = "wait" | "intro" | "loop" | "still";
@@ -97,8 +97,7 @@ export function AuthLaptop() {
     };
   }, [shown, calm]);
 
-  if (!shown) return <div className="nemesis-auth-art" data-phase="wait" />;
-  if (calm) {
+  if (!shown || calm) {
     return (
       <div className="nemesis-auth-art" data-phase="still">
         {/* eslint-disable-next-line @next/next/no-img-element */}

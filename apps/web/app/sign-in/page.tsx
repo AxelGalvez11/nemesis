@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
-import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { TurnstileWidget, useCaptcha } from "@/components/TurnstileWidget";
@@ -31,15 +30,54 @@ async function needsStepUp(): Promise<boolean> {
   }
 }
 
+function nextPath(): string {
+  const raw = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+  return sanitizeNextPath(raw, DEFAULT_LANDING_PATH);
+}
+
+const LEGAL = (
+  <>
+    By continuing, you agree to the <Link className="nemesis-auth-link" href="/legal/terms">Terms</Link> and{" "}
+    <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>. Nemesis only reads the material
+    you bring, and only to build what you ask for. No ads, no selling your data, no training on your content, and you can
+    delete your account at any time.
+  </>
+);
+
+// The password step's legal slot opens with its two links, so the rest is one clause shorter: the slot keeps Sana's
+// line count (four lines in a 381px column) instead of growing by one.
+const LEGAL_SHORT = (
+  <>
+    By continuing, you agree to the <Link className="nemesis-auth-link" href="/legal/terms">Terms</Link> and{" "}
+    <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>. No ads, no selling your data, and no
+    training on your content. You can delete your account at any time.
+  </>
+);
+
+/**
+ * 🔴🔴 THE EMAIL COMES FIRST AND THE PASSWORD SECOND, AND THAT IS A LAYOUT DECISION. Owner, 2026-09-11, the
+ * fourth report on this page: "the spacing doesn't match like the Sana sign in one for one". Sana's first
+ * screen is a headline, a lead, Google, "or", one field, one button and the legal line. Ours had a second
+ * provider button, a password field, a forgot-password line, a captcha box and a sign-up line as well:
+ * five rows Sana does not have, so no spacing could line the two pages up. The rows are Sana's now. The
+ * password is the second step of the same form (the way Google, Microsoft and Sana ask), the sign-up link
+ * is in the lead, the forgot-password link is in the legal slot, and the captcha floats.
+ *
+ * Nothing about HOW anyone signs in changed: the same signIn call, the same captcha, the same MFA step.
+ */
 export default function SignInPage() {
   const { signIn, session, loading } = useAuth();
   const router = useRouter();
+  const [step, setStep] = useState<"email" | "password">("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [existing, setExisting] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Read once on mount. Reading the URL during render would give the server and the browser different
+  // links and a hydration warning whenever ?next= is set.
+  const [next, setNext] = useState(DEFAULT_LANDING_PATH);
   // The captcha runs silently (interaction-only); the button stays live and submit waits for it.
   const captcha = useCaptcha();
   const [unconfirmed, setUnconfirmed] = useState(false);
@@ -49,6 +87,11 @@ export default function SignInPage() {
   const [mfa, setMfa] = useState<MfaStepUp | null>(null);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaBusy, setMfaBusy] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (step === "password") passwordRef.current?.focus();
+  }, [step]);
 
   // Challenge the first verified factor (authenticator app preferred; phone
   // sends the SMS as part of the challenge). Returns false to fall back to a
@@ -80,8 +123,7 @@ export default function SignInPage() {
         setError("That code didn't match. Try the newest code from your app.");
         return;
       }
-      const rawNext = new URLSearchParams(window.location.search).get("next");
-      router.replace(sanitizeNextPath(rawNext, DEFAULT_LANDING_PATH));
+      router.replace(nextPath());
     } catch {
       setError("Nemesis could not check that code. Try again.");
     } finally {
@@ -93,12 +135,14 @@ export default function SignInPage() {
     const params = new URLSearchParams(window.location.search);
     setDeleted(params.get("deleted") === "1");
     setExisting(params.get("existing") === "1");
+    setNext(nextPath());
     // /sign-up hands the typed email over via sessionStorage (never the URL) when the address
-    // already has an account, so the visitor lands here with their email ready to go.
+    // already has an account, so the visitor lands on its password with the email already known.
     try {
       const prefill = window.sessionStorage.getItem(SIGN_IN_PREFILL_KEY);
       if (prefill) {
         setEmail(prefill);
+        setStep("password");
         window.sessionStorage.removeItem(SIGN_IN_PREFILL_KEY);
       }
     } catch {
@@ -118,8 +162,7 @@ export default function SignInPage() {
         if (!alive) return;
       }
       if (!alive) return;
-      const rawNext = new URLSearchParams(window.location.search).get("next");
-      router.replace(sanitizeNextPath(rawNext, DEFAULT_LANDING_PATH));
+      router.replace(nextPath());
     })();
     return () => { alive = false; };
     // beginStepUp is stable enough for this gate; re-running on mfa covers it.
@@ -128,8 +171,13 @@ export default function SignInPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+    if (step === "email") {
+      // The browser's own check (required, type="email") has already run before this event fires.
+      setStep("password");
+      return;
+    }
+    setBusy(true);
     setUnconfirmed(false);
     try {
       const token = captchaEnabled && !isPreviewMode ? await captcha.waitForToken() : "";
@@ -156,6 +204,14 @@ export default function SignInPage() {
     }
   }
 
+  function changeEmail() {
+    setStep("email");
+    setPassword("");
+    setError(null);
+    setUnconfirmed(false);
+    setResent(false);
+  }
+
   // The account exists but the confirmation link was never opened (or expired). Send a new one
   // from right here instead of pointing the learner back at a sign-up form they already filled in.
   async function resendConfirmation() {
@@ -175,23 +231,16 @@ export default function SignInPage() {
     setResent(true);
   }
 
-  function nextPath(): string {
-    const raw = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
-    return sanitizeNextPath(raw, DEFAULT_LANDING_PATH);
-  }
-
   if (mfa) {
     return (
       <AuthFrame
-        eyebrow="One more step"
-        title="Enter your verification code."
-        description={mfa.kind === "phone" ? "We texted a code to your phone." : "Open your authenticator app and type the 6-digit code."}
+        title="One more step"
+        subtitle="Enter your code"
+        description={mfa.kind === "phone" ? <>We texted a code to your phone<br />Type it below to finish signing in</> : <>Open your authenticator app<br />and type the 6-digit code</>}
       >
-        <form onSubmit={onSubmitMfa} className="nemesis-auth-form">
-          <div className="nemesis-auth-field-group">
-            <input autoComplete="one-time-code" autoFocus id="signin-mfa-code" inputMode="numeric" maxLength={8} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))} placeholder=" " value={mfaCode} />
-            <label htmlFor="signin-mfa-code">Verification code</label>
-          </div>
+        <form className="nemesis-auth-form" onSubmit={onSubmitMfa}>
+          <label className="nemesis-auth-sr" htmlFor="signin-mfa-code">Verification code</label>
+          <input autoComplete="one-time-code" autoFocus id="signin-mfa-code" inputMode="numeric" maxLength={8} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))} placeholder="6-digit code" value={mfaCode} />
           <button className="nemesis-auth-submit" disabled={mfaBusy || mfaCode.length < 6} type="submit">{mfaBusy ? "Checking…" : "Continue"}</button>
         </form>
         {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
@@ -199,43 +248,64 @@ export default function SignInPage() {
     );
   }
 
+  const signUpHref = next === DEFAULT_LANDING_PATH ? "/sign-up" : `/sign-up?next=${encodeURIComponent(next)}`;
+  const lead = step === "password" ? (
+    <>
+      {existing ? "That email already has an account" : "Enter the password for"}
+      <br />
+      <strong className="nemesis-auth-email">{email.trim() || "your account"}</strong>
+    </>
+  ) : existing ? (
+    <>That email already has an account<br />Enter it again to sign in</>
+  ) : deleted ? (
+    <>Your account and its records were deleted<br />Sign in again, or <Link className="nemesis-auth-link" href={signUpHref}>create an account</Link></>
+  ) : isPreviewMode ? (
+    <>Local preview mode<br />No account needed to look around</>
+  ) : (
+    <>Sign in to pick up where you left off<br />New to Nemesis? <Link className="nemesis-auth-link" href={signUpHref}>Create an account</Link></>
+  );
+
   return (
-    <AuthFrame
-      eyebrow="Welcome back"
-      title="Welcome to Nemesis"
-      subtitle="Your learning workspace"
-      description="Sign in to pick up where you left off."
-      footer={<p>New to Nemesis? <Link className="nemesis-auth-link" href="/sign-up">Create your account.</Link></p>}
-    >
-        <AuthModeSwitch active="sign-in" />
-        {deleted ? <p className="nemesis-auth-success">Your account and its server-side records were deleted.</p> : null}
-        {existing ? <p className="nemesis-auth-notice">That email already has a Nemesis account. Sign in below to continue.</p> : null}
-        {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account credentials are required.</p> : null}
-        {/* `next` is threaded through so a learner who came from the pricing page and signs in
-            with Google lands back on checkout, not on the front door. */}
-        <OAuthButtons disabled={busy} onError={setError} showTermsNote next={nextPath()} />
-        <form onSubmit={onSubmit} className="nemesis-auth-form">
-          <div className="nemesis-auth-field-group">
-            <input id="signin-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder=" " value={email} onChange={(e) => setEmail(e.target.value)} />
-            <label htmlFor="signin-email">Account email</label>
-          </div>
-          <div className="nemesis-auth-field-group">
-            <input id="signin-password" type="password" autoComplete="current-password" required={!isPreviewMode} placeholder=" " value={password} onChange={(e) => setPassword(e.target.value)} />
-            <label htmlFor="signin-password">Password</label>
-          </div>
-          <p className="nemesis-auth-aside">
+    <AuthFrame title="Welcome to Nemesis" subtitle="Your learning space" description={lead}>
+      {/* `next` is threaded through so a learner who came from the pricing page and signs in
+          with Google lands back on checkout, not on the front door. */}
+      <OAuthButtons disabled={busy} next={next} onError={setError} />
+      <form className="nemesis-auth-form" noValidate={isPreviewMode} onSubmit={onSubmit}>
+        {step === "email" ? (
+          <>
+            <label className="nemesis-auth-sr" htmlFor="signin-email">Email</label>
+            <input autoComplete="username" id="signin-email" name="email" onChange={(e) => setEmail(e.target.value)} placeholder="name@school.edu" required={!isPreviewMode} type="email" value={email} />
+            <button className="nemesis-auth-submit" type="submit">{email.trim() ? "Continue" : "Enter your email"}</button>
+          </>
+        ) : (
+          <>
+            {/* The address rides along, hidden, so a password manager files the password under it. */}
+            <input autoComplete="username" hidden name="email" readOnly type="email" value={email} />
+            <label className="nemesis-auth-sr" htmlFor="signin-password">Password</label>
+            <input autoComplete="current-password" id="signin-password" name="password" onChange={(e) => setPassword(e.target.value)} placeholder="Password" ref={passwordRef} required={!isPreviewMode} type="password" value={password} />
+            <button className="nemesis-auth-submit" disabled={busy} type="submit">{busy ? "Signing in…" : isPreviewMode ? "Enter preview" : "Sign in"}</button>
+          </>
+        )}
+        <TurnstileWidget key={captcha.key} onToken={captcha.setToken} />
+      </form>
+      {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
+      {unconfirmed && !resent ? (
+        <p className="nemesis-auth-notice">
+          <button className="nemesis-auth-textbtn" onClick={() => void resendConfirmation()} type="button">Send me a new confirmation email</button>
+        </p>
+      ) : null}
+      {resent ? <p className="nemesis-auth-success">A new confirmation link is on its way to {email.trim()}.</p> : null}
+      <p className="nemesis-auth-legal">
+        {step === "password" ? (
+          <>
             <Link className="nemesis-auth-link" href="/auth/forgot">Forgot your password?</Link>
-          </p>
-          <TurnstileWidget key={captcha.key} onToken={captcha.setToken} />
-          <button className="nemesis-auth-submit" disabled={busy} type="submit">{busy ? "Signing in…" : isPreviewMode ? "Enter preview" : "Sign in"}</button>
-        </form>
-        {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
-        {unconfirmed && !resent ? (
-          <p className="nemesis-auth-notice">
-            <button className="nemesis-auth-textbtn" onClick={() => void resendConfirmation()} type="button">Send me a new confirmation email</button>
-          </p>
-        ) : null}
-        {resent ? <p className="nemesis-auth-success">A new confirmation link is on its way to {email.trim()}.</p> : null}
+            {" · "}
+            <button className="nemesis-auth-textbtn" onClick={changeEmail} type="button">Use a different email</button>
+            <br />
+            {LEGAL_SHORT}
+          </>
+        ) : LEGAL}
+      </p>
     </AuthFrame>
   );
 }
