@@ -30,6 +30,7 @@ surface cannot arrive without someone deciding what governs it.
 | `components/mascot` | the mascot's renderer and poses | the character's motion vocabulary | own system |
 | `components/dev` | developer studios such as the character studio and the mascot lab | none | internal |
 | `components/lab` | parser, replay and tutor labs | none | internal |
+| `components/space` | the pages workspace: sidebar, pages, blocks, databases, share, settings; the client itself lives in apps/web/space | measured on Notion's web app; ICONS.md: one library (Lucide), stroke 1.5; docs/space/PLAN.md | measured reference |
 | `components/workspace` | the signed-in app; its families follow | DESIGN.md | see the rows below |
 | `components/workspace/shell` | sidebar, title bar, status bar, settings modal and panels | DESIGN.md §1, §2, §7; RESPONSIVE.md | to migrate |
 | `components/workspace/learn` | the chat thread, composer, answers, thinking, check and quiz cards, figures | measured on ChatGPT's Work view and Claude; DESIGN.md §8, §9 | measured reference |

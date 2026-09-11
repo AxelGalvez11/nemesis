@@ -1,0 +1,349 @@
+/**
+ * An in-memory Space backend, for tests and for the /dev-preview/space harness. It is not the real permission model:
+ * the SQL self-test covers that against Postgres. It is the same write semantics and result shapes as
+ * supabase/migrations/20260911T10_space_core.sql, so the browser half can be exercised without a network.
+ */
+import { applyList } from "./list-ops";
+import type { Kind, Props } from "./records";
+import type { ApplyResult, Op, ServerRecord, SpaceSync, Transport, Tx, TxItem } from "./sync-engine";
+
+/**
+ * An in-memory `ws_apply`: per-field versions, list operations, conflicts, cascading destroys and broadcasts, with the
+ * same result shapes as supabase/migrations/20260911T10_space_core.sql (one result per op, in op order). Permissions
+ * are reduced to `denyPages`. The SQL itself is exercised by the database self-test; this pins the browser half.
+ */
+interface SRec {
+  id: string;
+  kind: Kind;
+  type: string;
+  parent_id: string | null;
+  page_id: string;
+  path: string[];
+  owner_id: string | null;
+  team_id: string | null;
+  props: Props;
+  alive: boolean;
+  v: number;
+  fv: Record<string, number>;
+  created_by: string;
+  created_at: string;
+  edited_at: string;
+  trashed_at: string | null;
+}
+
+export class FakeServer implements Transport {
+  recs = new Map<string, SRec>();
+  outbox: Tx[] = [];
+  failNext = 0;
+  denyPages = new Set<string>();
+
+  async apply(_space: string, ops: Op[], client: string, userId?: string): Promise<ApplyResult> {
+    if (this.failNext > 0) {
+      this.failNext--;
+      throw new Error("network down");
+    }
+    const results: ApplyResult["results"] = [];
+    const conflicts: ApplyResult["conflicts"] = [];
+    const denied: string[] = [];
+    const byPage = new Map<string, TxItem[]>();
+    const emit = (page: string, item: TxItem) => byPage.set(page, [...(byPage.get(page) ?? []), item]);
+    const deny = (id: string) => {
+      denied.push(id);
+      results.push({ id, denied: true });
+    };
+    const now = new Date().toISOString();
+    for (const op of ops) {
+      if (op.op === "create") {
+        const existing = this.recs.get(op.id);
+        if (existing) {
+          results.push({ id: op.id, v: existing.v, existed: true });
+          continue;
+        }
+        const place = this.place(op.kind!, op.id, op.parent_id ?? null);
+        if (!place || this.denyPages.has(place.page_id) || (op.parent_id && this.denyPages.has(op.parent_id))) {
+          deny(op.id);
+          continue;
+        }
+        const top = op.kind === "page" && !op.parent_id;
+        const rec: SRec = {
+          id: op.id, kind: op.kind!, type: op.type ?? "", parent_id: op.parent_id ?? null, page_id: place.page_id, path: place.path,
+          owner_id: top && (op.section ?? "private") === "private" ? userId ?? client : null, team_id: null,
+          props: structuredClone(op.props ?? {}), alive: true, v: 1, fv: {}, created_by: userId ?? client, created_at: now, edited_at: now, trashed_at: null,
+        };
+        this.recs.set(op.id, rec);
+        results.push({ id: op.id, v: 1 });
+        emit(rec.page_id, { ...this.json(rec), created: true });
+        continue;
+      }
+      const rec = this.recs.get(op.id);
+      if (!rec) {
+        results.push({ id: op.id, missing: true });
+        continue;
+      }
+      if (this.denyPages.has(rec.page_id)) {
+        deny(op.id);
+        continue;
+      }
+      if (op.op === "update") {
+        const v = rec.v + 1;
+        const item: TxItem = { id: rec.id, kind: rec.kind, type: rec.type, page_id: rec.page_id, parent_id: rec.parent_id, path: rec.path, v, set: {} };
+        for (const [f, val] of Object.entries(op.set ?? {})) {
+          const fbase = op.bases?.[f] ?? op.base;
+          if (fbase !== undefined && (rec.fv[f] ?? 0) > fbase) {
+            conflicts.push({ id: rec.id, field: f, value: rec.props[f] ?? null, v: rec.v });
+            continue;
+          }
+          if (val === null) delete rec.props[f];
+          else rec.props[f] = structuredClone(val);
+          rec.fv[f] = v;
+          item.set![f] = val;
+        }
+        const lists: Record<string, string[]> = {};
+        for (const [f, lop] of Object.entries(op.lists ?? {})) {
+          rec.props[f] = applyList(rec.props[f] as unknown[], lop);
+          rec.fv[f] = v;
+          item.set![f] = rec.props[f];
+          lists[f] = rec.props[f] as string[];
+        }
+        if (op.type !== undefined && op.type !== rec.type) {
+          const fbase = op.bases?.$type ?? op.base;
+          if (fbase !== undefined && (rec.fv.$type ?? 0) > fbase) conflicts.push({ id: rec.id, field: "$type", value: rec.type, v: rec.v });
+          else {
+            rec.type = op.type;
+            rec.fv.$type = v;
+            item.type = op.type;
+            item.set!.$type = op.type;
+          }
+        }
+        let moved = false;
+        if ("parent_id" in op && (op.parent_id ?? null) !== rec.parent_id) {
+          const place = this.place(rec.kind, rec.id, op.parent_id ?? null);
+          if (!place) {
+            deny(op.id);
+            continue;
+          }
+          rec.parent_id = op.parent_id ?? null;
+          rec.page_id = place.page_id;
+          rec.path = place.path;
+          rec.fv.$parent = v;
+          moved = true;
+          Object.assign(item, { parent_id: rec.parent_id, page_id: rec.page_id, path: rec.path, moved: true });
+        }
+        if (!Object.keys(item.set!).length && !moved) {
+          results.push({ id: rec.id, v: rec.v });
+          continue;
+        }
+        rec.v = v;
+        rec.edited_at = now;
+        results.push({ id: rec.id, v, lists });
+        emit(rec.page_id, item);
+        continue;
+      }
+      if (op.op === "trash" || op.op === "restore") {
+        rec.alive = op.op === "restore";
+        rec.trashed_at = rec.alive ? null : now;
+        rec.v += 1;
+        rec.fv.$alive = rec.v;
+        results.push({ id: rec.id, v: rec.v });
+        emit(rec.page_id, this.summary(rec));
+        continue;
+      }
+      if (op.op === "destroy") {
+        for (const id of this.subtree(rec)) this.recs.delete(id);
+        results.push({ id: rec.id, destroyed: true });
+        emit(rec.page_id, { id: rec.id, kind: rec.kind, page_id: rec.page_id, parent_id: rec.parent_id, path: rec.path, destroyed: true });
+      }
+    }
+    for (const [page, records] of byPage) this.outbox.push({ client, page, records });
+    return { ok: true, results, conflicts, denied };
+  }
+
+  private place(kind: Kind, id: string, parent: string | null): { page_id: string; path: string[] } | null {
+    if (!parent) return kind === "page" ? { page_id: id, path: [id] } : null;
+    const p = this.recs.get(parent);
+    if (!p) return null;
+    if (kind === "page") return p.kind === "page" && !p.path.includes(id) ? { page_id: id, path: [...p.path, id] } : null;
+    return p.kind === "page" ? { page_id: p.id, path: p.path } : { page_id: p.page_id, path: p.path };
+  }
+
+  private subtree(rec: SRec): Set<string> {
+    const out = new Set([rec.id]);
+    if (rec.kind === "page") {
+      for (const r of this.recs.values()) if (r.path.includes(rec.id)) out.add(r.id);
+      return out;
+    }
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const r of this.recs.values()) {
+        if (!out.has(r.id) && r.kind !== "page" && r.parent_id && out.has(r.parent_id)) {
+          out.add(r.id);
+          grew = true;
+        }
+      }
+    }
+    return out;
+  }
+
+  json(rec: SRec): ServerRecord {
+    return structuredClone(rec) as unknown as ServerRecord;
+  }
+
+  /** What `ws_page_summary` returns: the record without its content, marked partial. Keep the prop list in step with it. */
+  summary(rec: SRec): ServerRecord {
+    const props: Props = {};
+    for (const k of ["title", "icon", "cover", "rowOf", "titleParts", "titleDate", "collection", "description"]) if (k in rec.props) props[k] = structuredClone(rec.props[k]);
+    return {
+      id: rec.id, kind: rec.kind, type: rec.type, parent_id: rec.parent_id, page_id: rec.page_id, path: rec.path, owner_id: rec.owner_id,
+      team_id: rec.team_id, props, alive: rec.alive, trashed_at: rec.trashed_at, v: rec.v, partial: true,
+    };
+  }
+
+  load(pageId: string): ServerRecord[] {
+    return [...this.recs.values()].filter((r) => r.id === pageId || r.page_id === pageId).map((r) => this.json(r));
+  }
+
+  deliver(clients: SpaceSync[]) {
+    while (this.outbox.length) {
+      const tx = this.outbox.shift()!;
+      for (const c of clients) c.receive(tx);
+    }
+  }
+}
+
+type Handler = (payload: unknown) => void;
+
+/**
+ * Just enough of a Supabase client for runtime.js: the Space RPCs, realtime channels that deliver this server's
+ * broadcasts, an empty calendar and a storage bucket that keeps uploads as object URLs.
+ */
+export function createFakeSupabase(opts: { userId?: string; name?: string; email?: string } = {}) {
+  const server = new FakeServer();
+  const userId = opts.userId ?? "00000000-0000-4000-8000-000000000001";
+  const spaceId = "00000000-0000-4000-8000-0000000000a1";
+  const me = { id: userId, email: opts.email ?? "student@example.com", name: opts.name ?? "Sam Rivera", avatar: null, role: "owner" };
+  let settings: Record<string, unknown> = {};
+  const favorites = new Map<string, number>();
+  const visits = new Map<string, number>();
+  const channels = new Map<string, Map<string, Handler[]>>();
+  const files = new Map<string, string>();
+
+  const summary = (id: string) => {
+    const r = server.recs.get(id);
+    return r ? { ...server.summary(r), has_children: [...server.recs.values()].some((c) => c.parent_id === id && c.kind === "page") } : null;
+  };
+  const deliver = () => {
+    while (server.outbox.length) {
+      const tx = server.outbox.shift() as Tx;
+      const topic = `ws:page:${tx.page}`;
+      for (const fn of channels.get(topic)?.get("tx") ?? []) fn({ ...tx });
+    }
+  };
+
+  const rpc = async (name: string, params: Record<string, unknown> = {}) => {
+    const ok = (data: unknown) => ({ data, error: null });
+    switch (name) {
+      case "ws_enabled":
+        return ok(true);
+      case "ws_bootstrap": {
+        const pages = [...server.recs.values()].filter((r) => r.kind === "page");
+        return ok({
+          user: me,
+          settings,
+          spaces: [{ id: spaceId, name: "Sam's workspace", role: "owner", members: 1 }],
+          space: { id: spaceId, name: "Sam's workspace", icon: null, settings: {}, role: "owner" },
+          people: [me],
+          teams: [],
+          roots: pages.filter((r) => !r.parent_id && r.alive).map((r) => summary(r.id)),
+          shared: [],
+          favorites: [...favorites.keys()].map(summary).filter(Boolean),
+          recents: [...visits.entries()].sort((x, y) => y[1] - x[1]).map(([id]) => summary(id)).filter(Boolean),
+        });
+      }
+      case "ws_load_page": {
+        const id = String(params.p_page);
+        const page = server.recs.get(id);
+        if (!page || page.kind !== "page") return ok({ error: "not_found" });
+        const rowOf = page.props.rowOf as { row?: string; coll?: string } | undefined;
+        return ok({
+          role: "full",
+          space_id: spaceId,
+          page: server.json(page),
+          records: [...server.recs.values()].filter((r) => r.page_id === id && r.id !== id).map((r) => server.json(r)),
+          row: rowOf ? { row: rowOf.row && server.recs.has(rowOf.row) ? server.json(server.recs.get(rowOf.row)!) : null, collection: rowOf.coll && server.recs.has(rowOf.coll) ? server.json(server.recs.get(rowOf.coll)!) : null } : null,
+          children: [...server.recs.values()].filter((r) => r.parent_id === id && r.kind === "page").map((r) => summary(r.id)),
+          ancestors: page.path.filter((p) => p !== id).map(summary).filter(Boolean),
+          in_trash: page.path.some((p) => server.recs.get(p)?.alive === false),
+        });
+      }
+      case "ws_load_children": {
+        const ids = (params.p_pages as string[]) ?? [];
+        return ok({
+          pages: [...server.recs.values()].filter((r) => r.kind === "page" && r.parent_id && ids.includes(r.parent_id)).map((r) => summary(r.id)),
+          links: [...server.recs.values()].filter((r) => r.kind === "block" && r.type === "page" && ids.includes(r.page_id)).map((r) => server.json(r)),
+          content: {},
+        });
+      }
+      case "ws_apply": {
+        const res = await server.apply(String(params.p_space), params.p_ops as Op[], String(params.p_client), userId);
+        setTimeout(deliver, 30);
+        return ok(res);
+      }
+      case "ws_trash":
+        return ok([...server.recs.values()].filter((r) => r.kind === "page" && !r.alive).map((r) => server.summary(r)));
+      case "ws_save_settings":
+        settings = { ...settings, ...(params.p_patch as Record<string, unknown>) };
+        return ok(settings);
+      case "ws_visit":
+        visits.set(String(params.p_page), Date.now());
+        return ok(null);
+      case "ws_set_favorite":
+        if (params.p_on) favorites.set(String(params.p_page), Date.now());
+        else favorites.delete(String(params.p_page));
+        return ok(null);
+      default:
+        return { data: null, error: { message: `fake backend has no ${name}`, code: "42883" } };
+    }
+  };
+
+  const query = () => {
+    const q: Record<string, unknown> = {};
+    const chain = () => q;
+    for (const m of ["select", "eq", "neq", "gte", "lte", "order", "limit", "in"]) q[m] = chain;
+    q.then = (resolve: (v: unknown) => void) => resolve({ data: [], error: null });
+    return q;
+  };
+
+  return {
+    server,
+    auth: { getSession: async () => ({ data: { session: { access_token: "fake" } } }), signOut: async () => ({ error: null }) },
+    realtime: { setAuth: () => {} },
+    rpc,
+    from: () => query(),
+    channel(topic: string) {
+      const handlers = channels.get(topic) ?? new Map<string, Handler[]>();
+      channels.set(topic, handlers);
+      const ch = {
+        on(_type: string, filter: { event: string }, fn: Handler) {
+          handlers.set(filter.event, [...(handlers.get(filter.event) ?? []), (payload) => fn({ payload })]);
+          return ch;
+        },
+        subscribe(cb?: (status: string) => void) {
+          setTimeout(() => cb?.("SUBSCRIBED"), 0);
+          return ch;
+        },
+      };
+      return ch;
+    },
+    removeChannel: async () => "ok",
+    storage: {
+      from: () => ({
+        upload: async (path: string, file: Blob) => {
+          files.set(path, URL.createObjectURL(file));
+          return { data: { path }, error: null };
+        },
+        createSignedUrl: async (path: string) => ({ data: { signedUrl: files.get(path) ?? "" }, error: null }),
+      }),
+    },
+  };
+}
