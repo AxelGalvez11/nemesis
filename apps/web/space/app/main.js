@@ -869,6 +869,8 @@ function Cell({ row, pid, prop, col }) {
 }
 function Database({ page }) {
   const coll = S.collections[page.collection]; const vid = page.activeView && page.views.includes(page.activeView) ? page.activeView : page.views[0]; const view = S.views[vid]; const rows = S.rows[page.collection];
+  // A task opened from My Tasks or the inbox peeks its row as soon as this database's rows are here.
+  useEffect(() => { if (peekAfterLoad && (rows || []).some((r) => r.id === peekAfterLoad)) { peekRow = peekAfterLoad; peekAfterLoad = null; refresh(); } });
   const cols = view.format.table_properties.filter((c) => c.visible && coll.schema[c.property]);
   const shown = viewRows(rows, coll, view);
   const gprop = (view.type || 'table') === 'table' && view.group_by && coll.schema[view.group_by] && groupable(coll.schema[view.group_by].type) ? coll.schema[view.group_by] : null;
@@ -1026,11 +1028,11 @@ const inboxLine = (n) => {
   const who = (n.actor && n.actor.name) || 'Someone';
   // The title this browser knows is newer than the one sent with the notification, so it wins when the page is here.
   const title = (S.pages[n.page_id] && pageTitleText(S.pages[n.page_id])) || (n.page && n.page.props && n.page.props.title) || 'Untitled';
-  return n.kind === 'share' ? `${who} shared ${title} with you` : n.kind === 'mention' ? `${who} mentioned you in ${title}` : `${who} commented on ${title}`;
+  return n.kind === 'share' ? `${who} shared ${title} with you` : n.kind === 'mention' ? `${who} mentioned you in ${title}` : n.kind === 'assign' ? `${who} assigned you to ${n.preview || 'a task'} in ${title}` : `${who} commented on ${title}`;
 };
 function InboxBody() {
   const box = space.inbox;
-  const open = (n) => { if (!n.read) void space.markRead([n.id]); go(n.page_id); };
+  const open = (n) => { if (!n.read) void space.markRead([n.id]); if (n.kind === 'assign' && n.record_id) openTask({ id: n.record_id, page_id: n.page_id }); else go(n.page_id); };
   return html`<div class="sb-inbox"><section class="sb-inbox-sec">
     <div class="sb-inbox-head"><div class="sb-chat-label">Inbox</div><div class="sb-chat-acts">${box.unread ? html`<div class="sb-act24" role="button" aria-label="Mark all as read" data-tip="Mark all as read" onClick=${() => void space.markRead(null)}><${Icon} n="checkmarkSmall" cls="i16"/></div>` : ''}</div></div>
     ${box.items.length ? box.items.map((n) => html`<a class=${'sb-chat-row inbox-row' + (n.read ? '' : ' unread')} key=${n.id} role="menuitem" onClick=${() => open(n)}><div class="sb-chat-row-in"><div class="sb-chat-ic"><img class="inbox-av" src=${(n.actor && n.actor.avatar) || initialsAvatar((n.actor && n.actor.name) || '?')} alt=""/></div><div class="inbox-text"><div class="sb-chat-title">${inboxLine(n)}</div>${n.preview && n.kind !== 'share' ? html`<div class="inbox-preview">${n.preview}</div>` : ''}</div><div class="sb-chat-date">${chatLabel(Date.parse(n.created_at))}</div>${n.read ? '' : html`<i class="sb-chat-dot"></i>`}</div></a>`) : html`<div class="inbox-empty">${box.loaded ? 'Nothing here yet. Pages shared with you, comments in your conversations and mentions of you show up here.' : 'Loading…'}</div>`}
@@ -2440,14 +2442,28 @@ function libRows(tab) {
   return [];
 }
 const relTime = (ms) => { if (!ms) return ''; const m = Math.floor((NOW() - ms) / 60000); if (m < 1) return 'Just now'; if (m < 60) return `${m}m ago`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`; return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: TZ }); };
-// Measured on My Tasks: database-style page, one "My Tasks" view tab, disabled New task, empty state.
+// A task (a row someone put this person in) opens its database with the row in the side peek once the rows are here.
+let peekAfterLoad = null;
+function openTask(t) { peekAfterLoad = t.id; go(t.page_id); }
+// My Tasks: every row this person is assigned to, in databases they can open, that is not done yet (ws_my_tasks).
 function TasksPage() {
-  const tools = [['filterSmall', 'nsp-collection-filter'], ['arrowUpDownSmall', 'nsp-collection-sort'], ['magnifyingGlassSmall', 'off'], ['slidersSmall', 'nsp-collection-edit-view']];
-  return html`<div class="nsp-topbar"><div class="tb-right"><div class="tb-btn sq" role="button"><${Icon} n="star" cls="i20"/></div><div class="tb-btn sq" role="button"><${Icon} n="questionMarkCircle" cls="i20"/></div></div></div>
+  useEffect(() => { void space.loadTasks(); }, []);
+  const { items, loaded } = space.tasks;
+  const pill = (t) => { if (!t.status) return ''; const [bg, fg, dot] = OPT[t.status_color] || OPT.default; return html`<div class="pills"><div class="pill status" style=${`background:${bg};color:${fg}`}><div class="dot" style=${`background:${dot}`}></div><span>${t.status}</span></div></div>`; };
+  const cols = [['Name', 320], ['Status', 170], ['Due', 170], ['Database', 240]];
+  return html`<div class="nsp-topbar"><div class="tb-right"></div></div>
   <div class="nsp-scroller vertical"><div class="db-page tasks-page">
     <div class="db-head"><div class="db-head-inner"><h1 class="db-title">My Tasks</h1></div></div>
-    <div class="db-bar"><div class="db-tab tasks-tab" role="button"><${Icon} n="checkStack" cls="i16"/><span class="lbl">My Tasks</span></div><div class="db-tools">${tools.map(([n, c]) => html`<div class=${'db-tool ' + c} role="button"><${Icon} n=${n} cls="i16"/></div>`)}<div class="tasks-new">New task</div></div></div>
-    <div class="tasks-empty"><${Icon} n="checkStack" cls="i36"/><div class="tasks-empty-t">See all tasks assigned to you here.</div><a class="tasks-empty-a">Configure your task sources</a></div>
+    <div class="db-bar"><div class="db-tab tasks-tab"><${Icon} n="checkStack" cls="i16"/><span class="lbl">My Tasks</span></div></div>
+    ${items.length ? html`<div class="nsp-table-view tasks-table">
+      <div class="nsp-table-view-header-row">${cols.map(([n, w]) => html`<div class="nsp-table-view-header-cell" style=${`width:${w}px`}><div class="th"><div class="th-inner"><div class="th-text">${n}</div></div></div></div>`)}</div>
+      ${items.map((t) => html`<div class="nsp-table-view-row tasks-row" key=${t.id} role="button" onClick=${() => openTask(t)}>
+        <div class="nsp-table-view-cell" style="width:320px"><div class="td p75">${t.title || 'Untitled'}</div></div>
+        <div class="nsp-table-view-cell" style="width:170px"><div class="td p8">${pill(t)}</div></div>
+        <div class="nsp-table-view-cell" style="width:170px"><div class="td p75">${t.due ? fmtDate(String(t.due).slice(0, 10)) : ''}</div></div>
+        <div class="nsp-table-view-cell" style="width:240px"><div class="td p75">${t.database || 'Untitled'}</div></div>
+      </div>`)}
+    </div>` : html`<div class="tasks-empty"><${Icon} n="checkStack" cls="i36"/><div class="tasks-empty-t">${loaded ? 'Nothing is assigned to you. When someone puts you in a Person column, the row shows up here.' : 'Loading your tasks…'}</div></div>`}
   </div></div>`;
 }
 function LibraryPage({ tab }) {

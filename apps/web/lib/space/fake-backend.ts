@@ -332,6 +332,31 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
         invites.set(page, list);
         return ok({ notify, page: { id: page, title: String(server.recs.get(page)?.props.title ?? "") || "Untitled" }, inviter: me.name });
       }
+      case "ws_my_tasks": {
+        // As ws_my_tasks does: live rows whose Person properties list this person and whose Status is not complete.
+        type SchemaEntry = { type?: string; options?: Array<{ value?: string; color?: string; group?: string }> };
+        const items: Array<Record<string, unknown>> = [];
+        for (const r of server.recs.values()) {
+          if (r.kind !== "row" || !r.alive || !r.parent_id) continue;
+          const coll = server.recs.get(r.parent_id);
+          const page = server.recs.get(r.page_id);
+          if (!coll || coll.kind !== "collection" || !page || !page.alive) continue;
+          const schema = Object.entries(coll.props).filter(([k, v]) => k.startsWith("s:") && v && typeof v === "object") as Array<[string, SchemaEntry]>;
+          const valueOf = (key: string) => r.props[key.slice(2)];
+          if (!schema.some(([k, v]) => v.type === "person" && Array.isArray(valueOf(k)) && (valueOf(k) as unknown[]).includes(userId))) continue;
+          const status = schema.find(([, v]) => v.type === "status");
+          const value = status ? valueOf(status[0]) : undefined;
+          const option = status && typeof value === "string" ? (status[1].options ?? []).find((o) => o.value === value) : undefined;
+          if (option?.group === "complete") continue;
+          const due = schema.find(([k, v]) => v.type === "date" && valueOf(k));
+          items.push({
+            id: r.id, page_id: r.page_id, space_id: spaceId, title: String(r.props.title ?? ""), database: String(page.props.title ?? ""),
+            status: typeof value === "string" ? value : null, status_color: option?.color ?? null, due: due ? valueOf(due[0]) : null, edited_at: r.edited_at,
+          });
+        }
+        items.sort((a, b) => (a.due && b.due ? String(a.due).localeCompare(String(b.due)) : a.due ? -1 : b.due ? 1 : 0));
+        return ok(items);
+      }
       case "ws_inbox":
         return ok({ items: [...notifications].reverse(), unread: notifications.filter((n) => !n.read).length });
       case "ws_mark_read": {
@@ -407,12 +432,12 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
       library.splice(0, library.length, ...notes);
     },
     /** Harness only: a notification from someone else, delivered the way ws_notify broadcasts it on the person's channel. */
-    notify(kind: "share" | "comment" | "mention", pageId: string, preview: string, actorName = "Ana Lopez") {
+    notify(kind: "share" | "comment" | "mention" | "assign", pageId: string, preview: string, actorName = "Ana Lopez", recordId: string | null = null) {
       const n: Record<string, unknown> = {
         id: crypto.randomUUID(),
         kind,
         page_id: pageId,
-        record_id: null,
+        record_id: recordId,
         preview,
         created_at: new Date().toISOString(),
         read: false,
