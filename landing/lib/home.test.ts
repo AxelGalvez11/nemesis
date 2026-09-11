@@ -26,6 +26,8 @@ const sanaCss = read("../app/home-sana.css");
 const motionCss = read("../components/reference/motion/motion.css");
 const studyTools = stripComments(read("../components/reference/StudyTools.tsx"));
 const chrome = stripComments(read("../components/reference/SanaChrome.tsx"));
+const layout = read("../app/layout.tsx");
+const globalsCss = read("../app/globals.css");
 
 describe("the homepage", () => {
   it("🔴🔴 every photograph and clip the page names exists, and is light enough to ship", () => {
@@ -108,5 +110,43 @@ describe("the homepage", () => {
     const bare = motionCss.replace(/\/\*[\s\S]*?\*\//g, "");
     const hides = [...bare.matchAll(/^([^{}]*)\{[^}]*opacity:\s*0[;\s}]/gm)].map((m) => m[1].trim()).filter((s) => s && !s.startsWith("@") && !/^(from|to|\d)/.test(s));
     for (const selector of hides) expect(selector, `"${selector}" hides without being armed`).toMatch(/data-nm="armed"|nm-out|:is\(\[data-nm="on"\]/);
+  });
+});
+
+// ── The page renders in the face and the theme it was approved in (2026-09-11) ─────────────────────────
+//
+// Owner, the day after it shipped: "the landing page got messed up like some of the words are like the
+// wrong color. And some of the sizes just got messed up." Both were real and neither was visible to the
+// checks above, which read source rather than a rendered page. Measured on production against the
+// approved /preview/v/together: 288 text boxes a different size (the page had lost Inter and fallen
+// through to Hanken Grotesk), and, with the computer in dark mode, 55 headline words painted white on
+// the white page (globals.css follows the OS and colours every h1 to h3 with --text).
+
+describe("the homepage keeps its face and its light theme", () => {
+  it("🔴🔴 Inter is LOADED at the root, not merely named by the stylesheet", () => {
+    expect(sanaCss).toMatch(/font-family:\s*var\(--font-inter\)/);
+    expect(layout).toMatch(/\bInter\(\{[\s\S]*?axes:\s*\["opsz"\][\s\S]*?variable:\s*"--font-inter"/);
+    expect(layout, "the Inter variable never reaches <html>").toMatch(/className=\{`[^`]*\$\{inter\.variable\}[^`]*`\}/);
+  });
+
+  it("🔴🔴 every token globals.css flips for dark mode is pinned light on the page", () => {
+    const pin = sanaCss.match(/\.sn \{ color-scheme: light;[^}]*\}/)?.[0] ?? "";
+    expect(pin, "the light-only pin on .sn is gone").not.toBe("");
+    const darkBlock = globalsCss.match(/@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{([^}]*)\}/)?.[1] ?? "";
+    const flipped = new Set([...darkBlock.matchAll(/(--[a-z0-9-]+):/g)].map((m) => m[1]));
+    expect(flipped.size, "could not read the dark block in globals.css").toBeGreaterThan(3);
+    // A token computed from a flipped one at :root (--text is rgb(var(--fg))) flips with it, so it must be
+    // redeclared too: inheriting it would inherit the value already resolved against the dark --fg.
+    const rootBlock = globalsCss.match(/:root \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const decls = [...rootBlock.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2]] as const);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const [name, value] of decls) {
+        if (!flipped.has(name) && [...flipped].some((t) => value.includes(`var(${t})`))) { flipped.add(name); grew = true; }
+      }
+    }
+    for (const token of flipped) expect(pin, `${token} changes in dark mode and is not pinned on .sn`).toMatch(new RegExp(`${token}:`));
+    expect(sanaCss).toMatch(/html:has\(\.sn\)[^{]*\{[^}]*background:\s*#ffffff/);
   });
 });

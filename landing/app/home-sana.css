@@ -20,6 +20,20 @@
   min-height: 100vh; background: rgb(255, 255, 255); color: var(--sn-ink);
   font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+/* 🔴 THIS PAGE IS LIGHT ONLY, AND IT HAS TO SAY SO. globals.css belongs to the old homepage and follows the
+   operating system into dark mode: it flips --bg and --fg at :root and paints every h1, h2 and h3 with
+   var(--text). Measured on production 2026-09-11 with the computer in dark mode: all 55 headline words on
+   this page turned white on its white ground, and the ground behind the page went black. Sana's anatomy
+   has no dark theme, so the old tokens are pinned to their light values here. They are DECLARED on .sn,
+   not merely inherited, because --text is computed from --fg on the element that declares it: redefining
+   --fg alone would change nothing. */
+.sn { color-scheme: light;
+  --bg: #ffffff; --fg: 0, 0, 0; --line-a: 0.09;
+  --text: rgb(var(--fg)); --text-2: rgba(var(--fg), 0.6); --text-3: rgba(var(--fg), 0.55);
+  --line: rgba(var(--fg), var(--line-a)); --line-2: rgba(var(--fg), 0.26); --wash: rgba(var(--fg), 0.03);
+  --surface: var(--bg); --text-secondary: var(--text-2); --border: var(--line);
+  --bead-primary: #090909; --chrome-hi: #f4f4f4; --chrome-mid: #8a8a8a; --chrome-lo: #0a0a0a; --chrome-deep: #000000; }
+html:has(.sn), html:has(.sn) body { background: #ffffff; color-scheme: light; }
 .sn *, .sn *::before, .sn *::after { box-sizing: border-box; }
 .sn a { color: inherit; text-decoration: none; }
 /* 🔴 ZERO SPECIFICITY. As `.sn :is(p, h1 ...)` this reset outranked every `.sn-sub { margin: auto }`, so the hero paragraph lost its centring and slid up under the headline. */
