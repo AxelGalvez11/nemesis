@@ -47,7 +47,7 @@ nothing here reuses that word.
 - `READY` in apps/web/space/app/main.js hides every way into a feature with no server behind it: ai, meetings, inbox,
   notifyPrefs, publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5, the inbox with M6. The milestone that builds one turns its
   flag on. lib/space/space-ready.test.ts fails when an entry point escapes its flag.
-- Controls with no handler of their own: 106 on 2026-09-11 (lib/space/dead-controls.ts). The budget only goes down.
+- Controls with no handler of their own: 80 on 2026-09-11, down from 106 (lib/space/dead-controls.ts). The budget only goes down.
 - Home has no page of its own until M9; it opens the page you were last on, or your first page.
 
 ## Milestones
@@ -62,6 +62,11 @@ nothing here reuses that word.
       rows, settings, a new page, the slash menu, trash. An account on the rollout lands on /home after sign-in
       (components/space/space-landing.ts). Left: the same checks on production after merge.
 - [ ] M4 Databases: rows, views, filters, sorts, groups, relations, rollups, unique ids, forms, files
+      2026-09-11, part one: filters work in every view, with conditions for each property type (lib/space/db-filter.ts);
+      they are a field of the view record, so they sync. A search box finds rows by their words, a Person property opens
+      a picker of the workspace's people, and a row made while filters are on starts inside them. Database controls with
+      nothing behind them are wired or hidden. Left: calculations, grouping a table, several sorts, forms people fill in,
+      files, unique ids, relations and rollups, and the chart settings rows that do nothing yet.
 - [ ] M5 Sharing and people: invites by email, roles, guests, page share, publish to web, teamspaces
       2026-09-11, part one: 20260911T11_space_invites.sql is live (self-test 30 of 30, rolled back). Share a page by
       email with a role; an address without an account waits as an invite that only a confirmed email can claim; guests
