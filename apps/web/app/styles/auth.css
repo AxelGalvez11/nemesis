@@ -1,44 +1,49 @@
-/* Auth pages: /sign-in and /sign-up (the split, with the laptop), and the /auth/* pass-through pages
-   (`minimal`). Shared form components keep these class names, so every route stays aligned.
+/* Auth pages: /sign-in, /sign-up and the /auth/* pages. Every page shares these class names.
 
-   🔴🔴 SANA'S SIGN-IN, WITH THE MOVING LAPTOP. Owner, 2026-09-09: "for the sign in, make sure it looks
-   like the sana sign in because that one had a nice, cool animation". 2026-09-10: "look exactly like
-   Sana ... with the moving computer", then "make it live". Numbers marked "measured" were read off
-   sana.ai/login's computed styles at 1440x900 (teardown 2026-09-08, the same numbers as
-   /dev-preview/sign-in on the design-system branch).
+   🔴🔴 SANA'S SIGN-IN, ONE FOR ONE, AND THIS TIME THE RULES RATHER THAN THE BOXES. Owner, 2026-09-11, the
+   fourth report: "the spacing doesn't match like the Sana sign in one for one". Every earlier pass copied
+   Sana's boxes at 1440x900 and invented the rules between them, so the page agreed at one window size and
+   drifted at the rest. This file copies the rules, read off the live stylesheet of sana.ai/sign-in-to-sana
+   on 2026-09-11 and checked against its layout at 25 window sizes:
 
-   🔴 THIS REPLACES THE GRADIENT HALF OF 2026-09-06 ("splitscreen so sign in is on left and gradient
-   background on right"). The split stays and the form stays first in the DOM; the right side is Sana's
-   dark panel holding a rendered MacBook (AuthLaptop.tsx). */
+     page      flex column, min-height 100dvh; padding 14/20/20, gap 18; from 451px 22/32/32, gap 28; from
+               1400px wide AND 850px tall 22/62/62, gap 52, the whole page shifted right by 8.33333%
+     top bar   the mark in a 44px circle (-12px margin from 821px) and a pill nav with auto margins, nudged
+               left 18px, or by 8.33333% less 34px on the large layout
+     main      column-reverse under 821px, panel on top; above it one row, gap 9.09091%, with the form
+               column at 31.8182% and the panel at 59.0909%, both as tall as the row
+     column    content centred in its own box with 32px spare at the foot, never wider than 400px
+
+   The rows in the column are Sana's gap for gap: headline, 24, two-line lead, 32, provider row 40, 12, "or"
+   19.6, 12, email 48, 8, submit 44, 22, legal 78. That is why sign-in asks for the email first and the
+   password second: Sana's first screen has no password row, and a page with more rows cannot line up. */
 
 .nemesis-auth-shell {
-  /* Measured: Sana's neutrals are ONE ink, rgb(10,18,23), at alpha steps 0.6 / 0.4 / 0.25 / 0.08 /
-     0.04. The token names are older than this and are kept so every page's classes still resolve. */
+  /* Measured: Sana's neutrals are ONE ink, rgb(10,18,23), at alpha steps. */
   --auth-ink: #0a1217;
   --auth-muted: rgba(10, 18, 23, 0.6);
   --auth-faint: rgba(10, 18, 23, 0.4);
   --auth-accent: rgba(10, 18, 23, 0.25);
   --auth-line: rgba(10, 18, 23, 0.08);
-  /* Re-measured 2026-09-11: the input fields' own hairline reads heavier than the other 8%-ink
-     borders on the page (Sana's other hairlines, like the OAuth button, do stay at 8%). */
+  /* Fields and the provider buttons: Google's own #dadce0 outline, which is this ink at about 15%. */
   --auth-line-field: rgba(10, 18, 23, 0.15);
+  /* The nav pill (Sana's rgb(245,245,245)) and the quiet submit: ink at 4%. */
   --auth-soft: rgba(10, 18, 23, 0.04);
-  /* The ground every control is cut out of. The floating labels punch a gap in a border by painting
-     this exact colour over it, so it must stay opaque. */
   --auth-ground: #ffffff;
-  /* Measured motion: one easing used 31 times on sanalabs.com, and a real spring baked into a
-     linear() with 19 stops that overshoots to 1.263. */
+  --auth-panel: rgb(23, 24, 26);
+  /* Measured motion on sanalabs.com: one easing used 31 times, and a spring baked into a linear() with 19
+     stops that overshoots to 1.263. */
   --auth-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --auth-spring: linear(0 0%, 0.041 1.2%, 0.161 2.5%, 0.819 7.1%, 1.055 9.1%, 1.203 11.1%, 1.244 12.1%,
     1.263 13.1%, 1.262 14.4%, 1.231 15.9%, 1.043 20.9%, 0.98 23%, 0.945 24.8%, 0.93 26.7%, 0.936 29.2%,
     1.001 36.1%, 1.019 40.3%, 0.995 53.8%, 1 100%);
   background: var(--auth-ground);
   color: var(--auth-ink);
-  display: grid;
-  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif);
-  grid-template-columns: minmax(0, 1fr);
-  min-height: 100svh;
-  position: relative;
+  /* 🔴 The fallback INSIDE var() matters: an undefined variable without one voids the whole declaration,
+     and the list after it is never consulted. */
+  font-family: var(--font-auth, -apple-system), BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
 }
 
 /* DARK. Sana's page is light only; ours follows the app's theme, built the same way: one ink at alpha
@@ -54,93 +59,145 @@
   --auth-ground: #212121;
 }
 
-/* A soft wash behind the single-column pages, so a centred form is not sitting on a bare field. */
-.nemesis-auth-shell::before {
-  background: radial-gradient(120% 80% at 50% 42%, var(--auth-ground) 26%, transparent 100%);
-  opacity: 0.82;
-  content: "";
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-  z-index: 0;
-}
-
 .nemesis-auth-shell *,
 .nemesis-auth-shell *::before,
 .nemesis-auth-shell *::after {
   box-sizing: border-box;
 }
 
-/* The mark is an inline SVG filled with `currentColor`, so it takes the text colour in both themes. */
+/* ── THE PAGE ───────────────────────────────────────────────────────────────────────────────────────── */
+.nemesis-auth-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 100dvh;
+  padding: 14px 20px 20px;
+  position: relative;
+}
+@media (min-width: 451px) {
+  .nemesis-auth-page { gap: 28px; padding: 22px 32px 32px; }
+}
+@media (min-width: 1400px) and (min-height: 850px) {
+  .is-split .nemesis-auth-page { gap: 52px; margin-left: 8.33333%; padding: 22px 62px 62px; }
+}
+
+/* ── THE TOP BAR ────────────────────────────────────────────────────────────────────────────────────── */
+.nemesis-auth-top { align-items: center; display: flex; position: relative; }
+/* Measured: the mark alone, 24px, in a 44px circle. */
 .nemesis-auth-brand {
   align-items: center;
+  border-radius: 9999px;
   color: var(--auth-ink);
   display: flex;
-  gap: 11px;
-  left: 34px;
-  position: absolute;
-  text-decoration: none;
-  top: 30px;
-  z-index: 3;
-}
-.nemesis-auth-brand span { font-size: 11px; font-weight: 700; letter-spacing: 0.3em; }
-
-/* ── THE LAPTOP PANEL ────────────────────────────────────────────────────────────────────────────────
-   Measured: a 706.3x720 section at radius 18 on its own near-black, rgb(23,24,26), 62px from the right
-   edge and 62px from the bottom at 1440x900 (so top 118). The art inside is LARGER than the panel, so
-   it bleeds past every edge: art sized to fit reads as a framed screenshot, art that runs off the edges
-   reads as a window onto something bigger.
-
-   🔴🔴 RE-MEASURED 2026-09-11 ON THE LIVE PAGE, NOT JUST THE 2026-09-08 TEARDOWN — the panel and the
-   form column are NOT independently centred. Sana's `<section>` that HOLDS the form (the whole thing:
-   headline, buttons, fields, legal text) sits at x182/y118/w380.5/**h720** — the exact same y and
-   height as the panel section (x671.3/y118/w706.7/h720). Both are one flex row, one shared band.
-
-   🔴 THE OWNER'S "the sign-in still doesn't match the sizing" WAS THIS. The first pass gave the panel
-   a `position: fixed` box centred with a hand-tuned "+28px" fudge that only happened to land near
-   Sana's y=118 at exactly 900px tall, while the form column was centred SEPARATELY by its own flexbox
-   (`.nemesis-auth-panel-wrap`, centring whatever height the card happens to be). Two different
-   formulas agreeing by coincidence at one viewport size, and drifting apart at every other height or
-   whenever the form grows (an error, MFA, the captcha). Fixed below: `.nemesis-auth-shell.is-split`
-   is now the ONE flex row, `align-items: center` on it is the ONLY centring rule, and both the panel
-   and the column simply sit inside it — exactly Sana's own structure. Positioning moved out of this
-   base rule (only relevant once `.is-split` shows the panel) and into the media query below. */
-.nemesis-auth-field {
-  aspect-ratio: 706.3 / 720;
-  background: rgb(23, 24, 26);
-  border-radius: 18px;
-  display: none;
-  isolation: isolate;
-  overflow: hidden;
-  /* 🔴🔴 THE REAL BUG, FOUND 2026-09-11 CHASING "still doesn't match the sizing": removing
-     `position: fixed` (see the note above) also removed the ONLY thing that made this element a
-     CONTAINING BLOCK for its absolutely-positioned child, `.nemesis-auth-art`. `position: static`
-     (the default, and what this had after the split-layout rewrite) does not establish one, so that
-     child's percentage left/top/width/height fell through to `.nemesis-auth-shell` — the whole page,
-     ~1430x900 — instead of this 706.3x720 panel. The video was still being cropped to the correct
-     panel-sized WINDOW (this element's own `overflow: hidden`), but the crop being windowed was now
-     a slice of a video sized and positioned relative to the entire page, not to its own frame — so it
-     rendered oversized and shifted, worse at every viewport size. `position: relative` costs nothing
-     else here (this element already has no `top`/`left`/`right`/`bottom` of its own) and restores the
-     panel as the frame its own art is measured against. */
+  flex: none;
+  height: 44px;
+  justify-content: center;
   position: relative;
-  z-index: 1;
-  /* Measured: Sana's panel section fades in over 0.55s on cubic-bezier(0.32, 0.72, 0, 1). The 3D
-     swing is in the film itself. */
+  text-decoration: none;
+  width: 44px;
+  z-index: 21;
+}
+.nemesis-auth-brand svg { display: block; height: 24px; width: 24px; }
+@media (min-width: 821px) {
+  .nemesis-auth-brand { margin-left: -12px; }
+}
+/* Measured: a pill at rgb(245,245,245), links 13/500/19.5 at 60% ink, padding 12/16 with 24 at the ends. */
+.nemesis-auth-nav { display: none; margin: 0 auto; position: relative; }
+@media (min-width: 451px) {
+  .nemesis-auth-nav { left: -18px; }
+}
+@media (min-width: 650px) {
+  .nemesis-auth-nav { display: block; }
+}
+@media (min-width: 1400px) and (min-height: 850px) {
+  .is-split .nemesis-auth-nav { left: calc(-8.33333% + 34px); }
+}
+.nemesis-auth-nav ul {
+  background: var(--auth-soft);
+  border-radius: 9999px;
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.nemesis-auth-nav a {
+  border-radius: 9999px;
+  color: var(--auth-muted);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 19.5px;
+  padding: 12px 16px;
+  text-decoration: none;
+  transition: color 0.2s cubic-bezier(0.25, 0.5, 0.25, 1);
+  white-space: nowrap;
+}
+.nemesis-auth-nav li:first-child a { padding-left: 24px; }
+.nemesis-auth-nav li:last-child a { padding-right: 24px; }
+/* 🔴 SANA'S LINK BOXES, NOT OUR LABELS' WIDTHS. Their labels are set in Sana Sans, ours in Inter, so the same
+   paddings made our pill 5.4px wider and moved it 2.7px left. Each link takes the width measured on their page
+   (97.1 / 73.9 / 139.3 / 65.3) with their left padding, so the pill and every label's starting x land where
+   theirs do. Change a label and these widths must be re-measured. */
+.nemesis-auth-nav a { justify-content: flex-start; padding-right: 0; }
+.nemesis-auth-nav li:nth-child(1) a { width: 97.1px; }
+.nemesis-auth-nav li:nth-child(2) a { width: 73.9px; }
+.nemesis-auth-nav li:nth-child(3) a { width: 139.3px; }
+.nemesis-auth-nav li:nth-child(4) a { width: 65.3px; }
+.nemesis-auth-nav a:hover { color: var(--auth-ink); }
+
+/* ── THE ROW ────────────────────────────────────────────────────────────────────────────────────────── */
+.nemesis-auth-main {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column-reverse;
+  gap: 32px;
+  justify-content: flex-end;
+  position: relative;
+}
+@media (min-width: 821px) {
+  .nemesis-auth-main { flex-direction: row; gap: 9.09091%; justify-content: normal; }
+}
+.nemesis-auth-column {
+  align-items: center;
+  display: flex;
+  flex-basis: 31.8182%;
+  flex-direction: column;
+  justify-content: center;
+  padding-bottom: 32px;
+}
+.nemesis-auth-shell:not(.is-split) .nemesis-auth-column { flex-basis: 100%; }
+.nemesis-auth-card-in {
+  display: flex;
+  flex-direction: column;
+  max-width: 400px;
+  text-align: center;
+  width: 100%;
+}
+
+/* ── THE LAPTOP PANEL ───────────────────────────────────────────────────────────────────────────────────
+   Measured: radius 18 on its own near-black, rgb(23,24,26), as tall as the row. Under 821px it is a square
+   above the form, capped at 45% of the window's height. */
+.nemesis-auth-field {
   animation: nemesis-auth-panel-in 0.55s cubic-bezier(0.32, 0.72, 0, 1) both;
+  aspect-ratio: 1 / 1;
+  background: var(--auth-panel);
+  border-radius: 18px;
+  isolation: isolate;
+  max-height: 45vh;
+  overflow: hidden;
+  /* 🔴 A CONTAINING BLOCK FOR THE ART (#1192). Without a position the art's percentages resolve against
+     the whole page and the laptop renders oversized. */
+  position: relative;
+  width: 100%;
+}
+@media (min-width: 821px) {
+  .nemesis-auth-field { aspect-ratio: auto; flex-basis: 59.0909%; max-height: none; }
 }
 @keyframes nemesis-auth-panel-in { from { opacity: 0; } to { opacity: 1; } }
 [data-theme="dark"] .nemesis-auth-field { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06); }
-/* 🔴🔴 RE-MEASURED 2026-09-11 directly on sana.ai/sign-in-to-sana (the exact page the owner linked).
-   The PANEL box (706.3x720, radius 18, 62px off two edges) is unchanged and confirmed exact — that
-   is real page anatomy and it matters. How far the ART bleeds past that box is NOT anatomy: Sana's
-   own hero asset is literally named "landing-page-hero-new-hq.webp" — a flat photo whose crop is a
-   choice their photographer made for THAT picture. Porting its bleed percentage here (tried: -2.83%
-   / -7.94% / 105.7% / 115.9%) cropped OUR scene — a live 3D composition, not a flat photo — into the
-   laptop's own keyboard and cut the left edge off. The right amount of overhang is whatever frames
-   OUR laptop well, which is what these numbers already do; changing them chased a measurement that
-   was never meant to transfer. */
-.nemesis-auth-art { position: absolute; left: -1.812%; top: -2.153%; width: 103.63%; height: 104.32%; }
+/* The art bleeds past every edge, so the panel reads as a window onto something bigger. These are tuned
+   for OUR scene; Sana's photo's own bleed does not transfer to it (tried and reverted, #1192). */
+.nemesis-auth-art { height: 104.32%; left: -1.812%; position: absolute; top: -2.153%; width: 103.63%; }
 .nemesis-auth-art > img,
 .nemesis-auth-art > video {
   display: block;
@@ -151,8 +208,8 @@
   position: absolute;
   width: 100%;
 }
-/* The intro sits on top and fades off the loop's identical first frame; the loop and the still appear
-   at once, because a fade on them would let the dark ground show through the crossfade. */
+/* The intro sits on top and fades off the loop's identical first frame; the loop and the still appear at
+   once, because a fade on them would let the dark ground show through. */
 .nemesis-auth-art > .nemesis-auth-intro { transition: opacity 0.3s ease; }
 .nemesis-auth-art > .nemesis-auth-still { transition: opacity 0.4s ease; }
 .nemesis-auth-art[data-phase="intro"] > .nemesis-auth-intro,
@@ -160,54 +217,8 @@
 .nemesis-auth-art[data-phase="loop"] > .nemesis-auth-loop,
 .nemesis-auth-art[data-phase="still"] > .nemesis-auth-still { opacity: 1; }
 
-/* The column. On the single-column pages this centres itself, in the window, with symmetric padding
-   so the form sits on the optical centre. On the split pages (1080px+) the centring job moves up to
-   the shared row (`.nemesis-auth-shell.is-split`, see the media query) so the column and the panel
-   share exactly one vertical centre line, the way Sana's do — see the note on `.nemesis-auth-field`. */
-.nemesis-auth-panel-wrap {
-  align-items: center;
-  background: transparent;
-  display: flex;
-  justify-content: center;
-  min-height: 100svh;
-  padding: 28px 36px;
-  position: relative;
-  z-index: 2;
-}
-/* Measured: the form column is 381px wide. */
-.nemesis-auth-card { max-width: 381px; width: 100%; }
-.nemesis-auth-card-in {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  text-align: center;
-}
-
-/* THE PASS-THROUGH VARIANT — /auth/callback and /auth/desktop. A sentence on the page rather than a
-   card: no panel, a 19px headline, and a narrower column now that nothing frames it. */
-.nemesis-auth-card.is-minimal { max-width: 420px; }
-.nemesis-auth-card-in.is-minimal h1 {
-  font-size: 19px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
-  margin: 0 0 7px;
-}
-.nemesis-auth-card-in.is-minimal .nemesis-auth-description { margin: 0 auto 14px; }
-.nemesis-auth-card-in.is-minimal .nemesis-auth-footer { border: 0; margin-top: 14px; padding-top: 0; }
-.nemesis-auth-card-in.is-minimal .nemesis-auth-notice { background: transparent; border: 0; padding: 0; text-align: center; }
-
-/* Sana's column carries no centred badge and no tracked eyebrow above the headline. Both stay in the
-   markup so the pages do not change shape. */
-.nemesis-auth-mark,
-.nemesis-auth-eyebrow { display: none; }
-
-/* Measured: ONE h1 holding both lines at 34/500/47.6. The second line is the same size and weight at
-   60% ink: hierarchy is colour, not scale. */
+/* ── THE COLUMN'S ROWS ──────────────────────────────────────────────────────────────────────────────── */
+/* Measured: ONE h1 holding both lines at 34/500/47.6, the second at 60% ink; 24px under it. */
 .nemesis-auth-card-in h1 {
   color: var(--auth-ink);
   font-size: 34px;
@@ -215,52 +226,70 @@
   letter-spacing: 0;
   line-height: 47.6px;
   margin: 0;
-  text-wrap: balance;
+  text-wrap: pretty;
 }
 .nemesis-auth-card-in h1 span { color: var(--auth-muted); }
-/* Measured: 24px under the headline, 16/24 at 40% ink. */
+/* Measured: 16/24 at 60% ink, two lines. */
 .nemesis-auth-description {
-  color: var(--auth-faint);
+  color: var(--auth-muted);
   font-size: 16px;
   line-height: 24px;
   margin: 24px 0 0;
 }
-.nemesis-auth-description strong { color: var(--auth-ink); font-weight: 500; }
+.nemesis-auth-description strong,
+.nemesis-auth-description .nemesis-auth-link { color: var(--auth-ink); font-weight: 500; }
+/* An address can be longer than the column; it ends in an ellipsis rather than adding a line. */
+.nemesis-auth-email {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
 
-/* Sign in / Create account tabs. Sana's column has none, and each page's footer already links to the
-   other, so the switch is hidden rather than removed. */
-.nemesis-auth-mode { display: none; }
-
-.nemesis-auth-form { display: grid; gap: 8px; margin-top: 12px; }
-
-/* THE NOTCHED FLOATING LABEL. The label sits inside the empty pill like a placeholder and rises to
-   straddle the border, painting --auth-ground over it, once the field is focused or filled.
-   `:not(:placeholder-shown)` detects content, so every input here carries placeholder=" ". */
-.nemesis-auth-field-group { display: block; position: relative; }
-.nemesis-auth-field-group label {
+/* Measured: the provider slot starts 32px under the lead and is 40px tall; "or" is 14/500 at 25% ink with
+   12px either side and no rules. */
+.nemesis-auth-oauth { margin-top: 32px; }
+.nemesis-auth-oauth-row { display: flex; gap: 8px; }
+.nemesis-auth-oauth-btn {
+  align-items: center;
   background: var(--auth-ground);
-  color: var(--auth-faint);
+  border: 1px solid var(--auth-line-field);
+  border-radius: 9999px;
+  color: var(--auth-ink);
+  cursor: pointer;
+  display: flex;
+  flex: 1 1 0%;
+  font-family: inherit;
   font-size: 14px;
   font-weight: 500;
-  left: 18px;
-  letter-spacing: 0;
-  line-height: 1;
-  padding: 0 6px;
-  pointer-events: none;
-  position: absolute;
-  text-transform: none;
-  top: 24px;
-  transform: translateY(-50%);
-  transition: top 0.3s var(--auth-ease), font-size 0.3s var(--auth-ease), color 0.3s var(--auth-ease);
+  gap: 10px;
+  height: 40px;
+  justify-content: center;
+  line-height: 20px;
+  min-width: 0;
+  padding: 0 12px;
+  position: relative;
+  transition: background-color 0.3s var(--auth-ease), border-color 0.3s var(--auth-ease);
 }
-.nemesis-auth-field-group input:focus + label,
-.nemesis-auth-field-group input:not(:placeholder-shown) + label {
-  font-size: 12px;
-  top: 0;
+.nemesis-auth-oauth-btn svg { flex: none; height: 18px; width: 18px; }
+.nemesis-auth-oauth-btn.is-solo svg { left: 12px; position: absolute; top: 50%; transform: translateY(-50%); }
+.nemesis-auth-oauth-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nemesis-auth-oauth-btn:hover:not(:disabled) { background: var(--auth-soft); }
+.nemesis-auth-oauth-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.nemesis-auth-divider {
+  color: var(--auth-accent);
+  display: flex;
+  font-size: 14px;
+  font-weight: 500;
+  justify-content: center;
+  line-height: 19.6px;
+  margin: 12px 0;
 }
-.nemesis-auth-field-group input:focus + label { color: var(--auth-ink); }
-/* Measured: 381x48, radius 24, a hairline at 15% ink (re-measured 2026-09-11; the field border reads
-   heavier than the other 8%-ink hairlines on the page), 14/500. */
+
+.nemesis-auth-form { display: flex; flex-direction: column; position: relative; }
+/* Measured: 48px, radius 24, 12/24 padding, 14/500, the placeholder at 40% ink. */
 .nemesis-auth-shell input[type="email"],
 .nemesis-auth-shell input[type="password"],
 .nemesis-auth-shell input[inputmode="numeric"] {
@@ -271,44 +300,57 @@
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
-  min-height: 48px;
+  height: 48px;
+  line-height: 19.6px;
   outline: none;
-  padding: 0 24px;
+  padding: 12px 24px;
   text-align: left;
   transition: border-color 0.3s var(--auth-ease), box-shadow 0.3s var(--auth-ease);
   width: 100%;
 }
-/* The placeholder is a single space that exists only so :placeholder-shown can tell empty from filled. */
-.nemesis-auth-shell input::placeholder { color: transparent; }
+.nemesis-auth-shell input::placeholder { color: var(--auth-faint); opacity: 1; }
 .nemesis-auth-shell input[type="email"]:focus,
 .nemesis-auth-shell input[type="password"]:focus,
 .nemesis-auth-shell input[inputmode="numeric"]:focus {
   border-color: var(--auth-accent);
   box-shadow: 0 0 0 3px var(--auth-soft);
 }
+.nemesis-auth-form input + input { margin-top: 8px; }
+.nemesis-auth-sr {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
 
-/* Measured: 381x44, a pill in solid ink. */
+/* Measured: 44px pill, 8px under the field. Quiet until there is something to submit (ink at 4%, label at
+   40%), then solid ink, arriving on the spring: the one state change on Sana's page. */
 .nemesis-auth-submit {
+  align-items: center;
   background: var(--auth-ink);
   border: 0;
   border-radius: 9999px;
   color: var(--auth-ground);
   cursor: pointer;
+  display: flex;
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
-  letter-spacing: 0;
-  min-height: 44px;
+  height: 44px;
+  justify-content: center;
+  line-height: 20px;
+  margin-top: 8px;
   padding: 0 24px;
-  text-transform: none;
-  /* The one state change on Sana's page, and it arrives on the spring. */
+  text-decoration: none;
   transition: background-color 1s var(--auth-spring), color 1s var(--auth-spring), opacity 0.3s var(--auth-ease);
+  width: 100%;
 }
-/* Quiet until there is something to submit: ink at 4% with the label at 40%, measured. It stays a real
-   button; the browser's own required-field check still answers an early click. */
-.nemesis-auth-form:has(input[type="email"]:placeholder-shown) .nemesis-auth-submit,
-.nemesis-auth-form:has(input[type="password"]:placeholder-shown) .nemesis-auth-submit,
-.nemesis-auth-form:has(input[inputmode="numeric"]:placeholder-shown) .nemesis-auth-submit {
+.nemesis-auth-form:has(input:placeholder-shown) .nemesis-auth-submit {
   background: var(--auth-soft);
   color: var(--auth-faint);
   transition-duration: 0.3s;
@@ -317,6 +359,52 @@
 .nemesis-auth-submit:hover:not(:disabled) { opacity: 0.88; }
 .nemesis-auth-submit:disabled { cursor: not-allowed; opacity: 0.42; }
 [data-theme="dark"] .nemesis-auth-submit:disabled { opacity: 0.3; }
+
+/* Measured: 13/19.5 at 40% ink, 22px under the submit. Sana's runs four lines; the minimum height keeps the
+   column exactly as tall as theirs when ours runs three, so every row above stays where theirs is. */
+.nemesis-auth-legal {
+  color: var(--auth-faint);
+  font-size: 13px;
+  line-height: 19.5px;
+  margin: 22px auto 0;
+  max-width: 400px;
+  min-height: 78px;
+}
+.nemesis-auth-card-in.is-minimal .nemesis-auth-legal { min-height: 0; }
+
+.nemesis-auth-consent {
+  align-items: flex-start;
+  color: var(--auth-muted);
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  line-height: 19.5px;
+  margin: 12px 0 4px;
+  text-align: left;
+}
+.nemesis-auth-consent input { accent-color: var(--auth-ink); flex: none; height: 16px; margin: 2px 0 0; width: 16px; }
+
+.nemesis-auth-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--auth-accent);
+  text-underline-offset: 2px;
+}
+.nemesis-auth-link:hover { color: var(--auth-ink); text-decoration-color: var(--auth-ink); }
+/* A link-shaped button, for actions on this page (another email, a fresh confirmation link). */
+.nemesis-auth-textbtn {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--auth-accent);
+  text-underline-offset: 2px;
+}
+.nemesis-auth-textbtn:hover { color: var(--auth-ink); }
+.nemesis-auth-textbtn:disabled { cursor: default; opacity: 0.6; }
 
 .nemesis-auth-error,
 .nemesis-auth-success,
@@ -329,204 +417,55 @@
   text-align: center;
 }
 .nemesis-auth-error { background: rgba(192, 57, 43, 0.09); border: 1px solid rgba(192, 57, 43, 0.34); color: #c4574b; }
-.nemesis-auth-success { background: rgba(79, 118, 84, 0.10); border: 1px solid rgba(79, 118, 84, 0.32); color: #4f7654; }
+.nemesis-auth-success { background: rgba(79, 118, 84, 0.1); border: 1px solid rgba(79, 118, 84, 0.32); color: #4f7654; }
 .nemesis-auth-notice { background: var(--auth-soft); border: 1px solid var(--auth-line); color: var(--auth-muted); }
 
-/* Provider buttons. `display: contents` lets the terms note inside this wrapper take part in the
-   column's ordering, so it can sit at the foot of the form the way Sana's legal line does. */
-.nemesis-auth-oauth { display: contents; }
-/* Measured: 381x44, pill, white ground, hairline at 8% ink, 14/500; 30px under the lead. */
-.nemesis-auth-oauth-btn {
-  align-items: center;
-  background: var(--auth-ground);
-  border: 1px solid var(--auth-line);
-  border-radius: 9999px;
-  color: var(--auth-ink);
-  cursor: pointer;
-  display: flex;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 8px;
-  min-height: 44px;
-  padding: 0 24px;
-  transition: background-color 0.3s var(--auth-ease), border-color 0.3s var(--auth-ease);
-}
-.nemesis-auth-oauth-btn:first-child { margin-top: 30px; }
-.nemesis-auth-oauth-btn:hover:not(:disabled) { background: var(--auth-soft); border-color: var(--auth-accent); }
-.nemesis-auth-oauth-btn:disabled { cursor: not-allowed; opacity: 0.5; }
-.nemesis-auth-oauth-btn svg { flex: none; height: 18px; width: 18px; }
-/* Measured: 13/19.5 at 40% ink, the last thing in the column. */
-.nemesis-auth-oauth-note {
-  color: var(--auth-faint);
-  font-size: 13px;
-  line-height: 19.5px;
-  margin: 22px 0 0;
-  order: 99;
-}
-/* Measured: plain centred "or", 14/500 at 25% ink, 10px under the button, and no rules either side. */
-.nemesis-auth-divider {
-  color: var(--auth-accent);
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0;
-  line-height: 19.6px;
-  margin-top: 10px;
-  text-transform: none;
-}
-
-.nemesis-auth-consent {
-  align-items: flex-start;
-  color: var(--auth-muted);
-  display: flex;
-  font-size: 12px;
-  gap: 10px;
-  line-height: 1.55;
-  margin: 2px 0 2px;
-  text-align: left;
-}
-.nemesis-auth-consent input { accent-color: var(--auth-ink); flex: none; height: 16px; margin-top: 2px; width: 16px; }
-.nemesis-auth-link {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--auth-accent);
-  text-underline-offset: 2px;
-}
-.nemesis-auth-link:hover { color: var(--auth-ink); text-decoration-color: var(--auth-ink); }
-/* One sentence under everything, linking to the other page. */
-.nemesis-auth-footer {
-  border-top: 0;
-  color: var(--auth-faint);
-  font-size: 14px;
-  margin-top: 16px;
-  order: 100;
-  padding-top: 0;
-}
-.nemesis-auth-footer .nemesis-auth-link { color: var(--auth-ink); font-weight: 500; }
+/* One sentence under everything on the pages that are not sign-in or sign-up. */
+.nemesis-auth-footer { color: var(--auth-faint); font-size: 14px; margin-top: 16px; }
 .nemesis-auth-footer p { margin: 0; }
+.nemesis-auth-footer .nemesis-auth-link { color: var(--auth-ink); font-weight: 500; }
 
-.nemesis-auth-mode a:focus-visible,
+/* 🔴 THE CAPTCHA NEVER TAKES A ROW. Turnstile in interaction-only mode is usually invisible, and when it
+   does need a click it drew a 65px box INSIDE the form, which is the gap measured on production between
+   "Forgot your password?" and the button (88px). It floats under the form now, over the legal text, and
+   only for as long as Cloudflare needs it. */
+.nemesis-auth-captcha {
+  display: flex;
+  justify-content: center;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 5;
+}
+.nemesis-auth-captcha:empty { display: none; }
+.nemesis-auth-captcha iframe { border-radius: 14px; }
+
+.nemesis-auth-nav a:focus-visible,
+.nemesis-auth-brand:focus-visible,
 .nemesis-auth-oauth-btn:focus-visible,
 .nemesis-auth-submit:focus-visible,
 .nemesis-auth-link:focus-visible,
-.nemesis-auth-brand:focus-visible {
+.nemesis-auth-textbtn:focus-visible {
   outline: 2px solid var(--auth-accent);
   outline-offset: 3px;
 }
 
-/* "Forgot your password?" under the password field, right-aligned and small. */
-.nemesis-auth-aside {
-  color: var(--auth-faint);
-  font-size: 13px;
-  margin: 0;
-  text-align: right;
-}
-.nemesis-auth-aside .nemesis-auth-link { color: var(--auth-faint); }
-.nemesis-auth-aside .nemesis-auth-link:hover { color: var(--auth-ink); }
+/* ── THE PASS-THROUGH PAGES (/auth/callback, /auth/desktop): a sentence on the page, not a form. ───── */
+.nemesis-auth-card-in.is-minimal { max-width: 420px; }
+.nemesis-auth-card-in.is-minimal h1 { font-size: 19px; letter-spacing: -0.02em; line-height: 1.3; }
+.nemesis-auth-card-in.is-minimal .nemesis-auth-description { font-size: 15px; line-height: 22px; margin-top: 7px; }
+.nemesis-auth-card-in.is-minimal .nemesis-auth-notice { background: transparent; border: 0; padding: 0; }
+.nemesis-auth-card-in.is-minimal .nemesis-auth-footer { margin-top: 14px; }
 
-/* A link-shaped button for actions that send something (resend the confirmation email). */
-.nemesis-auth-textbtn {
-  background: none;
-  border: 0;
-  color: var(--auth-ink);
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  text-decoration: underline;
-  text-decoration-color: var(--auth-accent);
-  text-underline-offset: 3px;
-}
-.nemesis-auth-textbtn:disabled { cursor: default; opacity: 0.6; }
-
-/* Turnstile in interaction-only mode is 0px tall until Cloudflare needs a click. An empty container
-   must not open a gap in the form, so the wrapper itself carries no margin. */
-.nemesis-auth-captcha { display: flex; justify-content: center; width: 100%; }
-.nemesis-auth-captcha:empty { display: none; }
-.nemesis-auth-captcha iframe { border-radius: 14px; }
-
-/* ── THE ARRIVAL. Measured on sanalabs.com: blocks rise in on the signature easing. Each part of the
-   column arrives 60ms after the one above it, once, on load. ── */
+/* ── THE ARRIVAL. Measured on sanalabs.com: blocks rise in on the signature easing, each 60ms after the
+   one above it, once, on load. ── */
 @keyframes nemesis-auth-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-.is-split .nemesis-auth-card-in > h1,
-.is-split .nemesis-auth-card-in > .nemesis-auth-description,
-.is-split .nemesis-auth-oauth > *,
-.is-split .nemesis-auth-card-in > .nemesis-auth-form,
-.is-split .nemesis-auth-card-in > .nemesis-auth-footer { animation: nemesis-auth-rise 0.9s var(--auth-ease) both; }
-.is-split .nemesis-auth-card-in > .nemesis-auth-description { animation-delay: 0.06s; }
-.is-split .nemesis-auth-oauth > * { animation-delay: 0.12s; }
-.is-split .nemesis-auth-card-in > .nemesis-auth-form { animation-delay: 0.18s; }
-.is-split .nemesis-auth-card-in > .nemesis-auth-footer { animation-delay: 0.24s; }
-
-/* ── THE SPLIT, from 1080px. Measured at 1440: the column at x182 and the panel at x671.7, which puts
-   the column 62.6% of the way across the space the panel leaves. Wider than 1440 the whole
-   arrangement centres; narrower, the panel shrinks with the window (and with its height, so it never
-   runs off the bottom) and the column keeps its proportion. Sana drops the panel under 1380; ours
-   holds to 1080 so a 1280 or 1366 laptop still gets the machine.
-
-   🔴🔴 ONE FLEX ROW, ONE `align-items: center` — THAT IS THE WHOLE FIX. Sana's own form column and
-   panel are both children of one row, both spanning the same y118..y838 band at 1440x900; that is why
-   they line up. `.nemesis-auth-shell.is-split` IS that row now. `.nemesis-auth-panel-wrap` no longer
-   centres itself (it did, independently of the panel, which is the bug the owner caught) — it just
-   holds the card at its natural height and lets the row centre the whole wrap. The panel is a normal
-   flex item too, sized by width + aspect-ratio, `align-self: center` doing nothing but stating the
-   obvious now that the row already centres everything on the cross axis. ── */
-@media (min-width: 1080px) {
-  .nemesis-auth-shell.is-split {
-    --auth-page: min(100vw, 1440px);
-    --auth-edge: calc((100vw - var(--auth-page)) / 2);
-    --auth-panel-w: min(706.3px, 49.1vw, calc((100svh - 124px) * 0.98097));
-    --auth-col-x: calc(var(--auth-edge) + (var(--auth-page) - 62px - var(--auth-panel-w) - 381px) * 0.626);
-    align-items: center;
-    display: flex;
-    flex-direction: row;
-  }
-  .nemesis-auth-shell.is-split::before { display: none; }
-  .is-split .nemesis-auth-field {
-    align-self: center;
-    display: block;
-    flex: 0 0 auto;
-    margin: 24px 62px 24px 0;
-    order: 2;
-    width: var(--auth-panel-w);
-  }
-  .is-split .nemesis-auth-panel-wrap {
-    align-items: normal;
-    display: block;
-    flex: 1 1 auto;
-    justify-content: normal;
-    min-height: 0;
-    order: 1;
-    padding: 24px 0 24px var(--auth-col-x);
-  }
-  /* Measured: the mark alone, 24px, in a 44px hit area whose left edge is 12px before the column. */
-  .is-split .nemesis-auth-brand {
-    border-radius: 9999px;
-    height: 44px;
-    justify-content: center;
-    left: calc(var(--auth-col-x) - 12px);
-    top: 22px;
-    width: 44px;
-  }
-  .is-split .nemesis-auth-brand svg { height: 24px; width: 24px; }
-  .is-split .nemesis-auth-brand span { display: none; }
-}
-
-/* Single column below 900px: the brand mark sits over the form, so real clearance is needed. */
-@media (max-width: 900px) {
-  .nemesis-auth-shell { display: block; }
-  .nemesis-auth-panel-wrap { min-height: 100svh; padding: 64px 22px; }
-}
-
-@media (max-width: 480px) {
-  .nemesis-auth-brand { left: 22px; top: 22px; }
-  .nemesis-auth-card-in { padding: 20px 0 8px; }
-  .nemesis-auth-card-in.is-minimal { padding-inline: 18px; }
-  .nemesis-auth-card-in h1 { font-size: 28px; line-height: 38px; }
-  .nemesis-auth-panel-wrap { align-items: center; padding: 56px 24px; }
-}
+.is-split .nemesis-auth-card-in > * { animation: nemesis-auth-rise 0.9s var(--auth-ease) both; }
+.is-split .nemesis-auth-card-in > :nth-child(2) { animation-delay: 0.06s; }
+.is-split .nemesis-auth-card-in > :nth-child(3) { animation-delay: 0.12s; }
+.is-split .nemesis-auth-card-in > :nth-child(4) { animation-delay: 0.18s; }
+.is-split .nemesis-auth-card-in > :nth-child(n + 5) { animation-delay: 0.24s; }
 
 @media (prefers-reduced-motion: reduce) {
   .nemesis-auth-shell *,

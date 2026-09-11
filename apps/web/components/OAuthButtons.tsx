@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
@@ -10,18 +9,21 @@ import { enabledOAuthProviders, isPreviewMode, type OAuthProviderId } from "@/li
 interface OAuthButtonsProps {
   /** Disable the buttons while the surrounding form is busy. */
   disabled?: boolean;
-  /** Return an error message to block the redirect (e.g. the signup consent box is unchecked). */
+  /** Return an error message to block the redirect (e.g. a consent box that is unchecked). */
   gate?: () => string | null;
   onError: (message: string) => void;
-  /** Sign-in renders a terms line because OAuth can create an account without the signup checkbox. */
-  showTermsNote?: boolean;
-  /** Post-auth destination, defaults to /account. */
+  /** Post-auth destination, defaults to the landing path. */
   next?: string;
 }
 
 const PROVIDER_LABELS: Record<OAuthProviderId, string> = {
   google: "Continue with Google",
   apple: "Continue with Apple",
+};
+
+const PROVIDER_NAMES: Record<OAuthProviderId, string> = {
+  google: "Google",
+  apple: "Apple",
 };
 
 const PROVIDER_ICONS: Record<OAuthProviderId, React.ReactNode> = {
@@ -41,15 +43,23 @@ const PROVIDER_ICONS: Record<OAuthProviderId, React.ReactNode> = {
 };
 
 /**
- * Social sign-in buttons. Renders nothing unless NEXT_PUBLIC_AUTH_PROVIDERS lists a provider,
- * so the UI can never offer a provider before it is enabled in the Supabase dashboard.
+ * The provider row and the "or" under it. Renders nothing unless NEXT_PUBLIC_AUTH_PROVIDERS lists a
+ * provider, so the UI can never offer one before it is enabled in the Supabase dashboard.
+ *
+ * 🔴 ONE ROW, 40PX, HOWEVER MANY PROVIDERS. Sana's slot is Google's own 381x40 button, and every row
+ * under it is measured from that slot's height. A second full-width button stacked under it moved the
+ * rest of our form 48px down and was one of the rows the owner saw as "the spacing doesn't match".
+ * One provider gets Google's shape (mark at the left edge, label centred); two share the row.
+ *
+ * The terms line that used to live here belongs to the page now, which knows which step it is on.
  */
-export function OAuthButtons({ disabled, gate, onError, showTermsNote, next }: OAuthButtonsProps) {
+export function OAuthButtons({ disabled, gate, onError, next }: OAuthButtonsProps) {
   const { signInWithOAuth } = useAuth();
   const router = useRouter();
   const [pending, setPending] = useState<OAuthProviderId | null>(null);
 
   if (enabledOAuthProviders.length === 0) return null;
+  const solo = enabledOAuthProviders.length === 1;
 
   async function start(provider: OAuthProviderId) {
     const blocked = gate?.() ?? null;
@@ -75,25 +85,22 @@ export function OAuthButtons({ disabled, gate, onError, showTermsNote, next }: O
 
   return (
     <div className="nemesis-auth-oauth">
-      {enabledOAuthProviders.map((provider) => (
-        <button
-          key={provider}
-          type="button"
-          className="nemesis-auth-oauth-btn"
-          disabled={disabled || pending !== null}
-          onClick={() => void start(provider)}
-        >
-          {PROVIDER_ICONS[provider]}
-          <span>{pending === provider ? "Opening…" : PROVIDER_LABELS[provider]}</span>
-        </button>
-      ))}
-      {showTermsNote ? (
-        <p className="nemesis-auth-oauth-note">
-          By continuing, you agree to the <Link className="nemesis-auth-link" href="/legal/terms">Terms</Link> and{" "}
-          <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>.
-        </p>
-      ) : null}
-      <div className="nemesis-auth-divider" aria-hidden="true"><span>or</span></div>
+      <div className="nemesis-auth-oauth-row">
+        {enabledOAuthProviders.map((provider) => (
+          <button
+            aria-label={PROVIDER_LABELS[provider]}
+            className={solo ? "nemesis-auth-oauth-btn is-solo" : "nemesis-auth-oauth-btn"}
+            disabled={disabled || pending !== null}
+            key={provider}
+            onClick={() => void start(provider)}
+            type="button"
+          >
+            {PROVIDER_ICONS[provider]}
+            <span>{pending === provider ? "Opening…" : solo ? PROVIDER_LABELS[provider] : PROVIDER_NAMES[provider]}</span>
+          </button>
+        ))}
+      </div>
+      <div className="nemesis-auth-divider" aria-hidden="true">or</div>
     </div>
   );
 }

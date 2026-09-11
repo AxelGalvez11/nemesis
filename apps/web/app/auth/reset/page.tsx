@@ -93,14 +93,10 @@ export default function ResetPasswordPage() {
       description={<>For <strong>{session.user.email}</strong>. At least 8 characters.</>}
     >
       <form onSubmit={onSubmit} className="nemesis-auth-form">
-        <div className="nemesis-auth-field-group">
-          <input autoFocus id="reset-password" type="password" autoComplete="new-password" required minLength={8} placeholder=" " value={password} onChange={(e) => setPassword(e.target.value)} />
-          <label htmlFor="reset-password">New password</label>
-        </div>
-        <div className="nemesis-auth-field-group">
-          <input id="reset-confirm" type="password" autoComplete="new-password" required minLength={8} placeholder=" " value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-          <label htmlFor="reset-confirm">Confirm new password</label>
-        </div>
+        <label className="nemesis-auth-sr" htmlFor="reset-password">New password</label>
+        <input autoFocus id="reset-password" type="password" autoComplete="new-password" required minLength={8} placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <label className="nemesis-auth-sr" htmlFor="reset-confirm">Confirm new password</label>
+        <input id="reset-confirm" type="password" autoComplete="new-password" required minLength={8} placeholder="Confirm new password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         <button className="nemesis-auth-submit" disabled={busy} type="submit">{busy ? "Saving…" : "Save and sign in"}</button>
       </form>
       {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
