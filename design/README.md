@@ -43,6 +43,7 @@ These outrank anything older in this folder.
 
 | date | ruling | applies to |
 | --- | --- | --- |
+| 2026-09-11 | **A state a person can switch off reopens from every screen it is visible from**, and a control only one screen draws is not that. Triggered by the owner closing the sidebar on the live app and being locked out of it, on every screen and across reloads | the app; INTERACTIONS.md Reversible state |
 | 2026-09-11 | **The app's design is the Sana and Notion synthesis** ("our new design"), approved on a mockup of the rebuilt app. **Replaces "Figma leads the app's system"** below | the app; TOKENS.md, DESIGN.md |
 | 2026-09-11 | **The app-screens pass starts now**, beginning with the new workspace shell and its sidebar. **Replaces "app screens are finished later"** below | the app; MIGRATION.md |
 | 2026-09-11 | The mark is three dots, two up and one down, with no ring, and it must not resemble another famous logo | everywhere; BRAND.md |

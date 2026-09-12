@@ -63,6 +63,26 @@ keyboard.**
 Secondary actions live in an overflow menu, not spread across the toolbar. A toolbar shows what is
 used most; the menu holds the rest. If a toolbar has more than seven controls, it needs an overflow.
 
+## Reversible state
+
+**Any state a person can switch off must be switchable back on from every screen that state is
+visible from.** A control that only one screen draws is not that. When the state is saved to the
+account, a missing control is a lock rather than an inconvenience: the next sign-in lands wherever
+the app sends people, and the state is still off.
+
+Set on 2026-09-11, after the owner closed the sidebar on the live app and could not get it back. The
+sidebar's `collapsed` is saved per account (`ws_user_settings`), and the one control that reopened it
+lived in the page top bar. The chat screen draws its own bar, All notes and Templates draw an empty
+one, and Canvas, Review and the calendar are the React app's column with no Space bar at all.
+Signing in lands on the chat screen, so one click on "Close sidebar" left no visible way back on any
+screen, across reloads. The control is drawn once for the whole app now, into `.nsp-over`, a fixed
+layer above the React column that passes through every click it is not carrying. A screen cannot
+leave out what no screen draws. Guarded by `apps/web/lib/space/space-sidebar.test.ts`.
+
+**A keyboard shortcut is not the way back.** `⌘\` toggled the sidebar throughout, and the Keyboard
+rule above says why that counted for nothing: a shortcut nobody has been shown does not exist. A
+shortcut is the fast path beside a control a person can see, never instead of one.
+
 ## Loading
 
 - Under 200ms: nothing. A spinner that flashes is worse than no spinner.
