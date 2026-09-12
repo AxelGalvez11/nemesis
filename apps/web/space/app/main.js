@@ -1271,6 +1271,29 @@ function Sidebar({ current }) {
   </div></div>`;
 }
 
+/**
+ * The way back into the app when the sidebar is shut.
+ *
+ * 🔴🔴 THIS USED TO BELONG TO THE PAGE TOPBAR AND NOWHERE ELSE, AND THAT IS HOW THE OWNER GOT SHUT OUT OF HIS OWN APP
+ * (2026-09-11, "im stuck here"). Every other screen draws a different bar or none at all — the chat screen has its own,
+ * All notes and Templates have an empty one, and Canvas, Review and the calendar are the React app's and have no Space
+ * bar whatsoever — so on all of them a shut sidebar had nothing to press. Signing in lands on the chat screen and
+ * `collapsed` is saved to the account, so one click on "Close sidebar" locked the whole app behind a keyboard shortcut
+ * nobody had been told about.
+ *
+ * Drawn once, for the whole app, so no screen can leave it out — and NOT inside `.nsp-app`. 🔴 The measured copy sets
+ * `isolation:isolate` on every element (space.src.css `*`), which makes `.nsp-app` a stacking context of its own: from
+ * inside it, no z-index can climb over the React app's column (host.css, z-index 1), and that column fills the window
+ * on Canvas, Review and the calendar the moment the sidebar has no width. So this is rendered into `.nsp-over`, a
+ * layer of its own beside `.nsp-app` (see mountSpace), which is the only place in the frontend that can sit above the
+ * React app. The browser was asked, not the stylesheet: a button at z-index 5 inside `.nsp-app` failed this test.
+ */
+function SidebarOpener() {
+  useStore();
+  if (!S.sidebar.collapsed) return '';
+  return html`<div class="sb-opener" role="button" aria-label="Open sidebar" data-tip="Open sidebar ⌘\\" onClick=${() => { S.sidebar.collapsed = false; commit(); }}><span class="mirror"><${Icon} n="arrowChevronDoubleBackward" cls="i20"/></span></div>`;
+}
+
 /* ------------------------------------------------------------------ block handles, selection, drag */
 let picked = new Set();
 let hov = null; // { id, left, top } in viewport px
@@ -3615,8 +3638,8 @@ function DiscussionsPopover({ page }) {
   </div>`;
 }
 function Topbar({ page }) {
+  // The way back when the sidebar is shut is `SidebarOpener`, drawn once for the whole app rather than by this bar.
   return html`<div class="nsp-topbar">
-    ${S.sidebar.collapsed ? html`<div class="tb-open-sb" role="button" data-tip="Open sidebar" onClick=${() => { S.sidebar.collapsed = false; commit(); }}><span class="mirror"><${Icon} n="arrowChevronDoubleBackward" cls="i20"/></span></div>` : ''}
     ${ancestorsOf(page).map((a) => html`<div class="tb-crumb" role="button" onClick=${() => { go(a.id); }}>${hasIcon(a) ? html`<div class="tb-crumb-icon"><div class="tb-crumb-icon-in"><${PageIcon} ic=${a.icon} size=${16.2}/></div></div>` : ''}<div class="tb-crumb-title">${a.title || (a.kind === 'database' ? 'New database' : 'New page')}</div></div><span class="tb-slash">/</span>`)}<div class="tb-crumb">${hasIcon(page) ? html`<div class="tb-crumb-icon"><div class="tb-crumb-icon-in"><${PageIcon} ic=${page.icon} size=${16.2}/></div></div>` : ''}<div class=${'tb-crumb-title' + (hasIcon(page) ? '' : ' noicon')}>${(page.titleParts || [page.title]).join('') || (page.kind === 'database' ? 'New database' : 'New page')}</div></div>
     <div class="tb-private" role="button" onClick=${(e) => openOverlay('share', e.currentTarget)}><${Icon} n="lockFill" cls="i16"/><span class="tb-private-label">${space.sectionLabel(page)}</span><${Icon} n="arrowChevronSingleDownFill" cls="i11"/></div>
     ${cmtPanel === page.id ? html`<${DiscussionsPopover} page=${page}/>` : ''}
@@ -3702,7 +3725,7 @@ function App() {
   else if (page) main = html`
       <${Topbar} page=${page}/>${page.trashed ? html`<div class="trash-banner"><span>This page is in Trash.</span><div class="tb-b" role="button" onClick=${() => restorePage(page.id)}>Restore page</div><div class="tb-b" role="button" onClick=${() => destroyPage(page.id)}>Delete from Trash</div></div>` : ''}
       <div class=${'nsp-scroller ' + (page.kind === 'database' ? 'horizontal' : 'vertical')}>${page.kind === 'database' ? html`<${Database} page=${page}/>` : html`<${Outline} key=${'o' + page.id} page=${page}/><${Page} key=${page.id} page=${page}/>`}</div>`;
-  return html`<div class=${'nsp-app-inner' + (peek ? ' has-peek' : '') + (aiSideOpen() && !isAi && !isApp ? ' ais-open' : '') + (isAi ? ' ai-route' : '') + (isApp ? ' app-route' : '')}>
+  return html`<div class=${'nsp-app-inner' + (peek ? ' has-peek' : '') + (aiSideOpen() && !isAi && !isApp ? ' ais-open' : '') + (isAi ? ' ai-route' : '') + (isApp ? ' app-route' : '') + (S.sidebar.collapsed ? ' sb-shut' : '')}>
     <${Sidebar} current=${page ? page.id : null}/>
     <div class="nsp-frame">${main}</div>
     ${READY.ai && !isAi && !isApp ? html`<${AiSidePanel} page=${drawable ? page : null}/>` : ''}
@@ -3737,9 +3760,15 @@ addEventListener('mousedown', () => { clearTimeout(tipTimer); tipEl.classList.re
 export function mountSpace(root, host) {
   const appEl = document.createElement('div');
   appEl.className = 'nsp-app';
-  root.append(appEl, tipEl);
+  // The one layer that sits above the React app's column, for the chrome that has to be reachable from every screen.
+  // It is a second render root rather than a corner of App because `.nsp-app` is a stacking context of its own and
+  // nothing inside it can climb out; see SidebarOpener.
+  const overEl = document.createElement('div');
+  overEl.className = 'nsp-over';
+  root.append(appEl, overEl, tipEl);
   space.start(root, host);
   if (!window.katex) import('katex').then((m) => { window.katex = m.default || m; refresh(); }).catch(() => {});
   render(html`<${App}/>`, appEl);
-  return () => { render(null, appEl); appEl.remove(); tipEl.remove(); space.stop(); };
+  render(html`<${SidebarOpener}/>`, overEl);
+  return () => { render(null, appEl); render(null, overEl); appEl.remove(); overEl.remove(); tipEl.remove(); space.stop(); };
 }

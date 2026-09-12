@@ -2470,6 +2470,43 @@
 .nsp .sb-find:hover {
   background: var(--k-sel);
 }
+/* A shut sidebar is a door, not a wall: the way back is drawn in the same place on every screen, in the top bar's own
+   row (12px in, 28px square, centred in 44px), and the bars that have something at their left start after it.
+   🔴 `.nsp-over` is the layer it lives in, and the z-index belongs to the LAYER, not to the button: the copy sets
+   `isolation:isolate` on every element, so a z-index inside `.nsp-app` can never climb over the React app's column
+   (host.css, z-index 1) — and that column fills the window on Canvas, Review and the calendar while the sidebar has no
+   width. The layer passes every click it is not carrying straight through to the app underneath. */
+.nsp .nsp-over {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.nsp .nsp-over > * {
+  pointer-events: auto;
+}
+.nsp .sb-opener {
+  position: fixed;
+  left: 12px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--k-page);
+  fill: var(--k-i2);
+  --nsp-fill: var(--k-i2);
+  cursor: pointer;
+}
+.nsp .sb-opener:hover {
+  background: var(--k-sel);
+}
+.nsp .nsp-app-inner.sb-shut .nsp-topbar {
+  padding-left: 48px;
+}
+
 /* Search is a field rather than an icon, so the account's name keeps the width it needs. */
 .nsp .sb-find {
   display: flex;
