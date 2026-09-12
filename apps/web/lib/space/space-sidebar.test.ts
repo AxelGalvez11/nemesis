@@ -37,6 +37,28 @@ test("🔴 the old Library and the Study page have no door anywhere in the sideb
   assert.match(MAIN, /'\/review'/, "the review door is gone, so cards that are due have nowhere to be reviewed");
 });
 
+test("🔴 a sidebar that has been shut can be reopened from every screen, not only from a page", () => {
+  assert.match(MAIN, /function SidebarOpener\(\)[\s\S]{0,600}?S\.sidebar\.collapsed = false/, "nothing reopens the sidebar any more");
+  assert.ok(!/tb-open-sb/.test(MAIN), "the way back belongs to one screen's top bar again, so every other screen is a dead end");
+  // Drawn by the mount, into its own layer: a screen cannot leave out what no screen draws.
+  const mount = /export function mountSpace\([\s\S]*?\n\}/.exec(MAIN)?.[0] ?? "";
+  assert.match(mount, /overEl\.className = 'nsp-over'/, "the layer that sits above the React app is gone");
+  assert.match(mount, /render\(html`<\$\{SidebarOpener\}\/>`, overEl\)/, "the opener is not drawn into that layer");
+  assert.ok(!/<\$\{SidebarOpener\}\/>/.test(/\nfunction App\(\) \{[\s\S]*?\n\}/.exec(MAIN)?.[0] ?? ""), "the opener moved back inside .nsp-app, which is a stacking context of its own: the React column would bury it");
+});
+
+test("🔴 the opener's layer is painted above the React column, which fills the window once the sidebar has no width", () => {
+  const design = readFileSync(path.join(WEB, "space/styles/synthesis.src.css"), "utf8");
+  const host = readFileSync(path.join(WEB, "space/styles/host.css"), "utf8");
+  const layer = /\.nsp-over \{([\s\S]*?)\}/.exec(design)?.[1] ?? "";
+  assert.match(layer, /position: fixed/, "the layer scrolls away with a screen instead of staying put");
+  assert.match(layer, /pointer-events: none/, "the layer would swallow every click meant for the app underneath");
+  const over = Number(/z-index: (\d+)/.exec(layer)?.[1] ?? 0);
+  const column = Number(/\.nsp-app-column \{[^}]*z-index: (\d+)/.exec(host)?.[1] ?? 0);
+  assert.ok(column > 0, "the React column's stacking order is gone, so this test can no longer prove anything");
+  assert.ok(over > column, `the opener's layer (z-index ${over}) would be buried under the React column (z-index ${column}) on Canvas, Review and the calendar`);
+});
+
 test("Canvas and the review count are read from the app's own tables, not invented", () => {
   assert.match(MAIN, /space\.loadCanvases\(\)/, "the Canvas tab stopped listing real boards");
   assert.match(MAIN, /space\.loadDueCards\(\)/, "the review row stopped counting real cards");
