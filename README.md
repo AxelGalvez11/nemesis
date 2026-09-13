@@ -1,135 +1,155 @@
 # Nemesis
 
-**A field-agnostic academic OS.** It serves students and learners in *any* discipline — law,
-engineering, history, nursing, computer science, art history, trades.
+**The AI lecture memory for students.**
 
-Nemesis is not a study-material generator. It reads what a learner actually has, works out what the
-material *teaches*, and continuously decides what that learner should think about next.
+Nemesis records or imports a class, turns it into a trustworthy transcript and structured notes, and then turns the material worth remembering into flashcards that can be reviewed in Nemesis or synced to Anki.
 
-> **Design test for any feature:** would this work for a law student *and* a mechanical engineering
-> student? A rule, prompt or heuristic that only makes sense in one field is the wrong abstraction.
-> Prefer structural signals — headings, emphasis, position, document shape — over subject-matter
-> keyword lists, which never generalise.
+The product loop is deliberately simple:
+
+```text
+record / upload class
+      ↓
+transcript + timestamps + speakers
+      ↓
+structured lecture notes
+      ↓
+ask / search across the class and course
+      ↓
+flashcard drafts
+      ↓
+approve / edit
+      ↓
+Nemesis review or Anki sync
+      ↓
+return for the next class
+```
+
+Nemesis is field-agnostic. The same capture → understand → remember loop must work for law, engineering, history, nursing, computer science, pharmacy, art history and trades.
+
+> **Primary product test:** does this help a student capture a real class, find what mattered later, and remember it with less manual work?
 
 ---
 
-## The two surfaces
+## The product
 
-**Canvas** — the adaptive cognitive runtime, and the primary surface. It maps what a source teaches,
-models what the learner has demonstrated, and chooses the next interaction from both.
+### 1. Lecture capture is the wedge
 
-**Calendar** — dates, deadlines and schedules recovered from real coursework, each carrying the
-passage it came from.
+Students should be able to start a recording from phone, desktop or web without thinking about transcription minutes during normal academic use. Uploaded recordings and device-provided transcripts use the same downstream pipeline.
 
-Everything else in this repository is upstream of those two.
+The server owns provider selection. The existing transcription function is xAI-first with AssemblyAI fallback, so provider changes can be made without shipping a new client. Provider choice is an implementation detail; transcript quality, latency and cost are the product constraints.
+
+### 2. The transcript becomes durable course memory
+
+A recording is not the end product. Nemesis keeps the useful derivative artifacts:
+
+- timestamped transcript
+- structured notes
+- source links back to the moment in the lecture
+- extracted concepts and relationships
+- questions and answers grounded in the source
+- flashcard drafts
+
+The student should be able to search or ask across one lecture, a course, or the semester without reconstructing context manually.
+
+### 3. Flashcards close the learning loop
+
+Nemesis generates **drafts**, not an uncontrolled pile of cards. A student can approve, edit, reject or regenerate before cards enter review.
+
+Cards follow minimal-information principles: one retrievable fact or relationship per card where practical, with Basic and Cloze as the first supported note types. Every generated card keeps provenance back to the lecture/document section that produced it.
+
+Nemesis can review cards itself, but **Anki sync is a first-class exit path** for students who already use Anki. See [`docs/anki-sync.md`](docs/anki-sync.md).
+
+### 4. Existing document intelligence makes lecture memory better
+
+Slides, PDFs, syllabi, readings and pasted notes remain important. They are context for the lecture rather than the headline product.
+
+For example, a lecture recording plus its slide deck should let Nemesis recover structure that audio alone cannot: section boundaries, spellings, formulas, tables and references. The existing `DocumentModel`, `SourceContext`, knowledge objects and learner-evidence systems remain valuable infrastructure for this.
+
+### 5. Canvas is an optional deep-study surface
+
+Canvas remains the adaptive cognitive runtime for students who want to explore relationships, diagnose gaps and work spatially. It is no longer the definition of Nemesis or a prerequisite for understanding the product.
+
+The default path should remain understandable without Canvas:
+
+**Classes → lecture → transcript/notes → cards → review.**
+
+Calendar remains the schedule/deadline surface.
+
+---
+
+## Product principles
+
+1. **Capture first.** Starting a class recording should take fewer decisions than opening a blank note.
+2. **Preserve provenance.** Notes, answers and cards should link back to the transcript/document evidence that produced them.
+3. **Draft before review.** AI-generated flashcards are editable drafts until the learner approves them.
+4. **Do not trap the learner.** Export and Anki sync are product features, not grudging escape hatches.
+5. **Provider-agnostic infrastructure.** Speech and language model vendors can change; product contracts should not.
+6. **Normal use should feel unlimited.** Cost controls belong behind fair-use, abuse prevention, priority tiers and provider routing rather than brittle daily class limits.
+7. **Refusing beats guessing.** A missed extraction costs coverage. A fabricated fact teaches somebody something false and may later become a flashcard.
+8. **Field-agnostic by construction.** Prefer structural signals over subject-specific keyword rules.
+
+The detailed product definition is in [`docs/product-north-star.md`](docs/product-north-star.md).
 
 ---
 
 ## Architecture, in the order data moves
 
-```
- file / paste / recording
-      ↓  parsing
- DocumentModel            blocks, tables as CELLS, headings, page anchors
-      ↓  one boundary
- SourceContext            the ONE shape every semantic extractor reads
-      ↓  extraction
- KnowledgeObject          what the source teaches, typed by KIND of knowledge
+```text
+ recording / device transcript / file / paste
       ↓
- LearningObjective        a capability OVER that knowledge
+ transcription + parsing
       ↓
- learner evidence         append-only; state is a projection, never a stored row
+ DocumentModel / timestamped transcript
       ↓
- teaching policy          one decision, from current state, then stop
+ SourceContext
       ↓
- Canvas interaction
+ KnowledgeObject             what the source teaches
+      ↓
+ LearningObjective           a capability over that knowledge
+      ↓
+ notes / search / Q&A / flashcard drafts
+      ↓
+ learner approval + review evidence
+      ↓
+ Nemesis review / Anki sync / Canvas interaction
 ```
 
-Four rules hold this together, and most of the hard-won lessons in the codebase are restatements
-of one of them:
+Four existing architectural rules continue to apply:
 
-1. **Structure computed upstream must survive every boundary.** It has been discarded at one
-   boundary six separate times, each failure silent and each passing the tests on both sides. Every
-   structural field now needs a round-trip test: real file → parser → model → JSON → reader →
-   consumer.
-2. **Absence of evidence is never negative evidence.** "We have not asked" and "they cannot do it"
-   are different facts, and a type that cannot express the first will quietly assert the second.
-3. **Degraded is not complete.** A pipeline that half-worked must say so; silent degradation is the
-   most expensive recurring defect in this project.
-4. **Refusing beats guessing.** A missed extraction costs coverage. A fabricated one teaches
-   somebody something false and then tests them on it.
+1. **Structure computed upstream must survive every boundary.** Every structural field needs a round-trip test through the path the app actually uses.
+2. **Absence of evidence is never negative evidence.** "We have not asked" and "they cannot do it" are different facts.
+3. **Degraded is not complete.** A pipeline that half-worked must say so.
+4. **Refusing beats guessing.** Source-grounded learning artifacts are more important than maximum generation coverage.
 
 ---
 
 ## Monorepo layout
 
-```
-apps/web/                Next.js — Canvas, Calendar, the workspace shell. The main app.
-apps/mobile/             React Native + Expo
-apps/nemesis-desktop/    desktop shell + marketing
-packages/shared/         the document model, and the contracts both apps read
+```text
+apps/web/                Next.js — classes, lectures, notes, cards, Canvas, Calendar
+apps/mobile/             React Native + Expo — capture and study on the phone
+apps/nemesis-desktop/    desktop capture shell + marketing
+packages/shared/         document/transcript contracts shared by clients
 packages/db/             generated Supabase types
-supabase/migrations/     schema — knowledge objects, objectives, learner evidence, canvases
-supabase/functions/      edge functions — llm, search, transcribe, ics, indexing, media
-docs/                    the design references below
+supabase/migrations/     schema — sources, knowledge, evidence, recordings, usage
+supabase/functions/      edge functions — transcribe, llm, search, indexing, media
+docs/                    product and architecture references
 ```
 
-## The documents that govern the build
+## Documents that govern the build
 
 | Document | What it decides |
 |---|---|
-| [`docs/canvas-cognitive-runtime.md`](docs/canvas-cognitive-runtime.md) | **The north star for Canvas.** Target architecture, and §12 is a dated matrix of what is actually built. Read before changing the runtime, extraction, policy, evidence or presentation. |
-| [`docs/minimap-knowledge-territory.md`](docs/minimap-knowledge-territory.md) | **The north star for the Minimap.** How the learner navigates the knowledge territory, and what that demands of the layers below. Target only. |
-| [`docs/causal-cognition-contract.md`](docs/causal-cognition-contract.md) | **What a response demonstrates about a mechanism.** Edge-level evaluation, the operations causal knowledge supports, and what evidence must record. Target only. |
-| [`docs/document-intelligence.md`](docs/document-intelligence.md) | What Nemesis can read, and how well |
-| [`docs/document-graph.md`](docs/document-graph.md) | The canonical document model |
-| [`docs/parsing-architecture.md`](docs/parsing-architecture.md) | How files become that model |
+| [`docs/product-north-star.md`](docs/product-north-star.md) | **The product north star.** Lecture memory, default user loop, scope and sequencing. |
+| [`docs/anki-sync.md`](docs/anki-sync.md) | **Anki integration contract.** Stable card identity, one-way MVP sync, reconciliation and fallback export. |
+| [`docs/canvas-cognitive-runtime.md`](docs/canvas-cognitive-runtime.md) | The deep-study Canvas runtime and its implementation matrix. |
+| [`docs/minimap-knowledge-territory.md`](docs/minimap-knowledge-territory.md) | How learners navigate knowledge territory. |
+| [`docs/causal-cognition-contract.md`](docs/causal-cognition-contract.md) | What responses demonstrate about causal mechanisms. |
+| [`docs/document-intelligence.md`](docs/document-intelligence.md) | What Nemesis can read, and how well. |
+| [`docs/document-graph.md`](docs/document-graph.md) | The canonical document model. |
+| [`docs/parsing-architecture.md`](docs/parsing-architecture.md) | How files become that model. |
 
-🔴 **`canvas-cognitive-runtime.md` describes a target, not the present.** Only §12 describes what
-exists, and a test fails the build if the code gains a capability the matrix does not declare.
-
----
-
-## Knowledge, and why it is typed
-
-The unit is the **knowledge object**, not the document. One paragraph about one drug yields an
-association (its brand name), a classification (its class), a rule (avoid in pregnancy), a causal
-chain (how it lowers blood pressure) and a procedure (how to counsel someone starting it).
-Classifying the *document* as "pharmacology" and picking one interaction for all of it throws away
-the entire point.
-
-Two dimensions, kept strictly separate:
-
-- **Knowledge type** — association, causal, classification, procedure, conditional rule, …
-- **Cognitive operation** — recall, explain, predict, reconstruct, apply, …
-
-Compare-and-contrast is an *operation over* knowledge, never a type of it. Collapsing the two
-produces a combinatorial explosion of near-duplicate types and loses the ability to ask the same
-knowledge a harder question.
-
-**Identity is derived from content**, so a canvas built on Tuesday's lecture and one built on
-Friday's revision sheet recognise the same fact without any table joining them. Convergence is a
-property of the identity function rather than of a lookup.
-
----
-
-## Learner evidence
-
-The log is the truth; learner state is a projection of it, and there is no state table.
-
-Recorded per demonstration: what was asked, what was produced, the verdict, the cognitive operation,
-how long it took, and how much assistance was on offer. **Observations only** — no thresholds, no
-bands, no scores. An interpretation written into the log cannot be revised afterwards, because rows
-recorded under the old rule mean something different from rows recorded under the new one and
-nothing can tell them apart.
-
-Three kinds of not-knowing stay distinct, and must never collapse into a generic "unknown":
-
-| | |
-|---|---|
-| **Learner uncertainty** | we do not know whether they understand this |
-| **Extraction uncertainty** | we do not know whether this passage asserts that |
-| **Source-capability uncertainty** | we cannot know, because the parse lost the structure |
+`canvas-cognitive-runtime.md` describes a target; its implementation matrix is still authoritative for claims about what Canvas currently supports.
 
 ---
 
@@ -137,26 +157,23 @@ Three kinds of not-knowing stay distinct, and must never collapse into a generic
 
 ```bash
 pnpm install
-pnpm typecheck        # turbo, all packages — the only thing that catches cross-app orphans
+pnpm typecheck
 pnpm test
-pnpm build            # what Vercel runs; NOT the same as `next build`
+pnpm build
 ```
 
 Web tests are `node:test` + `tsx` and run from `apps/web`. Mobile tests run under Deno.
 
-**Conventions that are not optional here:**
+**Conventions that are not optional:**
 
-- Every structural field gets a round-trip test against a real file, not a fixture.
-- Every guard is calibrated by reintroducing the specific defect it exists for. A test that has
-  never been seen to fail is not yet a test.
-- A boundary change is verified through the API the app actually uses, not through raw SQL.
-- Measure before designing. Several features in this repository were cancelled by a measurement,
-  and the measurements are kept in the tests as permanent benchmarks.
+- Every structural field gets a round-trip test against a real file or recording path.
+- Every guard is calibrated by reintroducing the defect it exists for.
+- A boundary change is verified through the API the app actually uses, not raw SQL.
+- Generated learning artifacts preserve source provenance.
+- Measure real transcription hours, cost per active user, card acceptance rate and retention before loosening or tightening plan limits.
 
 ---
 
 ## Naming
 
-Earlier names in this repository's history — *PharmaBro*, *PharmaOrb* — are dead. Domain-specific
-data sources that still exist in the codebase are *features some students use*, not the product's
-identity.
+Earlier names in this repository's history — *PharmaBro*, *PharmaOrb* — are dead. Domain-specific data sources that remain are optional capabilities, not the product identity.
