@@ -1,8 +1,8 @@
 # Nemesis
 
-**The AI lecture memory for students.**
+**The AI lecture memory and study workspace for students.**
 
-Nemesis records or imports a class, turns it into a trustworthy transcript and structured notes, and then turns the material worth remembering into flashcards that can be reviewed in Nemesis or synced to Anki.
+Nemesis records or imports a class, turns it into a trustworthy transcript and structured notes, and connects that material to the student's existing study system — including Anki decks imported or synced into Nemesis.
 
 The product loop is deliberately simple:
 
@@ -15,18 +15,16 @@ structured lecture notes
       ↓
 ask / search across the class and course
       ↓
-flashcard drafts
+flashcards + existing imported Anki cards
       ↓
-approve / edit
-      ↓
-Nemesis review or Anki sync
+organize / connect / review in Nemesis
       ↓
 return for the next class
 ```
 
 Nemesis is field-agnostic. The same capture → understand → remember loop must work for law, engineering, history, nursing, computer science, pharmacy, art history and trades.
 
-> **Primary product test:** does this help a student capture a real class, find what mattered later, and remember it with less manual work?
+> **Primary product test:** does this help a student capture a real class, recover what mattered later, and connect it to what they are already studying?
 
 ---
 
@@ -51,13 +49,15 @@ A recording is not the end product. Nemesis keeps the useful derivative artifact
 
 The student should be able to search or ask across one lecture, a course, or the semester without reconstructing context manually.
 
-### 3. Flashcards close the learning loop
+### 3. Cards are part of the workspace, not an export-only feature
 
-Nemesis generates **drafts**, not an uncontrolled pile of cards. A student can approve, edit, reject or regenerate before cards enter review.
+Nemesis can generate editable Basic/Cloze card drafts from lecture material, but it should also respect the large study library many students already have in Anki.
 
-Cards follow minimal-information principles: one retrievable fact or relationship per card where practical, with Basic and Cloze as the first supported note types. Every generated card keeps provenance back to the lecture/document section that produced it.
+**Anki integration is primarily inbound:** a student can import or connect existing Anki decks so those cards appear inside Nemesis alongside lectures, notes and other study artifacts. Nemesis can then search them, organize them, attach them to courses/lectures, explain them and optionally review them.
 
-Nemesis can review cards itself, but **Anki sync is a first-class exit path** for students who already use Anki. See [`docs/anki-sync.md`](docs/anki-sync.md).
+For Anki-originated cards, Anki remains the source of truth for original card content and scheduling in the MVP. Nemesis adds its own metadata and relationships without silently rewriting the Anki collection.
+
+See [`docs/anki-sync.md`](docs/anki-sync.md).
 
 ### 4. Existing document intelligence makes lecture memory better
 
@@ -80,13 +80,14 @@ Calendar remains the schedule/deadline surface.
 ## Product principles
 
 1. **Capture first.** Starting a class recording should take fewer decisions than opening a blank note.
-2. **Preserve provenance.** Notes, answers and cards should link back to the transcript/document evidence that produced them.
-3. **Draft before review.** AI-generated flashcards are editable drafts until the learner approves them.
-4. **Do not trap the learner.** Export and Anki sync are product features, not grudging escape hatches.
-5. **Provider-agnostic infrastructure.** Speech and language model vendors can change; product contracts should not.
-6. **Normal use should feel unlimited.** Cost controls belong behind fair-use, abuse prevention, priority tiers and provider routing rather than brittle daily class limits.
-7. **Refusing beats guessing.** A missed extraction costs coverage. A fabricated fact teaches somebody something false and may later become a flashcard.
-8. **Field-agnostic by construction.** Prefer structural signals over subject-specific keyword rules.
+2. **Preserve provenance.** Notes, answers and generated cards should link back to the transcript/document evidence that produced them.
+3. **Meet students where their study history already lives.** Existing Anki decks should be importable/syncable into Nemesis rather than forcing a reset.
+4. **Do not destructively rewrite external systems.** Inbound Anki sync is read-only against Anki for the MVP.
+5. **Draft before review.** AI-generated flashcards are editable drafts until the learner approves them.
+6. **Provider-agnostic infrastructure.** Speech and language model vendors can change; product contracts should not.
+7. **Normal use should feel unlimited.** Cost controls belong behind fair-use, abuse prevention, priority tiers and provider routing rather than brittle daily class limits.
+8. **Refusing beats guessing.** A missed extraction costs coverage. A fabricated fact teaches somebody something false and may later become a flashcard.
+9. **Field-agnostic by construction.** Prefer structural signals over subject-specific keyword rules.
 
 The detailed product definition is in [`docs/product-north-star.md`](docs/product-north-star.md).
 
@@ -95,23 +96,21 @@ The detailed product definition is in [`docs/product-north-star.md`](docs/produc
 ## Architecture, in the order data moves
 
 ```text
- recording / device transcript / file / paste
+ recording / device transcript / file / paste / Anki import
       ↓
- transcription + parsing
+ transcription + parsing + external-card ingestion
       ↓
- DocumentModel / timestamped transcript
+ DocumentModel / timestamped transcript / card source model
       ↓
- SourceContext
+ SourceContext + course/card relationships
       ↓
  KnowledgeObject             what the source teaches
       ↓
- LearningObjective           a capability over that knowledge
+ notes / search / Q&A / card library
       ↓
- notes / search / Q&A / flashcard drafts
+ learner evidence + Nemesis-only enrichment
       ↓
- learner approval + review evidence
-      ↓
- Nemesis review / Anki sync / Canvas interaction
+ review / Canvas interaction / cross-source retrieval
 ```
 
 Four existing architectural rules continue to apply:
@@ -128,8 +127,8 @@ Four existing architectural rules continue to apply:
 ```text
 apps/web/                Next.js — classes, lectures, notes, cards, Canvas, Calendar
 apps/mobile/             React Native + Expo — capture and study on the phone
-apps/nemesis-desktop/    desktop capture shell + marketing
-packages/shared/         document/transcript contracts shared by clients
+apps/nemesis-desktop/    desktop capture shell + local Anki bridge
+packages/shared/         document/transcript/card contracts shared by clients
 packages/db/             generated Supabase types
 supabase/migrations/     schema — sources, knowledge, evidence, recordings, usage
 supabase/functions/      edge functions — transcribe, llm, search, indexing, media
@@ -140,8 +139,8 @@ docs/                    product and architecture references
 
 | Document | What it decides |
 |---|---|
-| [`docs/product-north-star.md`](docs/product-north-star.md) | **The product north star.** Lecture memory, default user loop, scope and sequencing. |
-| [`docs/anki-sync.md`](docs/anki-sync.md) | **Anki integration contract.** Stable card identity, one-way MVP sync, reconciliation and fallback export. |
+| [`docs/product-north-star.md`](docs/product-north-star.md) | **The product north star.** Lecture memory, existing study-library ingestion, default user loop, scope and sequencing. |
+| [`docs/anki-sync.md`](docs/anki-sync.md) | **Anki integration contract.** Anki → Nemesis import/sync, identity, reconciliation and source-of-truth rules. |
 | [`docs/canvas-cognitive-runtime.md`](docs/canvas-cognitive-runtime.md) | The deep-study Canvas runtime and its implementation matrix. |
 | [`docs/minimap-knowledge-territory.md`](docs/minimap-knowledge-territory.md) | How learners navigate knowledge territory. |
 | [`docs/causal-cognition-contract.md`](docs/causal-cognition-contract.md) | What responses demonstrate about causal mechanisms. |
@@ -170,7 +169,8 @@ Web tests are `node:test` + `tsx` and run from `apps/web`. Mobile tests run unde
 - Every guard is calibrated by reintroducing the defect it exists for.
 - A boundary change is verified through the API the app actually uses, not raw SQL.
 - Generated learning artifacts preserve source provenance.
-- Measure real transcription hours, cost per active user, card acceptance rate and retention before loosening or tightening plan limits.
+- Imported external cards preserve source identity and original fields.
+- Measure real transcription hours, cost per active user, Anki-import activation and retention before loosening or tightening plan limits.
 
 ---
 
