@@ -54,10 +54,8 @@ Support Anki package import so a user can move decks into Nemesis even without a
 
 Primary inputs:
 
-- `.apkg` — one deck / deck tree, with cards, notes, note types and optionally scheduling/media
-- `.colpkg` — whole collection, including scheduling when exported that way
-
-The Anki manual documents that deck packages can contain scheduling information and media, and collection packages include the full collection with scheduling. Import code must therefore inspect the package rather than assume it contains only front/back text.
+- `.apkg` — a deck / deck tree; it can include cards, notes, note types, media and scheduling when exported with those options
+- `.colpkg` — the whole collection; collection packages preserve scheduling and may include media
 
 File import is a snapshot, not continuous sync.
 
