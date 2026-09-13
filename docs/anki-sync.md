@@ -1,282 +1,353 @@
-# Anki sync contract
+# Anki import and sync contract
 
 **Status:** target architecture
-**Owner direction:** 2026-09-12
+**Owner direction:** 2026-09-13
 
 ## Goal
 
-A student can generate and approve flashcards in Nemesis, press **Sync to Anki**, and have those cards appear in the correct Anki deck without copy/paste. Later edits in Nemesis should update the same Anki notes rather than create duplicates.
+A student who already has Anki can bring existing decks into Nemesis and keep them available there without rebuilding cards manually.
 
-Nemesis owns card generation, provenance and approval. Anki may own scheduling/review after export.
+The primary direction is **Anki → Nemesis**:
+
+```text
+existing Anki decks
+      ↓
+import / desktop sync
+      ↓
+Nemesis card library
+      ↓
+search + organize + connect to lectures/notes
+      ↓
+AI explanations / related material / study tools
+      ↓
+optional Nemesis review
+```
+
+Nemesis should treat Anki as an acquisition source for a student's existing study memory, not mainly as an export destination.
+
+## Product promise
+
+The user-facing action should be understandable as:
+
+**Connect Anki** or **Import Anki**
+
+After connection, a student can select decks and see those cards inside Nemesis. Imported cards should preserve, where available:
+
+- deck hierarchy
+- note/card type
+- note fields
+- tags
+- card front/back rendering data where practical
+- media references
+- Anki identity
+- scheduling/review metadata when the chosen import path supplies it
+
+Nemesis may add its own metadata around an imported card without destructively rewriting the Anki source.
 
 ## MVP direction
 
-Start with **one-way content sync: Nemesis → Anki**.
+Build in two layers.
 
-Do not begin with two-way scheduling sync. Anki's review state is complex and valuable; duplicating or mutating it before the content bridge is reliable creates unnecessary risk.
+### Layer 1 — file import
 
-The cleanest initial path for this repository is:
+Support Anki package import so a user can move decks into Nemesis even without a desktop bridge.
+
+Primary inputs:
+
+- `.apkg` — one deck / deck tree, with cards, notes, note types and optionally scheduling/media
+- `.colpkg` — whole collection, including scheduling when exported that way
+
+The Anki manual documents that deck packages can contain scheduling information and media, and collection packages include the full collection with scheduling. Import code must therefore inspect the package rather than assume it contains only front/back text.
+
+File import is a snapshot, not continuous sync.
+
+### Layer 2 — connected desktop sync
+
+For users who want their existing Anki collection to remain mirrored in Nemesis:
 
 ```text
-Nemesis web/mobile
-      ↓
-Nemesis backend — approved card + stable ID + sync queue
-      ↓
-Nemesis desktop helper / Anki bridge
+Anki desktop
       ↓ localhost
-AnkiConnect while Anki desktop is running
+AnkiConnect / later Nemesis Anki add-on
       ↓
-Anki collection
+Nemesis desktop helper
+      ↓ authenticated
+Nemesis backend
       ↓
-normal Anki sync
-      ↓
-AnkiMobile / AnkiDroid / other Anki clients
+web + mobile see the same imported cards
 ```
 
-AnkiConnect is a community Anki add-on that exposes a local HTTP API while desktop Anki is running. The standard local endpoint is `127.0.0.1:8765`. The bridge must remain local; do not expose that service to the public internet.
+AnkiConnect exposes local actions such as deck listing, note search, note details and card details while Anki desktop is running. The standard local endpoint is `127.0.0.1:8765`.
 
-Because Nemesis already has a desktop app, the desktop process is a natural place to talk to localhost without coupling the web app to browser CORS/network restrictions.
+Because Nemesis already has a desktop app, the desktop process is the natural bridge between localhost Anki and the Nemesis account.
 
-A later alternative is a dedicated **Nemesis Anki add-on** that authenticates to Nemesis and pulls pending operations. That can provide a cleaner install/sync experience once demand justifies maintaining an add-on.
+A later dedicated **Nemesis Anki add-on** can provide deeper identity, deletion and change tracking if the AnkiConnect bridge proves too limited.
 
-## Why not direct AnkiWeb integration?
+## Source of truth
 
-Do not build the product around undocumented/private AnkiWeb endpoints, scrape AnkiWeb, or ask users to give Nemesis their Anki password.
+For Anki-originated cards, the MVP authority is:
 
-Anki's normal sync can remain responsible for propagating a user's local collection to their other Anki clients. Nemesis only needs a supported/local bridge into the desktop collection.
+- **Anki owns the original card/note content.**
+- **Anki owns scheduling and review history.**
+- **Nemesis owns Nemesis-only metadata:** course links, lecture links, AI explanations, semantic relationships, annotations, mastery overlays and source associations created inside Nemesis.
 
-## Fallback path
+Do not silently overwrite Anki content from Nemesis in the first version.
 
-Always preserve a no-addon fallback:
+This makes initial sync safe: Nemesis can re-pull a changed Anki card without risking the user's Anki collection.
 
-1. Export approved cards as an Anki-compatible text import.
-2. Where practical, offer `.apkg` deck export.
-3. Preserve a stable Nemesis ID in the exported note so re-import/update behavior can be reconciled.
+Later, an explicit two-way content mode can be added. That mode must have conflict handling before it can modify Anki notes.
 
-File export is not equivalent to sync, but it prevents lock-in and lets the card pipeline ship before the full bridge is perfect.
+## Identity
 
-## Card identity
+Imported cards need stable linkage back to Anki.
 
-Every Nemesis card needs an immutable application identity independent of its wording.
+Suggested logical source mapping:
+
+```text
+external_card_sources
+  id
+  user_id
+  provider                 'anki'
+  connection_id            which Anki profile / import source
+  anki_note_id              nullable local/synced note id
+  anki_card_id              nullable card id
+  anki_guid                 nullable, when available from package/add-on
+  deck_name
+  model_name
+  source_modified_at
+  source_hash
+  last_seen_at
+  sync_state                imported | synced | changed | missing | error
+  last_error
+```
+
+Do not identify a card by its front text. Wording changes, duplicate-looking prompts and cloze variants make text identity unsafe.
+
+For package imports, preserve Anki GUIDs when available. For AnkiConnect-based sync, scope Anki note/card IDs to the connected Anki profile and keep a content hash for change detection.
+
+## Canonical Nemesis card
+
+The external-source mapping points at a normal Nemesis card object rather than forcing the rest of the app to understand Anki's schema.
 
 Suggested logical fields:
 
 ```text
-id                    UUID — immutable Nemesis card ID
-user_id               owner
-course_id              nullable course
-lecture_id             nullable source lecture
-knowledge_object_id    nullable semantic identity
-note_type              basic | cloze
-front                   Basic prompt, or display text where applicable
-back                    Basic answer
-cloze_text              Cloze source text where applicable
-extra                   optional explanation/context
-source_refs             transcript timestamps / document anchors
-status                  draft | approved | suspended | archived
-content_hash            hash of sync-relevant content
-created_at
-updated_at
-```
-
-Do not use the card's front text as identity. Students will edit prompts, and two cards may legitimately share similar wording.
-
-## Sync mapping
-
-Store a per-destination mapping rather than putting Anki-specific state directly on the canonical card.
-
-Suggested logical table:
-
-```text
-card_sync_targets
-  id
+cards
+  id                       UUID — Nemesis identity
   user_id
+  origin                   native | anki
+  external_source_id       nullable mapping
+  note_type
+  fields                   normalized + original fields
+  rendered_front
+  rendered_back
+  tags
+  media_refs
+  nemesis_course_id        nullable
+  nemesis_lecture_id       nullable
+  explanation              nullable Nemesis-only enrichment
+  created_at
+  updated_at
+```
+
+Preserve original Anki fields even when Nemesis also creates normalized `rendered_front` and `rendered_back`. Custom note types cannot safely be reduced to two strings and then reconstructed later.
+
+## Initial connection flow
+
+```text
+Settings / Cards
+      ↓
+Connect Anki
+      ↓
+Nemesis desktop detects AnkiConnect
+      ↓
+show deck tree + counts
+      ↓
+student selects decks
+      ↓
+initial pull
+      ↓
+Nemesis card library appears on web/mobile
+```
+
+The student should be able to choose:
+
+- all decks
+- selected top-level decks
+- selected subdecks
+
+Do not automatically import the entire collection without showing scope and estimated card count.
+
+## Sync algorithm
+
+### Initial pull
+
+1. Read available deck names/IDs.
+2. For each selected deck, find its notes/cards.
+3. Read note fields, tags, note type and related card information.
+4. Normalize for Nemesis display while preserving original fields.
+5. Upsert by the Anki source identity.
+6. Record source modification/hash state.
+7. Mark the connection's initial sync complete.
+
+### Incremental pull
+
+On later sync:
+
+1. Re-read selected deck scope.
+2. Compare modification metadata/content hashes where available.
+3. Fetch changed/new notes or cards.
+4. Update their Nemesis mirror.
+5. Preserve all Nemesis-only metadata and course/lecture relationships.
+6. Periodically reconcile the full selected scope so removed cards can be identified safely.
+
+A source refresh must never erase Nemesis-only annotations merely because Anki does not know about them.
+
+### Missing/deleted source cards
+
+Do not immediately delete a Nemesis card when an Anki item disappears from one poll. A deck may have been renamed, moved, temporarily excluded from scope or unavailable.
+
+Use a staged state:
+
+```text
+synced → missing → confirmed_removed
+```
+
+Only after reconciliation should Nemesis offer options such as:
+
+- keep in Nemesis as a detached card
+- archive in Nemesis
+- remove from Nemesis
+
+## Scheduling data
+
+Anki scheduling is valuable but should not be required to get useful cards into Nemesis.
+
+When available, preserve source scheduling information separately from Nemesis's own review system:
+
+```text
+anki_review_state
   card_id
-  provider              'anki'
-  target_profile_id      local/profile bridge identity
-  target_deck            requested deck name/path
-  remote_note_id         Anki note ID once created
-  last_synced_hash
-  sync_state             pending | synced | error | conflict | disabled
-  last_error
-  last_synced_at
+  due
+  interval
+  ease / difficulty fields when available
+  queue/state
+  lapses
+  reps
+  source_updated_at
 ```
 
-One Nemesis card may eventually sync to more than one destination/profile. Keeping the mapping separate avoids making that impossible later.
+Do not translate Anki scheduling into Nemesis mastery as though the two were equivalent. "Anki says this card is due" and "Nemesis has evidence the learner understands this concept" are different facts.
 
-## Sync operation model
+If the user reviews an imported card inside Nemesis, initial Nemesis review evidence stays Nemesis-side. Do not mutate Anki's schedule until an explicit bidirectional review-sync design exists.
 
-Use an idempotent operation queue. Replaying a request must not create duplicate notes.
+## Custom note types and Cloze
 
-Suggested operations:
+Anki users frequently have more than Basic and Cloze.
 
-```text
-CREATE_NOTE
-UPDATE_NOTE
-MOVE_DECK
-SUSPEND_SYNC
-ARCHIVE_MAPPING
-```
+The importer must therefore preserve:
 
-Each operation references the immutable Nemesis card ID and expected content hash.
+- model/note-type name
+- original field names and values
+- card-template identity where available
+- tags
+- rendered question/answer if the bridge can obtain them
 
-### Create
+For Nemesis study views, prefer the rendered card when available. Use field-level normalization only as a convenience layer.
 
-When an approved card has no `remote_note_id`:
+Cloze cards may generate several Anki cards from one note. Preserve the note ↔ card relationship instead of flattening every card into an unrelated note.
 
-1. Ensure target deck exists.
-2. Ensure the Nemesis note model exists or map to Anki's Basic/Cloze models.
-3. Create the note.
-4. Include a stable marker such as `nemesis_id:<UUID>` in a dedicated field or tag.
-5. Store the returned Anki note ID and synced content hash.
+## Media
 
-### Update
+Package imports may contain sounds/images. Continuous sync may need a separate media-fetch path.
 
-When `content_hash != last_synced_hash` and a mapping exists:
+For MVP:
 
-1. Resolve the mapped Anki note.
-2. Verify the note still contains the expected Nemesis marker.
-3. Update content fields/tags.
-4. Store the new hash/time.
+- import package media when present
+- store media with user-scoped ownership
+- rewrite internal references for Nemesis rendering
+- avoid duplicating identical media where hashes match
+- do not make the first continuous-sync release depend on perfect media parity if text cards already provide value
 
-Never create a second card merely because wording changed.
+## AnkiWeb
 
-### Delete
+Do not build the product around private/undocumented AnkiWeb endpoints, scrape AnkiWeb, or ask users for their AnkiWeb password.
 
-Do **not** automatically delete an Anki note when a Nemesis card is deleted/archived in the MVP.
+Anki's own sync can continue moving a user's collection among Anki devices. Nemesis only needs a safe ingress path from a local/exported collection.
 
-Deletion is destructive and users may have review history attached to the Anki card. Prefer:
+## Mobile behavior
 
-- stop future Nemesis updates, or
-- explicitly ask the user whether to remove the Anki note.
+The iPhone app does not need direct access to Anki.
 
-## Note models
+Once the desktop bridge uploads imported cards to Nemesis, they are normal cloud-backed Nemesis artifacts and can appear on:
 
-Initial mapping:
+- Nemesis web
+- Nemesis iPhone/iPad
+- Nemesis desktop
 
-### Basic
+This is an important product benefit: **connect Anki once on desktop, then use the imported study library anywhere Nemesis runs.**
 
-```text
-Front
-Back
-Extra
-Source
-NemesisID
-```
+## Two-way sync — later
 
-### Cloze
+Two-way content sync may eventually be useful, but it is not required for the first useful product.
 
-```text
-Text
-Extra
-Source
-NemesisID
-```
+If added, it must distinguish:
 
-`Source` should contain human-readable provenance such as course/lecture name plus timestamp, with a Nemesis deep link when available.
+- Anki edit only
+- Nemesis edit only
+- both edited since last sync
+- scheduling-only changes
+- Nemesis-only enrichment changes
 
-Use tags for organizational metadata rather than identity:
-
-```text
-nemesis
-nemesis::course::<slug>
-nemesis::lecture::<slug>
-```
-
-Never rely on a mutable tag as the sole sync key.
-
-## Approval workflow
-
-The correct UX is:
-
-```text
-Generate 24 drafts
-      ↓
-student scans/edits/rejects
-      ↓
-Approve 17
-      ↓
-Sync approved cards
-      ↓
-17 created/updated in Anki
-```
-
-Do not automatically push every generated card. Card quality and deck bloat are product risks, not merely model-quality problems.
-
-Batch approval should support:
-
-- edit inline
-- accept/reject
-- change Basic ↔ Cloze where valid
-- choose destination deck
-- inspect source timestamp/page
-- detect likely duplicates
-
-## Conflict policy
-
-MVP authority is deliberately simple:
-
-- **Nemesis controls content fields it created.**
-- **Anki controls scheduling/review history.**
-- Unknown Anki fields and scheduling state are never overwritten by Nemesis.
-
-If the user edits the card content directly in Anki, a later Nemesis edit may conflict. Do not silently overwrite both versions.
-
-Initial conflict options:
+Conflict options should be explicit:
 
 - Keep Anki version
-- Replace content with Nemesis version
+- Keep Nemesis version
+- Merge fields where safe
 - Duplicate intentionally
-- Disconnect this card from sync
+- Disconnect the mirror
 
-A future two-way bridge can pull content edits back into Nemesis, but that is not required for the MVP.
-
-## Offline and mobile behavior
-
-Mobile Nemesis does not need direct access to the Anki collection.
-
-When the user approves cards on iPhone:
-
-1. Backend marks Anki operations pending.
-2. Next time the desktop bridge and Anki are running, pending operations are applied.
-3. Anki's normal sync distributes them to the user's Anki devices.
-
-The UI should therefore say **Queued for Anki** rather than falsely claiming **Synced** before the local bridge confirms it.
+Scheduling/review history should remain Anki-owned unless Nemesis deliberately implements a reviewed and tested scheduler synchronization contract.
 
 ## Security
 
 - Never store the user's AnkiWeb password.
-- Never make AnkiConnect publicly reachable as part of setup.
-- Authenticate the Nemesis desktop/helper to the user's Nemesis account normally.
-- Treat localhost Anki operations as local-device actions requiring the user's installed bridge/add-on.
-- Keep source-course data scoped to the signed-in Nemesis user.
+- Never expose AnkiConnect to the public internet.
+- The desktop helper authenticates only to the signed-in Nemesis account.
+- User card content and media are user-scoped.
+- Import is read-only against Anki for MVP.
+- Any future writes back to Anki require explicit connection permission and visible conflict behavior.
 
 ## Observability
 
 Measure:
 
-- users who enable Anki sync
-- approved cards queued
-- create/update success rate
-- duplicate-prevention failures
-- sync latency from approval to confirmation
-- error reason by bridge/Anki version
-- percentage of generated cards approved before sync
+- users who connect/import Anki
+- decks selected
+- cards imported
+- initial sync success rate
+- changed cards pulled per subsequent sync
+- sync error categories
+- custom note-type rendering success
+- percent of imported Anki users who later search, annotate, link or review those cards in Nemesis
+- retention of Anki-connected users versus non-connected users
 
-Do not measure success only as "cards generated." The useful metric is cards the learner chose to keep and can actually review.
+The success metric is not merely "we copied cards." It is whether importing an existing study library makes Nemesis immediately useful.
 
 ## Implementation order
 
-1. Add stable card identity/content hashes if not already present.
-2. Add sync-target mapping and operation queue.
-3. Add Anki-compatible text export as fallback.
-4. Implement desktop → AnkiConnect capability detection.
-5. Implement deck listing/creation and Basic note creation.
-6. Add Cloze.
-7. Add update/reconciliation by stable marker + Anki note ID.
-8. Add batch UI and sync status.
-9. Only then evaluate a dedicated Nemesis Anki add-on and/or two-way content reconciliation.
+1. Add generic external-card source mapping.
+2. Build `.apkg` import with preserved note fields/tags/deck hierarchy.
+3. Add package media import.
+4. Add `.colpkg` import where appropriate.
+5. Implement desktop AnkiConnect capability detection.
+6. Implement deck picker and initial Anki → Nemesis pull.
+7. Add stable mapping + content-hash reconciliation.
+8. Add scheduling metadata ingestion where available.
+9. Add periodic/full reconciliation for removed/moved cards.
+10. Evaluate a dedicated Nemesis Anki add-on for stronger incremental sync.
+11. Only then evaluate bidirectional content/review sync.
 
 ## Definition of done for MVP
 
-A student can approve ten cards in Nemesis, choose an Anki deck, open Anki on desktop, and receive exactly ten notes. Editing two of those cards in Nemesis and syncing again updates exactly those two notes, creates no duplicates, and leaves Anki scheduling/review history intact.
+A student with an existing Anki collection can connect or import a selected deck, see the same cards in Nemesis on web and mobile, keep deck/tag/note-type identity, re-sync after editing or adding cards in Anki without creating duplicates, and keep Nemesis-only annotations/lecture links intact across refreshes.
