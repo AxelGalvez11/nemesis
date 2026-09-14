@@ -9,6 +9,10 @@ import type { BoardCard, BoardNote, BoardPosition, BoardSource, BoardViewport } 
 export const CARD_WIDTH = 720;
 export const SOURCE_WIDTH = 640;
 export const NOTE_WIDTH = 260;
+/** A deliverable card (flashcards, a note, a document made from a thread): a small fixed-width
+ *  tile beside its parent. Ours, not Wondering's — they have no such node. */
+export const OUTPUT_WIDTH = 320;
+export const OUTPUT_HEIGHT = 132;
 export const CARD_MIN_WIDTH = 300;
 export const CARD_MAX_WIDTH = 840;
 export const CARD_MIN_HEIGHT = 320;

@@ -27,10 +27,13 @@ import {
   type DeleteTarget,
   type HistorySnapshot,
 } from "@/lib/board/board-history";
+import { MAKING_TITLES, SIGN_IN_TO_MAKE, deliverableAskIn, makeBoardDeliverable, type DeliverableKind } from "@/lib/board/board-deliverables";
 import {
   CARD_MIN_HEIGHT,
   CARD_WIDTH,
   NOTE_WIDTH,
+  OUTPUT_HEIGHT,
+  OUTPUT_WIDTH,
   SOURCE_WIDTH,
   findFreeChildPosition,
   nextRootPosition,
@@ -127,6 +130,15 @@ export interface BoardContextValue {
   addSourceFiles: (files: File[]) => Promise<void>;
   toggleSourceSelection: (sourceId: string) => void;
   createLessonFromSource: (sourceId: string) => void;
+  // ---- deliverables (lib/board/board-deliverables.ts) ----
+  /** Make one thing from a card's thread: a new output card beside it, filled when the maker returns. */
+  makeDeliverable: (cardId: string, kind: DeliverableKind, topic?: string) => boolean;
+  /** Run a failed output card's make again. */
+  retryDeliverable: (outputCardId: string) => void;
+  /** The output card open in the reader on the right, or null. */
+  openOutputId: string | null;
+  openOutput: (outputCardId: string) => void;
+  closeOutput: () => void;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -174,6 +186,7 @@ export function BoardProvider({
   const [noteFocusRequest, setNoteFocusRequest] = useState<NoteFocusRequest | null>(null);
   const [newThreadSuggestions, setNewThreadSuggestions] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(initialBoardId === null);
+  const [openOutputId, setOpenOutputId] = useState<string | null>(null);
   const composerMessageId = useRef<string | null>(null);
 
   const boardIdRef = useRef<string | null>(initialBoardId);
@@ -561,6 +574,95 @@ export function BoardProvider({
     [sources, startCard],
   );
 
+  // ----------------------------------------------------------------- deliverables
+  // A thread turned into a thing (lib/board/board-deliverables.ts): the output card goes up beside
+  // its parent in a "making" state, the chat's own maker runs, and the card is filled or marked
+  // failed with the maker's words. The parent card is never locked: the learner keeps chatting.
+  const runMake = useCallback(
+    (outputCardId: string, kind: DeliverableKind, parent: BoardCard, topic?: string) => {
+      const settle = (patch: Partial<BoardCard>) => {
+        if (!mounted.current) return;
+        updateCards((all) => all.map((card) => (card.id === outputCardId ? { ...card, status: "idle", ...patch } : card)));
+      };
+      if (!uid) {
+        settle({ outputStatus: "failed", outputError: SIGN_IN_TO_MAKE });
+        return;
+      }
+      const attached = parent.sourceIds.map((id) => sources.find((source) => source.id === id)).filter((s): s is BoardSource => Boolean(s));
+      void makeBoardDeliverable(uid, kind, {
+        boardId: boardIdRef.current,
+        title: parent.title === NEW_THREAD_TITLE ? "" : parent.title,
+        messages: cardContext(parent),
+        sources: attached,
+        topic,
+      })
+        .then((result) => {
+          if ("error" in result) settle({ outputStatus: "failed", outputError: result.error });
+          else settle({ outputStatus: "ready", outputError: undefined, output: result.output, title: result.output.title });
+        })
+        .catch((error) => {
+          console.error("Canvas deliverable failed:", error);
+          settle({ outputStatus: "failed", outputError: BOARD_REPLY_ERROR_FALLBACK });
+        });
+    },
+    [sources, uid, updateCards],
+  );
+
+  const makeDeliverable = useCallback(
+    (cardId: string, kind: DeliverableKind, topic?: string): boolean => {
+      const parent = cards.find((item) => item.id === cardId);
+      if (!parent || parent.kind === "output") return false;
+      if (cards.length >= MAX_BOARD_CARDS) {
+        setLimitNotice(`This canvas has reached the ${MAX_BOARD_CARDS}-card limit. Remove a card and try again.`);
+        return false;
+      }
+      const id = crypto.randomUUID();
+      const card: BoardCard = {
+        id,
+        kind: "output",
+        parentId: cardId,
+        sourceIds: parent.sourceIds,
+        contextExcerpt: null,
+        inheritedContext: [],
+        title: MAKING_TITLES[kind],
+        highlights: [],
+        savedImages: [],
+        notes: [],
+        status: "streaming",
+        position: findFreeChildPosition({ parent: measuredRect(parent), occupied: occupied(cards, sources), side: "right", childWidth: OUTPUT_WIDTH, childHeight: OUTPUT_HEIGHT }),
+        width: OUTPUT_WIDTH,
+        messages: [],
+        outputKind: kind,
+        outputStatus: "making",
+        ...(topic ? { outputAsk: topic } : {}),
+      };
+      updateCards((all) => [...all, card]);
+      setLastAddedCardId(id);
+      runMake(id, kind, parent, topic);
+      return true;
+    },
+    [cards, measuredRect, occupied, runMake, sources, updateCards],
+  );
+
+  const retryDeliverable = useCallback(
+    (outputCardId: string) => {
+      const card = cards.find((item) => item.id === outputCardId);
+      const parent = card?.parentId ? cards.find((item) => item.id === card.parentId) : undefined;
+      const kind = card?.outputKind as DeliverableKind | undefined;
+      if (!card || card.kind !== "output" || card.outputStatus === "making" || !kind) return;
+      if (!parent) {
+        setLimitNotice("The thread this was made from is gone, so it cannot be made again.");
+        return;
+      }
+      updateCards((all) => all.map((item) => (item.id === outputCardId ? { ...item, status: "streaming", outputStatus: "making", outputError: undefined, title: MAKING_TITLES[kind] } : item)));
+      runMake(outputCardId, kind, parent, card.outputAsk);
+    },
+    [cards, runMake, updateCards],
+  );
+
+  const openOutput = useCallback((outputCardId: string) => setOpenOutputId(outputCardId), []);
+  const closeOutput = useCallback(() => setOpenOutputId(null), []);
+
   const sendCardMessage = useCallback(
     (cardId: string, text: string, retry?: RetryTarget, contextExcerpt?: string, occurrence?: number): boolean => {
       const message = text.trim();
@@ -571,6 +673,13 @@ export function BoardProvider({
       }
       const card = cards.find((item) => item.id === cardId);
       if (!card || card.status === "streaming") return false;
+      // ---- deliverables: plain words that ask for a made thing never run a model turn. The ask
+      // joins the thread as the learner's line; the result is a card beside it (board-deliverables.ts).
+      const askedKind = retry ? null : deliverableAskIn(message);
+      if (askedKind) {
+        updateCards((all) => all.map((item) => (item.id === cardId ? { ...item, messages: [...item.messages, { id: crypto.randomUUID(), role: "user", content: message }] } : item)));
+        return makeDeliverable(cardId, askedKind, message);
+      }
       const retried = retry ? removeFailedTurn(card.messages, retry) : null;
       if (retry && !retried) return false;
       const messages = retried?.messages ?? card.messages;
@@ -615,7 +724,7 @@ export function BoardProvider({
       });
       return true;
     },
-    [cards, runTurn, updateCards],
+    [cards, makeDeliverable, runTurn, updateCards],
   );
 
   const createBranchCard = useCallback(
@@ -1067,6 +1176,11 @@ export function BoardProvider({
       addSourceFiles,
       toggleSourceSelection,
       createLessonFromSource,
+      makeDeliverable,
+      retryDeliverable,
+      openOutputId,
+      openOutput,
+      closeOutput,
     }),
     [
       loaded,
@@ -1109,6 +1223,11 @@ export function BoardProvider({
       addSourceFiles,
       toggleSourceSelection,
       createLessonFromSource,
+      makeDeliverable,
+      retryDeliverable,
+      openOutputId,
+      openOutput,
+      closeOutput,
     ],
   );
 

@@ -10,6 +10,8 @@
 // `board` so the ~120 `canvas-*` files of the chat cannot be confused with it; what a learner
 // reads says "Canvas".
 
+import type { CanvasOutput } from "@/lib/learn/canvas-model";
+
 export const BOARD_DOCUMENT_VERSION = 1;
 
 export const MAX_BOARD_CARDS = 250;
@@ -98,8 +100,14 @@ export interface BoardNote {
   position: BoardPosition;
 }
 
-export type BoardCardKind = "conversation" | "lesson";
+/** `output` is a DELIVERABLE CARD — a made thing (flashcards, a note, a document) beside the thread
+ *  it came from. It is a card so every card rule (placement, edges, delete, undo, save) applies to
+ *  it unchanged; its own fields are the `output*` group below. See lib/board/board-deliverables.ts. */
+export type BoardCardKind = "conversation" | "lesson" | "output";
 export type BoardCardStatus = "idle" | "streaming";
+/** Where an output card is: being made, made, or failed with a reason the learner can retry from. */
+export type BoardOutputStatus = "making" | "ready" | "failed";
+export const OUTPUT_UNFINISHED_ERROR = "This was not finished. Try again.";
 
 export interface BoardCard {
   id: string;
@@ -121,6 +129,23 @@ export interface BoardCard {
   width: number;
   height?: number;
   messages: BoardMessage[];
+  // ---- output cards only (kind === "output"); absent on every other card ----
+  /** Which deliverable this is (see `DeliverableKind` in lib/learn/canvas-deliverables.ts). */
+  outputKind?: string;
+  outputStatus?: BoardOutputStatus;
+  /** The made thing, once `outputStatus` is "ready": the chat's own output shape, so it opens in
+   *  the chat's own reader. 🔴 A type import only — the board shares the chat's model door and its
+   *  output SHAPE, never its state. */
+  output?: CanvasOutput;
+  /** Why the make failed, when it did. */
+  outputError?: string;
+  /** The learner's words when they asked in words, kept so a retry asks for the same thing. */
+  outputAsk?: string;
+}
+
+/** An output card, narrowed. */
+export function isOutputCard(card: Pick<BoardCard, "kind">): boolean {
+  return card.kind === "output";
 }
 
 export type BoardSourceType = "pdf" | "image" | "document";
@@ -285,6 +310,10 @@ export function parseBoardState(raw: unknown): BoardState {
           : [],
         parentId: typeof card.parentId === "string" ? card.parentId : null,
         contextExcerpt: typeof card.contextExcerpt === "string" ? card.contextExcerpt : null,
+        // An output card saved mid-make has no maker running any more: a failure the learner can retry.
+        ...(card.kind === "output" && card.outputStatus === "making"
+          ? { outputStatus: "failed" as const, outputError: OUTPUT_UNFINISHED_ERROR }
+          : {}),
       }))
     : [];
   const sources: BoardSource[] = Array.isArray(value.sources)

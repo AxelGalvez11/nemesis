@@ -11,12 +11,33 @@
 import { X } from "lucide-react";
 import { useCallback } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
+import { OutputPreview } from "@/components/workspace/learn/output-preview";
+import { DeckReview } from "@/components/workspace/study/deck-review";
 import type { BoardState } from "@/lib/board/board-model";
 
 import { BoardComposer } from "./board-composer";
 import { BoardProvider, useBoard } from "./board-provider";
 import { BoardSurface } from "./board-surface";
 import { FrontDoorToggle } from "./front-door-toggle";
+
+/**
+ * A made thing, opened: the chat's own docked reader on the right (`OutputPreview`, or `DeckReview`
+ * for flashcards), exactly as a chat deliverable opens. Same chrome, same dragged width, same close.
+ * The board is not pushed: it is a camera over an infinite surface, and the panel declares its own
+ * width to the shell the way it does beside a conversation. Nothing is mounted until a card is open.
+ */
+function OutputPanel() {
+  const { boardId, cards, openOutputId, closeOutput } = useBoard();
+  const { session } = useAuth();
+  const card = openOutputId ? cards.find((item) => item.id === openOutputId) : undefined;
+  const output = card?.kind === "output" && card.outputStatus === "ready" ? card.output : undefined;
+  if (!output) return null;
+  if (output.kind === "flashcards" && output.deckId) {
+    return <DeckReview crumb="Flashcards" deckId={output.deckId} onClose={closeOutput} widthSlot="reader" />;
+  }
+  return <OutputPreview canvasId={boardId ?? ""} comments={{ preview: false, uid: session?.user.id ?? null }} onClose={closeOutput} output={output} />;
+}
 
 /** The Chat | Canvas switch belongs to the front door only: an empty, unsaved board. Once a card
  *  exists the board is a place of its own (the same way a chat in progress shows no switch), and
@@ -76,6 +97,7 @@ export function BoardPage({ boardId, seed, toggle = true }: { boardId: string | 
         <EmptyStateHint />
         <LimitNotice />
         <BoardComposer />
+        <OutputPanel />
         {boardId === null && toggle && <FrontDoorSwitch />}
       </BoardProvider>
     </main>

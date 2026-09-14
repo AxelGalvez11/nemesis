@@ -54,6 +54,15 @@
         "cd /private/tmp/nemesis-wt-pricing/apps/web && npx next start -p 3311"
       ],
       "port": 3311
+    },
+    {
+      "name": "board-worktree-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/axelgalvez/Desktop/nemesis/.claude/worktrees/agent-ad7710b0d73d37817/apps/web && pnpm exec next dev -p 3277"
+      ],
+      "port": 3277
     }
   ]
 }

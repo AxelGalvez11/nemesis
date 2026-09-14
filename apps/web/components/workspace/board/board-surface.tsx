@@ -33,14 +33,16 @@ import { IconTooltip, isEditableTarget, measureBoardArea, sourceHandleId, target
 import { useBoard } from "./board-provider";
 import { ConversationCard, type ConversationNodeData } from "./conversation-card";
 import { NoteCard, SourceCard, type NoteNodeData, type SourceNodeData } from "./other-cards";
+import { OutputCard, type OutputNodeData } from "./output-card";
 import "./board.css";
 
 type BoardNode =
   | Node<ConversationNodeData, "conversation">
   | Node<NoteNodeData, "note">
-  | Node<SourceNodeData, "source">;
+  | Node<SourceNodeData, "source">
+  | Node<OutputNodeData, "output">;
 
-const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard };
+const NODE_TYPES = { conversation: ConversationCard, note: NoteCard, source: SourceCard, output: OutputCard };
 const PRO_OPTIONS = { hideAttribution: true };
 const EDGE_STROKE = "var(--board-edge)";
 const CONTROL_CLASS =
@@ -234,6 +236,13 @@ function BoardInner() {
       };
       const rebuilt: BoardNode[] = [
         ...cards.map((card) => {
+          // An output card (a made thing) is its own node kind; it sizes itself, so no height rides in.
+          if (card.kind === "output") {
+            const existingOutput = byId.get(card.id) as Node<OutputNodeData, "output"> | undefined;
+            if (existingOutput) return reuse(card.id, existingOutput, card.position, card.width, undefined, card.status !== "streaming");
+            changed = true;
+            return { id: card.id, type: "output", position: card.position, width: card.width, deletable: card.status !== "streaming", data: { cardId: card.id } } as BoardNode;
+          }
           const existing = byId.get(card.id) as Node<ConversationNodeData, "conversation"> | undefined;
           if (existing) return reuse(card.id, existing, card.position, card.width, heightOf(card), card.status !== "streaming");
           changed = true;

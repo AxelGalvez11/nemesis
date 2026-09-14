@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { AutoResizingTextarea, BRANCH_BUTTONS, IconTooltip, NodeHandles, NodeResizeControls, StreamingDots, measureBoardArea } from "./board-chrome";
 import { useBoard, type RetryTarget } from "./board-provider";
 import { CardMessage, DiveDeeperSourceMatcherContext } from "./card-message";
+import { DeliverableMenu } from "./deliverable-menu";
 import { SelectionActions } from "./selection-actions";
 import { SelectionMenu, SELECTION_ICONS } from "./selection-menu";
 import {
@@ -40,6 +41,7 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
     lastAddedCardId,
     noteFocusRequest,
     sendCardMessage,
+    makeDeliverable,
     createBranchCard,
     sendBranchQuestion,
     branchFromSelection,
@@ -603,6 +605,8 @@ function ConversationCardInner({ data, selected }: NodeProps & { data: Conversat
         )}
       </div>
       <form className="mt-auto flex shrink-0 items-center gap-[8px] rounded-b-[16px] px-[12px] py-[10px]" onSubmit={submit}>
+        {/* Deliverables: the seven things this thread can be turned into (deliverable-menu.tsx). */}
+        <DeliverableMenu disabled={streaming || !hasAnswer} onPick={(kind) => makeDeliverable(card.id, kind)} />
         <div className="min-w-0 flex-1">
           <AutoResizingTextarea
             aria-describedby={limitNotice ? `board-card-${card.id}-limit` : undefined}

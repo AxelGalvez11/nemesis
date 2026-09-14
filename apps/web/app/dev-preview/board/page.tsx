@@ -81,14 +81,56 @@ const STREAMING = card({
   ],
 });
 
-const SEED: BoardState = { cards: [ROOT, BRANCH, STREAMING], sources: [], selectedSourceIds: [], useWebSearch: true };
+const STUDY_GUIDE =
+  "# Insulin analogues: onset, peak, duration\n\n" +
+  "## Rapid-acting\n\n" +
+  "Insulin aspart starts in 10 to 20 minutes and peaks in 1 to 3 hours. It is taken with meals.\n\n" +
+  "## Long-acting\n\n" +
+  "Insulin glargine starts in 1 to 2 hours and has no real peak, because it precipitates at the neutral pH under the skin and dissolves back slowly.\n\n" +
+  "## Ultra-long-acting\n\n" +
+  "Insulin degludec starts in 30 to 60 minutes and lasts beyond 42 hours.\n\n" +
+  "| Analogue | Onset | Peak | Duration |\n|---|---|---|---|\n| Aspart | 10 to 20 min | 1 to 3 h | 3 to 5 h |\n| Glargine | 1 to 2 h | none | about 24 h |\n| Degludec | 30 to 60 min | none | over 42 h |";
+
+/** A finished deliverable beside the root card: a document made from the thread, ready to open. */
+const OUTPUT = card({
+  id: "output",
+  kind: "output",
+  parentId: "root",
+  title: "Insulin analogues: onset, peak, duration",
+  position: { x: 880, y: 520 },
+  width: 320,
+  outputKind: "document",
+  outputStatus: "ready",
+  output: { createdAt: "2026-09-03T10:00:00.000Z", id: "o1", kind: "document", markdown: STUDY_GUIDE, title: "Insulin analogues: onset, peak, duration" },
+  messages: [],
+});
+
+/** A deliverable still being made (`?making=1`): the busy face, which a real make shows for the
+ *  seconds a maker takes and which the fixture would otherwise never hold still for. */
+const MAKING = card({
+  id: "making",
+  kind: "output",
+  parentId: "branch",
+  title: "Making flashcards",
+  position: { x: 1680, y: 0 },
+  width: 320,
+  status: "streaming",
+  outputKind: "flashcards",
+  outputStatus: "making",
+  messages: [],
+});
+
+const SEED: BoardState = { cards: [ROOT, BRANCH, STREAMING, OUTPUT], sources: [], selectedSourceIds: [], useWebSearch: true };
 
 export default function BoardPreview() {
-  const empty = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("empty") === "1";
+  const search = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const empty = search?.get("empty") === "1";
+  const making = search?.get("making") === "1";
+  const seed = empty ? undefined : making ? { ...SEED, cards: [...SEED.cards, MAKING] } : SEED;
   return (
     <WorkspacePreviewProvider value={{ email: "preview@nemesis.local" }}>
       <WorkspaceShell>
-        <BoardPage boardId={null} seed={empty ? undefined : SEED} toggle />
+        <BoardPage boardId={null} seed={seed} toggle />
       </WorkspaceShell>
     </WorkspacePreviewProvider>
   );
