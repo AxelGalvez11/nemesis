@@ -19,6 +19,7 @@
 //
 // PURE. No React, no I/O.
 
+import { readActivity, type ActivityTrail } from "./activity-trail";
 import { isCropFileName } from "@/lib/reader/region-crop";
 
 import type { CanvasMoment, CanvasMomentKind } from "./canvas-moment";
@@ -294,6 +295,8 @@ export interface HistoricalMoment {
   truncated?: boolean;
   /** Nothing could be reconstructed: the entity this pointed at is gone. */
   missing?: boolean;
+  /** What the turn did to write `said`. See activity-trail.ts. */
+  activity?: ActivityTrail;
 }
 
 export function reconstructMoment(
@@ -326,8 +329,10 @@ export function reconstructMoment(
     .filter((title): title is string => Boolean(title?.trim()))
     .filter((title) => !isCropFileName(title));
 
+  const activity = readActivity(moment.activity);
   const built: HistoricalMoment = {
     ...(moment.annotations ? { annotations: moment.annotations } : {}),
+    ...(activity ? { activity } : {}),
     kind: moment.kind,
     momentId,
     occurredAt: moment.occurredAt,

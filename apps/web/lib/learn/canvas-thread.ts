@@ -17,6 +17,7 @@
 //
 // PURE. No React, no I/O.
 
+import { trailHasSteps, type ActivityTrail } from "./activity-trail";
 import type { CanvasOutput } from "./canvas-model";
 import type { CanvasVisualRequest } from "./canvas-visual";
 
@@ -65,6 +66,9 @@ export interface CanvasThreadTurn {
    * chip above the note; the picture itself lives only on the live turn (annotation-note.ts).
    */
   annotations?: number;
+  /** What the turn did to write its reply: read documents, searches, apps, lookups, and the plan it
+   *  stated first. Drawn above the reply as ChatGPT draws it (activity-trail.tsx). */
+  activity?: ActivityTrail;
 }
 
 /** Whether a turn has anything at all worth drawing. Guards against an empty row in the thread. */
@@ -98,9 +102,11 @@ export function fileTurn(input: {
   attached?: readonly string[];
   output?: CanvasOutput | null;
   annotations?: number;
+  activity?: ActivityTrail | null;
 }): CanvasThreadTurn {
   return {
     ...(input.annotations && input.annotations > 0 ? { annotations: input.annotations } : {}),
+    ...(trailHasSteps(input.activity) ? { activity: input.activity } : {}),
     at: input.at,
     attached: input.attached ?? [],
     id: input.id,

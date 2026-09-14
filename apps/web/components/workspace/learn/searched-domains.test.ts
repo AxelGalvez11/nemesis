@@ -62,7 +62,12 @@ test("🔴🔴 the hosts are the ACCUMULATED, deduped sources — not one round'
   // `found.sources` is this round's results; `sources` is what the answer actually stands on.
   // Using the former would make the chips flicker between rounds of a single turn.
   assert.match(CHAT, /onSearching\?\.\(sources\.length, searchedDomains\(sources\)\);/);
-  assert.ok(!/searchedDomains\(found\.sources\)/.test(CHAT), "the chips describe one round instead of the turn");
+  // 🔴 REPOINTED 2026-09-04: the CHIPS under the caption still describe the turn (`onSearching`
+  // is handed the accumulated list); the one place this round's own hosts are read is the
+  // search STEP of the activity trail, which is about that search and nothing else — ChatGPT
+  // draws the favicon of the page each search read. The guard now says which is which.
+  assert.match(CHAT, /onSearching\?\.\(sources\.length, searchedDomains\(sources\)\)/, "the chips describe one round instead of the turn");
+  assert.match(CHAT, /kind: "search", query, sites: searchedDomains\(found\.sources\)/, "the search step stopped naming the sites that search read");
 });
 
 test("🔴🔴🔴 a stale chip is unrepresentable, because the gate is computed at render", () => {

@@ -39,12 +39,21 @@
 //
 // PURE. No React, no I/O.
 
+import { serializeActivity, type ActivityTrail, type StoredActivity } from "./activity-trail";
+
 /**
  * What kind of learner-visible thing a moment was.
  *
- * 🔴 SYSTEM ACTIVITY IS ABSENT ON PURPOSE — no thinking, searching, reading, saving, tool call or
- * loading state. Owner: those are transient. The test for membership is whether a learner would
- * recognise it as something that HAPPENED to them, not whether the runtime did work.
+ * 🔴 SYSTEM ACTIVITY IS ABSENT FROM THE KINDS — no thinking, searching, reading, saving, tool call
+ * or loading state as a moment of its own. Owner, 2026-08-21: those are transient. The test for
+ * membership is whether a learner would recognise it as something that HAPPENED to them, not
+ * whether the runtime did work.
+ *
+ * 🔴🔴 BUT WHAT AN `assistant` TURN DID NOW RIDES THAT TURN, as `activity` (activity-trail.ts).
+ * Owner, 2026-09-04, with ChatGPT's desktop app on screen, where every old answer still opens to
+ * "Used…, read files, searched the web": *"can we have that for Nemesis too"*. It is a field on
+ * the turn, never a row on the rail, so the ruling above still holds: the rail's kinds are
+ * unchanged, and a reopened thread can show under an answer what was done to write it.
  */
 export type CanvasMomentKind =
   /** The learner said something that produced no answer of its own — it started a lesson instead. */
@@ -128,6 +137,13 @@ export interface CanvasMoment {
    * byte-identical to before this field existed.
    */
   annotations?: number;
+  /**
+   * What the turn did to write its answer: the documents read, the searches run, the apps used,
+   * and the model's own sentence about what it was about to do. Stored only on an `assistant`
+   * moment whose turn did work, capped in `activity-trail.ts`, so every other row is byte-identical
+   * to before this field existed.
+   */
+  activity?: StoredActivity;
 }
 
 /**
@@ -228,6 +244,8 @@ export interface NewCanvasMoment {
   curriculumNodeId?: string;
   /** Regions marked on a document and sent with these words. See `CanvasMoment.annotations`. */
   annotations?: number;
+  /** What the turn did. See `CanvasMoment.activity`. Ignored when it holds no steps. */
+  activity?: ActivityTrail | StoredActivity | null;
 }
 
 /**
@@ -241,6 +259,11 @@ export function makeMoment(input: NewCanvasMoment, occurredAt: string, id: strin
   const replied = input.assistantText ? tidy(input.assistantText) : "";
   const cutSaid = said.length > MAX_USER_TEXT;
   const cutReplied = replied.length > MAX_ASSISTANT_TEXT;
+  // Through the trail's own caps, whichever shape arrived: a live trail settles and is capped, a
+  // stored one is capped again, and either with no steps stores nothing.
+  const activity = input.activity
+    ? serializeActivity({ plan: input.activity.plan ?? null, seconds: input.activity.seconds, steps: input.activity.steps })
+    : null;
   return {
     id,
     kind: input.kind,
@@ -256,6 +279,7 @@ export function makeMoment(input: NewCanvasMoment, occurredAt: string, id: strin
     ...(input.sourceIds?.length ? { sourceIds: [...input.sourceIds] } : {}),
     ...(input.curriculumNodeId ? { curriculumNodeId: input.curriculumNodeId } : {}),
     ...(input.annotations && input.annotations > 0 ? { annotations: Math.floor(input.annotations) } : {}),
+    ...(input.kind === "assistant" && activity ? { activity } : {}),
   };
 }
 

@@ -50,11 +50,16 @@ test("🔴🔴🔴 the sites are drawn under the sentence that names them, not b
   const PREVIEW_SRC = readFileSync("components/workspace/learn/canvas-thinking-preview.tsx", "utf8");
   assert.match(PREVIEW_SRC, /domains\?: readonly string\[\];/, "the thinking line cannot carry the sites it is reading");
   assert.match(PREVIEW_SRC, /<DomainChips domains=\{domains\} \/>/, "the sites stopped being drawn under the line");
+  // 🔴 REPOINTED 2026-09-04: the live line is drawn by `ActivityTrailView` now (owner: the
+  // ChatGPT-shaped list of what the turn did), which hands the same sites, app and label through
+  // to the caption it draws until the first step lands.
   assert.match(
     CANVAS,
-    /<CanvasThinkingPreview app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\}/,
+    /<ActivityTrailView app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\} live trail=\{session\.activity\}/,
     "the line is no longer handed the sites",
   );
+  const TRAIL = readFileSync("components/workspace/learn/activity-trail.tsx", "utf8");
+  assert.match(TRAIL, /<CanvasThinkingPreview app=\{app\} domains=\{domains\} label=\{label\} web=\{web\} \/>/, "the trail's caption drops the sites on the way");
   // 🔴 AND THE DOCK ONLY DRAWS THEM WHERE THE CAPTION ALSO IS. `threadOpen` is the same term that
   // scopes the caption; the two must never be scoped differently or they separate again.
   assert.match(CANVAS, /domains=\{!threadOpen && turnInFlight \? session\.searchedDomains : undefined\}/,
@@ -97,7 +102,7 @@ test("🔴🔴 the step wears a mark only when it has a source to name", () => {
   // on the first unrelated step that borrowed the verb.
   assert.match(
     CANVAS,
-    /<CanvasThinkingPreview app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\} web=\{session\.searchedDomains\.length > 0\} \/>/,
+    /<ActivityTrailView app=\{session\.workApp\} domains=\{session\.searchedDomains\} label=\{preparingLabel\} live trail=\{session\.activity\} web=\{session\.searchedDomains\.length > 0\} \/>/,
     "the globe is no longer driven by real sites, so it can appear over a step with no source behind it",
   );
   assert.ok(

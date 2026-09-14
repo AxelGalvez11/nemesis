@@ -600,8 +600,24 @@ const CONVERSATION_MOMENTS = [
     "preview-moment-1",
   ),
   makeMoment({ kind: "source", sourceIds: [SOURCE.id] }, "2026-08-06T12:04:00.000Z", "preview-moment-2"),
+  // 🔴 ONE TURN CARRIES ITS TRAIL, so the harness draws the collapsed row a reopened conversation
+  // shows above an answer (activity-trail.tsx): the plan, then "Read 1 file, searched the web" with
+  // the steps one press away. Owner, 2026-09-04, of ChatGPT: every old answer still opens to what
+  // was done to write it.
   makeMoment(
-    { assistantText: "Yes. Block the calcium channels and the plateau shortens, so the whole action potential does.", kind: "assistant", userText: "so would a calcium channel blocker shorten it" },
+    {
+      activity: {
+        plan: "You want to know whether blocking calcium shortens the plateau. I'll check your lecture on the plateau's currents and confirm against a current pharmacology reference.",
+        seconds: 9.4,
+        steps: [
+          { count: 1, id: "read", kind: "read", titles: [SOURCE.title] },
+          { count: 3, done: true, id: "search-1", kind: "search", query: "calcium channel blocker cardiac action potential plateau", sites: ["ncbi.nlm.nih.gov", "cvphysiology.com"] },
+        ],
+      },
+      assistantText: "Yes. Block the calcium channels and the plateau shortens, so the whole action potential does.",
+      kind: "assistant",
+      userText: "so would a calcium channel blocker shorten it",
+    },
     "2026-08-06T12:06:00.000Z",
     "preview-moment-3",
   ),

@@ -52,6 +52,7 @@ import { readFigureSubject } from "./figure-subject";
 import { stripScreenPositions } from "./screen-positions";
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
 import type { TestRun } from "./test-run";
+import { readPlan } from "./activity-trail";
 import { readMilestones } from "./turn-preview";
 import type { CanvasVisualRequest } from "./canvas-visual";
 import { extractJson } from "./canvas-parse";
@@ -369,6 +370,15 @@ export interface TurnDecision {
    * planning teaches the learner that the preview means nothing.
    */
   milestones: readonly string[];
+  /**
+   * What the model said it understood and was about to do, before doing it, or null.
+   *
+   * 🔴 SHOWN FIRST AND KEPT FIRST (activity-trail.ts): it lands the moment the envelope is read,
+   * above the list of what the turn then did, and the answer follows. Null on a turn that does no
+   * work, which the contract asks for by name and `readPlan` enforces by refusing a claim of a
+   * search the turn never bought.
+   */
+  plan: string | null;
   /**
    * Figures this turn wants to draw, already validated, in the order `[figure n]` counts into.
    *
@@ -1186,7 +1196,7 @@ const DECISION_CONTRACT = [
   "Answer with a fenced JSON block for the decision, then your answer as ordinary text after it:",
   "",
   "```json",
-  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "milestones": ["..."],'
+  '{"then": "reply" | "study" | "rewrite", "topic": "..." | null, "plan": "..." | null, "milestones": ["..."],'
   + ' "needsWeb": true | false, "webQuery": "..." | null, "webResults": <number> | null,'
   + ' "needsPapers": true | false,'
   + ' "wantsReport": "the question to research" | null,'
@@ -1323,6 +1333,19 @@ const DECISION_CONTRACT = [
   // place for a model to describe a system that is not there. `turn-preview.ts` refuses a line that
   // carries a percentage, a step number, a token count or our own vocabulary, and refuses any line
   // mentioning a search on a turn that bought none. What survives is a milestone, not a log.
+  // 🔴🔴 THE SENTENCE BEFORE THE WORK — owner, 2026-09-04, of ChatGPT's desktop app: *"it will
+  // tell you like what it's gonna do, or reiterate things before it goes and does things."* Theirs
+  // reads "No further questions, I understand. You want a comprehensive learning library… I'll
+  // check for gaps as well as errors." It is shown the moment this envelope is read, above the
+  // list of what the turn then actually did (activity-trail.ts), and it stays there above the
+  // answer. `readPlan` refuses the same shapes a milestone is refused for, and refuses a plan that
+  // claims a search on a turn that bought none.
+  '"plan" is one or two sentences, in the learner\'s own terms, saying what you understood them to '
+  + 'want and what you are about to do: "You want the three questions on this worksheet explained. '
+  + "I'll read it, check the FDA's own pages, and lay out what each one asks.\" Write it ONLY when this "
+  + "turn will read their material, search, or use an app; give null for a greeting, small talk or "
+  + "an answer straight from your own head. Never a percentage, a step number, or our own vocabulary.",
+  "",
   '"milestones" is 1-4 short lines, in order, saying what you will be DOING at each stage of this '
   + "turn. They are shown one at a time beside the Nemesis character while the learner waits, and "
   + "each one appears only when that stage actually begins. Write them for the learner, in your own "
@@ -2453,6 +2476,7 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     // this is.
     then: then ?? "reply",
     milestones: milestonesFrom(parsed, then ?? "reply"),
+    plan: readPlan(parsed.plan, { searching: parsed.needsWeb === true, tools: Array.isArray(parsed.tools) && parsed.tools.length > 0 }),
     topic: asText(parsed.topic) || null,
     // Refused figures are dropped here, never repaired — see `replyVisuals`.
     visuals: replyVisuals(parsed.visuals),
@@ -2585,14 +2609,14 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, plan: null, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
   wantsCards: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, plan: null, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
   wantsCards: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
 }
 

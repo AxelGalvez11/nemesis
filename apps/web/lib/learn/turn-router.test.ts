@@ -228,6 +228,9 @@ test("a plain decision is read", () => {
     checkFigure: null,
     curriculumFor: null,
     milestones: [],
+    // 🔴 `plan` JOINS THEM, 2026-09-04: the sentence the model writes before doing work
+    // (activity-trail.ts). A greeting states none, and says so with null rather than by omission.
+    plan: null,
     // 🔴 PRESENT AND false, LIKE EVERY FIELD AROUND IT. `needsPapers` is the search loop's OTHER
     // condition (owner 2026-08-24, "plug the literature seven"), so `undefined` here would end the
     // loop for the wrong reason exactly as an absent `needsWeb` would — the same argument the four

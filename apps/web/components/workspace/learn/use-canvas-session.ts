@@ -25,6 +25,7 @@ import type { CurriculumPlan } from "@/lib/learn/curriculum-plan";
 import { courseGate, type TurnDecision } from "@/lib/learn/turn-router";
 import { rememberLine } from "@/lib/learn/learner-memory";
 import type { TurnStage } from "@/lib/learn/turn-preview";
+import { EMPTY_TRAIL, settleSteps, trailHasSteps, upsertStep, type ActivityTrail } from "@/lib/learn/activity-trail";
 import { groundingSources, needsGrounding } from "@/lib/learn/topic-grounding";
 import { canvasCapture, captureStateChange } from "@/lib/learn/canvas-analytics";
 import {
@@ -250,6 +251,19 @@ export interface CanvasSession {
   drafted: boolean;
   /** The lines the last turn showed while it worked, and how long it took. */
   lastTurn: { lines: readonly string[]; seconds: number } | null;
+  /**
+   * What the turn in flight has done so far, live: the documents read, the searches sent and
+   * returned, the apps called, the lookups made, and the plan the model stated first. Empty
+   * between turns; `lastTrail` keeps the finished one.
+   *
+   * 🔴 THE LIST THE LEARNER OPENS (activity-trail.ts). Owner, 2026-09-04, of ChatGPT's desktop app:
+   * *"it shows like it's running commands, it's searching web, with like an icon or favicon."*
+   */
+  activity: ActivityTrail;
+  /** The finished turn's trail, settled and timed, for the row above the answer and the moment. */
+  lastTrail: ActivityTrail | null;
+  /** The same trail, readable the instant `converse` returns rather than after the next render. */
+  takeLastTrail: () => ActivityTrail | null;
   /** A real step running inside the turn — the caption's fallback when no milestone covers it. */
   work: string | null;
   workApp: string | null;
@@ -597,8 +611,19 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
    * already refused one by one by `turn-preview.ts`; raw reasoning has no path into this state.
    */
   const [lastTurn, setLastTurn] = useState<{ lines: readonly string[]; seconds: number } | null>(null);
+  /** The trail as it grows, and the ref the callbacks write to (a closure over state would be stale). */
+  const [activity, setActivity] = useState<ActivityTrail>(EMPTY_TRAIL);
+  const activityRef = useRef<ActivityTrail>(EMPTY_TRAIL);
+  const [lastTrail, setLastTrail] = useState<ActivityTrail | null>(null);
+  const putActivity = useCallback((next: ActivityTrail) => {
+    activityRef.current = next;
+    setActivity(next);
+  }, []);
   const turnStartedAt = useRef(0);
   const shownLines = useRef<readonly string[]>([]);
+  /** The trail the turn that just returned left, read synchronously by the canvas as it files the
+   *  moment — state set a line above would still be the previous render's value there. */
+  const finishedTrail = useRef<ActivityTrail | null>(null);
   /** Whether the last answer arrived through a draft, so the canvas does not replay its arrival. */
   const [drafted, setDrafted] = useState(false);
   const draftedRef = useRef(false);
@@ -938,6 +963,9 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     setDraft("");
     setDrafted(false);
     setLastTurn(null);
+    setLastTrail(null);
+    setActivity(EMPTY_TRAIL);
+    activityRef.current = EMPTY_TRAIL;
     setError(null);
     setOpening(null);
     setAside(null);
@@ -2089,6 +2117,8 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       setBusy({ kind: "command", blockIds: [], label: "Thinking" });
       setDraft("");
       setLastTurn(null);
+      setLastTrail(null);
+      putActivity(EMPTY_TRAIL);
       shownLines.current = [];
       turnStartedAt.current = performance.now();
       draftedRef.current = false;
@@ -2150,6 +2180,13 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
       (prose) => {
         setDraft(prose);
         draftedRef.current = true;
+      },
+      // 🔴 EVERY STEP, THE MOMENT IT HAPPENS, INTO THE LIST THE LEARNER CAN OPEN. Upserted by id, so
+      // a search that reports twice (sent, then returned) is one row.
+      (step) => putActivity({ ...activityRef.current, steps: upsertStep(activityRef.current.steps, step) }),
+      // The model's sentence about what it is about to do: the first one a turn states is kept.
+      (plan) => {
+        if (!activityRef.current.plan) putActivity({ ...activityRef.current, plan });
       });
       let result = await runTurn();
       // 🔴🔴 A "study" THAT CANNOT RUN IS RE-ASKED AS A REPLY, ONCE. Measured on production
@@ -2177,6 +2214,15 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
           ? { lines: shownLines.current, seconds: (performance.now() - turnStartedAt.current) / 1000 }
           : null,
       );
+      // 🔴 SETTLED AND TIMED, THEN HANDED TO THE ROW ABOVE THE ANSWER AND TO THE MOMENT. A turn that
+      // did no work (a greeting) leaves no trail, which is the owner's first rule about the slot.
+      {
+        const seconds = (performance.now() - turnStartedAt.current) / 1000;
+        const settled: ActivityTrail = { ...activityRef.current, seconds, steps: settleSteps(activityRef.current.steps) };
+        finishedTrail.current = trailHasSteps(settled) ? settled : null;
+        setLastTrail(finishedTrail.current);
+        putActivity(EMPTY_TRAIL);
+      }
       // 🔴🔴 GATED BEFORE ANYTHING READS IT — owner ruling, 2026-08-23: a course builds ONLY behind
       // the Course chip. The contract says so too, but "teach me" over a fat PDF read as a course
       // order once already, and the cost was a minutes-long research pass and a canvas renamed
@@ -3265,6 +3311,10 @@ export function useCanvasSession(canvasId: string | null): CanvasSession {
     draft,
     drafted,
     lastTurn,
+    activity,
+    lastTrail,
+    /** The trail the turn that just returned left. Same object `lastTrail` will hold once rendered. */
+    takeLastTrail: () => finishedTrail.current,
     milestones,
     stage,
     work,

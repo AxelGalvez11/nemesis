@@ -32,7 +32,7 @@ test("🔴🔴 a plain reply keeps its milestones now that they can be shown in 
 test("🔴🔴 the session holds the draft and the finished summary, and clears both at the right moments", () => {
   assert.match(SESSION, /const \[draft, setDraft\] = useState\(""\);/);
   assert.match(SESSION, /const \[lastTurn, setLastTurn\] = useState<\{ lines: readonly string\[\]; seconds: number \} \| null>\(null\);/);
-  assert.match(SESSION, /setBusy\(\{ kind: "command", blockIds: \[\], label: "Thinking" \}\);\s*setDraft\(""\);\s*setLastTurn\(null\);\s*shownLines\.current = \[\];\s*turnStartedAt\.current = performance\.now\(\);/);
+  assert.match(SESSION, /setBusy\(\{ kind: "command", blockIds: \[\], label: "Thinking" \}\);\s*setDraft\(""\);\s*setLastTurn\(null\);\s*setLastTrail\(null\);\s*putActivity\(EMPTY_TRAIL\);\s*shownLines\.current = \[\];\s*turnStartedAt\.current = performance\.now\(\);/);
   assert.match(SESSION, /setLastTurn\(\s*shownLines\.current\.length > 0\s*\? \{ lines: shownLines\.current, seconds: \(performance\.now\(\) - turnStartedAt\.current\) \/ 1000 \}\s*: null,\s*\);/, "a turn that showed nothing leaves a row anyway, or the row lost its lines");
 });
 
@@ -40,7 +40,7 @@ test("🔴🔴 the canvas draws the draft in the answer's column and the summary
   assert.match(CANVAS, /const liveText = replyText \|\| \(turnInFlight \? session\.draft : ""\);/);
   assert.match(CANVAS, /\{turnInFlight && !session\.aside && session\.draft\.trim\(\) && \(/, "the draft is not drawn");
   assert.match(CANVAS, /data-canvas-draft=""/);
-  assert.match(CANVAS, /\{threadOpen && !turnInFlight && replyText\.trim\(\) && session\.lastTurn && \(\s*<CanvasThinkingSummary lines=\{session\.lastTurn\.lines\} seconds=\{session\.lastTurn\.seconds\} \/>/);
+  assert.match(CANVAS, /\{threadOpen && !turnInFlight && replyText\.trim\(\) && !session\.lastTrail && session\.lastTurn && \(\s*<CanvasThinkingSummary lines=\{session\.lastTurn\.lines\} seconds=\{session\.lastTurn\.seconds\} \/>/);
   // The finished answer does not replay its arrival over text the learner already read.
   assert.match(CANVAS, /\$\{session\.drafted \? "" : "canvas-answer-in "\}/);
   assert.match(CANVAS, /captionLeaving=\{Boolean\(liveText\.trim\(\)\)\}/);

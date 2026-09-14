@@ -31,6 +31,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { setCanvasFolder } from "@/lib/learn/canvas-store";
 import { CanvasCheck, CheckCard } from "./canvas-check";
 import { CanvasThinkingSummary } from "./canvas-thinking-summary";
+import { ActivityTrailView } from "./activity-trail";
+import type { ActivityTrail } from "@/lib/learn/activity-trail";
 import { MindmapDoorProvider } from "./mindmap-block";
 import { MindmapView } from "./mindmap-view";
 import { StudyPanel } from "./study-panel";
@@ -1241,7 +1243,10 @@ export function LearningCanvas({
     attached: readonly string[];
     /** The mode the sentence was sent with, so the bubble can say so. See `currentSaidCapability`. */
     capability: ComposerCapability | null;
+    /** What the turn did to write its answer, filed with it so the thread keeps the row. */
+    activity: ActivityTrail | null;
   }>({
+    activity: null,
     annotations: 0,
     capability: null,
     aside: null,
@@ -1298,6 +1303,7 @@ export function LearningCanvas({
             saidVia: outgoing.saidVia,
             sources: outgoing.aside?.sources ?? outgoing.aside?.consulted ?? [],
             visuals: outgoing.aside?.visuals ?? [],
+            activity: outgoing.activity,
           }),
         ]);
       }
@@ -1316,7 +1322,7 @@ export function LearningCanvas({
       const fromReader = readerSend.current;
       readerSend.current = { notes: [], said: null };
       const shown = fromReader.said?.trim() || trimmed;
-      onScreen.current = { annotations: fromReader.notes.length, aside: null, attached: attachedNow, capability, momentId: null, output: null, said: shown, saidVia: spokenNow };
+      onScreen.current = { activity: null, annotations: fromReader.notes.length, aside: null, attached: attachedNow, capability, momentId: null, output: null, said: shown, saidVia: spokenNow };
       setCurrentSaid(shown);
       // 🔴 READ BEFORE THE COMPOSER CLEARS IT. The chip is one-shot by §38, so by the time the turn
       // resolves `capability` is already null; the bubble's copy has to be taken here, at the same
@@ -1374,8 +1380,13 @@ export function LearningCanvas({
         // 🔴 `assistant` ONLY WHEN NEMESIS ACTUALLY SAID SOMETHING. A `study` turn answers by
         // starting a lesson rather than by speaking, and marking that as an answer would put a
         // marker on the rail that opens to an empty reconstruction.
+        // 🔴 WHAT THE TURN DID, KEPT WITH THE TURN (activity-trail.ts). Read off the session the
+        // instant it returns: the state it also set is the previous render's value in this closure.
+        const activity = session.takeLastTrail();
+        onScreen.current.activity = activity;
         const momentId = session.recordMoment({
           kind: decision?.say ? "assistant" : "user",
+          ...(activity ? { activity } : {}),
           // 🔴 THE LEARNER'S OWN WORDS, AND THE COUNT OF WHAT THEY MARKED. The record is what the
           // reopened thread draws; the model's fuller prompt lives in `remember` for the window.
           userText: shown,
@@ -2225,6 +2236,7 @@ export function LearningCanvas({
       .filter((moment): moment is NonNullable<typeof moment> => moment !== null)
       .map((moment) => ({
         ...fileTurn({
+          activity: moment.activity ?? null,
           annotations: moment.annotations,
           at: moment.occurredAt,
           attached: moment.sourceTitles ?? [],
@@ -3315,13 +3327,23 @@ export function LearningCanvas({
 
             🔴 IT STILL COVERS WHAT IT WAS WRITTEN FOR: a brand-new canvas waiting on its first
             answer has an empty thread, so `preparing` still speaks there. */}
+        {/* 🔴🔴 WHILE THE TURN WORKS: the plan the model stated, then the list of what it is doing,
+            growing step by step with the running one lit, in place of a caption. Owner,
+            2026-09-04, of ChatGPT's desktop app: *"it will tell you what it's gonna do… then it
+            shows like it's running commands, it's searching web, with an icon or favicon."* The
+            caption's own line (`preparingLabel`) is the last item of the list while nothing
+            named is running, so the milestone lines still speak; see activity-trail.tsx. */}
         {threadOpen && (turnInFlight || (presence === "preparing" && thread.length === 0)) && !liveText.trim() && (
-          <CanvasThinkingPreview app={session.workApp} domains={session.searchedDomains} label={preparingLabel} web={session.searchedDomains.length > 0} />
+          <ActivityTrailView app={session.workApp} domains={session.searchedDomains} label={preparingLabel} live trail={session.activity} web={session.searchedDomains.length > 0} />
         )}
-        {/* 🔴 THE SLOT THE CAPTION HELD, ONCE THE ANSWER IS IN: how long the turn worked and the
-            lines it showed, one row above the answer, opening on a press. Only for a turn that
-            showed something; see canvas-thinking-summary.tsx. */}
-        {threadOpen && !turnInFlight && replyText.trim() && session.lastTurn && (
+        {/* 🔴 THE SLOT THE LIST HELD, ONCE THE ANSWER IS IN: one collapsed row above the answer
+            ("Used…, read 2 files, searched the web") that opens to the steps, and the plan above
+            it. Only for a turn that did work; a greeting leaves no row. The old "Worked for Ns"
+            row stays for a turn that showed milestones but did nothing else. */}
+        {threadOpen && !turnInFlight && replyText.trim() && session.lastTrail && (
+          <ActivityTrailView trail={session.lastTrail} />
+        )}
+        {threadOpen && !turnInFlight && replyText.trim() && !session.lastTrail && session.lastTurn && (
           <CanvasThinkingSummary lines={session.lastTurn.lines} seconds={session.lastTurn.seconds} />
         )}
         {/* 🔴🔴 EVERYTHING THAT SWAPS, SWAPS THROUGH ONE FADE — owner call, 2026-08-19: "text should

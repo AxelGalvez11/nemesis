@@ -127,7 +127,7 @@ test("🔴🔴 the strip moves BEFORE each call, not after the round", () => {
 
 test("🔴 the label travels live, and so does the app it is running against", () => {
   // The WORDS travel live: tool → onWork → setWork, announced before the call runs.
-  assert.match(CHAT, /onCall: \(note\) => onWork\?\.\(note\.label, note\.app\)/, "the label stopped travelling from the tool to the caption");
+  assert.match(CHAT, /onCall: \(note\) => \{\s*onWork\?\.\(note\.label, note\.app\);/, "the label stopped travelling from the tool to the caption");
   assert.ok(!/workMark|ThinkingMark/.test(SESSION), "the session grew a mark again");
 });
 

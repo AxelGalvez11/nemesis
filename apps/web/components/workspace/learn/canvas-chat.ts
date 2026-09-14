@@ -63,6 +63,8 @@ import { fillMissingFigures } from "@/lib/learn/figure-fallback";
 import { spokenOpenerWatch } from "@/lib/learn/spoken-opener";
 import { draftWatch } from "@/lib/learn/stream-draft";
 import type { TurnStage } from "@/lib/learn/turn-preview";
+import { MAX_ACTIVITY_TITLES, type ActivityStep } from "@/lib/learn/activity-trail";
+import { labelFor as appLabel } from "@/lib/workspace/composio-apps";
 import {
   decisionOrReply,
   turnRouterMessages,
@@ -373,6 +375,18 @@ export async function askCanvasChat(
    * complete. See lib/learn/stream-draft.ts for what is drafted and what is withheld.
    */
   onDraft?: (prose: string) => void,
+  /**
+   * A step of real work, reported by the code that did it: a document read, a search sent and
+   * returned, an app called, a lookup made. The same step reports twice when it has a start and an
+   * end (a search), keyed by id, so the surface upserts rather than appends.
+   *
+   * 🔴 THE LIST THE LEARNER OPENS (activity-trail.ts). Owner, 2026-09-04, of ChatGPT's desktop app:
+   * *"it shows like it's running commands, it's searching web, with like an icon or favicon."*
+   * Nothing here is emitted from a plan; every call sits beside the thing it names.
+   */
+  onStep?: (step: ActivityStep) => void,
+  /** The model's own sentence about what it is about to do, the moment the envelope is read. */
+  onPlan?: (plan: string) => void,
 ): Promise<CanvasTurnReply> {
   // 🔴 FIVE READS, ONE WAIT. These are four independent tables (and one provider catalogue), and
   // they used to run one after another — a quarter to a full second of queue time before the
@@ -459,6 +473,12 @@ export async function askCanvasChat(
         groundingBlock(everyDocumentPresent(canvas.sources, focused.sources)),
       ].join("\n\n")
     : [inventoryNote(canvas.sources, canvas.sources), groundingBlock(canvas.sources)].filter(Boolean).join("\n\n");
+  // 🔴 THE FIRST STEP OF THE TRAIL: which of the learner's documents this turn drew on. Narrowed,
+  // the ones retrieval matched; otherwise every attached document, whose openings ride the packet.
+  if (canvas.sources.length > 0) {
+    const consulted = narrowed && focused ? focused.sources : canvas.sources;
+    onStep?.({ count: consulted.length, id: "read", kind: "read", titles: consulted.slice(0, MAX_ACTIVITY_TITLES).map((source) => source.title) });
+  }
 
   const ask = (webContext: string, searchesLeft: number, toolContext: string, toolRoundsLeft: number) => {
     // 🔴 ONE WATCHER PER ROUND, AND ONLY THE ANSWERING ROUND CAN FIRE. A round that decides to
@@ -553,6 +573,8 @@ export async function askCanvasChat(
   // ordinary turn pays nothing for this. When it does contain one, the round trip has to happen
   // HERE rather than inside the parser: `decisionOrReply` is synchronous, and the maths layer may
   // not reach the learner's bundle (see lib/learn/plot-compute.ts for why that forces a route).
+  let workSteps = 0;
+  let lastWork: Extract<ActivityStep, { kind: "work" }> | null = null;
   const readDecision = async (text: string) => {
     // 🔴🔴 THE ORPHANED-MARKER REPAIR RUNS FIRST, AND THE ORDER IS THE WHOLE POINT. What it adds is
     // a figure request carrying only a NAME, so putting it ahead of `prepareAnswer` means the thing
@@ -560,10 +582,22 @@ export async function askCanvasChat(
     // the model wrote itself — it cannot smuggle an asset past them. Placed after, it would be a
     // picture nobody resolved. See `figure-fallback.ts` for why this lane needed finishing in code.
     const read = decisionOrReply(
-      await prepareAnswer(fillMissingFigures(text), undefined, signal, (label) => onWork?.(label)),
+      await prepareAnswer(fillMissingFigures(text), undefined, signal, (label) => {
+        onWork?.(label);
+        // A lookup is a step: it starts with its label and ends with the null the same pass sends.
+        if (label) {
+          workSteps += 1;
+          lastWork = { done: false, id: `work-${workSteps}`, kind: "work", label };
+          onStep?.(lastWork);
+        } else if (lastWork && !lastWork.done) {
+          lastWork = { ...lastWork, done: true };
+          onStep?.(lastWork);
+        }
+      }),
     );
     // 🔴 REPORTED AS SOON AS THEY ARE READ, NOT WHEN THE TURN RETURNS. See `onMilestones`.
     onMilestones?.(read?.milestones ?? []);
+    if (read?.plan) onPlan?.(read.plan);
     return read;
   };
 
@@ -626,10 +660,28 @@ export async function askCanvasChat(
       enter("searching");
       // 🔴 THE STRIP MOVES WITH THE WORK, CALL BY CALL, rather than being handed the round's
       // labels once it is over — see `onCall`'s own note. `labelFor` never shows a slug.
+      const appSteps: Extract<ActivityStep, { kind: "app" }>[] = [];
       const ran = await runToolRound(decision.tools, catalogue.index, {
         askText: question,
-        onCall: (note) => onWork?.(note.label, note.app),
+        onCall: (note) => {
+          onWork?.(note.label, note.app);
+          // 🔴 ONE STEP PER CALL, IN THE RUNNER'S OWN WORDS, under the app's own name. `note.app`
+          // is the slug the logo is keyed by; the summary line says "Google Calendar", never
+          // "googlecalendar". Nemesis's own tools (the calendar, the study record) have no app.
+          const step: Extract<ActivityStep, { kind: "app" }> = {
+            app: note.app ? appLabel(note.app) : "Nemesis",
+            ...(note.app ? { appKey: note.app } : {}),
+            done: false,
+            id: `app-${toolRounds}-${appSteps.length + 1}`,
+            kind: "app",
+            label: note.label,
+          };
+          appSteps.push(step);
+          onStep?.(step);
+        },
       });
+      // The round is over: every call it made is finished, whatever it returned.
+      for (const step of appSteps) onStep?.({ ...step, done: true });
       if (ran.context) toolResults.push(ran.context);
       // 🔴 A HELD CALL ENDS THE TOOL HALF OF THE TURN, HERE, BEFORE ANOTHER ROUND CAN ASK AGAIN.
       // The model is still shown the held result — it must be able to say "I need you to confirm"
@@ -662,18 +714,25 @@ export async function askCanvasChat(
     // them.
     if (decision.needsPapers && !papersFetched) {
       papersFetched = true;
+      onStep?.({ count: null, done: false, id: "papers", kind: "papers" });
       const papers = await searchLiteratureContext(decision.webQuery || question, signal, decision.webResults);
       for (const paper of papers) {
         if (seen.has(paper.url)) continue;
         seen.add(paper.url);
         sources.push(paper);
       }
+      onStep?.({ count: papers.length, done: true, id: "papers", kind: "papers" });
     }
 
     if (decision.needsWeb) {
+      // 🔴 THE REQUEST IS THE FIRST REPORT AND THE RESULTS ARE THE SECOND, on one step: the query
+      // is known before anything comes back, the hosts and the count only after.
+      const query = decision.webQuery || question;
+      const searchId = `search-${round + 1}`;
+      onStep?.({ count: null, done: false, id: searchId, kind: "search", query, sites: [] });
       const found = await searchWebContext(
         uid,
-        decision.webQuery || question,
+        query,
         signal,
         decision.webResults,
         decision.webFreshness,
@@ -683,6 +742,7 @@ export async function askCanvasChat(
         seen.add(source.url);
         sources.push(source);
       }
+      onStep?.({ count: found.sources.length, done: true, id: searchId, kind: "search", query, sites: searchedDomains(found.sources) });
     }
     // 🔴 BUILT FROM `sources`, WHICH IS THE DEDUPED, ACCUMULATED LIST THE ANSWER ACTUALLY STANDS
     // ON — not `found.sources`, which is this round's haul and would make the chips flicker between

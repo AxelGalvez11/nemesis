@@ -27,6 +27,7 @@ import { AnnotationNoteView } from "./annotation-note-view";
 import type { CanvasThreadTurn } from "@/lib/learn/canvas-thread";
 import { replySegments } from "@/lib/learn/reply-visuals";
 
+import { ActivityTrailView } from "./activity-trail";
 import { ArtifactCard } from "./artifact-card";
 import { ReplyActions } from "./reply-actions";
 import { CanvasSourceCards } from "./canvas-source-cards";
@@ -87,6 +88,11 @@ export function CanvasThreadTurnView({
           <LearnerUtterance via={turn.saidVia}>{turn.said}</LearnerUtterance>
         </div>
       )}
+
+      {/* 🔴 WHAT THE TURN DID, ABOVE WHAT IT SAID, exactly as it was drawn live: the plan, then the
+          collapsed row that opens to the steps. Owner, 2026-09-04, of ChatGPT: every old answer in
+          the transcript still opens to what was done to write it. See activity-trail.tsx. */}
+      {turn.activity ? <ActivityTrailView inColumn={false} trail={turn.activity} /> : null}
 
       {/* 🔴 THE SAME SPLIT THE LIVE REPLY USES, so a drawing lands exactly where the model put it,
           between the sentence that introduces it and the one that follows. */}
