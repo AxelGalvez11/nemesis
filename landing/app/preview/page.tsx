@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import NextLink from "next/link";
+
 import { Mascot } from "@/components/home/Mascot";
 import { NemesisLockup } from "@/components/NemesisMark";
 
@@ -219,9 +221,9 @@ function Nav() {
   return (
     <header className="ref-nav">
       <div className="ref-nav-in">
-        <a href="/" aria-label="Nemesis home" style={{ display: "flex", marginRight: 24 }}>
+        <NextLink href="/" aria-label="Nemesis home" style={{ display: "flex", marginRight: 24 }}>
           <NemesisLockup size={26} />
-        </a>
+        </NextLink>
         <nav className="ref-nav-links">
           <a className="ref-nav-link" href="/principles">
             How it thinks
@@ -324,7 +326,7 @@ function Foot() {
               <ul>
                 {col.links.map((l) => (
                   <li key={l}>
-                    <a href="/">{l}</a>
+                    <NextLink href="/">{l}</NextLink>
                   </li>
                 ))}
               </ul>

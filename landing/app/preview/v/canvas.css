@@ -1,0 +1,70 @@
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   Variation G, "Canvas". notion.com's energy: a heavy two-line headline over the product film, the
+   character peeking over the frame, a row of things to ask for, big numbers.
+
+   🔴 THE WEIGHT IS THIS VARIATION'S ARGUMENT. Every other variation keeps display type at 400 or
+   500. Measured on notion.com 2026-09-10: h1 96/600/100/-4.6px, h2 54/700/56/-1.875px. This runs a
+   step smaller and lighter in Inter, so the owner can see bold type against the others before any
+   of it reaches the design system.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+.vg-hero { padding: 88px var(--sn-gutter) 0; text-align: center; }
+.vg-h1 { max-width: 1120px; margin: 0 auto; font-size: 84px; font-weight: 600; line-height: 88px; letter-spacing: -3.6px; text-wrap: balance; }
+.vg-sub { max-width: 640px; margin: 24px auto 0; font-size: 20px; line-height: 30px; color: var(--sn-dim); }
+.vg-btn { height: 44px; padding: 0 20px; font-size: 15px; }
+.vg-hero .sn-actions { margin-top: 30px; }
+.vg-stage { position: relative; max-width: 1248px; margin: 120px auto 0; padding: 0 24px; }
+/* The character stands behind the frame, so only the top of its head and its eyes clear the edge. */
+.vg-peek { position: absolute; right: 13%; top: -98px; z-index: 0; }
+.vg-frame { position: relative; z-index: 1; aspect-ratio: 16 / 10; background: rgb(251, 251, 250);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 30px 80px rgba(0, 0, 0, 0.12); }
+.vg-h2 { max-width: 960px; margin: 0 auto; text-align: center; font-size: 54px; font-weight: 600; line-height: 58px; letter-spacing: -2px; text-wrap: balance; }
+
+.vg-asks { max-width: var(--sn-well); margin: 0 auto; padding: 136px var(--sn-gutter) 40px; }
+.vg-ask-row { margin-top: 48px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.vg-ask { display: flex; flex-direction: column; gap: 14px; min-height: 178px; padding: 18px; border-radius: 16px;
+  background: rgb(255, 255, 255); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  transition: opacity 1s var(--nm-ease-out), transform 1s var(--nm-ease-out), translate 0.3s var(--nm-ease-out), box-shadow 0.3s var(--nm-ease-out); }
+/* ours: the tile lifts 4px under the pointer */
+.vg-ask:hover { translate: 0 -4px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 14px 30px rgba(0, 0, 0, 0.08); }
+.vg-ask-text { font-size: 16px; font-weight: 500; line-height: 22px; letter-spacing: -0.2px; }
+.vg-ask-meta { margin-top: auto; font-size: 12.5px; line-height: 16px; color: var(--sn-dim); }
+
+.vg-duo { max-width: var(--sn-well); margin: 0 auto; padding: 96px var(--sn-gutter) 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.vg-card { display: flex; flex-direction: column; gap: 24px; padding: 28px; border-radius: 24px; background: rgb(249, 248, 246); }
+.vg-card h3 { margin: 0; font-size: 22px; font-weight: 600; line-height: 28px; letter-spacing: -0.4px; }
+.vg-card p { margin-top: 8px; max-width: 460px; font-size: 15px; line-height: 22px; color: var(--sn-dim); }
+.vg-card-art { position: relative; height: 380px; border-radius: 16px; overflow: hidden; }
+.vg-card-art > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.vg-card-win { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: min(420px, 86%); }
+.vg-card-win .mk-panel { background: rgb(255, 255, 255); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 24px 50px rgba(0, 0, 0, 0.16); }
+.vg-card-win-wide { width: min(580px, 94%); }
+
+.vg-stats { max-width: 1200px; margin: 0 auto; padding: 120px var(--sn-gutter); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
+.vg-stat-n { font-size: 96px; font-weight: 600; line-height: 96px; letter-spacing: -4px; }
+.vg-stat-l { margin-top: 12px; max-width: 280px; font-size: 16px; line-height: 23px; color: var(--sn-dim); }
+.vg-film { margin-top: 0; }
+.vg-film-frame { max-width: 1200px; margin: 56px auto 0; }
+.vg-close { padding: 136px var(--sn-gutter); text-align: center; }
+.vg-close .vg-h1 { font-size: 72px; line-height: 76px; letter-spacing: -3px; }
+.vg-close .sn-actions { margin-top: 28px; }
+
+@media (max-width: 1100px) {
+  .vg-h1 { font-size: 64px; line-height: 68px; letter-spacing: -2.6px; }
+  .vg-ask-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vg-duo { grid-template-columns: minmax(0, 1fr); }
+  .vg-stats { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .vg-hero { padding-top: 48px; }
+  .vg-h1, .vg-close .vg-h1 { font-size: 42px; line-height: 46px; letter-spacing: -1.6px; }
+  .vg-sub { font-size: 17px; line-height: 26px; }
+  .vg-stage { margin-top: 96px; padding: 0 12px; }
+  .vg-peek { right: 8%; top: -70px; }
+  .vg-peek > * { width: 110px !important; height: 110px !important; }
+  .vg-h2 { font-size: 34px; line-height: 38px; letter-spacing: -1.2px; }
+  .vg-ask-row { grid-template-columns: minmax(0, 1fr); }
+  .vg-ask { min-height: 0; }
+  .vg-card { padding: 20px; }
+  .vg-card-art { height: 300px; }
+  .vg-stat-n { font-size: 72px; line-height: 72px; }
+}

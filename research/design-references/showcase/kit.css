@@ -1,0 +1,106 @@
+/* Shared parts for the landing showcase clips: the Nemesis app window, rendered by HyperFrames.
+   Built to the same anatomy as landing/components/reference/mockups (x.ai's measured window), in
+   the design system's Inter. Everything here is laid out on a 1240x800 stage; each composition
+   scales the stage to its render size. */
+@font-face { font-family: "Inter Var"; src: url("fonts/inter-opsz.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: block; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { overflow: hidden; background: #fbfbfa; }
+#root { position: relative; overflow: hidden; background: #fbfbfa; }
+#stage { position: absolute; left: 0; top: 0; width: 1240px; height: 800px; transform-origin: 0 0;
+  font-family: "Inter Var", Inter, -apple-system, sans-serif; font-optical-sizing: auto; color: rgb(20, 20, 20);
+  -webkit-font-smoothing: antialiased; }
+
+.app { position: absolute; inset: 0; background: #fbfbfa; overflow: hidden; }
+.av { display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: #fff; font-weight: 600; }
+
+/* title bar */
+.bar { position: absolute; left: 0; top: 0; right: 0; height: 40px; display: flex; align-items: center; padding: 0 14px;
+  background: #f5f5f3; border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+.lights { display: flex; gap: 7px; }
+.lights i { display: block; width: 11px; height: 11px; border-radius: 50%; }
+.bar-title { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 500; color: rgba(0, 0, 0, 0.7); }
+.bar-right { position: relative; margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.faces { display: flex; padding-left: 6px; }
+.faces .av { width: 24px; height: 24px; margin-left: -6px; font-size: 10px; box-shadow: 0 0 0 2px #f5f5f3; }
+.share { height: 26px; padding: 0 12px; border-radius: 8px; background: rgb(17, 17, 16); color: #fff; font-size: 12px; font-weight: 500; display: flex; align-items: center; }
+
+/* sidebar: 232px, tone only, no dividing border (x.ai measured) */
+.side { position: absolute; left: 0; top: 40px; bottom: 0; width: 232px; padding: 14px 12px; background: #f3f3f1; }
+.brand { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px; font-size: 15px; font-weight: 500; letter-spacing: -0.2px; }
+.search { display: flex; align-items: center; gap: 7px; height: 30px; margin: 10px 0 8px; padding: 0 10px; border-radius: 9px;
+  background: rgba(0, 0, 0, 0.045); font-size: 13px; color: rgba(0, 0, 0, 0.4); }
+.label { padding: 14px 8px 6px; font-size: 11px; font-weight: 500; letter-spacing: 0.2px; color: rgba(0, 0, 0, 0.4); }
+.row { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 8px; border-radius: 8px; font-size: 13.5px; color: rgba(0, 0, 0, 0.78); }
+.row.on { background: rgba(10, 10, 10, 0.06); color: rgb(20, 20, 20); }
+.row svg { width: 16px; height: 16px; flex: 0 0 auto; color: rgba(0, 0, 0, 0.5); }
+.row .badge { margin-left: auto; padding: 1px 7px; border-radius: 99px; background: rgba(0, 0, 0, 0.05); font-size: 11px; color: rgba(0, 0, 0, 0.5); }
+.row .live { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; color: rgb(14, 140, 92); }
+.row .live i { display: block; width: 6px; height: 6px; border-radius: 50%; background: rgb(23, 184, 122); }
+.row .av { width: 20px; height: 20px; font-size: 9.5px; }
+.side-foot { position: absolute; left: 12px; right: 12px; bottom: 14px; display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; }
+.side-foot .av { width: 26px; height: 26px; font-size: 10px; background: rgba(10, 10, 10, 0.08); color: rgba(0, 0, 0, 0.6); }
+
+/* main column */
+.main { position: absolute; left: 232px; top: 40px; right: 0; bottom: 0; }
+.crumb { position: absolute; left: 36px; top: 24px; font-size: 12px; color: rgba(0, 0, 0, 0.45); }
+.title { position: absolute; left: 36px; top: 42px; font-size: 26px; font-weight: 500; line-height: 32px; letter-spacing: -0.5px; }
+.chips { position: absolute; left: 36px; top: 84px; display: flex; gap: 6px; }
+.chip { display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 99px; white-space: nowrap;
+  background: rgba(16, 16, 0, 0.045); font-size: 11.5px; color: rgba(0, 0, 0, 0.6); }
+
+.status { position: absolute; right: 36px; top: 80px; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 5px;
+  border-radius: 99px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 6px 16px rgba(0, 0, 0, 0.06); font-size: 12.5px; }
+.status .av { width: 20px; height: 20px; font-size: 9.5px; }
+.status .lines { position: relative; width: 268px; height: 18px; }
+.status .ln { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 7px; white-space: nowrap; line-height: 18px; }
+.spin { display: block; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(0, 0, 0, 0.14); border-top-color: rgba(0, 0, 0, 0.6); }
+.ok { color: rgb(14, 140, 92); }
+.ok svg { width: 13px; height: 13px; }
+
+/* the deck: 4 x 2 cards, 222 x 190, radius 14. Flashcards are white, always. */
+.grid { position: absolute; left: 36px; top: 132px; width: 936px; height: 396px; }
+.slot { position: absolute; width: 222px; height: 190px; }
+.slot-hint { position: absolute; inset: 0; border-radius: 14px; border: 1.5px dashed rgba(0, 0, 0, 0.09); }
+.card { position: absolute; inset: 0; perspective: 900px; }
+.shadow { position: absolute; left: 8px; right: 8px; top: 10px; bottom: 0; border-radius: 14px; background: rgba(0, 0, 0, 0.1); }
+.flip { position: absolute; inset: 0; transform-style: preserve-3d; }
+.face { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 16px; border-radius: 14px; background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.face.back { transform: rotateY(180deg); }
+.q { font-size: 15px; font-weight: 450; line-height: 21px; letter-spacing: -0.15px; }
+.a { font-size: 12.5px; line-height: 18px; color: rgba(0, 0, 0, 0.72); }
+.card-foot { margin-top: auto; display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(0, 0, 0, 0.5); white-space: nowrap; }
+.card-foot .av { width: 16px; height: 16px; font-size: 8.5px; }
+.src { margin-left: auto; display: flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 99px; background: rgba(16, 16, 0, 0.045); }
+.grades { margin-top: auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.g { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 36px; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.045); font-size: 10.5px; font-weight: 500; line-height: 13px; }
+.g i { font-style: normal; font-size: 9.5px; font-weight: 400; color: rgba(0, 0, 0, 0.5); }
+.pop { position: absolute; left: 50%; top: -14px; margin-left: -80px; width: 160px; display: flex; align-items: center; justify-content: center; gap: 6px;
+  height: 28px; border-radius: 99px; background: rgb(17, 17, 16); color: #fff; font-size: 11.5px; font-weight: 500; z-index: 5;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18); }
+.tag-nemesis { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; font-size: 10.5px; font-weight: 500; color: rgba(0, 0, 0, 0.55); }
+
+/* composer */
+.composer { position: absolute; left: 36px; right: 36px; bottom: 26px; height: 50px; display: flex; align-items: center; padding: 0 7px 0 8px;
+  border-radius: 99px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.05); }
+.composer .mascot { position: relative; width: 36px; height: 32px; display: block; }
+.composer .ph, .composer .typed { position: absolute; left: 58px; top: 15px; font-size: 14px; line-height: 20px; white-space: nowrap; }
+.composer .ph { color: rgba(0, 0, 0, 0.36); }
+.caret { position: absolute; left: 58px; top: 15px; width: 1.5px; height: 20px; background: rgb(20, 20, 20); }
+.send { margin-left: auto; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: rgb(17, 17, 16); color: #fff; }
+.send svg { width: 15px; height: 15px; }
+
+/* cursors: the student in ink, each agent in its own tone */
+.cursor { position: absolute; left: 0; top: 0; z-index: 40; width: 1px; height: 1px; }
+.cursor svg { position: absolute; left: -2px; top: -2px; display: block; width: 19px; height: 23px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25)); }
+.cursor .tag { position: absolute; left: 15px; top: 19px; height: 20px; padding: 0 7px; border-radius: 6px; color: #fff; font-size: 11px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+
+.toast { position: absolute; right: 36px; top: 18px; z-index: 30; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px 0 12px;
+  border-radius: 12px; background: rgb(17, 17, 16); color: #fff; font-size: 13px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18); }
+.toast b { font-weight: 600; }
+.toast span { color: rgba(255, 255, 255, 0.64); }
+.toast svg { width: 16px; height: 16px; color: rgb(52, 211, 153); }
+.pop svg { width: 12px; height: 12px; flex: 0 0 auto; color: rgb(52, 211, 153); }
+.tag-nemesis svg, .card-foot svg { flex: 0 0 auto; }

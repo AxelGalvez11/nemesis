@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1860, height=1200">
+    <title>Nemesis showcase: together</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/CustomEase.min.js"></script>
+    <link rel="stylesheet" href="showcase/kit.css">
+    <script src="showcase/kit.js"></script>
+    <style>
+      html, body { width: 1860px; height: 1200px; }
+      #root { width: 1860px; height: 1200px; }
+      /* the 1240x800 app stage at 1.5x, so text stays sharp inside the laptop photograph on a 2x screen */
+      #stage { transform: scale(1.5); }
+    </style>
+  </head>
+  <body>
+    <!--
+      THE HERO CLIP: a student and Claude building one deck at the same time.
+      Owner, 2026-09-10: "lean into the 'agents and students think together' vibe" and "more of the
+      animation for the showcases to make the app feel premium, use hyperframes for it".
+      It loops: the last half second returns every element to the first frame's state.
+      Cards fall with Sana's measured polaroid physics (0.7s on cubic-bezier(0.327,0.023,0.988,0.015),
+      from 200px above with a tightening shadow). Flashcards are white.
+    -->
+    <div id="root" data-composition-id="together" data-start="0" data-width="1860" data-height="1200" data-duration="13">
+      <div id="stage">
+        <div class="app">
+          <div class="bar">
+            <div class="lights"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+            <div class="bar-title">Thermodynamics</div>
+            <div class="bar-right">
+              <div class="faces">
+                <span class="av" style="background:#111110">Y</span>
+                <span class="av" style="background:#8A63F0">C</span>
+                <span class="av" id="face-n" style="background:#ffffff"></span>
+              </div>
+              <span class="share">Share</span>
+            </div>
+          </div>
+
+          <aside class="side">
+            <div class="brand"><span id="brand-mark"></span>Nemesis</div>
+            <div class="search">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3" stroke-linecap="round"/></svg>
+              Search
+            </div>
+            <div class="label">Study</div>
+            <div class="row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="3.5" width="11" height="10" rx="2"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg>Today<span class="badge">12</span></div>
+            <div class="row on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="5" width="10" height="8.5" rx="1.8"/><path d="M5 3h6"/></svg>Decks</div>
+            <div class="row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="9" width="4.5" height="4.5" rx="1.2"/><path d="M7 4.75h2.5A1.5 1.5 0 0 1 11 6.25V9"/></svg>Canvas</div>
+            <div class="row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 3.5h3.5v9H3zM8 3.5h3.5v9H8z"/></svg>Library</div>
+            <div class="label">Agents</div>
+            <div class="row"><span class="av" style="background:#8A63F0">C</span>Claude<span class="live" id="live"><i></i>Working</span></div>
+            <div class="row"><span class="av" style="background:#2A8CCD">G</span>ChatGPT</div>
+            <div class="row"><span class="av" style="background:#17B87A">C</span>Cursor</div>
+            <div class="side-foot"><span class="av">Y</span>Your workspace</div>
+          </aside>
+
+          <section class="main">
+            <p class="crumb">Decks</p>
+            <h1 class="title">Lecture 6: The second law</h1>
+            <div class="chips"><span class="chip">Thermodynamics</span><span class="chip">FSRS</span><span class="chip">From Lecture 6.pdf</span></div>
+
+            <div class="status" id="status">
+              <span class="av" style="background:#8A63F0">C</span>
+              <div class="lines">
+                <span class="ln" id="st1"><span class="spin" id="spin1"></span>Reading Lecture 6.pdf, 38 slides</span>
+                <span class="ln" id="st2"><span class="spin" id="spin2"></span>Drafting cards from the slides</span>
+                <span class="ln ok" id="st3"></span>
+              </div>
+            </div>
+
+            <div class="toast" id="toast"></div>
+            <div class="grid" id="grid"></div>
+
+            <div class="composer" id="composer">
+              <span id="composer-mascot"></span>
+              <span class="ph" id="ph">Ask Claude or Nemesis about this deck</span>
+              <span class="typed" id="typed">Make a deck from Lecture 6 for Friday&#8217;s exam</span>
+              <span class="caret" id="caret"></span>
+              <span class="send" id="send"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3.5M3.5 7.5 8 3l4.5 4.5"/></svg></span>
+            </div>
+          </section>
+        </div>
+
+        <div class="cursor" id="c-you" style="color:#111110"><span class="tag" style="background:#111110">You</span></div>
+        <div class="cursor" id="c-claude" style="color:#8A63F0"><span class="tag" style="background:#8A63F0">Claude</span></div>
+      </div>
+    </div>
+
+    <script>
+      gsap.registerPlugin(CustomEase);
+      // Sana's three curves, read out of their stylesheet.
+      CustomEase.create("drop", "M0,0 C0.327,0.023 0.988,0.015 1,1");
+      CustomEase.create("out", "M0,0 C0.16,1 0.3,1 1,1");
+      CustomEase.create("inout", "M0,0 C0.83,0 0.17,1 1,1");
+
+      const { TONE, mascot, pointer, tick, rect, chars, move, click, type } = KIT;
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+      const stage = $("#stage");
+      const K = 1.5;
+
+      const CARDS = [
+        { q: "What does the second law say about the entropy of an isolated system?", src: "Slide 14", by: "claude" },
+        { q: "Why can no heat engine be 100% efficient?", a: "Some heat always has to flow to a colder reservoir, so it can never all become work.", src: "Slide 18", by: "claude", grade: true },
+        { q: "What is entropy a measure of?", src: "Slide 9", by: "claude" },
+        { q: "State the Clausius form of the second law.", src: "Slide 16", by: "claude" },
+        { q: "What happens to total entropy in a reversible process?", src: "Slide 15", by: "claude" },
+        { q: "What is a thermal reservoir?", src: "Slide 11", by: "claude" },
+        { q: "What does a Carnot engine’s efficiency depend on?", src: "Slide 22", by: "claude", typed: true },
+        { q: "Is entropy conserved in an isolated system?", src: "Missed last week", by: "nemesis", suggest: true },
+      ];
+
+      // ── build the static end state first (HyperFrames layout contract) ──
+      $("#brand-mark").innerHTML = mascot(20);
+      $("#face-n").innerHTML = mascot(17);
+      $("#composer-mascot").innerHTML = mascot(36);
+      $$(".cursor").forEach((c) => c.insertAdjacentHTML("afterbegin", pointer));
+      $("#st3").innerHTML = tick + "Every card checked against the deck rules";
+      $("#toast").innerHTML = tick + "<b>Deck ready</b><span>First review tomorrow at 9:00</span>";
+
+      const grid = $("#grid");
+      const who = (by) =>
+        by === "nemesis"
+          ? `<span style="display:block;width:16px">${mascot(16)}</span><span>Nemesis</span>`
+          : `<span class="av" style="background:${TONE.violet}">C</span><span>Claude</span>`;
+      CARDS.forEach((c, i) => {
+        const slot = document.createElement("div");
+        slot.className = "slot";
+        slot.style.left = (i % 4) * 238 + "px";
+        slot.style.top = Math.floor(i / 4) * 206 + "px";
+        const back = c.grade
+          ? `<p class="a">${c.a}</p><div class="grades"><span class="g">Again<i>1m</i></span><span class="g">Hard<i>8m</i></span><span class="g" data-good>Good<i>2d</i></span><span class="g">Easy<i>6d</i></span></div>`
+          : `<p class="a">Answer on the back.</p>`;
+        slot.innerHTML =
+          `<div class="slot-hint"></div>` +
+          (c.grade ? `<div class="pop" data-pop>${tick}Next review in 2 days</div>` : "") +
+          `<div class="card"><div class="shadow"></div><div class="flip">` +
+          `<div class="face front">${c.suggest ? `<div class="tag-nemesis">${mascot(14)}Suggested by Nemesis</div>` : ""}<p class="q">${c.q}</p>` +
+          `<div class="card-foot">${who(c.by)}<span class="src">${c.src}</span></div></div>` +
+          `<div class="face back">${back}</div></div></div>`;
+        grid.appendChild(slot);
+      });
+      $$(".pop").forEach((p) => { p.style.color = "#fff"; });
+
+      const slots = $$(".slot", grid);
+      const cardOf = (i) => $(".card", slots[i]);
+      const flipOf = (i) => $(".flip", slots[i]);
+      const shadowOf = (i) => $(".shadow", slots[i]);
+
+      function build() {
+        const tl = gsap.timeline({ paused: true, defaults: { ease: "out" } });
+        const R = (el) => rect(el, stage, K);
+        const you = $("#c-you"), claude = $("#c-claude");
+        const typedSpans = chars($("#typed"));
+        const q6 = chars($(".face.front .q", slots[6]));
+        const foot6 = $(".face.front .card-foot", slots[6]);
+        const pop = $("[data-pop]", slots[1]);
+        const good = $("[data-good]", slots[1]);
+
+        // geometry, measured once at rest
+        const centre = slots.map((s) => R(s));
+        const cardR = centre[1];
+        const goodR = R(good);
+        const goodX = 2 * cardR.cx - goodR.cx; // the back face is laid out mirrored until it turns
+        const send = R($("#send"));
+
+        const R0 = [-9, 7, -6, 10, -8, 6];
+
+        // ── the first frame, which is also the last ──
+        const reset = (at) => {
+          tl.set("#status", { autoAlpha: 0, y: -6 }, at);
+          tl.set("#st1", { autoAlpha: 1 }, at);
+          tl.set(["#st2", "#st3"], { autoAlpha: 0 }, at);
+          tl.set("#toast", { autoAlpha: 0, y: -10 }, at);
+          tl.set("#live", { autoAlpha: 0 }, at);
+          tl.set("#ph", { autoAlpha: 1 }, at);
+          tl.set("#typed", { autoAlpha: 1 }, at);
+          tl.set(typedSpans, { opacity: 0 }, at);
+          tl.set("#caret", { autoAlpha: 0, x: 0 }, at);
+          tl.set(you, { autoAlpha: 0, x: 1130, y: 770 }, at);
+          tl.set(claude, { autoAlpha: 0, x: 1000, y: 150 }, at);
+          for (let i = 0; i < 6; i++) {
+            tl.set(cardOf(i), { autoAlpha: 1, y: 0, rotation: R0[i] }, at);
+            tl.set(flipOf(i), { opacity: 0, scale: 1.2, rotationY: 0, filter: "blur(5px)" }, at);
+            tl.set(shadowOf(i), { opacity: 0 }, at);
+          }
+          tl.set(cardOf(6), { autoAlpha: 0, y: 0, rotation: 0 }, at);
+          tl.set(flipOf(6), { opacity: 1, scale: 0.96, filter: "none" }, at);
+          tl.set(q6, { opacity: 0 }, at);
+          tl.set(foot6, { autoAlpha: 0 }, at);
+          tl.set(cardOf(7), { autoAlpha: 0, y: 150, rotation: -4 }, at);
+          tl.set(pop, { autoAlpha: 0, y: 8, scale: 0.94 }, at);
+          tl.set(good, { backgroundColor: "rgba(0,0,0,0.045)", color: "rgb(20,20,20)" }, at);
+        };
+        reset(0);
+
+        // ── the student asks ──
+        tl.to("#ph", { autoAlpha: 0, duration: 0.2 }, 0.3);
+        tl.set("#caret", { autoAlpha: 1 }, 0.32);
+        const typedEnd = type(tl, typedSpans, 0.4, 30, $("#caret"), stage, K);
+        tl.set("#caret", { autoAlpha: 0 }, typedEnd + 0.08);
+        tl.to("#send", { scale: 0.86, duration: 0.09, ease: "power2.out" }, typedEnd + 0.1);
+        tl.to("#send", { scale: 1, duration: 0.28, ease: "back.out(2)" }, typedEnd + 0.19);
+        tl.to("#typed", { autoAlpha: 0, y: -6, duration: 0.3 }, typedEnd + 0.2);
+        tl.set("#typed", { y: 0 }, typedEnd + 0.55);
+        tl.to("#ph", { autoAlpha: 1, duration: 0.35 }, typedEnd + 0.5);
+
+        // ── Claude reads, then deals the cards ──
+        // 🔴 TWO DEPARTURES FROM SANA, BOTH FOUND IN THE FIRST DRAFT. Their polaroids start 200px above the
+        // table (scale 1.4 at their 700px perspective) with the shadow already at full strength. On a tight
+        // grid of small cards that read as grey smudges piling over the neighbours, so the fall starts at
+        // 1.2 with a 5px blur and the shadow fades in as the card lands. Timing and curve are still theirs.
+        const t0 = typedEnd + 0.25;
+        tl.to("#status", { autoAlpha: 1, y: 0, duration: 0.5 }, t0);
+        tl.to("#live", { autoAlpha: 1, duration: 0.4 }, t0);
+        tl.fromTo("#spin1", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none" }, t0);
+        tl.to("#st1", { autoAlpha: 0, duration: 0.3 }, t0 + 0.8);
+        tl.to("#st2", { autoAlpha: 1, duration: 0.35 }, t0 + 0.85);
+        tl.fromTo("#spin2", { rotation: 0 }, { rotation: 585, duration: 1.3, ease: "none" }, t0 + 0.85);
+
+        tl.to(claude, { autoAlpha: 1, duration: 0.25 }, t0 + 0.6);
+        const deal = t0 + 0.95;
+        move(tl, claude, centre[0].cx + 20, centre[0].cy + 20, deal - 0.1, 0.25);
+        for (let i = 0; i < 6; i++) {
+          const at = deal + i * 0.13;
+          if (i > 0) move(tl, claude, centre[i].cx + 20, centre[i].cy + 20, at - 0.13, 0.13, "power1.inOut");
+          tl.to(cardOf(i), { rotation: 0, duration: 0.7, ease: "drop" }, at + 0.05);
+          tl.to(flipOf(i), { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.7, ease: "drop" }, at);
+          tl.set(flipOf(i), { filter: "none" }, at + 0.72); // a filter flattens preserve-3d, and card 2 turns over later
+          tl.fromTo(shadowOf(i), { opacity: 0, scale: 1.3, filter: "blur(20px)", backgroundColor: "rgba(0,0,0,0.3)" },
+            { opacity: 0.5, scale: 1, filter: "blur(10px)", backgroundColor: "rgba(0,0,0,0.1)", duration: 0.7, ease: "drop" }, at);
+        }
+        const dealt = deal + 5 * 0.13 + 0.7;
+        tl.to("#st2", { autoAlpha: 0, duration: 0.3 }, dealt);
+        tl.to("#st3", { autoAlpha: 1, duration: 0.35 }, dealt + 0.05);
+        move(tl, claude, centre[6].cx + 60, centre[6].cy + 80, dealt - 0.1, 0.8);
+
+        // ── the student turns a card and grades it ──
+        const s0 = dealt + 0.35;
+        tl.to(you, { autoAlpha: 1, duration: 0.25 }, s0);
+        move(tl, you, cardR.cx - 10, cardR.cy + 12, s0 + 0.05, 0.8);
+        click(tl, you, s0 + 0.9);
+        tl.to(flipOf(1), { rotationY: 180, duration: 0.65, ease: "back.out(1.1)" }, s0 + 0.95);
+        move(tl, you, goodX + 4, goodR.cy + 6, s0 + 1.65, 0.55);
+        click(tl, you, s0 + 2.25);
+        tl.to(good, { backgroundColor: "rgb(17,17,16)", color: "#ffffff", duration: 0.18 }, s0 + 2.27);
+        tl.to(pop, { autoAlpha: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, s0 + 2.35);
+        tl.to(flipOf(1), { rotationY: 0, duration: 0.6, ease: "power2.inOut" }, s0 + 3.1);
+        tl.set(good, { backgroundColor: "rgba(0,0,0,0.045)", color: "rgb(20,20,20)" }, s0 + 3.45);
+        tl.to(pop, { autoAlpha: 0, y: -6, duration: 0.3 }, s0 + 3.7);
+        move(tl, you, send.cx - 420, send.cy - 4, s0 + 3.75, 0.8);
+
+        // ── meanwhile Claude writes one more ──
+        const c0 = s0 + 2.1;
+        move(tl, claude, centre[6].cx - 8, centre[6].cy - 10, c0, 0.6);
+        click(tl, claude, c0 + 0.65);
+        tl.to(cardOf(6), { autoAlpha: 1, duration: 0.3 }, c0 + 0.7);
+        tl.to(flipOf(6), { scale: 1, duration: 0.45 }, c0 + 0.7);
+        const q6End = type(tl, q6, c0 + 0.9, 40);
+        tl.to(foot6, { autoAlpha: 1, duration: 0.35 }, q6End + 0.05);
+        move(tl, claude, centre[6].cx + 70, centre[6].cy + 120, q6End + 0.2, 0.7);
+
+        // ── Nemesis adds the card you missed ──
+        const n0 = q6End + 0.1;
+        const face = $("#composer-mascot svg");
+        tl.to(face, { y: -5, duration: 0.18, ease: "power2.out" }, n0);
+        tl.to(face, { y: 0, duration: 0.4, ease: "back.out(2.2)" }, n0 + 0.18);
+        tl.to($$(".eye", face), { scaleY: 0.15, duration: 0.07, ease: "power1.in", transformOrigin: "50% 50%" }, n0 + 0.05);
+        tl.to($$(".eye", face), { scaleY: 1, duration: 0.12, ease: "power1.out" }, n0 + 0.12);
+        tl.to(cardOf(7), { autoAlpha: 1, y: 0, rotation: 0, duration: 0.75 }, n0 + 0.12);
+
+        // ── done ──
+        const d0 = n0 + 0.95;
+        tl.to("#toast", { autoAlpha: 1, y: 0, duration: 0.5 }, d0);
+        tl.to("#live", { autoAlpha: 0, duration: 0.4 }, d0);
+
+        // ── back to the first frame, so the clip loops without a seam ──
+        const END = 13;
+        const out = END - 0.95;
+        tl.to(["#toast", "#status"], { autoAlpha: 0, duration: 0.35, ease: "power2.in" }, out);
+        tl.to([you, claude], { autoAlpha: 0, duration: 0.3 }, out);
+        tl.to(slots.map((s, i) => cardOf(i)), { autoAlpha: 0, y: -8, duration: 0.4, ease: "power2.in", stagger: 0.03 }, out + 0.05);
+        reset(END - 0.06);
+        return tl;
+      }
+
+      Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 4000))]).then(() => {
+        try {
+          const tl = build();
+          tl.seek(0, false);
+          window.__timelines["together"] = tl;
+          window.__hfForceTimelineRebind && window.__hfForceTimelineRebind();
+        } catch (e) {
+          window.__err = String((e && e.stack) || e);
+          console.error("showcase build failed", e);
+        }
+      });
+    </script>
+  </body>
+</html>

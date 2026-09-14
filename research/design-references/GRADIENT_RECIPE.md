@@ -91,3 +91,31 @@ to roughly 15KB, which is what makes them shippable in a public repo.
 the shader is right where being live, themeable and zero-download matters more than being
 photographic — panel grounds, empty states, per-project colour. It is not a worse version of the
 images, it is a different tool.
+
+## Round two, 2026-09-10: 4K and eight more colour families
+
+Owner: *"make generations be 4k"* and *"make more gradients too"*. Recraft V4.1 stops at 2K, so each
+new family (scarlet, amber, yellow, teal, cyan, cobalt, plum, magenta) was made twice: with the
+Recraft recipe above, and with `nano_banana_pro` at native 4K (4096x4096, 4 credits). Then judged by
+eye and by the Sobel number.
+
+- **Recraft's second batch was worse than its first, with the same recipe.** Scarlet came back as one
+  flat red, amber with a faint ripple, plum and magenta with a visible paper grain. Nothing in the
+  prompt changed; the model's output did.
+- **nano_banana_pro was the smoother one** for yellow, cyan, cobalt, plum and magenta, and, after one
+  redo, for scarlet, amber and teal. The prompt that worked:
+  ```
+  An abstract full-frame field of soft coloured light, not a photograph of any object. Saturated
+  <family> only (deep <hex>, mid <hex>, bright <hex>). One broad, simple glow sits softly in one area
+  and falls off very slowly into deeper <family> elsewhere, like out-of-focus coloured light on a
+  smooth surface. Large and simple: no blotches, no mottling, no dark patches, no clouds.
+  Imperceptible transitions, no visible boundary, no edge, no line, no shape, no banding, no stripes,
+  no streaks, no bokeh circles, no grain, no noise, no texture, no white areas, no black, colour edge
+  to edge.
+  ```
+- **Its failure modes.** A two-stop range ("from #X to #Y") produced vertical banding. Without "one
+  broad, simple glow" it made blotches. It refused one cobalt image outright as unsafe.
+- **Bytedance upscale** (2 credits) takes a Recraft 2K to 4K cleanly, but it keeps any edge the
+  original had: teal's faint diagonal line survived it.
+- Picks live in `~/Desktop/higgsfield-archive/gradients-4k/` as 4096px PNGs. None are wired into the
+  site yet; export with the webp command above when one is.

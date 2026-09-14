@@ -42,11 +42,13 @@ function useInView<T extends Element>() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    setArmed(true);
-    if (typeof IntersectionObserver === "undefined") {
-      setInView(true);
-      return;
-    }
+    // Armed on the next frame rather than inside the effect body: a synchronous setState here renders
+    // twice on mount (react-hooks/set-state-in-effect), and the element is not hidden either way.
+    const raf = requestAnimationFrame(() => {
+      setArmed(true);
+      if (typeof IntersectionObserver === "undefined") setInView(true);
+    });
+    if (typeof IntersectionObserver === "undefined") return () => cancelAnimationFrame(raf);
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
@@ -57,7 +59,10 @@ function useInView<T extends Element>() {
       { threshold: 0.2 },
     );
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      io.disconnect();
+    };
   }, []);
   return { ref, armed, inView };
 }
@@ -146,13 +151,19 @@ export function ArtGround({
 }
 
 /* ── 1. The workspace: an outside agent working inside Nemesis ─────────────────────────── */
+// 🔴 DENSITY IS WHAT MADE x.ai'S WINDOW READ AS A PRODUCT (owner, 2026-09-10: "the mockups need to
+// look better like in x.ai"). The first version had the right anatomy and almost nothing in it: two
+// bubbles and a list. Theirs carries an attachment, timestamps under names, services named in bold with
+// counts, mention chips and a live working line. So does this one, with our content.
 const AGENTS = [
   { key: "claude", name: "Claude", tone: "violet", time: "9:41", preview: "Deck ready: 42 cards, scheduled", on: true },
-  { key: "nemesis", name: "Nemesis", tone: null, time: "9:30", preview: "Your review is ready for tomorrow" },
-  { key: "chatgpt", name: "ChatGPT", tone: "azure", time: "Yesterday", preview: "Slides for the French Revolution" },
+  { key: "nemesis", name: "Nemesis", tone: null, time: "9:42", preview: "3 cards went back for a source" },
+  { key: "chatgpt", name: "ChatGPT", tone: "azure", time: "Yesterday", preview: "Slides for the French Revolution", unread: true },
   { key: "cursor", name: "Cursor", tone: "emerald", time: "Yesterday", preview: "Turned lab code into a study guide" },
   { key: "tutor", name: "Contract Law", tone: "orange", time: "Mon", preview: "Offer and acceptance, 6 sections" },
 ] as const;
+
+const PEEK = ["What does the second law say about entropy?", "Why can no heat engine be 100% efficient?", "What is a thermal reservoir?"];
 
 export function WorkspaceMock() {
   return (
@@ -174,6 +185,7 @@ export function WorkspaceMock() {
           </svg>
           <span>Search</span>
         </label>
+        <p className="mk-side-label">Agents</p>
         {AGENTS.map((a, i) => (
           <In i={i} key={a.key}>
             <div className={`mk-row${"on" in a && a.on ? " is-on" : ""}`}>
@@ -183,7 +195,10 @@ export function WorkspaceMock() {
                   <span className="mk-row-name">{a.name}</span>
                   <span className="mk-row-time">{a.time}</span>
                 </div>
-                <span className="mk-row-preview">{a.preview}</span>
+                <span className="mk-row-preview">
+                  {"unread" in a && a.unread ? <i className="mk-unread" aria-hidden="true" /> : null}
+                  {a.preview}
+                </span>
               </div>
             </div>
           </In>
@@ -196,37 +211,103 @@ export function WorkspaceMock() {
 
       <section className="mk-chat">
         <header className="mk-chat-head">
-          <Avatar label="C" tone="violet" size={20} />
-          <span className="mk-chat-title">Claude</span>
-          <span className="mk-tag">Connected to Nemesis</span>
+          <span className="mk-chat-title">Thermodynamics</span>
+          <span className="mk-chat-sub">Lecture 6</span>
+          <span className="mk-people" aria-hidden="true">
+            <span className="mk-avatar mk-avatar-you" style={{ width: 22, height: 22, fontSize: 9 }}>
+              Y
+            </span>
+            <Avatar label="C" tone="violet" size={22} />
+            <NemesisAvatar size={22} />
+          </span>
+          <span className="mk-tag">
+            <i className="mk-live" aria-hidden="true" />
+            Connected
+          </span>
         </header>
 
         <div className="mk-thread">
-          <In i={1} className="mk-divider">Claude is using your Nemesis tools</In>
-          <In i={2} className="mk-bubble mk-bubble-me">
-            Turn Lecture 6 into something I can actually study before Friday&apos;s exam.
+          <In i={1} className="mk-divider">
+            You added Claude to this course · 9:38
           </In>
-          <In i={3} className="mk-bubble">
-            <ul className="mk-tools">
-              <li><Check /><b>Reader</b> → Thermodynamics, Lecture 6 · 38 slides read</li>
-              <li><Check /><b>Deck builder</b> → 42 cards · scheduled with FSRS</li>
-              <li><Check /><b>Slides</b> → 12-slide summary · .pptx</li>
-              <li><Check /><b>Study guide</b> → 6 sections, every claim cited</li>
-            </ul>
+          <In i={2} className="mk-me">
+            <span className="mk-file">
+              <span className="mk-file-page" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              <span>
+                <b>Lecture 6.pdf</b>
+                <em>38 slides</em>
+              </span>
+            </span>
+            <span className="mk-bubble mk-bubble-me">Turn this into something I can study before Friday&apos;s exam.</span>
           </In>
-          <In i={4} className="mk-bubble">
-            All four are in your workspace. Your first review is tomorrow at 9:00, and the cards on
-            entropy come back sooner because they are the ones you missed last week.
+          <In i={3} className="mk-msg">
+            <span className="mk-msg-head">
+              <Avatar label="C" tone="violet" size={20} />
+              <b>Claude</b>
+              <time>9:41</time>
+            </span>
+            <div className="mk-bubble">
+              <ul className="mk-tools">
+                <li>
+                  <Check />
+                  <b>Reader</b>
+                  <span>Lecture 6.pdf, 38 slides read</span>
+                </li>
+                <li>
+                  <Check />
+                  <b>Deck builder</b>
+                  <span>42 cards, scheduled with FSRS</span>
+                </li>
+                <li>
+                  <Check />
+                  <b>Slides</b>
+                  <span>12-slide summary, .pptx</span>
+                </li>
+                <li className="mk-working">
+                  <span className="mk-spinner" aria-hidden="true" />
+                  <b>Study guide</b>
+                  <span>writing section 4 of 6</span>
+                </li>
+              </ul>
+              <div className="mk-peek">
+                {PEEK.map((q) => (
+                  <span key={q} className="mk-peek-card">
+                    {q}
+                  </span>
+                ))}
+                <span className="mk-peek-more">+39</span>
+              </div>
+            </div>
           </In>
-          <In i={5} className="mk-pending">
-            <span className="mk-spinner" aria-hidden="true" />
-            Checking every card against the deck rules
+          <In i={4} className="mk-msg">
+            <span className="mk-msg-head">
+              <NemesisAvatar size={20} />
+              <b>Nemesis</b>
+              <time>9:42</time>
+            </span>
+            <div className="mk-bubble">
+              Checked all 42. <span className="mk-mention">3 cards</span> had no source, so they went back to{" "}
+              <span className="mk-mention mk-mention-violet">Claude</span>. Your first review is tomorrow at 9:00.
+            </div>
+          </In>
+          <In i={5} className="mk-typing">
+            <span className="mk-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            Claude is fixing 3 cards
           </In>
         </div>
 
         <div className="mk-composer">
           <span className="mk-attach" aria-hidden="true">+</span>
-          <span className="mk-composer-text">Message Claude</span>
+          <span className="mk-composer-text">Message Claude or @Nemesis</span>
           <span className="mk-send" aria-hidden="true">
             <svg viewBox="0 0 16 16" width="14" height="14">
               <path d="M8 13V3.5M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />

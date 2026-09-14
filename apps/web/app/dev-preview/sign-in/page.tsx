@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { NemesisMark } from "@/components/nemesis-mark";
 
@@ -28,7 +28,29 @@ import "./sana-signin.css";
  */
 export default function SanaShapedSignIn() {
   const [email, setEmail] = useState("");
-  const grainId = useId().replace(/:/g, "");
+  const introRef = useRef<HTMLVideoElement>(null);
+  const loopRef = useRef<HTMLVideoElement>(null);
+  const [phase, setPhase] = useState<"wait" | "intro" | "loop">("wait");
+
+  // The laptop film: the intro swings the machine in once, then the loop (which begins on the intro's
+  // last frame) runs forever. Same files and handoff as the live page's AuthLaptop.
+  useEffect(() => {
+    const intro = introRef.current;
+    const loop = loopRef.current;
+    if (!intro || !loop) return;
+    let alive = true;
+    const toLoop = () => void loop.play().then(() => alive && setPhase("loop"), () => {});
+    const start = () => void intro.play().then(() => alive && setPhase("intro"), toLoop);
+    intro.addEventListener("canplaythrough", start, { once: true });
+    intro.addEventListener("ended", toLoop, { once: true });
+    intro.load();
+    loop.load();
+    return () => {
+      alive = false;
+      intro.removeEventListener("canplaythrough", start);
+      intro.removeEventListener("ended", toLoop);
+    };
+  }, []);
   const ready = email.trim().length > 0;
 
   return (
@@ -110,32 +132,14 @@ export default function SanaShapedSignIn() {
       {/* Measured: 706.3x720 at radius 18 on rgb(23,24,26), cropping artwork that is deliberately
           LARGER than the frame (731.9x751.1, offset -12.8/-15.5) so it bleeds past every edge. */}
       <section className="sig-panel" aria-hidden="true">
-        {/* 🔴 THE COMPUTER IS THE SUBJECT, NOT THE GRADIENT. Sana's panel holds a photograph of a
-            laptop running their product, cropped by the frame. The first pass here kept the frame
-            and replaced its contents with a flat wash, which is how the thing the owner actually
-            picked the page for went missing. The machine is built in CSS 3D rather than
-            photographed because the app is being redesigned: a real screenshot today would be a
-            picture of something about to change. The mesh is what is ON the screen, and when the
-            redesign lands the product replaces it in the same laptop at the same angle. */}
-        <div className="sig-stage">
-          <div className="sig-laptop">
-            <div className="sig-lid">
-              <div className="sig-screen">
-                <div className="sig-panel-mesh" />
-                <svg className="sig-panel-grain" focusable="false">
-                  <filter id={`sig-grain-${grainId}`}>
-                    <feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves="3" stitchTiles="stitch" />
-                    <feColorMatrix type="saturate" values="0" />
-                  </filter>
-                  <rect width="100%" height="100%" filter={`url(#sig-grain-${grainId})`} />
-                </svg>
-                <div className="sig-glass" />
-              </div>
-            </div>
-            <div className="sig-deck" />
-          </div>
+        {/* 🔴 THE COMPUTER IS THE SUBJECT. Sana's panel holds a photograph of a laptop running their
+            product; ours holds a rendered MacBook (HyperFrames, ~/Desktop/nemesis-signin) running a
+            Student-Spaces-shaped Nemesis space (owner, 2026-09-10: "i love this design"). The CSS
+            laptop that stood here is gone: the owner called it fake. */}
+        <div className="sig-panel-art" data-phase={phase}>
+          <video ref={loopRef} className="sig-loop" src="/sign-in/laptop-loop.mp4" muted loop playsInline preload="auto" />
+          <video ref={introRef} className="sig-intro" src="/sign-in/laptop-intro.mp4" muted playsInline preload="auto" />
         </div>
-        <div className="sig-panel-shaft" />
       </section>
     </div>
   );

@@ -5,7 +5,10 @@
    ══════════════════════════════════════════════════════════════════════════════════════════════ */
 .mk { --mk-ink: rgb(20, 20, 20); --mk-ink-55: rgba(0, 0, 0, 0.55); --mk-ink-35: rgba(0, 0, 0, 0.35);
       --mk-fill: rgba(16, 16, 0, 0.04); --mk-sel: rgba(10, 10, 10, 0.055); --mk-dark: rgb(17, 17, 16);
-      --mk-card: rgb(249, 248, 246); color: var(--mk-ink); font-family: var(--font-inter), -apple-system, sans-serif; }
+      --mk-card: rgb(249, 248, 246); color: var(--mk-ink); font-family: var(--font-inter), -apple-system, sans-serif;
+      /* 🔴 a mockup sets its own alignment: dropped into a centred hero (variation H) it inherited
+         text-align: center and every tool line and bubble centred itself */
+      text-align: left; }
 
 /* ── entrance: measured on x.ai, 0.28s, a small overshoot, 60ms stagger ──────────────────── */
 @keyframes mk-enter { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
@@ -60,7 +63,10 @@
 .mk-bubble { max-width: 560px; padding: 8px 12px; border-radius: 16px; background: var(--mk-fill); font-size: 14px; line-height: 20px; letter-spacing: -0.15px; }
 .mk-bubble-me { align-self: flex-end; max-width: 420px; background: var(--mk-dark); color: #fff; }
 .mk-tools { list-style: none; margin: 0; padding: 2px 0; display: flex; flex-direction: column; gap: 3px; }
-.mk-tools li { display: flex; align-items: center; gap: 6px; }
+.mk-tools li { display: grid; grid-template-columns: 14px max-content minmax(0, 1fr); align-items: center; gap: 7px; font-size: 13.5px; }
+.mk-tools li b { font-weight: 500; }
+.mk-tools li span:last-child { color: var(--mk-ink-55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-working .mk-spinner { width: 11px; height: 11px; }
 .mk-check { color: rgb(23, 184, 122); flex: 0 0 auto; }
 .mk-pending { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 13px; color: var(--mk-ink-35); padding-left: 4px; }
 /* measured: 2.4s linear infinite for the working state */
@@ -139,10 +145,53 @@
 @media (max-width: 760px) {
   .mk-window { height: 560px; }
   .mk-sidebar { display: none; }
+  .mk-lights { display: none; }
+  .mk-tools li { align-items: flex-start; }
   .mk-schema { grid-template-columns: 1fr; }
   .mk-canvas { height: 520px; }
   .mk-card-answer { left: 20px; right: 20px; width: auto; top: 110px; }
   .mk-card-src { left: 20px; right: auto; top: auto; bottom: 110px; width: auto; }
   .mk-card-q { left: 20px; right: 20px; }
   .mk-card-next { left: 20px; bottom: 36px; }
+}
+
+/* ── the window's density, round two (x.ai carries attachments, times, mentions, a live line) ─── */
+.mk-side-label { margin: 4px 8px 6px; font-size: 11px; font-weight: 500; letter-spacing: 0.2px; color: var(--mk-ink-35); }
+.mk-unread { display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 9999px; background: #2A8CCD; vertical-align: 1px; }
+.mk-chat-sub { font-size: 13px; color: var(--mk-ink-55); }
+.mk-people { display: flex; margin-left: auto; padding-left: 5px; }
+.mk-people > * { margin-left: -5px; box-shadow: 0 0 0 2px rgb(252, 252, 252); border-radius: 9999px; }
+.mk-avatar-you { background: rgb(17, 17, 16); }
+.mk-live { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 9999px; background: rgb(23, 184, 122); vertical-align: 1px; }
+.mk-me { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.mk-file { display: inline-flex; align-items: center; gap: 10px; padding: 7px 14px 7px 7px; border-radius: 14px; background: rgb(255, 255, 255);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); }
+.mk-file-page { display: flex; flex-direction: column; gap: 3px; width: 32px; height: 40px; padding: 7px 6px; border-radius: 5px;
+  background: rgb(246, 245, 244); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.mk-file-page i { display: block; height: 2px; border-radius: 1px; background: rgba(0, 0, 0, 0.16); }
+.mk-file-page i:first-child { width: 70%; background: rgba(0, 0, 0, 0.4); }
+.mk-file b { display: block; font-size: 13px; font-weight: 500; line-height: 17px; }
+.mk-file em { display: block; font-size: 12px; font-style: normal; line-height: 15px; color: var(--mk-ink-55); }
+.mk-msg { display: flex; flex-direction: column; gap: 5px; max-width: 620px; }
+.mk-msg-head { display: flex; align-items: center; gap: 7px; font-size: 13px; line-height: 16px; }
+.mk-msg-head b { font-weight: 500; }
+.mk-msg-head time { font-size: 12px; color: var(--mk-ink-35); }
+.mk-peek { display: flex; align-items: stretch; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, 0.06); }
+.mk-peek-card { width: 132px; height: 58px; padding: 7px 9px; overflow: hidden; border-radius: 9px; background: rgb(255, 255, 255);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 2px 6px rgba(0, 0, 0, 0.04); font-size: 11px; line-height: 14px; }
+.mk-peek-more { align-self: center; margin-left: 2px; font-size: 12px; color: var(--mk-ink-55); }
+.mk-mention { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; background: rgba(255, 106, 26, 0.12);
+  color: rgb(186, 70, 0); font-size: 13px; font-weight: 500; }
+.mk-mention-violet { background: rgba(138, 99, 240, 0.13); color: rgb(98, 60, 204); }
+.mk-typing { display: flex; align-items: center; gap: 8px; padding-left: 4px; font-size: 12.5px; color: var(--mk-ink-35); }
+.mk-dots { display: inline-flex; gap: 3px; }
+.mk-dots i { display: block; width: 5px; height: 5px; border-radius: 9999px; background: rgba(0, 0, 0, 0.4); animation: mk-dot 1.2s ease-in-out infinite; }
+.mk-dots i:nth-child(2) { animation-delay: 0.15s; }
+.mk-dots i:nth-child(3) { animation-delay: 0.3s; }
+/* ours: the three dots of someone typing, rising in turn */
+@keyframes mk-dot { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .mk-dots i { animation: none; } }
+@media (max-width: 760px) {
+  .mk-peek-card { width: 104px; }
+  .mk-people, .mk-chat-sub { display: none; }
 }

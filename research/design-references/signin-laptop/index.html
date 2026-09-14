@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1440, height=1440">
+    <title>Nemesis sign-in: the laptop</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/DRACOLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+      /* The panel beside the sign-in form. Owner, 2026-09-10: "look exactly like Sana, with the moving
+         computer", "make it live", then, of Adobe's Student Spaces workspace: "i love this design, can we
+         also make it look similar to this". So: Sana's panel and laptop, a Student-Spaces-shaped app on
+         the screen, our content, our marks, our gradient art. Nothing of Adobe's is used.
+
+         THE SCREEN IS HTML, NOT A TEXTURE. Layers: the dark ground, the app (a DOM tree projected onto
+         the display with a matrix3d every frame), then the WebGL laptop with its display mesh punched
+         out to alpha 0, so the bezel and the notch sit on top of a crisp, animated app. */
+      @font-face { font-family: "Inter Var"; src: url("assets/fonts/inter.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1440px; height: 1440px; overflow: hidden; background: #17181a; }
+      #root { position: relative; width: 1440px; height: 1440px; overflow: hidden; background: #17181a; }
+      #theater { position: absolute; left: 0; top: 0; width: 1440px; height: 1440px; display: block; z-index: 2; }
+
+      /* 1512x982: the display mesh's own 1.5398 aspect. The app inside is laid out at Student Spaces'
+         measured sizes (tile 158x48 r10, composer 864x108 r24, 14px type) and zoomed 1.3 so it reads
+         on a laptop seen at an angle. */
+      #screen { position: absolute; left: 0; top: 0; width: 1512px; height: 982px; transform-origin: 0 0; overflow: hidden; z-index: 1; background: #f5f5f5; }
+      .z { position: absolute; left: 0; top: 0; width: 1163px; height: 755px; zoom: 1.3; font-family: "Inter Var", system-ui, sans-serif; color: #222; -webkit-font-smoothing: antialiased; }
+      svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+      .mb { position: absolute; left: 0; top: 0; right: 0; height: 24px; background: #e8e8ea; display: flex; align-items: center; gap: 16px; padding: 0 16px; font-size: 11px; color: #1c1c1e; }
+      .mb b { font-weight: 700; }
+      .mb .r { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+      .mb svg.i { width: 14px; height: 14px; }
+      .app { position: absolute; left: 0; top: 24px; right: 0; bottom: 0; background: #f5f5f5; }
+
+      .top { position: absolute; left: 0; right: 0; top: 0; height: 56px; display: flex; align-items: center; padding: 0 16px 0 18px; gap: 12px; }
+      .logo { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: #111; }
+      .logo svg { width: 22px; height: 22px; color: #111; }
+      .vr { width: 1px; height: 22px; background: #dcdcdc; margin: 0 4px; }
+      .space { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; color: #222; }
+      .space svg.i { width: 14px; height: 14px; color: #444; }
+      .top .r { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .pill { height: 32px; border-radius: 16px; padding: 0 16px; display: flex; align-items: center; font-size: 13.5px; font-weight: 700; }
+      .pill.dark { background: #222; color: #fff; }
+      .pill.line { border: 1.5px solid #cfcfcf; color: #222; background: #fff; }
+      .ic { width: 30px; height: 30px; display: grid; place-items: center; color: #444; }
+      .stack { display: flex; }
+      .stack > * { margin-left: -6px; box-shadow: 0 0 0 2px #f5f5f5; }
+      .stack > *:first-child { margin-left: 0; }
+      .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; flex: none; }
+      .av.sm { width: 22px; height: 22px; font-size: 10px; }
+      .av.me { background: #fff; box-shadow: 0 0 0 1px #e4e4e4; }
+      .av.me svg { width: 64%; height: auto; }
+
+      .rail { position: absolute; left: 0; top: 56px; bottom: 0; width: 150px; }
+      .create { position: absolute; left: 10px; top: 18px; height: 32px; padding: 0 16px 0 12px; border-radius: 16px; background: #1d6fd6; color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+      .create svg.i { width: 16px; height: 16px; stroke-width: 2; }
+      .nav { position: absolute; left: 0; right: 0; top: 66px; }
+      .nv { position: relative; height: 44px; display: flex; align-items: center; gap: 12px; padding-left: 24px; font-size: 14px; color: #222; }
+      .nv svg.i { width: 20px; height: 20px; color: #333; }
+      .nv.on { font-weight: 700; }
+      .nv.on::before { content: ""; position: absolute; left: 10px; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: #222; }
+      .rail .low { position: absolute; left: 0; right: 0; bottom: 8px; }
+
+      .panel { position: absolute; left: 150px; top: 56px; right: 10px; bottom: 10px; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.035), 0 1px 3px rgba(0,0,0,0.04); overflow: hidden; }
+      .panel .dots { position: absolute; right: 22px; top: 16px; color: #555; }
+      .col { position: absolute; left: 238px; top: 118px; width: 526px; }
+      .welcome h2 { font-size: 16px; line-height: 28px; font-weight: 700; color: #000; }
+      .welcome p { font-size: 16px; line-height: 28px; color: #222; }
+      .welcome .ask { margin-top: 36px; }
+      .tiles { margin-top: 12px; display: grid; grid-template-columns: repeat(3, 158px); gap: 17px 26px; }
+      .tile { position: relative; height: 50px; border-radius: 10px; background: #fdfdfd; border: 1px solid #f3f3f3; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
+      .tile b { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; line-height: 16px; font-weight: 700; color: #222; max-width: 84px; }
+      .thumb { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 58px; border-radius: 8px; overflow: hidden; }
+      .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+      .thumb svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+      .chat { position: absolute; left: 190px; top: 34px; width: 622px; opacity: 0; }
+      .you { position: absolute; right: 0; top: 0; height: 40px; border-radius: 18px; background: #f0f0f0; padding: 0 16px; display: flex; align-items: center; font-size: 14px; color: #222; }
+      .who { position: absolute; left: 0; top: 62px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: #111; }
+      .who em { font-style: normal; font-weight: 400; font-size: 12px; color: #8a8a8a; }
+      .status { position: absolute; left: 0; top: 94px; right: 0; height: 22px; font-size: 14px; color: #333; }
+      .status > span { position: absolute; left: 0; top: 0; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+      .ok { width: 16px; height: 16px; border-radius: 50%; background: #17b87a; color: #fff; display: grid; place-items: center; }
+      .ok svg.i { width: 11px; height: 11px; stroke-width: 2.4; }
+      .prog { position: absolute; left: 0; top: 124px; width: 260px; height: 4px; border-radius: 2px; background: #ededed; overflow: hidden; }
+      .prog i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #1d6fd6; border-radius: 2px; display: block; }
+      .chips { position: absolute; left: 0; top: 140px; display: flex; gap: 8px; }
+      .chip { height: 28px; border-radius: 14px; background: #f4f4f4; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 8px; font-size: 12.5px; color: #333; }
+      .chip i { width: 14px; height: 14px; border-radius: 4px; display: block; }
+      .deck { position: absolute; left: 0; top: 186px; width: 430px; height: 262px; border-radius: 14px; background: #fff; border: 1px solid #ececec; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+      .deck .hd { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; align-items: center; font-size: 14px; font-weight: 700; color: #111; }
+      .deck .hd em { margin-left: auto; font-style: normal; font-weight: 400; font-size: 12.5px; color: #777; }
+      .flash { position: absolute; left: 16px; right: 16px; top: 44px; height: 128px; border-radius: 12px; background: #fff; border: 1px solid #e6e6e6; transform-origin: 50% 50%; }
+      .flash > div { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 0 28px; }
+      .flash .q { font-size: 17px; line-height: 23px; font-weight: 600; color: #111; }
+      .flash .a { font-size: 15px; line-height: 21px; color: #222; }
+      .flash .a small { display: inline-block; margin-top: 8px; font-size: 11.5px; color: #1d6fd6; background: #eef4fd; border-radius: 10px; padding: 2px 8px; }
+      .grades { position: absolute; left: 16px; right: 16px; top: 184px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .grades span { height: 38px; border-radius: 10px; border: 1px solid #e3e3e3; display: grid; place-items: center; text-align: center; font-size: 12.5px; line-height: 14px; font-weight: 600; color: #222; background: #fff; }
+      .grades span small { display: block; font-size: 10.5px; font-weight: 400; color: #888; }
+      .next { position: absolute; left: 16px; top: 232px; font-size: 12.5px; color: #16945f; opacity: 0; }
+
+      .composer { position: absolute; left: 70px; top: 520px; width: 864px; height: 108px; border-radius: 24px; background: #fdfdfd; border: 1px solid #e6e6e6; box-shadow: 0 -8px 36px 1px rgba(0,0,0,0.08); }
+      .composer .box { position: absolute; left: 16px; right: 16px; top: 14px; bottom: 14px; border-radius: 14px; background: #f3f3f4; }
+      .composer .ph { position: absolute; left: 16px; top: 12px; font-size: 14px; color: #6e6e73; }
+      .composer .send { position: absolute; right: 10px; bottom: 10px; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: #9a9aa0; }
+      .fine { position: absolute; left: 0; right: 0; bottom: 11px; text-align: center; font-size: 11px; color: #6e6e73; }
+
+      .cursor { position: absolute; left: 0; top: 0; width: 17px; height: 24px; transform-origin: 2px 2px; z-index: 9; filter: drop-shadow(0 1.5px 2px rgba(0,0,0,0.35)); }
+      .glare { position: absolute; inset: 0; z-index: 10; background: linear-gradient(118deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.05) 24%, rgba(255,255,255,0) 42%); mix-blend-mode: screen; }
+      .dim { position: absolute; inset: 0; z-index: 11; background: #000; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1440" data-height="1440" data-duration="14.6">
+      <div id="screen">
+        <div class="z">
+          <div class="mb">
+            <b>Nemesis</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span>
+            <div class="r">
+              <svg class="i" viewBox="0 0 16 16"><path d="M2 6.2a8.6 8.6 0 0 1 12 0M4.2 8.6a5.4 5.4 0 0 1 7.6 0M6.4 11a2.2 2.2 0 0 1 3.2 0"/></svg>
+              <svg class="i" viewBox="0 0 24 16" style="width:20px"><rect x="1.5" y="3.5" width="19" height="9" rx="2.5"/><rect x="3.5" y="5.5" width="12" height="5" rx="1" fill="currentColor" stroke="none"/><path d="M22.5 6.5v3"/></svg>
+              <span>Thu 10 Sep&nbsp;&nbsp;9:41</span>
+            </div>
+          </div>
+          <div class="app">
+            <div class="top">
+              <div class="logo"><svg viewBox="-66 -10 232 232" aria-hidden="true"><g fill="currentColor"><ellipse cx="50" cy="40" rx="62" ry="20" transform="rotate(-36 50 40)"/><ellipse cx="50" cy="106" rx="62" ry="20" transform="rotate(-36 50 106)"/><ellipse cx="50" cy="172" rx="62" ry="20" transform="rotate(-36 50 172)"/></g></svg>Nemesis</div>
+              <span class="vr"></span>
+              <div class="space">Thermodynamics<svg class="i" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"/></svg><svg class="i" viewBox="0 0 16 16" style="width:17px;height:17px"><circle cx="6" cy="5.5" r="2.3"/><path d="M1.8 13.2c.5-2.4 2.2-3.7 4.2-3.7s3.7 1.3 4.2 3.7M10.6 3.4a2.2 2.2 0 1 1 0 4.3M12.4 9.8c1 .5 1.6 1.6 1.8 3.4"/></svg></div>
+              <div class="r">
+                <span class="stack"><span class="av" style="background:#8a63f0">C</span><span class="av" style="background:#2a8ccd">G</span><span class="av me"><svg viewBox="0 0 41 36"><path class="body" fill="#0e1116"/><rect x="13.2" y="10" width="4.4" height="11" rx="2.2" fill="#f9f9f9"/><rect x="23.4" y="10" width="4.4" height="11" rx="2.2" fill="#f9f9f9"/></svg></span></span>
+                <span class="pill dark">Share</span>
+                <span class="pill line">New space</span>
+                <span class="ic"><svg class="i" viewBox="0 0 16 16"><path d="M4.5 11.5h7l-1-1.6V7a2.5 2.5 0 0 0-5 0v2.9Z"/><path d="M7 13.5h2"/></svg></span>
+                <span class="av" style="background:#e07b39">S</span>
+              </div>
+            </div>
+
+            <aside class="rail">
+              <span class="create"><svg class="i" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg>Create</span>
+              <div class="nav">
+                <div class="nv"><svg class="i" viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M2.5 8h15M8 8v8.5"/></svg>Overview</div>
+                <div class="nv"><svg class="i" viewBox="0 0 20 20"><path d="M5 2.5h6.5l3.5 3.5v11a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z"/><path d="M11.5 2.5V6H15M7.5 10.5h5M7.5 13.5h3.5"/></svg>Sources</div>
+                <div class="nv"><svg class="i" viewBox="0 0 20 20"><rect x="3" y="2.5" width="5" height="15" rx="1.5"/><rect x="11" y="2.5" width="6" height="7" rx="1.5"/><rect x="11" y="12" width="6" height="5.5" rx="1.5"/></svg>Study tools</div>
+                <div class="nv"><svg class="i" viewBox="0 0 20 20"><path d="M4 3h12v14H4z"/><path d="M7 7h6M7 10h6M7 13h4"/></svg>Notes</div>
+                <div class="nv on"><svg class="i" viewBox="0 0 20 20"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h9A2.5 2.5 0 0 1 17 5.5v6a2.5 2.5 0 0 1-2.5 2.5H9l-3.5 3v-3A2.5 2.5 0 0 1 3 11.5Z"/><path d="M7 7.5h6M7 10.5h4"/></svg>Chat</div>
+              </div>
+              <div class="low">
+                <div class="nv"><svg class="i" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14h.01"/></svg>Help</div>
+                <div class="nv"><svg class="i" viewBox="0 0 20 20"><rect x="3" y="3.5" width="14" height="13" rx="2"/><path d="M8 3.5v13"/></svg>Collapse</div>
+              </div>
+            </aside>
+
+            <section class="panel">
+              <svg class="i dots" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="0.8" fill="currentColor"/><circle cx="10" cy="10" r="0.8" fill="currentColor"/><circle cx="15.5" cy="10" r="0.8" fill="currentColor"/></svg>
+
+              <div class="col welcome" id="welcome">
+                <h2>Welcome to your Thermodynamics space.</h2>
+                <p>Lecture slides, readings and notes, ready to study.</p>
+                <p class="ask">Here's what Nemesis can make from your sources:</p>
+                <div class="tiles">
+                  <div class="tile" id="tFlash"><b>Flashcards</b><span class="thumb"><img src="assets/art/violet.webp" alt=""><svg viewBox="0 0 58 44"><rect x="14" y="10" width="26" height="20" rx="4" fill="#fff" opacity="0.55" transform="rotate(-10 27 20)"/><rect x="20" y="14" width="26" height="20" rx="4" fill="#fff"/><path d="M30.6 20.3a2.6 2.6 0 1 1 3.4 2.5c-.6.2-.9.6-.9 1.2v.6" stroke="#6b45d8" stroke-width="1.8" fill="none" stroke-linecap="round"/><circle cx="33.1" cy="27.6" r="1" fill="#6b45d8"/></svg></span></div>
+                  <div class="tile"><b>Quiz</b><span class="thumb"><img src="assets/art/emerald.webp" alt=""><svg viewBox="0 0 58 44"><rect x="12" y="9" width="34" height="26" rx="4" fill="#fff"/><rect x="24" y="15" width="16" height="2.5" rx="1.2" fill="#9ad8bd"/><rect x="24" y="21" width="12" height="2.5" rx="1.2" fill="#cdeee0"/><rect x="24" y="27" width="14" height="2.5" rx="1.2" fill="#cdeee0"/><circle cx="18.5" cy="16.2" r="3.4" fill="#17b87a"/><path d="m16.9 16.3 1.2 1.2 2.1-2.4" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg></span></div>
+                  <div class="tile"><b>Study guide</b><span class="thumb"><img src="assets/art/lime.webp" alt=""><svg viewBox="0 0 58 44"><path d="M29 12c-4-2.4-9-2.6-14-1.6v22c5-1 10-.8 14 1.6 4-2.4 9-2.6 14-1.6v-22c-5-1-10-.8-14 1.6Z" fill="#fff"/><path d="M29 12v22" stroke="#b9d36a" stroke-width="1.2"/><path d="M18.5 16h7M18.5 20h7M18.5 24h5M32.5 16h7M32.5 20h7M32.5 24h5" stroke="#c8dc8e" stroke-width="1.4" stroke-linecap="round"/></svg></span></div>
+                  <div class="tile"><b>Mind map</b><span class="thumb"><img src="assets/art/coral.webp" alt=""><svg viewBox="0 0 58 44"><path d="M29 22 15 13M29 22l14-9M29 22l-12 11M29 22l13 10" stroke="#fff" stroke-width="1.6" opacity="0.9"/><circle cx="29" cy="22" r="6" fill="#fff"/><circle cx="15" cy="13" r="3.6" fill="#fff"/><circle cx="43" cy="13" r="3.6" fill="#fff"/><circle cx="17" cy="33" r="3.6" fill="#fff"/><circle cx="42" cy="32" r="3.6" fill="#fff"/></svg></span></div>
+                  <div class="tile"><b>Study packet</b><span class="thumb"><img src="assets/art/azure.webp" alt=""><svg viewBox="0 0 58 44"><rect x="21" y="7" width="22" height="28" rx="3" fill="#fff" opacity="0.5"/><rect x="18" y="10" width="22" height="28" rx="3" fill="#fff" opacity="0.75"/><rect x="15" y="13" width="22" height="28" rx="3" fill="#fff"/><path d="M19 19h14M19 23h14M19 27h9" stroke="#9cc6e6" stroke-width="1.5" stroke-linecap="round"/></svg></span></div>
+                  <div class="tile"><b>Podcast</b><span class="thumb"><img src="assets/art/orange.webp" alt=""><svg viewBox="0 0 58 44"><rect x="9" y="13" width="40" height="18" rx="9" fill="#fff"/><path d="m16 18.5 5 3.5-5 3.5Z" fill="#ff6a1a"/><path d="M26 19v6M29.5 16.5v11M33 18v8M36.5 15.5v13M40 19v6M43.5 20.5v3" stroke="#ff8a4a" stroke-width="1.7" stroke-linecap="round"/></svg></span></div>
+                  <div class="tile"><b>Video summary</b><span class="thumb"><img src="assets/art/emerald.webp?v=video" alt="" style="filter:hue-rotate(-25deg)"><svg viewBox="0 0 58 44"><rect x="10" y="9" width="38" height="26" rx="4" fill="#fff"/><circle cx="29" cy="22" r="7" fill="#17b87a"/><path d="m27 18.8 5.2 3.2-5.2 3.2Z" fill="#fff"/></svg></span></div>
+                  <div class="tile"><b>Slides</b><span class="thumb"><img src="assets/art/violet.webp?v=slides" alt="" style="filter:hue-rotate(28deg)"><svg viewBox="0 0 58 44"><rect x="9" y="9" width="40" height="26" rx="3" fill="#fff"/><rect x="14" y="14" width="16" height="3" rx="1.5" fill="#8a63f0"/><rect x="14" y="20" width="11" height="2" rx="1" fill="#d9ccfb"/><rect x="34" y="23" width="3.5" height="8" rx="1" fill="#b59cff"/><rect x="39" y="19" width="3.5" height="12" rx="1" fill="#8a63f0"/><rect x="44" y="26" width="3" height="5" rx="1" fill="#d9ccfb"/></svg></span></div>
+                  <div class="tile"><b>Cheat sheet</b><span class="thumb"><img src="assets/art/coral.webp?v=sheet" alt="" style="filter:hue-rotate(-18deg)"><svg viewBox="0 0 58 44"><rect x="15" y="6" width="28" height="34" rx="3" fill="#fff"/><path d="M19 12h12M19 17h20M19 22h20M19 27h20M19 32h14" stroke="#f3a3a0" stroke-width="1.5" stroke-linecap="round"/><path d="M29 15v19" stroke="#f7c9c7" stroke-width="1"/></svg></span></div>
+                </div>
+              </div>
+
+              <div class="chat" id="chat">
+                <div class="you" id="you">Make flashcards from Lecture 6</div>
+                <div class="who" id="who"><span class="av sm me"><svg viewBox="0 0 41 36"><path class="body" fill="#0e1116"/><rect x="13.2" y="10" width="4.4" height="11" rx="2.2" fill="#f9f9f9"/><rect x="23.4" y="10" width="4.4" height="11" rx="2.2" fill="#f9f9f9"/></svg></span>Nemesis<em>now</em></div>
+                <div class="status" id="status"><span id="sMaking">Making flashcards from 3 sources</span><span id="sReady"><i class="ok"><svg class="i" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></svg></i>24 flashcards ready, every one linked to its source</span></div>
+                <div class="prog" id="progWrap"><i id="prog"></i></div>
+                <div class="chips" id="chips"><span class="chip" id="c1"><i style="background:#ff6a1a"></i>Lecture 6 slides</span><span class="chip" id="c2"><i style="background:#e5484d"></i>Week 3 reading</span><span class="chip" id="c3"><i style="background:#8a63f0"></i>Your notes</span></div>
+                <div class="deck" id="deck">
+                  <div class="hd">Lecture 6: Heat engines<em>24 cards, scheduled with FSRS</em></div>
+                  <div class="flash" id="flash">
+                    <div class="q" id="fq">Why can no heat engine be 100% efficient?</div>
+                    <div class="a" id="fa"><span>Some heat always has to flow out to the cold reservoir.<br><small>Slide 14</small></span></div>
+                  </div>
+                  <div class="grades"><span>Again<small>1m</small></span><span>Hard<small>8m</small></span><span id="good">Good<small id="goodT">2d</small></span><span>Easy<small>4d</small></span></div>
+                  <div class="next" id="next">Next review in 2 days</div>
+                </div>
+              </div>
+
+              <div class="composer">
+                <div class="box"><span class="ph">Ask a question, or @ an agent</span></div>
+                <span class="send"><svg class="i" viewBox="0 0 16 16"><path d="M2.5 8 13.5 2.8 11 13.2 7.6 9.4Z"/><path d="m7.6 9.4 5.9-6.6"/></svg></span>
+              </div>
+              <div class="fine">Every answer links back to your sources.</div>
+            </section>
+
+            <svg class="cursor" id="cursor" viewBox="0 0 22 30"><path d="M2 2 L2 24 L7.6 18.6 L11.4 27.4 L14.8 26 L11.1 17.4 L18.6 17.4 Z" fill="#0b0b0d" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+        <div class="glare"></div>
+        <div class="dim" id="dim"></div>
+      </div>
+      <canvas id="theater" width="1440" height="1440"></canvas>
+    </div>
+    <script>
+      var W = 1440, H = 1440, UW = 1512, UH = 982, PI = Math.PI;
+      var SWING = 2.6, LOOP = 12, DUR = SWING + LOOP;
+
+      var renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("theater"), antialias: true, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true });
+      renderer.setSize(W, H, false);
+      renderer.setPixelRatio(1);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.setClearColor(0x000000, 0);
+      var scene = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
+
+      // Reflections for the aluminium: the block's own striped studio environment.
+      (function () {
+        var eC = document.createElement("canvas"); eC.width = 1024; eC.height = 512;
+        var ec = eC.getContext("2d"), eg = ec.createLinearGradient(0, 0, 1024, 512);
+        eg.addColorStop(0, "#020307"); eg.addColorStop(0.15, "#1a1a2e"); eg.addColorStop(0.3, "#ffffff");
+        eg.addColorStop(0.45, "#0a0a1e"); eg.addColorStop(0.6, "#ffffff"); eg.addColorStop(0.75, "#1e1e2e"); eg.addColorStop(1, "#020307");
+        ec.fillStyle = eg; ec.fillRect(0, 0, 1024, 512);
+        var eT = new THREE.CanvasTexture(eC); eT.mapping = THREE.EquirectangularReflectionMapping;
+        var pm = new THREE.PMREMGenerator(renderer);
+        scene.environment = pm.fromEquirectangular(eT).texture; eT.dispose(); pm.dispose();
+      })();
+      scene.add(new THREE.AmbientLight(0xffffff, 0.22));
+      var key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(-4, 6, 5); scene.add(key);
+      var rim = new THREE.DirectionalLight(0xdfe8ff, 1.1); rim.position.set(5, 2, -4); scene.add(rim);
+      var fill = new THREE.PointLight(0xffe6d0, 0.5, 20); fill.position.set(-3, -1, 4); scene.add(fill);
+
+      function cbz(p1x, p1y, p2x, p2y) {
+        var ax = 3 * p1x - 3 * p2x + 1, bx = 3 * p2x - 6 * p1x, cx = 3 * p1x;
+        var ay = 3 * p1y - 3 * p2y + 1, by = 3 * p2y - 6 * p1y, cy = 3 * p1y;
+        return function (t) {
+          var s = t;
+          for (var i = 0; i < 12; i++) { var x = ((ax * s + bx) * s + cx) * s - t, dx = (3 * ax * s + 2 * bx) * s + cx; if (Math.abs(dx) < 1e-10) break; s -= x / dx; }
+          s = Math.max(0, Math.min(1, s));
+          return ((ay * s + by) * s + cy) * s;
+        };
+      }
+      var easeOut = cbz(0.16, 1, 0.3, 1);        // Sana's signature curve
+      var easeIO = cbz(0.65, 0, 0.35, 1);
+      var lerp = function (a, b, k) { return a + (b - a) * k; };
+      var clamp01 = function (x) { return x < 0 ? 0 : x > 1 ? 1 : x; };
+      var seg = function (t, a, b) { return clamp01((t - a) / (b - a)); };
+      var bump = function (t, a, d) { return Math.sin(seg(t, a, a + d) * PI); };
+
+      // The character's body: bloub's squircle (superellipse n = 4.2), 41 by 36.
+      (function () {
+        var d = "";
+        for (var i = 0; i <= 96; i++) {
+          var a = (i / 96) * PI * 2, c = Math.cos(a), s = Math.sin(a);
+          d += (i ? "L" : "M") + (20.5 + 20.5 * Math.sign(c) * Math.pow(Math.abs(c), 2 / 4.2)).toFixed(2) + " " + (18 + 18 * Math.sign(s) * Math.pow(Math.abs(s), 2 / 4.2)).toFixed(2);
+        }
+        document.querySelectorAll("path.body").forEach(function (p) { p.setAttribute("d", d + "Z"); });
+      })();
+
+      // ── the laptop ───────────────────────────────────────────────────────────────────────────
+      var display = null, box = null;
+      var lap = new THREE.Group();
+      scene.add(lap);
+      var modelReady = false, pageReady = false, registered = false;
+      var draco = new THREE.DRACOLoader();
+      draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.6/");
+      var loader = new THREE.GLTFLoader();
+      loader.setDRACOLoader(draco);
+      loader.load("models/macbook.glb", function (gltf) {
+        var m = gltf.scene, b3 = new THREE.Box3().setFromObject(m), sz = b3.getSize(new THREE.Vector3());
+        m.scale.setScalar(4.5 / Math.max(sz.x, sz.z));
+        b3.setFromObject(m);
+        m.position.sub(b3.getCenter(new THREE.Vector3()));
+        m.traverse(function (child) {
+          if (child.isMesh && child.name.replace(/\.\d+$/, "") === "display") {
+            // A hole: whatever this mesh covers is written as transparent, so the HTML app shows through.
+            var hole = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            hole.blending = THREE.CustomBlending;
+            hole.blendEquation = THREE.AddEquation;
+            hole.blendSrc = THREE.ZeroFactor; hole.blendDst = THREE.ZeroFactor;
+            hole.blendSrcAlpha = THREE.ZeroFactor; hole.blendDstAlpha = THREE.ZeroFactor;
+            child.material = hole;
+            child.renderOrder = 10;
+            child.geometry.computeBoundingBox();
+            box = child.geometry.boundingBox.clone();
+            display = child;
+          }
+        });
+        lap.add(m);
+        modelReady = true;
+        maybeReady();
+      });
+
+      // Framing: Sana's crop, the screen filling the panel and the keyboard running off the bottom.
+      var FROM = { rx: 0.34, ry: -0.95, rz: 0.36, x: 0.7, y: -0.8, z: -1.8 };
+      var HERO = { rx: 0.1, ry: -0.2, rz: 0.3, x: 0.25, y: -0.1, z: 0 };
+      var CAM = { x: -0.35, y: 1.95, z: 6.2 }, LOOK = { x: -0.2, y: 0.5, z: 0 };
+
+      // Heckbert: the matrix3d that maps a w x h box onto four screen points (TL, TR, BR, BL).
+      function quad(w, h, q) {
+        var x0 = q[0][0], y0 = q[0][1], x1 = q[1][0], y1 = q[1][1], x2 = q[2][0], y2 = q[2][1], x3 = q[3][0], y3 = q[3][1];
+        var sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+        var dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2, den = dx1 * dy2 - dx2 * dy1;
+        var g = (sx * dy2 - dx2 * sy) / den, hh = (dx1 * sy - sx * dy1) / den;
+        var a = x1 - x0 + g * x1, b = x3 - x0 + hh * x3, d = y1 - y0 + g * y1, e = y3 - y0 + hh * y3;
+        return "matrix3d(" + [a / w, d / w, 0, g / w, b / h, e / h, 0, hh / h, 0, 0, 1, 0, x0, y0, 0, 1].map(function (v) { return +v.toFixed(8); }).join(",") + ")";
+      }
+      var tmp = new THREE.Vector3();
+      function project(x, y) {
+        tmp.set(x, y, 0).applyMatrix4(display.matrixWorld).project(camera);
+        return [(tmp.x + 1) * W / 2, (1 - tmp.y) * H / 2];
+      }
+
+      // ── the app on the screen ───────────────────────────────────────────────────────────────
+      var $ = function (id) { return document.getElementById(id); };
+      var screenEl = $("screen"), dim = $("dim"), cursor = $("cursor");
+      var welcome = $("welcome"), tFlash = $("tFlash"), chat = $("chat"), you = $("you"), who = $("who");
+      var sMaking = $("sMaking"), sReady = $("sReady"), progWrap = $("progWrap"), prog = $("prog");
+      var chips = [$("c1"), $("c2"), $("c3")], deck = $("deck"), flash = $("flash"), fq = $("fq"), fa = $("fa"), good = $("good"), goodT = $("goodT"), next = $("next");
+
+      // Cursor keys in app space (the zoomed layout's own pixels): the composer, the Flashcards tile,
+      // the card, the Good button, then home.
+      var CUR = [[0, 1010, 648], [0.7, 1010, 648], [1.9, 470, 335], [2.3, 470, 335], [6.3, 470, 335], [7.2, 552, 342], [7.9, 552, 342], [8.8, 595, 440], [10.1, 595, 440], [11.5, 1010, 648], [12, 1010, 648]];
+      function keys(t, list) {
+        for (var i = 1; i < list.length; i++) {
+          if (t <= list[i][0]) { var k = easeIO(seg(t, list[i - 1][0], list[i][0])); return [lerp(list[i - 1][1], list[i][1], k), lerp(list[i - 1][2], list[i][2], k)]; }
+        }
+        return [list[list.length - 1][1], list[list.length - 1][2]];
+      }
+      function rise(el, k, dy) { el.style.opacity = k.toFixed(3); el.style.transform = "translateY(" + ((1 - k) * dy).toFixed(2) + "px)"; }
+
+      function ui(t) {
+        // loop time: the swing holds the resting state, then one 12s cycle that ends where it began
+        var lt = t >= SWING ? (t - SWING) % LOOP : 0;
+        dim.style.opacity = (1 - easeOut(seg(t, 0.35, 1.7))).toFixed(4);
+
+        var c = keys(lt, CUR), press = Math.max(bump(lt, 1.95, 0.2), bump(lt, 7.2, 0.2), bump(lt, 8.85, 0.2));
+        cursor.style.transform = "translate(" + c[0].toFixed(2) + "px," + c[1].toFixed(2) + "px) scale(" + (1 - 0.15 * press).toFixed(4) + ")";
+
+        // the welcome grid leaves after the click and comes back at the end of the loop
+        var wOut = easeIO(seg(lt, 2.2, 2.7)), wIn = easeOut(seg(lt, 10.3, 10.9));
+        var wk = lt < 10.3 ? 1 - wOut : wIn;
+        welcome.style.opacity = wk.toFixed(3);
+        welcome.style.transform = "translateY(" + (lt < 10.3 ? -10 * wOut : 10 * (1 - wIn)).toFixed(2) + "px)";
+        var hover = easeOut(seg(lt, 1.65, 1.95)) * (1 - seg(lt, 2.3, 2.6));
+        tFlash.style.transform = "translateY(" + (-2 * hover).toFixed(2) + "px) scale(" + (1 - 0.03 * bump(lt, 2.0, 0.22)).toFixed(4) + ")";
+        tFlash.style.boxShadow = "0 " + (2 + 6 * hover).toFixed(1) + "px " + (8 + 14 * hover).toFixed(1) + "px rgba(0,0,0," + (0.08 + 0.08 * hover).toFixed(3) + ")";
+
+        // the conversation: the ask, Nemesis working through three sources, the deck, one card graded
+        var live = lt >= 2.4 && lt < 10.6;
+        chat.style.opacity = live ? (1 - easeIO(seg(lt, 10.0, 10.5))).toFixed(3) : 0;
+        rise(you, easeOut(seg(lt, 2.5, 2.95)), 8);
+        rise(who, easeOut(seg(lt, 2.9, 3.3)), 8);
+        var p = easeIO(seg(lt, 3.3, 5.6)), ready = seg(lt, 5.6, 5.9);
+        sMaking.style.opacity = (easeOut(seg(lt, 3.0, 3.35)) * (1 - ready)).toFixed(3);
+        sReady.style.opacity = ready.toFixed(3);
+        progWrap.style.opacity = (easeOut(seg(lt, 3.0, 3.35)) * (1 - seg(lt, 5.7, 6.0))).toFixed(3);
+        prog.style.width = (100 * p).toFixed(2) + "%";
+        for (var i = 0; i < 3; i++) rise(chips[i], easeOut(seg(lt, 3.4 + i * 0.1, 3.85 + i * 0.1)), 6);
+        rise(deck, easeOut(seg(lt, 5.8, 6.4)), 14);
+        var flipA = seg(lt, 7.3, 7.52), flipB = seg(lt, 7.52, 7.75), shown = lt >= 7.52 && lt < 10.6;
+        flash.style.transform = "scaleX(" + (shown ? easeOut(flipB) : 1 - easeIO(flipA)).toFixed(4) + ")";
+        fq.style.opacity = shown ? 0 : 1;
+        fa.style.opacity = shown ? 1 : 0;
+        var g = lt < 10.6 ? easeOut(seg(lt, 8.95, 9.15)) : 0;
+        good.style.background = "rgb(" + Math.round(lerp(255, 34, g)) + "," + Math.round(lerp(255, 34, g)) + "," + Math.round(lerp(255, 34, g)) + ")";
+        good.style.color = g > 0.5 ? "#fff" : "#222";
+        good.style.borderColor = g > 0.5 ? "#222" : "#e3e3e3";
+        goodT.style.color = g > 0.5 ? "rgba(255,255,255,0.7)" : "#888";
+        next.style.opacity = (lt < 10.6 ? easeOut(seg(lt, 9.1, 9.4)) : 0).toFixed(3);
+      }
+
+      var S = { t: 0 };
+      function render() {
+        var t = S.t, k = easeOut(seg(t, 0, SWING));
+        // after the swing, one idle cycle every 12 s, so [2.6 s, 14.6 s] loops without a seam
+        var a = t > SWING ? ((t - SWING) / LOOP) * PI * 2 : 0;
+        lap.rotation.set(lerp(FROM.rx, HERO.rx, k) + Math.sin(a) * 0.015, lerp(FROM.ry, HERO.ry, k) + Math.sin(a) * 0.05, HERO.rz + Math.sin(a * 2) * 0.006);
+        lap.position.set(lerp(FROM.x, HERO.x, k), lerp(FROM.y, HERO.y, k) + Math.sin(a * 2) * 0.02, lerp(FROM.z, HERO.z, k));
+        camera.position.set(CAM.x + Math.sin(a) * 0.12, CAM.y + Math.cos(a) * 0.06 - 0.06, CAM.z);
+        camera.lookAt(LOOK.x, LOOK.y, LOOK.z);
+        scene.updateMatrixWorld(true);
+        camera.updateMatrixWorld(true);
+        screenEl.style.transform = quad(UW, UH, [project(box.min.x, box.max.y), project(box.max.x, box.max.y), project(box.max.x, box.min.y), project(box.min.x, box.min.y)]);
+        ui(t);
+        renderer.render(scene, camera);
+      }
+
+      var tl = gsap.timeline({ paused: true });
+      tl.to(S, { t: DUR, duration: DUR, ease: "none", onUpdate: render }, 0);
+
+      var imgs = [].slice.call(document.querySelectorAll("#screen img")).map(function (im) { return im.decode ? im.decode().catch(function () {}) : Promise.resolve(); });
+      Promise.all([document.fonts.load('400 16px "Inter Var"'), document.fonts.load('700 16px "Inter Var"')].concat(imgs)).then(function () {
+        pageReady = true;
+        maybeReady();
+      });
+      function maybeReady() {
+        if (!modelReady || !pageReady || registered) return;
+        registered = true;
+        render();
+        window.__timelines = window.__timelines || {};
+        window.__timelines["main"] = tl;
+        window.__hfForceTimelineRebind && window.__hfForceTimelineRebind();
+      }
+    </script>
+  </body>
+</html>

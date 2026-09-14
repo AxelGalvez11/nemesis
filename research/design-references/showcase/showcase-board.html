@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1200">
+    <title>Nemesis showcase: the canvas</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/CustomEase.min.js"></script>
+    <link rel="stylesheet" href="showcase/kit.css">
+    <script src="showcase/kit.js"></script>
+    <style>
+      html, body { width: 1920px; height: 1200px; }
+      #root { width: 1920px; height: 1200px; }
+      #stage { width: 1280px; transform: scale(1.5); }
+      .board-wrap { position: absolute; left: 0; top: 40px; right: 0; bottom: 0; overflow: hidden; background: #fbfbfa; }
+      #board { position: absolute; left: 0; top: 0; width: 1280px; height: 760px; }
+      .dots { position: absolute; left: -80px; top: -80px; right: -80px; bottom: -80px;
+        background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.1px, transparent 1.4px); background-size: 22px 22px; }
+      svg.links { position: absolute; left: 0; top: 0; width: 1280px; height: 760px; overflow: visible; }
+      svg.links path { fill: none; stroke: rgba(0, 0, 0, 0.24); stroke-width: 1.5; stroke-linecap: round; }
+      .node { position: absolute; border-radius: 16px; background: #fff; padding: 14px 16px 16px;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 10px 30px rgba(0, 0, 0, 0.06); }
+      .kind { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 500; color: rgba(0, 0, 0, 0.5); }
+      .kind svg { width: 14px; height: 14px; flex: 0 0 auto; }
+      .node h3 { margin-top: 8px; font-size: 15.5px; font-weight: 500; line-height: 20px; letter-spacing: -0.2px; }
+      .meta { margin-top: 4px; font-size: 12px; line-height: 16px; color: rgba(0, 0, 0, 0.5); }
+      .by { position: absolute; right: 12px; top: 11px; }
+      .by .av { width: 20px; height: 20px; font-size: 9.5px; }
+      .mini-cards { display: flex; gap: 6px; margin-top: 12px; }
+      .mini-cards i { display: block; width: 56px; height: 36px; border-radius: 6px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.09), 0 2px 4px rgba(0, 0, 0, 0.04); }
+      .mini-slides { display: flex; gap: 6px; margin-top: 12px; }
+      .mini-slides i { position: relative; display: block; width: 66px; height: 38px; border-radius: 4px; background: #f4f4f2; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+      .mini-slides b { position: absolute; left: 7px; top: 8px; width: 32px; height: 3px; border-radius: 2px; background: rgba(0, 0, 0, 0.3); }
+      .mini-slides u { position: absolute; left: 7px; top: 16px; width: 48px; height: 2px; border-radius: 2px; background: rgba(0, 0, 0, 0.12); box-shadow: 0 5px 0 rgba(0, 0, 0, 0.12), 0 10px 0 rgba(0, 0, 0, 0.12); }
+      .doc-lines { margin-top: 12px; }
+      .doc-lines i { display: block; height: 3px; margin-top: 6px; border-radius: 2px; background: rgba(0, 0, 0, 0.1); }
+      .note .q { margin-top: 8px; min-height: 42px; }
+      .ask { display: inline-flex; align-items: center; height: 24px; margin-top: 10px; padding: 0 10px; border-radius: 99px; background: rgb(17, 17, 16); color: #fff; font-size: 11.5px; font-weight: 500; }
+      .answer { overflow: hidden; }
+      .answer .a { margin-top: 8px; font-size: 13px; line-height: 19px; color: rgba(0, 0, 0, 0.78); min-height: 57px; }
+      .answer .card-foot { margin-top: 10px; }
+      .answer .src { margin-left: 0; }
+      .tools { position: absolute; left: 50%; bottom: 22px; margin-left: -112px; width: 224px; height: 44px; display: flex; align-items: center; justify-content: space-around;
+        border-radius: 14px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 10px 26px rgba(0, 0, 0, 0.08); color: rgba(0, 0, 0, 0.6); }
+      .tools span { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; }
+      .tools span.on { background: rgba(0, 0, 0, 0.06); color: rgb(20, 20, 20); }
+      .tools svg { width: 17px; height: 17px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      THE CANVAS CLIP, for the band under the hero. Owner, 2026-09-10: "lean into the 'agents and
+      students think together' vibe" and "use hyperframes for it like you did with the launch video".
+      One lecture on the board. Claude brings a deck, ChatGPT brings slides, the student asks a
+      question in a note and Nemesis answers it from the slide, and every output stays linked back to
+      the lecture. The canvas holds pointers to outputs, not the outputs themselves (the shipped rule).
+      Loops: the last second returns the board to its first frame.
+    -->
+    <div id="root" data-composition-id="board" data-start="0" data-width="1920" data-height="1200" data-duration="13">
+      <div id="stage">
+        <div class="app">
+          <div class="bar">
+            <div class="lights"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i></div>
+            <div class="bar-title">Thermodynamics</div>
+            <div class="bar-right">
+              <div class="faces">
+                <span class="av" style="background:#111110">Y</span>
+                <span class="av" style="background:#8A63F0">C</span>
+                <span class="av" style="background:#2A8CCD">G</span>
+                <span class="av" id="face-n" style="background:#ffffff"></span>
+              </div>
+              <span class="share">Share</span>
+            </div>
+          </div>
+          <div class="board-wrap">
+            <div id="board">
+              <div class="dots"></div>
+              <svg class="links" viewBox="0 0 1280 760" aria-hidden="true">
+                <path id="l-deck" d="M346 376 C 440 376, 430 200, 520 200"/>
+                <path id="l-slides" d="M346 396 C 450 396, 430 548, 540 548"/>
+                <path id="l-guide" d="M346 386 C 640 386, 700 196, 940 196"/>
+                <path id="l-answer" d="M930 640 C 640 720, 221 700, 221 468"/>
+              </svg>
+
+              <div class="node" id="n-source" style="left:96px; top:292px; width:250px;">
+                <div class="kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5h3.5"/></svg>Lecture</div>
+                <h3>Lecture 6: The second law</h3>
+                <p class="meta">38 slides, read by Nemesis</p>
+                <div class="doc-lines"><i style="width:92%"></i><i style="width:78%"></i><i style="width:85%"></i><i style="width:60%"></i></div>
+              </div>
+
+              <div class="node" id="n-deck" style="left:520px; top:120px; width:270px;">
+                <div class="kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="5" width="10" height="8.5" rx="1.8"/><path d="M5 3h6"/></svg>Flashcards</div>
+                <span class="by"><span class="av" style="background:#8A63F0">C</span></span>
+                <h3>Lecture 6 deck</h3>
+                <p class="meta" id="deck-count">42 cards, scheduled with FSRS</p>
+                <div class="mini-cards"><i></i><i></i><i></i><i></i></div>
+              </div>
+
+              <div class="node" id="n-slides" style="left:540px; top:470px; width:270px;">
+                <div class="kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="3" width="12" height="8.5" rx="1.5"/><path d="M8 11.5V14M5.5 14h5"/></svg>Slides</div>
+                <span class="by"><span class="av" style="background:#2A8CCD">G</span></span>
+                <h3>The second law in 12 slides</h3>
+                <p class="meta">.pptx, ready to present</p>
+                <div class="mini-slides"><i><b></b><u></u></i><i><b></b><u></u></i><i><b></b><u></u></i></div>
+              </div>
+
+              <div class="node" id="n-guide" style="left:940px; top:126px; width:264px;">
+                <div class="kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3.5 2.5h7l2 2v9h-9z"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3"/></svg>Study guide</div>
+                <span class="by" id="guide-by"></span>
+                <h3>The second law, explained</h3>
+                <p class="meta">6 sections, every claim cited, .docx</p>
+                <div class="doc-lines"><i style="width:88%"></i><i style="width:70%"></i><i style="width:80%"></i></div>
+              </div>
+
+              <div class="node note" id="n-note" style="left:930px; top:420px; width:290px;">
+                <div class="kind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 13l1-3.5L11 2.5l2.5 2.5-7 7z"/></svg>Note</div>
+                <span class="by"><span class="av" style="background:#111110">Y</span></span>
+                <p class="q" id="note-q">Why can&#8217;t a heat engine be 100% efficient?</p>
+                <span class="ask" id="ask">Ask Nemesis</span>
+              </div>
+
+              <div class="node answer" id="n-answer" style="left:930px; top:560px; width:290px;">
+                <div class="kind" id="answer-kind">Nemesis</div>
+                <p class="a" id="answer-a">Because some heat always has to flow out to a colder reservoir. Only the rest can become work.</p>
+                <div class="card-foot"><span class="src" id="answer-src">Slide 18</span><span>From Lecture 6</span></div>
+              </div>
+            </div>
+            <div class="tools">
+              <span class="on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2.5l8 5.2-3.6.8L6.6 12z"/></svg></span>
+              <span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 13l1-3.5L11 2.5l2.5 2.5-7 7z"/></svg></span>
+              <span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="5" width="10" height="8.5" rx="1.8"/><path d="M5 3h6"/></svg></span>
+              <span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6.5 9.5l3-3M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 10.8M11 8.5l1.2-1.2a2.3 2.3 0 0 0-3.3-3.3L7.7 5.2"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="cursor" id="c-claude" style="color:#8A63F0"><span class="tag" style="background:#8A63F0">Claude</span></div>
+        <div class="cursor" id="c-gpt" style="color:#2A8CCD"><span class="tag" style="background:#2A8CCD">ChatGPT</span></div>
+        <div class="cursor" id="c-you" style="color:#111110"><span class="tag" style="background:#111110">You</span></div>
+      </div>
+    </div>
+
+    <script>
+      gsap.registerPlugin(CustomEase);
+      CustomEase.create("drop", "M0,0 C0.327,0.023 0.988,0.015 1,1");
+      CustomEase.create("out", "M0,0 C0.16,1 0.3,1 1,1");
+      CustomEase.create("inout", "M0,0 C0.83,0 0.17,1 1,1");
+      const { mascot, pointer, tick, chars, move, click, type } = KIT;
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+      const stage = $("#stage");
+
+      $("#face-n").innerHTML = mascot(17);
+      $("#guide-by").innerHTML = mascot(22);
+      $("#answer-kind").innerHTML = mascot(16) + "Nemesis";
+      $("#answer-src").insertAdjacentHTML("afterbegin", "");
+      $$(".cursor").forEach((c) => c.insertAdjacentHTML("afterbegin", pointer));
+
+      function build() {
+        const tl = gsap.timeline({ paused: true, defaults: { ease: "out" } });
+        const B = 40; // the board starts 40px down the stage, under the title bar
+        const claude = $("#c-claude"), gpt = $("#c-gpt"), you = $("#c-you");
+        const deck = $("#n-deck"), slides = $("#n-slides"), guide = $("#n-guide"), note = $("#n-note"), answer = $("#n-answer");
+        const links = ["#l-deck", "#l-slides", "#l-guide", "#l-answer"].map((s) => $(s));
+        const len = links.map((p) => p.getTotalLength());
+        const noteQ = chars($("#note-q"));
+        const answerA = chars($("#answer-a"));
+        const answerH = answer.offsetHeight;
+        const count = $("#deck-count");
+        const REST = "0 0 0 1px rgba(0,0,0,0.07), 0 10px 30px rgba(0,0,0,0.06)";
+        const LIFT = "0 0 0 1px rgba(0,0,0,0.07), 0 26px 54px rgba(0,0,0,0.16)";
+
+        const reset = (at) => {
+          tl.set("#board", { scale: 1.03, x: 0, y: 0, transformOrigin: "40% 45%" }, at);
+          [deck, slides].forEach((n) => tl.set(n, { autoAlpha: 0, x: 0, y: 0, rotation: 0, scale: 1, boxShadow: REST }, at));
+          tl.set(guide, { autoAlpha: 0, scale: 0.7, rotation: -10 }, at);
+          tl.set(note, { autoAlpha: 0, scale: 0.9 }, at);
+          tl.set(noteQ, { opacity: 0 }, at);
+          tl.set("#ask", { autoAlpha: 0, scale: 1 }, at);
+          tl.set(answer, { autoAlpha: 0, height: 0, paddingTop: 0, paddingBottom: 0 }, at);
+          tl.set(answerA, { opacity: 0 }, at);
+          tl.set("#answer-src", { autoAlpha: 0, scale: 0.8 }, at);
+          links.forEach((p, i) => tl.set(p, { strokeDasharray: len[i], strokeDashoffset: len[i], opacity: 1 }, at));
+          tl.set([claude, gpt, you], { autoAlpha: 0 }, at);
+          tl.set(".mini-slides i", { autoAlpha: 0, y: 4 }, at);
+        };
+        reset(0);
+
+        // the slow push in, the whole board settling toward the reader
+        // 🔴 PUSH IN ONCE, THEN HOLD. A camera that keeps moving makes every frame of the dotted ground new
+        // (the first draft was 4.3 MB for 13 s) and makes the dots shimmer. The motion belongs to the agents.
+        tl.to("#board", { scale: 1, duration: 3.2, ease: "inout" }, 0);
+
+        // ── Claude carries the deck in and sets it down ──
+        const dx = 520, dy = 120; // the deck's resting spot, in board pixels
+        tl.set(claude, { x: 1340, y: 60 }, 0);
+        tl.set(deck, { autoAlpha: 1, x: 1340 - 40 - dx, y: 60 - B - 60 - dy, rotation: 6, scale: 1.03, boxShadow: LIFT }, 0.5);
+        tl.to(claude, { autoAlpha: 1, duration: 0.2 }, 0.5);
+        move(tl, claude, dx + 40, dy + B + 60, 0.55, 1.35, "power2.inOut");
+        tl.to(deck, { x: 0, y: 0, duration: 1.35, ease: "power2.inOut" }, 0.55);
+        click(tl, claude, 1.9);
+        tl.to(deck, { rotation: 0, scale: 1, boxShadow: REST, duration: 0.7, ease: "drop" }, 1.9);
+        tl.to(links[0], { strokeDashoffset: 0, duration: 0.6, ease: "power2.inOut" }, 2.25);
+        move(tl, claude, dx + 330, dy + B - 30, 2.5, 0.8);
+        tl.to(claude, { autoAlpha: 0, duration: 0.3 }, 3.3);
+
+        // ── ChatGPT brings the slides ──
+        const sx = 540, sy = 470;
+        tl.set(gpt, { x: 700, y: 860 }, 1.9);
+        tl.set(slides, { autoAlpha: 1, x: 700 - 36 - sx, y: 860 - B - 50 - sy, rotation: -5, scale: 1.03, boxShadow: LIFT }, 2.0);
+        tl.to(gpt, { autoAlpha: 1, duration: 0.2 }, 2.0);
+        move(tl, gpt, sx + 36, sy + B + 50, 2.05, 1.3, "power2.inOut");
+        tl.to(slides, { x: 0, y: 0, duration: 1.3, ease: "power2.inOut" }, 2.05);
+        click(tl, gpt, 3.35);
+        tl.to(slides, { rotation: 0, scale: 1, boxShadow: REST, duration: 0.7, ease: "drop" }, 3.35);
+        tl.to(links[1], { strokeDashoffset: 0, duration: 0.6, ease: "power2.inOut" }, 3.7);
+        tl.to(".mini-slides i", { autoAlpha: 1, y: 0, duration: 0.45, stagger: 0.08 }, 3.8);
+        move(tl, gpt, sx - 80, sy + B + 210, 4.0, 0.8);
+        tl.to(gpt, { autoAlpha: 0, duration: 0.3 }, 4.8);
+
+        // ── the student asks a question in a note ──
+        const nx = 930, ny = 420;
+        tl.set(you, { x: 1330, y: 800 }, 4.3);
+        tl.to(you, { autoAlpha: 1, duration: 0.2 }, 4.3);
+        move(tl, you, nx + 70, ny + B + 44, 4.35, 0.85);
+        click(tl, you, 5.25);
+        click(tl, you, 5.42);
+        tl.to(note, { autoAlpha: 1, scale: 1, duration: 0.45, ease: "back.out(1.5)" }, 5.5);
+        const qEnd = type(tl, noteQ, 5.85, 32);
+        tl.to("#ask", { autoAlpha: 1, duration: 0.25 }, qEnd + 0.05);
+        move(tl, you, nx + 70, ny + B + 118, qEnd + 0.1, 0.45);
+        click(tl, you, qEnd + 0.6);
+        tl.to("#ask", { scale: 0.92, duration: 0.09 }, qEnd + 0.6);
+        tl.to("#ask", { scale: 1, duration: 0.25, ease: "back.out(2)" }, qEnd + 0.69);
+
+        // ── Nemesis answers under it, from the slide ──
+        const a0 = qEnd + 0.8;
+        tl.to(answer, { autoAlpha: 1, height: answerH, paddingTop: 14, paddingBottom: 16, duration: 0.6 }, a0);
+        const face = $("#answer-kind svg");
+        tl.to($$(".eye", face), { scaleY: 0.15, duration: 0.07, transformOrigin: "50% 50%" }, a0 + 0.35);
+        tl.to($$(".eye", face), { scaleY: 1, duration: 0.12 }, a0 + 0.42);
+        const aEnd = type(tl, answerA, a0 + 0.45, 62);
+        tl.to("#answer-src", { autoAlpha: 1, scale: 1, duration: 0.4, ease: "back.out(2)" }, aEnd + 0.05);
+        tl.to(links[3], { strokeDashoffset: 0, duration: 0.7, ease: "power2.inOut" }, aEnd + 0.15);
+        move(tl, you, nx - 60, ny + B + 250, aEnd + 0.2, 0.9);
+
+        // ── and the study guide it wrote from the same lecture ──
+        const g0 = aEnd + 0.75;
+        tl.to(guide, { autoAlpha: 1, scale: 1, rotation: 0, duration: 1, ease: "out" }, g0);
+        tl.to(links[2], { strokeDashoffset: 0, duration: 0.7, ease: "power2.inOut" }, g0 + 0.35);
+
+        // the deck's count climbs as it lands; driven from the timeline clock so any seek shows the right number
+        const setCount = () => {
+          const t = tl.time();
+          const n = Math.round(gsap.utils.clamp(0, 42, gsap.utils.mapRange(2.1, 2.9, 0, 42, t)));
+          count.textContent = n + " cards, scheduled with FSRS";
+        };
+        tl.eventCallback("onUpdate", setCount);
+
+        // ── back to the first frame ──
+        const END = 13, out = END - 0.95;
+        tl.to([deck, slides, guide, note, answer, ...links], { autoAlpha: 0, duration: 0.45, ease: "power2.in", stagger: 0.03 }, out);
+        tl.to([claude, gpt, you], { autoAlpha: 0, duration: 0.3 }, out);
+        tl.to("#board", { scale: 1.03, duration: 0.9, ease: "inout" }, out);
+        reset(END - 0.05);
+        return { tl, setCount };
+      }
+
+      Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 4000))]).then(() => {
+        try {
+          const { tl, setCount } = build();
+          tl.seek(0, false);
+          setCount();
+          window.__timelines["board"] = tl;
+          window.__hfForceTimelineRebind && window.__hfForceTimelineRebind();
+        } catch (e) {
+          window.__err = String((e && e.stack) || e);
+          console.error("board build failed", e);
+        }
+      });
+    </script>
+  </body>
+</html>
