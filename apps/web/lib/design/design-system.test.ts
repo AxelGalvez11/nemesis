@@ -165,6 +165,11 @@ test("🔴 the primitives keep their measured decisions", () => {
   assert.ok(!controls.includes("--ui-accent"), "a checkbox or switch paints the accent again: checked is ink");
   assert.match(controls, /background: on \? "var\(--text-primary\)"/, "the checkbox stopped being ink when checked");
   assert.match(controls, /background: checked \? "var\(--text-primary\)"/, "the switch stopped being ink when on");
+  // 🔴 AND A SWITCH IS A BUTTON WITH role="switch": the flashcard screen may hold no <input> at all (cards-are-output-only).
+  // To the function's own closing brace: `\n}\n`, because its destructured props end in `\n}: {` first.
+  const toggle = /export function Toggle\([\s\S]*?\n\}\n/.exec(controls)?.[0] ?? "";
+  assert.match(toggle, /role="switch"/, "the switch stopped being a switch");
+  assert.ok(!/<input/.test(toggle), "the switch hides a checkbox again, which the flashcard screen cannot hold");
 
   // Nine type variants, and tracking is never set at a call site.
   assert.match(text, /TEXT_VARIANTS = \[\s*"meta",\s*"caption",\s*"ui",\s*"ui-lg",\s*"body",\s*"body-lg",\s*"title-sm",\s*"title",\s*"display",\s*\]/, "the type scale changed");

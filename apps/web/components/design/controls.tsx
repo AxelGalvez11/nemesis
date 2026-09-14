@@ -137,6 +137,13 @@ export function Checkbox({
  * colour (`--text-on-inverse`), so it reads on the ink in both themes, and it travels by a transform
  * on the spacing scale rather than by a pixel `left`, so its end stop follows the track at any root
  * size instead of assuming a 16px rem.
+ *
+ * 🔴🔴 A SWITCH IS A BUTTON WITH `role="switch"`, NOT A HIDDEN CHECKBOX. That is the element a switch
+ * is (the label and the track are one target, and `aria-checked` says on or off), and it is the only
+ * form the flashcard screen can use: `cards-are-output-only.test.ts` bans every `<input>` there,
+ * because the owner has twice said a learner never types into a card, and a guard that learns
+ * exceptions stops being a guard. The review screen had hand-built its own switch for exactly that
+ * reason; with this, it uses the system's.
  */
 export function Toggle({
   checked,
@@ -144,19 +151,30 @@ export function Toggle({
   label,
   disabled,
   className,
+  "aria-label": ariaLabel,
 }: {
   checked?: boolean;
   onChange?: (next: boolean) => void;
   label?: ReactNode;
   disabled?: boolean;
   className?: string;
+  /** The switch's name when no visible label is passed, for a row that labels it elsewhere. */
+  "aria-label"?: string;
 }) {
   return (
-    <label className={cn("inline-flex cursor-pointer select-none items-center gap-(--space-8)", disabled && "pointer-events-none opacity-40", className)}>
-      <input checked={Boolean(checked)} className="peer sr-only" disabled={disabled} onChange={(e) => onChange?.(e.target.checked)} type="checkbox" />
+    <button
+      aria-checked={Boolean(checked)}
+      aria-label={label ? undefined : ariaLabel}
+      className={cn("focus-ring inline-flex cursor-pointer select-none items-center gap-(--space-8) disabled:pointer-events-none disabled:opacity-40", className)}
+      disabled={disabled}
+      onClick={() => onChange?.(!checked)}
+      role="switch"
+      style={{ borderRadius: "var(--radius-6)" }}
+      type="button"
+    >
       <span
         aria-hidden
-        className="relative inline-block h-5 w-9 shrink-0 transition-colors duration-(--dur-fast) ease-(--ease-standard) peer-focus-visible:[box-shadow:var(--focus-ring)]"
+        className="relative inline-block h-5 w-9 shrink-0 transition-colors duration-(--dur-fast) ease-(--ease-standard)"
         style={{ borderRadius: "var(--radius-full)", background: checked ? "var(--text-primary)" : "var(--border-strong)" }}
       >
         <span
@@ -165,7 +183,7 @@ export function Toggle({
         />
       </span>
       {label ? <Text variant="ui">{label}</Text> : null}
-    </label>
+    </button>
   );
 }
 
