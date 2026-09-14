@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "drill-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/axelgalvez/Desktop/nemesis-drill/apps/web && npx next dev -p 3277"
+      ],
+      "port": 3277
+    },
+    {
       "name": "panel-preview",
       "runtimeExecutable": "bash",
       "runtimeArgs": [

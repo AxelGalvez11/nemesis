@@ -44,6 +44,7 @@ import { THINKING_STANCE } from "@nemesis/shared";
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
 import { readChatCheck } from "./chat-check";
+import { readSpeakingDrill, type SpeakingDrill } from "./speaking-drill";
 import { readFigureSubject } from "./figure-subject";
 import { stripScreenPositions } from "./screen-positions";
 import { MAX_REPLY_VISUALS, replyVisuals } from "./reply-visuals";
@@ -212,6 +213,26 @@ export interface TurnDecision {
    * and `chat-check.ts` decides what usable means.
    */
   check: TestRun | null;
+  /**
+   * The learner asked to PRACTISE SAYING something, rather than to be asked about it in writing.
+   *
+   * 🔴🔴 A SEPARATE FIELD FROM `wantsTest`, AND SEPARATE FROM VOICE MODE, because it is a third
+   * thing. `wantsTest` hands back written questions. Voice mode (`use-voice-conversation.ts`) is
+   * an OPEN loop for talking to Nemesis, ordered by the owner on 2026-08-30, and it stays exactly
+   * as it is. This is an EXERCISE: a fixed number of short spoken prompts with an end written into
+   * the script before it starts. Owner, 2026-09-01: *"practice with speaking only allows for short
+   * scripted practice like in pingo."*
+   */
+  wantsDrill: boolean;
+  /**
+   * The script itself, when `wantsDrill` is true and the model wrote a usable one.
+   *
+   * 🔴 THE MODEL IS ASKED ONCE AND THEN HAS NO SAY. Nothing calls a model again while a drill runs;
+   * the runner plays turn N, listens for turn N's window, and moves on. That is what makes a
+   * drill's whole cost knowable before the first word, and it is the difference between this and
+   * the conversation lane. `speaking-drill.ts` bounds every field, because a model wrote them.
+   */
+  drill: SpeakingDrill | null;
   /**
    * A diagram this turn wants to be tested on, as the SHORTEST NAME for the thing (§46.6).
    *
@@ -1027,8 +1048,14 @@ const DECISION_CONTRACT = [
   // null every time, so no course was ever built. Reproduced offline through this very packet
   // before the fix, emitted after it; turn-router.test.ts now pins the field INTO the shape.
   + ' "curriculumFor": "organic chemistry" | null,'
-  // 🔴 SHOWN FILLED IN, for the same reason `visuals` is one line below: a field displayed as
-  // `null` in the contract's highest-signal position is a field the model sends as null forever.
+  // 🔴 SHOWN FILLED IN, AND THE FOURTH TIME THIS LESSON IS BEING OBEYED RATHER THAN RELEARNED.
+  // `visuals`, `checkFigure`, `tools` and `curriculumFor` each shipped as an empty or null example
+  // and each was sent empty or null for ever. A speaking drill is a whole surface behind one
+  // field, so it is drawn here complete: one plain prompt and one repeat-after-me line, which are
+  // the two turn kinds that exist.
+  + ' "wantsDrill": true | false,'
+  + ' "drill": {"title": "Say it back", "turns": [{"ask": "In one sentence, what does this rule actually stop someone doing?", "seconds": 25, "say": null},'
+  + ' {"ask": "Now repeat this line.", "seconds": 15, "say": {"locale": "de-DE", "text": "Ich lerne seit zwei Jahren Deutsch."}}]} | null,'
   + ' "checkFigure": "nephron" | null,'
   + ' "remember": [{"kind": "subject" | "deadline" | "preference" | "context", "statement": "..."}],'
   // 🔴 SHOWN FILLED IN, like `visuals` and `checkFigure` below and above it, and for the same
@@ -1406,6 +1433,32 @@ const DECISION_CONTRACT = [
   + "them either: no \"here it is\", no \"five questions coming up\", no describing what the quiz "
   + "is about to ask. The learner is looking at it. Answer whatever they actually asked, and if "
   + "they asked for nothing but the check, one short line is the whole answer.",
+  "",
+  // 🔴🔴 THE SCRIPT IS WRITTEN ONCE AND THE MODEL IS NOT CONSULTED AGAIN, which is the sentence
+  // that has to land or the whole cost argument fails. A model that expects to be asked what comes
+  // next writes prompts that depend on the previous answer, and the runner has no way to give it
+  // one. Stated as a fact about what will happen rather than as a style note.
+  //
+  // 🔴 THE BOUNDS ARE REPEATED HERE AND ENFORCED IN `speaking-drill.ts` REGARDLESS. Telling the
+  // model the limit gets a better script; the code refusing anything outside it is what makes the
+  // limit true. Neither substitutes for the other.
+  //
+  // 🔴 NO SUBJECT WORDS, NO FIELD LIST (CLAUDE.md). "Say it, recite it, explain it aloud, repeat a
+  // line" describes a spoken exercise for a law student, a machinist and a language learner alike.
+  '"wantsDrill" is true ONLY when the learner asked to practise SAYING something out loud: rehearse '
+  + "an answer, recite something from memory, explain a thing aloud in their own words, or repeat a "
+  + "line in a language they are learning. An ordinary spoken question is not a drill, and a drill "
+  + "is never a way to hold a conversation out loud.",
+  '"drill" is the script, written whenever "wantsDrill" is true: {"title": "…", "turns": [{"ask": "…", '
+  + '"seconds": 25, "say": null}]}. THREE to SIX turns. The entire script is fixed before the '
+  + "learner speaks a word and you will NOT be asked again while it runs, so every prompt has to "
+  + "stand on its own and none of them may depend on how the last one was answered. Each \"ask\" is "
+  + "one short thing to say, under 220 characters, because it is read aloud and cannot be re-read. "
+  + '"seconds" is how long they get to answer it, 10 to 45. Give "say" a value ONLY for a line to be '
+  + "repeated in a target language, and only together with the variety it must be said in; leave it "
+  + "null on every other turn. Draw the prompts from the material the learner means, the same way "
+  + "the questions do. It is shown as a card with its own controls, so do not write the prompts out "
+  + "in your prose and do not announce it.",
   "",
   // 🔴🔴 REPORTED ON PRODUCTION, 2026-08-26: *"i asked for a quiz and it put it in chat not as
   // component."* The reply opened *"Here's your diagnostic quiz"* and then printed nine numbered
@@ -2107,6 +2160,12 @@ export function readTurnDecision(raw: string): TurnDecision | null {
     wantsTest: parsed.wantsTest === true,
     wantsCards: parsed.wantsCards === true,
     check: readChatCheck(parsed.check),
+    wantsDrill: parsed.wantsDrill === true,
+    // 🔴 ONLY WHEN A DRILL WAS ACTUALLY ASKED FOR, the same contradiction rule `checkFigure` and
+    // `webQuery` follow: a script on a turn that set `wantsDrill: false` is the model preparing a
+    // surface nobody opened, and rendering it would put a speaking exercise in front of someone who
+    // asked a written question.
+    drill: parsed.wantsDrill === true ? readSpeakingDrill(parsed.drill) : null,
     // 🔴 ONLY WHEN A TEST WAS ACTUALLY ASKED FOR. A `checkFigure` on a turn with `wantsTest: false`
     // would buy a vision read for a picture nothing is going to show.
     checkFigure: parsed.wantsTest === true || parsed.wantsCards === true ? readFigureSubject(parsed.checkFigure) : null,
@@ -2251,14 +2310,14 @@ export function decisionOrReply(raw: string): TurnDecision | null {
       // 🔴 NO MILESTONES ON EITHER, AND NOT AS A FILLER. These are the paths where the model ignored
       // the envelope and simply answered; nothing announced an intention, so there is nothing to
       // show. Inventing a plan here would be the product narrating on the model's behalf.
-      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
+      ? { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: salvaged, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsDrill: false, drill: null, wantsTest: false,
   wantsCards: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null }
       : null;
   }
   // 🔴 NO QUESTION IS EVER INVENTED HERE. A model that answered in prose asked for nothing, and
   // manufacturing a card from text nobody parsed would park a turn behind a choice the model never
   // offered — the same class of mistake as promoting an unreadable decision to "study".
-  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsTest: false,
+  return { curriculumFor: null, milestones: [], needsPapers: false, needsWeb: false, question: null, say: prose, then: "reply", tools: [], topic: null, remember: [], visuals: [], checkFigure: null, check: null, wantsDrill: false, drill: null, wantsTest: false,
   wantsCards: false, wantsReport: null, webFreshness: null, webQuery: null, webResults: null };
 }
 
