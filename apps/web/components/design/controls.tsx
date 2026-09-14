@@ -80,8 +80,13 @@ export function Textarea({
  * 🔴 THE WHOLE ROW IS THE TARGET, not the 16px box. A native label wrapping both means the text is
  * clickable, which is the difference between a control that feels considered and one that does not.
  *
- * 🔴 CHECKED USES THE ACCENT, and this is the accent's one legitimate job: marking what the learner
- * has chosen. See /design/TOKENS.md §1.3.
+ * 🔴🔴 CHECKED IS INK, NEVER THE ACCENT (owner's ruling 2026-09-11, /design/TOKENS.md §1.4 and
+ * COMPONENTS.md §2). This file said the opposite until 2026-09-14 and painted `--ui-accent`, so every
+ * checkbox and switch built from it contradicted the system it belongs to. The accent has two places:
+ * the send button and the learner's own message bubble.
+ *
+ * 🔴 FOCUS IS DRAWN ON THE BOX, because the real input is visually hidden and a ring on it would
+ * never be seen. `peer-focus-visible` carries the input's keyboard focus to the box beside it.
  */
 export function Checkbox({
   checked,
@@ -103,18 +108,18 @@ export function Checkbox({
     <label className={cn("inline-flex cursor-pointer select-none items-center gap-(--space-8)", disabled && "pointer-events-none opacity-40", className)}>
       <input
         checked={Boolean(checked)}
-        className="sr-only"
+        className="peer sr-only"
         disabled={disabled}
         onChange={(event) => onChange?.(event.target.checked)}
         type="checkbox"
       />
       <span
         aria-hidden
-        className="inline-flex size-4 shrink-0 items-center justify-center transition-colors duration-(--dur-fast)"
+        className="inline-flex size-4 shrink-0 items-center justify-center transition-colors duration-(--dur-fast) peer-focus-visible:[box-shadow:var(--focus-ring)]"
         style={{
           borderRadius: "var(--radius-4)",
-          background: on ? "var(--ui-accent)" : "transparent",
-          border: `1px solid ${on ? "var(--ui-accent)" : "var(--border-strong)"}`,
+          background: on ? "var(--text-primary)" : "transparent",
+          border: `1px solid ${on ? "var(--text-primary)" : "var(--border-strong)"}`,
           // 🔴 `--ui-bg-primary` IS A FILL, NOT A GROUND. Drawing the tick in it put translucent
           // dark on a dark box and the check vanished. Same mistake as the primary button.
           color: "var(--text-on-inverse)",
@@ -127,6 +132,12 @@ export function Checkbox({
   );
 }
 
+/**
+ * 🔴 A SWITCH IS INK WHEN IT IS ON, the ruling the checkbox above follows. The knob takes the ground
+ * colour (`--text-on-inverse`), so it reads on the ink in both themes, and it travels by a transform
+ * on the spacing scale rather than by a pixel `left`, so its end stop follows the track at any root
+ * size instead of assuming a 16px rem.
+ */
 export function Toggle({
   checked,
   onChange,
@@ -142,15 +153,15 @@ export function Toggle({
 }) {
   return (
     <label className={cn("inline-flex cursor-pointer select-none items-center gap-(--space-8)", disabled && "pointer-events-none opacity-40", className)}>
-      <input checked={Boolean(checked)} className="sr-only" disabled={disabled} onChange={(e) => onChange?.(e.target.checked)} type="checkbox" />
+      <input checked={Boolean(checked)} className="peer sr-only" disabled={disabled} onChange={(e) => onChange?.(e.target.checked)} type="checkbox" />
       <span
         aria-hidden
-        className="relative inline-block h-5 w-9 shrink-0 transition-colors duration-(--dur-fast) ease-(--ease-standard)"
-        style={{ borderRadius: "var(--radius-full)", background: checked ? "var(--ui-accent)" : "var(--border-strong)" }}
+        className="relative inline-block h-5 w-9 shrink-0 transition-colors duration-(--dur-fast) ease-(--ease-standard) peer-focus-visible:[box-shadow:var(--focus-ring)]"
+        style={{ borderRadius: "var(--radius-full)", background: checked ? "var(--text-primary)" : "var(--border-strong)" }}
       >
         <span
-          className="absolute top-0.5 size-4 transition-[left] duration-(--dur-standard) ease-(--ease-standard)"
-          style={{ left: checked ? "18px" : "2px", borderRadius: "var(--radius-full)", background: "var(--text-on-inverse)" }}
+          className={cn("absolute left-0.5 top-0.5 size-4 transition-transform duration-(--dur-standard) ease-(--ease-standard)", checked && "translate-x-4")}
+          style={{ borderRadius: "var(--radius-full)", background: "var(--text-on-inverse)" }}
         />
       </span>
       {label ? <Text variant="ui">{label}</Text> : null}

@@ -158,6 +158,14 @@ test("🔴 the primitives keep their measured decisions", () => {
   // A loading button keeps its width: the spinner replaces the ICON slot, never the label.
   assert.match(button, /loading \? <Spinner/, "the spinner stopped replacing the icon slot, so the button will reflow");
 
+  // 🔴🔴 CHECKBOXES AND SWITCHES ARE INK (owner's ruling 2026-09-11, /design/COMPONENTS.md §2). The primitives kept
+  // painting `--ui-accent` for three days after the ruling, so every switch built from them, the two in Settings
+  // included, contradicted the system. The accent has two places: the send button and the learner's own bubble.
+  const controls = src("controls.tsx");
+  assert.ok(!controls.includes("--ui-accent"), "a checkbox or switch paints the accent again: checked is ink");
+  assert.match(controls, /background: on \? "var\(--text-primary\)"/, "the checkbox stopped being ink when checked");
+  assert.match(controls, /background: checked \? "var\(--text-primary\)"/, "the switch stopped being ink when on");
+
   // Nine type variants, and tracking is never set at a call site.
   assert.match(text, /TEXT_VARIANTS = \[\s*"meta",\s*"caption",\s*"ui",\s*"ui-lg",\s*"body",\s*"body-lg",\s*"title-sm",\s*"title",\s*"display",\s*\]/, "the type scale changed");
   assert.ok(!/letterSpacing|letter-spacing|tracking-/.test(text), "a call site set letter-spacing by hand");
