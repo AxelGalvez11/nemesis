@@ -466,8 +466,10 @@ export function createFakeSupabase(opts: { userId?: string; name?: string; email
 
   // AI tools this person has connected, as Supabase Auth's OAuth server lists them (auth.oauth.listGrants).
   const grants: Array<{ client: { id: string; name: string; uri: string; logo_uri: string }; scopes: string[]; granted_at: string }> = [];
-  // Plain tables for what the runtime reads and writes directly rather than through an RPC: chats.
+  // Plain tables for what the runtime reads and writes directly rather than through an RPC: chats, recordings, and the
+  // decks the Flashcards tab lists.
   const tables = new Map<string, Array<Record<string, unknown>>>([
+    ["study_decks", []],
     ["chat_threads", []],
     ["chat_messages", []],
     ["recording_jobs", []],
