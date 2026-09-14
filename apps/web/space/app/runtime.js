@@ -83,8 +83,8 @@ export function emptyState() {
       open: { meetings: true, recents: true, favorites: true, agents: true, private: true, workspace: true, shared: true, apps: true },
       expanded: {},
       hidden: {},
-      // Chats first: signing in lands on a new chat, so the sidebar opens on the tab that chat lives in.
-      tab: 'chats',
+      // Notes first: entering the app opens your notes (owner, 2026-09-14), so the sidebar opens on the tab they live in.
+      tab: 'notes',
       collapsed: false,
       private: [],
       workspace: [],
@@ -202,10 +202,10 @@ class Space {
     this.meetingPollMs = 5000;
     // Outside AI tools this person connected (loadAgents); `available` is false until the OAuth server is switched on.
     this.agents = { items: [], loaded: false, available: false };
-    // The Canvas tab's list of boards and the Workspaces tab's count of cards that are due. Both live in the React
-    // app's own tables, and the sidebar is the only thing here that reads them.
-    this.canvases = { items: [], loaded: false, loading: false };
+    // The Flashcards tab: this person's decks and the count of cards that are due. Both live in the React app's own study
+    // tables, and the sidebar is the only thing here that reads them.
     this.due = { count: 0, at: 0, loading: false };
+    this.decks = { items: [], loaded: false, loading: false };
     // What each workspace is built on, by page (loadSources). The text itself stays on the server until a question
     // needs it, because a workspace can hold a term's worth of lectures.
     this.sources = new Map();
@@ -916,24 +916,28 @@ class Space {
     }
   }
 
-  /** The canvases this person has, newest first. The board itself is the React app's; this is only the list. */
-  async loadCanvases(force = false) {
-    if (!this.me.id || this.canvases.loading || (this.canvases.loaded && !force)) return;
-    this.canvases.loading = true;
+  /**
+   * The decks this person has, newest first, for the Flashcards tab. The cards stay in the React app's study tables and
+   * a deck opens there (/flashcards/<id>); this is only the list. Scoped by `user_id` as well as by the row policy, the
+   * way every study read in this app states its owner.
+   */
+  async loadDecks(force = false) {
+    if (!this.me.id || this.decks.loading || (this.decks.loaded && !force)) return;
+    this.decks.loading = true;
     try {
       const { data, error } = await this.sb
-        .from('canvas_boards')
-        .select('id,title,updated_at')
-        .eq('deleted', false)
+        .from('study_decks')
+        .select('id,name,updated_at')
+        .eq('user_id', this.me.id)
         .order('updated_at', { ascending: false })
-        .limit(200);
+        .limit(500);
       if (error) throw toError(error);
-      this.canvases.items = (data || []).map((r) => ({ id: r.id, title: typeof r.title === 'string' ? r.title : '', at: Date.parse(r.updated_at) || 0 }));
-      this.canvases.loaded = true;
+      this.decks.items = (data || []).map((r) => ({ id: r.id, name: typeof r.name === 'string' && r.name.trim() ? r.name.trim() : 'Untitled deck', at: Date.parse(r.updated_at) || 0 }));
+      this.decks.loaded = true;
     } catch (err) {
-      console.warn('Space: could not list the canvases', err);
+      console.warn('Space: could not list the decks', err);
     } finally {
-      this.canvases.loading = false;
+      this.decks.loading = false;
       this.emit();
     }
   }

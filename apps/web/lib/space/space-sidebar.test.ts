@@ -7,26 +7,27 @@ import { space } from "../../space/app/runtime.js";
 import { createFakeSupabase } from "./fake-backend";
 
 /**
- * 🔴 THE SIDEBAR THE OWNER APPROVED ON 2026-09-11 (docs/space/PLAN.md, "The app, rebuilt around the workspace").
+ * 🔴 THE SIDEBAR IS THE OWNER'S THREE TABS, 2026-09-14 (docs/space/PLAN.md, "Notes, Flashcards and Nemesis AI").
  *
- * Chats, Workspaces, Notes, Canvas and Meetings, with the inbox as a bell. He had already told us twice what a sidebar
- * that hides things reads like, so these tests pin the row itself, the tab a saved sidebar opens on after the rename,
- * and the one piece of the workspace that is not UI: a chat started inside one stays in it.
+ * Notes, Flashcards and Nemesis AI, with the inbox as a bell. Canvas, Workspaces, Meetings and the live group game are
+ * parked, not deleted. He had already told us twice what a sidebar that hides things reads like, so these tests pin the
+ * row itself, the tab a saved sidebar opens on once its own tab has gone, and the parts of the sidebar that are not UI:
+ * the review count and the decks come from real tables, and a chat started inside a workspace stays in it.
  */
 const WEB = path.resolve(__dirname, "../..");
 const MAIN = readFileSync(path.join(WEB, "space/app/main.js"), "utf8");
 
-test("🔴 the tab row is Chats, Workspaces, Notes, Canvas and Meetings, in that order", () => {
+test("🔴 the tab row is Notes, Flashcards and Nemesis AI, in that order", () => {
   const block = /const SB_TABS = \[([\s\S]*?)\n\];/.exec(MAIN);
   assert.ok(block, "SB_TABS is not a list any more");
-  const labels = [...block[1]!.matchAll(/'([A-Z][a-z]+)'\]/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ["Chats", "Workspaces", "Notes", "Canvas", "Meetings"]);
+  const labels = [...block[1]!.matchAll(/'([A-Z][A-Za-z ]+)'\]/g)].map((m) => m[1]);
+  assert.deepEqual(labels, ["Notes", "Flashcards", "Nemesis AI"]);
 });
 
-test("🔴 a sidebar saved before the rename opens on the tab that replaced its own", () => {
+test("🔴 a sidebar saved on a tab that has gone opens on the tab that took its place", () => {
   const map = /const TAB_RENAMED = \{([^}]*)\}/.exec(MAIN);
   assert.ok(map, "the rename map is gone, so a saved sidebar would open on a tab that no longer exists");
-  for (const [was, now] of [["home", "notes"], ["chat", "chats"], ["inbox", "chats"]]) {
+  for (const [was, now] of [["home", "notes"], ["chat", "chats"], ["inbox", "chats"], ["meetings", "notes"], ["workspaces", "notes"], ["canvas", "notes"]]) {
     assert.match(map[1]!, new RegExp(`${was}:\\s*'${now}'`), `a sidebar saved on ${was} does not land on ${now}`);
   }
 });
@@ -59,22 +60,44 @@ test("🔴 the opener's layer is painted above the React column, which fills the
   assert.ok(over > column, `the opener's layer (z-index ${over}) would be buried under the React column (z-index ${column}) on Canvas, Review and the calendar`);
 });
 
-test("Canvas and the review count are read from the app's own tables, not invented", () => {
-  assert.match(MAIN, /space\.loadCanvases\(\)/, "the Canvas tab stopped listing real boards");
-  assert.match(MAIN, /space\.loadDueCards\(\)/, "the review row stopped counting real cards");
-});
-
 type Chat = { id: string; title: string; running?: boolean; workspace?: string | null };
 type Runtime = {
   sb: unknown;
+  me: { id: string | null };
   state: { aiChats: Record<string, Chat>; sidebar: { chats: Array<{ id: string; workspace?: string | null }> } };
+  decks: { items: Array<{ id: string; name: string; at: number }>; loaded: boolean };
   chatEngine: unknown;
   boot(): Promise<void>;
   resetState(): void;
   loadChats(): Promise<void>;
+  loadDecks(force?: boolean): Promise<void>;
   sendChat(id: string | null, text: string, opts?: { webSearch?: boolean; workspace?: string | null }): string | null;
 };
 const runtime = space as unknown as Runtime;
+
+test("🔴 Flashcards lists this person's own decks from the study tables, newest first, and each one opens", async () => {
+  assert.match(MAIN, /space\.loadDecks\(\)/, "the Flashcards tab stopped listing real decks");
+  assert.match(MAIN, /space\.loadDueCards\(\)/, "the review row stopped counting real cards");
+  assert.match(MAIN, /space\.openApp\('\/flashcards\/' \+ /, "a deck row no longer opens its deck");
+
+  const fake = createFakeSupabase() as unknown as { tables: Map<string, Array<Record<string, unknown>>> };
+  runtime.resetState();
+  runtime.sb = fake;
+  await runtime.boot();
+  const me = runtime.me.id;
+  assert.ok(me, "the preview backend signed nobody in, so there is nobody whose decks to list");
+  fake.tables.get("study_decks")!.push(
+    { id: "d-old", user_id: me, name: "Contracts", updated_at: "2026-09-01T10:00:00.000Z" },
+    { id: "d-new", user_id: me, name: "Thermodynamics", updated_at: "2026-09-13T10:00:00.000Z" },
+    { id: "d-theirs", user_id: "someone-else", name: "Not yours", updated_at: "2026-09-14T10:00:00.000Z" },
+    { id: "d-blank", user_id: me, name: "  ", updated_at: "2026-09-10T10:00:00.000Z" },
+  );
+  await runtime.loadDecks(true);
+  assert.deepEqual(
+    runtime.decks.items.map((deck) => [deck.id, deck.name]),
+    [["d-new", "Thermodynamics"], ["d-blank", "Untitled deck"], ["d-old", "Contracts"]],
+  );
+});
 
 async function until(ok: () => boolean, what: string) {
   const end = Date.now() + 2000;

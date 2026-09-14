@@ -525,11 +525,6 @@ function MeetingBar({ b }) {
   if (rec.status === 'failed') return html`<div class="tr-rec-bar failed"><span>${rec.error || 'This recording could not be written up.'}</span>${mine ? html`<div class="tr-btn" role="button" onClick=${run(() => space.retryMeeting(b.id))}><span>${rec.job || space.meetingTakes.has(b.id) ? 'Try again' : 'Start again'}</span></div>` : ''}</div>`;
   return '';
 }
-// Pages holding an AI Meeting Notes block, newest first, grouped the way the Chat tab groups chats.
-function meetingNoteGroups() {
-  const pages = Object.values(S.pages).filter((p) => p && !p.trashed && p.kind === 'page' && (p.content || []).some((id) => S.blocks[id] && S.blocks[id].type === 'transcription')).sort((x, y) => (y.lastEdited || 0) - (x.lastEdited || 0));
-  return CHAT_GROUPS.map(([k, label]) => [label, pages.filter((p) => chatGroup(p.lastEdited || 0) === k)]).filter(([, list]) => list.length);
-}
 // A calendar event's meeting note: the one already made for it on a loaded page, or a new one named after the event.
 function openEventNote(m) {
   const made = Object.values(S.blocks).find((x) => x && x.type === 'transcription' && x.event === m.id);
@@ -1006,7 +1001,7 @@ function RowIcon({ page }) {
   if (ic && ic.svg === 'viewTable') return html`<${Icon} n="viewTable" cls="i20"/>`;
   return html`<${Icon} n="page" cls="i18"/>`;
 }
-// The page tree, which now lives under Notes. Meetings, Agents and the apps have tabs or homes of their own.
+// The page tree, which lives under Notes. Agents lives under Nemesis AI.
 const SECTION_DEFS = [
   { key: 'recents', label: 'Recents', actions: ['ellipsisSmall'] },
   // Favorites, Shared and Workspace appear only once they hold something.
@@ -1016,7 +1011,7 @@ const SECTION_DEFS = [
   ...(READY.agents ? [{ key: 'agents', label: 'Agents', actions: ['arrowDiagonalUpRightSmall', 'ellipsisSmall'] }] : []),
   { key: 'private', label: 'Private', actions: ['arrowDiagonalUpRightSmall', 'plusSmall', 'ellipsisSmall'] },
 ];
-// The sections Notes draws, in this order. Agents belongs to Chats, which is where the AI is.
+// The sections Notes draws, in this order. Agents belongs to Nemesis AI, which is where the AI is.
 const NOTES_SECTIONS = ['recents', 'favorites', 'shared', 'workspace', 'private'];
 function subPagesOf(pid) { return space.childPages(pid); }
 let pendingTitleFocus = null;
@@ -1061,19 +1056,19 @@ function SectionBody({ k, current }) {
   if (k === 'private' || k === 'workspace' || k === 'shared') return html`<div class="sb-list">${sb[k].slice(0, showCount(k)).map((pid) => html`<${PageRow} key=${pid} pid=${pid} current=${current}/>`)}</div>${sb[k].length > showCount(k) ? html`<${MoreRow} k=${k}/>` : ''}`;
   return null;
 }
-// 🔴 THE SIDEBAR THE OWNER APPROVED, 2026-09-11 (docs/space/PLAN.md, "The app, rebuilt around the workspace"):
-// Chats, Workspaces, Notes, Canvas and Meetings, with the inbox as a bell beside his name rather than a tab. He asked
-// for "a synthesis of both": the shape of the mockup he approved, keeping what is already live inside it. The live
-// group game joins the row when it works (M15).
+// 🔴 THREE TABS, THE OWNER'S OWN LIST, 2026-09-14 (docs/space/PLAN.md, "Notes, Flashcards and Nemesis AI"): "there'll
+// be the notes toggle... the flashcards toggle, and... the nemesis AI toggle". Notes holds the page tree and recording,
+// Flashcards the decks, Nemesis AI the chats and the AI tools connected to this account. Canvas, Workspaces, Meetings
+// and the live group game are PARKED, his choice the same day: off the row with nothing deleted, so they can come back.
+// The Nemesis AI tab keeps the key `chats`, which is what saved sidebars and the unread badge already say.
 const SB_TABS = [
-  ...(READY.chat ? [['chats', 'chatBubble', 'Chats']] : []),
-  ['workspaces', 'squareGrid2X2', 'Workspaces'],
   ['notes', 'page', 'Notes'],
-  ['canvas', 'appCanvas', 'Canvas'],
-  ...(READY.meetings ? [['meetings', 'paperMicrophone', 'Meetings']] : []),
+  ['flashcards', 'flashcards', 'Flashcards'],
+  ...(READY.chat ? [['chats', 'aiFace', 'Nemesis AI']] : []),
 ];
-// A sidebar saved before the tabs changed carries the names they had then, so it opens on the tab that replaced it.
-const TAB_RENAMED = { home: 'notes', chat: 'chats', inbox: 'chats' };
+// A sidebar saved on a tab that has since gone opens on the one that took its place. Meeting notes and a workspace's
+// notes are pages, so Meetings, Workspaces and Canvas all fold into Notes.
+const TAB_RENAMED = { home: 'notes', chat: 'chats', inbox: 'chats', meetings: 'notes', workspaces: 'notes', canvas: 'notes' };
 const sidebarTab = () => {
   const saved = TAB_RENAMED[S.sidebar.tab] || S.sidebar.tab;
   return SB_TABS.some(([k]) => k === saved) ? saved : SB_TABS[0][0];
@@ -1109,32 +1104,22 @@ function chatRows() {
 }
 const unreadChats = () => Object.values(S.aiChats || {}).filter((c) => c.unread).length;
 function ChatBody() {
-  const tiles = [['Nemesis AI', 'ai'], ...(READY.ai ? [['New agent', 'new']] : [])];
-  // A chat started inside a workspace lists under that workspace, not here beside the general ones.
-  const rows = chatRows().filter((c) => !c.workspace);
+  // Every chat lists here, including one started inside a workspace: Workspaces is parked (owner, 2026-09-14), and a
+  // chat with nowhere else to show would simply be lost.
+  const rows = chatRows();
   const groups = CHAT_GROUPS.map(([k, label]) => [label, rows.filter((r) => chatGroup(r.at) === k)]).filter(([, list]) => list.length);
   const cur = route() === 'ai' ? S.aiOpen : null;
   const openChat = (c) => { if (!c.chat) return; c.chat.unread = false; S.aiOpen = c.id; void space.openChat(c.id); commit(); go('ai'); };
   const readAll = () => { Object.values(S.aiChats || {}).forEach((c) => { c.unread = false; }); commit(); };
-  return html`<div class="sb-chat"><div class="sb-chat-group">
-    <div class="sb-chat-in">
-      <div class="sb-chat-head"><div class="sb-chat-label">Nemesis AI</div>${READY.ai ? html`<div class="sb-act24 hov" role="button" aria-label="New agent"><${Icon} n="plusSmall" cls="i16"/></div>` : ''}</div>
-      <div class="sb-tiles">${tiles.map(([label, kind]) => html`<a class="sb-tile" role="button" onClick=${() => { if (kind === 'ai') openNewChat(); }}><div class=${'sb-tile-av ' + kind}>${kind === 'new' ? html`<${Icon} n="plusSmall" cls="i20"/>` : kind === 'ai' ? html`<div class="sb-tile-in"><span class="ais-mark" dangerouslySetInnerHTML=${{ __html: ICONS.nemesisMark }}></span></div>` : html`<${Icon} n="book" cls="i20"/>`}</div><div class="sb-tile-label">${label}</div></a>`)}</div>
-    </div>
+  // The tab is already called Nemesis AI, so it opens the way Notes does, with the way to start one, rather than with a
+  // heading and a tile that both say its name again.
+  return html`<div class="sb-section open"><div class="sb-list"><a class="sb-item link" role="button" onClick=${openNewChat}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="chatBubblePlus" cls="i20"/></div><div class="sb-item-label">New chat</div></div></a></div></div>
+  <div class="sb-chat"><div class="sb-chat-group">
     ${groups.map(([label, list], gi) => html`<div class="sb-chat-in older" key=${label}>
       <div class="sb-chat-head"><div class="sb-chat-label">${label}</div>${gi === 0 ? html`<div class="sb-chat-acts"><div class="sb-act24" role="button" aria-label="Search chats" onClick=${(e) => openOverlay('search', e.currentTarget)}><${Icon} n="magnifyingGlass" cls="i16"/></div><div class="sb-act24" role="button" aria-label="Mark all as read" onClick=${readAll}><${Icon} n="checkmarkSmall" cls="i16"/></div><div class="sb-act24" role="button" aria-label="New chat" onClick=${openNewChat}><${Icon} n="plusSmall" cls="i16"/></div></div>` : ''}</div>
       ${list.map((c) => html`<a class=${'sb-chat-row' + (c.id && c.id === cur ? ' on' : '')} key=${c.id || c.title} role="menuitem" onClick=${() => openChat(c)}><div class="sb-chat-row-in"><div class="sb-chat-ic">${html`<${Icon} n="chatBubble" cls="i20"/>`}</div><div class="sb-chat-title">${c.title}</div><div class="sb-chat-date">${chatLabel(c.at)}</div>${c.chat && c.chat.unread ? html`<i class="sb-chat-dot"></i>` : ''}</div></a>`)}
     </div>`)}
   </div></div>`;
-}
-function MeetingsBody() {
-  const sb = S.sidebar;
-  const upcoming = sb.upcoming.slice(0, showCount('upcoming'));
-  const groups = meetingNoteGroups();
-  const newRow = html`<a class="sb-item muted first" onClick=${() => openMeetingNote('')}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New AI meeting note</div></div></a>`;
-  return html`<div class="sb-section open"><div class="sb-list"><a class="sb-item link" role="button" onClick=${() => space.openApp('/calendar')}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="appCalendar" cls="i20"/></div><div class="sb-item-label">Calendar</div></div></a></div></div>
-  <div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Upcoming</span></div><div class="sb-list tight">${upcoming.length ? upcoming.map((m) => html`<div class="sb-meet" role="button" onClick=${() => openEventNote(m)}><div class="sb-meet-ic"><i style=${`background:${m.color}`}></i></div><div class="sb-meet-title">${m.title}</div><div class="sb-meet-time">${m.time}</div></div>`) : html`<div class="sb-meet muted"><div class="sb-meet-title">Nothing on your calendar this week</div></div>`}</div>${sb.upcoming.length > upcoming.length ? html`<${MoreRow} k="upcoming"/>` : ''}</div>
-  ${groups.length ? groups.map(([label, pages], gi) => html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">${label}</span></div><div class="sb-notes">${gi === 0 ? newRow : ''}${pages.map((p) => html`<a class="sb-item" onClick=${() => go(p.id)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="paperMicrophone" cls="i20"/></div><div class="sb-item-label">${pageTitleText(p) || 'Meeting'}</div></div></a>`)}</div></div>`) : html`<div class="sb-section mt"><div class="sb-sec static"><span class="sb-sec-label">Meeting notes</span></div><div class="sb-notes">${newRow}</div></div>`}`;
 }
 // The Inbox (docs/space/PLAN.md, M6): shares, comments and mentions for this person, newest first. Opening one marks it read
 // and goes to the page, which switches workspace when the page lives in someone else's.
@@ -1153,91 +1138,43 @@ function InboxBody() {
   </section></div>`;
 }
 /* ------------------------------------------------------------------ what each tab holds */
-// Chats: every chat, newest first, and the AI tools connected to this account underneath, because that is where the
-// AI lives now that the sidebar has tabs.
+// Nemesis AI: every chat, newest first, and the AI tools connected to this account underneath, because the notes are
+// their memory too (owner, 2026-09-14: "the second brain for Claude, ChatGPT and any other AI agent").
 function ChatsBody() {
   const open = S.sidebar.open.agents !== false;
   return html`<${ChatBody}/>
     ${READY.agents ? html`<div class=${'sb-section' + (open ? ' open' : '')}><div class="sb-sec" role="button" onClick=${() => { S.sidebar.open.agents = !open; commit(); }}><span class="sb-sec-label">Agents</span><span class=${'sb-sec-chev' + (open ? '' : ' closed')}><${Icon} n="arrowChevronSingleDownFillSmall" cls="i12"/></span></div>${open ? html`<${SectionBody} k="agents"/>` : ''}</div>` : ''}`;
 }
 
-// 🔴 A WORKSPACE IS A PAGE, NOT A NEW KIND OF THING (docs/space/PLAN.md, M13). Owner, 2026-09-11: a workspace holds
-// sources, chats, notes and what was made there, and a note written in one is the same note that shows under Notes.
-// Making it a top-level page means sharing, permissions, realtime and the page tree all work the day it is created:
-// its notes are the pages inside it and its chats are the chats started in it. Sources, the Create tiles and Made
-// here arrive with M13.
-const workspacePages = () =>
-  [...S.sidebar.workspace, ...S.sidebar.private, ...S.sidebar.shared]
-    .map((id) => S.pages[id])
-    .filter((p) => p && p.workspace && !p.trashed);
-// A colour per workspace, so a course is recognisable in the list before its name is read. Chosen from the page's own
-// id, so it is the same on every device and needs nothing stored.
-const WS_COLORS = ['#5B5BD6', '#0E7C66', '#B0480D', '#1F6FEB', '#A5306F', '#6E4CC4'];
-const workspaceColor = (p) => [...String(p.id)].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % WS_COLORS.length;
-const workspaceChats = (pid) => (S.sidebar.chats || []).filter((c) => c.workspace === pid);
-function createWorkspace() {
-  const pid = createPage(null, 'private');
-  const page = S.pages[pid];
-  if (page) {
-    page.workspace = true;
-    commit();
-  }
-  return pid;
+// Notes opens with the two ways a note starts: writing one, or recording a class into one. A recording is an AI Meeting
+// Notes block on a new page (openMeetingNote), the same block the slash menu makes, so a recorded class is a note like
+// any other and lists with the rest of them underneath.
+function NotesTop() {
+  return html`<div class="sb-section open"><div class="sb-list">
+      <a class="sb-item link" role="button" onClick=${() => createPage(null, 'private')}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="compose" cls="i20"/></div><div class="sb-item-label">New note</div></div></a>
+      ${READY.meetings ? html`<a class="sb-item link" role="button" onClick=${() => openMeetingNote('')}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="microphone" cls="i20"/></div><div class="sb-item-label">Record</div></div></a>` : ''}
+    </div></div>`;
 }
-function WorkspaceRow({ pid, current }) {
-  const p = S.pages[pid];
-  if (!p || p.trashed) return null;
-  const open = !!(S.sidebar.expanded && S.sidebar.expanded[pid]);
-  const chats = open ? workspaceChats(pid) : [];
-  const notes = open ? space.childPages(pid) : [];
-  const title = pageTitleText(p) || 'New workspace';
-  const toggle = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (!open) space.ensureChildren(pid);
-    S.sidebar.expanded = { ...(S.sidebar.expanded || {}), [pid]: !open };
-    commit();
-  };
-  return html`<a class=${'sb-item ws' + (pid === current ? ' active' : '')} onClick=${() => go(pid)}><div class="sb-item-inner">
-      <div class="sb-item-icon"><span class=${'sb-sq c' + workspaceColor(p)}>${title.trim().slice(0, 1).toUpperCase()}</span><span class=${'sb-ic-tog' + (open ? ' open' : '')} role="button" aria-label="Open" onClick=${toggle}><${Icon} n="arrowChevronSingleDownFillSmall" cls="i12"/></span></div>
-      <div class="sb-item-label">${title}</div>
-      <div class="sb-row-actions">
-        <div class="sb-act" role="button" aria-label="New chat in this workspace" onClick=${(e) => { e.stopPropagation(); e.preventDefault(); openNewChat(pid); }}><${Icon} n="chatBubblePlus" cls="i16"/></div>
-        <div class="sb-act" role="button" aria-label="New note in this workspace" onClick=${(e) => { e.stopPropagation(); e.preventDefault(); createPage(pid); }}><${Icon} n="plusSmall" cls="i16"/></div>
-      </div>
-    </div></a>
-    ${open ? html`<div class="sb-list kids">
-      ${chats.map((c) => html`<${ChatRecentRow} key=${c.id} id=${c.id} depth=${1}/>`)}
-      ${notes.map((k) => html`<${PageRow} key=${k} pid=${k} current=${current} depth=${1}/>`)}
-      ${!chats.length && !notes.length ? html`<div class="sb-item sb-empty"><div class="sb-item-inner" style="padding-left:38px"><div class="sb-item-label">Nothing in here yet</div></div></div>` : ''}
-    </div>` : ''}`;
-}
-// Workspaces: what is due to review across all of them, then the workspaces themselves.
-function WorkspacesBody({ current }) {
-  useEffect(() => { void space.loadDueCards(); }, []);
-  const list = workspacePages();
+
+// Flashcards: what is due across every deck, then the decks themselves, newest first. The cards live in the React app's
+// study tables, so a deck opens in the column beside the sidebar and the sidebar stays where it is.
+function FlashcardsBody() {
+  useEffect(() => { void space.loadDueCards(); void space.loadDecks(); }, []);
   const due = space.due.count;
+  const { items, loaded } = space.decks;
   return html`<div class="sb-section open"><div class="sb-list">
       <a class=${'sb-item link' + (location.pathname === '/review' ? ' active' : '')} role="button" onClick=${() => space.openApp('/review')}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="checkStack" cls="i20"/></div><div class="sb-item-label">Review due cards</div>${due ? html`<div class="sb-count">${due > 999 ? '999+' : due}</div>` : ''}</div></a>
     </div></div>
     <div class="sb-section open">
-      <div class="sb-sec static"><span class="sb-sec-label">Workspaces</span></div>
-      <div class="sb-list">${list.map((p) => html`<${WorkspaceRow} key=${p.id} pid=${p.id} current=${current}/>`)}</div>
-      <a class="sb-item muted" role="button" onClick=${() => createWorkspace()}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New workspace</div></div></a>
-      ${list.length ? '' : html`<div class="sb-note">A workspace keeps one course or project together: its chats, its notes, and what you make there.</div>`}
+      <div class="sb-sec static"><span class="sb-sec-label">Decks</span></div>
+      <div class="sb-list">
+        ${items.map((d) => html`<a class=${'sb-item link' + (location.pathname === '/flashcards/' + d.id ? ' active' : '')} key=${d.id} role="button" onClick=${() => space.openApp('/flashcards/' + d.id)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="flashcards" cls="i20"/></div><div class="sb-item-label">${d.name}</div></div></a>`)}
+        ${items.length ? '' : html`<div class="sb-item sb-empty"><div class="sb-item-inner"><div class="sb-item-label">${loaded ? 'No decks yet' : 'Loading…'}</div></div></div>`}
+      </div>
+      ${loaded && !items.length ? html`<div class="sb-note">Ask Nemesis AI to make flashcards from a note, and the deck shows up here.</div>` : ''}
     </div>`;
 }
-// Canvas: the boards this person has, newest first. The board itself is the React app's, so opening one hands the
-// main column over and keeps the sidebar.
-function CanvasBody() {
-  useEffect(() => { void space.loadCanvases(); }, []);
-  const { items, loaded } = space.canvases;
-  return html`<div class="sb-section open"><div class="sb-list">
-      <a class="sb-item muted first" role="button" onClick=${() => space.openApp('/canvas?new=1')}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="plusSmall" cls="i16"/></div><div class="sb-item-label">New canvas</div></div></a>
-      ${items.map((c) => html`<a class=${'sb-item link' + (location.pathname === '/canvas/' + c.id ? ' active' : '')} key=${c.id} role="button" onClick=${() => space.openApp('/canvas/' + c.id)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n="appCanvas" cls="i20"/></div><div class="sb-item-label">${c.title || 'Untitled canvas'}</div><div class="sb-chat-date">${chatLabel(c.at)}</div></div></a>`)}
-      ${items.length ? '' : html`<div class="sb-item sb-empty"><div class="sb-item-inner"><div class="sb-item-label">${loaded ? 'No canvases yet' : 'Loading…'}</div></div></div>`}
-    </div></div>`;
-}
+
 // The inbox is a bell beside the account name now, so its list hangs off the bell instead of filling the sidebar.
 function InboxPopover() {
   const r = overlay.r;
@@ -1260,7 +1197,7 @@ function Sidebar({ current }) {
     <div class="sb-find" role="button" aria-label="Search" onClick=${(e) => openOverlay('search', e.currentTarget)}><${Icon} n="magnifyingGlass" cls="i16"/><span>Search</span></div>
     <div class="sb-tabs" role="tablist">${SB_TABS.map(([k, ic, label]) => html`<div class=${'sb-tab' + (tab === k ? ' active' : '')} role="tab" key=${k} aria-label=${label} onClick=${() => { S.sidebar.tab = k; commit(); }}><${Icon} n=${ic} cls="i22"/><div class="sb-tab-label"><span><span>${label}</span></span></div>${k === 'chats' && unreadChats() ? html`<span class="sb-badge">${unreadChats()}</span>` : ''}</div>`)}</div>
     <div class=${'sb-scroll tab-' + tab}>
-      ${tab === 'chats' ? html`<${ChatsBody}/>` : tab === 'workspaces' ? html`<${WorkspacesBody} current=${current}/>` : tab === 'canvas' ? html`<${CanvasBody}/>` : tab === 'meetings' ? html`<${MeetingsBody}/>` : ''}
+      ${tab === 'chats' ? html`<${ChatsBody}/>` : tab === 'flashcards' ? html`<${FlashcardsBody}/>` : html`<${NotesTop}/>`}
       ${tab !== 'notes' ? '' : notesSections().map((def) => { const open = S.sidebar.open[def.key] !== false; return html`<div class=${'sb-section' + (open ? ' open' : '')} key=${def.key}><div class="sb-sec" role="button" onClick=${() => { S.sidebar.open[def.key] = !open; commit(); }}><span class="sb-sec-label">${def.label}</span><span class=${'sb-sec-chev' + (open ? '' : ' closed')}><${Icon} n="arrowChevronSingleDownFillSmall" cls="i12"/></span><div class="sb-sec-actions">${def.actions.map((ic) => html`<div class="sb-act" role="button" onClick=${(e) => { e.stopPropagation(); if (ic === 'plusSmall') createPage(null, def.key === 'workspace' ? 'workspace' : 'private'); if (ic === 'ellipsisSmall') openOverlay('sectionMenu', e.currentTarget, { key: def.key }); if (ic === 'arrowDiagonalUpRightSmall') go('library/' + (def.key === 'private' ? 'private' : def.key === 'agents' ? 'agents' : 'recents')); }}><${Icon} n=${ic} cls="i16"/></div>`)}</div></div>${open ? html`<${SectionBody} k=${def.key} current=${current}/>` : ''}</div>`; })}
       ${tab !== 'notes' ? '' : html`<div class="sb-links">${links.map(([ic, label, dot]) => html`<a class=${'sb-item link' + ((label === 'All notes' && route().startsWith('library')) || (label === 'My Tasks' && route() === 'tasks') || (label === 'Templates' && route().startsWith('marketplace')) ? ' active' : '')} onClick=${(e) => sidebarLink(label, e.currentTarget)}><div class="sb-item-inner"><div class="sb-item-icon"><${Icon} n=${ic} cls="i22"/>${dot ? html`<span class="sb-dot"></span>` : ''}</div><div class="sb-item-label">${label}</div></div></a>`)}</div>`}
     </div>

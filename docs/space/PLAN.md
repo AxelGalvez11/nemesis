@@ -47,7 +47,7 @@ nothing here reuses that word.
 - `READY` in apps/web/space/app/main.js hides every way into a feature with no server behind it: ai, meetings, inbox,
   notifyPrefs, publish, members, importExport, history, pageOps, automations, searchFilters, maps. Invites came on with M5, the inbox with M6, chat and meeting notes with M9, agents with M11. The milestone that builds one turns its
   flag on. lib/space/space-ready.test.ts fails when an entry point escapes its flag.
-- Controls with no handler of their own: 71 on 2026-09-11, down from 106 (lib/space/dead-controls.ts). The budget only goes down.
+- Controls with no handler of their own: 70 on 2026-09-14, down from 106 (lib/space/dead-controls.ts). The budget only goes down.
 - Home has no page of its own until M9; it opens the page you were last on, or your first page.
 
 ## Milestones
@@ -214,3 +214,54 @@ style and he likes the tests and the blocks that are live now.
       account, points and a leaderboard, and questions Nemesis writes from a workspace's sources.
 - [ ] M16 **Retirements.** /study and /library/classic redirect, saved chat links that point at /study are migrated,
       and the front door flips for everyone once M12 to M15 are verified, which finishes M10.
+
+## Notes, Flashcards and Nemesis AI (owner, 2026-09-14)
+
+Owner, 2026-09-14, by voice: "nemesis has to become granola slash anki slash notion. The product idea is the second
+brain for Claude, ChatGPT and any other AI agent", for students. The notes are "your database, like long-term memory for
+your AI agent", Claude and ChatGPT connect through an MCP, and "there'll be three main pages on the sidebar": Notes,
+Flashcards and Nemesis AI. This replaces the five tabs above.
+
+**Decided**, in his words or the options he picked:
+- The sidebar carries three tabs: **Notes, Flashcards, Nemesis AI**.
+- **Canvas, Workspaces and the live group game are parked**: off the sidebar, nothing deleted, and they can come back.
+  A course is a note with notes inside it, and its slides or PDFs go into that note. The rest of M13, M14 and M15 wait.
+- **Notes include recording, the quiet way.** The student's own note stays on screen and they can type rough notes or
+  nothing. When they stop, Nemesis writes clean notes from the recording and what they typed, and keeps the full
+  transcript underneath. No live transcript. The laptop microphone is the only source in the first version.
+- **Flashcards are just flashcards.** A deck flips with X and check, and turning on spaced repetition gives the FSRS
+  buttons and due dates. Students can import the Anki decks they already have; syncing with the Anki app itself comes
+  later. Cards stay output only: Nemesis or the student's own AI writes them, never the student.
+- **Claude, ChatGPT and other agents use the notes as memory** through the door built in M11. It stays closed until
+  the Supabase OAuth server is turned on, which only the owner can do (checked 2026-09-14: still off).
+- The design does not change: /design and the synthesis.
+
+**Read from his words and told to him, not yet corrected:** the app opens on Notes ("you enter, and it's pretty much
+like granola and notion"); the spaced repetition switch belongs to each deck and starts off; practice tests are reached
+from Nemesis AI rather than Flashcards; Nemesis AI reads the notes too, so a chat outside a course is no longer answered
+from nothing. docs/product-north-star.md in PR #1221 (2026-09-13) describes the same direction at more length and is the
+older word where the two differ; its "AI cards are drafts until approved" is not adopted, because his own rule is thumbs
+up or down on cards that are already there.
+
+### Milestones
+- [ ] M17 **Three tabs.** Notes, Flashcards and Nemesis AI replace the five; Canvas, Workspaces and Meetings leave the
+      row without losing their routes or their data; a sidebar saved on an old tab opens on the one that took its
+      place; signing in lands on Notes; the guard tests move with the row.
+      2026-09-14, part one: the row is Notes, Flashcards and Nemesis AI (the Nemesis AI tab keeps the key `chats`, so
+      saved sidebars and the unread badge still apply), and TAB_RENAMED sends a sidebar saved on Meetings, Workspaces or
+      Canvas to Notes. Notes opens with New note and Record (a new page holding an AI Meeting Notes block), then the page
+      tree. Flashcards holds Review due cards and the person's decks from study_decks, newest first (runtime.loadDecks);
+      a deck opens at /flashcards/<id> in the column beside the sidebar (components/space/flashcard-deck.tsx). Nemesis
+      AI opens with New chat, lists every chat including those started in a workspace, and keeps Agents. The
+      Workspaces, Canvas and Meetings bodies are gone from main.js; their routes and rows are untouched. Signing in
+      lands on /home, the note last open. Both study screens in the column wear the design system's frame
+      (components/space/study-frame.tsx: the 48px bar, caption crumbs, a 28px close, and the EmptyState shape for their
+      notices), measured on /dev-preview/flashcards-deck. Left for M18: the player under that frame is still the older
+      card (a grey card ground, red and green tallies, a black Show answer pill, tabler thumbs), which
+      /design/COMPONENTS.md §6 replaces with a white Anki card, X and check, an ink progress bar and an ink switch.
+- [ ] M18 **Flashcards.** The tab lists the decks and what is due; a deck opens beside the sidebar and flips with X and
+      check; each deck's switch turns on FSRS; Anki decks come in through the importer that already exists.
+- [ ] M19 **Recording in a note.** Record from any note or from the Notes tab; the note stays editable while it records;
+      the clean notes fold in what the student typed; the transcript stays underneath.
+- [ ] M20 **Notes as memory.** Nemesis AI answers from the notes and cites them; the agent door can search the notes and
+      read their transcripts.
