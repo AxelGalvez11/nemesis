@@ -1,0 +1,1494 @@
+{
+ "count": 186,
+ "directory": "apps/web/public/course-art",
+ "courses": [
+  {
+   "slug": "behavioraleconomics",
+   "file": "behavioraleconomics.webp",
+   "title": "A Practicum in Behavioral Economics",
+   "subject": "Business and economics",
+   "sections": 9,
+   "covers": "Section 1 - The Irrational Quirks of Homo sapiens, Section 2 - Homo economicus Versus Homo sapiens, Section 3 - Behavioral Game Theory, Section 4 - Empirical Studies and Field Experiments"
+  },
+  {
+   "slug": "epa-playbook",
+   "file": "epa-playbook.webp",
+   "title": "Economic Policy Analysis Playbook",
+   "subject": "Business and economics",
+   "sections": 12,
+   "covers": "The Defensive Playbook: Tactics for Policy Analysis"
+  },
+  {
+   "slug": "gatewaytobusinessanalytics",
+   "file": "gatewaytobusinessanalytics.webp",
+   "title": "Gateway to Business Analytics with Microsoft Excel®",
+   "subject": "Business and economics",
+   "sections": 10,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "intromarketinguark",
+   "file": "intromarketinguark.webp",
+   "title": "Introduction to Marketing - MKTG 34303",
+   "subject": "Business and economics",
+   "sections": 294,
+   "covers": "What Is Marketing?, Marketing Function, Segmentation and Targeting, Marketing Strategy"
+  },
+  {
+   "slug": "marketing-podstawy",
+   "file": "marketing-podstawy.webp",
+   "title": "Marketing - Podstawy",
+   "subject": "Business and economics",
+   "sections": 108,
+   "covers": "Część 1 Wprowadzenie, Część 2 Wybór rynków docelowych, Część 3 Produkt, promocja, cena i dystrybucja"
+  },
+  {
+   "slug": "media-innovation-and-entrepreneurship",
+   "file": "media-innovation-and-entrepreneurship.webp",
+   "title": "Media Innovation and Entrepreneurship",
+   "subject": "Business and economics",
+   "sections": 45,
+   "covers": "Developing the Entrepreneurial Mindset, Ideation, Customer Discovery, Business Models for Content & Technology Ventures"
+  },
+  {
+   "slug": "kines082",
+   "file": "kines082.webp",
+   "title": "Methods for Stress Management",
+   "subject": "Business and economics",
+   "sections": 94,
+   "covers": "Stress, Managing Stress, Relaxation, Communication"
+  },
+  {
+   "slug": "socialprovisioning",
+   "file": "socialprovisioning.webp",
+   "title": "Principles of Economics",
+   "subject": "Business and economics",
+   "sections": 134,
+   "covers": "Welcome to Economics!, Defining Economics: A Pluralistic Approach, Choice in a World of Scarcity, Demand and Supply"
+  },
+  {
+   "slug": "principles-economics",
+   "file": "principles-economics.webp",
+   "title": "Principles of Economics",
+   "subject": "Business and economics",
+   "sections": 138,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-economics-2e",
+   "file": "principles-economics-2e.webp",
+   "title": "Principles of Economics 2e",
+   "subject": "Business and economics",
+   "sections": 142,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-macroeconomics",
+   "file": "principles-macroeconomics.webp",
+   "title": "Principles of Macroeconomics",
+   "subject": "Business and economics",
+   "sections": 94,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-macroeconomics-2e",
+   "file": "principles-macroeconomics-2e.webp",
+   "title": "Principles of Macroeconomics 2e",
+   "subject": "Business and economics",
+   "sections": 94,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-macroeconomics-ap-courses",
+   "file": "principles-macroeconomics-ap-courses.webp",
+   "title": "Principles of Macroeconomics for AP® Courses",
+   "subject": "Business and economics",
+   "sections": 82,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-macroeconomics-ap-courses-2e",
+   "file": "principles-macroeconomics-ap-courses-2e.webp",
+   "title": "Principles of Macroeconomics for AP® Courses 2e",
+   "subject": "Business and economics",
+   "sections": 82,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-microeconomics",
+   "file": "principles-microeconomics.webp",
+   "title": "Principles of Microeconomics",
+   "subject": "Business and economics",
+   "sections": 72,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-microeconomics-2e",
+   "file": "principles-microeconomics-2e.webp",
+   "title": "Principles of Microeconomics 2e",
+   "subject": "Business and economics",
+   "sections": 76,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-microeconomics-ap-courses",
+   "file": "principles-microeconomics-ap-courses.webp",
+   "title": "Principles of Microeconomics for AP® Courses",
+   "subject": "Business and economics",
+   "sections": 72,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "principles-microeconomics-ap-courses-2e",
+   "file": "principles-microeconomics-ap-courses-2e.webp",
+   "title": "Principles of Microeconomics for AP® Courses 2e",
+   "subject": "Business and economics",
+   "sections": 74,
+   "covers": "Welcome to Economics!, Choice in a World of Scarcity, Demand and Supply, Labor and Financial Markets"
+  },
+  {
+   "slug": "aboutwriting",
+   "file": "aboutwriting.webp",
+   "title": "About Writing: A Guide",
+   "subject": "Communication and media",
+   "sections": 50,
+   "covers": "Composing, Academic writing, Researching, MLA/APA/CMS"
+  },
+  {
+   "slug": "englishcomposition",
+   "file": "englishcomposition.webp",
+   "title": "English Composition",
+   "subject": "Communication and media",
+   "sections": 20,
+   "covers": "College Success Skills, The Writing Process, Essay Structure, Types of Essays"
+  },
+  {
+   "slug": "greentea",
+   "file": "greentea.webp",
+   "title": "Green Tea Intermediate English Communication OER",
+   "subject": "Communication and media",
+   "sections": 45,
+   "covers": "Introverts and Extroverts, Sports, disabilities, and aging, Empathy, Superstitions - Good Luck, Bad Luck, or No Luck?"
+  },
+  {
+   "slug": "in-the-community",
+   "file": "in-the-community.webp",
+   "title": "In the Community: An Intermediate Integrated Skills Textbook",
+   "subject": "Communication and media",
+   "sections": 40,
+   "covers": "Reception, Respect, and Relationships, Requests and Responses, Permission, Prohibitions, and Obligations, Apologies and Excuses"
+  },
+  {
+   "slug": "leveragingdatavisualizationtocommunicateeffectively",
+   "file": "leveragingdatavisualizationtocommunicateeffectively.webp",
+   "title": "Leveraging Data Visualization to Communicate Effectively",
+   "subject": "Communication and media",
+   "sections": 8,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "communications",
+   "file": "communications.webp",
+   "title": "Oral/Interpersonal Communication",
+   "subject": "Communication and media",
+   "sections": 104,
+   "covers": "Introduction to Communication Situations, Nonverbal Communication, Listening, Leadership and Teamwork Skills"
+  },
+  {
+   "slug": "oregonwrites",
+   "file": "oregonwrites.webp",
+   "title": "Oregon Writes Open Writing Text",
+   "subject": "Communication and media",
+   "sections": 22,
+   "covers": "Situation and Analysis, The Writing Process, Research, Rhetorical Modes"
+  },
+  {
+   "slug": "publicspeakinganddemocraticparticipation",
+   "file": "publicspeakinganddemocraticparticipation.webp",
+   "title": "Public Speaking and Democratic Participation: Speech, Deliberation, and Analysis in the Civic Realm, 2nd ed.",
+   "subject": "Communication and media",
+   "sections": 35,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "readwritesuccess",
+   "file": "readwritesuccess.webp",
+   "title": "Reading and Writing Successfully in College: A Guide for Students [Revised Edition]",
+   "subject": "Communication and media",
+   "sections": 47,
+   "covers": "Doing Intellectual Work, Successful College Reading, Writing Process in College, Writing with Sources"
+  },
+  {
+   "slug": "rhetoricalcommunities",
+   "file": "rhetoricalcommunities.webp",
+   "title": "Rhetorical Communities",
+   "subject": "Communication and media",
+   "sections": 22,
+   "covers": "Rhetorical Foundations, Language Attitudes and Linguistic Justice, Discourse Communities, Genre"
+  },
+  {
+   "slug": "ctetechwriting",
+   "file": "ctetechwriting.webp",
+   "title": "Technical Writing for Technicians",
+   "subject": "Communication and media",
+   "sections": 48,
+   "covers": "1. What is Technical Writing?, 2. Effective Emails & Proper Capitalization, 3. Intake Documents, 5. Delivering Bad News & Using Possessives Correctly"
+  },
+  {
+   "slug": "internationalcomposition",
+   "file": "internationalcomposition.webp",
+   "title": "University Academic Writing for International Students: A Usage-based Approach",
+   "subject": "Communication and media",
+   "sections": 40,
+   "covers": "Writing Through Narrative, Writing for Information Purposes, Writing to Persuade, Email Guidelines"
+  },
+  {
+   "slug": "writingfordigitalmedia",
+   "file": "writingfordigitalmedia.webp",
+   "title": "Writing for Digital Media",
+   "subject": "Communication and media",
+   "sections": 19,
+   "covers": "Critical Literacy, Rhetorical Literacy, Functional Literacy"
+  },
+  {
+   "slug": "englishcomp1",
+   "file": "englishcomp1.webp",
+   "title": "Writing Rhetorically: Framing First Year Writing",
+   "subject": "Communication and media",
+   "sections": 38,
+   "covers": "Course Contents and Syllabus, Invention, Arrangement, Drafting and Revising"
+  },
+  {
+   "slug": "anopenguidetodatastructuresandalgorithms",
+   "file": "anopenguidetodatastructuresandalgorithms.webp",
+   "title": "An Open Guide to Data Structures and Algorithms",
+   "subject": "Computer science",
+   "sections": 12,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "buildinginformationmodeling",
+   "file": "buildinginformationmodeling.webp",
+   "title": "Building Information Modeling using Revit for Architects and Engineers",
+   "subject": "Computer science",
+   "sections": 16,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "messagesthatmatter",
+   "file": "messagesthatmatter.webp",
+   "title": "Messages that Matter: Public Speaking in the Information Age - Third Edition",
+   "subject": "Computer science",
+   "sections": 122,
+   "covers": "Part I - Chapter 1: What is Communication?, The Dread of the Podium, Topic Selection and Purpose, Part II - Chapter 4: Analyzing the Audience"
+  },
+  {
+   "slug": "information",
+   "file": "information.webp",
+   "title": "Research and the Information Landscape",
+   "subject": "Computer science",
+   "sections": 41,
+   "covers": "1: Welcome!, 2: Foundations of Academic Research, 3: Exploring the Information Landscape, 4: Source Evaluation"
+  },
+  {
+   "slug": "fromlabtolaptop",
+   "file": "fromlabtolaptop.webp",
+   "title": "From Lab to Laptop: Case studies in teaching practical courses online",
+   "subject": "Education",
+   "sections": 14,
+   "covers": "Student Perspectives, Teaching Case Studies, Assessment, Educational Development"
+  },
+  {
+   "slug": "higheredk12collaborationtoolkit",
+   "file": "higheredk12collaborationtoolkit.webp",
+   "title": "Making Open Educational Resources with and for PreK12",
+   "subject": "Education",
+   "sections": 17,
+   "covers": "Part I: Mastering the Context, Part III: Develop and Evaluate Learning Resources, Part IV: Share With a Broader Audience, Part V: Evaluate Your Learning"
+  },
+  {
+   "slug": "teachingearlyliteracy",
+   "file": "teachingearlyliteracy.webp",
+   "title": "Methods of Teaching Early Literacy",
+   "subject": "Education",
+   "sections": 10,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "openedaustralasia",
+   "file": "openedaustralasia.webp",
+   "title": "Open Education Down UndOER: Australasian Case Studies",
+   "subject": "Education",
+   "sections": 29,
+   "covers": "Advocacy, Adoption, Adaptation, Creation"
+  },
+  {
+   "slug": "restoryingeducation-pressbooks-sunycreate-cloud",
+   "file": "restoryingeducation-pressbooks-sunycreate-cloud.webp",
+   "title": "ReStorying Education",
+   "subject": "Education",
+   "sections": 10,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "teachingappareldesign",
+   "file": "teachingappareldesign.webp",
+   "title": "Teaching Apparel Production",
+   "subject": "Education",
+   "sections": 49,
+   "covers": "Understanding Yourself and Your Students, Getting Prepared, Pattern Instruction Sheet, Cutting, and Marking, Sewing Supplies and Pressing Equipment"
+  },
+  {
+   "slug": "teachingmethods",
+   "file": "teachingmethods.webp",
+   "title": "Teaching Methods & Practices",
+   "subject": "Education",
+   "sections": 13,
+   "covers": "Managing Learner Behavior, Planning Instruction & Assessment, Family & Community Partnerships"
+  },
+  {
+   "slug": "teachingpronunciation",
+   "file": "teachingpronunciation.webp",
+   "title": "Teaching Pronunciation with Confidence",
+   "subject": "Education",
+   "sections": 11,
+   "covers": "Introduction, Segmentals, Suprasegmentals, Assessment"
+  },
+  {
+   "slug": "whoteacheswriting",
+   "file": "whoteacheswriting.webp",
+   "title": "Who Teaches Writing?",
+   "subject": "Education",
+   "sections": 17,
+   "covers": "Writing a Narrative, Writing with Primary Research, Analyzing Writing, Evaluating Writing"
+  },
+  {
+   "slug": "appliedfluidmechanics",
+   "file": "appliedfluidmechanics.webp",
+   "title": "Applied Fluid Mechanics Lab Manual",
+   "subject": "Engineering and trades",
+   "sections": 10,
+   "covers": "Lab Manual"
+  },
+  {
+   "slug": "blueprint",
+   "file": "blueprint.webp",
+   "title": "Basic Blueprint Reading",
+   "subject": "Engineering and trades",
+   "sections": 10,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "buildingmaint",
+   "file": "buildingmaint.webp",
+   "title": "Building Maintenance & Construction: Tools and Maintenance Tasks (Interactive)",
+   "subject": "Engineering and trades",
+   "sections": 35,
+   "covers": "Safety, Hand & Power Tools, Mathematics for Maintenance Techs, Plumbing Systems"
+  },
+  {
+   "slug": "industrialengineeringintro",
+   "file": "industrialengineeringintro.webp",
+   "title": "Introduction to Industrial Engineering",
+   "subject": "Engineering and trades",
+   "sections": 12,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "me270baughman",
+   "file": "me270baughman.webp",
+   "title": "Introduction to Mechanical Engineering Design",
+   "subject": "Engineering and trades",
+   "sections": 41,
+   "covers": "Micro-economy Kit, Define, Measure, Analyze"
+  },
+  {
+   "slug": "manufacturingprocesses45",
+   "file": "manufacturingprocesses45.webp",
+   "title": "Manufacturing Processes 4-5",
+   "subject": "Engineering and trades",
+   "sections": 24,
+   "covers": "Milling Machines, Lathe Machines, Drill Presses, Bandsaws"
+  },
+  {
+   "slug": "theatreappreciation-pressbooks-sunycreate-cloud",
+   "file": "theatreappreciation-pressbooks-sunycreate-cloud.webp",
+   "title": "#TheatreAppreciation",
+   "subject": "Humanities",
+   "sections": 15,
+   "covers": "Theatre: The Basics, The Culture of Theatre, Professionals in the Theatre: Who Does What?"
+  },
+  {
+   "slug": "ala1865",
+   "file": "ala1865.webp",
+   "title": "American Literatures After 1865",
+   "subject": "Humanities",
+   "sections": 94,
+   "covers": "Contemporary Fiction: Hughes / Walker / Cather, Late Romanticism: Whitman / Dickinson, Realism: Twain / Harte / Howells / Bierce, Realism: James / Jewett / Chopin"
+  },
+  {
+   "slug": "exploringarts",
+   "file": "exploringarts.webp",
+   "title": "Exploring the Arts",
+   "subject": "Humanities",
+   "sections": 20,
+   "covers": "Main Body, Summary"
+  },
+  {
+   "slug": "humanities207",
+   "file": "humanities207.webp",
+   "title": "Huma 207: Exploring the Arts and Culture of the World",
+   "subject": "Humanities",
+   "sections": 54,
+   "covers": "Instructor Resources, What are the Humanities?, Prehistoric - 300 CE, 300 - 900 CE"
+  },
+  {
+   "slug": "intro-to-phil-epistemology",
+   "file": "intro-to-phil-epistemology.webp",
+   "title": "Introduction to Philosophy: Epistemology",
+   "subject": "Humanities",
+   "sections": 8,
+   "covers": "Traditional Epistemology, Expanded Epistemology"
+  },
+  {
+   "slug": "intro-to-phil-of-religion",
+   "file": "intro-to-phil-of-religion.webp",
+   "title": "Introduction to Philosophy: Philosophy of Religion",
+   "subject": "Humanities",
+   "sections": 6,
+   "covers": "Chapters"
+  },
+  {
+   "slug": "musicappreciation",
+   "file": "musicappreciation.webp",
+   "title": "Music Appreciation",
+   "subject": "Humanities",
+   "sections": 17,
+   "covers": "Music Fundamentals, History of Western Music before 1600, History of Western Music after 1600, Music of the 20th and 21st Centuries"
+  },
+  {
+   "slug": "openmusictheory",
+   "file": "openmusictheory.webp",
+   "title": "Open Music Theory",
+   "subject": "Humanities",
+   "sections": 140,
+   "covers": "I. Fundamentals, II. Counterpoint and Galant Schemas, IV. Form, V. Chromaticism in Western Classical Music"
+  },
+  {
+   "slug": "thebibleandmusic",
+   "file": "thebibleandmusic.webp",
+   "title": "The Bible and Music",
+   "subject": "Humanities",
+   "sections": 35,
+   "covers": "History, Texts, People and Genres"
+  },
+  {
+   "slug": "wheredoesartcomefrom",
+   "file": "wheredoesartcomefrom.webp",
+   "title": "Where Does Art Come From?",
+   "subject": "Humanities",
+   "sections": 24,
+   "covers": "Main Body, Student Contributions"
+  },
+  {
+   "slug": "gr-202",
+   "file": "gr-202.webp",
+   "title": "German 202",
+   "subject": "Languages",
+   "sections": 14,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "explorandonegocios",
+   "file": "explorandonegocios.webp",
+   "title": "Negocios y Desarrollo Profesional: Perspectivas en Español",
+   "subject": "Languages",
+   "sections": 11,
+   "covers": "Contenido"
+  },
+  {
+   "slug": "usahispanictvnews",
+   "file": "usahispanictvnews.webp",
+   "title": "Producción de Noticias Televisivas en Español en Estados Unidos de América",
+   "subject": "Languages",
+   "sections": 7,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "elementary-spanish-i",
+   "file": "elementary-spanish-i.webp",
+   "title": "Semillas: Elementary Spanish I",
+   "subject": "Languages",
+   "sections": 38,
+   "covers": "Todo sobre mí, Todo sobre mi vivienda, Todo sobre mi familia, Todo sobre mis gustos"
+  },
+  {
+   "slug": "elementary-spanish-ii",
+   "file": "elementary-spanish-ii.webp",
+   "title": "Semillas: Elementary Spanish II",
+   "subject": "Languages",
+   "sections": 34,
+   "covers": "Todo sobre mis gustos y costumbres, Todo sobre mis rutinas, Todo sobre mi pasado, Todo sobre mis aventuras"
+  },
+  {
+   "slug": "legal",
+   "file": "legal.webp",
+   "title": "Advanced Legal Research: Process and Practice",
+   "subject": "Law",
+   "sections": 14,
+   "covers": "Getting Started, Sample Assignments, Legal Research Process"
+  },
+  {
+   "slug": "introduction-intellectual-property",
+   "file": "introduction-intellectual-property.webp",
+   "title": "Introduction to Intellectual Property",
+   "subject": "Law",
+   "sections": 47,
+   "covers": "Patent Basics, Patent Enforcement, Copyright Basics, Trademark Basics"
+  },
+  {
+   "slug": "suny-monroe-law101",
+   "file": "suny-monroe-law101.webp",
+   "title": "Law 101: Fundamentals of the Law",
+   "subject": "Law",
+   "sections": 111,
+   "covers": ""
+  },
+  {
+   "slug": "ccj230",
+   "file": "ccj230.webp",
+   "title": "SOU-CCJ230 Introduction to the American Criminal Justice System",
+   "subject": "Law",
+   "sections": 113,
+   "covers": "1: Crime, Criminal Justice, and Criminology, 2: Defining and Measuring Crime and Criminal Justice, 3: Criminal Law, 4: Criminal Justice Policy"
+  },
+  {
+   "slug": "algebra-and-trigonometry",
+   "file": "algebra-and-trigonometry.webp",
+   "title": "Algebra and Trigonometry",
+   "subject": "Mathematics",
+   "sections": 79,
+   "covers": "Prerequisites, Equations and Inequalities, Functions, Linear Functions"
+  },
+  {
+   "slug": "college-algebra",
+   "file": "college-algebra.webp",
+   "title": "College Algebra",
+   "subject": "Mathematics",
+   "sections": 59,
+   "covers": "Prerequisites, Equations and Inequalities, Functions, Linear Functions"
+  },
+  {
+   "slug": "college-algebra-corequisite-support",
+   "file": "college-algebra-corequisite-support.webp",
+   "title": "College Algebra with Corequisite Support",
+   "subject": "Mathematics",
+   "sections": 59,
+   "covers": "Prerequisites, Equations and Inequalities, Functions, Linear Functions"
+  },
+  {
+   "slug": "elementary-algebra",
+   "file": "elementary-algebra.webp",
+   "title": "Elementary Algebra",
+   "subject": "Mathematics",
+   "sections": 71,
+   "covers": "Foundations, Solving Linear Equations and Inequalities, Math Models, Graphs"
+  },
+  {
+   "slug": "intermediate-algebra",
+   "file": "intermediate-algebra.webp",
+   "title": "Intermediate Algebra",
+   "subject": "Mathematics",
+   "sections": 70,
+   "covers": "Foundations, Solving Linear Equations, Graphs and Functions, Systems of Linear Equations"
+  },
+  {
+   "slug": "introducingmathematicalbiology",
+   "file": "introducingmathematicalbiology.webp",
+   "title": "Introducing Mathematical Biology",
+   "subject": "Mathematics",
+   "sections": 23,
+   "covers": "Population ecology, Infectious disease, Immune and cell dynamics, Gene networks"
+  },
+  {
+   "slug": "ecumath",
+   "file": "ecumath.webp",
+   "title": "Mathematics Methods for Early Childhood",
+   "subject": "Mathematics",
+   "sections": 13,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "prealgebra",
+   "file": "prealgebra.webp",
+   "title": "Prealgebra",
+   "subject": "Mathematics",
+   "sections": 60,
+   "covers": "Whole Numbers, The Language of Algebra, Integers, Fractions"
+  },
+  {
+   "slug": "precalculus",
+   "file": "precalculus.webp",
+   "title": "Precalculus",
+   "subject": "Mathematics",
+   "sections": 73,
+   "covers": "Functions, Linear Functions, Polynomial and Rational Functions, Exponential and Logarithmic Functions"
+  },
+  {
+   "slug": "significantstatistics",
+   "file": "significantstatistics.webp",
+   "title": "Significant Statistics: An Introduction to Statistics",
+   "subject": "Mathematics",
+   "sections": 51,
+   "covers": "Sampling and Data, Univariate Descriptive Statistics, Bivariate Descriptive Statistics, Probability Distributions"
+  },
+  {
+   "slug": "statisticsforresearchstudents",
+   "file": "statisticsforresearchstudents.webp",
+   "title": "Statistics for Research Students",
+   "subject": "Mathematics",
+   "sections": 48,
+   "covers": "Chapter One - Exploring Your Data, Chapter Three - Comparing Two Group Means, Chapter Six - Comparing Three or More Group Means, Chapter Seven - Moderation and Mediation Analyses"
+  },
+  {
+   "slug": "technicalpm",
+   "file": "technicalpm.webp",
+   "title": "Technical Project Management in Living and Geometric Order",
+   "subject": "Mathematics",
+   "sections": 15,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "curehumanphysiology",
+   "file": "curehumanphysiology.webp",
+   "title": "A Mixed Course-Based Research Approach to Human Physiology",
+   "subject": "Medicine and health",
+   "sections": 18,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "anatomy-and-physiology",
+   "file": "anatomy-and-physiology.webp",
+   "title": "Anatomy and Physiology",
+   "subject": "Medicine and health",
+   "sections": 169,
+   "covers": "Levels of Organization, Support and Movement, Regulation, Integration, and Control, Fluids and Transport"
+  },
+  {
+   "slug": "anatomyandphysiology2lab",
+   "file": "anatomyandphysiology2lab.webp",
+   "title": "Anatomy and Physiology 2 Lab Manual",
+   "subject": "Medicine and health",
+   "sections": 11,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "anatomyandphysiologylaboratorymanualfornursing",
+   "file": "anatomyandphysiologylaboratorymanualfornursing.webp",
+   "title": "Anatomy and Physiology Laboratory Manual for Nursing and Allied Health",
+   "subject": "Medicine and health",
+   "sections": 29,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "bigdataforepidemiology",
+   "file": "bigdataforepidemiology.webp",
+   "title": "Big Data for Epidemiology: Applied Data Analysis Using National Health Surveys",
+   "subject": "Medicine and health",
+   "sections": 12,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "case-studies-for-health-research-and-practice-in-au-and-nz",
+   "file": "case-studies-for-health-research-and-practice-in-au-and-nz.webp",
+   "title": "Case Studies for Health, Research and Practice in Australia and New Zealand",
+   "subject": "Medicine and health",
+   "sections": 26,
+   "covers": "The Calos-Clark Family, Lucy's Story, The Shero Family, The Lewis Family"
+  },
+  {
+   "slug": "communityhealthnursing",
+   "file": "communityhealthnursing.webp",
+   "title": "Community and Public Health Nursing: A Call to Action",
+   "subject": "Medicine and health",
+   "sections": 13,
+   "covers": "Introductory Content, Unit Two: Current Challenges and Community Issues"
+  },
+  {
+   "slug": "comparativevertebrateandhumananatomy",
+   "file": "comparativevertebrateandhumananatomy.webp",
+   "title": "Comparative Vertebrate and Human Anatomy: Ecology, Evolution, and Function",
+   "subject": "Medicine and health",
+   "sections": 21,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "anatomy",
+   "file": "anatomy.webp",
+   "title": "Fundamentals of Anatomy and Physiology",
+   "subject": "Medicine and health",
+   "sections": 140,
+   "covers": "Levels of Organisation, Homeostasis and Nomenclature, Cells and Reproduction, Tissues, Organs, Systems, Integumentary System"
+  },
+  {
+   "slug": "humananatomylab",
+   "file": "humananatomylab.webp",
+   "title": "Fundamentals of Human Anatomy Laboratory Manual",
+   "subject": "Medicine and health",
+   "sections": 14,
+   "covers": "Lab 1, Lab 2, Lab 3, Lab 4"
+  },
+  {
+   "slug": "pedsendocrinology",
+   "file": "pedsendocrinology.webp",
+   "title": "General Inpatient Management of Pediatric Diabetes Mellitus at University of Iowa Stead Family Children's Hospital",
+   "subject": "Medicine and health",
+   "sections": 24,
+   "covers": "An Overview of Diabetes Mellitus, Insulin Basics, Creating and Discussing Insulin Regimens"
+  },
+  {
+   "slug": "anatomylab",
+   "file": "anatomylab.webp",
+   "title": "Human Anatomy Lab Manual",
+   "subject": "Medicine and health",
+   "sections": 41,
+   "covers": "Lab 1: Anatomical Language, Lab 2: Bones and Bone Markings, Lab 3: Spinal Cord and Spinal Nerves, Lab 4: Brain and Cranial Nerves"
+  },
+  {
+   "slug": "humannutrition2",
+   "file": "humannutrition2.webp",
+   "title": "Human Nutrition: 2020 Edition",
+   "subject": "Medicine and health",
+   "sections": 131,
+   "covers": "Basic Concepts in Nutrition, The Human Body, Water and Electrolytes, Carbohydrates"
+  },
+  {
+   "slug": "individualfamilydevelopment",
+   "file": "individualfamilydevelopment.webp",
+   "title": "Individual and Family Development, Health, and Well-being",
+   "subject": "Medicine and health",
+   "sections": 67,
+   "covers": "Introduction, Theories, Families and Other Influences on Development, Research"
+  },
+  {
+   "slug": "literaturereviewsedunursing",
+   "file": "literaturereviewsedunursing.webp",
+   "title": "Literature Reviews for Education and Nursing Graduate Students",
+   "subject": "Medicine and health",
+   "sections": 9,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "medicalterminology",
+   "file": "medicalterminology.webp",
+   "title": "Medical Terminology for Healthcare Professions",
+   "subject": "Medicine and health",
+   "sections": 18,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "micropharmimmuno",
+   "file": "micropharmimmuno.webp",
+   "title": "Microbiology, Pharmacology, and Immunology for Pre-Clinical Students",
+   "subject": "Medicine and health",
+   "sections": 9,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "microbiomeshealthandtheenvironment",
+   "file": "microbiomeshealthandtheenvironment.webp",
+   "title": "Microbiomes: Health and the Environment",
+   "subject": "Medicine and health",
+   "sections": 22,
+   "covers": "An Introduction to Microbiomes, Analyzing Microbiomes, Human Health and Disease, Environmental Microbiomes"
+  },
+  {
+   "slug": "nursingadvancedskills",
+   "file": "nursingadvancedskills.webp",
+   "title": "Nursing Advanced Skills",
+   "subject": "Medicine and health",
+   "sections": 71,
+   "covers": "Initiate IV Therapy, Administer IV Push Medications, Administer Blood Products, Manage Central Lines"
+  },
+  {
+   "slug": "nurseassist",
+   "file": "nurseassist.webp",
+   "title": "Nursing Assistant",
+   "subject": "Medicine and health",
+   "sections": 143,
+   "covers": "Demonstrate Professionalism in the Workplace, Maintain a Safe Health Care Environment, Adhere to Principles of Infection Control, Provide for Personal Care Needs of Clients"
+  },
+  {
+   "slug": "nursingfundamentals",
+   "file": "nursingfundamentals.webp",
+   "title": "Nursing Fundamentals 2e",
+   "subject": "Medicine and health",
+   "sections": 179,
+   "covers": "Scope of Practice, Communication, Diverse Patients, Nursing Process"
+  },
+  {
+   "slug": "nursingmpc",
+   "file": "nursingmpc.webp",
+   "title": "Nursing Management and Professional Concepts 2e",
+   "subject": "Medicine and health",
+   "sections": 108,
+   "covers": "Overview of Management and Professional Issues, Prioritization, Delegation and Supervision, Leadership and Management"
+  },
+  {
+   "slug": "nursingmhcc",
+   "file": "nursingmhcc.webp",
+   "title": "Nursing Mental Health and Community Concepts 2e",
+   "subject": "Medicine and health",
+   "sections": 216,
+   "covers": "Foundational Mental Health Concepts, Stress, Coping, and Crisis Intervention, Psychotropic Medications, Depressive Disorders"
+  },
+  {
+   "slug": "pharmacology",
+   "file": "pharmacology.webp",
+   "title": "Nursing Pharmacology",
+   "subject": "Medicine and health",
+   "sections": 139,
+   "covers": "Kinetics & Dynamics, Legal/Ethical, Antimicrobials, Autonomic Nervous System"
+  },
+  {
+   "slug": "nursingskills",
+   "file": "nursingskills.webp",
+   "title": "Nursing Skills 2e",
+   "subject": "Medicine and health",
+   "sections": 261,
+   "covers": "General Survey, Health History, Blood Pressure, Aseptic Technique"
+  },
+  {
+   "slug": "publichealthforpharmacy",
+   "file": "publichealthforpharmacy.webp",
+   "title": "Public Health in Pharmacy Practice: A Casebook",
+   "subject": "Medicine and health",
+   "sections": 54,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "healthassessment",
+   "file": "healthassessment.webp",
+   "title": "The Complete Subjective Health Assessment",
+   "subject": "Medicine and health",
+   "sections": 24,
+   "covers": "Preface, The Complete Subjective Health Assessment, Cultural Safety and Care Partners, Summary"
+  },
+  {
+   "slug": "suny-delhi-professionalnursing",
+   "file": "suny-delhi-professionalnursing.webp",
+   "title": "Transitions to Professional Nursing Practice",
+   "subject": "Medicine and health",
+   "sections": 20,
+   "covers": ""
+  },
+  {
+   "slug": "immunizations",
+   "file": "immunizations.webp",
+   "title": "Vaccine Practice for Health Professionals: 1st Canadian Edition",
+   "subject": "Medicine and health",
+   "sections": 79,
+   "covers": "Preface, Introduction to Immunizations, Understanding the Timing of Vaccines, Vaccine Administration and Storage"
+  },
+  {
+   "slug": "astronomy",
+   "file": "astronomy.webp",
+   "title": "Astronomy",
+   "subject": "Natural sciences",
+   "sections": 155,
+   "covers": "Science and the Universe: A Brief Tour, Observing the Sky: The Birth of Astronomy, Orbits and Gravity, Earth, Moon, and Sky"
+  },
+  {
+   "slug": "biology",
+   "file": "biology.webp",
+   "title": "Biology",
+   "subject": "Natural sciences",
+   "sections": 206,
+   "covers": "Unit 1. The Chemistry of Life, Unit 2. The Cell, Unit 3. Genetics, Unit 4. Evolutionary Processes"
+  },
+  {
+   "slug": "chemistry",
+   "file": "chemistry.webp",
+   "title": "Chemistry",
+   "subject": "Natural sciences",
+   "sections": 114,
+   "covers": "Essential Ideas, Atoms, Molecules, and Ions, Composition of Substances and Solutions, Stoichiometry of Chemical Reactions"
+  },
+  {
+   "slug": "chemistry-atoms-first",
+   "file": "chemistry-atoms-first.webp",
+   "title": "Chemistry: Atoms First",
+   "subject": "Natural sciences",
+   "sections": 114,
+   "covers": "Essential Ideas, Atoms, Molecules, and Ions, Chemical Bonding and Molecular Geometry, Advanced Theories of Bonding"
+  },
+  {
+   "slug": "college-physics",
+   "file": "college-physics.webp",
+   "title": "College Physics",
+   "subject": "Natural sciences",
+   "sections": 244,
+   "covers": "Introduction: The Nature of Science and Physics, Kinematics, Two-Dimensional Kinematics, Dynamics: Force and Newton's Laws of Motion"
+  },
+  {
+   "slug": "college-physics-ap-courses",
+   "file": "college-physics-ap-courses.webp",
+   "title": "College Physics for AP® Courses",
+   "subject": "Natural sciences",
+   "sections": 244,
+   "covers": "Introduction: The Nature of Science and Physics, Kinematics, Two-Dimensional Kinematics, Dynamics: Force and Newton's Laws of Motion"
+  },
+  {
+   "slug": "environmentaljustice",
+   "file": "environmentaljustice.webp",
+   "title": "Environmental Justice",
+   "subject": "Natural sciences",
+   "sections": 16,
+   "covers": "Final Project Information, Who Gets Environmental Justice?, Student Works"
+  },
+  {
+   "slug": "educationaltechnologyethics",
+   "file": "educationaltechnologyethics.webp",
+   "title": "Ethical Use of Technology in Digital Learning Environments: Graduate Student Perspectives",
+   "subject": "Natural sciences",
+   "sections": 9,
+   "covers": ""
+  },
+  {
+   "slug": "physicsforteachers",
+   "file": "physicsforteachers.webp",
+   "title": "Exploring Physical Phenomena",
+   "subject": "Natural sciences",
+   "sections": 54,
+   "covers": "Exploring the Nature of Light Phenomena, Exploring the Nature of Thermal Phenomena"
+  },
+  {
+   "slug": "física-universitaria-volumen-1",
+   "file": "física-universitaria-volumen-1.webp",
+   "title": "Física universitaria volumen 1",
+   "subject": "Natural sciences",
+   "sections": 99,
+   "covers": "Unidad 1 Mecánica, Unidad 2 Ondas y acústica"
+  },
+  {
+   "slug": "fizyka-dla-szkół-wyższych-tom-1",
+   "file": "fizyka-dla-szkół-wyższych-tom-1.webp",
+   "title": "Fizyka dla szkół wyższych. Tom 1",
+   "subject": "Natural sciences",
+   "sections": 99,
+   "covers": "Część 1 Mechanika, Część 2 Fale i akustyka"
+  },
+  {
+   "slug": "fizyka-dla-szkół-wyższych-tom-2",
+   "file": "fizyka-dla-szkół-wyższych-tom-2.webp",
+   "title": "Fizyka dla szkół wyższych. Tom 2",
+   "subject": "Natural sciences",
+   "sections": 95,
+   "covers": "Część 1 Termodynamika, Część 2 Elektryczność i magnetyzm"
+  },
+  {
+   "slug": "fizyka-dla-szkół-wyższych-tom-3",
+   "file": "fizyka-dla-szkół-wyższych-tom-3.webp",
+   "title": "Fizyka dla szkół wyższych. Tom 3",
+   "subject": "Natural sciences",
+   "sections": 76,
+   "covers": "Część 1 Optyka, Część 2 Fizyka współczesna"
+  },
+  {
+   "slug": "management",
+   "file": "management.webp",
+   "title": "Management: Financial, Social, and Ecological Well-Being",
+   "subject": "Natural sciences",
+   "sections": 18,
+   "covers": "Background and Basics, Planning, Organizing, Leading"
+  },
+  {
+   "slug": "mhccbiology101",
+   "file": "mhccbiology101.webp",
+   "title": "Mt Hood Community College Biology 101",
+   "subject": "Natural sciences",
+   "sections": 55,
+   "covers": "Chapter I: Reference Information, Chapter II: The Process of Science, Chapter III: Themes and Concepts of Biology, Chapter IV: Cell Structure and Function"
+  },
+  {
+   "slug": "mhccbiology102",
+   "file": "mhccbiology102.webp",
+   "title": "Mt Hood Community College Biology 102",
+   "subject": "Natural sciences",
+   "sections": 78,
+   "covers": "Reference Information, The Process of Science, Structure of DNA, Protein Synthesis"
+  },
+  {
+   "slug": "mhccmajorsbio",
+   "file": "mhccmajorsbio.webp",
+   "title": "Principles of Biology",
+   "subject": "Natural sciences",
+   "sections": 163,
+   "covers": "The Process of Science, Chemistry for Biology, Biological Molecules, What is Life?"
+  },
+  {
+   "slug": "ultrasoundphysicsanditsapplicationinmedicine",
+   "file": "ultrasoundphysicsanditsapplicationinmedicine.webp",
+   "title": "Ultrasound Physics and its Application in Medicine",
+   "subject": "Natural sciences",
+   "sections": 11,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "american-government",
+   "file": "american-government.webp",
+   "title": "American Government",
+   "subject": "Social sciences",
+   "sections": 77,
+   "covers": "Students and the System, Individual Agency and Action, Toward Collective Action: Mediating Institutions, Delivering Collective Action: Formal Institutions"
+  },
+  {
+   "slug": "american-government-2e",
+   "file": "american-government-2e.webp",
+   "title": "American Government 2e",
+   "subject": "Social sciences",
+   "sections": 77,
+   "covers": "Students and the System, Individual Agency and Action, Toward Collective Action: Mediating Institutions, Delivering Collective Action: Formal Institutions"
+  },
+  {
+   "slug": "american-government-3e",
+   "file": "american-government-3e.webp",
+   "title": "American Government 3e",
+   "subject": "Social sciences",
+   "sections": 77,
+   "covers": "Students and the System, Individual Agency and Action, Toward Collective Action: Mediating Institutions, Delivering Collective Action: Formal Institutions"
+  },
+  {
+   "slug": "communitypsychologypractice",
+   "file": "communitypsychologypractice.webp",
+   "title": "Case Studies in Community Psychology Practice: A Global Lens",
+   "subject": "Social sciences",
+   "sections": 20,
+   "covers": "Part One: Community Building, Part Two: Global Perspectives, Part Three: Evaluation Research, Part Four: Community and Public Health"
+  },
+  {
+   "slug": "contempfamilies2e",
+   "file": "contempfamilies2e.webp",
+   "title": "Contemporary Families in the US: An Equity Lens 2e",
+   "subject": "Social sciences",
+   "sections": 104,
+   "covers": "Social Constructions, Studying Families, Connection, Community, Love, and Partnering, Nurturance, Parenting, and Caregiving"
+  },
+  {
+   "slug": "suny-hvcc-educationalpsychology",
+   "file": "suny-hvcc-educationalpsychology.webp",
+   "title": "Educational Psychology",
+   "subject": "Social sciences",
+   "sections": 103,
+   "covers": "The Changing Teaching Profession and You, The Learning Process, Student Development, Student Diversity"
+  },
+  {
+   "slug": "humansrsocialmedia",
+   "file": "humansrsocialmedia.webp",
+   "title": "Humans R Social Media - 2024 \"Living Book\" Edition",
+   "subject": "Social sciences",
+   "sections": 19,
+   "covers": "Main Body, iVoices Media Collections"
+  },
+  {
+   "slug": "socproblems1e",
+   "file": "socproblems1e.webp",
+   "title": "Inequality and Interdependence: Social Problems and Social Justice",
+   "subject": "Social sciences",
+   "sections": 94,
+   "covers": "What Is a Social Problem?, Who Are We?: Social Problems in a Diverse World, What Is Sociology? Theory in Social Science, Who Learns? Pods, Masks, and “You’re on Mute”"
+  },
+  {
+   "slug": "introtosocialmedia",
+   "file": "introtosocialmedia.webp",
+   "title": "Intro to Social Media",
+   "subject": "Social sciences",
+   "sections": 33,
+   "covers": "Marketing Principles, Crafting a Social Media Strategy for Your Business, Social Media 101, Course Project"
+  },
+  {
+   "slug": "introductiontocommunitypsychology",
+   "file": "introductiontocommunitypsychology.webp",
+   "title": "Introduction to Community Psychology",
+   "subject": "Social sciences",
+   "sections": 57,
+   "covers": "Introduction, Theory, Research, and Practice, Understanding Communities, Intervention and Prevention Strategies"
+  },
+  {
+   "slug": "introcrim2e",
+   "file": "introcrim2e.webp",
+   "title": "Introduction to Criminology - 2nd Edition",
+   "subject": "Social sciences",
+   "sections": 191,
+   "covers": "1. What is Crime?, 2. Typologies and Patterns of Crime, 3. Media and Crime, 4. Race and Crime"
+  },
+  {
+   "slug": "criminologyintro1e",
+   "file": "criminologyintro1e.webp",
+   "title": "Introduction to Criminology: An Equity Lens",
+   "subject": "Social sciences",
+   "sections": 63,
+   "covers": "Introduction to Criminology, Measuring Crime, Origins of Criminology, Social Structural and Strain Theories"
+  },
+  {
+   "slug": "introduction-sociology-2e",
+   "file": "introduction-sociology-2e.webp",
+   "title": "Introduction to Sociology 2e",
+   "subject": "Social sciences",
+   "sections": 74,
+   "covers": "An Introduction to Sociology, Sociological Research, Culture, Society and Social Interaction"
+  },
+  {
+   "slug": "psychology",
+   "file": "psychology.webp",
+   "title": "Psychology",
+   "subject": "Social sciences",
+   "sections": 88,
+   "covers": "Introduction to Psychology, Psychological Research, Biopsychology, States of Consciousness"
+  },
+  {
+   "slug": "soceveryday1e",
+   "file": "soceveryday1e.webp",
+   "title": "Sociology in Everyday Life",
+   "subject": "Social sciences",
+   "sections": 89,
+   "covers": "Introduction to Sociology, The History of Sociology and Social Theory, Sociological Research Methods: Studying Social Life, Socialization and Interaction"
+  },
+  {
+   "slug": "socgender1e",
+   "file": "socgender1e.webp",
+   "title": "Sociology of Gender: An Equity Lens",
+   "subject": "Social sciences",
+   "sections": 34,
+   "covers": "Gender as a Sociological Concept, Gender as a Social Construct, Gender, Sex and Sexuality, Gender in Theory"
+  },
+  {
+   "slug": "theexcitingdynamicsofstateandlocalgovernment",
+   "file": "theexcitingdynamicsofstateandlocalgovernment.webp",
+   "title": "The Exciting Dynamics of State and Local Government",
+   "subject": "Social sciences",
+   "sections": 24,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "collegereading",
+   "file": "collegereading.webp",
+   "title": "How to Learn Like a Pro!",
+   "subject": "Student success",
+   "sections": 31,
+   "covers": "Overview--Listening and Note-Taking; Unit Terms"
+  },
+  {
+   "slug": "achristmascarol",
+   "file": "achristmascarol.webp",
+   "title": "A Christmas Carol",
+   "subject": "Everything else",
+   "sections": 14,
+   "covers": "Marley's Ghost, The First of the Three Spirits, The Second of the Three Spirits, The Last of the Three Spirits"
+  },
+  {
+   "slug": "goodargument",
+   "file": "goodargument.webp",
+   "title": "A Dam Good Argument",
+   "subject": "Everything else",
+   "sections": 33,
+   "covers": "Introduction to Argument at the College Level, Analyzing Persuasion, Constructing Arguments, Working with Sources"
+  },
+  {
+   "slug": "collegetransition",
+   "file": "collegetransition.webp",
+   "title": "A Different Road To College",
+   "subject": "Everything else",
+   "sections": 13,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "apossessionforever",
+   "file": "apossessionforever.webp",
+   "title": "A Possession Forever",
+   "subject": "Everything else",
+   "sections": 7,
+   "covers": "Part A, Part B, Part C"
+  },
+  {
+   "slug": "agent-based-evolutionary-game-dynamics",
+   "file": "agent-based-evolutionary-game-dynamics.webp",
+   "title": "Agent-Based Evolutionary Game Dynamics",
+   "subject": "Everything else",
+   "sections": 30,
+   "covers": "Part I. Introduction, Part II. Our first agent-based evolutionary model, Part III. Spatial interactions on a grid, Part IV. Games on networks"
+  },
+  {
+   "slug": "batepapo",
+   "file": "batepapo.webp",
+   "title": "Bate-Papo",
+   "subject": "Everything else",
+   "sections": 15,
+   "covers": "Content for Unidades A and B"
+  },
+  {
+   "slug": "call",
+   "file": "call.webp",
+   "title": "CALL Principles and Practices",
+   "subject": "Everything else",
+   "sections": 69,
+   "covers": "Principles of CALL, Developing and Practicing Reading and Writing Skills, Communication and Collaboration, Creativity and Production"
+  },
+  {
+   "slug": "socialchange1e",
+   "file": "socialchange1e.webp",
+   "title": "Changing Society",
+   "subject": "Everything else",
+   "sections": 88,
+   "covers": "How Does Social Change Matter to You?, The Study of Social Change, Social Location and Social Theories, Globalization and Inequality"
+  },
+  {
+   "slug": "choosingsources",
+   "file": "choosingsources.webp",
+   "title": "Choosing & Using Sources: A Guide to Academic Research",
+   "subject": "Everything else",
+   "sections": 62,
+   "covers": "1-Research Questions, 2-Types of Sources, 3-Sources and Information Needs, 4-Precision Searching"
+  },
+  {
+   "slug": "comunidades",
+   "file": "comunidades.webp",
+   "title": "Comunidades",
+   "subject": "Everything else",
+   "sections": 5,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "ctar2",
+   "file": "ctar2.webp",
+   "title": "Critical Thinking in Academic Research - Second Edition",
+   "subject": "Everything else",
+   "sections": 89,
+   "covers": "What is Critical Thinking?, Barriers to Critical Thinking, Analyzing Arguments, Making an Argument"
+  },
+  {
+   "slug": "culturaycivilizaciondelospaiseshispanos",
+   "file": "culturaycivilizaciondelospaiseshispanos.webp",
+   "title": "Culturas y Civilizaciones de los Países Hispanos",
+   "subject": "Everything else",
+   "sections": 21,
+   "covers": "BLOQUE 1: EL ESPAÑOL EN ÁFRICA Y EUROPA, BLOQUE 2: EL ESPAÑOL EN AMÉRICA DEL NORTE, BLOQUE 3: EL ESPAÑOL EN AMÉRICA DEL SUR, BLOQUE 4: EL ESPAÑOL EN EL CARIBE HISPANOHABLANTE"
+  },
+  {
+   "slug": "doingresearch",
+   "file": "doingresearch.webp",
+   "title": "Doing Research",
+   "subject": "Everything else",
+   "sections": 32,
+   "covers": "Get Started on Your Research, Recognize Types of Information, Develop your Search Strategy, Evaluate your Sources"
+  },
+  {
+   "slug": "dressappearancediversity",
+   "file": "dressappearancediversity.webp",
+   "title": "Dress, Appearance, and Diversity in U.S. Society",
+   "subject": "Everything else",
+   "sections": 13,
+   "covers": "Dress Theories and Concepts, Dress and Marginalized Communities"
+  },
+  {
+   "slug": "dcquickstart",
+   "file": "dcquickstart.webp",
+   "title": "Dublin Core Quick Start",
+   "subject": "Everything else",
+   "sections": 28,
+   "covers": "Metadata, DublinCore, Sample Records"
+  },
+  {
+   "slug": "fishandconservation",
+   "file": "fishandconservation.webp",
+   "title": "Fish, Fishing, and Conservation",
+   "subject": "Everything else",
+   "sections": 15,
+   "covers": "Chapters"
+  },
+  {
+   "slug": "auralskills",
+   "file": "auralskills.webp",
+   "title": "Foundations of Aural Skills",
+   "subject": "Everything else",
+   "sections": 123,
+   "covers": "Attention, Moving to Music (Meter), Tonic/Collection and Solfège, Timbre and Texture"
+  },
+  {
+   "slug": "hspracticum1e",
+   "file": "hspracticum1e.webp",
+   "title": "Human Services Practicum",
+   "subject": "Everything else",
+   "sections": 76,
+   "covers": "Preparing For Your Internship, Understanding Your Role as an Intern, Getting to Know the Agency, Working Across Difference"
+  },
+  {
+   "slug": "botany",
+   "file": "botany.webp",
+   "title": "Inanimate Life",
+   "subject": "Everything else",
+   "sections": 91,
+   "covers": "Text, Organisms"
+  },
+  {
+   "slug": "hsintro2e",
+   "file": "hsintro2e.webp",
+   "title": "Introduction to Human Services: An Equity Lens 2e",
+   "subject": "Everything else",
+   "sections": 67,
+   "covers": "An Overview: Human Services, Historical Context and Contemporary Focus, Trauma and Support Practices, Ethical Standards"
+  },
+  {
+   "slug": "introlgbtqstudies",
+   "file": "introlgbtqstudies.webp",
+   "title": "Introduction to LGBTQ+ Studies: A Cross-Disciplinary Approach",
+   "subject": "Everything else",
+   "sections": 12,
+   "covers": "Part I: Theoretical Foundations, Part II: Global Histories, Part III: U.S. Histories, Part IV: Prejudice and Health"
+  },
+  {
+   "slug": "learninginthedigitalage",
+   "file": "learninginthedigitalage.webp",
+   "title": "Learning in the Digital Age",
+   "subject": "Everything else",
+   "sections": 14,
+   "covers": "Chapters, Resources"
+  },
+  {
+   "slug": "learningtolearnonline",
+   "file": "learningtolearnonline.webp",
+   "title": "Learning to Learn Online",
+   "subject": "Everything else",
+   "sections": 33,
+   "covers": "Who am I as an Online Learner?, Who am I on my Learning Journey with?, Who are my Instructors? What is Their Role?, Time Management for Online Learning"
+  },
+  {
+   "slug": "lib160",
+   "file": "lib160.webp",
+   "title": "Library 1600: Introduction to College-Level Research",
+   "subject": "Everything else",
+   "sections": 46,
+   "covers": "Getting started with research, Locating information, Search techniques, Evaluating information"
+  },
+  {
+   "slug": "gpsandgnss",
+   "file": "gpsandgnss.webp",
+   "title": "Lost Without It",
+   "subject": "Everything else",
+   "sections": 32,
+   "covers": "Fundamentals, Datums and Coordinates, GNSS Basic Principles, Code Observable"
+  },
+  {
+   "slug": "makingripples",
+   "file": "makingripples.webp",
+   "title": "Making Ripples: A Guidebook to Challenge Status Quo in OER Creation",
+   "subject": "Everything else",
+   "sections": 21,
+   "covers": "Purpose of OER Creation, Storytelling in Education, Equity-minded Pedagogy, Practices as Community Service"
+  },
+  {
+   "slug": "nolimits",
+   "file": "nolimits.webp",
+   "title": "No Limits",
+   "subject": "Everything else",
+   "sections": 50,
+   "covers": "Welcome to UT Arlington, About a University, Campus Life - The value Added from Involvement, Foundations of Academic Self-Management"
+  },
+  {
+   "slug": "oer-field-guide",
+   "file": "oer-field-guide.webp",
+   "title": "OER: A Field Guide for Academic Librarians | Editor's Cut",
+   "subject": "Everything else",
+   "sections": 20,
+   "covers": "The Case for OER, The Pedagogical Implications of OER, Library-Supported Adoption and Creation Programs"
+  },
+  {
+   "slug": "zywienie",
+   "file": "zywienie.webp",
+   "title": "Pielęgniarstwo. Żywienie w wybranych stanach klinicznych",
+   "subject": "Everything else",
+   "sections": 36,
+   "covers": "Rozdział 3 Odżywianie a zdrowie układu nerwowego, Rozdział 7 Odżywianie a zdrowie układu oddechowego, Rozdział 8 Odżywianie a zdrowie układu moczowego, Rozdział 9 Odżywianie a zdrowie układu pokarmowego"
+  },
+  {
+   "slug": "planparaelexito",
+   "file": "planparaelexito.webp",
+   "title": "Plan para el éxito en la universidad y la carrera profesional",
+   "subject": "Everything else",
+   "sections": 47,
+   "covers": "Unidad 1: Lanzamiento, Unidad 4: Escritura de nivel universitario, Unidad 5: Escuchar y tomar apuntes, Unidad 6: Estrategias para presentar exámenes"
+  },
+  {
+   "slug": "quantitativenaturalresources",
+   "file": "quantitativenaturalresources.webp",
+   "title": "Quantitative Problem Solving in Natural Resources",
+   "subject": "Everything else",
+   "sections": 14,
+   "covers": "Introduction, Part I. PROBLEM SOLVING, Part II. NUMERICAL REASONING, Part III. SPATIAL REASONING"
+  },
+  {
+   "slug": "raceandcrime1e",
+   "file": "raceandcrime1e.webp",
+   "title": "Race, Crime and Injustice",
+   "subject": "Everything else",
+   "sections": 68,
+   "covers": "Prejudice, Racism, and Discrimination, Theories of Race and Crime, Policing in America, Racial Justice in Rural Communities"
+  },
+  {
+   "slug": "plant-identification",
+   "file": "plant-identification.webp",
+   "title": "Red Seal Landscape Horticulturist Identify Plants and Plant Requirements (F2 - 1&2)",
+   "subject": "Everything else",
+   "sections": 23,
+   "covers": "Plant Identification, Plant Requirements and Use"
+  },
+  {
+   "slug": "technologytoolsforleaders",
+   "file": "technologytoolsforleaders.webp",
+   "title": "Technology Tools for Leaders",
+   "subject": "Everything else",
+   "sections": 8,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "thechangingstory",
+   "file": "thechangingstory.webp",
+   "title": "The Changing Story",
+   "subject": "Everything else",
+   "sections": 9,
+   "covers": "Main Body, Internally Linked Content"
+  },
+  {
+   "slug": "isudp-2024-153",
+   "file": "isudp-2024-153.webp",
+   "title": "The DEI Metadata Handbook",
+   "subject": "Everything else",
+   "sections": 6,
+   "covers": "Main Body"
+  },
+  {
+   "slug": "storyofdinosaurs",
+   "file": "storyofdinosaurs.webp",
+   "title": "The Story of Dinosaurs",
+   "subject": "Everything else",
+   "sections": 10,
+   "covers": "Main Body, For Instructors"
+  },
+  {
+   "slug": "traumainformedpractice",
+   "file": "traumainformedpractice.webp",
+   "title": "Trauma Informed Behaviour Support: A Practical Guide to Developing Resilient Learners",
+   "subject": "Everything else",
+   "sections": 30,
+   "covers": "Understand and empathise, Observe and reflect, Prevent and contain, Connect and validate"
+  },
+  {
+   "slug": "devpre2ad1e",
+   "file": "devpre2ad1e.webp",
+   "title": "Understanding Human Development: Prenatal Through Adolescence",
+   "subject": "Everything else",
+   "sections": 119,
+   "covers": "Understanding Human Development, Theory and Research in Child Development, Conception, Pregnancy, and Prenatal Development, Birth, the Newborn, and Postnatal Experiences"
+  }
+ ]
+}

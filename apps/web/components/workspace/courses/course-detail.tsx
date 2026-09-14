@@ -66,7 +66,7 @@ export function outlineOf(sections: readonly CourseSection[]): OutlineUnit[] {
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
-      className="shrink-0 text-(--ui-text-tertiary) transition-transform"
+      className="shrink-0 text-(--course-meta) transition-transform"
       fill="none"
       height="14"
       stroke="currentColor"
@@ -92,7 +92,7 @@ function Objectives({ items }: { items: readonly string[] }) {
       <div className="flex flex-col gap-[6px]">
         {items.map((objective) => (
           <div className="flex gap-[8px] text-[13px] leading-[1.45] text-(--ui-text-primary)" key={objective}>
-            <span className="text-(--ui-text-tertiary)">—</span>
+            <span className="text-(--course-meta)">—</span>
             <span>{objective}</span>
           </div>
         ))}
@@ -162,14 +162,16 @@ export function CourseDetail({
     setStarting(false);
     if (!ok) return;
     onStarted();
-    // 🔴 A COURSE OPENS A CANVAS, IT DOES NOT BECOME ONE. `/learn` is the conversation surface;
-    // the course id rides the URL so the session knows there is a plan behind the questions.
-    router.push(`/learn?course=${encodeURIComponent(course.slug)}`);
+    // 🔴 A COURSE STAYS IN THE COURSES SECTION. Owner, 2026-09-04: *"courses, I think they should
+    // be able to remain in the courses section. They shouldn't really open up a chat."* This line
+    // used to push to `/learn?course=…`, which meant starting a course left Courses and turned
+    // into an ordinary canvas — the exact thing he ruled out. It opens the reader now.
+    router.push(`/courses?course=${encodeURIComponent(course.slug)}&read=1`);
   }, [course, onStarted, router, userId]);
 
   if (missing) {
     return (
-      <div className="flex h-full items-center justify-center bg-(--ui-bg-editor) text-[14px] text-(--ui-text-tertiary)">
+      <div className="flex h-full items-center justify-center bg-(--ui-bg-editor) text-[14px] text-(--course-quiet)">
         That course is not on the shelf.
       </div>
     );
@@ -182,7 +184,7 @@ export function CourseDetail({
         {/* left: the course */}
         <div className="min-w-0 grow">
           <button
-            className="flex h-[36px] items-center gap-[6px] text-[14px] text-(--ui-text-secondary) hover:text-(--ui-text-primary)"
+            className="flex h-[36px] items-center gap-[6px] text-[14px] text-(--course-quiet) hover:text-(--ui-text-primary)"
             onClick={onBack}
             type="button"
           >
@@ -195,7 +197,7 @@ export function CourseDetail({
           {course ? (
             <>
               <div className="mt-[8px] overflow-hidden rounded-[12px]">
-                <CourseCover {...coverFor(course)} height={150} />
+                <CourseCover {...coverFor(course)} height={150} slug={course.slug} />
               </div>
 
               <h1 className="m-0 mt-[20px] text-[28px] font-medium leading-[1.2] tracking-[-0.01em] text-(--ui-text-primary)">
@@ -203,7 +205,7 @@ export function CourseDetail({
               </h1>
 
               {course.description ? (
-                <p className="m-0 mt-[14px] max-w-[640px] text-[15px] leading-[1.6] text-(--ui-text-secondary)">
+                <p className="m-0 mt-[14px] max-w-[640px] text-[15px] leading-[1.6] text-(--course-quiet)">
                   {course.description}.
                 </p>
               ) : null}
@@ -229,7 +231,7 @@ export function CourseDetail({
                         >
                           <Chevron open={unitOpen} />
                           <span className="text-[17px] font-semibold text-(--ui-text-primary)">{unit.title}</span>
-                          <span className="ml-auto text-[12px] font-normal text-(--ui-text-tertiary) tabular-nums">
+                          <span className="ml-auto text-[12px] font-normal text-(--course-meta) tabular-nums">
                             {unit.chapters.length} chapters
                           </span>
                         </button>
@@ -273,7 +275,7 @@ export function CourseDetail({
               </div>
             </>
           ) : (
-            <div className="pt-[40px] text-[14px] text-(--ui-text-tertiary)">Opening…</div>
+            <div className="pt-[40px] text-[14px] text-(--course-quiet)">Opening…</div>
           )}
         </div>
 
@@ -292,11 +294,11 @@ export function CourseDetail({
 
               <div className="mt-[18px] flex flex-col gap-[11px] border-t border-(--ui-stroke-tertiary) pt-[16px]">
                 <div className="flex justify-between text-[13px]">
-                  <span className="text-(--ui-text-secondary)">Sections</span>
+                  <span className="text-(--course-quiet)">Sections</span>
                   <span className="tabular-nums text-(--ui-text-primary)">{course.sectionCount}</span>
                 </div>
                 <div className="flex justify-between text-[13px]">
-                  <span className="text-(--ui-text-secondary)">Things to be able to do</span>
+                  <span className="text-(--course-quiet)">Things to be able to do</span>
                   <span className="tabular-nums text-(--ui-text-primary)">{course.objectiveCount}</span>
                 </div>
               </div>
@@ -313,7 +315,7 @@ export function CourseDetail({
                 conditions "by providing a URI or hyperlink to a resource that includes the required
                 information", and `/courses/sources` is that resource. The words may change freely.
                 The LINK may not disappear. */}
-            <div className="mt-[16px] px-[2px] text-[11px] leading-[1.5] text-(--ui-text-tertiary)">
+            <div className="mt-[16px] px-[2px] text-[11px] leading-[1.5] text-(--course-meta)">
               Based on an open textbook.{" "}
               <button className="underline" onClick={() => router.push("/courses/sources")} type="button">
                 Source and licence

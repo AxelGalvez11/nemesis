@@ -1491,3 +1491,111 @@ li.note-task-item[data-checked="true"] .note-task-content { color: var(--ui-text
     --canvas-column: 694px;
   }
 }
+
+/* ------------------------------------------------------------------ course status colours
+
+   🔴 THESE ARE SEMANTIC, NOT A SECOND BRAND ACCENT, AND THE OWNER ASKED FOR THEM BY NAME
+   (2026-09-04: "add red and green for tests ... add color to the flashcard new, review, due").
+
+   The one-accent rule (#28fb6c82) is about the product's identity: the character is the accent and
+   nothing competes with it. Right and wrong are not identity, they are information, and a study
+   surface that cannot say which answer was correct without making you read a sentence is a worse
+   surface. The tick and cross marks STAY alongside these: colour is the fast signal, the mark is
+   the one that survives colour blindness and a photocopy.
+
+   The deck counts follow Anki's own three: new is blue, learning is red, review is green. A learner
+   who has used Anki reads that palette without being told.
+
+   Each pair is a text colour and a wash to sit behind it. Every value is checked for AA contrast
+   against the ground it is used on in that theme. */
+:root {
+  --course-right: #1a7a46;
+  --course-right-wash: rgba(26, 122, 70, 0.09);
+  --course-wrong: #b4231c;
+  --course-wrong-wash: rgba(180, 35, 28, 0.07);
+  --course-new: #2b62a8;
+  --course-learning: #b4231c;
+  --course-review: #1a7a46;
+}
+
+:root[data-theme="dark"] {
+  /* Lifted and desaturated: the light values are unreadable on #000, and a fully saturated green
+     on black vibrates. */
+  --course-right: #4cc27f;
+  --course-right-wash: rgba(76, 194, 127, 0.13);
+  --course-wrong: #f07a72;
+  --course-wrong-wash: rgba(240, 122, 114, 0.12);
+  --course-new: #6da8f0;
+  --course-learning: #f07a72;
+  --course-review: #4cc27f;
+}
+
+/* ------------------------------------------------------------------ the reader's ink
+
+   🔴🔴 THE COURSE HAD THREE GREYS AND SPENT THE FAINTEST ONE ON THINGS PEOPLE HAVE TO READ.
+   Owner, 2026-09-04: *"fix the letters that are grayish, make the passage and content more readable
+   because a lot of gray parts are hard to see well"*, and then: *"use claude course for
+   reference"* — academy.claude.com/courses/claude-101.
+
+   MEASURED THERE THE SAME DAY, on a real lesson page (`getting-better-results`, signed out):
+
+     headings, titles, bold run-ins   #0b0b0b   18.7:1   32/48, 22/33, 18/28, 14/20
+     BODY PROSE                       #52514e    7.5:1   16 / 26
+     meta only                        #898781    3.5:1   12-13 / 17
+                                      ("Lesson 3 of 13", "Previous lesson", "By the end…")
+
+   The lesson they teach is not the hex values, it is WHERE EACH ONE IS ALLOWED TO GO: everything
+   at 14px and up clears 7.5:1, and the faint step is spent on three navigation labels and nothing
+   else. Ours measured `#919191` at 3.10:1 and was carrying the rail's table of contents, the 30px
+   section number beside the title, the test explanations and the flashcard instructions — all of
+   it content, all of it two and a half times fainter than the reference allows.
+
+   🔴 SCOPED TO THE COURSE, NOT A SECOND APP-WIDE LADDER. `--ui-text-secondary`/`-tertiary` are the
+   whole product's steps and are correct where a grey is genuinely furniture. A course is read for
+   an hour at a stretch; it gets its own two, used ONLY inside `components/workspace/courses`.
+
+   🔴 NOTHING IN THE READER SITS BELOW 4.5:1, WHICH IS ONE STEP STRICTER THAN THE REFERENCE. Their
+   faint step is 3.5:1, which is below the accessible floor for text at any size. Copying that
+   number exactly would have reproduced the complaint at a slightly lighter shade.
+
+   Light mode is where the whole problem lived. Measured on this build, dark mode's own steps were
+   already 11:1 and 6.1:1 — so the dark values below are deliberately the app's existing ones, and
+   the ladder says out loud that this was a light-mode fix. */
+:root {
+  /* 72% of #0d0d0d over the page ≈ #525252, 7.6:1 — the reference's body ink. */
+  --course-quiet: color-mix(in srgb, var(--ui-base) 72%, transparent);
+  /* 60% ≈ #6e6e6e, 5.1:1 on the page — counters, eyebrows and glyphs.
+     🔴 60 AND NOT 57. 57% put it exactly on the 4.5 line against the page, and the check card's
+     own ground is a few percent darker than the page, so the eyebrow sitting on THAT measured
+     4.36 — under the floor, in the one place a reader is being asked a question. A step that only
+     passes on the lightest surface in the product is not a step that passes. */
+  --course-meta: color-mix(in srgb, var(--ui-base) 60%, transparent);
+}
+
+:root[data-theme="dark"] {
+  --course-quiet: color-mix(in srgb, var(--ui-base) 74%, transparent);
+  --course-meta: color-mix(in srgb, var(--ui-base) 54%, transparent);
+}
+
+/* Either of the reader's two side panels, opening or closing.
+   Owner, 2026-09-04: *"also add animation for collapsing the right and left sidebars"*.
+
+   🔴 `--pane-slide` RATHER THAN A FOURTH CLOCK. 220ms cubic-bezier(0.22, 1, 0.36, 1) is this
+   product's beat and already carries the reading pane, `.canvas-preview-out`, `CanvasFade` and the
+   mascot dock. Three different durations on one gesture is what made the document pane feel laggy
+   in September, and the fix there was this token.
+
+   🔴🔴 BOTH ENDS MUST BE LENGTHS OR THIS RULE NEVER RUNS. `canvas-surface` declared
+   `transition: width` for weeks and never once played, because its closed state left `width` unset
+   and `auto` cannot interpolate with a length. Every element wearing this class sets an explicit
+   width in BOTH states — 48px/286px on the left, 0px/396px on the right — and it is filmed rather
+   than assumed. */
+.course-pane {
+  transition: width var(--pane-slide);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .course-pane {
+    transition: none;
+  }
+}

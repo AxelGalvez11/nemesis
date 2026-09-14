@@ -25,6 +25,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { CourseCover } from "./course-cover";
 import { CourseDetail } from "./course-detail";
+import { CourseReader } from "./course-reader";
+import { readView } from "@/lib/courses/reading";
 import {
   listCourses,
   listStarted,
@@ -44,12 +46,12 @@ function SearchField({ value, onChange }: { value: string; onChange: (v: string)
       className="flex items-center gap-[8px] rounded-[8px] border border-(--ui-stroke-primary) bg-(--ui-bg-elevated) px-[12px]"
       style={{ height: `${CONTROL_H_PX}px`, width: "260px" }}
     >
-      <svg fill="none" height="16" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16" width="16" className="shrink-0 text-(--ui-text-tertiary)">
+      <svg fill="none" height="16" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16" width="16" className="shrink-0 text-(--course-meta)">
         <circle cx="7.2" cy="7.2" r="4.2" />
         <path d="m10.4 10.4 2.6 2.6" />
       </svg>
       <input
-        className="w-full bg-transparent text-[14px] text-(--ui-text-primary) outline-none placeholder:text-(--ui-text-tertiary)"
+        className="w-full bg-transparent text-[14px] text-(--ui-text-primary) outline-none placeholder:text-(--course-meta)"
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search courses"
         value={value}
@@ -66,11 +68,11 @@ function CourseCard({ course, onOpen }: { course: CourseSummary; onOpen: () => v
       onClick={onOpen}
       type="button"
     >
-      <CourseCover motif={motif} seed={seed} />
+      <CourseCover motif={motif} seed={seed} slug={course.slug} />
       <div className="flex grow flex-col gap-[7px] p-[16px]">
         <div className="text-[15px] font-medium leading-[1.3] text-(--ui-text-primary)">{course.title}</div>
         {course.description ? (
-          <div className="line-clamp-2 text-[13px] leading-[1.45] text-(--ui-text-secondary)">{course.description}</div>
+          <div className="line-clamp-2 text-[13px] leading-[1.45] text-(--course-quiet)">{course.description}</div>
         ) : null}
         {/* 🔴 NO COUNTS ON THE CARD — owner, 2026-09-04. "169 sections · 606 objectives" is
             inventory, and inventory is not what someone is deciding between when they scan a
@@ -85,6 +87,13 @@ export function CoursesPage({ userId }: { userId: string | null }) {
   const router = useRouter();
   const params = useSearchParams();
   const openSlug = params.get("course");
+  // `?read=1` is the reader rather than the course's own screen, and `?at=` is the section you are
+  // on. Both ride the URL so a reload lands you back where you were reading — the whole point of
+  // the address, and the bug in `chat-had-no-address` when it was missing.
+  const reading = params.get("read") === "1";
+  const atRaw = Number(params.get("at"));
+  const at = Number.isInteger(atRaw) && atRaw >= 0 ? atRaw : null;
+  const view = readView(params.get("view"));
 
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [started, setStarted] = useState<StartedCourse[]>([]);
@@ -123,6 +132,23 @@ export function CoursesPage({ userId }: { userId: string | null }) {
     [router],
   );
 
+  if (openSlug && reading) {
+    return (
+      <CourseReader
+        at={at}
+        onLeave={() => router.push(`/courses?course=${encodeURIComponent(openSlug)}`)}
+        onMove={(ordinal, next) =>
+          router.replace(
+            `/courses?course=${encodeURIComponent(openSlug)}&read=1&at=${ordinal}&view=${next}`,
+          )
+        }
+        slug={openSlug}
+        userId={userId}
+        view={view}
+      />
+    );
+  }
+
   if (openSlug) {
     return (
       <CourseDetail
@@ -148,7 +174,7 @@ export function CoursesPage({ userId }: { userId: string | null }) {
 
         <div className="mt-[18px] flex flex-wrap gap-[6px]">
           <button
-            className={`flex items-center rounded-full px-[12px] text-[13px] ${subject === null ? "bg-(--ui-action) text-(--ui-action-glyph)" : "border border-(--ui-stroke-primary) text-(--ui-text-secondary)"}`}
+            className={`flex items-center rounded-full px-[12px] text-[13px] ${subject === null ? "bg-(--ui-action) text-(--ui-action-glyph)" : "border border-(--ui-stroke-primary) text-(--course-quiet)"}`}
             onClick={() => setSubject(null)}
             style={{ height: "30px" }}
             type="button"
@@ -157,7 +183,7 @@ export function CoursesPage({ userId }: { userId: string | null }) {
           </button>
           {subjects.map((name) => (
             <button
-              className={`flex items-center rounded-full px-[12px] text-[13px] ${subject === name ? "bg-(--ui-action) text-(--ui-action-glyph)" : "border border-(--ui-stroke-primary) text-(--ui-text-secondary)"}`}
+              className={`flex items-center rounded-full px-[12px] text-[13px] ${subject === name ? "bg-(--ui-action) text-(--ui-action-glyph)" : "border border-(--ui-stroke-primary) text-(--course-quiet)"}`}
               key={name}
               onClick={() => setSubject(name)}
               style={{ height: "30px" }}
@@ -169,7 +195,7 @@ export function CoursesPage({ userId }: { userId: string | null }) {
         </div>
 
         {loading ? (
-          <div className="pt-[40px] text-[14px] text-(--ui-text-tertiary)">Reading the shelf…</div>
+          <div className="pt-[40px] text-[14px] text-(--course-quiet)">Reading the shelf…</div>
         ) : null}
 
         {!loading && carryingOn.length > 0 ? (
@@ -184,7 +210,7 @@ export function CoursesPage({ userId }: { userId: string | null }) {
                   type="button"
                 >
                   <div className="text-[15px] font-medium text-(--ui-text-primary)">{course!.title}</div>
-                  <div className="text-[13px] text-(--ui-text-secondary) tabular-nums">
+                  <div className="text-[13px] text-(--course-quiet) tabular-nums">
                     Section {s.position + 1} of {course!.sectionCount}
                   </div>
                 </button>
@@ -194,7 +220,7 @@ export function CoursesPage({ userId }: { userId: string | null }) {
         ) : null}
 
         {!loading && groups.length === 0 ? (
-          <div className="pt-[40px] text-[14px] text-(--ui-text-tertiary)">
+          <div className="pt-[40px] text-[14px] text-(--course-quiet)">
             Nothing on the shelf matches that.
           </div>
         ) : null}
@@ -203,7 +229,7 @@ export function CoursesPage({ userId }: { userId: string | null }) {
           <section className="pt-[28px]" key={shelf.subject}>
             <div className="mb-[12px] flex items-baseline gap-[10px]">
               <h2 className="m-0 text-[15px] font-semibold text-(--ui-text-primary)">{shelf.subject}</h2>
-              <span className="text-[13px] text-(--ui-text-tertiary) tabular-nums">{shelf.courses.length}</span>
+              <span className="text-[13px] text-(--course-meta) tabular-nums">{shelf.courses.length}</span>
             </div>
             <div className="grid grid-cols-3 gap-[16px]">
               {shelf.courses.map((course) => (
@@ -219,7 +245,7 @@ export function CoursesPage({ userId }: { userId: string | null }) {
             and it is not decoration — removing it uses every author's work without the permission
             the whole catalogue depends on. */}
         {!loading && groups.length > 0 ? (
-          <div className="pt-[36px] text-[12px] text-(--ui-text-tertiary)">
+          <div className="pt-[36px] text-[12px] text-(--course-quiet)">
             <button className="underline" onClick={() => router.push("/courses/sources")} type="button">
               Sources and licences
             </button>

@@ -9,6 +9,8 @@
 // with whatever it inherits, so dark mode and the accent picker both work without this file
 // knowing they exist.
 
+import { useState } from "react";
+
 import { type CoverMotif } from "@/lib/courses/shelf";
 
 /** A deterministic pseudo-random sequence from one seed. */
@@ -25,7 +27,30 @@ function rng(seed: number): () => number {
 const W = 362;
 const H = 92;
 
-export function CourseCover({ motif, seed, height = H }: { motif: CoverMotif; seed: number; height?: number }) {
+export function CourseCover({
+  motif,
+  seed,
+  slug,
+  height = H,
+}: {
+  motif: CoverMotif;
+  seed: number;
+  /**
+   * The course's slug, which is also the name of its artwork file.
+   *
+   * 🔴 NO MANIFEST, NO DATABASE COLUMN, NO BUILD STEP. Dropping `public/course-art/<slug>.webp` into
+   * the repo is the entire act of giving a course a picture, and deleting the file is the entire
+   * act of taking it away. The alternative was a `cover_url` column, which means a migration and
+   * a row update per course before anybody can see anything; or a generated list of which slugs
+   * have art, which is a second thing to keep in step with the first.
+   */
+  slug?: string;
+  height?: number;
+}) {
+  // Missing art is the NORMAL case, not an error: 186 courses, and they get pictures a few at a
+  // time. The motif is painted underneath either way, so a 404 costs a hidden <img> and nothing
+  // else. Keyed on the slug so a re-used card that scrolls onto a different course tries again.
+  const [artworkFailed, setArtworkFailed] = useState(false);
   const next = rng(seed);
   const shapes: React.ReactNode[] = [];
 
@@ -114,13 +139,29 @@ export function CourseCover({ motif, seed, height = H }: { motif: CoverMotif; se
   }
 
   return (
-    <svg
-      aria-hidden="true"
-      className="block w-full text-(--ui-text-primary)"
-      style={{ height: `${height}px`, background: "var(--ui-bg-quaternary)" }}
-      viewBox={`0 0 ${W} ${H}`}
-    >
-      {shapes}
-    </svg>
+    <div className="relative w-full overflow-hidden" style={{ background: "var(--ui-bg-quaternary)", height: `${height}px` }}>
+      <svg
+        aria-hidden="true"
+        className="block h-full w-full text-(--ui-text-primary)"
+        preserveAspectRatio="xMidYMid slice"
+        viewBox={`0 0 ${W} ${H}`}
+      >
+        {shapes}
+      </svg>
+      {slug && !artworkFailed ? (
+        /* 🔴 `alt=""`, DELIBERATELY. The picture repeats the title printed directly beneath it, so
+           a screen reader announcing it would read the course name twice. It is decoration in the
+           technical sense even though it is the most eye-catching thing on the card.
+           🔴 `object-cover`: the same file is cropped to 2.7:1 on a shelf card and 5.1:1 on the
+           course page. See public/course-art/README.md for what that means for the artwork. */
+        <img
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+          key={slug}
+          onError={() => setArtworkFailed(true)}
+          src={`/course-art/${slug}.webp`}
+        />
+      ) : null}
+    </div>
   );
 }
