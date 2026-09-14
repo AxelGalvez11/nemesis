@@ -174,7 +174,16 @@ test("🔴🔴 the card writer is told what the learner asked for, and only that
   assert.match(note, /rather than filling in from memory/);
   const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
   assert.match(source, /makeFlashcardsDeliverable\([\s\S]*?topic\?: string/, "the maker no longer takes the ask");
-  assert.match(source, /canvasBriefFor\(canvas, topic\), cardsAskNote\(topic\)/, "the ask is not handed to the writer");
+  // 🔴 THE USER MESSAGE, NOT AN ADJACENCY. This asserted the two calls sat next to each other, which
+  // broke the day a third block (the learner's standing instructions) was added between them for
+  // reasons that had nothing to do with the ask. What matters is that both still reach the writer in
+  // the one user message, so the guard now reads that block rather than the punctuation inside it.
+  const cardsUserMessage = source.slice(
+    source.indexOf("export async function makeFlashcardsDeliverable"),
+    source.indexOf("maxTokens: CARDS_MAX_TOKENS"),
+  );
+  assert.match(cardsUserMessage, /canvasBriefFor\(canvas, topic\)/, "the canvas brief is not handed to the writer");
+  assert.match(cardsUserMessage, /cardsAskNote\(topic\)/, "the ask is not handed to the writer");
 });
 
 test("🔴🔴 a labelled diagram TRIGGERS image occlusion rather than merely permitting it", () => {
@@ -428,7 +437,10 @@ test("🔴🔴 the note writer knows a RECALL LIST from a summary, and the ask d
   assert.match(NOTE_PROMPT, /say from memory without looking/, "a line is no longer defined by what the learner can say unaided");
   assert.match(NOTE_PROMPT, /exactly as the material gave it/, "an exact specific may be softened again");
   assert.match(NOTE_PROMPT, /No paragraphs anywhere in a recall list/, "paragraphs are allowed back into a recall list");
-  assert.match(NOTE_PROMPT, /Otherwise write a summary note/, "the summary shape is gone, so every note is a list now");
+  // Matched on "write a summary note" rather than the sentence around it: the fallback was reworded
+  // when the study-guide branch landed between them, and what this guard protects is that the shape
+  // still exists, not the words introducing it.
+  assert.match(NOTE_PROMPT, /write a summary note/, "the summary shape is gone, so every note is a list now");
   // The triggers are the learner's words, all five, so the ask paragraph can be read against them.
   for (const trigger of ["points to recall", "things to memorise", "a checklist", "a cheat sheet", "revision notes"]) {
     assert.ok(NOTE_PROMPT.includes(trigger), `the writer is no longer told that "${trigger}" means a recall list`);
@@ -452,6 +464,92 @@ test("🔴 no em dash reaches the note writer either, by owner rule", () => {
   // Written as an escape so this file does not carry the character it bans.
   assert.equal(NOTE_PROMPT.includes("\u2014"), false, "an em dash is back in the note prompt");
   assert.equal(NOTE_MAKER.includes("\u2014"), false, "an em dash is in the note maker's own strings");
+});
+
+// ------------------------------- the learner's standing instructions reach the things they keep
+
+// Owner, 2026-09-09: he should not have to re-explain formatting and atomicity on every request.
+// The mechanism already existed and stopped one step short. A project carries
+// `folders.instructions`; `turn-router.ts` has given them their own block on every CHAT turn since
+// 2026-08-30; and the two makers that produce the artifacts were calling the model with a system
+// prompt and the material and nothing else. So the preference shaped the conversation about the
+// study guide and not the study guide.
+
+test("🔴🔴 standing instructions reach BOTH makers, not just the chat", async () => {
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  assert.match(source, /import \{ loadProjectInstructions \} from "\.\/canvas-store"/, "the makers can no longer read a project's instructions");
+
+  // Both makers, because a preference honoured for cards and dropped for guides is the same bug
+  // half-fixed, and that is harder to notice than the whole one.
+  const cardsBlock = source.slice(
+    source.indexOf("export async function makeFlashcardsDeliverable"),
+    source.indexOf("maxTokens: CARDS_MAX_TOKENS"),
+  );
+  assert.match(cardsBlock, /standingInstructionsParagraph\(uid, canvas\.id\)/, "the card writer stopped receiving the learner's standing instructions");
+  const noteBlock = source.slice(
+    source.indexOf("export async function makeNoteDeliverable"),
+    source.indexOf("CANVAS_NOTE_FOLDER, madeBy"),
+  );
+  assert.match(noteBlock, /standingInstructionsParagraph\(uid, canvas\.id\)/, "the note writer stopped receiving the learner's standing instructions");
+});
+
+test("🔴 standing instructions are preferences, and they never license an invention", async () => {
+  const { standingInstructionsParagraph } = await import("./canvas-deliverables");
+  // 🔴 NO PROJECT, NO PARAGRAPH, AND NO THROW. `loadProjectInstructions` returns null for a canvas
+  // in no project, an unmigrated table or a dead network. Making something the learner keeps must
+  // never fail because a preference lookup did, so the empty string is the whole contract here.
+  assert.equal(await standingInstructionsParagraph("", "canvas-1"), "");
+
+  // The line turn-router.ts already draws, kept in the same words: the learner decides shape and
+  // presentation, and nothing they write turns off the rules that keep the artifact honest.
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  const fn = source.slice(source.indexOf("export async function standingInstructionsParagraph"), source.indexOf("// ------", source.indexOf("export async function standingInstructionsParagraph")));
+  assert.match(fn, /shape and presentation/, "the instructions no longer say what they are allowed to decide");
+  assert.match(fn, /never license/, "the instructions no longer say what they cannot override");
+  assert.match(fn, /soften an exact specific/, "an instruction may now round away the specifics the card and guide rules protect");
+  assert.equal(fn.includes("—"), false, "an em dash reaches the writer through the standing-instructions block");
+});
+
+// ------------------------------------------------- the note: a study guide, which is not a summary
+
+// Owner, 2026-09-09: study guides out of Nemesis, Opus and ChatGPT are all "not good enough", and
+// the only remedy was re-explaining the format by hand on every request. The 2026-09-03 fix above
+// added the RECALL LIST and left the other branch alone, so "study guide" still fell through to
+// "write a summary note", eleven words against the ~4,500 characters the card writer carries. A
+// summary and a study guide look alike on the page; only the retrieval shape separates them.
+
+test("\ud83d\udd34\ud83d\udd34 a study guide is its own shape, and the ask reaches it", () => {
+  assert.match(NOTE_PROMPT, /WHEN THE LEARNER ASKS FOR A STUDY GUIDE/, "the study-guide shape is gone from the note writer");
+  // The learner's own words for it, so the ask paragraph can be read against them.
+  for (const trigger of ["a revision guide", "exam preparation", "learn or revise the material from"]) {
+    assert.ok(NOTE_PROMPT.includes(trigger), `the writer is no longer told that "${trigger}" means a study guide`);
+  }
+  // The other two shapes must survive: a summary is still the right answer to "summarise this", and
+  // collapsing all three into one guide would be the same mistake in the opposite direction.
+  assert.match(NOTE_PROMPT, /RECALL LIST/, "the recall shape was lost when the guide shape was added");
+  assert.match(NOTE_PROMPT, /write a summary note/, "every note is a study guide now, including the ones that asked to be summaries");
+  // 🔴 THE RULES BLOCK IS FENCED. It is the only multi-line block in a one-paragraph prompt, so the
+  // fallback needs an explicit end or "otherwise" binds to the last rule instead of to the choice
+  // between the three shapes, and a model that reads it that way writes a summary.
+  assert.match(NOTE_PROMPT, /rules and they end here/, "the study-guide rules lost their closing fence");
+  assert.match(NOTE_PROMPT, /none of the three shapes above/, "the fallback no longer says it is the third branch of a choice");
+});
+
+// \ud83d\udd34 THE RULES TRAVEL BY REFERENCE, WHICH `NOTE_PROMPT` CANNOT SEE. It extracts string literals from
+// the source, so an imported constant is invisible to it: the routing sentence above could read
+// perfectly while no craft reached the model at all. Same technique `canvas-tools.test.ts` uses to
+// prove `EXAM_ITEM_RULES_SHORT` is passed rather than pasted.
+test("\ud83d\udd34\ud83d\udd34 the study-guide craft is the SHARED module, not a second copy of it", async () => {
+  const source = readFileSync(new URL("./canvas-deliverables.ts", import.meta.url), "utf8");
+  assert.match(source, /import \{ STUDY_GUIDE_RULES \} from "@\/lib\/workspace\/study-guide-craft"/, "the note writer no longer imports the shared study-guide craft");
+  const block = source.slice(source.indexOf("const NOTE_SYSTEM"), source.indexOf("export const CANVAS_NOTE_FOLDER"));
+  assert.match(block, /\bSTUDY_GUIDE_RULES\b/, "NOTE_SYSTEM stopped carrying the study-guide rules");
+
+  // And the craft itself is intact where it lives. `item-writing.ts` exists so no lane writes its
+  // own exam rules; this asserts the same for guides, at the point a copy-paste would break it.
+  const { STUDY_GUIDE_RULES } = await import("@/lib/workspace/study-guide-craft");
+  assert.match(STUDY_GUIDE_RULES, /ANSWERED, NOT READ/, "the thesis is gone from the shared rules");
+  assert.equal(STUDY_GUIDE_RULES.includes("\u2014"), false, "an em dash rides into the note writer through the study-guide rules");
 });
 
 test("🔴🔴 the learner's ask reaches the writer, quoted and capped, and an empty ask sends nothing", async () => {

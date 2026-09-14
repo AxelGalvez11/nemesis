@@ -27,6 +27,8 @@ import { postChatCompletion, searchWebContext } from "@/lib/workspace/chat-api";
 import { writeLibraryNote } from "@/lib/workspace/library-write";
 import { normalizeStudyTags } from "@/lib/workspace/study-cloud-store";
 import { hasCloze } from "@/lib/workspace/study-cloze";
+import { STUDY_GUIDE_RULES } from "@/lib/workspace/study-guide-craft";
+import { loadProjectInstructions } from "./canvas-store";
 
 import { deckSystemPrompt, readDeckJson, type DeckPlan } from "../export/deck-plan";
 import { canvasFigures, figureMenu } from "./deck-figures";
@@ -304,6 +306,47 @@ const newId = (): string =>
     ? crypto.randomUUID()
     : `o_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
+// ------------------------------------------------ the learner's standing instructions, everywhere
+
+/**
+ * The learner's standing instructions for the project this canvas is filed in, as a paragraph for
+ * a writer that makes something they keep.
+ *
+ * 🔴🔴 THE HALF OF "STOP MAKING ME REPEAT MYSELF" THAT WAS NEVER PLUMBED. Owner, 2026-09-09: he
+ * should not have to re-explain formatting and atomicity on every request. Nemesis already has the
+ * mechanism for that and has since 2026-08-30. A project carries `folders.instructions`, the
+ * learner writes them once, and `turn-router.ts` gives them their own PROJECT INSTRUCTIONS block on
+ * every chat turn, outranking taste and defaults.
+ *
+ * It reached the CHAT and stopped there. `makeNoteDeliverable` and `makeFlashcardsDeliverable`
+ * called `postChatCompletion` with a system prompt and the material, and nothing else: no project
+ * instructions, no memory. So a learner whose project says "organise every guide by exam topic and
+ * box the formulas" was answered that way in conversation and ignored by the thing that actually
+ * writes the guide. The instruction was not being forgotten; it was never delivered.
+ *
+ * 🔴 BEST EFFORT, LIKE EVERY OTHER READ ON THIS PATH. `loadProjectInstructions` returns null for a
+ * canvas in no project, an unmigrated table, or a dead network, and the writer then gets exactly the
+ * packet it got before this existed. Making something the learner keeps must never fail because a
+ * preference lookup did.
+ *
+ * 🔴 WHAT THEY OUTRANK, AND WHAT THEY DO NOT. Same line `turn-router.ts` draws: standing
+ * instructions are the learner's own preferences, so they beat our defaults about shape and
+ * presentation. They do not beat the rules that make the artifact honest, because "just say it
+ * covers everything" is not a formatting preference and a guide that invents a specific is worse
+ * than no guide.
+ */
+export async function standingInstructionsParagraph(uid: string, canvasId: string): Promise<string> {
+  const project = await loadProjectInstructions(uid, canvasId);
+  if (!project) return "";
+  return (
+    `STANDING INSTRUCTIONS. The learner filed this in a project called "${project.name}" and wrote ` +
+    "these instructions for everything made in it. Follow them as their own preferences, and let " +
+    "them decide shape and presentation wherever they say something about it. They never license " +
+    "you to state what the material does not support, to soften an exact specific, or to write a " +
+    `point you cannot find in the material.\n\n${project.instructions}`
+  );
+}
+
 // ---------------------------------------------------------------- flashcards
 
 export const CARDS_SYSTEM =
@@ -461,7 +504,14 @@ export async function makeFlashcardsDeliverable(
     uid,
     [
       { content: CARDS_SYSTEM, role: "system" },
-      { content: [await canvasBriefFor(canvas, topic), cardsAskNote(topic)].filter(Boolean).join("\n\n"), role: "user" },
+      {
+        content: [
+          await canvasBriefFor(canvas, topic),
+          await standingInstructionsParagraph(uid, canvas.id),
+          cardsAskNote(topic),
+        ].filter(Boolean).join("\n\n"),
+        role: "user",
+      },
     ],
     { maxTokens: CARDS_MAX_TOKENS },
   );
@@ -585,9 +635,21 @@ export async function makeFlashcardsDeliverable(
  * 🔴 THE SHAPE IS CHOSEN BY THE ASK, AND THE ASK TRAVELS. `makeNoteDeliverable` appends the
  * learner's own sentence after the material (`noteAskParagraph`), and this rule reads it: points to
  * recall, things to memorise, a checklist, a cheat sheet or revision notes get a RECALL LIST, one
- * line per point; everything else gets the summary note it always got. Two shapes behind one door,
- * because a second deliverable kind would be a second row in every table that lists them, for a
- * difference the model can hear in one sentence.
+ * line per point; a study guide gets STUDY_GUIDE_RULES; everything else gets the summary note it
+ * always got. Three shapes behind one door, because a second deliverable kind would be a second row
+ * in every table that lists them, for a difference the model can hear in one sentence.
+ *
+ * 🔴🔴 AND THE THIRD SHAPE IS THE SAME BUG A SECOND TIME. The 2026-09-03 fix above added the recall
+ * list because "the points I should recall" came back as prose. It left the OTHER branch untouched,
+ * so the word "study guide" still fell through to "write a summary note: short sections that cover
+ * the material faithfully and compactly" — eleven words, against the ~4,500 characters of craft the
+ * card writer two sections up carries. `board-studio.ts` ships a tile labelled "Study guide" that
+ * lands here, so the button named after the artifact produced the one shape that is not it.
+ *
+ * Owner, 2026-09-09: study guides out of Nemesis, Opus and ChatGPT are all "not good enough" and
+ * the only fix was re-explaining the format on every request. The re-explaining is the symptom; an
+ * eleven-word specification is the cause. Why a competent summary is the wrong artifact, with the
+ * measurement behind it, is in `study-guide-craft.ts` and not repeated here.
  *
  * 🔴 STATED BY SHAPE, NEVER BY SUBJECT. "A value, a name, a date, an order of steps, a formula, a
  * condition" is a titration, a filing deadline, a load limit and a conjugation without naming any
@@ -609,7 +671,17 @@ const NOTE_SYSTEM =
   "able to say from memory without looking. Carry every exact specific across exactly as the " +
   "material gave it (a value, a name, a date, an order of steps, a formula, a condition under " +
   "which something holds or does not). No paragraphs anywhere in a recall list. " +
-  "Otherwise write a summary note: short sections that cover the material faithfully and compactly.";
+  // 🔴 THE RULES ARE FENCED ON BOTH SIDES. They arrive as their own multi-line block in a prompt
+  // that is otherwise one paragraph, so the boundaries are explicit: without the blank line and the
+  // closing sentence, "Otherwise write a summary note" reads as a clause hanging off the last rule
+  // rather than as the third branch of the shape choice, and a model that binds it that way writes
+  // a summary whenever the final rule does not apply.
+  "WHEN THE LEARNER ASKS FOR A STUDY GUIDE, a revision guide, exam preparation, or a document to " +
+  "learn or revise the material from, write to these rules:\n\n" +
+  STUDY_GUIDE_RULES +
+  "\n\nThose are the study-guide rules and they end here. " +
+  "If the learner asked for none of the three shapes above, write a summary note instead: short " +
+  "sections that cover the material faithfully and compactly.";
 
 /** Where canvas-made notes are filed in the library's tree. */
 export const CANVAS_NOTE_FOLDER = "Canvas outputs";
@@ -636,8 +708,9 @@ export function noteAskParagraph(topic?: string): string {
   if (!ask) return "";
   return (
     `The learner asked: "${ask}". Shape the note the way they asked for it: a recall list if they ` +
-    "asked for the points to recall, memorise or check off, a summary note otherwise. Cover what " +
-    "they named, and the whole material when they named nothing narrower."
+    "asked for the points to recall, memorise or check off, a study guide if they asked for a study " +
+    "or revision guide or for something to learn the material from, a summary note otherwise. Cover " +
+    "what they named, and the whole material when they named nothing narrower."
   );
 }
 
@@ -664,7 +737,12 @@ export async function makeNoteDeliverable(
     : [`Write this note about: ${subject}`, await webContextForTopic(uid, subject)].filter(Boolean).join("\n\n");
   const reply = await postChatCompletion(uid, [
     { content: NOTE_SYSTEM, role: "system" },
-    { content: [brief, noteAskParagraph(topic)].filter(Boolean).join("\n\n"), role: "user" },
+    {
+      content: [brief, await standingInstructionsParagraph(uid, canvas.id), noteAskParagraph(topic)]
+        .filter(Boolean)
+        .join("\n\n"),
+      role: "user",
+    },
   ]);
   if (!reply.text) return { error: reply.errorText ?? "The model call failed. Nothing was made." };
   const content = reply.text.trim();
