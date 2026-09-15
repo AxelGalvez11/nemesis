@@ -312,6 +312,15 @@ export function BlockEditor({
   useEffect(() => {
     onEngaged?.(engaged);
   }, [engaged, onEngaged]);
+  // 🔴 ENGAGED MUST MEAN VISIBLE. The page hides its Ask and done bar while the editor is engaged, so a toolbar left
+  // parked at HIDDEN strands the note with no way out (a reload resets the position but not this flag, and a focus()
+  // on an already-focused line fires no onFocus). Whenever engaged, make sure the toolbar is actually raised.
+  useEffect(() => {
+    if (!engaged || sheet) return;
+    if (lift.value <= HIDDEN + 1) {
+      lift.value = withTiming(kbUp.current || panelRef.current ? panelH : Math.max(insets.bottom, 12) - 10, { duration: 280, easing: EASE });
+    }
+  });
 
   const disengage = useCallback(() => {
     if (!kbUp.current && !panelRef.current && !focusedRef.current) setEngaged(false);
