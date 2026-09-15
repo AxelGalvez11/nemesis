@@ -8,7 +8,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { makeFlashcards } from "@/api/makeCards";
 import { settlePageRecordings } from "@/api/recording";
-import { addFileSource, addNoteSource } from "@/api/pageSources";
+import { addFileSource, addNoteSource, removeSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
 import { addBlockAfter, setBlockText, setChecked, setPageTitle } from "@/api/spaceWrite";
 import { BlockEditor, type NewBlockType } from "@/components/nx/editor/BlockEditor";
@@ -172,6 +172,21 @@ export default function PageScreen() {
   const [notePicker, setNotePicker] = useState(false);
   const [sourceBusy, setSourceBusy] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  // Every source row carries the canvas arrow; tapping it offers what the phone can really do with a source.
+  const sourceOptions = (s: PageSource) => {
+    const remove = () => void runSource("Removing", () => removeSource(s.id));
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: s.name, message: sourceMeta(s), options: ["Remove from this page", "Cancel"], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
+        (i) => i === 0 && remove(),
+      );
+    } else {
+      Alert.alert(s.name, sourceMeta(s), [
+        { text: "Remove from this page", style: "destructive", onPress: remove },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  };
   const runSource = async (label: string, work: () => Promise<unknown>) => {
     setAddOpen(false);
     setNotePicker(false);
@@ -194,6 +209,10 @@ export default function PageScreen() {
   const [useNotes, setUseNotes] = useState(true);
   const [skipped, setSkipped] = useState<string[]>([]);
   const chosen = readySources.filter((s) => !skipped.includes(s.id));
+  // Sub-pages are sources too (canvas CreateSources: "Seminar prep, Sub-page, 2 sources" with its own tick).
+  const [skippedSubs, setSkippedSubs] = useState<string[]>([]);
+  const subChosen = subTotals.filter((x) => !skippedSubs.includes(x.page.id));
+  const picked = chosen.length + subChosen.length + (useNotes ? 1 : 0);
   const [making, setMaking] = useState(false);
   const [makeError, setMakeError] = useState<string | null>(null);
   const [openDeck, setOpenDeck] = useState<string | null>(null);
@@ -205,7 +224,7 @@ export default function PageScreen() {
     setMaking(true);
     setMakeError(null);
     try {
-      const { deckId } = await makeFlashcards(uid, id, { includeNotes: useNotes, sourceIds: chosen.map((s) => s.id) });
+      const { deckId } = await makeFlashcards(uid, id, { includeNotes: useNotes, sourceIds: chosen.map((s) => s.id), subPageIds: subChosen.map((x) => x.page.id) });
       await qc.invalidateQueries({ queryKey: ["study-decks"] });
       setOpenDeck(deckId);
     } catch (e) {
@@ -219,7 +238,8 @@ export default function PageScreen() {
     await qc.invalidateQueries({ queryKey: ["study-decks"] });
   };
 
-  const sourcesLabel = `${useNotes ? "Notes and " : ""}${chosen.length} source${chosen.length === 1 ? "" : "s"}`;
+  const sourceTotal = chosen.length + subChosen.reduce((n, x) => n + x.count, 0);
+  const sourcesLabel = `${useNotes ? "Notes and " : ""}${sourceTotal} source${sourceTotal === 1 ? "" : "s"}`;
 
   // A brand-new page (canvas NewPage): only the title cursor, with Record / Lecture notes / Study guide / More
   // riding on the keyboard. Any of them, or leaving the title, turns it into the normal page.
@@ -391,7 +411,14 @@ export default function PageScreen() {
                   ) : null}
                   {sourceError ? <Text style={[styles.note, { color: c.danger, paddingTop: 4 }]}>{sourceError}</Text> : null}
                   {own.map((s) => (
-                    <NxRow key={s.id} lead={s.mime === "text/x-nemesis-note" ? <NxEmoji emoji="📝" /> : <NxIconTile icon={sourceIcon(s)} />} title={s.name} meta={sourceMeta(s)} />
+                    <NxRow
+                      key={s.id}
+                      lead={s.mime === "text/x-nemesis-note" ? <NxEmoji emoji="📝" /> : <NxIconTile icon={sourceIcon(s)} />}
+                      title={s.name}
+                      meta={sourceMeta(s)}
+                      trail={canEdit ? <NxChevron /> : undefined}
+                      onPress={canEdit ? () => sourceOptions(s) : undefined}
+                    />
                   ))}
                   {subTotals.map(({ page: ch, count }) => (
                     <NxRow
@@ -425,7 +452,7 @@ export default function PageScreen() {
                         </Pressable>
                       </View>
                     </View>
-                    <Pressable onPress={() => void make()} disabled={making || (!useNotes && chosen.length === 0)} style={({ pressed }) => [styles.makeBtn, { opacity: pressed || making ? 0.85 : 1 }]}>
+                    <Pressable onPress={() => void make()} disabled={making || picked === 0} style={({ pressed }) => [styles.makeBtn, { opacity: pressed || making ? 0.85 : 1 }]}>
                       {making ? <ActivityIndicator color="#1b2a6b" /> : <Text style={{ fontSize: 16, fontWeight: "600", color: "#1b2a6b" }}>Make flashcards</Text>}
                     </Pressable>
                   </View>
@@ -572,6 +599,7 @@ export default function PageScreen() {
               onPress={() => {
                 setUseNotes(true);
                 setSkipped([]);
+                setSkippedSubs([]);
               }}
             >
               <Text style={{ fontSize: 14, fontWeight: "500", color: c.acc }}>Select all</Text>
@@ -591,10 +619,23 @@ export default function PageScreen() {
               />
             );
           })}
+          {subTotals.map(({ page: ch, count }) => {
+            const on = !skippedSubs.includes(ch.id);
+            return (
+              <NxRow
+                key={`pick-${ch.id}`}
+                lead={<NxEmoji emoji={iconOf(ch.props.icon)} />}
+                title={ch.props.title || "Untitled"}
+                meta={`Sub-page, ${count} source${count === 1 ? "" : "s"}`}
+                trail={<Tick on={on} />}
+                onPress={() => setSkippedSubs((list) => (on ? [...list, ch.id] : list.filter((x) => x !== ch.id)))}
+              />
+            );
+          })}
           <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
             <NxButton
-              label={`Use ${chosen.length + (useNotes ? 1 : 0)} source${chosen.length + (useNotes ? 1 : 0) === 1 ? "" : "s"}`}
-              disabled={!useNotes && chosen.length === 0}
+              label={`Use ${picked} source${picked === 1 ? "" : "s"}`}
+              disabled={picked === 0}
               onPress={() => setPickOpen(false)}
             />
           </View>
