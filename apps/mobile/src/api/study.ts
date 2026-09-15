@@ -88,6 +88,46 @@ export function reviewQueue(cards: Card[], now = Date.now()): Card[] {
   return due.length ? due : live;
 }
 
+// ── Authoring, only from a page's Create tab ─────────────────────────────────────────────────────
+// 🔴 Owner, 2026-09-14: "Students can type cards too" in Create (add, edit, delete, like Gizmo).
+// Study screens (flip, quiz) stay free of editors; these functions are for Create only.
+
+/** A new empty set filed under the page it was made in. */
+export async function createDeck(name: string, pageId: string | null): Promise<string> {
+  const uid = await userId();
+  if (!uid) throw new Error('Sign in to make flashcards.');
+  const { data, error } = await supabase
+    .from('study_decks')
+    .insert({ user_id: uid, name: name.trim() || 'Flashcards', page_id: pageId })
+    .select('id')
+    .single();
+  if (error) throw new Error(`study_decks: ${error.message}`);
+  return data.id as string;
+}
+
+export async function addCard(deckId: string, front: string, back: string): Promise<Card> {
+  const uid = await userId();
+  if (!uid) throw new Error('Sign in to add cards.');
+  const { data, error } = await supabase
+    .from('study_cards')
+    .insert({ user_id: uid, deck_id: deckId, front: front.trim(), back: back.trim(), due_at: new Date().toISOString() })
+    .select('id,deck_id,front,back,due_at,state,suspended')
+    .single();
+  if (error) throw new Error(`study_cards: ${error.message}`);
+  return data as Card;
+}
+
+export async function updateCard(cardId: string, front: string, back: string): Promise<void> {
+  const { error } = await supabase.from('study_cards').update({ front: front.trim(), back: back.trim() }).eq('id', cardId);
+  if (error) throw new Error(`study_cards: ${error.message}`);
+}
+
+/** Deleting a card also removes its review history (the schema cascades), so the caller confirms first. */
+export async function deleteCard(cardId: string): Promise<void> {
+  const { error } = await supabase.from('study_cards').delete().eq('id', cardId);
+  if (error) throw new Error(`study_cards: ${error.message}`);
+}
+
 export async function markCard(cardId: string, got: boolean, durationMs?: number): Promise<void> {
   const { error } = await supabase.rpc('grade_study_card', {
     p_card_id: cardId,

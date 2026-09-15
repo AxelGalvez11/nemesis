@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource } from "@/api/space";
+import { addCard, createDeck, deckCards, deleteCard, updateCard } from "@/api/study";
+import { CardEditor, type CardDraft } from "@/components/nx/CardEditor";
 import { NxIcon, type NxIconName } from "@/components/nx/NxIcon";
 import { NxBottomBar, NxChevron, NxEmoji, NxIconButton, NxIconTile, NxPill, NxRow, NxSection } from "@/components/nx/primitives";
-import { NxPageTitle, NxWorkspaceTabs, type WsTab } from "@/components/nx/workspace";
+import { NxAddPill, NxPageTitle, NxWorkspaceTabs, type WsTab } from "@/components/nx/workspace";
 import { useDecks } from "@/hooks/useSpace";
 import { nxType, useNx } from "@/theme/nx";
 
@@ -18,6 +20,10 @@ export default function PageScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<WsTab>("notes");
+  const qc = useQueryClient();
+  const [openDeck, setOpenDeck] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ deckId: string; draft: CardDraft } | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const page = useQuery({ queryKey: ["ws-page", id], queryFn: () => loadPage(id), enabled: !!id });
   const sources = useQuery({ queryKey: ["ws-sources", id], queryFn: () => pageSources(id), enabled: !!id });
@@ -37,6 +43,22 @@ export default function PageScreen() {
   const ownCount = sources.data?.length ?? 0;
   const totalSources = ownCount + subTotals.reduce((n, x) => n + x.count, 0);
   const pageDecks = (decks.data ?? []).filter((d) => d.page_id === id);
+  const openCards = useQuery({ queryKey: ["study-cards", openDeck], queryFn: () => deckCards(openDeck as string), enabled: !!openDeck });
+  const refreshCards = async (deckId: string) => {
+    await qc.invalidateQueries({ queryKey: ["study-cards", deckId] });
+    await qc.invalidateQueries({ queryKey: ["study-decks"] });
+  };
+  const newSet = async () => {
+    setCreateError(null);
+    try {
+      const deckId = await createDeck(title || "Flashcards", id);
+      await qc.invalidateQueries({ queryKey: ["study-decks"] });
+      setOpenDeck(deckId);
+      setEditor({ deckId, draft: { front: "", back: "" } });
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "The set could not be made.");
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
@@ -111,19 +133,43 @@ export default function PageScreen() {
 
             {tab === "create" ? (
               <>
-                <NxSection label="Made in this page" />
-                {pageDecks.map((d) => (
-                  <NxRow
-                    key={d.id}
-                    lead={<NxIconTile icon="cards" tint="accent" />}
-                    title={d.name.split("::").pop() || d.name}
-                    meta={`${d.cards} card${d.cards === 1 ? "" : "s"}${d.due ? `, ${d.due} due` : ""}`}
-                    trail={<NxPill label="Study" onPress={() => router.push({ pathname: "/set/[id]", params: { id: d.id } })} />}
-                    onPress={() => router.push({ pathname: "/set/[id]", params: { id: d.id } })}
-                  />
-                ))}
+                <NxSection label="Made in this page" right={<NxAddPill label="New set" onPress={() => void newSet()} />} />
+                {createError ? <Text style={[styles.note, { color: c.danger }]}>{createError}</Text> : null}
+                {pageDecks.map((d) => {
+                  const expanded = openDeck === d.id;
+                  return (
+                    <View key={d.id}>
+                      <NxRow
+                        lead={<NxIconTile icon="cards" tint="accent" />}
+                        title={d.name.split("::").pop() || d.name}
+                        meta={`${d.cards} card${d.cards === 1 ? "" : "s"}${d.due ? `, ${d.due} due` : ""}`}
+                        trail={<NxPill label="Study" onPress={() => router.push({ pathname: "/set/[id]", params: { id: d.id } })} />}
+                        onPress={() => setOpenDeck(expanded ? null : d.id)}
+                      />
+                      {expanded ? (
+                        <View style={[styles.cards, { borderColor: c.ln }]}>
+                          {openCards.isLoading ? <ActivityIndicator style={{ margin: 12 }} color={c.t3} /> : null}
+                          {(openCards.data ?? []).map((card) => (
+                            <Pressable
+                              key={card.id}
+                              onPress={() => setEditor({ deckId: d.id, draft: { id: card.id, front: card.front, back: card.back } })}
+                              style={({ pressed }) => [styles.cardRow, { borderBottomColor: c.ln }, pressed && { backgroundColor: c.soft }]}
+                            >
+                              <Text style={{ fontSize: 15, lineHeight: 21, fontWeight: "500", color: c.t1 }}>{card.front}</Text>
+                              <Text style={{ fontSize: 14, lineHeight: 20, color: c.t2 }}>{card.back}</Text>
+                            </Pressable>
+                          ))}
+                          <Pressable onPress={() => setEditor({ deckId: d.id, draft: { front: "", back: "" } })} style={styles.addCard}>
+                            <NxIcon name="plus" size={16} color={c.acc} strokeWidth={2.2} />
+                            <Text style={{ color: c.acc, fontSize: 15, fontWeight: "500" }}>Add card</Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
                 {!decks.isLoading && pageDecks.length === 0 ? (
-                  <Text style={[styles.note, { color: c.t2 }]}>No flashcards made in this page yet.</Text>
+                  <Text style={[styles.note, { color: c.t2 }]}>No flashcards in this page yet. Tap New set to start one.</Text>
                 ) : null}
               </>
             ) : null}
@@ -131,6 +177,22 @@ export default function PageScreen() {
         )}
       </ScrollView>
       <NxBottomBar ask="Ask about this page" onAsk={() => router.push("/chat")} />
+      <CardEditor
+        visible={!!editor}
+        initial={editor?.draft ?? null}
+        onClose={() => setEditor(null)}
+        onSave={async (draft) => {
+          if (!editor) return;
+          if (draft.id) await updateCard(draft.id, draft.front, draft.back);
+          else await addCard(editor.deckId, draft.front, draft.back);
+          await refreshCards(editor.deckId);
+        }}
+        onDelete={async (cardId) => {
+          if (!editor) return;
+          await deleteCard(cardId);
+          await refreshCards(editor.deckId);
+        }}
+      />
     </View>
   );
 }
@@ -255,4 +317,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 19, fontWeight: "600" },
   emptyText: { fontSize: 15, lineHeight: 22, textAlign: "center" },
   foot: { paddingHorizontal: 20, paddingTop: 10, fontSize: 13, lineHeight: 18 },
+  cards: { marginLeft: 64, marginRight: 16, borderLeftWidth: 1, paddingLeft: 12, marginBottom: 8 },
+  cardRow: { paddingVertical: 10, gap: 2, borderBottomWidth: StyleSheet.hairlineWidth },
+  addCard: { flexDirection: "row", alignItems: "center", gap: 6, height: 44 },
 });

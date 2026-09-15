@@ -61,7 +61,15 @@ export default function SignIn() {
     signInWithProvider,
     signInEmail,
     signUpEmail,
+    continueAsGuest,
+    isGuest,
   } = useAuth();
+
+  // Development-only guest link: leave sign-in once guest mode has actually been set. Navigating in the
+  // same tap loses the race with the state update and the shell sends the visitor straight back here.
+  useEffect(() => {
+    if (__DEV__ && isGuest && !session) router.replace("/");
+  }, [isGuest, session]);
 
   const [typed, setTyped] = useState<TypewriterState>(TYPEWRITER_START);
   const [emailExpanded, setEmailExpanded] = useState(false);
@@ -348,6 +356,17 @@ export default function SignIn() {
             >
               <Text style={styles.btnDarkLabel}>Log in or sign up</Text>
             </Pressable>
+            {__DEV__ ? (
+              // Development builds only: look at the app's layout without an account.
+              <Pressable
+                testID="signin-dev-guest"
+                onPress={continueAsGuest}
+                hitSlop={8}
+                style={{ alignSelf: "center", paddingVertical: 10 }}
+              >
+                <Text style={{ color: "rgba(255,255,255,0.55)", fontSize: 14 }}>Continue without signing in</Text>
+              </Pressable>
+            ) : null}
           </>
         )}
       </View>
