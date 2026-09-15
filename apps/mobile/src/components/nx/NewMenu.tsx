@@ -36,15 +36,24 @@ export function NewMenu({ visible, onClose, onNewPage, onRecord, busy }: { visib
         <View style={[styles.rule, { backgroundColor: c.ln }]} />
         {option('mic', 'Record', onRecord)}
       </View>
+      {/* The New button turns into a close button while the menu is open (canvas NewChooser). */}
+      <Pressable
+        onPress={onClose}
+        accessibilityLabel="Close"
+        style={({ pressed }) => [styles.close, { bottom: Math.max(insets.bottom, 12) + 4, backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}
+      >
+        <NxIcon name="x" size={18} color={c.onInv} strokeWidth={2} />
+      </Pressable>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  close: { position: 'absolute', right: 12, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   menu: {
     position: 'absolute',
     right: 12,
-    width: 200,
+    width: 212,
     borderRadius: 18,
     padding: 6,
     borderWidth: StyleSheet.hairlineWidth,

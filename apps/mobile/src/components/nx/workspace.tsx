@@ -62,6 +62,7 @@ export function NxPageTitle({
 }) {
   const c = useNx();
   const [draft, setDraft] = useState(title);
+  const [focused, setFocused] = useState(!!autoFocus);
   useEffect(() => setDraft(title), [title]);
   const titleStyle = [nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: bare ? 22 : 6 }];
   return (
@@ -74,9 +75,13 @@ export function NxPageTitle({
           onChangeText={setDraft}
           // Saved once, on leaving the field. Done (blurOnSubmit) blurs, so it lands here too.
           onBlur={() => {
+            setFocused(false);
             if (draft.trim() !== title.trim()) onRename(draft.trim());
           }}
-          placeholder={bare ? '' : 'Untitled'}
+          // Bare (a brand-new page) shows only the cursor while typing; once the field lets go it must still say
+          // Untitled, or the page reads as blank.
+          placeholder={bare && focused ? '' : 'Untitled'}
+          onFocus={() => setFocused(true)}
           placeholderTextColor={c.t3}
           autoFocus={autoFocus}
           inputAccessoryViewID={accessoryId}

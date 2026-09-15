@@ -173,12 +173,12 @@ export default function NotesHome() {
             <NxSection label="Private" />
             {tree.flatMap((n) => renderNode(n, 0))}
           </ScrollView>
-          <NxBottomBar
+          {menu ? null : <NxBottomBar
             ask={online ? "Ask Nemesis" : "Ask Nemesis is offline"}
             onAsk={online ? () => router.push({ pathname: "/c/[id]", params: { id: "new" } }) : undefined}
             onSearch={() => router.push("/search")}
             right={spaceId && online ? <NxNewButton onPress={() => setMenu(true)} /> : null}
-          />
+          />}
         </>
       )}
       <NewMenu

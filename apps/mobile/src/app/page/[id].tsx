@@ -480,8 +480,8 @@ export default function PageScreen() {
         </View>
       ) : null}
 
-      <Animated.View
-        pointerEvents={editing ? "box-none" : "box-none"}
+      {isNew ? null : <Animated.View
+        pointerEvents="box-none"
         style={[StyleSheet.absoluteFill, { top: undefined, height: insets.bottom + 90, opacity: barShown, transform: [{ translateY: barShown.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] }]}
       >
       <NxBottomBar
@@ -503,7 +503,7 @@ export default function PageScreen() {
           ) : null
         }
       />
-      </Animated.View>
+      </Animated.View>}
 
       {isNew && Platform.OS === "ios" ? (
         <InputAccessoryView nativeID={NEW_PAGE_ACCESSORY} backgroundColor="transparent">
