@@ -475,11 +475,19 @@ export function BlockEditor({
     }, 2500);
   };
 
+  // 🔴 The toolbar lives in a FullWindowOverlay, which sits above every window, the iOS Files picker included. It is
+  // taken down while the picker is up and comes back as soon as the picker closes (the first upload step, or a cancel).
+  const [picking, setPicking] = useState(false);
   const attach = async (kind: MediaKind) => {
     if (!spaceId || !pageId || busy) return;
     setNotice(null);
+    setPicking(true);
     try {
-      const res = await pickAndUploadMedia(kind, spaceId, pageId, setBusy);
+      const res = await pickAndUploadMedia(kind, spaceId, pageId, (step) => {
+        setPicking(false);
+        setBusy(step);
+      });
+      setPicking(false);
       if (!res) return;
       onAddBlock(res.block.type, lastFocused.current, res.block.props);
       if (res.readSource) {
@@ -495,6 +503,7 @@ export function BlockEditor({
     } catch (e) {
       setNotice(e instanceof Error ? e.message : 'That file could not be added. Try again.');
     } finally {
+      setPicking(false);
       setBusy(null);
     }
   };
@@ -866,7 +875,7 @@ export function BlockEditor({
     <View style={{ gap: 2 }}>
       {body}
 
-      {engaged && !sheet ? (
+      {engaged && !sheet && !picking ? (
         <FullWindowOverlay>
           <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
             {panel ? (
