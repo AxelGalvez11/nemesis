@@ -499,8 +499,20 @@ export function BlockEditor({
   const closeSheet = (backToField: boolean) => {
     setSheet(null);
     setPanel(null);
-    if (backToField) setTimeout(refocus, 350);
-    else hideToolbar();
+    if (!backToField) {
+      hideToolbar();
+      return;
+    }
+    setTimeout(() => {
+      refocus();
+      // 🔴 When the cursor never left its line (a hardware keyboard, or the sheet closed before a blur landed), focus()
+      // fires no onFocus, so nothing would raise the toolbar again and the note is left with no toolbar and no
+      // done button. Put it back explicitly: on the keyboard if one is up, else at its resting spot.
+      if (lastFocused.current) {
+        setEngaged(true);
+        lift.value = withTiming(kbUp.current ? panelH : Math.max(insets.bottom, 12) - 10, { duration: 280, easing: EASE });
+      }
+    }, 350);
   };
   const submitLink = (embed: boolean) => {
     const block = linkEmbed(sheetText, embed);
