@@ -84,7 +84,8 @@ export function useRecorder() {
         return 'denied';
       }
       if (!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()) {
-        set('error');
+        // Not 'error': the screen treats an error while recording as a broken microphone, which overwrote the
+        // "can't record privately" message with "The microphone stopped working".
         return 'unsupported';
       }
       uris.current = [];

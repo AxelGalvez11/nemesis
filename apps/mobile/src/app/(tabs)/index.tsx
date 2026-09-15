@@ -145,7 +145,8 @@ export default function NotesHome() {
             {error ? <Text style={[styles.note, { color: c.t2 }]}>Your pages could not be loaded. Pull down to try again.</Text> : null}
             {makeError ? <Text style={[styles.note, { color: c.danger }]}>{makeError}</Text> : null}
 
-            {comingUp.length ? (
+            {/* Canvas Offline: only the banner and the page tree; calendar and recents need a connection. */}
+            {online && comingUp.length ? (
               <>
                 <NxSection label="Coming up" right={<Text style={{ fontSize: 13, lineHeight: 18, color: c.t3 }}>Google Calendar</Text>} />
                 {comingUp.map((e, i) => (
@@ -160,7 +161,7 @@ export default function NotesHome() {
               </>
             ) : null}
 
-            {recents.length ? (
+            {online && recents.length ? (
               <>
                 <NxSection label="Recents" />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cards}>
