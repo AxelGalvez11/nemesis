@@ -11,7 +11,7 @@ import { settlePageRecordings } from "@/api/recording";
 import { addFileSource, addNoteSource, removeSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
 import { addBlockAfter, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
-import { openEmbed } from "@/api/noteMedia";
+import { embedUrl, openEmbed } from "@/api/noteMedia";
 import { BlockEditor, turnIntoProps, type NewBlockType, type SaveResult, type TurnIntoType } from "@/components/nx/editor/BlockEditor";
 import { BookmarkEmbed, FileEmbed } from "@/components/nx/editor/FileEmbed";
 import { SkelBar, SkelBody, SkelGroup, SkelList, SkelPage } from "@/components/nx/Skeleton";
@@ -834,8 +834,18 @@ function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; link
           </View>
         </View>
       );
+    case "image": {
+      // Pictures show inline like Notion; the file card is only the fallback when the picture cannot load.
+      const p = (block.props ?? {}) as { src?: unknown; name?: unknown };
+      const src = typeof p.src === "string" ? p.src : undefined;
+      if (src) return <InlineImage src={src} name={typeof p.name === "string" ? p.name : "Image"} pad={pad} />;
+      return (
+        <View style={pad}>
+          <FileEmbed name={typeof p.name === "string" ? p.name : "Image"} mime="image/*" />
+        </View>
+      );
+    }
     case "file":
-    case "image":
     case "video":
     case "audio": {
       // A file embedded in the note (canvas NoteReady: "Week 7 slides.pdf"). Tapping opens a signed link to it.
@@ -876,6 +886,41 @@ function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; link
     default:
       return block.text ? <Text style={[body, pad]}>{block.text}</Text> : <View style={{ height: 8 }} />;
   }
+}
+
+function InlineImage({ src, name, pad }: { src: string; name: string; pad: { marginLeft: number } }) {
+  const c = useNx();
+  const url = useQuery({ queryKey: ["embed-url", src], queryFn: () => embedUrl(src), staleTime: 6 * 3600_000 });
+  const [ratio, setRatio] = useState(4 / 3);
+  const [broken, setBroken] = useState(false);
+  if (url.isLoading) {
+    return (
+      <SkelGroup style={[pad, { marginTop: 6 }]}>
+        <SkelBar width="100%" height={200} radius={12} />
+      </SkelGroup>
+    );
+  }
+  if (!url.data || broken) {
+    return (
+      <View style={pad}>
+        <FileEmbed name={name} mime="image/*" onPress={() => void openEmbed(src).catch(() => undefined)} />
+      </View>
+    );
+  }
+  return (
+    <Pressable onPress={() => void openEmbed(src).catch(() => undefined)} style={({ pressed }) => [pad, { marginTop: 6, opacity: pressed ? 0.85 : 1 }]} accessibilityLabel={`Open ${name}`}>
+      <Image
+        source={{ uri: url.data }}
+        onLoad={(e) => {
+          const { width, height } = e.nativeEvent.source;
+          if (width && height) setRatio(width / height);
+        }}
+        onError={() => setBroken(true)}
+        style={{ width: "100%", aspectRatio: ratio, borderRadius: 12, backgroundColor: c.sel }}
+        resizeMode="cover"
+      />
+    </Pressable>
+  );
 }
 
 function sourceIcon(s: PageSource): NxIconName {

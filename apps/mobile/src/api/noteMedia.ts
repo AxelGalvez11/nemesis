@@ -130,6 +130,15 @@ export function linkEmbed(raw: string, embed: boolean): EmbedBlock | null {
   return { type: 'bookmark', props: { src: url, name: host, ...(embed ? { embed: true } : {}) } };
 }
 
+/** A viewable link for a block's file: signed for a stored `ws-file:` (twelve hours, like the web), or the link itself. */
+export async function embedUrl(src: string): Promise<string | null> {
+  if (src.startsWith('ws-file:')) {
+    const { data, error } = await supabase.storage.from('ws-files').createSignedUrl(src.slice('ws-file:'.length), 12 * 3600);
+    return error || !data?.signedUrl ? null : data.signedUrl;
+  }
+  return /^https?:\/\//i.test(src) ? src : null;
+}
+
 /** Opens a block's file: a signed link for a stored `ws-file:` (twelve hours, like the web), or the link itself. */
 export async function openEmbed(src: string): Promise<void> {
   if (src.startsWith('ws-file:')) {
