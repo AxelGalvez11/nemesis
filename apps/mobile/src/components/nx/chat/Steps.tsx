@@ -68,8 +68,8 @@ export function LiveSteps({ phase, trail, glimpse }: { phase: ThinkingPhase; tra
   } else {
     current = (
       <>
+        {/* No spinner beside "Thinking" (owner 2026-09-15): the shimmering word is the only sign of work. */}
         <StepLine
-          lead={<Spinner color={c.t2} />}
           onPress={glimpse ? () => setOpen((o) => !o) : undefined}
           trail={glimpse ? <StepIcon name={open ? 'chev_d' : 'chev_r'} size={14} color={c.t3} /> : undefined}
         >
