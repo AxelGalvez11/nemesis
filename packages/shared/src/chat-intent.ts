@@ -215,11 +215,14 @@ export const DEFAULT_INTENT: ChatIntent = {
 /**
  * How long the decision gets before the turn goes ahead without it.
  *
- * Inherited from the web pre-flight this replaces, and left there rather than raised: the packet is
- * small, the reply is a few dozen tokens, and a student waiting on an answer must not be held up by
- * a routing decision. Past this we take DEFAULT_INTENT and answer.
+ * 🔴 RAISED FROM 3 s ON 2026-09-15, BECAUSE 3 s SILENTLY TURNED WEB SEARCH OFF. Past the deadline we
+ * take DEFAULT_INTENT, whose needsWeb is false, so a timed-out decision is not "a slightly slower
+ * answer": it is a news question answered with "I don't have live news access". Measured on the
+ * phone over a campus network, the decision alone took 2.5 s on a good turn (edge log, nemesis-llm)
+ * and was cut off on the next one, which logged only the answer call. 6 s keeps a real margin while
+ * still bounding how long a student waits when the decision genuinely hangs.
  */
-export const INTENT_TIMEOUT_MS = 3_000;
+export const INTENT_TIMEOUT_MS = 6_000;
 
 /** How many past exchanges ride in the packet. Enough for "yeah do that" to resolve. */
 export const INTENT_HISTORY_TURNS = 6;
