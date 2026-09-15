@@ -10,7 +10,8 @@ import { makeFlashcards } from "@/api/makeCards";
 import { settlePageRecordings } from "@/api/recording";
 import { addFileSource, addNoteSource, removeSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
-import { addBlockAfter, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
+import { addBlockAfter, createPage, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
+import { NoteAskBar } from "@/components/nx/NoteAskBar";
 import { embedUrl, openEmbed } from "@/api/noteMedia";
 import { BlockEditor, turnIntoProps, type NewBlockType, type SaveResult, type TurnIntoType } from "@/components/nx/editor/BlockEditor";
 import { BookmarkEmbed, FileEmbed } from "@/components/nx/editor/FileEmbed";
@@ -46,6 +47,17 @@ export default function PageScreen() {
   const [tab, setTab] = useState<WsTab>("notes");
   const [editing, setEditing] = useState(false);
   const [toolbarUp, setToolbarUp] = useState(false);
+  // Notion's bottom bar: ≡ opens Recents, Ask AI raises the AI bar with this note's pill, the pencil offers
+  // AI Meeting Notes / Chat / Page. Typing starts by tapping a line; putting the keyboard away ends it.
+  const [recentsOpen, setRecentsOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
+  const [focusRequest, setFocusRequest] = useState<{ id: string; at: number } | null>(null);
+  const engagedOnce = useRef(false);
+  const recentsMenu = useNxPresence(recentsOpen);
+  const recentsPop = useNxPopStyle(recentsMenu.p);
+  const composeMenu = useNxPresence(composeOpen);
+  const composePop = useNxPopStyle(composeMenu.p);
 
   // Scrolled down a long note (canvas NoteScrolled): past the title a slim frosted bar with the page name
   // appears; scrolling down tucks the Ask bar away, scrolling up brings it back.
@@ -125,6 +137,34 @@ export default function PageScreen() {
     }
   };
   const record = () => router.push({ pathname: "/record/[pageId]", params: { pageId: id } });
+
+  const startEditing = (blockId: string) => {
+    setEditError(null);
+    setFocusRequest({ id: blockId, at: Date.now() });
+    setEditing(true);
+  };
+  const onEditorEngaged = (on: boolean) => {
+    setToolbarUp(on);
+    if (on) engagedOnce.current = true;
+    else if (engagedOnce.current) {
+      engagedOnce.current = false;
+      setEditing(false);
+    }
+  };
+  const makePage = async (kind: "page" | "meeting") => {
+    const sid = page.data?.space_id;
+    setComposeOpen(false);
+    if (!sid) return;
+    try {
+      const day = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      const pid = await createPage(sid, kind === "meeting" ? { title: `Meeting, ${day}`, icon: "🎙️" } : {});
+      void qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
+      if (kind === "meeting") router.push({ pathname: "/record/[pageId]", params: { pageId: pid } });
+      else router.push({ pathname: "/page/[id]", params: { id: pid, fresh: "1" } });
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "The page could not be made.");
+    }
+  };
   const titles = useMemo(() => new Map(children.map((ch) => [ch.id, ch])), [children]);
   const parent = page.data?.ancestors[page.data.ancestors.length - 1];
   const title = String(page.data?.page.props.title ?? "");
@@ -424,7 +464,8 @@ export default function PageScreen() {
                           reloadPage();
                           refreshSources();
                         }}
-                        onEngaged={setToolbarUp}
+                        onEngaged={onEditorEngaged}
+                        focusRequest={focusRequest}
                         onAddDatabase={(after) => void addDatabase(after)}
                         databasePageIds={databaseIds}
                         canEdit={canEdit}
@@ -437,14 +478,16 @@ export default function PageScreen() {
                     <>
                       {blocks.length === 0 ? (
                         <Pressable disabled={!canEdit} onPress={() => setEditing(true)}>
-                          <Text style={[nxType.body, { color: c.t3 }]}>{canEdit ? "Tap the pencil to start writing." : "This page is empty."}</Text>
+                          <Text style={[nxType.body, { color: c.t3 }]}>{canEdit ? "Tap here to start writing." : "This page is empty."}</Text>
                         </Pressable>
                       ) : null}
                       {numbered(blocks).map(({ block, n }) =>
                         block.type === "page" && block.pageId && databaseIds.has(block.pageId) && spaceIdOfPage ? (
                           <DatabaseBlock key={block.id} spaceId={spaceIdOfPage} pageId={id} block={block} canEdit={canEdit} onChanged={reloadPage} />
                         ) : (
-                          <BlockView key={block.id} block={block} n={n} linked={block.pageId ? titles.get(block.pageId) : undefined} onOpen={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })} />
+                          <Pressable key={block.id} disabled={!canEdit} onPress={() => startEditing(block.id)}>
+                            <BlockView block={block} n={n} linked={block.pageId ? titles.get(block.pageId) : undefined} onOpen={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })} />
+                          </Pressable>
                         ),
                       )}
                     </>
@@ -597,21 +640,19 @@ export default function PageScreen() {
         style={[StyleSheet.absoluteFill, { top: undefined, height: insets.bottom + 90, opacity: barShown, transform: [{ translateY: barShown.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] }]}
       >
       <NxBottomBar
-        ask={tab === "notes" ? "Ask about this note" : "Ask about this page"}
-        onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new", page: id } })}
-        onSearch={() => router.push("/search")}
+        ask="Ask AI"
+        askMark
+        onAsk={() => setAskOpen(true)}
+        left={
+          <NxPressable onPress={() => setRecentsOpen(true)} scaleTo={0.92} style={[styles.round, { backgroundColor: c.card, borderColor: c.ring }]} accessibilityLabel="Recents">
+            <NxIcon name="menu" size={22} color={c.t1} />
+          </NxPressable>
+        }
         right={
-          tab === "notes" && canEdit ? (
-            <Pressable
-              onPress={() => {
-                setEditError(null);
-                setEditing((e) => !e);
-              }}
-              style={[styles.round, { backgroundColor: editing ? c.inv : c.card, borderColor: c.ring }]}
-              accessibilityLabel={editing ? "Done editing" : "Edit this note"}
-            >
-              <NxIcon name={editing ? "check" : "compose"} size={20} color={editing ? c.onInv : c.t1} strokeWidth={editing ? 2.2 : 1.6} />
-            </Pressable>
+          spaceIdOfPage ? (
+            <NxPressable onPress={() => setComposeOpen(true)} haptic="light" scaleTo={0.92} style={[styles.round, { backgroundColor: c.card, borderColor: c.ring }]} accessibilityLabel="New">
+              <NxIcon name="compose" size={20} color={c.t1} />
+            </NxPressable>
           ) : null
         }
       />
@@ -714,6 +755,64 @@ export default function PageScreen() {
             />
           </View>
       </NxSheet>
+
+      {/* ≡ Recents: a small pop-up of the pages opened last, rising from the bottom-left button. */}
+      <Modal visible={recentsMenu.mounted} transparent animationType="none" onRequestClose={() => setRecentsOpen(false)}>
+        <View style={StyleSheet.absoluteFill} pointerEvents={recentsOpen ? "box-none" : "none"}>
+          <NxDim p={recentsMenu.p} onPress={() => setRecentsOpen(false)} />
+          <Reanimated.View style={[styles.menuPop, { left: 12, bottom: Math.max(insets.bottom, 12) + 60, backgroundColor: c.card, borderColor: c.ring, transformOrigin: "bottom left" }, recentsPop]}>
+            <Text style={[nxType.section, { color: c.t2, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4 }]}>Recents</Text>
+            {space.recents.filter((p) => p.id !== id).slice(0, 6).map((p) => (
+              <Pressable
+                key={p.id}
+                onPress={() => {
+                  setRecentsOpen(false);
+                  router.push({ pathname: "/page/[id]", params: { id: p.id } });
+                }}
+                style={({ pressed }) => [styles.recentRow, pressed && { backgroundColor: c.soft }]}
+              >
+                <Text style={{ fontSize: 18, width: 24, textAlign: "center" }}>{iconOf(p.props.icon)}</Text>
+                <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, color: c.t1 }}>
+                  {p.props.title || "Untitled"}
+                </Text>
+                <Text style={[nxType.rowMeta, { color: c.t3 }]}>{ago(p.edited_at)}</Text>
+              </Pressable>
+            ))}
+            {space.recents.filter((p) => p.id !== id).length === 0 ? (
+              <Text style={{ fontSize: 15, color: c.t2, paddingHorizontal: 14, paddingVertical: 12 }}>Pages you open show up here.</Text>
+            ) : null}
+          </Reanimated.View>
+        </View>
+      </Modal>
+
+      {/* Pencil: AI Meeting Notes, Chat, Page (Notion's new menu), rising from the bottom-right button. */}
+      <Modal visible={composeMenu.mounted} transparent animationType="none" onRequestClose={() => setComposeOpen(false)}>
+        <View style={StyleSheet.absoluteFill} pointerEvents={composeOpen ? "box-none" : "none"}>
+          <NxDim p={composeMenu.p} onPress={() => setComposeOpen(false)} />
+          <Reanimated.View style={[styles.menuPop, { right: 12, width: 240, bottom: Math.max(insets.bottom, 12) + 60, backgroundColor: c.card, borderColor: c.ring, transformOrigin: "bottom right" }, composePop]}>
+            <MenuOption icon="mic" label="AI Meeting Notes" onPress={() => void makePage("meeting")} />
+            <MenuOption
+              icon="bubble"
+              label="Chat"
+              onPress={() => {
+                setComposeOpen(false);
+                router.push({ pathname: "/c/[id]", params: { id: "new" } });
+              }}
+            />
+            <MenuOption icon="file" label="Page" onPress={() => void makePage("page")} />
+          </Reanimated.View>
+        </View>
+      </Modal>
+
+      <NoteAskBar
+        visible={askOpen}
+        onClose={() => setAskOpen(false)}
+        page={page.data ? { emoji: icon, title: title || "Untitled" } : null}
+        onSend={(q, withPage) => {
+          setAskOpen(false);
+          router.push({ pathname: "/c/[id]", params: withPage ? { id: "new", page: id, q } : { id: "new", q } });
+        }}
+      />
 
       <CardEditor
         visible={!!editor}
@@ -1014,6 +1113,8 @@ const styles = StyleSheet.create({
   opt: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 52, paddingHorizontal: 14, borderRadius: 12 },
   optTile: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8 },
+  menuPop: { position: "absolute", width: 300, borderRadius: 18, padding: 6, borderWidth: StyleSheet.hairlineWidth, shadowColor: "#2a1c00", shadowOpacity: 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } },
+  recentRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 46, paddingHorizontal: 12, borderRadius: 12 },
   grab: { width: 36, height: 5, borderRadius: 3, alignSelf: "center" },
   sheetHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sheetTitle: { fontSize: 19, lineHeight: 24, fontWeight: "600", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },

@@ -57,6 +57,7 @@ const P = {
   kbd_down: () => <><Rect x="3" y="3.5" width="18" height="11.5" rx="2" /><Path d="M7 7.5h.01M10.5 7.5h.01M14 7.5h.01M17 7.5h.01M8 11.5h8" /><Path d="M9 18.5l3 2.5 3-2.5" /></>,
   xcirc: () => <><Circle cx="12" cy="12" r="9" /><Path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" /></>,
   undo: () => <><Path d="M9 14L4 9l5-5" /><Path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></>,
+  menu: () => <Path d="M4 7h16M4 12h16M4 17h16" />,
   bullets: () => <><Circle cx="5" cy="7" r="1" /><Circle cx="5" cy="12" r="1" /><Circle cx="5" cy="17" r="1" /><Path d="M9 7h11M9 12h11M9 17h11" /></>,
   turn: () => <><Path d="M17 3l3 3-3 3" /><Path d="M20 6H9a5 5 0 0 0-5 5" /><Path d="M7 21l-3-3 3-3" /><Path d="M4 18h11a5 5 0 0 0 5-5" /></>,
   // Database view and property icons (hand-drawn in the same 24px, round-cap style; not in gen.py).

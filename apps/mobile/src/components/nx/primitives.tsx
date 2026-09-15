@@ -9,6 +9,7 @@ import Animated, { FadeIn, LinearTransition, useReducedMotion } from 'react-nati
 import { nxDuration, nxSize, nxType, useNx } from '@/theme/nx';
 import { NxIcon, type NxIconName } from './NxIcon';
 import { NxPressable } from './NxPressable';
+import { NxMark } from './NxMark';
 import { nxEasing, nxHaptic } from './motion';
 
 export type NxTabKey = 'notes' | 'study' | 'chats';
@@ -195,11 +196,17 @@ export function NxBottomBar({
   onSearch,
   onAsk,
   right,
+  left,
+  askMark,
 }: {
   ask: string;
   onSearch?: () => void;
   onAsk?: () => void;
   right?: React.ReactNode;
+  /** Replaces the search circle (a note page puts its Recents button here, like Notion). */
+  left?: React.ReactNode;
+  /** The Nemesis mark in a ringed circle instead of the sparkle (Notion's Ask AI pill). */
+  askMark?: boolean;
 }) {
   const c = useNx();
   const insets = useSafeAreaInsets();
@@ -207,13 +214,19 @@ export function NxBottomBar({
   return (
     <View pointerEvents="box-none" style={[styles.bottom, { bottom: Math.max(insets.bottom, 12) + 4 }]}>
       {/* Only drawn when there is somewhere to go: a search button that does nothing reads as broken. */}
-      {onSearch ? (
+      {left ?? (onSearch ? (
         <NxPressable onPress={onSearch} scaleTo={0.92} style={[styles.round, float]} accessibilityLabel="Search">
           <NxIcon name="search" size={20} color={c.t1} />
         </NxPressable>
-      ) : null}
-      <NxPressable onPress={onAsk} scaleTo={0.98} style={[styles.ask, float]}>
-        <NxIcon name="spark" size={18} color={c.t3} />
+      ) : null)}
+      <NxPressable onPress={onAsk} scaleTo={0.98} style={[styles.ask, float, askMark && { paddingLeft: 6 }]}>
+        {askMark ? (
+          <View style={{ width: 32, height: 32, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.ring, backgroundColor: c.card, alignItems: 'center', justifyContent: 'center' }}>
+            <NxMark size={16} color={c.t1} />
+          </View>
+        ) : (
+          <NxIcon name="spark" size={18} color={c.t3} />
+        )}
         <Text numberOfLines={1} style={{ color: c.t3, fontSize: 15 }}>
           {ask}
         </Text>

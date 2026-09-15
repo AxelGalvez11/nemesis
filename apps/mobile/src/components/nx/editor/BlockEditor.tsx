@@ -87,6 +87,8 @@ export type BlockEditorProps = {
   onChanged?: () => void;
   /** The typing toolbar is showing (a field is focused or a panel is open): the page hides its Ask bar. */
   onEngaged?: (on: boolean) => void;
+  /** Put the cursor in this block (a tap on a line in the reading view opens the editor there). `at` makes a repeat tap count. */
+  focusRequest?: { id: string; at: number } | null;
   /** Adds a database after `afterId` (end of page when null). The Database tile is hidden when this is not passed. */
   onAddDatabase?: (afterId: string | null) => void;
   /** Sub-page ids that are databases (api/database.ts databasePageIdsOf): their page blocks draw the database inline. */
@@ -147,6 +149,7 @@ export function BlockEditor({
   onTurnInto,
   onChanged,
   onEngaged,
+  focusRequest,
   onAddDatabase,
   databasePageIds,
   canEdit = true,
@@ -271,6 +274,13 @@ export function BlockEditor({
       }
     }
   }, [blocks]);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    // Waits a beat for the fields to mount when the editor has just opened.
+    const t = setTimeout(() => inputs.current.get(focusRequest.id)?.focus(), 80);
+    return () => clearTimeout(t);
+  }, [focusRequest]);
 
   // ── Undo: snapshots of a field before a burst of typing (a pause over 1.2s starts a new one) or a format ────────
   const undoStack = useRef<{ id: string; segs: Seg[]; at: number }[]>([]);
