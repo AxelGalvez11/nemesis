@@ -76,7 +76,8 @@ export default function FlashcardsReview() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
-      <Stack.Screen options={{ headerShown: false, presentation: "fullScreenModal" }} />
+      {/* Presentation is set in _layout: changing it from inside the screen loops when opened by link. */}
+      <Stack.Screen options={{ headerShown: false }} />
       {/* The header names the page the set came from. No emoji (owner 2026-09-15). */}
       <NxStudyHeader title={page ? page.props.title || "Untitled" : name} onClose={close} />
 

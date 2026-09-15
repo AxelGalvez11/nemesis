@@ -85,6 +85,8 @@ function ThemedApp() {
         {/* A full-screen push with its own back chevron at the top (canvas Settings), not a sheet. */}
         <Stack.Screen name="settings" options={{ presentation: "card" }} />
         <Stack.Screen name="settings-upgrade" options={{ presentation: "modal" }} />
+        <Stack.Screen name="flashcards/[id]" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="quiz/[id]" options={{ presentation: "fullScreenModal" }} />
       </Stack>
       <OfflineBanner />
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />

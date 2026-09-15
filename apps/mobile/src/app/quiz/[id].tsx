@@ -104,7 +104,8 @@ export default function QuizScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
-      <Stack.Screen options={{ headerShown: false, presentation: "fullScreenModal" }} />
+      {/* Presentation is set in _layout: changing it from inside the screen loops when opened by link. */}
+      <Stack.Screen options={{ headerShown: false }} />
       {/* The quiz header names the set. No emoji (owner 2026-09-15). */}
       <NxStudyHeader title={name} onClose={close} />
 
