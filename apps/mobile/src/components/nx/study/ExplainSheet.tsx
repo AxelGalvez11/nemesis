@@ -36,7 +36,7 @@ export function ExplainSheet({
   /** An explanation already written for this card (the quiz keeps one on the card). */
   initial?: string | null;
   /** The page the set was made from. */
-  source?: { emoji: string; title: string; onPress: () => void } | null;
+  source?: { title: string; onPress: () => void } | null;
 }) {
   const c = useNx();
   const float = useFloat();
@@ -133,7 +133,7 @@ export function ExplainSheet({
           {source ? (
             <Pressable onPress={source.onPress} style={({ pressed }) => [styles.source, { borderColor: c.ring, opacity: pressed ? 0.7 : 1 }]}>
               <View style={[styles.dot, { backgroundColor: c.sel }]}>
-                <Text style={{ fontSize: 11 }}>{source.emoji}</Text>
+                <NxIcon name="notes" size={12} color={c.t2} strokeWidth={1.6} />
               </View>
               <Text numberOfLines={1} style={{ fontSize: 14, color: c.t1, flexShrink: 1 }}>
                 {source.title}

@@ -8,7 +8,6 @@ import { NxFlashcard, NxMarkButtons, NxStudyHeader } from "@/components/nx/study
 import { ExplainSheet } from "@/components/nx/study/ExplainSheet";
 import { StudyDone } from "@/components/nx/study/StudyDone";
 import { useDecks, useSpacePages } from "@/hooks/useSpace";
-import { iconOf } from "@/lib/fresh";
 import { useNx } from "@/theme/nx";
 
 // Flashcards mode (canvas Review, ReviewAnswer, ExplainSheet, CardsDone, DarkReview). Spaced repetition is
@@ -77,8 +76,8 @@ export default function FlashcardsReview() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false, presentation: "fullScreenModal" }} />
-      {/* The header names the page the set came from, with its emoji (canvas Review: "📚 Contract law"). */}
-      <NxStudyHeader title={page ? `${iconOf(page.props.icon)} ${page.props.title || "Untitled"}` : name} onClose={close} />
+      {/* The header names the page the set came from. No emoji (owner 2026-09-15). */}
+      <NxStudyHeader title={page ? page.props.title || "Untitled" : name} onClose={close} />
 
       {cards.isLoading || queue === null ? (
         cards.error ? (
@@ -119,7 +118,6 @@ export default function FlashcardsReview() {
             source={
               page
                 ? {
-                    emoji: iconOf(page.props.icon),
                     title: page.props.title || "Untitled",
                     onPress: () => {
                       setExplain(false);

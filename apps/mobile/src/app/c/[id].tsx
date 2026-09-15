@@ -21,12 +21,11 @@ import { LiveSteps, SettledSteps, type TurnTrail } from '@/components/nx/chat/St
 import { useSpacePages } from '@/hooks/useSpace';
 import { ATTACHMENT_CONTEXT_MAX_CHARS, type ChatMsg, type ChatSource } from '@/lib/chat-thread';
 import { deriveThreadTitle } from '@/lib/chat-threads';
-import { iconOf } from '@/lib/fresh';
 import { reasoningGlimpse } from '@/lib/reasoning-preview';
 import type { ThinkingPhase } from '@/lib/thinking-phase';
 import { useNx } from '@/theme/nx';
 
-type Attached = { pageId: string; title: string; emoji: string; content: string };
+type Attached = { pageId: string; title: string; content: string };
 
 const EMPTY_TRAIL: TurnTrail = { queries: [], thoughtMs: 0, found: 0 };
 
@@ -106,7 +105,6 @@ export default function ChatScreen() {
       const next: Attached = {
         pageId,
         title: recordText(loaded.page.props.title) || 'Untitled',
-        emoji: iconOf(loaded.page.props.icon),
         content: text.slice(0, ATTACHMENT_CONTEXT_MAX_CHARS),
       };
       setAttached(next);
@@ -182,7 +180,7 @@ export default function ChatScreen() {
       if (abortRef.current === controller) abortRef.current = null;
       sendingRef.current = false;
       if (!alive.current) return;
-      const noteSource: ChatSource[] = page ? [{ title: page.title, url: `nemesis://page/${page.pageId}`, description: page.emoji }] : [];
+      const noteSource: ChatSource[] = page ? [{ title: page.title, url: `nemesis://page/${page.pageId}`, description: "" }] : [];
       const partial = streamRef.current.trim();
       let next: ChatMsg[] | null = null;
       if (reply.errorKind === 'aborted') {
@@ -347,7 +345,7 @@ export default function ChatScreen() {
           onSend={() => void send()}
           onStop={() => abortRef.current?.abort()}
           sending={sending}
-          chip={attached ? { emoji: attached.emoji, title: attached.title } : null}
+          chip={attached ? { title: attached.title } : null}
           onRemoveChip={() => setAttached(null)}
           web={web}
           onWebOff={() => setWeb(false)}

@@ -12,6 +12,7 @@ import { addFileSource, addNoteSource, removeSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
 import { addBlockAfter, createPage, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
 import { NoteAskBar } from "@/components/nx/NoteAskBar";
+import { PageMenu } from "@/components/nx/PageMenu";
 import { embedUrl, openEmbed } from "@/api/noteMedia";
 import { BlockEditor, turnIntoProps, type NewBlockType, type SaveResult, type TurnIntoType } from "@/components/nx/editor/BlockEditor";
 import { BookmarkEmbed, FileEmbed } from "@/components/nx/editor/FileEmbed";
@@ -29,7 +30,6 @@ import { NxBottomBar, NxButton, NxChevron, NxEmoji, NxIconButton, NxIconTile, Nx
 import { NxAddPill, NxPageTitle, NxWorkspaceTabs, type WsTab } from "@/components/nx/workspace";
 import { useDecks, useSpacePages } from "@/hooks/useSpace";
 import { ago } from "@/lib/ago";
-import { iconOf } from "@/lib/fresh";
 import { nxType, useNx } from "@/theme/nx";
 
 const cobalt = require("../../../assets/images/nx/cobalt-hd.jpg");
@@ -107,35 +107,56 @@ export default function PageScreen() {
   }, [id]);
 
   // The dots menu (canvas page_header): favourite and move to trash. Trash is restorable from the web.
+  // 🔴 A page opened from a link or a notification has no screen behind it; going back must land on Notes, not throw
+  // "The action 'GO_BACK' was not handled".
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace("/"));
+
+  // The "..." menu: the app's own pop-up (owner: the iOS action sheet "doesn't have UI").
+  const [menuOpen, setMenuOpen] = useState(false);
   const more = () => {
-    const spaceId = page.data?.space_id;
-    if (!spaceId) return;
-    const fav = space.favoriteIds.has(id);
-    const options = [fav ? "Remove from favorites" : "Add to favorites", ...(canEdit ? ["Move to trash"] : []), "Cancel"];
-    const run = async (label: string) => {
-      try {
-        if (label === "Move to trash") {
-          await trashPage(spaceId, id);
-          await qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
-          await qc.invalidateQueries({ queryKey: ["ws-bootstrap"] });
-          router.back();
-        } else if (label !== "Cancel") {
-          await setFavorite(id, !fav);
-          await qc.invalidateQueries({ queryKey: ["ws-bootstrap"] });
-        }
-      } catch (e) {
-        setEditError(e instanceof Error ? e.message : "That did not work. Try again.");
-      }
-    };
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: options.length - 1, destructiveButtonIndex: canEdit ? 1 : undefined, title: title || "Untitled" },
-        (i) => void run(options[i]!),
-      );
-    } else {
-      Alert.alert(title || "Untitled", undefined, options.map((o) => ({ text: o, style: o === "Cancel" ? "cancel" : o === "Move to trash" ? "destructive" : "default", onPress: () => void run(o) })));
+    if (page.data?.space_id) setMenuOpen(true);
+  };
+  const fav = space.favoriteIds.has(id);
+  const runMenu = async (work: () => Promise<void>) => {
+    try {
+      await work();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "That did not work. Try again.");
     }
   };
+  // A function, so canEdit and blocks (declared further down) are read when the menu renders.
+  const menuItems = () => [
+    {
+      icon: "star" as const,
+      label: fav ? "Remove from favorites" : "Add to favorites",
+      onPress: () =>
+        void runMenu(async () => {
+          await setFavorite(id, !fav);
+          await qc.invalidateQueries({ queryKey: ["ws-bootstrap"] });
+        }),
+    },
+    {
+      icon: "share" as const,
+      label: "Share",
+      onPress: () => void Share.share({ message: `${title || "Untitled"}\n\n${blocks.map((b) => b.text).filter(Boolean).join("\n")}`.trim() }),
+    },
+    ...(canEdit
+      ? [
+          {
+            icon: "trash" as const,
+            label: "Move to trash",
+            danger: true,
+            onPress: () =>
+              void runMenu(async () => {
+                await trashPage(page.data!.space_id, id);
+                await qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
+                await qc.invalidateQueries({ queryKey: ["ws-bootstrap"] });
+                goBack();
+              }),
+          },
+        ]
+      : []),
+  ];
   const record = () => router.push({ pathname: "/record/[pageId]", params: { pageId: id } });
 
   const startEditing = (blockId: string) => {
@@ -157,7 +178,7 @@ export default function PageScreen() {
     if (!sid) return;
     try {
       const day = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      const pid = await createPage(sid, kind === "meeting" ? { title: `Meeting, ${day}`, icon: "🎙️" } : {});
+      const pid = await createPage(sid, kind === "meeting" ? { title: `Meeting, ${day}` } : {});
       void qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
       if (kind === "meeting") router.push({ pathname: "/record/[pageId]", params: { pageId: pid } });
       else router.push({ pathname: "/page/[id]", params: { id: pid, fresh: "1" } });
@@ -168,7 +189,6 @@ export default function PageScreen() {
   const titles = useMemo(() => new Map(children.map((ch) => [ch.id, ch])), [children]);
   const parent = page.data?.ancestors[page.data.ancestors.length - 1];
   const title = String(page.data?.page.props.title ?? "");
-  const icon = iconOf(page.data?.page.props.icon);
   const cover = typeof page.data?.page.props.cover === "string" && /^#|^rgb/.test(page.data.page.props.cover as string) ? (page.data.page.props.cover as string) : undefined;
   const canEdit = page.data?.role === "full" || page.data?.role === "edit";
 
@@ -360,7 +380,7 @@ export default function PageScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.header, { paddingTop: insets.top + 2 }]}>
-        <NxIconButton icon="chev_l" size={22} label="Back" onPress={() => router.back()} />
+        <NxIconButton icon="chev_l" size={22} label="Back" onPress={goBack} />
         <View style={{ width: 44 }} />
         <View style={{ flex: 1, alignItems: "center" }}>
           <Pressable
@@ -368,7 +388,7 @@ export default function PageScreen() {
             onPress={() => parent && router.replace({ pathname: "/page/[id]", params: { id: parent.id } })}
             style={styles.crumb}
           >
-            <Text style={{ fontSize: 14 }}>{parent ? iconOf(parent.props.icon) : "🔒"}</Text>
+            <NxIcon name={parent ? "notes" : "lock"} size={14} color={c.t3} strokeWidth={1.6} />
             <Text numberOfLines={1} style={{ fontSize: 14, color: c.t2, maxWidth: 190 }}>
               {parent ? parent.props.title || "Untitled" : "Private"}
             </Text>
@@ -407,7 +427,6 @@ export default function PageScreen() {
         ) : (
           <>
             <NxPageTitle
-              emoji={icon}
               title={title}
               cover={tab === "notes" && !isNew ? cover : undefined}
               autoFocus={fresh === "1" && !title}
@@ -453,7 +472,7 @@ export default function PageScreen() {
                         onTurnInto={(b, t) => void turnInto(b, t)}
                         onOpenPage={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })}
                         onRecord={record}
-                        pages={space.pages.filter((p) => p.id !== id).map((p) => ({ id: p.id, title: p.props.title || "Untitled", icon: iconOf(p.props.icon) }))}
+                        pages={space.pages.filter((p) => p.id !== id).map((p) => ({ id: p.id, title: p.props.title || "Untitled" }))}
                         sources={own}
                         onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new", page: id } })}
                         onFlashcards={() => {
@@ -532,7 +551,7 @@ export default function PageScreen() {
                   {own.map((s) => (
                     <NxRow
                       key={s.id}
-                      lead={s.mime === "text/x-nemesis-note" ? <NxEmoji emoji="📝" /> : <NxIconTile icon={sourceIcon(s)} />}
+                      lead={s.mime === "text/x-nemesis-note" ? <NxEmoji /> : <NxIconTile icon={sourceIcon(s)} />}
                       title={s.name}
                       meta={sourceMeta(s)}
                       trail={canEdit ? <NxChevron /> : undefined}
@@ -542,7 +561,7 @@ export default function PageScreen() {
                   {subTotals.map(({ page: ch, count }) => (
                     <NxRow
                       key={`sub-${ch.id}`}
-                      lead={<NxEmoji emoji={iconOf(ch.props.icon)} />}
+                      lead={<NxEmoji />}
                       title={ch.props.title || "Untitled"}
                       meta={`Sub-page, ${count} source${count === 1 ? "" : "s"}`}
                       trail={<NxChevron />}
@@ -625,9 +644,9 @@ export default function PageScreen() {
       {scrolledPast ? (
         <View style={[StyleSheet.absoluteFill, { bottom: undefined, height: insets.top + 50 }]} pointerEvents="box-none">
           <BlurView intensity={60} tint="systemChromeMaterial" style={[styles.scrollBar, { paddingTop: insets.top + 2, borderBottomColor: c.ln }]}>
-            <NxIconButton icon="chev_l" size={22} label="Back" onPress={() => router.back()} />
+            <NxIconButton icon="chev_l" size={22} label="Back" onPress={goBack} />
             <Text numberOfLines={1} style={{ flex: 1, textAlign: "center", fontSize: 16, lineHeight: 22, fontWeight: "600", color: c.t1 }}>
-              {`${icon} ${title || "Untitled"}`}
+              {title || "Untitled"}
             </Text>
             <View style={{ width: 44 }} />
           </BlurView>
@@ -699,7 +718,7 @@ export default function PageScreen() {
             {space.pages
               .filter((p) => p.id !== id)
               .map((p: PageSummary) => (
-                <NxRow key={p.id} lead={<NxEmoji emoji={iconOf(p.props.icon)} />} title={p.props.title || "Untitled"} meta={ago(p.edited_at)} onPress={() => void runSource(p.props.title || "Adding a note", () => addNoteSource(id, p.id))} />
+                <NxRow key={p.id} lead={<NxEmoji />} title={p.props.title || "Untitled"} meta={ago(p.edited_at)} onPress={() => void runSource(p.props.title || "Adding a note", () => addNoteSource(id, p.id))} />
               ))}
             {space.pages.length <= 1 ? <Text style={[styles.note, { color: c.t2 }]}>You have no other notes yet.</Text> : null}
           </ScrollView>
@@ -720,13 +739,13 @@ export default function PageScreen() {
               <Text style={{ fontSize: 14, fontWeight: "500", color: c.acc }}>Select all</Text>
             </Pressable>
           </View>
-          <NxRow lead={<NxEmoji emoji={icon} />} title="Notes on this page" meta={title || "Untitled"} trail={<Tick on={useNotes} />} onPress={() => setUseNotes((v) => !v)} />
+          <NxRow lead={<NxEmoji />} title="Notes on this page" meta={title || "Untitled"} trail={<Tick on={useNotes} />} onPress={() => setUseNotes((v) => !v)} />
           {readySources.map((s) => {
             const on = !skipped.includes(s.id);
             return (
               <NxRow
                 key={s.id}
-                lead={s.mime === "text/x-nemesis-note" ? <NxEmoji emoji="📝" /> : <NxIconTile icon={sourceIcon(s)} />}
+                lead={s.mime === "text/x-nemesis-note" ? <NxEmoji /> : <NxIconTile icon={sourceIcon(s)} />}
                 title={s.name}
                 meta={sourceMeta(s)}
                 trail={<Tick on={on} />}
@@ -739,7 +758,7 @@ export default function PageScreen() {
             return (
               <NxRow
                 key={`pick-${ch.id}`}
-                lead={<NxEmoji emoji={iconOf(ch.props.icon)} />}
+                lead={<NxEmoji />}
                 title={ch.props.title || "Untitled"}
                 meta={`Sub-page, ${count} source${count === 1 ? "" : "s"}`}
                 trail={<Tick on={on} />}
@@ -771,7 +790,9 @@ export default function PageScreen() {
                 }}
                 style={({ pressed }) => [styles.recentRow, pressed && { backgroundColor: c.soft }]}
               >
-                <Text style={{ fontSize: 18, width: 24, textAlign: "center" }}>{iconOf(p.props.icon)}</Text>
+                <View style={{ width: 24, alignItems: "center" }}>
+                  <NxIcon name="notes" size={18} color={c.t2} strokeWidth={1.6} />
+                </View>
                 <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, color: c.t1 }}>
                   {p.props.title || "Untitled"}
                 </Text>
@@ -804,10 +825,12 @@ export default function PageScreen() {
         </View>
       </Modal>
 
+      <PageMenu visible={menuOpen} onClose={() => setMenuOpen(false)} items={menuItems()} />
+
       <NoteAskBar
         visible={askOpen}
         onClose={() => setAskOpen(false)}
-        page={page.data ? { emoji: icon, title: title || "Untitled" } : null}
+        page={page.data ? { emoji: "", title: title || "Untitled" } : null}
         onSend={(q, withPage) => {
           setAskOpen(false);
           router.push({ pathname: "/c/[id]", params: withPage ? { id: "new", page: id, q } : { id: "new", q } });
@@ -945,7 +968,7 @@ function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; link
     case "page":
       return (
         <Pressable onPress={() => block.pageId && onOpen(block.pageId)} style={[styles.line, { alignItems: "center" }, pad]}>
-          <Text style={{ fontSize: 18 }}>{iconOf(linked?.props.icon)}</Text>
+          <NxIcon name="notes" size={18} color={c.t2} strokeWidth={1.6} />
           <Text style={[body, { textDecorationLine: "underline", textDecorationColor: c.ring }]}>{linked?.props.title || block.text || "Untitled"}</Text>
         </Pressable>
       );

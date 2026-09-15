@@ -14,7 +14,6 @@ import { NxIcon } from "@/components/nx/NxIcon";
 import { NxBottomBar, NxButton, NxNewButton, NxPill, NxRow, NxSection } from "@/components/nx/primitives";
 import { useSpacePages } from "@/hooks/useSpace";
 import { ago } from "@/lib/ago";
-import { iconOf } from "@/lib/fresh";
 import { nxType, useNx, type NxColors } from "@/theme/nx";
 
 // Notes, the home tab (canvas artboards "Main" and "Notes, first day"): Coming up (today's classes),
@@ -50,7 +49,7 @@ export default function NotesHome() {
     setMaking(true);
     setMakeError(null);
     try {
-      const id = await createPage(spaceId, record ? { title: record.title, icon: "🎙️" } : {});
+      const id = await createPage(spaceId, record ? { title: record.title } : {});
       await qc.invalidateQueries({ queryKey: ["ws-all-pages", spaceId] });
       setMenu(false);
       if (record) router.push({ pathname: "/record/[pageId]", params: { pageId: id } });
@@ -81,7 +80,9 @@ export default function NotesHome() {
         >
           <NxIcon name={expanded ? "chev_d" : "chev_r"} size={14} color={c.t3} strokeWidth={2} />
         </Pressable>
-        <Text style={styles.treeEmoji}>{iconOf(node.props.icon)}</Text>
+        <View style={styles.treeEmoji}>
+          <NxIcon name="notes" size={18} color={c.t2} strokeWidth={1.6} />
+        </View>
         <Text numberOfLines={1} style={[nxType.rowTitle, { color: c.t1, flex: 1 }]}>
           {node.props.title || "Untitled"}
         </Text>
@@ -198,7 +199,9 @@ function RecentCard({ page, cover, onPress }: { page: PageSummary; cover: string
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: c.card, borderColor: c.ln }, pressed && { opacity: 0.8 }]}>
       <View style={{ height: 38, backgroundColor: cover }} />
       <View style={{ paddingHorizontal: 12, paddingBottom: 12, marginTop: -14 }}>
-        <Text style={{ fontSize: 24, lineHeight: 28 }}>{iconOf(page.props.icon)}</Text>
+        <View style={{ height: 28, justifyContent: "flex-end" }}>
+          <NxIcon name="notes" size={22} color={c.t2} strokeWidth={1.6} />
+        </View>
         <Text numberOfLines={2} style={{ fontSize: 14, lineHeight: 19, fontWeight: "500", color: c.t1, marginTop: 6, height: 38 }}>
           {page.props.title || "Untitled"}
         </Text>
@@ -236,7 +239,7 @@ function formatTime(hhmm: string): string {
 const styles = StyleSheet.create({
   tree: { flexDirection: "row", alignItems: "center", minHeight: 44, paddingRight: 16 },
   chev: { width: 32, height: 44, alignItems: "center", justifyContent: "center" },
-  treeEmoji: { width: 26, fontSize: 18, textAlign: "center" },
+  treeEmoji: { width: 26, alignItems: "center", justifyContent: "center" },
   note: { paddingHorizontal: 20, paddingTop: 16, fontSize: 15, lineHeight: 22 },
   bar: { width: 3, height: 32, borderRadius: 2, marginLeft: 4 },
   cards: { gap: 10, paddingHorizontal: 16, paddingVertical: 2 },

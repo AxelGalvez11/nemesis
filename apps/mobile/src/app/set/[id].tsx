@@ -12,7 +12,6 @@ import { NxIconButton } from "@/components/nx/primitives";
 import { NxFootButton, NxModeCard } from "@/components/nx/study";
 import { useDecks, useSpacePages } from "@/hooks/useSpace";
 import { nxType, useNx } from "@/theme/nx";
-import { iconOf } from "@/lib/fresh";
 
 type Mode = "quiz" | "cards";
 
@@ -59,18 +58,17 @@ export default function SetScreen() {
         {page ? <NxIconButton icon="dots" size={20} label="More" onPress={more} /> : <View style={{ width: 44 }} />}
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}>
-        <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: 14 }]}>🗂️</Text>
         {deck ? (
-          <Text style={[nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 6 }]}>{deck.name.split("::").pop()}</Text>
+          <Text style={[nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 14 }]}>{deck.name.split("::").pop()}</Text>
         ) : (
-          <SkelGroup style={{ paddingHorizontal: 20, paddingTop: 10 }}>
+          <SkelGroup style={{ paddingHorizontal: 20, paddingTop: 18 }}>
             <SkelBar width="70%" height={26} radius={6} />
           </SkelGroup>
         )}
         <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
           <Prop icon="cards" label="Cards" value={String(cards.data?.length ?? deck?.cards ?? "")} />
           <Prop icon="clock" label="Due today" value={String(due)} />
-          {page ? <Prop icon="notes" label="From page" value={`${iconOf(page.props.icon)} ${page.props.title || "Untitled"}`} onPress={openPage} /> : null}
+          {page ? <Prop icon="notes" label="From page" value={page.props.title || "Untitled"} onPress={openPage} /> : null}
         </View>
         <View style={[styles.rule, { backgroundColor: c.ln }]} />
         <Text style={[nxType.section, { color: c.t2, paddingHorizontal: 20, paddingTop: 18 }]}>Cards</Text>

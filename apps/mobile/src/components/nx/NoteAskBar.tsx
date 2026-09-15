@@ -44,16 +44,11 @@ export function NoteAskBar({
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.fill}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
         <View style={{ paddingHorizontal: 12, paddingBottom: Math.max(insets.bottom, 12), gap: 10 }}>
-          <View style={[styles.who, float]}>
-            <View style={[styles.logo, { borderColor: c.ring, backgroundColor: c.card }]}>
-              <NxMark size={16} color={c.t1} />
-            </View>
-            <Text style={{ fontSize: 15, fontWeight: '500', color: c.t1 }}>Nemesis AI</Text>
-          </View>
+          {/* Owner: no "Nemesis AI" pill above the box. */}
           <View style={[styles.box, float]}>
             {page && withPage ? (
               <View style={[styles.chip, { borderColor: c.ring }]}>
-                <Text style={{ fontSize: 14 }}>{page.emoji}</Text>
+                <NxIcon name="notes" size={15} color={c.t2} />
                 <Text numberOfLines={1} style={{ fontSize: 14, color: c.t1, maxWidth: 200 }}>
                   {page.title}
                 </Text>

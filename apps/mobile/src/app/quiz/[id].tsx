@@ -24,10 +24,9 @@ import {
 import { ExplainSheet } from "@/components/nx/study/ExplainSheet";
 import { StudyDone } from "@/components/nx/study/StudyDone";
 import { useDecks, useSpacePages } from "@/hooks/useSpace";
-import { iconOf } from "@/lib/fresh";
 import { useNx } from "@/theme/nx";
 
-type Source = { emoji: string; title: string; onPress: () => void } | null;
+type Source = { title: string; onPress: () => void } | null;
 
 // Active recall quiz (canvas QuizRecall, QuizChoice, QuizMatch; memory: gizmo-quiz-teardown).
 // Think first, then 4 options. Right: green, moves on by itself. Wrong: red, the right answer, Explain and
@@ -97,7 +96,6 @@ export default function QuizScreen() {
 
   const source: Source = page
     ? {
-        emoji: iconOf(page.props.icon),
         title: page.props.title || "Untitled",
         onPress: () => router.push({ pathname: "/page/[id]", params: { id: page.id } }),
       }
@@ -106,8 +104,8 @@ export default function QuizScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false, presentation: "fullScreenModal" }} />
-      {/* The quiz header names the set with the card-box emoji (canvas QuizRecall: "🗂️ Offer and acceptance"). */}
-      <NxStudyHeader title={name ? `🗂️ ${name}` : ""} onClose={close} />
+      {/* The quiz header names the set. No emoji (owner 2026-09-15). */}
+      <NxStudyHeader title={name} onClose={close} />
 
       {!uid ? (
         <Centered title="Sign in to take a quiz" text="Quizzes are written from your own flashcards." />

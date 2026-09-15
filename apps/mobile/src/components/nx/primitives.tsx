@@ -147,10 +147,13 @@ export function NxRow({
   );
 }
 
-export function NxEmoji({ emoji, size = 20 }: { emoji?: string | null; size?: number }) {
+/** A page's lead icon: a quiet line icon, never an emoji (owner 2026-09-15: "i dont want emojis").
+ *  `emoji` is accepted and ignored so older callers keep compiling. */
+export function NxEmoji({ icon = 'notes', size = 20 }: { emoji?: string | null; icon?: NxIconName; size?: number }) {
+  const c = useNx();
   return (
     <View style={styles.emoji}>
-      <Text style={{ fontSize: size }}>{emoji || '📄'}</Text>
+      <NxIcon name={icon} size={size} color={c.t2} strokeWidth={1.6} />
     </View>
   );
 }

@@ -13,7 +13,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { NxIcon } from '@/components/nx/NxIcon';
 import { NxEmoji, NxSection } from '@/components/nx/primitives';
 import { useDecks, useSpacePages } from '@/hooks/useSpace';
-import { iconOf, isFresh } from '@/lib/fresh';
+import { isFresh } from '@/lib/fresh';
 import { useNx } from '@/theme/nx';
 
 type Filter = 'all' | 'notes' | 'cards' | 'chats';
@@ -24,8 +24,8 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'chats', label: 'Chats' },
 ];
 
-type NoteHit = { id: string; title: string; emoji: string; snippet: string };
-type CardHit = { id: string; deckId: string; front: string; deck: string; emoji: string };
+type NoteHit = { id: string; title: string; snippet: string };
+type CardHit = { id: string; deckId: string; front: string; deck: string };
 type ChatHit = { id: string; title: string; snippet: string };
 type ChatDoc = { id: string; title: string; text: string };
 
@@ -116,12 +116,12 @@ export default function SearchScreen() {
       .then((hits) =>
         hits
           .filter((h) => byId.has(h.page_id))
-          .map((h) => ({ id: h.page_id, title: h.title || byId.get(h.page_id)?.props.title || 'Untitled', emoji: iconOf(byId.get(h.page_id)?.props.icon), snippet: snippet(h.passages?.[0] ?? '', dq) })),
+          .map((h) => ({ id: h.page_id, title: h.title || byId.get(h.page_id)?.props.title || 'Untitled', snippet: snippet(h.passages?.[0] ?? '', dq) })),
       )
       .catch(() =>
         pages
           .filter((p) => (p.props.title ?? '').toLowerCase().includes(dq.toLowerCase()))
-          .map((p) => ({ id: p.id, title: p.props.title || 'Untitled', emoji: iconOf(p.props.icon), snippet: '' })),
+          .map((p) => ({ id: p.id, title: p.props.title || 'Untitled', snippet: '' })),
       )
       .then((list) => {
         if (live) setNotes(list);
@@ -153,7 +153,7 @@ export default function SearchScreen() {
           (data ?? []).map((r: { id: string; deck_id: string; front: string }) => {
             const deck = decks.find((d) => d.id === r.deck_id);
             const page = deck?.page_id ? byId.get(deck.page_id) : undefined;
-            return { id: r.id, deckId: r.deck_id, front: r.front, deck: page?.props.title || deck?.name || 'Flashcards', emoji: page ? iconOf(page.props.icon) : '📚' };
+            return { id: r.id, deckId: r.deck_id, front: r.front, deck: page?.props.title || deck?.name || 'Flashcards' };
           }),
         );
       });
@@ -225,7 +225,7 @@ export default function SearchScreen() {
           <>
             <NxSection label="Notes" />
             {notes.map((n) => (
-              <Row key={n.id} lead={<NxEmoji emoji={n.emoji} />} title={n.title} meta={n.snippet} onPress={() => router.push(`/page/${n.id}` as Href)} />
+              <Row key={n.id} lead={<NxEmoji />} title={n.title} meta={n.snippet} onPress={() => router.push(`/page/${n.id}` as Href)} />
             ))}
           </>
         ) : null}
@@ -233,7 +233,7 @@ export default function SearchScreen() {
           <>
             <NxSection label="Flashcards" />
             {cards.map((k) => (
-              <Row key={k.id} lead={<NxEmoji emoji={k.emoji} />} title={k.front} meta={k.deck} onPress={() => router.push(`/set/${k.deckId}` as Href)} />
+              <Row key={k.id} lead={<NxEmoji icon="cards" />} title={k.front} meta={k.deck} onPress={() => router.push(`/set/${k.deckId}` as Href)} />
             ))}
           </>
         ) : null}

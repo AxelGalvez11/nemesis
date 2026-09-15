@@ -7,7 +7,6 @@ import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 're
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PageSummary } from '@/api/space';
 import type { ChatSource } from '@/lib/chat-thread';
-import { iconOf } from '@/lib/fresh';
 import { useNx } from '@/theme/nx';
 import { NxIcon } from '../NxIcon';
 import { NxEmoji, NxRow, NxSection } from '../primitives';
@@ -95,7 +94,7 @@ export function PlusSheet({
           <NxSection label="Ask about a page" />
           {pages.length ? (
             pages.map((p) => (
-              <NxRow key={p.id} lead={<NxEmoji emoji={iconOf(p.props?.icon)} />} title={p.props?.title || 'Untitled'} onPress={() => onPage(p)} />
+              <NxRow key={p.id} lead={<NxEmoji />} title={p.props?.title || 'Untitled'} onPress={() => onPage(p)} />
             ))
           ) : (
             <Text style={{ color: c.t2, fontSize: 15, lineHeight: 22, paddingHorizontal: 16 }}>You have no pages yet.</Text>

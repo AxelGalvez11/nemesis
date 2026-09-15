@@ -72,6 +72,7 @@ const P = {
   trash: () => <><Path d="M4.5 7h15" /><Path d="M9.5 7V4.5h5V7" /><Path d="M6.5 7l1 13h9l1-13" /></>,
   open_out: () => <><Path d="M14 4h6v6" /><Path d="M20 4l-9 9" /><Path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></>,
   selectprop: () => <><Circle cx="12" cy="12" r="8.5" /><Path d="M8.5 10.5l3.5 3.5 3.5-3.5" /></>,
+  lock: () => <><Rect x="5" y="10.5" width="14" height="10" rx="2.5" /><Path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></>,
 } as const;
 
 export type NxIconName = keyof typeof P | 'dots' | 'mark';

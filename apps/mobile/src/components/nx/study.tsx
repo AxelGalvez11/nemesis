@@ -28,7 +28,7 @@ export function useFloat(): ViewStyle {
 }
 
 /** Close on the left, the set's name centred. Nothing else: no progress bar, no "4 of 12". */
-export function NxStudyHeader({ title, emoji = '🗂️', onClose }: { title: string; emoji?: string; onClose: () => void }) {
+export function NxStudyHeader({ title, onClose }: { title: string; emoji?: string; onClose: () => void }) {
   const c = useNx();
   const insets = useSafeAreaInsets();
   return (
@@ -37,7 +37,7 @@ export function NxStudyHeader({ title, emoji = '🗂️', onClose }: { title: st
         <NxIcon name="x" size={22} color={c.t1} />
       </Pressable>
       <Text numberOfLines={1} style={[styles.headTitle, { color: c.t1 }]}>
-        {title ? `${emoji} ${title}` : ''}
+        {title}
       </Text>
     </View>
   );

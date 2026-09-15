@@ -158,7 +158,11 @@ export function SourceMark({ source, size = 20, round = false, ring }: { source:
         justifyContent: 'center',
       }}
     >
-      <Text style={{ fontSize: 11, fontWeight: '600', color: note ? c.t1 : '#ffffff' }}>{note ? source.description || '📝' : letter}</Text>
+      {note ? (
+        <NxIcon name="notes" size={Math.round(size * 0.65)} color={c.t2} strokeWidth={1.6} />
+      ) : (
+        <Text style={{ fontSize: 11, fontWeight: '600', color: '#ffffff' }}>{letter}</Text>
+      )}
     </View>
   );
 }

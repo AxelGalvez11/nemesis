@@ -69,9 +69,8 @@ export function NxWorkspaceTabs({ active, sourceCount, onChange }: { active: WsT
   );
 }
 
-/** The page's emoji and title. With `onRename`, the title is typed straight into (saved when you leave the field). */
+/** The page's title (no emoji; `emoji` is ignored). With `onRename`, the title is typed straight into (saved when you leave the field). */
 export function NxPageTitle({
-  emoji,
   title,
   cover,
   onRename,
@@ -92,11 +91,11 @@ export function NxPageTitle({
   const [draft, setDraft] = useState(title);
   const [focused, setFocused] = useState(!!autoFocus);
   useEffect(() => setDraft(title), [title]);
-  const titleStyle = [nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: bare ? 22 : 6 }];
+  // No page emoji (owner 2026-09-15): a page starts with its title, with room under the header.
+  const titleStyle = [nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: bare ? 22 : 14 }];
   return (
     <View>
       {cover ? <View style={{ height: 76, marginTop: 4, backgroundColor: cover }} /> : null}
-      {bare ? null : <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: cover ? 0 : 14, marginTop: cover ? -26 : 0 }]}>{emoji || '📄'}</Text>}
       {onRename ? (
         <TextInput
           value={draft}

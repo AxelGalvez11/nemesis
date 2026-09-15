@@ -10,7 +10,7 @@ import { useSpeechInput } from '@/hooks/useSpeechInput';
 import { useNx } from '@/theme/nx';
 import { NxIcon } from '../NxIcon';
 
-export type ComposerChip = { emoji: string; title: string };
+export type ComposerChip = { title: string };
 
 export function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
@@ -102,7 +102,7 @@ export function Composer({
       {chip ? (
         <View style={{ flexDirection: 'row' }}>
           <View style={[styles.chip, { borderColor: c.ring }]}>
-            <Text style={{ fontSize: 13 }}>{chip.emoji}</Text>
+            <NxIcon name="notes" size={14} color={c.t2} strokeWidth={1.6} />
             <Text numberOfLines={1} style={{ color: c.t1, fontSize: 13, maxWidth: 220 }}>
               {chip.title}
             </Text>

@@ -989,7 +989,7 @@ export function BlockEditor({
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.pageRow, pressed && { backgroundColor: c.soft }]}
               >
-                {pg.icon ? <Text style={{ fontSize: 17, width: 22, textAlign: 'center' }}>{pg.icon}</Text> : <NxIcon name="notes" size={19} color={c.t2} />}
+                <NxIcon name="notes" size={19} color={c.t2} strokeWidth={1.6} />
                 <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, color: c.t1 }}>
                   {pg.title || 'Untitled'}
                 </Text>

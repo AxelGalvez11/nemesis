@@ -22,7 +22,7 @@ import { NxIconButton } from '@/components/nx/primitives';
 import { RecordPill } from '@/components/nx/record/RecordPill';
 import { MicOffSheet, NotesFailedCard, PropRows, WritingNotesCard } from '@/components/nx/record/RecordStates';
 import { useRecorder } from '@/components/nx/record/useRecorder';
-import { iconOf } from '@/lib/fresh';
+import { NxIcon } from '@/components/nx/NxIcon';
 import { nxType, useNx } from '@/theme/nx';
 
 // Recording a class onto a page. Open with router.push({ pathname: '/record/[pageId]', params: { pageId } }).
@@ -215,11 +215,11 @@ export default function RecordScreen() {
           color={c.t1}
           onPress={() => (phase.kind === 'recording' && showPill ? void end() : router.back())}
         />
-        {/* Same header as a page (canvas Recording): back, crumb (🔒 Private at the top level), share, more. */}
+        {/* Same header as a page (canvas Recording): back, crumb (a lock and Private at the top level), share, more. */}
         <View style={{ width: 44 }} />
         <View style={styles.crumbWrap}>
           <View style={styles.crumb}>
-            <Text style={{ fontSize: 14 }}>{parent ? iconOf(parent.props.icon) : '🔒'}</Text>
+            <NxIcon name={parent ? 'notes' : 'lock'} size={14} color={c.t3} strokeWidth={1.6} />
             <Text numberOfLines={1} style={{ fontSize: 14, color: c.t2, maxWidth: 190 }}>
               {parent ? parent.props.title || 'Untitled' : 'Private'}
             </Text>
@@ -253,8 +253,7 @@ export default function RecordScreen() {
           <SkelPage />
         ) : (
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 160 }}>
-            <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: 14 }]}>{iconOf(page.page.props.icon, '🎙️')}</Text>
-            <Text style={[nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 6 }]}>{title}</Text>
+            <Text style={[nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 14 }]}>{title}</Text>
             {phase.kind !== 'micoff' ? (
               <PropRows
                 rows={[

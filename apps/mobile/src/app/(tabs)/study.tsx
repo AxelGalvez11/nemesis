@@ -10,7 +10,6 @@ import { NxBottomBar, NxButton, NxSection } from "@/components/nx/primitives";
 import { tint } from "@/components/nx/study";
 import { useDecks, useSpacePages } from "@/hooks/useSpace";
 import { nxType, useNx } from "@/theme/nx";
-import { iconOf } from "@/lib/fresh";
 
 // Study (canvas "Study, filed by page" and "Study, nothing yet"): every flashcard set, filed in folders that
 // follow the page tree. Due counts are small grey badges; there is no cards-due card (owner).
@@ -53,7 +52,7 @@ export default function StudyTab() {
         state={expanded ? "open" : "closed"}
         lead={
           <View style={styles.emojiBox}>
-            <Text style={{ fontSize: 20 }}>{iconOf(f.page.props.icon)}</Text>
+            <NxIcon name="notes" size={20} color={c.t2} strokeWidth={1.6} />
           </View>
         }
         title={f.page.props.title || "Untitled"}
