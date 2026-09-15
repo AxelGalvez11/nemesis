@@ -186,9 +186,12 @@ export function NxBottomBar({
   const float = { backgroundColor: c.card, borderColor: c.ring, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#2a1c00', shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } };
   return (
     <View pointerEvents="box-none" style={[styles.bottom, { bottom: Math.max(insets.bottom, 12) + 4 }]}>
-      <Pressable onPress={onSearch} style={[styles.round, float]} accessibilityLabel="Search">
-        <NxIcon name="search" size={20} color={c.t1} />
-      </Pressable>
+      {/* Only drawn when there is somewhere to go: a search button that does nothing reads as broken. */}
+      {onSearch ? (
+        <Pressable onPress={onSearch} style={[styles.round, float]} accessibilityLabel="Search">
+          <NxIcon name="search" size={20} color={c.t1} />
+        </Pressable>
+      ) : null}
       <Pressable onPress={onAsk} style={[styles.ask, float]}>
         <NxIcon name="spark" size={18} color={c.t3} />
         <Text numberOfLines={1} style={{ color: c.t3, fontSize: 15 }}>

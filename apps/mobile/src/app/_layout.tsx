@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { AppState } from "react-native";
+import { AppState, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -62,7 +62,10 @@ export default function RootLayout() {
 // background (no flash behind the UI in either mode), the Stack's content
 // background, and the status-bar icon color.
 function ThemedApp() {
-  const { colors: c, resolvedMode } = useTheme();
+  const { colors: c } = useTheme();
+  // 🔴 The rebuilt screens (theme/nx.ts) follow the phone's light/dark setting, not the old appearance
+  // picker, so the status bar does too. Following the old picker drew white clock text on white screens.
+  const scheme = useColorScheme();
 
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(c.bg);
@@ -75,7 +78,7 @@ function ThemedApp() {
         <Stack.Screen name="settings" options={{ presentation: "modal" }} />
       </Stack>
       <OfflineBanner />
-      <StatusBar style={resolvedMode === "dark" ? "light" : "dark"} />
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
     </SafeAreaProvider>
   );
 }
