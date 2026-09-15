@@ -224,6 +224,15 @@ export default function PageScreen() {
   // A brand-new page (canvas NewPage): only the title cursor, with Record / Lecture notes / Study guide / More
   // riding on the keyboard. Any of them, or leaving the title, turns it into the normal page.
   const [newDone, setNewDone] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardWillShow", (e) => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardWillHide", () => setKbHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
   const isNew = fresh === "1" && !newDone && !title && blocks.length === 0 && !page.isLoading;
   const startWith = async (template: PageTemplate) => {
     if (!spaceIdOfPage) return;
@@ -293,7 +302,6 @@ export default function PageScreen() {
               cover={tab === "notes" && !isNew ? cover : undefined}
               autoFocus={fresh === "1" && !title}
               bare={isNew}
-              accessoryId={isNew && Platform.OS === "ios" ? NEW_PAGE_ACCESSORY : undefined}
               onRename={
                 canEdit
                   ? (next) => {
@@ -505,8 +513,10 @@ export default function PageScreen() {
       />
       </Animated.View>}
 
-      {isNew && Platform.OS === "ios" ? (
-        <InputAccessoryView nativeID={NEW_PAGE_ACCESSORY} backgroundColor="transparent">
+      {/* 🔴 NOT an InputAccessoryView: that only draws while a software keyboard is up, so with a hardware keyboard
+          (or the keyboard tucked away) the chips vanished and a new page read as blank. The bar follows the keyboard. */}
+      {isNew ? (
+        <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { top: undefined, bottom: kbHeight ? kbHeight : Math.max(insets.bottom, 12) }]}>
           <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
             <View style={[styles.chipBar, { backgroundColor: c.card, borderColor: c.ring }]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ alignItems: "center", gap: 6, paddingLeft: 8 }}>
@@ -521,7 +531,7 @@ export default function PageScreen() {
               </Pressable>
             </View>
           </View>
-        </InputAccessoryView>
+        </View>
       ) : null}
 
       {/* Add a source (canvas AddSource): only the ways that work from the phone today. */}
@@ -637,8 +647,6 @@ function MenuOption({ icon, label, onPress }: { icon: NxIconName; label: string;
     </Pressable>
   );
 }
-
-const NEW_PAGE_ACCESSORY = "nx-new-page-chips";
 
 function Chip({ icon, label, onPress }: { icon: NxIconName; label: string; onPress: () => void }) {
   const c = useNx();
