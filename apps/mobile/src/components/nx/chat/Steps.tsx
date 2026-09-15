@@ -49,27 +49,28 @@ export function LiveSteps({ phase, trail, glimpse }: { phase: ThinkingPhase; tra
     );
   } else if (phase.kind === 'reading') {
     current = (
-      <StepLine>
+      <StepLine lead={<StepIcon name="file" color={c.t2} />}>
         <ShimmerText text={phase.sources > 0 ? `Reading ${plural(phase.sources, 'source', 'sources')}` : 'Nothing usable came back, answering without it'} style={live} />
       </StepLine>
     );
   } else if (phase.kind === 'recalling') {
     current = (
-      <StepLine>
+      <StepLine lead={<StepIcon name="book" color={c.t2} />}>
         <ShimmerText text={`Reading ${plural(phase.notes, 'note', 'notes')}`} style={live} />
       </StepLine>
     );
   } else if (phase.kind === 'acting') {
     current = (
-      <StepLine>
+      <StepLine lead={<StepIcon name="compose" color={c.t2} />}>
         <ShimmerText text={phaseLabel(phase)} style={live} />
       </StepLine>
     );
   } else {
     current = (
       <>
-        {/* No spinner beside "Thinking" (owner 2026-09-15): the shimmering word is the only sign of work. */}
+        {/* No spinners (owner 2026-09-15): each step leads with an icon for what it is doing. */}
         <StepLine
+          lead={<StepIcon name={phase.kind === "reading-photo" ? "image" : "bulb"} color={c.t2} />}
           onPress={glimpse ? () => setOpen((o) => !o) : undefined}
           trail={glimpse ? <StepIcon name={open ? 'chev_d' : 'chev_r'} size={14} color={c.t3} /> : undefined}
         >
@@ -87,7 +88,7 @@ export function LiveSteps({ phase, trail, glimpse }: { phase: ThinkingPhase; tra
   return (
     <View style={{ gap: 12 }}>
       {thought ? (
-        <StepLine>
+        <StepLine lead={<StepIcon name="bulb" color={c.t2} />}>
           <Text style={quiet}>{thought}</Text>
         </StepLine>
       ) : null}
@@ -125,17 +126,17 @@ export function SettledSteps({ msg, onOpenSource }: { msg: ChatMsg; onOpenSource
       </StepLine>
       {open ? (
         <View style={{ marginTop: -4, marginLeft: 2, paddingVertical: 2, paddingLeft: 14, borderLeftWidth: 1.5, borderLeftColor: c.ln, gap: 6 }}>
-          {thought ? <StepLabel text={thought} /> : null}
+          {thought ? <StepLabel icon="bulb" text={thought} /> : null}
           {thoughtText ? (
             <Text numberOfLines={8} style={{ fontSize: 14, lineHeight: 21, color: c.t2 }}>
               {thoughtText}
             </Text>
           ) : null}
-          {web.length ? <StepLabel text="Searched the web" /> : null}
+          {web.length ? <StepLabel icon="globe" text="Searched the web" /> : null}
           {web.map((s, i) => (
             <ResultRow key={`w${i}`} source={s} onPress={() => onOpenSource(s)} />
           ))}
-          {notes.length ? <StepLabel text={`Read ${plural(notes.length, 'note', 'notes')}`} /> : null}
+          {notes.length ? <StepLabel icon="book" text={`Read ${plural(notes.length, "note", "notes")}`} /> : null}
           {notes.map((s, i) => (
             <ResultRow key={`n${i}`} source={s} onPress={() => onOpenSource(s)} />
           ))}

@@ -256,9 +256,17 @@ export function StepIcon({ name, color, size = 16 }: { name: NxIconName; color: 
   return <NxIcon name={name} size={size} color={color} strokeWidth={name.startsWith('chev') ? 2 : 1.6} />;
 }
 
-export function StepLabel({ text }: { text: string }) {
+/** A small grey step heading, with the step's icon when given (globe, book, bulb; owner: icons, never spinners). */
+export function StepLabel({ text, icon }: { text: string; icon?: NxIconName }) {
   const c = useNx();
-  return <Text style={{ fontSize: 13, lineHeight: 18, color: c.t3 }}>{text}</Text>;
+  const label = <Text style={{ fontSize: 13, lineHeight: 18, color: c.t3 }}>{text}</Text>;
+  if (!icon) return label;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <NxIcon name={icon} size={13} color={c.t3} strokeWidth={1.6} />
+      {label}
+    </View>
+  );
 }
 
 export function QueryPill({ query, small }: { query: string; small?: boolean }) {
