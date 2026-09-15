@@ -39,12 +39,6 @@ export default function FlashcardsReview() {
   const page = deck?.page_id ? space.byId.get(deck.page_id) : undefined;
   const done = queue !== null && queue.length === 0;
 
-  // When the sitting ends, re-read the cards so "due tomorrow" reflects the marks just saved.
-  useEffect(() => {
-    if (done) void cards.refetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [done]);
-
   const mark = async (got: boolean) => {
     if (!current || !queue) return;
     const rest = queue.slice(1);
@@ -60,6 +54,8 @@ export default function FlashcardsReview() {
     try {
       await markCard(current.id, got, took);
       setFailed(null);
+      // The last mark of the sitting: re-read only after it saved, so "due tomorrow" sees the new date.
+      if (got && rest.length === 0) void cards.refetch();
     } catch {
       setFailed("That mark did not save. Check your connection.");
     }
@@ -90,7 +86,7 @@ export default function FlashcardsReview() {
       ) : done ? (
         <StudyDone
           title="Done for today"
-          sub={nextDue(name, cards.data ?? [])}
+          sub={nextDue(page ? page.props.title || "Untitled" : name, cards.data ?? [])}
           got={tally.got}
           missed={tally.missed}
           primary="Back to Study"
