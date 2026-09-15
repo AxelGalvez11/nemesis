@@ -153,7 +153,7 @@ export default function NotesHome() {
             <NxSection label="Private" />
             {tree.flatMap((n) => renderNode(n, 0))}
           </ScrollView>
-          <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push("/chat")} right={spaceId ? <NxNewButton onPress={() => setMenu(true)} /> : null} />
+          <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new" } })} onSearch={() => router.push("/search")} right={spaceId ? <NxNewButton onPress={() => setMenu(true)} /> : null} />
         </>
       )}
       <NewMenu

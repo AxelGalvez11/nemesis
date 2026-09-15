@@ -114,7 +114,7 @@ export default function StudyTab() {
           </>
         )}
       </ScrollView>
-      <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push("/chat")} />
+      <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new" } })} onSearch={() => router.push("/search")} />
     </View>
   );
 }

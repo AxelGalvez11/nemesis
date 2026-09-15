@@ -1,10 +1,17 @@
+import { useEffect, useRef, useState } from "react";
 import { Redirect, Slot, usePathname, useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useAuth } from "@/auth/AuthProvider";
 import { DrawerProvider, useShell } from "@/components/AppDrawer";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
 import { TopBar } from "@/components/TopBar";
 import { NxIconButton, NxTopTabs, type NxTabKey } from "@/components/nx/primitives";
+import { ProfileMenu } from "@/components/nx/settings/ProfileMenu";
+import { fetchLibrary } from "@/api/cloudLibrary";
+import { listCalendarEvents } from "@/api/cloudCalendar";
+import { readOnboarding } from "@/lib/onboarding";
+import { decideOnboardingGate } from "@/lib/onboarding-gate";
 import { useNx } from "@/theme/nx";
 
 // The 2026-09 app shell (canvas "Nemesis iPhone Screens"): three tabs on top like Notion — Notes (home),
@@ -46,6 +53,29 @@ function Frame() {
   const router = useRouter();
   const { session, isGuest, signOut } = useAuth();
   const active = tabFor(path);
+  const [profile, setProfile] = useState(false);
+
+  // A student who closed the app partway through setup comes back signed in and never passes sign-in
+  // again, so the same setup check sign-in uses runs here once per launch.
+  const gated = useRef(false);
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid || gated.current) return;
+    gated.current = true;
+    void (async () => {
+      try {
+        const stored = await readOnboarding(SecureStore);
+        if (stored) return;
+        const decision = await decideOnboardingGate(stored, async () => {
+          const [library, events] = await Promise.all([fetchLibrary(uid), listCalendarEvents(uid, { from: "2000-01-01", to: "2100-12-31" })]);
+          return { hasLibrary: library.notes.length + library.folders.length > 0, hasEvents: events.length > 0 };
+        });
+        if (decision === "onboarding") router.replace("/onboarding" as never);
+      } catch {
+        // A failed check never blocks the app.
+      }
+    })();
+  }, [session, router]);
 
   if (!active) return <LegacyFrame />;
 
@@ -54,9 +84,15 @@ function Frame() {
       <NxTopTabs
         active={active}
         initial={session?.user?.email ?? "N"}
-        onAvatar={() => router.push("/settings")}
+        onAvatar={() => setProfile(true)}
         onChange={(k) => router.replace(k === "notes" ? "/" : k === "study" ? "/study" : "/chats")}
-        right={active === "chats" ? <NxIconButton icon="compose" label="New chat" onPress={() => router.push("/chat")} /> : null}
+        right={
+          active === "chats" ? (
+            <NxIconButton icon="compose" label="New chat" onPress={() => router.push({ pathname: "/c/[id]", params: { id: "new" } })} />
+          ) : active === "study" ? (
+            <NxIconButton icon="search" label="Search" onPress={() => router.push("/search")} />
+          ) : null
+        }
       />
       {isGuest && !session ? (
         // 🔴 A way back out of guest mode. Without it a visitor who skipped sign-in could never sign in:
@@ -70,6 +106,7 @@ function Frame() {
         </Pressable>
       ) : null}
       <Slot />
+      <ProfileMenu visible={profile} onClose={() => setProfile(false)} />
     </View>
   );
 }

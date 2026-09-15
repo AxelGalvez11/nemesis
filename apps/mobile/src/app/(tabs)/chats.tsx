@@ -1,23 +1,64 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { ActionSheetIOS, ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { useFocusEffect, useRouter, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { listThreads } from "@/api/chat";
+import { deleteThread, listThreads, pinThread, renameThread } from "@/api/chat";
 import { useAuth } from "@/auth/AuthProvider";
+import { Composer } from "@/components/nx/chat/Composer";
+import { ChatHero, CobaltGlow } from "@/components/nx/chat/parts";
 import { NxIcon } from "@/components/nx/NxIcon";
 import { NxBottomBar, NxRow, NxSection } from "@/components/nx/primitives";
-import { ago } from "@/lib/ago";
+import { useSpacePages } from "@/hooks/useSpace";
 import type { ThreadSummary } from "@/lib/chat-threads";
 import { useNx } from "@/theme/nx";
 import { isFresh } from "@/lib/fresh";
 
-// Chats (canvas artboard "Chats, previous chats"): opens on previous chats; a chat opens full screen.
+const DAY = 86_400_000;
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function startOfToday(now: number) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Canvas meta: "12 min ago", "3h ago" today; the weekday this week; "Aug 21" before that. */
+function when(iso: string, now = Date.now()): string {
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return "";
+  if (at >= startOfToday(now)) {
+    const mins = Math.round((now - at) / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins} min ago`;
+    return `${Math.round(mins / 60)}h ago`;
+  }
+  if (at >= startOfToday(now) - 6 * DAY) return WEEKDAYS[new Date(at).getDay()];
+  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function groupOf(iso: string, now = Date.now()): string {
+  const at = Date.parse(iso);
+  const today = startOfToday(now);
+  if (at >= today) return "Today";
+  if (at >= today - 6 * DAY) return "This week";
+  const d = new Date(now);
+  const thisMonth = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  if (at >= thisMonth) return "This month";
+  const lastMonth = new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime();
+  return at >= lastMonth ? "Last month" : "Earlier";
+}
+
+const openChat = (id: string, q?: string): Href => (q ? `/c/${id}?q=${encodeURIComponent(q)}` : `/c/${id}`) as Href;
+
+// Chats (canvas NemesisAI): previous chats by day; a chat opens full screen at /c/[id]. No chats yet is
+// canvas AIEmpty: the Nemesis tile, three starters and the composer, which opens a new chat.
 export default function ChatsTab() {
   const c = useNx();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
+  const { pages } = useSpacePages();
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -30,7 +71,7 @@ export default function ChatsTab() {
     }
     try {
       // Old chats are not shown. See lib/fresh.ts.
-      setThreads((await listThreads(uid)).filter((t) => isFresh(t.createdAt ?? t.updatedAt)));
+      setThreads((await listThreads(uid)).filter((t) => isFresh((t as ThreadSummary & { createdAt?: string }).createdAt ?? t.updatedAt)));
     } catch {
       setThreads((prev) => prev ?? []);
     }
@@ -42,9 +83,73 @@ export default function ChatsTab() {
     }, [load]),
   );
 
+  const options = (t: ThreadSummary) => {
+    if (!uid) return;
+    const rename = () =>
+      Alert.prompt("Rename chat", undefined, async (name) => {
+        if (!name?.trim()) return;
+        await renameThread(uid, t.id, name.trim()).catch(() => undefined);
+        void load();
+      }, "plain-text", t.title);
+    const pin = async () => {
+      await pinThread(uid, t.id, !t.pinned).catch(() => undefined);
+      void load();
+    };
+    const remove = () =>
+      Alert.alert("Delete this chat?", "It is removed from all your devices.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setThreads((prev) => (prev ?? []).filter((x) => x.id !== t.id));
+            await deleteThread(uid, t.id).catch(() => undefined);
+            void load();
+          },
+        },
+      ]);
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: t.title, options: ["Rename", t.pinned ? "Unpin" : "Pin", "Delete", "Cancel"], destructiveButtonIndex: 2, cancelButtonIndex: 3 },
+        (i) => (i === 0 ? rename() : i === 1 ? void pin() : i === 2 ? remove() : undefined),
+      );
+    } else {
+      Alert.alert(t.title, undefined, [
+        { text: t.pinned ? "Unpin" : "Pin", onPress: () => void pin() },
+        { text: "Delete", style: "destructive", onPress: remove },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  };
+
+  if (threads !== null && threads.length === 0) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <CobaltGlow height={300} opacity={0.1} solid={0.2} breathe={false} />
+        <View style={styles.hero}>
+          <ChatHero hasNotes={pages.length > 0} onSuggest={(s) => router.push(openChat("new", s))} />
+        </View>
+        <Composer value="" onChange={() => undefined} onSend={() => undefined} onPress={() => router.push(openChat("new"))} />
+      </View>
+    );
+  }
+
+  const groups: { label: string; items: ThreadSummary[] }[] = [];
   const pinned = (threads ?? []).filter((t) => t.pinned);
-  const rest = (threads ?? []).filter((t) => !t.pinned);
-  const open = (id: string) => router.push({ pathname: "/chat", params: { c: id } });
+  if (pinned.length) groups.push({ label: "Pinned", items: pinned });
+  for (const t of threads ?? []) {
+    if (t.pinned) continue;
+    const label = groupOf(t.updatedAt);
+    const g = groups.find((x) => x.label === label);
+    if (g) g.items.push(t);
+    else groups.push({ label, items: [t] });
+  }
+
+  const lead = (
+    <View style={[styles.icbox, { backgroundColor: c.soft }]}>
+      <NxIcon name="comment" size={18} color={c.t2} />
+    </View>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
@@ -64,35 +169,23 @@ export default function ChatsTab() {
       >
         {threads === null ? (
           <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
-        ) : threads.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={[styles.emptyIcon, { backgroundColor: c.sel }]}>
-              <NxIcon name="bubble" size={30} color={c.t2} />
-            </View>
-            <Text style={[styles.emptyTitle, { color: c.t1 }]}>No chats yet</Text>
-            <Text style={[styles.emptyText, { color: c.t2 }]}>Ask Nemesis anything. It answers from your notes first.</Text>
-          </View>
         ) : (
-          <>
-            {pinned.length ? <NxSection label="Pinned" /> : null}
-            {pinned.map((t) => (
-              <NxRow key={t.id} lead={<NxIcon name="bubble" size={20} color={c.t2} />} title={t.title || "New chat"} meta={ago(t.updatedAt)} onPress={() => open(t.id)} />
-            ))}
-            <NxSection label="Previous chats" />
-            {rest.map((t) => (
-              <NxRow key={t.id} lead={<NxIcon name="bubble" size={20} color={c.t2} />} title={t.title || "New chat"} meta={ago(t.updatedAt)} onPress={() => open(t.id)} />
-            ))}
-          </>
+          groups.map((g) => (
+            <View key={g.label}>
+              <NxSection label={g.label} />
+              {g.items.map((t) => (
+                <NxRow key={t.id} lead={lead} title={t.title || "New chat"} meta={when(t.updatedAt)} onPress={() => router.push(openChat(t.id))} onLongPress={() => options(t)} />
+              ))}
+            </View>
+          ))
         )}
       </ScrollView>
-      <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push("/chat")} />
+      <NxBottomBar ask="Ask Nemesis" onSearch={() => router.push("/search" as Href)} onAsk={() => router.push(openChat("new"))} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  empty: { alignItems: "center", paddingTop: 80, paddingHorizontal: 32, gap: 8 },
-  emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  emptyTitle: { fontSize: 19, fontWeight: "600" },
-  emptyText: { fontSize: 15, lineHeight: 22, textAlign: "center" },
+  hero: { flex: 1, justifyContent: "center", paddingHorizontal: 24, paddingBottom: 150 },
+  icbox: { width: 32, height: 32, borderRadius: 6, alignItems: "center", justifyContent: "center" },
 });

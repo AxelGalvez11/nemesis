@@ -13,6 +13,7 @@ import { bootstrapAnalytics } from "@/lib/analyticsBootstrap";
 import { flushAnalytics } from "@/lib/analytics";
 import { setupPushResponseRouting } from "@/lib/push";
 import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
+import { applyStoredAppearance } from "@/components/nx/settings/appearance-store";
 
 // The app's home route "/" resolves through src/app/(tabs)/index.tsx (an
 // expo-router route group — the parentheses do not appear in the URL).
@@ -29,6 +30,12 @@ export default function RootLayout() {
       posthogKey: process.env.EXPO_PUBLIC_POSTHOG_KEY,
       posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
     });
+  }, []);
+
+  // The student's saved theme (Settings > Appearance) before the first screen paints, so the app never
+  // flashes the phone's own light/dark setting first.
+  useEffect(() => {
+    void applyStoredAppearance();
   }, []);
 
   // Notification taps are routed once at root, independent of auth state.
@@ -76,6 +83,7 @@ function ThemedApp() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
         {/* Settings slides up from the bottom as a sheet (ChatGPT-style), owner call. */}
         <Stack.Screen name="settings" options={{ presentation: "modal" }} />
+        <Stack.Screen name="settings-upgrade" options={{ presentation: "modal" }} />
       </Stack>
       <OfflineBanner />
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />

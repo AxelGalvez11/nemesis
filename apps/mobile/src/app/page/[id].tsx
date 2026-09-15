@@ -362,7 +362,8 @@ export default function PageScreen() {
 
       <NxBottomBar
         ask={tab === "notes" ? "Ask about this note" : "Ask about this page"}
-        onAsk={() => router.push("/chat")}
+        onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new", page: id } })}
+        onSearch={() => router.push("/search")}
         right={
           tab === "notes" && canEdit ? (
             <Pressable
