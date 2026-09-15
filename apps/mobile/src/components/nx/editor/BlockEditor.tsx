@@ -50,6 +50,7 @@ import { NxPressable } from '../NxPressable';
 import { nxEasing, nxHaptic } from '../motion';
 import { DatabaseBlock } from '../db/DatabaseBlock';
 import { BookmarkEmbed, FileEmbed } from './FileEmbed';
+import { InlineImage } from './InlineImage';
 import { applyEdit, hasMark, insertMention, mentionOf, plainOf, rawText, segDisplay, segsOf, toggleMark, type Seg } from './rich';
 
 export type TurnIntoType = 'text' | 'header' | 'sub_header' | 'sub_sub_header' | 'bulleted_list' | 'numbered_list' | 'to_do' | 'toggle' | 'quote' | 'callout';
@@ -674,6 +675,8 @@ export function BlockEditor({
       const src = str(p.src) ?? '';
       const open = src ? () => void openEmbed(src).catch(() => undefined) : undefined;
       if (b.type === 'bookmark') return src ? <View key={b.id} style={pad}><BookmarkEmbed url={src} onPress={open} /></View> : null;
+      // A picture stays a picture while typing, as it reads (Notion does the same).
+      if (b.type === 'image' && src) return <InlineImage key={b.id} src={src} name={str(p.name) || 'Image'} pad={pad} />;
       return (
         <View key={b.id} style={pad}>
           <FileEmbed name={str(p.name) || 'File'} mime={str(p.mime) ?? (b.type === 'file' ? null : `${b.type}/*`)} bytes={num(p.bytes)} onPress={open} />

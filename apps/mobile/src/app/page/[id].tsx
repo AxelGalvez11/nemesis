@@ -17,6 +17,7 @@ import { PageMenu } from "@/components/nx/PageMenu";
 import { embedUrl, openEmbed } from "@/api/noteMedia";
 import { BlockEditor, turnIntoProps, type NewBlockType, type SaveResult, type TurnIntoType } from "@/components/nx/editor/BlockEditor";
 import { BookmarkEmbed, FileEmbed } from "@/components/nx/editor/FileEmbed";
+import { InlineImage } from "@/components/nx/editor/InlineImage";
 import { SkelBar, SkelBody, SkelGroup, SkelList, SkelPage } from "@/components/nx/Skeleton";
 import Reanimated from "react-native-reanimated";
 import { NxDim, NxSheet, nxHaptic, useNxPopStyle, useNxPresence } from "@/components/nx/motion";
@@ -1125,41 +1126,6 @@ function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; link
     default:
       return block.text ? <Text style={[body, pad]}>{block.text}</Text> : <View style={{ height: 8 }} />;
   }
-}
-
-function InlineImage({ src, name, pad }: { src: string; name: string; pad: { marginLeft: number } }) {
-  const c = useNx();
-  const url = useQuery({ queryKey: ["embed-url", src], queryFn: () => embedUrl(src), staleTime: 6 * 3600_000 });
-  const [ratio, setRatio] = useState(4 / 3);
-  const [broken, setBroken] = useState(false);
-  if (url.isLoading) {
-    return (
-      <SkelGroup style={[pad, { marginTop: 6 }]}>
-        <SkelBar width="100%" height={200} radius={12} />
-      </SkelGroup>
-    );
-  }
-  if (!url.data || broken) {
-    return (
-      <View style={pad}>
-        <FileEmbed name={name} mime="image/*" onPress={() => void openEmbed(src).catch(() => undefined)} />
-      </View>
-    );
-  }
-  return (
-    <Pressable onPress={() => void openEmbed(src).catch(() => undefined)} style={({ pressed }) => [pad, { marginTop: 6, opacity: pressed ? 0.85 : 1 }]} accessibilityLabel={`Open ${name}`}>
-      <Image
-        source={{ uri: url.data }}
-        onLoad={(e) => {
-          const { width, height } = e.nativeEvent.source;
-          if (width && height) setRatio(width / height);
-        }}
-        onError={() => setBroken(true)}
-        style={{ width: "100%", aspectRatio: ratio, borderRadius: 12, backgroundColor: c.sel }}
-        resizeMode="cover"
-      />
-    </Pressable>
-  );
 }
 
 function sourceIcon(s: PageSource): NxIconName {
