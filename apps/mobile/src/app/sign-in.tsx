@@ -1,6 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,52 +7,44 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
-import { Link, router } from "expo-router";
+import { router } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import * as SecureStore from "expo-secure-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppleMark, GoogleMark } from "@/components/SocialMarks";
 import { useAuth } from "@/auth/AuthProvider";
+import { fetchLibrary } from "@/api/cloudLibrary";
+import { listCalendarEvents } from "@/api/cloudCalendar";
+import { AppleMark, GoogleMark } from "@/components/SocialMarks";
+import { NxIcon } from "@/components/nx/NxIcon";
+import { AnimatedMark, DriftingGradient, OutlineButton, PrimaryButton } from "@/components/nx/onboarding/parts";
 import { AGE_TOS_ACK } from "@/lib/legal";
+import { readOnboarding } from "@/lib/onboarding";
+import { decideOnboardingGate } from "@/lib/onboarding-gate";
 import type { SocialProvider } from "@/lib/oauth-deeplink";
-import { nextTypewriterState, TYPEWRITER_START, type TypewriterState } from "@/lib/typewriter";
-import type { ThemeColors } from "@/theme/palette";
-import { useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { useNx } from "@/theme/nx";
 
-// The sign-in screen (owner 2026-07-24, working from reference screens they
-// sent): a black page, one big line typing itself out behind a block cursor, and
-// the three ways in stacked on a card at the bottom.
+// The Welcome screen of the 2026-09 iPhone canvas (gen.py 'Welcome.dc.html'): the cobalt gradient
+// drifting behind the three-dot mark, "Nemesis" / "Your second brain", and a white sheet with the
+// three ways in and the Terms line.
 //
-// Apple and Google use iOS's in-app authentication sheet. The provider's secure
-// web content appears as a dismissible modal over Nemesis and closes itself on
-// the callback; it never hands the student off to the standalone Safari app.
-// Email and password stay in the same bottom card rather than opening a modal.
-// Account creation carries the same 18+ attestation and legal links as the web
-// app, but keeps the black-and-white visual language of this page.
+// Apple and Google use iOS's in-app authentication sheet. The provider's secure web content appears
+// as a dismissible modal over Nemesis and closes itself on the callback; it never hands the student
+// off to the standalone Safari app. Email and password open inline in the same sheet. Account
+// creation carries the same 18+ attestation and legal links as the web app.
 //
-// TRUE BLACK AND FIXED WHITE, deliberately outside the palette. This screen is
-// seen before anyone has chosen a theme, and it is the app introducing itself;
-// everything past sign-in follows the palette as usual.
-
-/** The rotating headline. Copy lives here, beside the screen that shows it; the
- *  animation that drives it lives in lib/typewriter.ts. */
-const HEADLINES = ["Let's study", "Let's remember", "Let's get ahead"];
-
-/** One tick per character. At 55ms it reads as brisk typing — much faster stops
- *  looking typed at all, much slower feels like the app is struggling. */
-const TICK_MS = 55;
-
-/** Ticks a finished line rests before erasing: about 1.8s, long enough to read. */
-const HOLD_TICKS = 32;
-
-const LINE_LENGTHS = HEADLINES.map((line) => line.length);
+// After sign-in the student goes to first-run setup when the account has never been set up
+// (lib/onboarding-gate.ts: this device's marker first, then whether the account already has
+// notes or calendar events), otherwise straight into the app.
 
 type EmailMode = "signin" | "signup";
 
 export default function SignIn() {
-  const styles = useThemedStyles(createStyles);
+  const c = useNx();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const {
     session,
     providerError,
@@ -71,7 +62,6 @@ export default function SignIn() {
     if (__DEV__ && isGuest && !session) router.replace("/");
   }, [isGuest, session]);
 
-  const [typed, setTyped] = useState<TypewriterState>(TYPEWRITER_START);
   const [emailExpanded, setEmailExpanded] = useState(false);
   const [emailMode, setEmailMode] = useState<EmailMode>("signin");
   const [email, setEmail] = useState("");
@@ -82,20 +72,9 @@ export default function SignIn() {
   const [pending, setPending] = useState<SocialProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ONE interval, cleared on unmount. Pause once the form is expanded so the
-  // headline is calm while somebody is entering credentials.
-  useEffect(() => {
-    if (emailExpanded) return;
-    const id = setInterval(() => {
-      setTyped((prev) => nextTypewriterState(prev, LINE_LENGTHS, HOLD_TICKS));
-    }, TICK_MS);
-    return () => clearInterval(id);
-  }, [emailExpanded]);
-
-  // A failed hand-off arrives through the deep link, so it lands on the auth
-  // provider rather than in this screen's own state — possibly after a cold
-  // start, when the screen that began the attempt no longer existed. Adopt it,
-  // then clear it, so it cannot reappear on the next mount.
+  // A failed hand-off arrives through the deep link, so it lands on the auth provider rather than in
+  // this screen's own state, possibly after a cold start. Adopt it, then clear it, so it cannot
+  // reappear on the next mount.
   useEffect(() => {
     if (!providerError) return;
     setError(providerError);
@@ -103,38 +82,49 @@ export default function SignIn() {
     clearProviderError();
   }, [providerError, clearProviderError]);
 
-  // /sign-in is a root Stack route, not a child of the authenticated tabs
-  // guard. A completed provider exchange therefore does not unmount this screen
-  // by itself. Route on the session as the source of truth so direct returns,
-  // cold-start callbacks, and a slightly delayed auth event all leave the
-  // spinner instead of stranding the student here.
-  useEffect(() => {
-    if (session) router.replace("/");
-  }, [session]);
+  // Leave exactly once, whichever path noticed the session first (the effect below, a direct
+  // provider return, or the email form).
+  const leaving = useRef(false);
+  const leave = useCallback(async (uid: string | undefined) => {
+    if (leaving.current) return;
+    leaving.current = true;
+    let target = "/";
+    if (uid) {
+      try {
+        const stored = await readOnboarding(SecureStore);
+        const decision = await decideOnboardingGate(stored, async () => {
+          const [library, events] = await Promise.all([
+            fetchLibrary(uid),
+            listCalendarEvents(uid, { from: "2000-01-01", to: "2100-12-31" }),
+          ]);
+          return { hasLibrary: library.notes.length + library.folders.length > 0, hasEvents: events.length > 0 };
+        });
+        if (decision === "onboarding") target = "/onboarding";
+      } catch {
+        // The gate already treats a failed probe as "not new"; anything else lands in the app too.
+      }
+    }
+    router.replace(target as never);
+  }, []);
 
-  const line = HEADLINES[typed.line] ?? "";
+  // /sign-in is a root Stack route, not a child of the authenticated tabs guard, so a completed
+  // provider exchange does not unmount this screen by itself. Route on the session as the source of
+  // truth so direct returns, cold-start callbacks and a delayed auth event all leave the spinner.
+  useEffect(() => {
+    if (session) void leave(session.user?.id);
+  }, [session, leave]);
 
   async function start(provider: SocialProvider) {
     setError(null);
     setPending(provider);
     const { error: failure } = await signInWithProvider(provider);
     setPending(null);
-    if (failure) {
-      setError(failure);
-      return;
-    }
-    // Do not depend solely on the session effect: navigating here makes the
-    // successful direct-return path immediate, while the effect remains the
-    // fallback for cold-start and delayed auth events.
-    router.replace("/");
+    if (failure) setError(failure);
+    // Success routes through the session effect above, which knows the account.
   }
 
   const isSignup = emailMode === "signup";
-  const canSubmitEmail =
-    !emailBusy &&
-    email.trim().length > 3 &&
-    password.length > 0 &&
-    (!isSignup || acked);
+  const canSubmitEmail = !emailBusy && email.trim().length > 3 && password.length > 0 && (!isSignup || acked);
 
   async function submitEmail() {
     if (!canSubmitEmail) return;
@@ -154,9 +144,8 @@ export default function SignIn() {
       setNotice("Account created. Check your email to confirm, then sign in.");
       setEmailMode("signin");
       setPassword("");
-      return;
     }
-    router.replace("/");
+    // A successful sign-in routes through the session effect.
   }
 
   function switchEmailMode() {
@@ -173,35 +162,31 @@ export default function SignIn() {
     setEmailBusy(false);
   }
 
+  const inputStyle = [styles.input, { backgroundColor: c.sunk, color: c.t1 }];
+  const legal = (doc: "terms" | "privacy") => router.push(`/profile/legal?doc=${doc}` as never);
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       testID="signin-screen"
     >
-      {/* No close button (owner 2026-07-29: "remove the x in the sign in").
-          The way out is the iOS edge-swipe, which works because this screen is
-          PUSHED from the six guest empty states (Study, Library, Chat, Calendar,
-          Graph, Notebooks) onto a stack whose gestures are on by default.
-          The button it replaced was already dead on the other two routes in:
-          (tabs)/_layout.tsx redirects here and settings.tsx replaces, and after
-          either of those router.back() has nothing to go back to. */}
-      <View style={[styles.headlineWrap, emailExpanded && styles.headlineWrapWithForm]}>
-        {/* The cursor is a View, not a text character: a block glyph varies by
-            font and would sit at a different height from the letters beside it.
-            accessibilityLabel carries the WHOLE line so a screen reader is never
-            handed a half-typed word. */}
-        <Text style={styles.headline} accessibilityLabel={line} testID="signin-headline">
-          {line.slice(0, typed.chars)}
-        </Text>
-        <View style={styles.cursor} />
+      <StatusBar style="light" />
+      <DriftingGradient width={width} height={height} />
+
+      {/* No close button (owner 2026-07-29). The way out is the iOS edge-swipe, which works because this
+          screen is pushed from the guest empty states onto a stack whose gestures are on by default. */}
+      <View style={[styles.hero, emailExpanded && styles.heroWithForm]}>
+        <AnimatedMark size={emailExpanded ? 44 : 64} color="#ffffff" />
+        <Text style={styles.brand} testID="signin-headline">Nemesis</Text>
+        {emailExpanded ? null : <Text style={styles.tagline}>Your second brain</Text>}
       </View>
 
       <View
         style={[
-          styles.card,
-          emailExpanded && styles.cardWithForm,
-          { paddingBottom: insets.bottom + space(3) },
+          styles.sheet,
+          { backgroundColor: c.bg, paddingBottom: Math.max(insets.bottom - 4, 30) },
+          emailExpanded && styles.sheetWithForm,
         ]}
       >
         {emailExpanded ? (
@@ -214,293 +199,160 @@ export default function SignIn() {
             <View style={styles.formHeader}>
               <Pressable
                 onPress={closeEmailForm}
-                hitSlop={10}
+                hitSlop={6}
+                style={styles.ib}
                 accessibilityRole="button"
                 accessibilityLabel="Back to sign-in options"
                 testID="email-auth-back"
               >
-                <Text style={styles.backLabel}>‹ Back</Text>
+                <NxIcon name="chev_l" size={22} color={c.t1} />
               </Pressable>
-              <Text style={styles.formTitle}>{isSignup ? "Create account" : "Log in"}</Text>
-              <View style={styles.headerSpacer} />
+              <Text style={[styles.formTitle, { color: c.t1 }]}>{isSignup ? "Create account" : "Log in"}</Text>
+              <View style={styles.ib} />
             </View>
 
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Email</Text>
-              <TextInput
-                testID="email"
-                style={styles.input}
-                placeholder="you@example.com"
-                placeholderTextColor="#8e8e93"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                keyboardType="email-address"
-                returnKeyType="next"
-                value={email}
-                onChangeText={setEmail}
-              />
-            </View>
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Password</Text>
-              <TextInput
-                testID="password"
-                style={styles.input}
-                placeholder={isSignup ? "Create a password" : "Enter your password"}
-                placeholderTextColor="#8e8e93"
-                secureTextEntry
-                autoComplete={isSignup ? "new-password" : "current-password"}
-                returnKeyType="done"
-                onSubmitEditing={() => void submitEmail()}
-                value={password}
-                onChangeText={setPassword}
-              />
-            </View>
+            <TextInput
+              testID="email"
+              style={inputStyle}
+              placeholder="Email"
+              placeholderTextColor={c.t3}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              keyboardType="email-address"
+              returnKeyType="next"
+              value={email}
+              onChangeText={setEmail}
+              accessibilityLabel="Email"
+            />
+            <TextInput
+              testID="password"
+              style={inputStyle}
+              placeholder={isSignup ? "Create a password" : "Password"}
+              placeholderTextColor={c.t3}
+              secureTextEntry
+              autoComplete={isSignup ? "new-password" : "current-password"}
+              returnKeyType="done"
+              onSubmitEditing={() => void submitEmail()}
+              value={password}
+              onChangeText={setPassword}
+              accessibilityLabel="Password"
+            />
 
             {error ? (
-              <Text style={styles.error} testID="signin-error">{error}</Text>
+              <Text style={[styles.message, { color: c.danger }]} testID="signin-error">{error}</Text>
             ) : notice ? (
-              <Text style={styles.notice} testID="signin-notice">{notice}</Text>
+              <Text style={[styles.message, { color: c.ok }]} testID="signin-notice">{notice}</Text>
             ) : null}
 
             {isSignup ? (
-              <>
-                <Pressable
-                  testID="age-ack"
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: acked }}
-                  style={styles.ackRow}
-                  onPress={() => setAcked((value) => !value)}
-                >
-                  <View style={[styles.checkbox, acked && styles.checkboxChecked]}>
-                    {acked ? <Text style={styles.checkmark}>✓</Text> : null}
-                  </View>
-                  <Text style={styles.ackText}>{AGE_TOS_ACK}</Text>
-                </Pressable>
-                <View style={styles.legalLinks}>
-                  <Link testID="link-terms" href="/profile/legal?doc=terms" style={styles.legalLink}>
-                    Terms
-                  </Link>
-                  <Text style={styles.legalDot}>·</Text>
-                  <Link testID="link-privacy" href="/profile/legal?doc=privacy" style={styles.legalLink}>
-                    Privacy Policy
-                  </Link>
+              <Pressable
+                testID="age-ack"
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: acked }}
+                style={styles.ackRow}
+                onPress={() => setAcked((value) => !value)}
+              >
+                <View style={[styles.checkbox, { borderColor: acked ? c.inv : c.t3, backgroundColor: acked ? c.inv : "transparent" }]}>
+                  {acked ? <NxIcon name="check" size={14} strokeWidth={2.4} color={c.onInv} /> : null}
                 </View>
-              </>
+                <Text style={[styles.ackText, { color: c.t2 }]}>{AGE_TOS_ACK}</Text>
+              </Pressable>
             ) : null}
 
-            <Pressable
+            <PrimaryButton
               testID="signin-submit"
+              label={isSignup ? "Create account" : "Sign in"}
               onPress={() => void submitEmail()}
-              disabled={!canSubmitEmail}
-              style={({ pressed }) => [
-                styles.btn,
-                styles.btnLight,
-                pressed && canSubmitEmail && styles.pressedLight,
-                !canSubmitEmail && styles.dim,
-              ]}
-              accessibilityRole="button"
-              accessibilityState={{ busy: emailBusy, disabled: !canSubmitEmail }}
-            >
-              {emailBusy ? (
-                <ActivityIndicator color="#000000" />
-              ) : (
-                <Text style={styles.btnLightLabel}>{isSignup ? "Create account" : "Sign in"}</Text>
-              )}
-            </Pressable>
+              busy={emailBusy}
+              disabled={!canSubmitEmail && !emailBusy}
+            />
 
-            <Pressable testID="switch-mode" onPress={switchEmailMode} hitSlop={8}>
-              <Text style={styles.switchText}>
+            <Pressable testID="switch-mode" onPress={switchEmailMode} style={styles.txt} accessibilityRole="button">
+              <Text style={{ fontSize: 15, color: c.t2 }}>
                 {isSignup ? "Already have an account? " : "New here? "}
-                <Text style={styles.switchLink}>{isSignup ? "Sign in" : "Create account"}</Text>
+                <Text style={{ color: c.t1, fontWeight: "500" }}>{isSignup ? "Sign in" : "Create account"}</Text>
               </Text>
             </Pressable>
           </ScrollView>
         ) : (
-          <>
-            {error ? <Text style={styles.error} testID="signin-error">{error}</Text> : null}
+          <View style={styles.actions}>
+            {error ? <Text style={[styles.message, { color: c.danger }]} testID="signin-error">{error}</Text> : null}
 
-            <ProviderButton
+            <OutlineButton
+              testID="signin-apple"
               label="Continue with Apple"
-              mark={<AppleMark size={17} color="#000000" />}
+              lead={<AppleMark size={18} color={c.t1} />}
               onPress={() => void start("apple")}
               busy={pending === "apple"}
               disabled={pending !== null}
-              primary
-              styles={styles}
-              testID="signin-apple"
             />
-            <ProviderButton
+            <OutlineButton
+              testID="signin-google"
               label="Continue with Google"
-              mark={<GoogleMark size={17} />}
+              lead={<GoogleMark size={18} />}
               onPress={() => void start("google")}
               busy={pending === "google"}
               disabled={pending !== null}
-              styles={styles}
-              testID="signin-google"
             />
-            <Pressable
+            <OutlineButton
+              testID="signin-email"
+              label="Continue with email"
+              lead={<NxIcon name="mail" size={20} color={c.t1} />}
               onPress={() => {
                 setError(null);
                 setEmailExpanded(true);
               }}
               disabled={pending !== null}
-              style={({ pressed }) => [
-                styles.btn,
-                styles.btnDark,
-                pressed && styles.pressedDark,
-                pending !== null && styles.dim,
-              ]}
-              accessibilityRole="button"
-              testID="signin-email"
-            >
-              <Text style={styles.btnDarkLabel}>Log in or sign up</Text>
-            </Pressable>
+            />
+
+            <Text style={[styles.terms, { color: c.t2 }]}>
+              By continuing, you agree to the{" "}
+              <Text testID="link-terms" style={styles.underline} onPress={() => legal("terms")} accessibilityRole="link">
+                Terms
+              </Text>{" "}
+              and the{" "}
+              <Text testID="link-privacy" style={styles.underline} onPress={() => legal("privacy")} accessibilityRole="link">
+                Privacy Policy
+              </Text>
+              .
+            </Text>
+
             {__DEV__ ? (
               // Development builds only: look at the app's layout without an account.
-              <Pressable
-                testID="signin-dev-guest"
-                onPress={continueAsGuest}
-                hitSlop={8}
-                style={{ alignSelf: "center", paddingVertical: 10 }}
-              >
-                <Text style={{ color: "rgba(255,255,255,0.55)", fontSize: 14 }}>Continue without signing in</Text>
+              <Pressable testID="signin-dev-guest" onPress={continueAsGuest} hitSlop={8} style={{ alignSelf: "center", paddingTop: 6 }}>
+                <Text style={{ color: c.t3, fontSize: 13 }}>Continue without signing in</Text>
               </Pressable>
             ) : null}
-          </>
+          </View>
         )}
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-function ProviderButton({
-  label,
-  mark,
-  onPress,
-  busy,
-  disabled,
-  primary,
-  styles,
-  testID,
-}: {
-  label: string;
-  mark: ReactNode;
-  onPress: () => void;
-  busy: boolean;
-  disabled: boolean;
-  primary?: boolean;
-  styles: ReturnType<typeof createStyles>;
-  testID: string;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.btn,
-        primary ? styles.btnLight : styles.btnDark,
-        pressed && (primary ? styles.pressedLight : styles.pressedDark),
-        // The one being pressed shows a spinner; the OTHER one dims, so it reads
-        // as "wait" rather than "broken".
-        disabled && !busy && styles.dim,
-      ]}
-      accessibilityRole="button"
-      accessibilityState={{ busy, disabled }}
-      testID={testID}
-    >
-      {busy ? (
-        <ActivityIndicator color={primary ? "#000000" : "#ffffff"} />
-      ) : (
-        <>
-          {mark}
-          <Text style={primary ? styles.btnLightLabel : styles.btnDarkLabel}>{label}</Text>
-        </>
-      )}
-    </Pressable>
-  );
-}
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: "#1d3fbf" },
 
-const createStyles = (_c: ThemeColors) =>
-  StyleSheet.create({
-    screen: { flex: 1, backgroundColor: "#000000" },
+  hero: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 32 },
+  heroWithForm: { minHeight: 150, gap: 10 },
+  brand: { color: "#ffffff", fontSize: 32, lineHeight: 38, fontWeight: "600", letterSpacing: -0.6, textAlign: "center" },
+  tagline: { color: "rgba(255,255,255,0.92)", fontSize: 19, lineHeight: 26, textAlign: "center" },
 
-    // The headline sits on the vertical centre line, where the eye lands first
-    // on a page with nothing else in the middle of it.
-    headlineWrap: {
-      flex: 1,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: space(5),
-    },
-    headlineWrapWithForm: { minHeight: 116 },
-    headline: { color: "#ffffff", fontSize: 38, lineHeight: 46, fontWeight: "800", letterSpacing: -1 },
-    cursor: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#ffffff", marginLeft: 2 },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 22 },
+  sheetWithForm: { maxHeight: "75%" },
+  actions: { paddingHorizontal: 20, gap: 8 },
+  terms: { fontSize: 12, lineHeight: 17, textAlign: "center", paddingTop: 8, paddingHorizontal: 12 },
+  underline: { textDecorationLine: "underline" },
+  message: { fontSize: 13, lineHeight: 18, textAlign: "center", paddingHorizontal: 12 },
 
-    card: {
-      backgroundColor: "#1c1c1e",
-      borderTopLeftRadius: 28,
-      borderTopRightRadius: 28,
-      paddingHorizontal: space(4),
-      paddingTop: space(4),
-      gap: space(2),
-    },
-    cardWithForm: { maxHeight: "72%" },
-    form: { gap: space(2), paddingBottom: space(1) },
-    formHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: space(1),
-    },
-    backLabel: { color: "#ffffff", fontSize: type.small.fontSize, fontWeight: "600" },
-    formTitle: { color: "#ffffff", fontSize: type.title.fontSize, fontWeight: "700" },
-    headerSpacer: { width: 42 },
-    field: { gap: space(1) },
-    fieldLabel: { color: "#d1d1d6", fontSize: type.micro.fontSize, fontWeight: "600" },
-    input: {
-      height: 54,
-      borderRadius: radius.md,
-      backgroundColor: "#2c2c2e",
-      color: "#ffffff",
-      fontSize: type.body.fontSize,
-      paddingHorizontal: space(3),
-    },
-    error: { ...type.small, color: "#ff6b6b", textAlign: "center", marginBottom: space(1) },
-    notice: { ...type.small, color: "#7ee2a8", textAlign: "center", marginBottom: space(1) },
-    ackRow: { flexDirection: "row", alignItems: "center", gap: space(2) },
-    checkbox: {
-      width: 22,
-      height: 22,
-      borderRadius: 6,
-      borderWidth: 1.5,
-      borderColor: "#636366",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    checkboxChecked: { backgroundColor: "#ffffff", borderColor: "#ffffff" },
-    checkmark: { color: "#000000", fontSize: type.small.fontSize, fontWeight: "800", lineHeight: 16 },
-    ackText: { flex: 1, color: "#aeaeb2", fontSize: type.micro.fontSize, lineHeight: 18 },
-    legalLinks: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: space(2) },
-    legalLink: { color: "#ffffff", fontSize: type.micro.fontSize, textDecorationLine: "underline" },
-    legalDot: { color: "#636366" },
-    switchText: { color: "#aeaeb2", fontSize: type.micro.fontSize, textAlign: "center" },
-    switchLink: { color: "#ffffff", fontWeight: "700" },
-
-    btn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: space(2),
-      height: 54,
-      borderRadius: radius.md,
-    },
-    btnLight: { backgroundColor: "#ffffff" },
-    btnLightLabel: { color: "#000000", fontSize: type.body.fontSize, fontWeight: "600" },
-    btnDark: { backgroundColor: "#2c2c2e" },
-    btnDarkLabel: { color: "#ffffff", fontSize: type.body.fontSize, fontWeight: "600" },
-    pressedLight: { backgroundColor: "#e6e6e6" },
-    pressedDark: { backgroundColor: "#3a3a3c" },
-    dim: { opacity: 0.5 },
-  });
+  form: { paddingHorizontal: 20, gap: 8 },
+  formHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: -10, marginHorizontal: -16 },
+  ib: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  formTitle: { fontSize: 16, lineHeight: 22, fontWeight: "600" },
+  input: { height: 50, borderRadius: 10, paddingHorizontal: 14, fontSize: 16 },
+  ackRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 },
+  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  ackText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  txt: { height: 44, alignItems: "center", justifyContent: "center" },
+});

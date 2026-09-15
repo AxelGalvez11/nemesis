@@ -1,221 +1,391 @@
-// First run on the phone. ONE screen, on purpose.
+// First run on the phone, rebuilt to the 2026-09 iPhone canvas (gen.py: Studying, ConnectAI,
+// ApproveAI, ConnectCalendar, Microphone, Notifications, AnkiSync, AllSet).
 //
-// The web flow has three steps (courses, syllabi, coursework). The phone gets
-// only the first, and that is a deliberate cut rather than an unfinished port:
+// Every step either does the real thing or says plainly that it cannot yet:
+//  - Studying saves the answer on the Supabase account (user_metadata.field_of_study / study_level,
+//    the same keys the Account screen reads).
+//  - Connect your AI hands the student off to Claude or ChatGPT with the real MCP address copied.
+//    The approval itself happens later on the web consent page (apps/web/app/oauth/consent), which
+//    Claude opens; nothing here claims a connection was made.
+//  - Google Calendar starts a real Composio connection through /api/composio and then asks the
+//    server whether it went through before it says "connected".
+//  - Microphone and Notifications ask iOS for the real permissions the app uses.
+//  - Anki sync has no add-on or server yet, so that step says so and moves on.
 //
-//  - THE SYLLABUS STEP would be inventing a screen for a path that already
-//    exists in chat, where a student attaches the file and the agent calls
-//    add_calendar_event. A second front door to the same thing is a maintenance
-//    cost and a choice the student has to make.
-//  - THE COURSEWORK STEP is about the browser extension, which is a DESKTOP
-//    thing. It cannot run on an iPhone. A screen explaining a button the student
-//    cannot press on this device is a screen that should not exist.
-//  - THE PLAN STEP is deliberately absent too. Apple's rules mean the only
-//    lawful sell here is in-app purchase, and the right moment to offer it is
-//    when a student hits the free recording ceiling mid-lecture — see
-//    UpgradeSheet — not thirty seconds after install, before they have used
-//    anything.
-//
-// What is left is the only question whose answer the app genuinely cannot work
-// without: what are you taking. There is no courses table; a course EXISTS
-// because a Library folder or a calendar event names it. So this screen writes
-// real folders, and everything the student records, photographs or imports
-// afterwards has somewhere to file itself.
+// The completion marker (lib/onboarding.ts) is written when the student leaves the last step.
 
-import { useCallback, useState } from "react";
-import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { router } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as SecureStore from "expo-secure-store";
+import { useCallback, useState } from 'react';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import * as Clipboard from 'expo-clipboard';
+import * as Notifications from 'expo-notifications';
+import * as SecureStore from 'expo-secure-store';
+import * as WebBrowser from 'expo-web-browser';
+import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
+import { useAuth } from '@/auth/AuthProvider';
+import { APP_API_BASE } from '@/api/chat';
+import { supabase } from '@/api/supabase';
+import { NxIcon } from '@/components/nx/NxIcon';
+import { CalendarPreview, MicCard, NotificationPreview } from '@/components/nx/onboarding/illustrations';
 import {
-  addCourse,
-  ONBOARDING_MAX_COURSES,
-  removeCourse,
-  splitCourseInput,
-} from "@nemesis/shared";
-import { useAuth } from "@/auth/AuthProvider";
-import { createFolder, fetchLibrary } from "@/api/cloudLibrary";
-import { newThreadId } from "@/api/chat";
-import { MissionButton } from "@/components/mission-ui";
-import { CloseIcon } from "@/components/icons";
-import { writeOnboarding } from "@/lib/onboarding";
-import type { ThemeColors } from "@/theme/palette";
-import { useThemedStyles } from "@/theme/ThemeProvider";
-import { control, radius, space, type } from "@/theme/tokens";
+  AiLogo,
+  CheckLead,
+  Chip,
+  DriftingGradient,
+  Group,
+  GroupRow,
+  IconBox,
+  LinkedTiles,
+  ObActions,
+  ObText,
+  ObTop,
+  Pill,
+} from '@/components/nx/onboarding/parts';
+import { registerForPush, setStudyReminder } from '@/lib/push';
+import { writeOnboarding } from '@/lib/onboarding';
+import { useNx } from '@/theme/nx';
 
-/** Deliberately spans disciplines. A student should see their own subject in the
- *  first two seconds; a placeholder full of one field quietly says the app is
- *  not for everyone else. */
-const PLACEHOLDER = "Contract Law, Thermodynamics II, Welding…";
+type Step = 'studying' | 'ai' | 'approve' | 'calendar' | 'mic' | 'notifications' | 'anki' | 'done';
+type AiTool = 'Claude' | 'ChatGPT';
+
+const FIELDS = ['Law', 'Engineering', 'Computer science', 'History', 'Nursing', 'Business', 'Biology', 'Psychology', 'Art and design', 'Languages', 'Math', 'Something else'];
+const LEVELS = ['High school', 'College', 'Graduate school', 'On my own'];
+
+const BACK: Partial<Record<Step, Step>> = { ai: 'studying', approve: 'ai', calendar: 'ai', mic: 'calendar', notifications: 'mic', anki: 'notifications' };
+
+const MCP_LINK = `${APP_API_BASE}/api/mcp`;
+const AI_SETTINGS: Record<AiTool, string> = {
+  Claude: 'https://claude.ai/settings/connectors',
+  ChatGPT: 'https://chatgpt.com/#settings/Connectors',
+};
+
+/** "Studying law in college", "Studying in graduate school", "Studying math". */
+function studyingPhrase(field: string | null, level: string | null): string | null {
+  if (!field && !level) return null;
+  const subject = field && field !== 'Something else' ? ` ${field.toLowerCase()}` : '';
+  const where = level ? (level === 'On my own' ? ' on my own' : ` in ${level.toLowerCase()}`) : '';
+  return `Studying${subject}${where}`;
+}
+
+async function composio(token: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(`${APP_API_BASE}/api/composio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as Record<string, unknown>;
+}
 
 export default function OnboardingScreen() {
-  const insets = useSafeAreaInsets();
-  const styles = useThemedStyles(createStyles);
+  const c = useNx();
+  const { width } = useWindowDimensions();
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
+  const token = session?.access_token ?? null;
+  const email = session?.user?.email ?? null;
 
-  const [courses, setCourses] = useState<string[]>([]);
-  const [draft, setDraft] = useState("");
+  const [step, setStep] = useState<Step>('studying');
+  const [field, setField] = useState<string | null>(null);
+  const [level, setLevel] = useState<string | null>(null);
+  const [aiHandoff, setAiHandoff] = useState<AiTool | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const [calendarOn, setCalendarOn] = useState(false);
+  const [calendarNote, setCalendarNote] = useState<string | null>(null);
+  const [micOn, setMicOn] = useState(false);
+  const [remindersOn, setRemindersOn] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  /** Commit whatever is typed. Splits on commas and newlines, so a student who
-   *  pastes their whole timetable in one go gets every course rather than one
-   *  long folder name. */
-  const commitDraft = useCallback(() => {
-    setCourses((current) => splitCourseInput(draft).reduce(addCourse, current));
-    setDraft("");
-  }, [draft]);
+  const back = BACK[step];
+  const goBack = back ? () => setStep(back) : undefined;
 
-  /** Leave, one way or the other.
-   *
-   *  🔴 THE MARKER IS WRITTEN BEFORE THE FOLDERS, AND NEITHER CAN STRAND THE
-   *  STUDENT. A folder write that fails must not trap somebody on the setup
-   *  screen forever, and a student who has answered the question has answered it
-   *  whether or not the network agreed. Everything here is best-effort; the
-   *  navigation at the end is not. */
-  const finish = useCallback(
-    async (outcome: "finished" | "skipped", names: readonly string[]) => {
-      setBusy(true);
-      Keyboard.dismiss();
-      await writeOnboarding(SecureStore, outcome, new Date());
-      if (uid && names.length > 0) {
-        try {
-          // Read the tree once and reuse it: createFolder needs a snapshot to
-          // spot collisions, and refetching per course would be N round trips
-          // to answer the same question.
-          const snapshot = await fetchLibrary(uid);
-          for (const name of names) {
-            try {
-              await createFolder(uid, snapshot, name);
-            } catch {
-              // A duplicate or a rejected name is not worth stopping setup for.
-              // The student keeps the rest, and can add this one from Library.
-            }
-          }
-        } catch {
-          // Could not read the Library at all — offline, most likely. The course
-          // names are not lost in any way that matters: the student types them
-          // again in Library, or the first note they file creates the folder.
-        }
+  /* ----- Studying ----- */
+  const saveStudying = useCallback(() => {
+    if (session && (field || level)) {
+      // Best-effort: a failed save must not hold the student on the first screen.
+      void supabase.auth.updateUser({ data: { field_of_study: field, study_level: level } }).catch(() => {});
+    }
+    setStep('ai');
+  }, [session, field, level]);
+
+  /* ----- Connect your AI ----- */
+  const handOff = useCallback(async (tool: AiTool) => {
+    await Clipboard.setStringAsync(MCP_LINK);
+    setAiHandoff(tool);
+    setAiNotice(`Link copied. In ${tool}, add a custom connector and paste it, then approve Nemesis.`);
+    setStep('ai');
+    await WebBrowser.openBrowserAsync(AI_SETTINGS[tool]).catch(() => {});
+  }, []);
+
+  const copyLink = useCallback(async () => {
+    await Clipboard.setStringAsync(MCP_LINK);
+    setAiNotice('Link copied. Paste it into any AI tool that accepts an MCP connector.');
+  }, []);
+
+  /* ----- Google Calendar ----- */
+  const connectCalendar = useCallback(async () => {
+    if (!token) return;
+    setBusy(true);
+    setCalendarNote(null);
+    try {
+      const started = await composio(token, { op: 'connect', app: 'googlecalendar' });
+      if (started.configured === false) {
+        setCalendarNote('Calendar connections are not switched on yet. You can connect later in Settings.');
+        return;
       }
-      router.replace(`/chat?c=${newThreadId()}` as never);
-    },
-    [uid],
-  );
+      if (typeof started.url !== 'string') {
+        setCalendarNote(typeof started.error === 'string' ? started.error : 'Could not start the connection. Try again.');
+        return;
+      }
+      await WebBrowser.openBrowserAsync(started.url);
+      const status = await composio(token, { op: 'status' });
+      const connected = Array.isArray(status.connected) && status.connected.includes('googlecalendar');
+      if (connected) {
+        setCalendarOn(true);
+        setStep('mic');
+      } else {
+        setCalendarNote('Google Calendar is not connected yet. Try again, or choose Not now.');
+      }
+    } catch {
+      setCalendarNote('Nemesis could not reach Google Calendar. Check your connection and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }, [token]);
 
-  const pending = splitCourseInput(draft);
-  const total = courses.length + pending.length;
-  const full = courses.length >= ONBOARDING_MAX_COURSES;
+  /* ----- Microphone ----- */
+  const allowMic = useCallback(async () => {
+    setBusy(true);
+    try {
+      // The same request the recorder makes (hooks/useLiveTranscription.ts): microphone and speech.
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      setMicOn(permission.granted);
+    } catch {
+      setMicOn(false);
+    } finally {
+      setBusy(false);
+      setStep('notifications');
+    }
+  }, []);
+
+  /* ----- Notifications ----- */
+  const allowNotifications = useCallback(async () => {
+    setBusy(true);
+    try {
+      if (uid) {
+        const result = await setStudyReminder(uid, true);
+        setRemindersOn(result.enabled);
+        if (result.enabled) void registerForPush();
+      } else {
+        const result = await Notifications.requestPermissionsAsync();
+        setRemindersOn(result.granted);
+      }
+    } catch {
+      setRemindersOn(false);
+    } finally {
+      setBusy(false);
+      setStep('anki');
+    }
+  }, [uid]);
+
+  /* ----- All set ----- */
+  const finish = useCallback(async () => {
+    setBusy(true);
+    await writeOnboarding(SecureStore, 'finished', new Date());
+    router.replace('/' as never);
+  }, []);
+
+  const phrase = studyingPhrase(field, level);
+  const summary = [
+    phrase,
+    aiHandoff ? `${aiHandoff} link copied, finish in ${aiHandoff}` : null,
+    calendarOn ? 'Google Calendar connected' : null,
+    micOn && remindersOn ? 'Microphone and reminders on' : micOn ? 'Microphone on' : remindersOn ? 'Reminders on' : null,
+  ].filter((row): row is string => !!row);
+
+  let body: React.ReactNode;
+  switch (step) {
+    case 'studying':
+      body = (
+        <>
+          <ObTop step={1} />
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+            <ObText title="What are you studying?" sub="Nemesis writes your notes and flashcards to fit your subject." />
+            <View style={styles.chips}>
+              {FIELDS.map((f) => (
+                <Chip key={f} label={f} on={field === f} onPress={() => setField(field === f ? null : f)} />
+              ))}
+            </View>
+            <Text style={[styles.sec, { color: c.t2 }]}>Where you study</Text>
+            <View style={[styles.chips, { paddingTop: 0 }]}>
+              {LEVELS.map((l) => (
+                <Chip key={l} label={l} on={level === l} onPress={() => setLevel(level === l ? null : l)} />
+              ))}
+            </View>
+            <ObActions primary="Continue" onPrimary={saveStudying} secondary="Skip for now" onSecondary={() => setStep('ai')} />
+          </ScrollView>
+        </>
+      );
+      break;
+
+    case 'ai':
+      body = (
+        <>
+          <ObTop step={2} onBack={goBack} />
+          <ObText title="Connect your own AI" sub="Claude or ChatGPT can search your notes and make flashcards for you. You decide what it can see." />
+          <Group style={{ marginTop: 28 }}>
+            <GroupRow lead={<AiLogo kind="claude" />} title="Claude" trail={<Pill go label="Connect" onPress={() => setStep('approve')} />} />
+            <GroupRow lead={<AiLogo kind="gpt" />} title="ChatGPT" trail={<Pill go label="Connect" onPress={() => void handOff('ChatGPT')} />} />
+            <GroupRow lead={<IconBox name="link" />} title="Another AI tool" trail={<Pill label="Copy link" icon="copy" onPress={() => void copyLink()} />} />
+          </Group>
+          <ObActions
+            primary="Continue"
+            onPrimary={() => setStep('calendar')}
+            secondary="Skip for now"
+            onSecondary={() => setStep('calendar')}
+            note={aiNotice ?? 'You can connect or disconnect any AI later in Settings.'}
+          />
+        </>
+      );
+      break;
+
+    case 'approve':
+      body = (
+        <>
+          <ObTop onBack={goBack} icon="x" />
+          <View style={{ paddingTop: 28 }}>
+            <LinkedTiles left={<AiLogo kind="claude" size={56} radius={16} />} />
+          </View>
+          <ObText
+            top={24}
+            title="Claude wants access to your Nemesis"
+            sub={email ? `It will act as you, signed in as ${email}.` : 'It will act as you, signed in to your account.'}
+          />
+          <Text style={[styles.sec, { color: c.t2, paddingTop: 26 }]}>Claude will be able to</Text>
+          <Group>
+            <GroupRow lead={<CheckLead />} title="Search and read your notes" />
+            <GroupRow lead={<CheckLead />} title="Create notes" />
+            <GroupRow lead={<CheckLead />} title="Make flashcards and practice tests" />
+            <GroupRow lead={<CheckLead no />} title="Delete anything" dim />
+          </Group>
+          <ObActions
+            primary="Continue in Claude"
+            onPrimary={() => void handOff('Claude')}
+            secondary="Cancel"
+            onSecondary={() => setStep('ai')}
+            note="We copy your Nemesis link and open Claude. Paste it there, and Claude asks you to approve."
+          />
+        </>
+      );
+      break;
+
+    case 'calendar':
+      body = (
+        <>
+          <ObTop step={3} onBack={goBack} />
+          <CalendarPreview />
+          <ObText top={32} title="See your classes coming up" sub="Connect Google Calendar and your next class shows on Notes, ready to record." />
+          {token ? (
+            <ObActions
+              primary="Connect Google Calendar"
+              icon="calendar"
+              onPrimary={() => void connectCalendar()}
+              busy={busy}
+              secondary="Not now"
+              onSecondary={() => setStep('mic')}
+              note={calendarNote ?? 'Nemesis only reads your events. It never changes them.'}
+            />
+          ) : (
+            <ObActions primary="Continue" onPrimary={() => setStep('mic')} note="Sign in to connect Google Calendar." />
+          )}
+        </>
+      );
+      break;
+
+    case 'mic':
+      body = (
+        <>
+          <ObTop step={4} onBack={goBack} />
+          <MicCard />
+          <ObText top={26} title="Record your lectures" sub="Tap Record and Nemesis listens quietly, then writes up clean notes. It only uses the microphone while you record." />
+          <ObActions primary="Allow microphone" onPrimary={() => void allowMic()} busy={busy} secondary="Not now" onSecondary={() => setStep('notifications')} />
+        </>
+      );
+      break;
+
+    case 'notifications':
+      body = (
+        <>
+          <ObTop step={5} onBack={goBack} />
+          <NotificationPreview />
+          <ObText top={36} title="Stay on top of your cards" sub="One reminder a day when cards are due, and a heads-up when your notes are written." />
+          <ObActions primary="Turn on notifications" onPrimary={() => void allowNotifications()} busy={busy} secondary="Not now" onSecondary={() => setStep('anki')} />
+        </>
+      );
+      break;
+
+    case 'anki':
+      body = (
+        <>
+          <ObTop step={6} onBack={goBack} />
+          <View style={{ paddingTop: 40 }}>
+            <LinkedTiles
+              left={
+                <View style={[styles.ankiTile, { backgroundColor: c.sel }]}>
+                  <NxIcon name="cards" size={28} color={c.t1} />
+                </View>
+              }
+            />
+          </View>
+          <ObText top={24} title="Sync your Anki decks" sub="Study in Anki or in Nemesis. Your decks and reviews stay the same in both." />
+          <ObActions
+            primary="Continue"
+            onPrimary={() => setStep('done')}
+            note="Anki sync is not ready yet. This step switches on when the Nemesis add-on for Anki is released."
+          />
+        </>
+      );
+      break;
+
+    case 'done':
+      body = (
+        <>
+          <StatusBar style="light" />
+          <View style={styles.hero}>
+            <DriftingGradient width={width} height={230} tall />
+            <View style={styles.heroCheck}>
+              <NxIcon name="check" size={40} strokeWidth={2} color="#ffffff" />
+            </View>
+          </View>
+          <ObText
+            title="You're all set"
+            sub={summary.length > 0 ? 'Here is what you set up. Change any of it in Settings.' : 'You can set any of this up later in Settings.'}
+          />
+          {summary.length > 0 ? (
+            <Group style={{ marginTop: 28 }}>
+              {summary.map((row) => (
+                <GroupRow key={row} lead={<CheckLead />} title={row} />
+              ))}
+            </Group>
+          ) : null}
+          <ObActions primary="Start taking notes" onPrimary={() => void finish()} busy={busy} />
+        </>
+      );
+      break;
+  }
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + space(3) }]} testID="onboarding-screen">
-      <View style={styles.skipRow}>
-        <Pressable
-          onPress={() => void finish("skipped", [])}
-          hitSlop={12}
-          disabled={busy}
-          accessibilityRole="button"
-          testID="onboarding-skip"
-        >
-          <Text style={styles.skip}>Skip</Text>
-        </Pressable>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.body}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.title}>What are you taking?</Text>
-        <Text style={styles.blurb}>
-          Everything you add later files itself into these. You can change them any time.
-        </Text>
-
-        <TextInput
-          style={styles.field}
-          value={draft}
-          onChangeText={setDraft}
-          onSubmitEditing={commitDraft}
-          onBlur={commitDraft}
-          placeholder={PLACEHOLDER}
-          placeholderTextColor={styles.placeholder.color}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="done"
-          editable={!busy && !full}
-          multiline
-          testID="onboarding-input"
-        />
-
-        <View style={styles.chips}>
-          {courses.map((name) => (
-            <Pressable
-              key={name}
-              style={styles.chip}
-              onPress={() => setCourses((current) => removeCourse(current, name))}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${name}`}
-              testID={`onboarding-chip-${name}`}
-            >
-              <Text style={styles.chipText}>{name}</Text>
-              <CloseIcon size={13} color={styles.placeholder.color} />
-            </Pressable>
-          ))}
-        </View>
-
-        {full ? <Text style={styles.note}>That is as many as setup takes. Add more from Library.</Text> : null}
-      </ScrollView>
-
-      <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
-        <MissionButton
-          label={total > 0 ? "Start using Nemesis" : "Skip for now"}
-          onPress={() => void finish(total > 0 ? "finished" : "skipped", [...courses, ...pending])}
-          variant="primary"
-          busy={busy}
-          testID="onboarding-continue"
-        />
-      </View>
+    <View style={[styles.root, { backgroundColor: c.bg }]} testID="onboarding-screen">
+      {body}
     </View>
   );
 }
 
-const createStyles = (c: ThemeColors) =>
-  StyleSheet.create({
-    root: { flex: 1, backgroundColor: c.bg },
-    skipRow: { alignItems: "flex-end", paddingHorizontal: space(4), paddingBottom: space(4) },
-    skip: { ...type.small, color: c.textHint },
-    body: { paddingHorizontal: space(5), paddingBottom: space(6) },
-    title: { ...type.h1, color: c.text, marginBottom: space(2) },
-    blurb: { ...type.small, color: c.textHint, marginBottom: space(5) },
-    // A pill rather than a boxed field, matching the auth screens' 52pt inputs.
-    // multiline, because a pasted timetable is several lines and a single-line
-    // field would hide everything but the last one behind the caret.
-    field: {
-      ...type.body,
-      color: c.text,
-      backgroundColor: c.glass,
-      borderColor: c.line,
-      borderRadius: radius.xl,
-      borderWidth: 1,
-      minHeight: control.xl,
-      paddingHorizontal: space(4),
-      paddingVertical: space(3),
-    },
-    placeholder: { color: c.textHint },
-    chips: { flexDirection: "row", flexWrap: "wrap", gap: space(2), marginTop: space(4) },
-    chip: {
-      alignItems: "center",
-      backgroundColor: c.glass,
-      borderColor: c.line,
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      flexDirection: "row",
-      gap: space(2),
-      paddingHorizontal: space(3),
-      paddingVertical: space(2),
-    },
-    chipText: { ...type.small, color: c.text },
-    note: { ...type.micro, color: c.textHint, marginTop: space(4) },
-    footer: { paddingHorizontal: space(5), paddingTop: space(3) },
-  });
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 24, paddingHorizontal: 20 },
+  sec: { fontSize: 13, lineHeight: 18, fontWeight: '500', paddingTop: 22, paddingHorizontal: 20, paddingBottom: 8 },
+  ankiTile: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  hero: { height: 230, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  heroCheck: { width: 88, height: 88, borderRadius: 44, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+});
