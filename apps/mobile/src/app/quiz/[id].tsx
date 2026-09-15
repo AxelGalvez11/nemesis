@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { goBack } from "@/lib/goBack";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SkelFlashcard } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -91,7 +92,7 @@ export default function QuizScreen() {
   };
   const close = () => {
     refresh();
-    router.back();
+    goBack(router);
   };
 
   const source: Source = page

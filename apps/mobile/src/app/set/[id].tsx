@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { goBack } from "@/lib/goBack";
 import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NxSheet } from "@/components/nx/motion";
 import { NxPressable } from "@/components/nx/NxPressable";
@@ -52,7 +53,7 @@ export default function SetScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.header, { paddingTop: insets.top + 3 }]}>
-        <NxIconButton icon="chev_l" size={22} label="Back" onPress={() => router.back()} />
+        <NxIconButton icon="chev_l" size={22} label="Back" onPress={() => goBack(router)} />
         <View style={{ flex: 1 }} />
         {/* Only drawn when it has something to offer. */}
         {page ? <NxIconButton icon="dots" size={20} label="More" onPress={more} /> : <View style={{ width: 44 }} />}

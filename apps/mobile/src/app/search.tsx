@@ -3,6 +3,7 @@
  * with the matched words highlighted. Only what the new app shows is searched (lib/fresh.ts).
  */
 import React, { useEffect, useMemo, useState } from 'react';
+import { goBack } from "@/lib/goBack";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -206,7 +207,7 @@ export default function SearchScreen() {
             </Pressable>
           ) : null}
         </View>
-        <Pressable onPress={() => router.back()} style={styles.cancel}>
+        <Pressable onPress={() => goBack(router)} style={styles.cancel}>
           <Text style={{ color: c.t1, fontSize: 15 }}>Cancel</Text>
         </Pressable>
       </View>

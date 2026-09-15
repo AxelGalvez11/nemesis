@@ -6,6 +6,7 @@
  * the page shows as a chip in the composer (tap x to drop it). /c/new?q=<text> sends that text at once.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { goBack } from "@/lib/goBack";
 import { ActionSheetIOS, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -265,7 +266,7 @@ export default function ChatScreen() {
           onPress: async () => {
             abortRef.current?.abort();
             await deleteThread(uid, id).catch(() => undefined);
-            router.back();
+            goBack(router);
           },
         },
       ]);
@@ -288,7 +289,7 @@ export default function ChatScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
-      <ChatHeader title={shownTitle} onBack={() => (router.canGoBack() ? router.back() : router.replace('/chats' as Href))} onMore={id && messages.length ? more : undefined} />
+      <ChatHeader title={shownTitle} onBack={() => (router.canGoBack() ? goBack(router) : router.replace('/chats' as Href))} onMore={id && messages.length ? more : undefined} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {sending ? <CobaltGlow /> : empty ? <CobaltGlow height={300} opacity={0.1} solid={0.2} breathe={false} /> : null}
         <ScrollView

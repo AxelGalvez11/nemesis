@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { goBack } from "@/lib/goBack";
 import { StyleSheet, Text, View } from "react-native";
 import { SkelFlashcard } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -70,7 +71,7 @@ export default function FlashcardsReview() {
   };
   const close = () => {
     refresh();
-    router.back();
+    goBack(router);
   };
 
   return (

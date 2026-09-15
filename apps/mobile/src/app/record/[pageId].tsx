@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { goBack } from "@/lib/goBack";
 import { ActionSheetIOS, Alert, Keyboard, KeyboardAvoidingView, Linking, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { setFavorite } from '@/api/pageMenu';
 import { SkelPage } from '@/components/nx/Skeleton';
@@ -105,7 +106,7 @@ export default function RecordScreen() {
         const block = fresh.records.find((r) => r.id === t.blockId);
         if (block) await finishRecording(fresh, block, t.jobId, t.artifactId, t.audio?.bytes ?? null);
         await refreshPage();
-        if (alive.current) router.back();
+        if (alive.current) goBack(router);
         return;
       }
       if (job?.status === 'failed') {
@@ -178,7 +179,7 @@ export default function RecordScreen() {
       } else if (t.blockId) {
         await submit();
       } else {
-        router.back();
+        goBack(router);
       }
     } catch (e) {
       setPhase({ kind: 'failed', body: e instanceof Error ? e.message : 'That did not work. Try again in a moment.', canKeepAudio: !!t.jobId });
@@ -195,7 +196,7 @@ export default function RecordScreen() {
       await dropPendingAudio(t.blockId);
     }
     await refreshPage();
-    router.back();
+    goBack(router);
   }, [page, refreshPage, router]);
 
   const parent = page?.ancestors[page.ancestors.length - 1];
@@ -213,7 +214,7 @@ export default function RecordScreen() {
           size={22}
           label="Back"
           color={c.t1}
-          onPress={() => (phase.kind === 'recording' && showPill ? void end() : router.back())}
+          onPress={() => (phase.kind === 'recording' && showPill ? void end() : goBack(router))}
         />
         {/* Same header as a page (canvas Recording): back, crumb (a lock and Private at the top level), share, more. */}
         <View style={{ width: 44 }} />
@@ -270,7 +271,7 @@ export default function RecordScreen() {
                 onRetry={() => void retry()}
                 retrying={retrying}
                 secondLabel={phase.canKeepAudio ? 'Keep audio only' : 'Not now'}
-                onSecond={() => (phase.canKeepAudio ? void keepAudio() : router.back())}
+                onSecond={() => (phase.canKeepAudio ? void keepAudio() : goBack(router))}
               />
             ) : null}
 
@@ -319,9 +320,9 @@ export default function RecordScreen() {
         visible={phase.kind === 'micoff'}
         onOpenSettings={() => {
           void Linking.openSettings();
-          router.back();
+          goBack(router);
         }}
-        onNotNow={() => router.back()}
+        onNotNow={() => goBack(router)}
       />
     </View>
   );
