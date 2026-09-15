@@ -63,7 +63,14 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   return data as T;
 }
 
-export type Bootstrap = { space: { id: string; name: string } | null; roots: PageSummary[]; recents: PageSummary[]; favorites: PageSummary[] };
+export type Bootstrap = {
+  space: { id: string; name: string } | null;
+  roots: PageSummary[];
+  recents: PageSummary[];
+  favorites: PageSummary[];
+  /** The person's own settings row (ws_user_settings.data); the phone's live under `phone`. */
+  settings?: Record<string, unknown>;
+};
 
 export function bootstrap(): Promise<Bootstrap> {
   return rpc<Bootstrap>('ws_bootstrap', {});

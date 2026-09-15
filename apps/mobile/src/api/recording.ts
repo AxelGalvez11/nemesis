@@ -17,6 +17,8 @@ import { APP_API_BASE } from './chat';
 import { newId } from './spaceWrite';
 import { loadPage, type LoadedPage, type SpaceRecord } from './space';
 import { supabase } from './supabase';
+import { getPhoneSettings } from './phoneSettings';
+import { notifyNotesReady } from '@/lib/push';
 import { encodeToM4A } from '../../modules/nemesis-audio-encoder';
 
 export type JobStage = 'queued' | 'transcribing' | 'composing' | 'filing' | 'indexing' | 'ready';
@@ -321,6 +323,22 @@ export async function finishRecording(loaded: LoadedPage, block: SpaceRecord, jo
   });
   if (error) console.warn('recording source not added:', error.message);
   await dropPendingAudio(block.id);
+
+  // Study settings. Keep the audio off: the uploaded file goes once the notes and transcript are on the page.
+  const phone = getPhoneSettings();
+  const storagePath = typeof block.props.storagePath === 'string' ? block.props.storagePath : null;
+  if (!phone.keepAudio && storagePath) {
+    const { error: removeError } = await supabase.storage.from('recordings').remove([storagePath]);
+    if (removeError) console.warn('recording audio not removed:', removeError.message);
+    else await apply(loaded.space_id, [{ op: 'update', id: block.id, set: { storagePath: null, audioRemoved: true } }]).catch(() => undefined);
+  }
+  if (phone.notesReadyAlert) void notifyNotesReady(plainTitle(loaded.page.props.title), loaded.page.id);
+}
+
+/** A page title is rich text (segments); the alert needs the words only. */
+function plainTitle(title: unknown): string {
+  if (!Array.isArray(title)) return typeof title === 'string' ? title : '';
+  return title.map((seg) => (Array.isArray(seg) ? String(seg[0] ?? '') : '')).join('').trim();
 }
 
 /**

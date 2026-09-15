@@ -25,7 +25,11 @@ const studyReminderKey = (uid: string) => `nemesis_study_reminder_notification_v
 
 /** Enable/disable the student's real on-device daily study reminder.
  * Permission is requested only after the explicit ON tap in Settings. */
-export async function setStudyReminder(uid: string, enabled: boolean): Promise<{ enabled: boolean; error: string | null }> {
+export async function setStudyReminder(
+  uid: string,
+  enabled: boolean,
+  at: { hour: number; minute: number } = { hour: 19, minute: 0 },
+): Promise<{ enabled: boolean; error: string | null }> {
   try {
     const existingId = await SecureStore.getItemAsync(studyReminderKey(uid));
     if (existingId) {
@@ -47,8 +51,8 @@ export async function setStudyReminder(uid: string, enabled: boolean): Promise<{
         title: "Ready for a quick review?",
       },
       trigger: {
-        hour: 19,
-        minute: 0,
+        hour: at.hour,
+        minute: at.minute,
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
       },
     });
@@ -56,6 +60,33 @@ export async function setStudyReminder(uid: string, enabled: boolean): Promise<{
     return { enabled: true, error: null };
   } catch {
     return { enabled: false, error: "Nemesis couldn't schedule that reminder. Try again." };
+  }
+}
+
+/** Asks, from an explicit Settings switch, whether Nemesis may show alerts. True when it may. */
+export async function allowAlerts(): Promise<boolean> {
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    return current.granted || (await Notifications.requestPermissionsAsync()).granted;
+  } catch {
+    return false;
+  }
+}
+
+/** "Your notes are ready", shown at once, and only when alerts were already allowed (it never asks from here). */
+export async function notifyNotesReady(pageTitle: string, pageId: string): Promise<void> {
+  try {
+    if (!(await Notifications.getPermissionsAsync()).granted) return;
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Your notes are ready",
+        body: `Nemesis finished writing the notes for ${pageTitle || "your recording"}.`,
+        data: { destination: "page", pageId },
+      },
+      trigger: null,
+    });
+  } catch {
+    // An alert is a courtesy; the notes are already on the page.
   }
 }
 
@@ -94,8 +125,12 @@ export async function registerForPush(): Promise<void> {
  * at app root, independent of auth state. */
 export function setupPushResponseRouting(): () => void {
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    const destination = response.notification.request.content.data?.destination;
-    router.push(destination === "study" ? ("/study" as never) : ("/" as never));
+    const data = response.notification.request.content.data as { destination?: unknown; pageId?: unknown } | undefined;
+    if (data?.destination === "page" && typeof data.pageId === "string") {
+      router.push(`/page/${data.pageId}` as never);
+      return;
+    }
+    router.push(data?.destination === "study" ? ("/study" as never) : ("/" as never));
   });
   return () => sub.remove();
 }

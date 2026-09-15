@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { allPages, bootstrap, buildTree, type PageSummary } from "@/api/space";
+import { primePhoneSettings, readPhoneSettings } from "@/api/phoneSettings";
 import { listDecks } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
 import { isFresh } from "@/lib/fresh";
@@ -10,6 +11,8 @@ export function useSpacePages() {
   const uid = session?.user?.id ?? null;
   const boot = useQuery({ queryKey: ["ws-bootstrap", uid], queryFn: bootstrap, enabled: !!uid, staleTime: 60_000 });
   const spaceId = boot.data?.space?.id ?? null;
+  // Code outside a screen (finishing a recording) reads the phone settings from this cache.
+  if (boot.data) primePhoneSettings(readPhoneSettings(boot.data.settings));
   const pages = useQuery({
     queryKey: ["ws-all-pages", spaceId],
     queryFn: () => allPages(spaceId as string),
@@ -34,6 +37,16 @@ export function useSpacePages() {
     },
     refreshing: boot.isRefetching || pages.isRefetching,
   };
+}
+
+/** The phone's study and recording settings, from the same bootstrap call as the page tree. */
+export function usePhoneSettings() {
+  const { session } = useAuth();
+  const uid = session?.user?.id ?? null;
+  const boot = useQuery({ queryKey: ["ws-bootstrap", uid], queryFn: bootstrap, enabled: !!uid, staleTime: 60_000 });
+  const settings = readPhoneSettings(boot.data?.settings);
+  if (boot.data) primePhoneSettings(settings);
+  return { settings, loading: boot.isLoading };
 }
 
 export function useDecks() {

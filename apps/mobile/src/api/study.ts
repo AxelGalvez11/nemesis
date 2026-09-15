@@ -101,11 +101,14 @@ export async function deckCards(deckId: string): Promise<Card[]> {
 }
 
 /** Today's queue for a deck: step cards first, then the longest-waiting. Nothing due → the whole deck, so a set can always be studied. */
-export function reviewQueue(cards: Card[], now = Date.now()): Card[] {
+export function reviewQueue(cards: Card[], now = Date.now(), newLimit = Infinity): Card[] {
   const live = cards.filter((c) => !c.suspended);
+  let fresh = 0;
   const due = live
     .filter((c) => isDue(c, now))
-    .sort((a, b) => Number(STEP_STATES.includes(b.state ?? '')) - Number(STEP_STATES.includes(a.state ?? '')) || a.due_at.localeCompare(b.due_at));
+    .sort((a, b) => Number(STEP_STATES.includes(b.state ?? '')) - Number(STEP_STATES.includes(a.state ?? '')) || a.due_at.localeCompare(b.due_at))
+    // New cards per day (Study settings): never-studied cards join up to the limit; reviews always join.
+    .filter((c) => c.state !== 'new' || fresh++ < newLimit);
   return due.length ? due : live;
 }
 

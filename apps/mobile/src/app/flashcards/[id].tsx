@@ -8,7 +8,7 @@ import { cardQuiz, deckCards, markCard, reviewQueue, type Card } from "@/api/stu
 import { NxFlashcard, NxMarkButtons, NxStudyHeader } from "@/components/nx/study";
 import { ExplainSheet } from "@/components/nx/study/ExplainSheet";
 import { StudyDone } from "@/components/nx/study/StudyDone";
-import { useDecks, useSpacePages } from "@/hooks/useSpace";
+import { useDecks, usePhoneSettings, useSpacePages } from "@/hooks/useSpace";
 import { useNx } from "@/theme/nx";
 
 // Flashcards mode (canvas Review, ReviewAnswer, ExplainSheet, CardsDone, DarkReview). Spaced repetition is
@@ -20,6 +20,7 @@ export default function FlashcardsReview() {
   const qc = useQueryClient();
   const decks = useDecks();
   const space = useSpacePages();
+  const phone = usePhoneSettings().settings;
   const cards = useQuery({ queryKey: ["study-cards", id], queryFn: () => deckCards(id), enabled: !!id });
   const [queue, setQueue] = useState<Card[] | null>(null);
   const [flipped, setFlipped] = useState(false);
@@ -30,7 +31,7 @@ export default function FlashcardsReview() {
   const shownAt = useRef(Date.now());
 
   useEffect(() => {
-    if (cards.data && queue === null) setQueue(reviewQueue(cards.data));
+    if (cards.data && queue === null) setQueue(reviewQueue(cards.data, Date.now(), phone.newPerDay));
   }, [cards.data, queue]);
 
   const current = queue?.[0];
