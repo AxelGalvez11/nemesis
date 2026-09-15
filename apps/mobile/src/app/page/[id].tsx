@@ -67,8 +67,19 @@ export default function PageScreen() {
   const lastY = useRef(0);
   const barVisible = useRef(true);
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = e.nativeEvent.contentOffset.y;
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const y = contentOffset.y;
     setScrolledPast(y > 170);
+    // The rubber-band at the foot of a short note springs back up; that is not the student scrolling up.
+    const bottom = Math.max(0, contentSize.height - layoutMeasurement.height);
+    if (y > bottom - 2 || y < 0) {
+      lastY.current = Math.min(Math.max(y, 0), bottom);
+      if (y < 0 && !barVisible.current) {
+        barVisible.current = true;
+        Animated.timing(barShown, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+      }
+      return;
+    }
     const goingDown = y > lastY.current + 4;
     const goingUp = y < lastY.current - 4;
     lastY.current = y;
@@ -663,7 +674,16 @@ export default function PageScreen() {
             <Text numberOfLines={1} style={{ flex: 1, textAlign: "center", fontSize: 16, lineHeight: 22, fontWeight: "600", color: c.t1 }}>
               {title || "Untitled"}
             </Text>
-            <View style={{ width: 44 }} />
+            {/* Canvas NoteScrolled keeps share and ... on the slim bar. */}
+            <NxIconButton
+              icon="share"
+              label="Share"
+              onPress={() => {
+                const text = blocks.map((b) => b.text).filter(Boolean).join("\n");
+                void Share.share({ message: `${title || "Untitled"}\n\n${text}`.trim() });
+              }}
+            />
+            <NxIconButton icon="dots" label="More" onPress={more} />
           </BlurView>
         </View>
       ) : null}
