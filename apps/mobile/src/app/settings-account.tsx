@@ -13,13 +13,13 @@ import {
   GroupRow,
   LEVELS,
   NavTrail,
-  pickOne,
   Pill,
   Sec,
   SettingsHeader,
   usePlan,
   useSettingsProfile,
 } from "@/components/nx/settings/kit";
+import { ChoiceSheet } from "@/components/nx/settings/ChoiceSheet";
 
 // Account and subscription (canvas artboard "Account"). Name, field and level are saved on the
 // Supabase account (user_metadata: full_name, field_of_study, study_level), so they follow the
@@ -32,6 +32,8 @@ export default function AccountScreen() {
   const { name, fullName, email, initial, field, level } = useSettingsProfile();
   const plan = usePlan();
   const [busy, setBusy] = useState(false);
+  // Studying and Where you study open the app's own sheet, not the iOS action sheet.
+  const [choosing, setChoosing] = useState<"field" | "level" | null>(null);
 
   const save = async (data: Record<string, string>) => {
     const { error } = await supabase.auth.updateUser({ data });
@@ -90,14 +92,30 @@ export default function AccountScreen() {
           <GroupRow
             title="Studying"
             trail={<NavTrail value={field ?? "Choose"} />}
-            onPress={() => pickOne("What do you study?", FIELDS, field, (v) => void save({ field_of_study: v }))}
+            onPress={() => setChoosing("field")}
           />
           <GroupRow
             title="Where you study"
             trail={<NavTrail value={level ?? "Choose"} />}
-            onPress={() => pickOne("Where do you study?", LEVELS, level, (v) => void save({ study_level: v }))}
+            onPress={() => setChoosing("level")}
           />
         </Group>
+        <ChoiceSheet
+          visible={choosing === "field"}
+          title="What do you study?"
+          options={FIELDS}
+          selected={field}
+          onPick={(v) => void save({ field_of_study: v })}
+          onClose={() => setChoosing(null)}
+        />
+        <ChoiceSheet
+          visible={choosing === "level"}
+          title="Where do you study?"
+          options={LEVELS}
+          selected={level}
+          onPick={(v) => void save({ study_level: v })}
+          onClose={() => setChoosing(null)}
+        />
 
         <Sec label="Subscription" style={{ paddingHorizontal: 32 }} />
         <Group>

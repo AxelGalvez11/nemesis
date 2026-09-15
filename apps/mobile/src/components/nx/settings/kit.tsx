@@ -3,7 +3,7 @@
  * .pb, pb_go, ai_logo, .sec. Kept in this folder so the shared primitives stay untouched.
  */
 import React, { useEffect } from 'react';
-import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import Animated, { interpolateColor, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { nxDuration } from '@/theme/nx';
 import { NxPressable } from '../NxPressable';
@@ -269,23 +269,6 @@ export function usePlan() {
   const plan = q.data?.plan ?? 'free';
   const paid = plan !== 'free';
   return { paid, label: paid ? 'Pro' : 'Free', refetch: q.refetch };
-}
-
-/** Pick one value: the native action sheet on iPhone, a plain alert elsewhere. */
-export function pickOne(title: string, options: string[], selected: string | null, onPick: (value: string) => void) {
-  if (Platform.OS === 'ios') {
-    ActionSheetIOS.showActionSheetWithOptions(
-      { title, options: [...options, 'Cancel'], cancelButtonIndex: options.length },
-      (i) => {
-        if (i < options.length) onPick(options[i]!);
-      },
-    );
-    return;
-  }
-  Alert.alert(title, selected ? `Now: ${selected}` : undefined, [
-    ...options.slice(0, 2).map((o) => ({ text: o, onPress: () => onPick(o) })),
-    { text: 'Cancel', style: 'cancel' as const },
-  ]);
 }
 
 const s = StyleSheet.create({
