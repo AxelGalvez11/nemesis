@@ -40,6 +40,7 @@ export default function PageScreen() {
   const uid = session?.user?.id ?? null;
   const [tab, setTab] = useState<WsTab>("notes");
   const [editing, setEditing] = useState(false);
+  const [toolbarUp, setToolbarUp] = useState(false);
 
   // Scrolled down a long note (canvas NoteScrolled): past the title a slim frosted bar with the page name
   // appears; scrolling down tucks the Ask bar away, scrolling up brings it back.
@@ -395,6 +396,7 @@ export default function PageScreen() {
                           reloadPage();
                           refreshSources();
                         }}
+                        onEngaged={setToolbarUp}
                       />
                       <Pressable onPress={() => void addBlock("text", blocks.length ? blocks[blocks.length - 1]!.id : null)} style={{ paddingVertical: 10 }}>
                         <Text style={[nxType.body, { color: c.t3 }]}>{blocks.length ? "Add a line" : "Tap to start writing"}</Text>
@@ -554,7 +556,8 @@ export default function PageScreen() {
         </View>
       ) : null}
 
-      {isNew ? null : <Animated.View
+      {/* While the typing toolbar is up the Ask bar steps aside (canvas NoteTyping shows only the toolbar). */}
+      {isNew || (editing && toolbarUp) ? null : <Animated.View
         pointerEvents="box-none"
         style={[StyleSheet.absoluteFill, { top: undefined, height: insets.bottom + 90, opacity: barShown, transform: [{ translateY: barShown.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] }]}
       >

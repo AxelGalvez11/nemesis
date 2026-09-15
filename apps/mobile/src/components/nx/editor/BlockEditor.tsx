@@ -81,6 +81,8 @@ export type BlockEditorProps = {
   onTurnInto?: (block: Block, type: TurnIntoType) => void;
   /** Something outside the blocks' text changed: a comment was added, or a file was read into Sources. */
   onChanged?: () => void;
+  /** The typing toolbar is showing (a field is focused or a panel is open): the page hides its Ask bar. */
+  onEngaged?: (on: boolean) => void;
 };
 
 const TEXT_TYPES = new Set(['text', 'header', 'sub_header', 'sub_sub_header', 'header_4', 'bulleted_list', 'numbered_list', 'to_do', 'quote', 'callout', 'toggle']);
@@ -134,6 +136,7 @@ export function BlockEditor({
   onFlashcards,
   onTurnInto,
   onChanged,
+  onEngaged,
 }: BlockEditorProps) {
   const c = useNx();
   const insets = useSafeAreaInsets();
@@ -302,6 +305,11 @@ export function BlockEditor({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  const sheetRef = useRef<Sheet | null>(null);
+  sheetRef.current = sheet;
+  useEffect(() => {
+    onEngaged?.(engaged);
+  }, [engaged, onEngaged]);
 
   const disengage = useCallback(() => {
     if (!kbUp.current && !panelRef.current && !focusedRef.current) setEngaged(false);
@@ -341,6 +349,9 @@ export function BlockEditor({
     lastFocused.current = id;
     setEngaged(true);
     if (panelRef.current) setPanel(null);
+    // 🔴 No keyboard event comes with a hardware keyboard (the Simulator, an iPad keyboard), so the toolbar would stay
+    // hidden. It rests above the home indicator until a software keyboard lifts it.
+    if (!kbUp.current) lift.value = withTiming(Math.max(insets.bottom, 12) - 10, { duration: 280, easing: EASE });
   };
   const onFieldBlur = (id: string) => {
     if (focusedRef.current === id) focusedRef.current = null;
@@ -348,6 +359,8 @@ export function BlockEditor({
     // Focus went to another field on the page (the title): the keyboard stays up, but these tools are not for it.
     setTimeout(() => {
       if (!focusedRef.current && !panelRef.current && kbUp.current) setEngaged(false);
+      // Hardware keyboard: nothing else will lower the resting toolbar once no field is focused.
+      else if (!focusedRef.current && !panelRef.current && !kbUp.current && !sheetRef.current) hideToolbar();
     }, 80);
   };
 
