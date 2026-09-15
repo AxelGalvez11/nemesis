@@ -6,7 +6,9 @@
  * Files go through the phone's existing upload-and-read lane (api/documents.ts pickAndReadDocument), which
  * stores the file in the student's own storage and reads it on the server.
  */
+import { APP_API_BASE, deviceKey } from './chat';
 import { DocumentError, pickAndReadDocument } from './documents';
+import { storeAndReadPhoto } from './photos';
 import { pageText } from './makeCards';
 import type { PageSource } from './space';
 import { supabase } from './supabase';
@@ -45,6 +47,42 @@ export async function addFileSource(uid: string, pageId: string): Promise<PageSo
 export async function addNoteSource(pageId: string, notePageId: string): Promise<PageSource> {
   const note = await pageText(notePageId);
   return addSource(pageId, { name: note.title || 'Untitled note', mime: 'text/x-nemesis-note', body: note.text });
+}
+
+/** A photograph (a slide, a whiteboard, a page): stored and read by the chat's photo lane, its text saved as a source. */
+export async function addPhotoSource(uid: string, pageId: string, uri: string): Promise<PageSource> {
+  const read = await storeAndReadPhoto(uid, uri);
+  return addSource(pageId, { name: read.title || 'Photo', mime: 'image/jpeg', body: read.text });
+}
+
+/**
+ * A web link, read to text by the same server route the web workspace uses (/api/notebooks/extract/url). It
+ * takes the device key, not the session token, and meters the read against the account.
+ */
+export async function addLinkSource(uid: string, pageId: string, raw: string): Promise<PageSource> {
+  const key = await deviceKey(uid);
+  if (!key) throw new Error('This device needs to re-connect to your account. Try again.');
+  let res: Response;
+  try {
+    res = await fetch(`${APP_API_BASE}/api/notebooks/extract/url`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: raw }),
+    });
+  } catch {
+    throw new Error('That link could not be reached. Check your connection.');
+  }
+  const json = (await res.json().catch(() => null)) as { title?: string; text?: string; url?: string; error?: string } | null;
+  if (!res.ok || !json) throw new Error(json?.error || "Couldn't read that page.");
+  const url = json.url || (raw.includes('://') ? raw : `https://${raw}`);
+  let host = url;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    // Keep the typed text as the name.
+  }
+  // The site rides as a mime parameter so the Sources list can show it under the title (canvas: "bailii.org").
+  return addSource(pageId, { name: json.title?.trim() || host, mime: `text/uri-list; host=${host}`, body: `${url}\n\n${json.text ?? ''}`.trim() });
 }
 
 export async function removeSource(sourceId: string): Promise<void> {

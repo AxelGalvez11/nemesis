@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Animated, Image, InputAccessoryView, Keyboard, Modal, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, Animated, Image, InputAccessoryView, Keyboard, Modal, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { applyPageTemplate, type PageTemplate } from "@/api/pageTemplates";
 import { setFavorite, trashPage, visitPage } from "@/api/pageMenu";
 import { BlurView } from "expo-blur";
@@ -8,7 +8,8 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { makeFlashcards } from "@/api/makeCards";
 import { settlePageRecordings } from "@/api/recording";
-import { addFileSource, addNoteSource, removeSource } from "@/api/pageSources";
+import { addFileSource, addLinkSource, addNoteSource, addPhotoSource, removeSource } from "@/api/pageSources";
+import { PhotoCaptureSheet } from "@/components/PhotoCaptureSheet";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
 import { addBlockAfter, createPage, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
 import { NoteAskBar } from "@/components/nx/NoteAskBar";
@@ -278,6 +279,16 @@ export default function PageScreen() {
   const addMenu = useNxPresence(addOpen);
   const addPop = useNxPopStyle(addMenu.p);
   const [notePicker, setNotePicker] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkText, setLinkText] = useState("");
+  const submitLink = () => {
+    const url = linkText.trim();
+    if (!url || !uid) return;
+    setLinkOpen(false);
+    setLinkText("");
+    void runSource("Reading the link", () => addLinkSource(uid, id, url));
+  };
   const [sourceBusy, setSourceBusy] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   // Every source row carries the canvas arrow; tapping it offers what the phone can really do with a source.
@@ -517,7 +528,7 @@ export default function PageScreen() {
                   </View>
                   <Text style={[styles.centerTitle, { color: c.t1 }]}>No sources yet</Text>
                   <Text style={[styles.centerText, { color: c.t2 }]}>
-                    {parent ? `This page starts fresh. What you add here also counts for ${parent.props.title || "the page above it"}.` : "Add files or other notes, then use Create to make flashcards from them."}
+                    {parent ? `This page starts fresh. What you add here also counts for ${parent.props.title || "the page above it"}.` : "Add files, photos, links or other notes, then use Create to make flashcards from them."}
                   </Text>
                   {sourceError ? <Text style={{ color: c.danger, fontSize: 14 }}>{sourceError}</Text> : null}
                   {canEdit ? (
@@ -697,11 +708,48 @@ export default function PageScreen() {
           <NxDim p={addMenu.p} onPress={() => setAddOpen(false)} />
           <Reanimated.View style={[styles.popup, { top: insets.top + 290, backgroundColor: c.card, borderColor: c.ring, transformOrigin: "top right" }, addPop]}>
             <MenuOption icon="file" label="Files" onPress={() => uid && void runSource("Adding a file", () => addFileSource(uid, id))} />
+            <MenuOption icon="image" label="Photo or scan" onPress={() => { setAddOpen(false); setTimeout(() => setCameraOpen(true), 320); }} />
             <MenuOption icon="mic" label="Record" onPress={() => { setAddOpen(false); record(); }} />
-            <MenuOption icon="notes" label="Another note" onPress={() => { setAddOpen(false); setNotePicker(true); }} />
+            <MenuOption icon="link" label="Link" onPress={() => { setAddOpen(false); setTimeout(() => setLinkOpen(true), 320); }} />
+            {/* iOS will not present a second modal while this one is still leaving, so the sheet waits for it. */}
+            <MenuOption icon="notes" label="Another note" onPress={() => { setAddOpen(false); setTimeout(() => setNotePicker(true), 320); }} />
           </Reanimated.View>
         </View>
       </Modal>
+
+      {/* Photo or scan: the camera; the picture's text becomes a source (the same photo reader the chat uses). */}
+      <PhotoCaptureSheet
+        visible={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCaptured={(uri) => {
+          setCameraOpen(false);
+          if (uid) void runSource("Reading the photo", () => addPhotoSource(uid, id, uri));
+        }}
+      />
+
+      {/* Link: a web page, read to text on the server. */}
+      <NxSheet visible={linkOpen} avoidKeyboard onClose={() => setLinkOpen(false)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.grab, { backgroundColor: c.ring }]} />
+        <Text style={[styles.sheetTitle, { color: c.t1 }]}>Add a link</Text>
+        <View style={{ paddingHorizontal: 20, gap: 12 }}>
+          <TextInput
+            value={linkText}
+            onChangeText={setLinkText}
+            placeholder="Paste a web link"
+            placeholderTextColor={c.t3}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={submitLink}
+            style={{ fontSize: 16, color: c.t1, borderWidth: StyleSheet.hairlineWidth, borderColor: c.ring, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 }}
+          />
+          <NxPressable onPress={submitLink} disabled={!linkText.trim()} scaleTo={0.98} style={{ borderRadius: 12, paddingVertical: 14, alignItems: "center", backgroundColor: linkText.trim() ? c.t1 : c.sel }}>
+            <Text style={{ fontSize: 16, fontWeight: "600", color: linkText.trim() ? c.bg : c.t3 }}>Add link</Text>
+          </NxPressable>
+        </View>
+      </NxSheet>
 
       {/* Another note: pick one of your pages. */}
       <NxSheet visible={notePicker} onClose={() => setNotePicker(false)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 12, maxHeight: "70%" }]}>
@@ -1095,6 +1143,8 @@ function sourceMeta(s: PageSource): string {
   if (s.status === "reading") return "Reading…";
   if (s.status === "failed") return s.error || "Could not be read";
   if (s.mime === "text/x-nemesis-note") return "Note";
+  const host = s.mime?.match(/host=([^;\s]+)/)?.[1];
+  if (host) return host;
   if (s.bytes) return s.bytes > 1_000_000 ? `${(s.bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(s.bytes / 1000))} KB`;
   if (s.chars) return `${Math.max(1, Math.round(s.chars / 1800))} page${s.chars > 1800 * 1.5 ? "s" : ""} of text`;
   return "Ready";
