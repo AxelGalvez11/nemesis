@@ -8,7 +8,6 @@ import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
 import * as SystemUI from "expo-system-ui";
 import { AuthProvider } from "@/auth/AuthProvider";
-import { OfflineBanner } from "@/components/OfflineBanner";
 import { bootstrapAnalytics } from "@/lib/analyticsBootstrap";
 import { flushAnalytics } from "@/lib/analytics";
 import { setupPushResponseRouting } from "@/lib/push";
@@ -88,7 +87,6 @@ function ThemedApp() {
         <Stack.Screen name="flashcards/[id]" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="quiz/[id]" options={{ presentation: "fullScreenModal" }} />
       </Stack>
-      <OfflineBanner />
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
     </SafeAreaProvider>
   );
