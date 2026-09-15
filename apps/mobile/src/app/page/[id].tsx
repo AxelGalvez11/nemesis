@@ -548,7 +548,7 @@ export default function PageScreen() {
                   </Text>
                   {sourceError ? <Text style={{ color: c.danger, fontSize: 14 }}>{sourceError}</Text> : null}
                   {canEdit ? (
-                    <View style={{ alignSelf: "stretch", marginTop: 8, alignItems: "center", gap: 14 }}>
+                    <View style={{ alignSelf: "stretch", marginTop: 126, alignItems: "center", gap: 14 }}>
                       <View style={{ alignSelf: "stretch" }}>
                         <NxButton label="Add a source" icon="plus" onPress={() => setAddOpen(true)} />
                       </View>
@@ -1170,7 +1170,8 @@ const styles = StyleSheet.create({
   box: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, marginTop: 4, alignItems: "center", justifyContent: "center" },
   embed: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, marginTop: 6 },
   embedTile: { width: 40, height: 40, borderRadius: 6, alignItems: "center", justifyContent: "center" },
-  fresh: { alignItems: "center", paddingTop: 48, paddingHorizontal: 32, gap: 14 },
+  // Measured from canvas SubPage: the circle sits ~160pt below the tabs, the button ~145pt below the text.
+  fresh: { alignItems: "center", paddingTop: 140, paddingHorizontal: 32, gap: 14 },
   circle: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
   centerTitle: { fontSize: 22, lineHeight: 28, fontWeight: "600", letterSpacing: -0.3, textAlign: "center" },
   centerText: { fontSize: 16, lineHeight: 24, textAlign: "center" },
