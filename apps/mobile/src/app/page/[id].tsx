@@ -799,7 +799,8 @@ export default function PageScreen() {
       <NxSheet visible={pickOpen} onClose={() => setPickOpen(false)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.grab, { backgroundColor: c.ring }]} />
           <View style={styles.sheetHead}>
-            <Text style={[styles.sheetTitle, { color: c.t1, paddingHorizontal: 0 }]}>Make flashcards from</Text>
+            {/* The header row carries the padding; the title's own top padding pushed it below Select all. */}
+            <Text style={[styles.sheetTitle, { color: c.t1, paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }]}>Make flashcards from</Text>
             <Pressable
               onPress={() => {
                 setUseNotes(true);
