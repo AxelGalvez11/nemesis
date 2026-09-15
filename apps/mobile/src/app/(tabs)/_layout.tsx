@@ -1,5 +1,5 @@
 import { Redirect, Slot, usePathname, useRouter } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useAuth } from "@/auth/AuthProvider";
 import { DrawerProvider, useShell } from "@/components/AppDrawer";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
@@ -44,7 +44,7 @@ function Frame() {
   const c = useNx();
   const path = usePathname();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, isGuest, signOut } = useAuth();
   const active = tabFor(path);
 
   if (!active) return <LegacyFrame />;
@@ -58,6 +58,17 @@ function Frame() {
         onChange={(k) => router.replace(k === "notes" ? "/" : k === "study" ? "/study" : "/chats")}
         right={active === "chats" ? <NxIconButton icon="compose" label="New chat" onPress={() => router.push("/chat")} /> : null}
       />
+      {isGuest && !session ? (
+        // 🔴 A way back out of guest mode. Without it a visitor who skipped sign-in could never sign in:
+        // the avatar opens settings, and sign-in itself sends a guest straight back to the tabs.
+        <Pressable
+          onPress={() => void signOut()}
+          style={{ marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: c.sunk, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+        >
+          <Text style={{ color: c.t2, fontSize: 14 }}>You are not signed in</Text>
+          <Text style={{ color: c.acc, fontSize: 15, fontWeight: "600" }}>Sign in</Text>
+        </Pressable>
+      ) : null}
       <Slot />
     </View>
   );

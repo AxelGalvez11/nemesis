@@ -116,8 +116,23 @@ function fileByPage(decks: Deck[], byId: Map<string, PageSummary>): { roots: Fol
     else roots.push(f);
     return f;
   };
+  // 🔴 Sets made before sets knew their page have no page_id. File those under the page whose title matches
+  // the set's name (any "A::B" folder part, ignoring case) so the Study tab reads like the Notes tree.
+  const byTitle = new Map<string, PageSummary>();
+  for (const p of byId.values()) {
+    const t = (p.props.title ?? "").trim().toLowerCase();
+    if (t && !byTitle.has(t)) byTitle.set(t, p);
+  }
+  const guess = (name: string) => {
+    const parts = name.split("::").map((x) => x.trim().toLowerCase()).filter(Boolean);
+    for (const part of [...parts].reverse()) {
+      const hit = byTitle.get(part);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
   for (const d of decks) {
-    const page = d.page_id ? byId.get(d.page_id) : undefined;
+    const page = d.page_id ? byId.get(d.page_id) : guess(d.name);
     if (!page) {
       loose.push(d);
       continue;
