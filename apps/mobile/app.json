@@ -60,8 +60,8 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Nemesis uses the microphone only when you tap the mic to dictate a message.",
-          "speechRecognitionPermission": "Nemesis turns what you say into text in the chat box when you tap the mic."
+          "microphonePermission": "Nemesis uses the microphone when you record a class or tap the mic to dictate.",
+          "speechRecognitionPermission": "Nemesis turns what you say into text when you record a class or dictate."
         }
       ],
       "expo-web-browser"

@@ -124,7 +124,7 @@ async function uploadDocument(uid: string, uri: string, name: string, mime: stri
 }
 
 /** Read the file, by reference when we could store it, by value when we could not. */
-async function readDocumentText(
+export async function readDocumentText(
   uid: string,
   uri: string,
   name: string,

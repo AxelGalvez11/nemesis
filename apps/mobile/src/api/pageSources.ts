@@ -11,7 +11,7 @@ import { pageText } from './makeCards';
 import type { PageSource } from './space';
 import { supabase } from './supabase';
 
-async function addSource(pageId: string, fields: { name: string; mime?: string | null; bytes?: number | null; body: string }): Promise<PageSource> {
+export async function addSource(pageId: string, fields: { name: string; mime?: string | null; bytes?: number | null; body: string }): Promise<PageSource> {
   const body = fields.body ?? '';
   const failed = !body.trim();
   const { data, error } = await supabase.rpc('ws_add_source', {

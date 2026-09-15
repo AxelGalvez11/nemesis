@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActionSheetIOS, Alert, Keyboard, KeyboardAvoidingView, Linking, Platform, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { setFavorite } from '@/api/pageMenu';
 import { SkelPage } from '@/components/nx/Skeleton';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -207,17 +208,35 @@ export default function RecordScreen() {
           color={c.t1}
           onPress={() => (phase.kind === 'recording' && showPill ? void end() : router.back())}
         />
-        <View style={styles.crumbWrap}>
-          {parent ? (
-            <View style={styles.crumb}>
-              <Text style={{ fontSize: 14 }}>{iconOf(parent.props.icon)}</Text>
-              <Text numberOfLines={1} style={{ fontSize: 14, color: c.t2, maxWidth: 200 }}>
-                {parent.props.title || 'Untitled'}
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        {/* Same header as a page (canvas Recording): back, crumb (🔒 Private at the top level), share, more. */}
         <View style={{ width: 44 }} />
+        <View style={styles.crumbWrap}>
+          <View style={styles.crumb}>
+            <Text style={{ fontSize: 14 }}>{parent ? iconOf(parent.props.icon) : '🔒'}</Text>
+            <Text numberOfLines={1} style={{ fontSize: 14, color: c.t2, maxWidth: 190 }}>
+              {parent ? parent.props.title || 'Untitled' : 'Private'}
+            </Text>
+          </View>
+        </View>
+        <NxIconButton
+          icon="share"
+          label="Share"
+          onPress={() => void Share.share({ message: `${title}\n\n${typed}`.trim() })}
+        />
+        <NxIconButton
+          icon="dots"
+          label="More"
+          onPress={() => {
+            if (!page) return;
+            const options = ['Add to favorites', 'Cancel'];
+            const fav = () => void setFavorite(page.page.id, true).catch(() => undefined);
+            if (Platform.OS === 'ios') {
+              ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 1, title }, (i) => i === 0 && fav());
+            } else {
+              Alert.alert(title, undefined, [{ text: options[0]!, onPress: fav }, { text: 'Cancel', style: 'cancel' }]);
+            }
+          }}
+        />
       </View>
 
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>

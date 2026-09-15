@@ -116,7 +116,21 @@ export function recordText(title: unknown): string {
   return title.map((seg) => (Array.isArray(seg) && typeof seg[0] === 'string' ? seg[0] : '')).join('');
 }
 
-export type Block = { id: string; type: string; text: string; checked?: boolean; pageId?: string; transcript?: string; depth: number; parentId: string | null; titleVersion?: number };
+export type Block = {
+  id: string;
+  type: string;
+  text: string;
+  checked?: boolean;
+  pageId?: string;
+  transcript?: string;
+  depth: number;
+  parentId: string | null;
+  titleVersion?: number;
+  /** The stored title as it is: rich-text segments with marks and mentions (the editor keeps them). */
+  rich?: unknown;
+  /** Every prop of the block record: a file's `src` / `name` / `mime` / `bytes`, a bookmark's `src`, a callout's `icon`. */
+  props?: Record<string, unknown>;
+};
 
 /** Flattens a loaded page into render order: page.props.content, then each block's children, depth-first. */
 export function pageBlocks(loaded: LoadedPage): Block[] {
@@ -144,6 +158,8 @@ export function pageBlocks(loaded: LoadedPage): Block[] {
         depth,
         parentId: r.parent_id,
         titleVersion: typeof r.fv?.title === 'number' ? r.fv.title : undefined,
+        rich: p.title,
+        props: p,
       });
       walk(p.children, depth + 1);
     }

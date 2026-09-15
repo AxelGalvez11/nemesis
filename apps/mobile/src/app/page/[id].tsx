@@ -10,8 +10,10 @@ import { makeFlashcards } from "@/api/makeCards";
 import { settlePageRecordings } from "@/api/recording";
 import { addFileSource, addNoteSource, removeSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
-import { addBlockAfter, setBlockText, setChecked, setPageTitle } from "@/api/spaceWrite";
-import { BlockEditor, type NewBlockType } from "@/components/nx/editor/BlockEditor";
+import { addBlockAfter, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
+import { openEmbed } from "@/api/noteMedia";
+import { BlockEditor, turnIntoProps, type NewBlockType, type SaveResult, type TurnIntoType } from "@/components/nx/editor/BlockEditor";
+import { BookmarkEmbed, FileEmbed } from "@/components/nx/editor/FileEmbed";
 import { SkelBar, SkelBody, SkelGroup, SkelList, SkelPage } from "@/components/nx/Skeleton";
 import { addCard, deckCards, deleteCard, updateCard } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
@@ -151,11 +153,33 @@ export default function PageScreen() {
       setEditError(e instanceof Error ? e.message : "That change did not save.");
     }
   };
-  const addBlock = async (type: NewBlockType, afterId: string | null) => {
+  // The editor saves text itself as you type; the page only reacts to how that went.
+  const onSaved = (_block: Block, result: SaveResult) => {
+    if (result === "conflict") {
+      setEditError("This line was changed somewhere else, so the newest version is shown.");
+      reloadPage();
+    } else if (result === "failed") {
+      setEditError("That line did not save. Check your connection and keep typing to try again.");
+    } else {
+      setEditError(null);
+    }
+  };
+  const turnInto = async (block: Block, type: TurnIntoType) => {
+    if (!spaceIdOfPage) return;
+    try {
+      await setBlockType(spaceIdOfPage, block.id, type, turnIntoProps(block, type));
+      reloadPage();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "That block could not be changed.");
+    }
+  };
+  const addBlock = async (type: NewBlockType, afterId: string | null, props?: Record<string, unknown>) => {
     if (!spaceIdOfPage) return;
     try {
       const after = afterId ? blocks.find((b) => b.id === afterId) : undefined;
-      await addBlockAfter(spaceIdOfPage, id, pageContent, after ? { id: after.id, parentId: after.parentId === id ? null : after.parentId } : null, type);
+      const anchor = after ? { id: after.id, parentId: after.parentId === id ? null : after.parentId } : null;
+      if (props) await insertBlockAfter(spaceIdOfPage, id, pageContent, anchor, type, props);
+      else await addBlockAfter(spaceIdOfPage, id, pageContent, anchor, type);
       reloadPage();
       if (type === "page") void qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
     } catch (e) {
@@ -351,11 +375,26 @@ export default function PageScreen() {
                     <>
                       <BlockEditor
                         blocks={blocks}
+                        spaceId={spaceIdOfPage}
+                        pageId={id}
                         onSaveText={(b, t) => void saveText(b, t)}
+                        onSaved={onSaved}
                         onToggle={(b, v) => void toggle(b, v)}
-                        onAddBlock={(type, after) => void addBlock(type, after)}
+                        onAddBlock={(type, after, props) => void addBlock(type, after, props)}
+                        onTurnInto={(b, t) => void turnInto(b, t)}
                         onOpenPage={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })}
                         onRecord={record}
+                        pages={space.pages.filter((p) => p.id !== id).map((p) => ({ id: p.id, title: p.props.title || "Untitled", icon: iconOf(p.props.icon) }))}
+                        sources={own}
+                        onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new", page: id } })}
+                        onFlashcards={() => {
+                          setEditing(false);
+                          setTab("create");
+                        }}
+                        onChanged={() => {
+                          reloadPage();
+                          refreshSources();
+                        }}
                       />
                       <Pressable onPress={() => void addBlock("text", blocks.length ? blocks[blocks.length - 1]!.id : null)} style={{ paddingVertical: 10 }}>
                         <Text style={[nxType.body, { color: c.t3 }]}>{blocks.length ? "Add a line" : "Tap to start writing"}</Text>
@@ -795,6 +834,36 @@ function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; link
           </View>
         </View>
       );
+    case "file":
+    case "image":
+    case "video":
+    case "audio": {
+      // A file embedded in the note (canvas NoteReady: "Week 7 slides.pdf"). Tapping opens a signed link to it.
+      const p = (block.props ?? {}) as { src?: unknown; name?: unknown; mime?: unknown; bytes?: unknown };
+      const src = typeof p.src === "string" ? p.src : undefined;
+      const name = typeof p.name === "string" && p.name ? p.name : block.text || "File";
+      return (
+        <View style={pad}>
+          <FileEmbed
+            name={name}
+            mime={typeof p.mime === "string" ? p.mime : null}
+            bytes={typeof p.bytes === "number" ? p.bytes : null}
+            onPress={src ? () => void openEmbed(src).catch(() => undefined) : undefined}
+          />
+        </View>
+      );
+    }
+    case "bookmark": {
+      const p = (block.props ?? {}) as { src?: unknown; url?: unknown; name?: unknown; title?: unknown };
+      const url = typeof p.url === "string" ? p.url : typeof p.src === "string" ? p.src : "";
+      if (!url) return null;
+      const label = typeof p.title === "string" ? p.title : typeof p.name === "string" ? p.name : block.text || null;
+      return (
+        <View style={pad}>
+          <BookmarkEmbed url={url} title={label} onPress={() => void openEmbed(url).catch(() => undefined)} />
+        </View>
+      );
+    }
     case "table":
       return (
         <View style={[styles.embed, { backgroundColor: c.card, borderColor: c.ln }, pad]}>

@@ -139,3 +139,75 @@ export async function setPageTitle(spaceId: string, pageId: string, title: strin
 export async function setChecked(spaceId: string, blockId: string, checked: boolean): Promise<void> {
   await apply(spaceId, [{ op: 'update', id: blockId, set: { checked } }]);
 }
+
+// ── The note editor's toolbar (components/nx/editor/BlockEditor.tsx): turn into, rich text, embeds, comments ──────
+
+/**
+ * "Turn into": changes a block's type in place. ws_apply takes `type` at the top level of an update op and versions it
+ * as the `$type` field (supabase/migrations/20260911T10_space_core.sql), which is what the web's sync engine sends.
+ * `set` carries the props the new type needs (a to-do's `checked`, a callout's `icon`).
+ */
+export async function setBlockType(spaceId: string, blockId: string, type: string, set?: Record<string, unknown>): Promise<void> {
+  const op = { op: 'update', id: blockId, type, ...(set && Object.keys(set).length ? { set } : {}) };
+  await apply(spaceId, [op as unknown as Op]);
+}
+
+/** Replaces a block's title with rich-text segments, marks and mentions kept. Same field version rule as setBlockText. */
+export async function setBlockRich(spaceId: string, blockId: string, title: unknown[], fieldVersion?: number): Promise<'saved' | 'conflict'> {
+  const empty = title.every((s) => !Array.isArray(s) || !s[0]);
+  const res = await apply(spaceId, [
+    { op: 'update', id: blockId, ...(fieldVersion != null ? { bases: { title: fieldVersion } } : {}), set: { title: empty ? [] : title } },
+  ]);
+  return res.conflicts.length ? 'conflict' : 'saved';
+}
+
+/** A block with its own props (a file, image or bookmark) right after `after` in the same parent, or at the end of the page. */
+export async function insertBlockAfter(
+  spaceId: string,
+  pageId: string,
+  pageContent: string[],
+  after: { id: string; parentId: string | null } | null,
+  type: string,
+  props: Record<string, unknown>,
+): Promise<string> {
+  const id = newId();
+  const parent = after?.parentId ?? pageId;
+  const listField = parent === pageId ? 'content' : 'children';
+  await apply(spaceId, [
+    { op: 'create', id, kind: 'block', type, parent_id: parent, props },
+    { op: 'update', id: parent, lists: { [listField]: { ins: [[id, after ? after.id : lastOf(pageContent)]] } } },
+  ]);
+  return id;
+}
+
+/**
+ * A comment on a block: the record the web's block comment card makes (apps/web/lib/space/records.ts), kind `comment`
+ * under the block with props `{ text, resolved }`. Author and time come from the row's created_by and created_at.
+ * ws_apply lets anyone with comment access or more create one.
+ */
+export async function addBlockComment(spaceId: string, blockId: string, text: string): Promise<string> {
+  const id = newId();
+  const op = { op: 'create', id, kind: 'comment', type: '', parent_id: blockId, props: { text, resolved: false } };
+  await apply(spaceId, [op as unknown as Op]);
+  return id;
+}
+
+/**
+ * Saves a block's title (rich segments) and says which version the field is now at, so the next save from the same
+ * editor sends that as its base instead of the stale one it loaded with (which would come back as a conflict).
+ * ws_apply stamps every field an update sets with the record's new version, and returns it as results[].v.
+ */
+export async function saveBlockTitle(
+  spaceId: string,
+  blockId: string,
+  title: unknown[],
+  fieldVersion?: number,
+): Promise<{ status: 'saved' | 'conflict'; version?: number }> {
+  const empty = title.every((s) => !Array.isArray(s) || !s[0]);
+  const res = await apply(spaceId, [
+    { op: 'update', id: blockId, ...(fieldVersion != null ? { bases: { title: fieldVersion } } : {}), set: { title: empty ? [] : title } },
+  ]);
+  if (res.conflicts.length) return { status: 'conflict' };
+  const v = res.results.find((r) => r.id === blockId)?.v;
+  return { status: 'saved', version: typeof v === 'number' ? v : undefined };
+}
