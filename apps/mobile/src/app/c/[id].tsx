@@ -14,6 +14,7 @@ import { deleteThread, listThreads, loadThreadMessages, newMessageId, newThreadI
 import { loadPage, pageBlocks, recordText, type PageSummary } from '@/api/space';
 import { useAuth } from '@/auth/AuthProvider';
 import { Composer } from '@/components/nx/chat/Composer';
+import { SkelBar, SkelBody, SkelGroup } from '@/components/nx/Skeleton';
 import { ChatHero, ChatHeader, CobaltGlow, AnswerText, SourcesPill, UserBubble, isNoteSource } from '@/components/nx/chat/parts';
 import { PlusSheet, SourcesSheet } from '@/components/nx/chat/Sheets';
 import { LiveSteps, SettledSteps, type TurnTrail } from '@/components/nx/chat/Steps';
@@ -39,6 +40,8 @@ export default function ChatScreen() {
 
   const threadRef = useRef<string | null>(params.id && params.id !== 'new' ? params.id : null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  // An existing chat draws a skeleton while its messages load, instead of flashing the empty-chat hero.
+  const [loadingThread, setLoadingThread] = useState(threadRef.current !== null);
   const messagesRef = useRef<ChatMsg[]>([]);
   messagesRef.current = messages;
   const [title, setTitle] = useState<string | null>(null);
@@ -69,12 +72,18 @@ export default function ChatScreen() {
   // An existing chat: its messages, title and pin.
   useEffect(() => {
     const id = threadRef.current;
-    if (!uid || !id || messagesRef.current.length) return;
+    if (!uid || !id || messagesRef.current.length) {
+      if (!id) setLoadingThread(false);
+      return;
+    }
     void loadThreadMessages(uid, id)
       .then((loaded) => {
         if (alive.current && !messagesRef.current.length) setMessages(loaded);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive.current) setLoadingThread(false);
+      });
     void listThreads(uid)
       .then((list) => {
         const t = list.find((x) => x.id === id);
@@ -276,7 +285,8 @@ export default function ChatScreen() {
     }
   };
 
-  const empty = !messages.length && !sending;
+  const empty = !messages.length && !sending && !loadingThread;
+  const skeleton = loadingThread && !messages.length && !sending;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
@@ -294,7 +304,14 @@ export default function ChatScreen() {
               : { paddingTop: 20, paddingHorizontal: 20, paddingBottom: composerH + 28, gap: 14 }
           }
         >
-          {empty ? (
+          {skeleton ? (
+            <SkelGroup style={{ gap: 18 }}>
+              <SkelBar width="58%" height={44} radius={16} style={{ alignSelf: 'flex-end' }} />
+              <SkelBody lines={[94, 88, 90, 62]} />
+              <SkelBar width="46%" height={40} radius={16} style={{ alignSelf: 'flex-end', marginTop: 8 }} />
+              <SkelBody lines={[90, 76]} />
+            </SkelGroup>
+          ) : empty ? (
             <ChatHero hasNotes={pages.length > 0} onSuggest={(s) => setInput(s)} />
           ) : (
             messages.map((m, i) =>

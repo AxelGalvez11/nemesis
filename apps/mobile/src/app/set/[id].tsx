@@ -60,7 +60,13 @@ export default function SetScreen() {
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}>
         <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: 14 }]}>🗂️</Text>
-        <Text style={[nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 6 }]}>{deck ? deck.name.split("::").pop() : ""}</Text>
+        {deck ? (
+          <Text style={[nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 6 }]}>{deck.name.split("::").pop()}</Text>
+        ) : (
+          <SkelGroup style={{ paddingHorizontal: 20, paddingTop: 10 }}>
+            <SkelBar width="70%" height={26} radius={6} />
+          </SkelGroup>
+        )}
         <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
           <Prop icon="cards" label="Cards" value={String(cards.data?.length ?? deck?.cards ?? "")} />
           <Prop icon="clock" label="Due today" value={String(due)} />

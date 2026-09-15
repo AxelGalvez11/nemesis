@@ -4,7 +4,8 @@
  * (api/chat.ts completeOnce), written only from the card, in any subject.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SkelBody, SkelGroup } from '../Skeleton';
 import Animated, { FadeIn, SlideInDown, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { completeOnce } from '@/api/chat';
@@ -120,8 +121,10 @@ export function ExplainSheet({
             {asked ? <Text style={{ fontSize: 14, lineHeight: 20, color: c.t2 }}>{asked}</Text> : null}
             {busy ? (
               <View style={styles.busy}>
-                <ActivityIndicator size="small" color={c.t3} />
                 <Text style={{ fontSize: 15, color: c.t2 }}>Writing an explanation</Text>
+                <SkelGroup style={{ alignSelf: 'stretch' }}>
+                  <SkelBody lines={[92, 78, 86]} />
+                </SkelGroup>
               </View>
             ) : failed ? (
               <Text style={{ fontSize: 16, lineHeight: 26, color: c.t2 }}>Nemesis could not answer just now. Check your connection and try a chip again.</Text>
