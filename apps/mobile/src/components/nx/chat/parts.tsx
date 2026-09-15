@@ -73,10 +73,40 @@ function Cite({ n, c }: { n: number; c: NxColors }) {
   );
 }
 
-/** Inline runs: **bold**, [n] citations, markdown links (a link to a known source becomes its number). */
+/** The source number for a link the model wrote out, matching with or without a trailing slash. Null when unknown. */
+function citeFor(url: string, sources: ChatSource[]): number | null {
+  const bare = (u: string) => u.replace(/[.,;]+$/, '').replace(/\/+$/, '').toLowerCase();
+  const want = bare(url);
+  const at = sources.findIndex((s) => bare(s.url) === want);
+  return at >= 0 ? at + 1 : null;
+}
+
+/** Links shown as numbered cite chips (canvas AISources) instead of raw URLs; an unknown link shows its site name. */
+function linkCites(urls: string[], sources: ChatSource[], c: NxColors, key: string): React.ReactNode {
+  return (
+    <Text key={key}>
+      {urls.map((u, j) => {
+        const n = citeFor(u, sources);
+        return n ? (
+          <Text key={`${key}-${j}`}>
+            {' '}
+            <Cite n={n} c={c} />
+          </Text>
+        ) : (
+          <Text key={`${key}-${j}`} style={{ color: c.t2 }}>{` ${domainOf(u.replace(/[.,;]+$/, ''))}`}</Text>
+        );
+      })}
+    </Text>
+  );
+}
+
+/**
+ * Inline runs: **bold**, [n] citations, markdown links (a link to a known source becomes its number), and the raw
+ * "(https://a, https://b)" groups and bare links the model writes when told to cite URLs, which become numbered chips.
+ */
 function inline(text: string, sources: ChatSource[], c: NxColors, key: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
-  const re = /\*\*([^*]+)\*\*|\[(\d{1,2})\]|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|`([^`]+)`/g;
+  const re = /\*\*([^*]+)\*\*|\[(\d{1,2})\]|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|`([^`]+)`|\s*\((https?:\/\/[^\s)]+(?:,\s*https?:\/\/[^\s)]+)*)\)|(https?:\/\/[^\s)]+)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -91,6 +121,8 @@ function inline(text: string, sources: ChatSource[], c: NxColors, key: string): 
       const at = sources.findIndex((s) => s.url === m![4]);
       out.push(at >= 0 ? <Text key={k}>{m[3]} <Cite n={at + 1} c={c} /></Text> : m[3]);
     } else if (m[5]) out.push(<Text key={k} style={{ fontFamily: 'Menlo', fontSize: 14 }}>{m[5]}</Text>);
+    else if (m[6]) out.push(linkCites(m[6].split(/,\s*/), sources, c, k));
+    else if (m[7]) out.push(linkCites([m[7]], sources, c, k));
     last = m.index + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));
