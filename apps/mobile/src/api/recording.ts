@@ -285,7 +285,23 @@ function dateLabel(iso: unknown): string {
  * Writes a ready job's notes under the recording block, marks it ready, and adds the recording to the page's sources.
  * Safe to run twice: note ids come from the job id, and a block already marked ready is left alone.
  */
-export async function finishRecording(loaded: LoadedPage, block: SpaceRecord, jobId: string, artifactId: string, bytes: number | null): Promise<void> {
+const finishing = new Map<string, Promise<void>>();
+
+/**
+ * 🔴 ONE WRITE PER BLOCK AT A TIME. The page screen settles recordings on open and the recorder finishes its own take;
+ * two of these racing (seen on the Simulator 2026-09-15: a page opened twice in a second) both read the block before
+ * either marked it ready, so the recording landed in Sources twice. The note blocks were safe (ids derive from the
+ * job); the source add is not, so a second caller waits for the first instead of writing again.
+ */
+export function finishRecording(loaded: LoadedPage, block: SpaceRecord, jobId: string, artifactId: string, bytes: number | null): Promise<void> {
+  const running = finishing.get(block.id);
+  if (running) return running;
+  const run = writeFinishedRecording(loaded, block, jobId, artifactId, bytes).finally(() => finishing.delete(block.id));
+  finishing.set(block.id, run);
+  return run;
+}
+
+async function writeFinishedRecording(loaded: LoadedPage, block: SpaceRecord, jobId: string, artifactId: string, bytes: number | null): Promise<void> {
   if (block.props.status === 'ready') return;
   const { data: art } = await supabase.from('chat_recording_artifacts').select('notes,transcript,duration_seconds').eq('id', artifactId).maybeSingle();
   const notes = String((art as { notes?: string } | null)?.notes ?? '');

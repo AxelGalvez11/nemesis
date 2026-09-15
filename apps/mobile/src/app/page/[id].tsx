@@ -466,8 +466,10 @@ export default function PageScreen() {
             {tab === "notes" && !isNew ? (
               <>
                 <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
-                  {recording ? <Prop icon="mic" label="Recording" value={recording.text || "Recorded"} /> : null}
+                  {/* Canvas WritingNotes / Recording: Date first, then how long the recording ran ("51 min"). The value
+                      used to be the block's own title, so the row read "Recording  Recording". */}
                   <Prop icon="calendar" label="Date" value={formatDate(page.data?.page.edited_at)} />
+                  {recording ? <Prop icon="mic" label="Recording" value={recordingLength(recording)} /> : null}
                   <Prop icon="file" label="Sources" value={String(totalSources)} />
                 </View>
                 <View style={[styles.rule, { backgroundColor: c.ln }]} />
@@ -1145,6 +1147,15 @@ function sourceMeta(s: PageSource): string {
   if (s.bytes) return s.bytes > 1_000_000 ? `${(s.bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(s.bytes / 1000))} KB`;
   if (s.chars) return `${Math.max(1, Math.round(s.chars / 1800))} page${s.chars > 1800 * 1.5 ? "s" : ""} of text`;
   return "Ready";
+}
+
+/** "51 min" once the recording's length is known; while it is still being written, say so. */
+function recordingLength(block: Block): string {
+  const p = (block.props ?? {}) as { durationSeconds?: unknown; status?: unknown };
+  const secs = typeof p.durationSeconds === "number" ? p.durationSeconds : 0;
+  if (secs > 0) return `${Math.max(1, Math.round(secs / 60))} min`;
+  if (p.status === "uploading" || p.status === "processing") return "Writing notes";
+  return "Recorded";
 }
 
 function formatDate(iso: string | null | undefined): string {
