@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Image, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { BlurView } from "expo-blur";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,6 +35,25 @@ export default function PageScreen() {
   const uid = session?.user?.id ?? null;
   const [tab, setTab] = useState<WsTab>("notes");
   const [editing, setEditing] = useState(false);
+
+  // Scrolled down a long note (canvas NoteScrolled): past the title a slim frosted bar with the page name
+  // appears; scrolling down tucks the Ask bar away, scrolling up brings it back.
+  const [scrolledPast, setScrolledPast] = useState(false);
+  const barShown = useRef(new Animated.Value(1)).current;
+  const lastY = useRef(0);
+  const barVisible = useRef(true);
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    setScrolledPast(y > 170);
+    const goingDown = y > lastY.current + 4;
+    const goingUp = y < lastY.current - 4;
+    lastY.current = y;
+    const want = y < 60 || goingUp ? true : goingDown ? false : barVisible.current;
+    if (want !== barVisible.current) {
+      barVisible.current = want;
+      Animated.timing(barShown, { toValue: want ? 1 : 0, duration: 220, useNativeDriver: true }).start();
+    }
+  };
   const [editError, setEditError] = useState<string | null>(null);
 
   const page = useQuery({ queryKey: ["ws-page", id], queryFn: () => loadPage(id), enabled: !!id });
@@ -195,6 +215,8 @@ export default function PageScreen() {
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={page.isRefetching}
@@ -376,6 +398,22 @@ export default function PageScreen() {
         )}
       </ScrollView>
 
+      {scrolledPast ? (
+        <View style={[StyleSheet.absoluteFillObject, { bottom: undefined, height: insets.top + 50 }]} pointerEvents="box-none">
+          <BlurView intensity={60} tint="systemChromeMaterial" style={[styles.scrollBar, { paddingTop: insets.top + 2, borderBottomColor: c.ln }]}>
+            <NxIconButton icon="chev_l" size={22} label="Back" onPress={() => router.back()} />
+            <Text numberOfLines={1} style={{ flex: 1, textAlign: "center", fontSize: 16, lineHeight: 22, fontWeight: "600", color: c.t1 }}>
+              {`${icon} ${title || "Untitled"}`}
+            </Text>
+            <View style={{ width: 44 }} />
+          </BlurView>
+        </View>
+      ) : null}
+
+      <Animated.View
+        pointerEvents={editing ? "box-none" : "box-none"}
+        style={[StyleSheet.absoluteFillObject, { top: undefined, height: insets.bottom + 90, opacity: barShown, transform: [{ translateY: barShown.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] }]}
+      >
       <NxBottomBar
         ask={tab === "notes" ? "Ask about this note" : "Ask about this page"}
         onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new", page: id } })}
@@ -395,6 +433,7 @@ export default function PageScreen() {
           ) : null
         }
       />
+      </Animated.View>
 
       {/* Add a source (canvas AddSource): only the ways that work from the phone today. */}
       <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
@@ -681,5 +720,6 @@ const styles = StyleSheet.create({
   sheetHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sheetTitle: { fontSize: 19, lineHeight: 24, fontWeight: "600", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   tick: { width: 22, height: 22, borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  scrollBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 4, borderBottomWidth: StyleSheet.hairlineWidth },
   round: { width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: "center", justifyContent: "center", shadowColor: "#2a1c00", shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } },
 });
