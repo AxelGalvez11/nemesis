@@ -48,21 +48,26 @@ export function NxPageTitle({
   cover,
   onRename,
   autoFocus,
+  bare,
+  accessoryId,
 }: {
   emoji?: string | null;
   title: string;
   cover?: string;
   onRename?: (title: string) => void;
   autoFocus?: boolean;
+  /** A brand-new page (canvas NewPage): no emoji, no placeholder, only the cursor. */
+  bare?: boolean;
+  accessoryId?: string;
 }) {
   const c = useNx();
   const [draft, setDraft] = useState(title);
   useEffect(() => setDraft(title), [title]);
-  const titleStyle = [nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 6 }];
+  const titleStyle = [nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: bare ? 22 : 6 }];
   return (
     <View>
       {cover ? <View style={{ height: 76, marginTop: 4, backgroundColor: cover }} /> : null}
-      <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: cover ? 0 : 14, marginTop: cover ? -26 : 0 }]}>{emoji || '📄'}</Text>
+      {bare ? null : <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: cover ? 0 : 14, marginTop: cover ? -26 : 0 }]}>{emoji || '📄'}</Text>}
       {onRename ? (
         <TextInput
           value={draft}
@@ -71,9 +76,10 @@ export function NxPageTitle({
           onBlur={() => {
             if (draft.trim() !== title.trim()) onRename(draft.trim());
           }}
-          placeholder="Untitled"
+          placeholder={bare ? '' : 'Untitled'}
           placeholderTextColor={c.t3}
           autoFocus={autoFocus}
+          inputAccessoryViewID={accessoryId}
           returnKeyType="done"
           blurOnSubmit
           multiline={false}

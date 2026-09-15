@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Animated, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, Animated, Image, InputAccessoryView, Keyboard, Modal, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { applyPageTemplate, type PageTemplate } from "@/api/pageTemplates";
 import { setFavorite, trashPage, visitPage } from "@/api/pageMenu";
 import { BlurView } from "expo-blur";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -220,6 +221,22 @@ export default function PageScreen() {
 
   const sourcesLabel = `${useNotes ? "Notes and " : ""}${chosen.length} source${chosen.length === 1 ? "" : "s"}`;
 
+  // A brand-new page (canvas NewPage): only the title cursor, with Record / Lecture notes / Study guide / More
+  // riding on the keyboard. Any of them, or leaving the title, turns it into the normal page.
+  const [newDone, setNewDone] = useState(false);
+  const isNew = fresh === "1" && !newDone && !title && blocks.length === 0 && !page.isLoading;
+  const startWith = async (template: PageTemplate) => {
+    if (!spaceIdOfPage) return;
+    setNewDone(true);
+    try {
+      await applyPageTemplate(spaceIdOfPage, id, pageContent, template);
+      reloadPage();
+      setEditing(true);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "That could not be added.");
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -273,8 +290,10 @@ export default function PageScreen() {
             <NxPageTitle
               emoji={icon}
               title={title}
-              cover={tab === "notes" ? cover : undefined}
+              cover={tab === "notes" && !isNew ? cover : undefined}
               autoFocus={fresh === "1" && !title}
+              bare={isNew}
+              accessoryId={isNew && Platform.OS === "ios" ? NEW_PAGE_ACCESSORY : undefined}
               onRename={
                 canEdit
                   ? (next) => {
@@ -288,9 +307,9 @@ export default function PageScreen() {
                   : undefined
               }
             />
-            <NxWorkspaceTabs active={tab} sourceCount={totalSources} onChange={setTab} />
+            {isNew ? null : <NxWorkspaceTabs active={tab} sourceCount={totalSources} onChange={setTab} />}
 
-            {tab === "notes" ? (
+            {tab === "notes" && !isNew ? (
               <>
                 <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
                   {recording ? <Prop icon="mic" label="Recording" value={recording.text || "Recorded"} /> : null}
@@ -486,6 +505,25 @@ export default function PageScreen() {
       />
       </Animated.View>
 
+      {isNew && Platform.OS === "ios" ? (
+        <InputAccessoryView nativeID={NEW_PAGE_ACCESSORY} backgroundColor="transparent">
+          <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+            <View style={[styles.chipBar, { backgroundColor: c.card, borderColor: c.ring }]}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ alignItems: "center", gap: 6, paddingLeft: 8 }}>
+                <Chip icon="mic" label="Record" onPress={() => { setNewDone(true); record(); }} />
+                <Chip icon="notes" label="Lecture notes" onPress={() => void startWith("lecture")} />
+                <Chip icon="book" label="Study guide" onPress={() => void startWith("study")} />
+                <Chip icon="dots" label="More" onPress={() => { setNewDone(true); setEditing(true); }} />
+              </ScrollView>
+              <View style={{ width: 1, height: 24, backgroundColor: c.ln }} />
+              <Pressable onPress={() => Keyboard.dismiss()} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }} accessibilityLabel="Hide the keyboard">
+                <NxIcon name="kbd_down" size={21} color={c.t2} />
+              </Pressable>
+            </View>
+          </View>
+        </InputAccessoryView>
+      ) : null}
+
       {/* Add a source (canvas AddSource): only the ways that work from the phone today. */}
       <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={() => setAddOpen(false)} accessibilityLabel="Close" />
@@ -596,6 +634,18 @@ function MenuOption({ icon, label, onPress }: { icon: NxIconName; label: string;
         <NxIcon name={icon} size={19} color={c.t1} strokeWidth={1.8} />
       </View>
       <Text style={{ fontSize: 16, fontWeight: "500", color: c.t1 }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const NEW_PAGE_ACCESSORY = "nx-new-page-chips";
+
+function Chip({ icon, label, onPress }: { icon: NxIconName; label: string; onPress: () => void }) {
+  const c = useNx();
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.chip, { backgroundColor: c.sunk, opacity: pressed ? 0.7 : 1 }]}>
+      <NxIcon name={icon} size={16} color={c.t2} />
+      <Text style={{ fontSize: 15, color: c.t2 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -771,6 +821,8 @@ const styles = StyleSheet.create({
   sheetHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sheetTitle: { fontSize: 19, lineHeight: 24, fontWeight: "600", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   tick: { width: 22, height: 22, borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  chipBar: { height: 48, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", overflow: "hidden", shadowColor: "#2a1c00", shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } },
+  chip: { height: 32, paddingLeft: 10, paddingRight: 12, borderRadius: 9999, flexDirection: "row", alignItems: "center", gap: 6 },
   scrollBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 4, borderBottomWidth: StyleSheet.hairlineWidth },
   round: { width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: "center", justifyContent: "center", shadowColor: "#2a1c00", shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } },
 });

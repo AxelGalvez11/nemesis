@@ -72,14 +72,14 @@ export default function NotesHome() {
         onPress={() => openPage(node.id)}
         style={({ pressed }) => [styles.tree, { paddingLeft: 6 + level * 22 }, pressed && { backgroundColor: c.soft }]}
       >
+        {/* Every page gets the arrow, like Notion and the canvas tree; an empty page opens to "No pages inside". */}
         <Pressable
           hitSlop={6}
-          disabled={leaf}
           onPress={() => setOpen((o) => ({ ...o, [node.id]: !o[node.id] }))}
           style={styles.chev}
           accessibilityLabel={expanded ? "Collapse" : "Expand"}
         >
-          {leaf ? null : <NxIcon name={expanded ? "chev_d" : "chev_r"} size={14} color={c.t3} strokeWidth={2} />}
+          <NxIcon name={expanded ? "chev_d" : "chev_r"} size={14} color={c.t3} strokeWidth={2} />
         </Pressable>
         <Text style={styles.treeEmoji}>{iconOf(node.props.icon)}</Text>
         <Text numberOfLines={1} style={[nxType.rowTitle, { color: c.t1, flex: 1 }]}>
@@ -87,6 +87,13 @@ export default function NotesHome() {
         </Text>
       </Pressable>,
     ];
+    if (expanded && leaf) {
+      rows.push(
+        <Text key={`${node.id}-empty`} style={[nxType.rowMeta, { color: c.t3, paddingLeft: 6 + (level + 1) * 22 + 32, minHeight: 36, lineHeight: 36 }]}>
+          No pages inside
+        </Text>,
+      );
+    }
     if (expanded) for (const child of node.children) rows.push(...renderNode(child, level + 1));
     return rows;
   };
