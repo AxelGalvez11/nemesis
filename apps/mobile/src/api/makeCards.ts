@@ -79,13 +79,19 @@ function parseCards(text: string): { front: string; back: string }[] {
 export async function makeFlashcards(
   uid: string,
   pageId: string,
-  opts: { includeNotes: boolean; sourceIds: string[] },
+  opts: { includeNotes: boolean; sourceIds: string[]; subPageIds?: string[] },
 ): Promise<{ deckId: string; count: number }> {
   const parts: string[] = [];
   const page = await pageText(pageId);
   if (opts.includeNotes && page.text.trim()) parts.push(`Notes on this page:\n${page.text}`);
   if (opts.sourceIds.length) {
     const bodies = await sourceBodies(pageId, opts.sourceIds);
+    for (const s of bodies) parts.push(`Source "${s.name}":\n${s.body}`);
+  }
+  // Sources flow up (owner): a ticked sub-page brings every source it holds. ws_source_bodies reads one page at a
+  // time, so each sub-page is asked for its own.
+  for (const subId of opts.subPageIds ?? []) {
+    const bodies = await sourceBodies(subId, null);
     for (const s of bodies) parts.push(`Source "${s.name}":\n${s.body}`);
   }
   const material = parts.join('\n\n---\n\n');
