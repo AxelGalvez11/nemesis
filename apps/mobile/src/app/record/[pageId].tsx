@@ -24,6 +24,7 @@ import { RecordPill } from '@/components/nx/record/RecordPill';
 import { MicOffSheet, NotesFailedCard, PropRows, WritingNotesCard } from '@/components/nx/record/RecordStates';
 import { useRecorder } from '@/components/nx/record/useRecorder';
 import { NxIcon } from '@/components/nx/NxIcon';
+import { PageMenu } from '@/components/nx/PageMenu';
 import { nxType, useNx } from '@/theme/nx';
 
 // Recording a class onto a page. Open with router.push({ pathname: '/record/[pageId]', params: { pageId } }).
@@ -231,20 +232,7 @@ export default function RecordScreen() {
           label="Share"
           onPress={() => void Share.share({ message: `${title}\n\n${typed}`.trim() })}
         />
-        <NxIconButton
-          icon="dots"
-          label="More"
-          onPress={() => {
-            if (!page) return;
-            const options = ['Add to favorites', 'Cancel'];
-            const fav = () => void setFavorite(page.page.id, true).catch(() => undefined);
-            if (Platform.OS === 'ios') {
-              ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 1, title }, (i) => i === 0 && fav());
-            } else {
-              Alert.alert(title, undefined, [{ text: options[0]!, onPress: fav }, { text: 'Cancel', style: 'cancel' }]);
-            }
-          }}
-        />
+        <MoreButton onFavorite={page ? () => void setFavorite(page.page.id, true).catch(() => undefined) : null} />
       </View>
 
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
@@ -325,6 +313,17 @@ export default function RecordScreen() {
         onNotNow={() => goBack(router)}
       />
     </View>
+  );
+}
+
+/** The header ... : the app's own pop-up (owner: the iOS action sheet has no UI). */
+function MoreButton({ onFavorite }: { onFavorite: (() => void) | null }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <NxIconButton icon="dots" label="More" onPress={() => onFavorite && setOpen(true)} />
+      <PageMenu visible={open} onClose={() => setOpen(false)} items={onFavorite ? [{ icon: 'star', label: 'Add to favorites', onPress: onFavorite }] : []} />
+    </>
   );
 }
 

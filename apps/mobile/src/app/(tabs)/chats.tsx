@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { ActionSheetIOS, Alert, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { PageMenu, type PageMenuItem } from "@/components/nx/PageMenu";
 import { SkelList } from "@/components/nx/Skeleton";
 import { useFocusEffect, useRouter, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -62,6 +63,8 @@ export default function ChatsTab() {
   const { pages } = useSpacePages();
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // A chat row's long-press options, in the app's own pop-up. Items stay while it animates out.
+  const [rowMenu, setRowMenu] = useState<{ open: boolean; title: string; items: PageMenuItem[] }>({ open: false, title: "", items: [] });
 
   // 🔴 ALWAYS SETTLE. Returning early with no signed-in person (or on a failed read) left `threads` null,
   // and null draws the spinner forever. No person, or no list, is the empty state.
@@ -109,18 +112,17 @@ export default function ChatsTab() {
           },
         },
       ]);
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { title: t.title, options: ["Rename", t.pinned ? "Unpin" : "Pin", "Delete", "Cancel"], destructiveButtonIndex: 2, cancelButtonIndex: 3 },
-        (i) => (i === 0 ? rename() : i === 1 ? void pin() : i === 2 ? remove() : undefined),
-      );
-    } else {
-      Alert.alert(t.title, undefined, [
-        { text: t.pinned ? "Unpin" : "Pin", onPress: () => void pin() },
-        { text: "Delete", style: "destructive", onPress: remove },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    }
+    // A system prompt cannot open while the pop-up is still leaving, so those wait for it to finish.
+    const afterClose = (fn: () => void) => () => setTimeout(fn, 320);
+    setRowMenu({
+      open: true,
+      title: t.title || "New chat",
+      items: [
+        { icon: "compose", label: "Rename", onPress: afterClose(rename) },
+        { icon: "pin", label: t.pinned ? "Unpin" : "Pin", onPress: () => void pin() },
+        { icon: "trash", label: "Delete", danger: true, onPress: afterClose(remove) },
+      ],
+    });
   };
 
   if (threads !== null && threads.length === 0) {
@@ -182,6 +184,7 @@ export default function ChatsTab() {
         )}
       </ScrollView>
       <NxBottomBar ask="Ask Nemesis" onSearch={() => router.push("/search" as Href)} onAsk={() => router.push(openChat("new"))} />
+      <PageMenu anchor="bottom" visible={rowMenu.open} title={rowMenu.title} onClose={() => setRowMenu((m) => ({ ...m, open: false }))} items={rowMenu.items} />
     </View>
   );
 }

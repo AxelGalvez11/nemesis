@@ -25,6 +25,7 @@ import { deriveThreadTitle } from '@/lib/chat-threads';
 import { reasoningGlimpse } from '@/lib/reasoning-preview';
 import type { ThinkingPhase } from '@/lib/thinking-phase';
 import { useNx } from '@/theme/nx';
+import { PageMenu, type PageMenuItem } from '@/components/nx/PageMenu';
 
 type Attached = { pageId: string; title: string; content: string };
 
@@ -244,6 +245,8 @@ export default function ChatScreen() {
   const shownTitle = title || (messages.length ? deriveThreadTitle(messages) : 'New chat');
   const id = threadRef.current;
 
+  // The header ... in the app's own pop-up (owner: the iOS action sheet has no UI). Items stay while it leaves.
+  const [chatMenu, setChatMenu] = useState<{ open: boolean; items: PageMenuItem[] }>({ open: false, items: [] });
   const more = () => {
     if (!uid || !id) return;
     const doRename = () =>
@@ -270,18 +273,16 @@ export default function ChatScreen() {
           },
         },
       ]);
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ['Rename', pinned ? 'Unpin' : 'Pin', 'Delete', 'Cancel'], destructiveButtonIndex: 2, cancelButtonIndex: 3 },
-        (i) => (i === 0 ? doRename() : i === 1 ? doPin() : i === 2 ? doDelete() : undefined),
-      );
-    } else {
-      Alert.alert(shownTitle, undefined, [
-        { text: pinned ? 'Unpin' : 'Pin', onPress: doPin },
-        { text: 'Delete', style: 'destructive', onPress: doDelete },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
+    // A system prompt cannot open while the pop-up is still leaving, so those wait for it to finish.
+    const afterClose = (fn: () => void) => () => setTimeout(fn, 320);
+    setChatMenu({
+      open: true,
+      items: [
+        { icon: 'compose', label: 'Rename', onPress: afterClose(doRename) },
+        { icon: 'pin', label: pinned ? 'Unpin' : 'Pin', onPress: doPin },
+        { icon: 'trash', label: 'Delete', danger: true, onPress: afterClose(doDelete) },
+      ],
+    });
   };
 
   const empty = !messages.length && !sending && !loadingThread;
@@ -366,6 +367,7 @@ export default function ChatScreen() {
         }}
       />
       <SourcesSheet visible={!!sheetSources} sources={sheetSources ?? []} onClose={() => setSheetSources(null)} onOpen={openSource} />
+      <PageMenu visible={chatMenu.open} onClose={() => setChatMenu((m) => ({ ...m, open: false }))} items={chatMenu.items} />
     </View>
   );
 }

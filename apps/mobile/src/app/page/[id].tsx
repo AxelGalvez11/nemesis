@@ -281,19 +281,13 @@ export default function PageScreen() {
   const [sourceBusy, setSourceBusy] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   // Every source row carries the canvas arrow; tapping it offers what the phone can really do with a source.
+  // The app's own pop-up rising from the foot (owner: the iOS action sheet has no UI). The source stays set
+  // while the menu animates out, so the card does not empty mid-fade.
+  const [sourceMenu, setSourceMenu] = useState<PageSource | null>(null);
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
   const sourceOptions = (s: PageSource) => {
-    const remove = () => void runSource("Removing", () => removeSource(s.id));
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { title: s.name, message: sourceMeta(s), options: ["Remove from this page", "Cancel"], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
-        (i) => i === 0 && remove(),
-      );
-    } else {
-      Alert.alert(s.name, sourceMeta(s), [
-        { text: "Remove from this page", style: "destructive", onPress: remove },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    }
+    setSourceMenu(s);
+    setSourceMenuOpen(true);
   };
   const runSource = async (label: string, work: () => Promise<unknown>) => {
     setAddOpen(false);
@@ -826,6 +820,17 @@ export default function PageScreen() {
       </Modal>
 
       <PageMenu visible={menuOpen} onClose={() => setMenuOpen(false)} items={menuItems()} />
+      <PageMenu
+        anchor="bottom"
+        visible={sourceMenuOpen}
+        onClose={() => setSourceMenuOpen(false)}
+        title={sourceMenu ? `${sourceMenu.name} · ${sourceMeta(sourceMenu)}` : undefined}
+        items={
+          sourceMenu
+            ? [{ icon: "trash", label: "Remove from this page", danger: true, onPress: () => void runSource("Removing", () => removeSource(sourceMenu.id)) }]
+            : []
+        }
+      />
 
       <NoteAskBar
         visible={askOpen}
