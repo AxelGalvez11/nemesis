@@ -13,7 +13,10 @@ import { pageText } from './makeCards';
 import type { PageSource } from './space';
 import { supabase } from './supabase';
 
-export async function addSource(pageId: string, fields: { name: string; mime?: string | null; bytes?: number | null; body: string }): Promise<PageSource> {
+export async function addSource(
+  pageId: string,
+  fields: { name: string; mime?: string | null; bytes?: number | null; body: string; emptyError?: string },
+): Promise<PageSource> {
   const body = fields.body ?? '';
   const failed = !body.trim();
   const { data, error } = await supabase.rpc('ws_add_source', {
@@ -24,7 +27,7 @@ export async function addSource(pageId: string, fields: { name: string; mime?: s
     p_library_source: null,
     p_body: body,
     p_status: failed ? 'failed' : 'ready',
-    p_error: failed ? 'Nothing could be read out of this file.' : null,
+    p_error: failed ? fields.emptyError ?? 'Nothing could be read out of this file.' : null,
   });
   if (error) throw new Error(error.message.includes('not allowed') ? 'You can only add sources to pages you can edit.' : `ws_add_source: ${error.message}`);
   return data as PageSource;
@@ -46,7 +49,7 @@ export async function addFileSource(uid: string, pageId: string): Promise<PageSo
 /** Another of the student's notes, copied in as text. */
 export async function addNoteSource(pageId: string, notePageId: string): Promise<PageSource> {
   const note = await pageText(notePageId);
-  return addSource(pageId, { name: note.title || 'Untitled note', mime: 'text/x-nemesis-note', body: note.text });
+  return addSource(pageId, { name: note.title || 'Untitled note', mime: 'text/x-nemesis-note', body: note.text, emptyError: 'This note is empty.' });
 }
 
 /** A photograph (a slide, a whiteboard, a page): stored and read by the chat's photo lane, its text saved as a source. */
