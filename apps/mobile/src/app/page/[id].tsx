@@ -654,7 +654,6 @@ export default function PageScreen() {
       >
       <NxBottomBar
         ask="Ask AI"
-        askMark
         onAsk={() => setAskOpen(true)}
         left={
           <NxPressable onPress={() => setRecentsOpen(true)} scaleTo={0.92} style={[styles.round, { backgroundColor: c.card, borderColor: c.ring }]} accessibilityLabel="Recents">

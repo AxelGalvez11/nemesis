@@ -136,7 +136,10 @@ export default function ChatScreen() {
       }
       const page = withPage === undefined ? attached : withPage;
       const history = messagesRef.current;
-      const base: ChatMsg[] = [...history, { at: new Date().toISOString(), content: text, role: 'user', id: newMessageId() }];
+      // The note rides on the question as a saved attachment, so the chip above it survives a reload and shows
+      // on every device. A page link as its url is what marks it a note rather than an uploaded file.
+      const noteAttachment = page ? { attachments: [{ name: page.title, kind: 'file' as const, url: `nemesis://page/${page.pageId}` }] } : {};
+      const base: ChatMsg[] = [...history, { at: new Date().toISOString(), content: text, role: 'user', id: newMessageId(), ...noteAttachment }];
       setMessages(base);
       setInput('');
       setError(null);
@@ -285,6 +288,14 @@ export default function ChatScreen() {
     });
   };
 
+  // The note sent with a question shows above it (owner 2026-09-15), read from the question's saved attachment.
+  const noteOf = (m: ChatMsg) => {
+    const a = m.attachments?.find((x) => x.url?.startsWith('nemesis://page/'));
+    if (!a?.url) return null;
+    const pageId = a.url.slice('nemesis://page/'.length);
+    return { title: a.name, onPress: () => router.push({ pathname: '/page/[id]', params: { id: pageId } }) };
+  };
+
   const empty = !messages.length && !sending && !loadingThread;
   const skeleton = loadingThread && !messages.length && !sending;
 
@@ -316,7 +327,7 @@ export default function ChatScreen() {
           ) : (
             messages.map((m, i) =>
               m.role === 'user' ? (
-                <UserBubble key={m.id ?? `u${i}`} text={m.content} />
+                <UserBubble key={m.id ?? `u${i}`} text={m.content} note={noteOf(m)} />
               ) : (
                 <View key={m.id ?? `a${i}`} style={{ gap: 12 }}>
                   <SettledSteps msg={m} onOpenSource={openSource} />

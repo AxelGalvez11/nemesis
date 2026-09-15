@@ -43,11 +43,24 @@ export function ChatHeader({ title, onBack, onMore }: { title: string; onBack: (
 
 // ---------- bubble and answer ----------
 
-export function UserBubble({ text }: { text: string }) {
+/** The question, with the note that was attached when it was sent shown as a chip above it (tap opens the note). */
+export function UserBubble({ text, note }: { text: string; note?: { title: string; onPress: () => void } | null }) {
   const c = useNx();
-  return (
-    <View style={[styles.bubble, { backgroundColor: c.acc }]}>
+  const bubble = (
+    <View style={[styles.bubble, { backgroundColor: c.acc }, note && { maxWidth: '100%' }]}>
       <Text style={{ color: '#ffffff', fontSize: 16, lineHeight: 24 }}>{text}</Text>
+    </View>
+  );
+  if (!note) return bubble;
+  return (
+    <View style={styles.withNote}>
+      <NxPressable onPress={note.onPress} scaleTo={0.97} style={[styles.noteChip, { borderColor: c.ln, backgroundColor: c.bg }]} accessibilityLabel={`Open ${note.title}`}>
+        <NxIcon name="notes" size={14} color={c.t2} />
+        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 14, lineHeight: 18, color: c.t1 }}>
+          {note.title}
+        </Text>
+      </NxPressable>
+      {bubble}
     </View>
   );
 }
@@ -331,6 +344,8 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, minWidth: 0, alignItems: 'center' },
   ib: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   bubble: { alignSelf: 'flex-end', maxWidth: '78%', borderRadius: 16, paddingVertical: 9, paddingHorizontal: 14 },
+  withNote: { alignSelf: 'flex-end', alignItems: 'flex-end', maxWidth: '78%', gap: 6 },
+  noteChip: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
   cite: { minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: 'center', justifyContent: 'center', transform: [{ translateY: 3 }] },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 36, paddingLeft: 5, paddingRight: 13, borderRadius: 9999, borderWidth: 1 },
   srow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 30 },
