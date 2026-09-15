@@ -20,9 +20,18 @@ export default function ChatsTab() {
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // 🔴 ALWAYS SETTLE. Returning early with no signed-in person (or on a failed read) left `threads` null,
+  // and null draws the spinner forever. No person, or no list, is the empty state.
   const load = useCallback(async () => {
-    if (!uid) return;
-    setThreads(await listThreads(uid));
+    if (!uid) {
+      setThreads([]);
+      return;
+    }
+    try {
+      setThreads(await listThreads(uid));
+    } catch {
+      setThreads((prev) => prev ?? []);
+    }
   }, [uid]);
 
   useFocusEffect(
