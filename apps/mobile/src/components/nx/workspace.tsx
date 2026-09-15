@@ -2,8 +2,8 @@
  * Page workspace chrome from the canvas: the quiet Notes / Sources / Create toggle,
  * the page title block, and the "Add" pill used on Sources.
  */
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { nxType, useNx } from '@/theme/nx';
 import { NxIcon } from './NxIcon';
@@ -41,13 +41,48 @@ export function NxWorkspaceTabs({ active, sourceCount, onChange }: { active: WsT
   );
 }
 
-export function NxPageTitle({ emoji, title, cover }: { emoji?: string | null; title: string; cover?: string }) {
+/** The page's emoji and title. With `onRename`, the title is typed straight into (saved when you leave the field). */
+export function NxPageTitle({
+  emoji,
+  title,
+  cover,
+  onRename,
+  autoFocus,
+}: {
+  emoji?: string | null;
+  title: string;
+  cover?: string;
+  onRename?: (title: string) => void;
+  autoFocus?: boolean;
+}) {
   const c = useNx();
+  const [draft, setDraft] = useState(title);
+  useEffect(() => setDraft(title), [title]);
+  const titleStyle = [nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 6 }];
   return (
     <View>
       {cover ? <View style={{ height: 76, marginTop: 4, backgroundColor: cover }} /> : null}
       <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: cover ? 0 : 14, marginTop: cover ? -26 : 0 }]}>{emoji || '📄'}</Text>
-      <Text style={[nxType.pageTitle, { color: c.t1, paddingHorizontal: 20, paddingTop: 6 }]}>{title || 'Untitled'}</Text>
+      {onRename ? (
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          // Saved once, on leaving the field. Done (blurOnSubmit) blurs, so it lands here too.
+          onBlur={() => {
+            if (draft.trim() !== title.trim()) onRename(draft.trim());
+          }}
+          placeholder="Untitled"
+          placeholderTextColor={c.t3}
+          autoFocus={autoFocus}
+          returnKeyType="done"
+          blurOnSubmit
+          multiline={false}
+          style={titleStyle}
+          accessibilityLabel="Page title"
+        />
+      ) : (
+        <Text style={titleStyle}>{title || 'Untitled'}</Text>
+      )}
     </View>
   );
 }

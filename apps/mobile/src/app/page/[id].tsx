@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource } from "@/api/space";
+import { setPageTitle } from "@/api/spaceWrite";
 import { addCard, createDeck, deckCards, deleteCard, updateCard } from "@/api/study";
 import { CardEditor, type CardDraft } from "@/components/nx/CardEditor";
 import { NxIcon, type NxIconName } from "@/components/nx/NxIcon";
@@ -15,7 +16,7 @@ import { nxType, useNx } from "@/theme/nx";
 // A page is a workspace (canvas: NotePage, NoteSources, NoteCreate, SubPage): Notes / Sources / Create.
 // Sources flow UP: a page counts its sub-pages' sources too; a sub-page only sees its own.
 export default function PageScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
   const c = useNx();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -88,7 +89,24 @@ export default function PageScreen() {
           <Text style={[styles.note, { color: c.t2 }]}>{(page.error as Error).message}</Text>
         ) : (
           <>
-            <NxPageTitle emoji={icon} title={title} />
+            <NxPageTitle
+              emoji={icon}
+              title={title}
+              autoFocus={fresh === "1" && !title}
+              onRename={
+                // ws_role_rank: full 4, edit 3, comment 2, read 1. Renaming needs edit or better.
+                page.data && (page.data.role === "full" || page.data.role === "edit")
+                  ? (next) => {
+                      void setPageTitle(page.data!.space_id, id, next)
+                        .then(() => {
+                          void qc.invalidateQueries({ queryKey: ["ws-page", id] });
+                          void qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
+                        })
+                        .catch(() => undefined);
+                    }
+                  : undefined
+              }
+            />
             <NxWorkspaceTabs active={tab} sourceCount={totalSources} onChange={setTab} />
 
             {tab === "notes" ? (

@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PageNode } from "@/api/space";
+import { createPage } from "@/api/spaceWrite";
+import { NewMenu } from "@/components/nx/NewMenu";
 import { NxIcon } from "@/components/nx/NxIcon";
-import { NxBottomBar, NxRow, NxSection } from "@/components/nx/primitives";
+import { NxBottomBar, NxNewButton, NxRow, NxSection } from "@/components/nx/primitives";
 import { useSpacePages } from "@/hooks/useSpace";
 import { ago } from "@/lib/ago";
 import { nxType, useNx } from "@/theme/nx";
@@ -14,8 +17,29 @@ export default function NotesHome() {
   const c = useNx();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { tree, recents, loading, error, refetch, refreshing } = useSpacePages();
+  const { spaceId, tree, recents, loading, error, refetch, refreshing } = useSpacePages();
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const qc = useQueryClient();
+  const [menu, setMenu] = useState(false);
+  const [making, setMaking] = useState(false);
+  const [makeError, setMakeError] = useState<string | null>(null);
+
+  const newPage = async () => {
+    if (!spaceId) return;
+    setMaking(true);
+    setMakeError(null);
+    try {
+      const id = await createPage(spaceId, {});
+      await qc.invalidateQueries({ queryKey: ["ws-all-pages", spaceId] });
+      setMenu(false);
+      router.push({ pathname: "/page/[id]", params: { id, fresh: "1" } });
+    } catch (e) {
+      setMakeError(e instanceof Error ? e.message : "The page could not be made.");
+      setMenu(false);
+    } finally {
+      setMaking(false);
+    }
+  };
 
   const openPage = (id: string) => router.push({ pathname: "/page/[id]", params: { id } });
 
@@ -54,6 +78,7 @@ export default function NotesHome() {
           <Text style={[styles.note, { color: c.t2 }]}>Your pages could not be loaded. Pull down to try again.</Text>
         ) : (
           <>
+            {makeError ? <Text style={[styles.note, { color: c.danger }]}>{makeError}</Text> : null}
             {recents.length ? (
               <>
                 <NxSection label="Recent" />
@@ -73,7 +98,18 @@ export default function NotesHome() {
           </>
         )}
       </ScrollView>
-      <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push("/chat")} />
+      <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push("/chat")} right={spaceId ? <NxNewButton onPress={() => setMenu(true)} /> : null} />
+      <NewMenu
+        visible={menu}
+        busy={making}
+        onClose={() => setMenu(false)}
+        onNewPage={() => void newPage()}
+        onRecord={() => {
+          // Recording inside a note is not built yet; the chat screen's recorder is one tap away there.
+          setMenu(false);
+          router.push("/chat");
+        }}
+      />
     </View>
   );
 }
