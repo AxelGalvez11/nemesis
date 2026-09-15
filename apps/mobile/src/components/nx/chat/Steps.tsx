@@ -7,7 +7,7 @@ import { Pressable, Text, View } from 'react-native';
 import type { ChatMsg, ChatSource } from '@/lib/chat-thread';
 import { phaseLabel, type ThinkingPhase } from '@/lib/thinking-phase';
 import { useNx } from '@/theme/nx';
-import { ShimmerText, Spinner } from './Shimmer';
+import { ShimmerText } from './Shimmer';
 import { MarkStack, QueryPill, ResultRow, StepIcon, StepLabel, StepLine, isNoteSource } from './parts';
 
 export function secondsLabel(ms: number): string {
@@ -49,19 +49,19 @@ export function LiveSteps({ phase, trail, glimpse }: { phase: ThinkingPhase; tra
     );
   } else if (phase.kind === 'reading') {
     current = (
-      <StepLine lead={<Spinner color={c.t2} />}>
+      <StepLine>
         <ShimmerText text={phase.sources > 0 ? `Reading ${plural(phase.sources, 'source', 'sources')}` : 'Nothing usable came back, answering without it'} style={live} />
       </StepLine>
     );
   } else if (phase.kind === 'recalling') {
     current = (
-      <StepLine lead={<Spinner color={c.t2} />}>
+      <StepLine>
         <ShimmerText text={`Reading ${plural(phase.notes, 'note', 'notes')}`} style={live} />
       </StepLine>
     );
   } else if (phase.kind === 'acting') {
     current = (
-      <StepLine lead={<Spinner color={c.t2} />}>
+      <StepLine>
         <ShimmerText text={phaseLabel(phase)} style={live} />
       </StepLine>
     );
