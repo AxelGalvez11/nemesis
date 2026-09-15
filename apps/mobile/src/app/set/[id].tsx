@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { goBack } from "@/lib/goBack";
-import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NxSheet } from "@/components/nx/motion";
+import { PageMenu } from "@/components/nx/PageMenu";
 import { NxPressable } from "@/components/nx/NxPressable";
 import { SkelBar, SkelGroup } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -35,14 +36,9 @@ export default function SetScreen() {
   const openPage = () => {
     if (page) router.push({ pathname: "/page/[id]", params: { id: page.id } });
   };
-  const more = () => {
-    const label = "Open the page it came from";
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions({ options: [label, "Cancel"], cancelButtonIndex: 1 }, (i) => i === 0 && openPage());
-    } else {
-      Alert.alert(deck?.name.split("::").pop() ?? "", undefined, [{ text: label, onPress: openPage }, { text: "Cancel", style: "cancel" }]);
-    }
-  };
+  // The app's own pop-up, like the page menu (owner: the plain iOS action sheet has no UI).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const more = () => setMenuOpen(true);
 
   const start = () => {
     setChoosing(false);
@@ -95,6 +91,7 @@ export default function SetScreen() {
       </ScrollView>
       <NxFootButton label="Study" disabled={!cards.data?.length} onPress={() => setChoosing(true)} />
 
+      <PageMenu visible={menuOpen} onClose={() => setMenuOpen(false)} items={[{ icon: "notes", label: "Open the page it came from", onPress: openPage }]} />
       <NxSheet visible={choosing} onClose={() => setChoosing(false)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: Math.max(insets.bottom, 30) }]}>
           <View style={[styles.grab, { backgroundColor: c.ring }]} />
           <Text style={{ paddingTop: 8, fontSize: 22, lineHeight: 28, fontWeight: "600", color: c.t1 }}>How do you want to study?</Text>

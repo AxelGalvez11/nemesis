@@ -3,8 +3,9 @@
  * durations, fire-and-forget haptics, and presence (mount, animate in, animate out, unmount) for modals so
  * menus and sheets leave the way they came instead of vanishing.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { nxDuration, nxEase, useNx } from '@/theme/nx';
@@ -90,6 +91,20 @@ export function NxSheet({
   closeLabel?: string;
 }) {
   const { mounted, p } = useNxPresence(visible, nxDuration.slow, nxDuration.base);
+  // A sheet belongs to its screen. A modal outlives navigation, so when another screen covers this one
+  // (a push, a link), close it instead of leaving it floating over the new screen.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const openRef = useRef(visible);
+  openRef.current = visible;
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        if (openRef.current) closeRef.current();
+      },
+      [],
+    ),
+  );
   const h = useSharedValue(800);
   const slide = useAnimatedStyle(() => ({ transform: [{ translateY: (1 - p.value) * h.value }] }));
   const sheet = (
