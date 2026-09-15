@@ -63,8 +63,11 @@ export default function SetScreen() {
           <NxModeCard
             icon="bulb"
             title="Active recall quiz"
-            sub="Coming in the next build: think first, then multiple choice and matching"
-            onPress={() => setChoosing(false)}
+            sub="Think first, then multiple choice and matching"
+            onPress={() => {
+              setChoosing(false);
+              router.push({ pathname: "/quiz/[id]", params: { id } });
+            }}
           />
           <NxModeCard
             icon="cards"

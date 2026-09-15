@@ -24,7 +24,26 @@ export type Card = {
   due_at: string;
   state: string | null;
   suspended: boolean;
+  /** Free-form per-card data. Image occlusion lives here; the quiz keeps its written options under `quiz`. */
+  payload?: Record<string, unknown> | null;
 };
+
+/** What the quiz keeps on a card: three wrong answers written once (Gizmo keeps them on the card too). */
+export type CardQuiz = { wrong: string[]; explain?: string };
+
+export function cardQuiz(card: Pick<Card, 'payload'>): CardQuiz | null {
+  const q = (card.payload as { quiz?: unknown } | null | undefined)?.quiz as { wrong?: unknown; explain?: unknown } | undefined;
+  if (!q || !Array.isArray(q.wrong)) return null;
+  const wrong = q.wrong.filter((w): w is string => typeof w === 'string' && w.trim().length > 0);
+  return wrong.length >= 3 ? { wrong: wrong.slice(0, 3), explain: typeof q.explain === 'string' ? q.explain : undefined } : null;
+}
+
+/** Saves the quiz options onto the card, MERGED into its payload so occlusion data on the same card survives. */
+export async function saveCardQuiz(card: Pick<Card, 'id' | 'payload'>, quiz: CardQuiz): Promise<void> {
+  const payload = { ...(card.payload ?? {}), quiz };
+  const { error } = await supabase.from('study_cards').update({ payload }).eq('id', card.id);
+  if (error) throw new Error(`study_cards: ${error.message}`);
+}
 
 async function userId(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
@@ -72,7 +91,7 @@ export async function listDecks(): Promise<Deck[]> {
 export async function deckCards(deckId: string): Promise<Card[]> {
   const { data, error } = await supabase
     .from('study_cards')
-    .select('id,deck_id,front,back,due_at,state,suspended')
+    .select('id,deck_id,front,back,due_at,state,suspended,payload')
     .eq('deck_id', deckId)
     .order('due_at', { ascending: true });
   if (error) throw new Error(`study_cards: ${error.message}`);
@@ -117,8 +136,20 @@ export async function addCard(deckId: string, front: string, back: string): Prom
   return data as Card;
 }
 
+/**
+ * 🔴 AN EDITED CARD DROPS ITS SAVED QUIZ OPTIONS. Three wrong answers written for the old front and back
+ * would sit next to a new right answer (or be right themselves), so they are cleared and rewritten on the
+ * next quiz. Everything else in the payload (image occlusion) is kept.
+ */
 export async function updateCard(cardId: string, front: string, back: string): Promise<void> {
-  const { error } = await supabase.from('study_cards').update({ front: front.trim(), back: back.trim() }).eq('id', cardId);
+  const { data: current, error: readError } = await supabase.from('study_cards').select('payload').eq('id', cardId).maybeSingle();
+  if (readError) throw new Error(`study_cards: ${readError.message}`);
+  const payload = { ...((current?.payload as Record<string, unknown> | null) ?? {}) };
+  delete payload.quiz;
+  const { error } = await supabase
+    .from('study_cards')
+    .update({ front: front.trim(), back: back.trim(), payload: Object.keys(payload).length ? payload : null })
+    .eq('id', cardId);
   if (error) throw new Error(`study_cards: ${error.message}`);
 }
 

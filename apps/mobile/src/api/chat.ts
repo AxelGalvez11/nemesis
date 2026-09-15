@@ -1252,6 +1252,14 @@ export async function requestLiveNotes(uid: string, transcript: string, previous
   return parseLiveNotes(reply.text);
 }
 
+/** One request and one reply, with no thread, tools or web search: the same metered
+ *  valve and model as the notes passes. For small jobs that want plain text back
+ *  (the Study tab's active recall quiz). Resolves null when the call failed. */
+export async function completeOnce(uid: string, messages: WireMsg[]): Promise<string | null> {
+  const reply = await postChatCompletion(uid, messages, LIVE_NOTES_DECISION);
+  return reply.text ?? null;
+}
+
 /** The Next.js app that hosts the shared HTTP API (transcription, file and
  *  photo extraction). Exported for api/photos.ts. */
 export const APP_API_BASE = "https://app.enternemesis.com";
