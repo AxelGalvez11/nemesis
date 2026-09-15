@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { makeFlashcards } from "@/api/makeCards";
+import { settlePageRecordings } from "@/api/recording";
 import { addFileSource, addNoteSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
 import { addBlockAfter, setBlockText, setChecked, setPageTitle } from "@/api/spaceWrite";
@@ -45,6 +46,20 @@ export default function PageScreen() {
   const space = useSpacePages();
 
   const blocks = useMemo(() => (page.data ? pageBlocks(page.data) : []), [page.data]);
+
+  // Notes from a recording that finished while the student was elsewhere are written in when the page opens.
+  useEffect(() => {
+    if (!id) return;
+    void settlePageRecordings(id)
+      .then((changed) => {
+        if (changed) {
+          void qc.invalidateQueries({ queryKey: ["ws-page", id] });
+          void qc.invalidateQueries({ queryKey: ["ws-sources", id] });
+        }
+      })
+      .catch(() => undefined);
+  }, [id, qc]);
+  const record = () => router.push({ pathname: "/record/[pageId]", params: { pageId: id } });
   const titles = useMemo(() => new Map(children.map((ch) => [ch.id, ch])), [children]);
   const parent = page.data?.ancestors[page.data.ancestors.length - 1];
   const title = String(page.data?.page.props.title ?? "");
@@ -235,6 +250,7 @@ export default function PageScreen() {
                         onToggle={(b, v) => void toggle(b, v)}
                         onAddBlock={(type, after) => void addBlock(type, after)}
                         onOpenPage={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })}
+                        onRecord={record}
                       />
                       <Pressable onPress={() => void addBlock("text", blocks.length ? blocks[blocks.length - 1]!.id : null)} style={{ paddingVertical: 10 }}>
                         <Text style={[nxType.body, { color: c.t3 }]}>{blocks.length ? "Add a line" : "Tap to start writing"}</Text>
@@ -385,6 +401,7 @@ export default function PageScreen() {
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={() => setAddOpen(false)} accessibilityLabel="Close" />
         <View style={[styles.popup, { top: insets.top + 290, backgroundColor: c.card, borderColor: c.ring }]}>
           <MenuOption icon="file" label="Files" onPress={() => uid && void runSource("Adding a file", () => addFileSource(uid, id))} />
+          <MenuOption icon="mic" label="Record" onPress={() => { setAddOpen(false); record(); }} />
           <MenuOption icon="notes" label="Another note" onPress={() => { setAddOpen(false); setNotePicker(true); }} />
         </View>
       </Modal>

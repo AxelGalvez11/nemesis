@@ -25,12 +25,14 @@ export function BlockEditor({
   onToggle,
   onAddBlock,
   onOpenPage,
+  onRecord,
 }: {
   blocks: Block[];
   onSaveText: (block: Block, text: string) => void;
   onToggle: (block: Block, checked: boolean) => void;
   onAddBlock: (type: NewBlockType, afterId: string | null) => void;
   onOpenPage: (pageId: string) => void;
+  onRecord?: () => void;
 }) {
   const c = useNx();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -163,6 +165,17 @@ export function BlockEditor({
             <View style={[styles.toolbar, { backgroundColor: c.card, borderColor: c.ring }]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center', gap: 2, paddingLeft: 6 }}>
                 <ToolButton icon="plus" on={panel} label="Add a block" onPress={() => setPanel((p) => !p)} />
+                {onRecord ? (
+                  <ToolButton
+                    icon="mic"
+                    label="Record"
+                    onPress={() => {
+                      setPanel(false);
+                      Keyboard.dismiss();
+                      onRecord();
+                    }}
+                  />
+                ) : null}
               </ScrollView>
               <View style={[styles.divider, { backgroundColor: c.ln }]} />
               <Pressable

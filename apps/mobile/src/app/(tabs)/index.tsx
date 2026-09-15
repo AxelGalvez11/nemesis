@@ -9,7 +9,7 @@ import { createPage } from "@/api/spaceWrite";
 import { useAuth } from "@/auth/AuthProvider";
 import { NewMenu } from "@/components/nx/NewMenu";
 import { NxIcon } from "@/components/nx/NxIcon";
-import { NxBottomBar, NxButton, NxNewButton, NxRow, NxSection } from "@/components/nx/primitives";
+import { NxBottomBar, NxButton, NxNewButton, NxPill, NxRow, NxSection } from "@/components/nx/primitives";
 import { useSpacePages } from "@/hooks/useSpace";
 import { ago } from "@/lib/ago";
 import { iconOf } from "@/lib/fresh";
@@ -42,15 +42,16 @@ export default function NotesHome() {
 
   const openPage = (id: string) => router.push({ pathname: "/page/[id]", params: { id } });
 
-  const newPage = async () => {
+  const newPage = async (record?: { title: string }) => {
     if (!spaceId) return;
     setMaking(true);
     setMakeError(null);
     try {
-      const id = await createPage(spaceId, {});
+      const id = await createPage(spaceId, record ? { title: record.title, icon: "🎙️" } : {});
       await qc.invalidateQueries({ queryKey: ["ws-all-pages", spaceId] });
       setMenu(false);
-      router.push({ pathname: "/page/[id]", params: { id, fresh: "1" } });
+      if (record) router.push({ pathname: "/record/[pageId]", params: { pageId: id } });
+      else router.push({ pathname: "/page/[id]", params: { id, fresh: "1" } });
     } catch (e) {
       setMakeError(e instanceof Error ? e.message : "The page could not be made.");
       setMenu(false);
@@ -128,12 +129,13 @@ export default function NotesHome() {
             {comingUp.length ? (
               <>
                 <NxSection label="Coming up" />
-                {comingUp.map((e) => (
+                {comingUp.map((e, i) => (
                   <NxRow
                     key={e.id}
                     lead={<View style={[styles.bar, { backgroundColor: c.t3 }]} />}
                     title={e.title}
                     meta={[e.time ? formatTime(e.time) : "Today", e.course].filter(Boolean).join(", ")}
+                    trail={i === 0 && spaceId ? <NxPill label="Record" icon="mic" onPress={() => void newPage({ title: `${e.title}, ${shortDate()}` })} /> : undefined}
                   />
                 ))}
               </>
@@ -161,10 +163,7 @@ export default function NotesHome() {
         busy={making}
         onClose={() => setMenu(false)}
         onNewPage={() => void newPage()}
-        onRecord={() => {
-          setMenu(false);
-          router.push("/chat");
-        }}
+        onRecord={() => void newPage({ title: `Recording, ${shortDate()}` })}
       />
     </View>
   );
@@ -188,6 +187,10 @@ function RecentCard({ page, cover, onPress }: { page: PageSummary; cover: string
 
 function coverFor(c: NxColors, i: number): string {
   return [c.c1, c.c2, c.c3][i % 3]!;
+}
+
+function shortDate(): string {
+  return new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function localDate(d: Date): string {
