@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { goBack } from "@/lib/goBack";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SkelFlashcard } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,8 +30,9 @@ import { useNx } from "@/theme/nx";
 type Source = { title: string; onPress: () => void } | null;
 
 // Active recall quiz (canvas QuizRecall, QuizChoice, QuizMatch; memory: gizmo-quiz-teardown).
-// Think first, then 4 options. Right: green, moves on by itself. Wrong: red, the right answer, Explain and
-// Continue. Missed cards come back at the end of the round. No hearts, XP or streaks.
+// Straight into 4 options (owner 2026-09-15). Right: green. Wrong: red and the right answer. Either way Explain
+// (why the right one is right and the wrong ones wrong) and Continue. Missed cards come back at the end of the
+// round. No hearts, XP or streaks.
 // Every first answer also grades the card for spaced repetition (right = good, wrong = again).
 export default function QuizScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -175,21 +176,14 @@ function Choice({
   onAnswered: (ok: boolean) => void;
   onNext: () => void;
 }) {
-  const c = useNx();
   const insets = useSafeAreaInsets();
-  const [showing, setShowing] = useState(q.retry === true);
   const [picked, setPicked] = useState<number | null>(null);
   const [explain, setExplain] = useState(false);
-  const right = picked !== null && picked === q.answer;
-  const wrong = picked !== null && !right;
+  const answered = picked !== null;
+  const wrong = answered && picked !== q.answer;
 
-  // A right answer moves on by itself, like Gizmo.
-  useEffect(() => {
-    if (!right) return;
-    const t = setTimeout(onNext, 800);
-    return () => clearTimeout(t);
-  }, [right, onNext]);
-
+  // Owner 2026-09-15: straight into the options (no "think first" step), and a right answer is explained
+  // too, so it waits for Continue instead of moving on by itself.
   const stateFor = (i: number): OptState => {
     if (picked === null) return "idle";
     if (i === q.answer) return "ok";
@@ -201,51 +195,39 @@ function Choice({
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
         <View style={styles.qHead}>
-          <NxQLabel>{!showing ? "Active recall" : q.retry ? "Try this one again" : "Multiple choice"}</NxQLabel>
+          <NxQLabel>{q.retry ? "Try this one again" : "Multiple choice"}</NxQLabel>
           <NxQText>{q.prompt}</NxQText>
         </View>
         <NxQuizBox>
-          {showing ? (
-            q.options.map((opt, i) => (
-              <NxQuizOption
-                key={i}
-                first={i === 0}
-                text={opt}
-                state={stateFor(i)}
-                onPress={() => {
-                  setPicked(i);
-                  onAnswered(i === q.answer);
-                }}
-              />
-            ))
-          ) : (
-            <>
-              <View style={styles.think}>
-                <NxIcon name="bulb" size={26} color={c.acc} />
-                <Text style={{ fontSize: 16, lineHeight: 23, color: c.t2, textAlign: "center" }}>Think of the answer first, then check yourself</Text>
-              </View>
-              <Pressable
-                onPress={() => setShowing(true)}
-                style={({ pressed }) => [styles.show, { borderTopColor: c.ln, backgroundColor: pressed ? c.soft : "transparent" }]}
-              >
-                <Text style={{ fontSize: 16, fontWeight: "600", color: c.t1 }}>Show options</Text>
-              </Pressable>
-            </>
-          )}
+          {q.options.map((opt, i) => (
+            <NxQuizOption
+              key={i}
+              first={i === 0}
+              text={opt}
+              state={stateFor(i)}
+              onPress={() => {
+                if (answered) return;
+                setPicked(i);
+                onAnswered(i === q.answer);
+              }}
+            />
+          ))}
         </NxQuizBox>
-        {wrong ? (
+        {answered ? (
           <View style={{ paddingTop: 16, paddingHorizontal: 16 }}>
             <NxSparkChip label="Explain" onPress={() => setExplain(true)} />
           </View>
         ) : null}
       </ScrollView>
-      <NxFootButton label="Continue" disabled={!wrong} onPress={onNext} />
+      <NxFootButton label="Continue" disabled={!answered} onPress={onNext} />
       <ExplainSheet
         visible={explain}
         onClose={() => setExplain(false)}
         front={q.prompt}
         back={q.card.back}
         initial={initial}
+        options={q.options}
+        picked={wrong && picked !== null ? q.options[picked] : null}
         source={
           source
             ? {
@@ -341,8 +323,6 @@ function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
   qHead: { paddingTop: 26, paddingHorizontal: 20, gap: 10 },
-  think: { paddingVertical: 30, paddingHorizontal: 24, alignItems: "center", gap: 10 },
-  show: { height: 52, borderTopWidth: 1, alignItems: "center", justifyContent: "center" },
   pairs: { paddingTop: 20, paddingHorizontal: 16, gap: 10 },
   pairRow: { flexDirection: "row", alignItems: "stretch", gap: 6 },
   pairIcon: { width: 20, alignItems: "center", justifyContent: "center" },
