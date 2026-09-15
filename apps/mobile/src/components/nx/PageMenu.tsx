@@ -48,7 +48,7 @@ export function PageMenu({ visible, onClose, items }: { visible: boolean; onClos
 }
 
 const styles = StyleSheet.create({
-  card: { position: 'absolute', right: 12, width: 240, borderRadius: 18, padding: 6, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#2a1c00', shadowOpacity: 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } },
+  card: { position: 'absolute', right: 12, width: 268, borderRadius: 18, padding: 6, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#2a1c00', shadowOpacity: 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingHorizontal: 10, borderRadius: 12 },
   tile: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   rule: { height: StyleSheet.hairlineWidth, marginHorizontal: 10, marginVertical: 4 },
