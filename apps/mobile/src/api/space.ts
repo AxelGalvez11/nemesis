@@ -39,15 +39,18 @@ export type LoadedPage = {
   in_trash: boolean;
 };
 
+/** The shape `ws_source_json` returns: note `page`, `at` and `by`, not `page_id` / `created_at`. */
 export type PageSource = {
   id: string;
-  page_id: string;
+  page: string;
   name: string;
   mime: string | null;
   bytes: number | null;
   chars: number | null;
   status: 'reading' | 'ready' | 'failed' | string;
-  created_at: string;
+  error: string | null;
+  by: string | null;
+  at: string;
 };
 
 export type SearchHit = { page_id: string; title: string; score: number; passages: string[] };

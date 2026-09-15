@@ -17,7 +17,10 @@ const TABS: { key: NxTabKey; icon: NxIconName; label: string }[] = [
   { key: 'chats', icon: 'bubble', label: 'Chats' },
 ];
 
-/** Tabs sit on top, like Notion: avatar, three pills, one action on the right. */
+/**
+ * Tabs sit on top, like Notion (canvas `tabs()`): avatar, then the three tabs. Only the open tab shows its
+ * name, in a grey pill; the other two are icons. One optional action sits at the far right.
+ */
 export function NxTopTabs({
   active,
   onChange,
@@ -34,33 +37,39 @@ export function NxTopTabs({
   const c = useNx();
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.tabsBar, { paddingTop: insets.top + 6 }]}>
-      <Pressable onPress={onAvatar} hitSlop={8} style={styles.iconBtn} accessibilityLabel="Profile">
+    <View style={[styles.tabsBar, { paddingTop: insets.top + 2 }]}>
+      <Pressable onPress={onAvatar} hitSlop={4} style={styles.iconBtn} accessibilityLabel="Profile">
         <View style={[styles.avatar, { backgroundColor: c.sel }]}>
           <Text style={{ color: c.t1, fontSize: 12, fontWeight: '600' }}>{(initial ?? 'N').slice(0, 1).toUpperCase()}</Text>
         </View>
       </Pressable>
-      <View style={styles.tabsRow}>
-        {TABS.map((t) => {
-          const on = t.key === active;
-          return (
-            <Pressable
-              key={t.key}
-              onPress={() => {
-                if (!on) void Haptics.selectionAsync();
-                onChange(t.key);
-              }}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: on }}
-              style={[styles.tab, on && { backgroundColor: c.sel }]}
-            >
-              <NxIcon name={t.icon} size={17} color={on ? c.t1 : c.t2} />
-              <Text style={[nxType.tab, { color: on ? c.t1 : c.t2, fontWeight: on ? '600' : '500' }]}>{t.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={styles.iconBtn}>{right}</View>
+      {TABS.map((t) => {
+        const on = t.key === active;
+        return on ? (
+          <View key={t.key} style={styles.tabWrap}>
+            <View style={[styles.tabOn, { backgroundColor: c.sel }]} accessibilityRole="tab" accessibilityState={{ selected: true }}>
+              <NxIcon name={t.icon} size={18} color={c.t1} />
+              <Text style={{ fontSize: 14, fontWeight: '500', color: c.t1 }}>{t.label}</Text>
+            </View>
+          </View>
+        ) : (
+          <Pressable
+            key={t.key}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              onChange(t.key);
+            }}
+            accessibilityRole="tab"
+            accessibilityLabel={t.label}
+            accessibilityState={{ selected: false }}
+            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.5 }]}
+          >
+            <NxIcon name={t.icon} size={20} color={c.t2} />
+          </Pressable>
+        );
+      })}
+      <View style={{ flex: 1 }} />
+      {right ? <View style={styles.iconBtn}>{right}</View> : null}
     </View>
   );
 }
@@ -219,9 +228,9 @@ export function NxChevron() {
 }
 
 const styles = StyleSheet.create({
-  tabsBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingBottom: 2 },
-  tabsRow: { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 2 },
-  tab: { height: 34, paddingHorizontal: 11, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tabsBar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: 10, paddingRight: 6, paddingBottom: 2 },
+  tabWrap: { height: 44, justifyContent: 'center', paddingHorizontal: 2 },
+  tabOn: { height: 34, paddingLeft: 9, paddingRight: 12, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', gap: 6 },
   avatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   iconBtn: { width: nxSize.iconButton, height: nxSize.iconButton, alignItems: 'center', justifyContent: 'center' },
   section: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 18, paddingBottom: 6, paddingHorizontal: nxSize.gutter },
