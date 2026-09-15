@@ -9,6 +9,7 @@ import { NxButton, NxIconButton } from "@/components/nx/primitives";
 import { NxModeCard } from "@/components/nx/study";
 import { useDecks, useSpacePages } from "@/hooks/useSpace";
 import { nxType, useNx } from "@/theme/nx";
+import { iconOf } from "@/lib/fresh";
 
 // A flashcard set (canvas: StudySet, StudyChooser). Study asks how: active recall quiz or flashcards.
 export default function SetScreen() {
@@ -37,7 +38,7 @@ export default function SetScreen() {
         <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
           <Prop icon="cards" label="Cards" value={String(cards.data?.length ?? deck?.cards ?? "")} />
           <Prop icon="clock" label="Due today" value={String(due)} />
-          {page ? <Prop icon="notes" label="From page" value={`${page.props.icon || "📄"} ${page.props.title || "Untitled"}`} /> : null}
+          {page ? <Prop icon="notes" label="From page" value={`${iconOf(page.props.icon)} ${page.props.title || "Untitled"}`} /> : null}
         </View>
         <View style={[styles.rule, { backgroundColor: c.ln }]} />
         <Text style={[nxType.section, { color: c.t2, paddingHorizontal: 20, paddingTop: 18 }]}>Cards</Text>

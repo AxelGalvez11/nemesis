@@ -9,6 +9,7 @@ import { NxBottomBar, NxRow, NxSection } from "@/components/nx/primitives";
 import { ago } from "@/lib/ago";
 import type { ThreadSummary } from "@/lib/chat-threads";
 import { useNx } from "@/theme/nx";
+import { isFresh } from "@/lib/fresh";
 
 // Chats (canvas artboard "Chats, previous chats"): opens on previous chats; a chat opens full screen.
 export default function ChatsTab() {
@@ -28,7 +29,8 @@ export default function ChatsTab() {
       return;
     }
     try {
-      setThreads(await listThreads(uid));
+      // Old chats are not shown. See lib/fresh.ts.
+      setThreads((await listThreads(uid)).filter((t) => isFresh(t.createdAt ?? t.updatedAt)));
     } catch {
       setThreads((prev) => prev ?? []);
     }

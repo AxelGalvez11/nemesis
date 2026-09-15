@@ -8,6 +8,7 @@ import { NxIcon } from "@/components/nx/NxIcon";
 import { NxBottomBar, NxIconTile, NxSection } from "@/components/nx/primitives";
 import { useDecks, useSpacePages } from "@/hooks/useSpace";
 import { nxType, useNx } from "@/theme/nx";
+import { iconOf } from "@/lib/fresh";
 
 // Study (canvas artboard "Study, filed by page"): every flashcard set, filed in folders that follow the page tree.
 type Folder = { page: PageSummary; folders: Folder[]; decks: Deck[]; due: number; sets: number };
@@ -20,7 +21,7 @@ export default function StudyTab() {
   const space = useSpacePages();
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
-  const { roots, loose } = useMemo(() => fileByPage(decks.data ?? [], space.byId), [decks.data, space.byId]);
+  const { roots } = useMemo(() => fileByPage(decks.data ?? [], space.byId), [decks.data, space.byId]);
 
   const deckRow = (d: Deck, level: number) => (
     <Row key={d.id} level={level} state="leaf" lead={<NxIconTile icon="cards" tint="accent" />} title={d.name.split("::").pop() || d.name} meta={`${d.cards} card${d.cards === 1 ? "" : "s"}`} due={d.due} onPress={() => router.push({ pathname: "/set/[id]", params: { id: d.id } })} />
@@ -33,7 +34,7 @@ export default function StudyTab() {
         key={f.page.id}
         level={level}
         state={expanded ? "open" : "closed"}
-        lead={<Text style={styles.emoji}>{f.page.props.icon || "📄"}</Text>}
+        lead={<Text style={styles.emoji}>{iconOf(f.page.props.icon)}</Text>}
         title={f.page.props.title || "Untitled"}
         meta={`${f.sets} set${f.sets === 1 ? "" : "s"}`}
         due={f.due}
@@ -58,7 +59,7 @@ export default function StudyTab() {
           <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
         ) : decks.error ? (
           <Text style={[styles.note, { color: c.t2 }]}>Your flashcards could not be loaded. Pull down to try again.</Text>
-        ) : roots.length === 0 && loose.length === 0 ? (
+        ) : roots.length === 0 ? (
           <View style={styles.empty}>
             <View style={[styles.emptyIcon, { backgroundColor: c.sel }]}>
               <NxIcon name="cards" size={30} color={c.t2} />
@@ -70,8 +71,6 @@ export default function StudyTab() {
           <>
             {roots.length ? <NxSection label="By page" /> : null}
             {roots.flatMap((f) => folderRows(f, 0))}
-            {loose.length ? <NxSection label="Not in a page" /> : null}
-            {loose.map((d) => deckRow(d, 0))}
           </>
         )}
       </ScrollView>
@@ -116,23 +115,8 @@ function fileByPage(decks: Deck[], byId: Map<string, PageSummary>): { roots: Fol
     else roots.push(f);
     return f;
   };
-  // 🔴 Sets made before sets knew their page have no page_id. File those under the page whose title matches
-  // the set's name (any "A::B" folder part, ignoring case) so the Study tab reads like the Notes tree.
-  const byTitle = new Map<string, PageSummary>();
-  for (const p of byId.values()) {
-    const t = (p.props.title ?? "").trim().toLowerCase();
-    if (t && !byTitle.has(t)) byTitle.set(t, p);
-  }
-  const guess = (name: string) => {
-    const parts = name.split("::").map((x) => x.trim().toLowerCase()).filter(Boolean);
-    for (const part of [...parts].reverse()) {
-      const hit = byTitle.get(part);
-      if (hit) return hit;
-    }
-    return undefined;
-  };
   for (const d of decks) {
-    const page = d.page_id ? byId.get(d.page_id) : guess(d.name);
+    const page = d.page_id ? byId.get(d.page_id) : undefined;
     if (!page) {
       loose.push(d);
       continue;

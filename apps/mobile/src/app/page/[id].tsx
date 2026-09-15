@@ -12,6 +12,7 @@ import { NxBottomBar, NxChevron, NxEmoji, NxIconButton, NxIconTile, NxPill, NxRo
 import { NxAddPill, NxPageTitle, NxWorkspaceTabs, type WsTab } from "@/components/nx/workspace";
 import { useDecks } from "@/hooks/useSpace";
 import { nxType, useNx } from "@/theme/nx";
+import { iconOf } from "@/lib/fresh";
 
 // A page is a workspace (canvas: NotePage, NoteSources, NoteCreate, SubPage): Notes / Sources / Create.
 // Sources flow UP: a page counts its sub-pages' sources too; a sub-page only sees its own.
@@ -38,7 +39,7 @@ export default function PageScreen() {
   const titles = useMemo(() => new Map(children.map((ch) => [ch.id, ch])), [children]);
   const parent = page.data?.ancestors[page.data.ancestors.length - 1];
   const title = String(page.data?.page.props.title ?? "");
-  const icon = (page.data?.page.props.icon as string | undefined) ?? null;
+  const icon = iconOf(page.data?.page.props.icon);
 
   const subTotals = children.slice(0, 20).map((ch, i) => ({ page: ch, count: childSources[i]?.data?.length ?? 0 })).filter((x) => x.count > 0);
   const ownCount = sources.data?.length ?? 0;
@@ -69,7 +70,7 @@ export default function PageScreen() {
         <View style={{ flex: 1, alignItems: "center" }}>
           {parent ? (
             <Pressable onPress={() => router.replace({ pathname: "/page/[id]", params: { id: parent.id } })} style={styles.crumb}>
-              <Text style={{ fontSize: 14 }}>{parent.props.icon || "📄"}</Text>
+              <Text style={{ fontSize: 14 }}>{iconOf(parent.props.icon)}</Text>
               <Text numberOfLines={1} style={{ fontSize: 14, color: c.t2, maxWidth: 200 }}>
                 {parent.props.title || "Untitled"}
               </Text>
@@ -128,7 +129,7 @@ export default function PageScreen() {
                 {subTotals.map(({ page: ch, count }) => (
                   <NxRow
                     key={`sub-${ch.id}`}
-                    lead={<NxEmoji emoji={ch.props.icon} />}
+                    lead={<NxEmoji emoji={iconOf(ch.props.icon)} />}
                     title={ch.props.title || "Untitled"}
                     meta={`Sub-page, ${count} source${count === 1 ? "" : "s"}`}
                     trail={<NxChevron />}
@@ -230,7 +231,7 @@ function numbered(blocks: Block[]): { block: Block; n: number }[] {
   });
 }
 
-function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; linked?: { props: { title?: string; icon?: string | null } }; onOpen: (id: string) => void }) {
+function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; linked?: { props: { title?: string; icon?: unknown } }; onOpen: (id: string) => void }) {
   const c = useNx();
   const pad = { marginLeft: block.depth * 20 };
   const body = [nxType.body, { color: c.t1 }];
@@ -278,7 +279,7 @@ function BlockView({ block, n, linked, onOpen }: { block: Block; n: number; link
     case "page":
       return (
         <Pressable onPress={() => block.pageId && onOpen(block.pageId)} style={[styles.line, { alignItems: "center" }, pad]}>
-          <Text style={{ fontSize: 18 }}>{linked?.props.icon || "📄"}</Text>
+          <Text style={{ fontSize: 18 }}>{iconOf(linked?.props.icon)}</Text>
           <Text style={[body, { textDecorationLine: "underline", textDecorationColor: c.ring }]}>{linked?.props.title || block.text || "Untitled"}</Text>
         </Pressable>
       );

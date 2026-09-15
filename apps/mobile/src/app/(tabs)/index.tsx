@@ -11,6 +11,7 @@ import { NxBottomBar, NxNewButton, NxRow, NxSection } from "@/components/nx/prim
 import { useSpacePages } from "@/hooks/useSpace";
 import { ago } from "@/lib/ago";
 import { nxType, useNx } from "@/theme/nx";
+import { iconOf } from "@/lib/fresh";
 
 // Notes, the home tab (canvas artboard "Main"): recent pages, then every page as a tree, Notion style.
 export default function NotesHome() {
@@ -56,7 +57,7 @@ export default function NotesHome() {
         >
           {node.children.length ? <NxIcon name={expanded ? "chev_d" : "chev_r"} size={14} color={c.t3} strokeWidth={2} /> : null}
         </Pressable>
-        <Text style={styles.treeEmoji}>{node.props.icon || "📄"}</Text>
+        <Text style={styles.treeEmoji}>{iconOf(node.props.icon)}</Text>
         <Text numberOfLines={1} style={[nxType.rowTitle, { color: c.t1, flex: 1 }]}>
           {node.props.title || "Untitled"}
         </Text>
@@ -85,7 +86,7 @@ export default function NotesHome() {
                 {recents.slice(0, 4).map((p) => (
                   <NxRow
                     key={`r-${p.id}`}
-                    lead={<Text style={styles.recentEmoji}>{p.props.icon || "📄"}</Text>}
+                    lead={<Text style={styles.recentEmoji}>{iconOf(p.props.icon)}</Text>}
                     title={p.props.title || "Untitled"}
                     meta={ago(p.edited_at)}
                     onPress={() => openPage(p.id)}
@@ -94,7 +95,7 @@ export default function NotesHome() {
               </>
             ) : null}
             <NxSection label="Pages" />
-            {tree.length ? tree.flatMap((n) => renderNode(n, 0)) : <Text style={[styles.note, { color: c.t2 }]}>No pages yet. Pages you make on the web show up here.</Text>}
+            {tree.length ? tree.flatMap((n) => renderNode(n, 0)) : <Text style={[styles.note, { color: c.t2 }]}>No pages yet. Tap New to make your first page. Pages you make on the web show up here too.</Text>}
           </>
         )}
       </ScrollView>

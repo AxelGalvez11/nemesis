@@ -66,6 +66,8 @@ export async function listDecks(): Promise<Deck[]> {
     .from('study_decks')
     .select('id,name,page_id,updated_at')
     .eq('user_id', uid)
+    // Only sets made from a page's Create tab. Old decks have no page and are not shown (lib/fresh.ts).
+    .not('page_id', 'is', null)
     .order('updated_at', { ascending: false });
   if (error) throw new Error(`study_decks: ${error.message}`);
   const counts = new Map<string, { cards: number; due: number }>();

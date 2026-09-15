@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { allPages, bootstrap, buildTree, type PageSummary } from "@/api/space";
 import { listDecks } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
+import { isFresh } from "@/lib/fresh";
 
 /** The signed-in person's space and every page in it, as a flat list, a lookup and a tree. */
 export function useSpacePages() {
@@ -15,14 +16,15 @@ export function useSpacePages() {
     enabled: !!spaceId,
     staleTime: 15_000,
   });
-  const list: PageSummary[] = pages.data ?? [];
+  // Old pages (copied in from the old library) are not shown. See lib/fresh.ts.
+  const list: PageSummary[] = (pages.data ?? []).filter((p) => isFresh(p.created_at));
   const byId = new Map(list.map((p) => [p.id, p]));
   return {
     spaceId,
     pages: list,
     byId,
     tree: buildTree(list),
-    recents: boot.data?.recents ?? [],
+    recents: (boot.data?.recents ?? []).filter((p) => isFresh(p.created_at)),
     loading: boot.isLoading || pages.isLoading,
     error: (boot.error ?? pages.error) as Error | null,
     refetch: async () => {

@@ -11,7 +11,7 @@ export type PageSummary = {
   id: string;
   parent_id: string | null;
   path: string[] | null;
-  props: { title?: string; icon?: string | null; cover?: string | null };
+  props: { title?: string; icon?: unknown; cover?: unknown };
   alive: boolean;
   has_children?: boolean;
   created_at: string | null;
