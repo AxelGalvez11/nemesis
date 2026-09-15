@@ -77,7 +77,8 @@ export default function FlashcardsReview() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false, presentation: "fullScreenModal" }} />
-      <NxStudyHeader title={name} onClose={close} />
+      {/* The header names the page the set came from, with its emoji (canvas Review: "📚 Contract law"). */}
+      <NxStudyHeader title={page ? `${iconOf(page.props.icon)} ${page.props.title || "Untitled"}` : name} onClose={close} />
 
       {cards.isLoading || queue === null ? (
         cards.error ? (

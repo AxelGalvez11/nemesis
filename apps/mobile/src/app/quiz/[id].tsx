@@ -106,7 +106,8 @@ export default function QuizScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false, presentation: "fullScreenModal" }} />
-      <NxStudyHeader title={name} onClose={close} />
+      {/* The quiz header names the set with the card-box emoji (canvas QuizRecall: "🗂️ Offer and acceptance"). */}
+      <NxStudyHeader title={name ? `🗂️ ${name}` : ""} onClose={close} />
 
       {!uid ? (
         <Centered title="Sign in to take a quiz" text="Quizzes are written from your own flashcards." />
