@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Redirect, Slot, usePathname, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import { SkelNotesHome } from "@/components/nx/Skeleton";
+import { NxBanner } from "@/components/nx/Banner";
+import { useOnline } from "@/lib/useOnline";
 import { useAuth } from "@/auth/AuthProvider";
 import { DrawerProvider, useShell } from "@/components/AppDrawer";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
@@ -26,8 +29,8 @@ export default function AppShellLayout() {
 
   if (loading) {
     return (
-      <View testID="auth-loading" style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: c.bg }}>
-        <ActivityIndicator color={c.t2} />
+      <View testID="auth-loading" style={{ flex: 1, paddingTop: 110, backgroundColor: c.bg }}>
+        <SkelNotesHome />
       </View>
     );
   }
@@ -54,6 +57,7 @@ function Frame() {
   const { session, isGuest, signOut } = useAuth();
   const active = tabFor(path);
   const [profile, setProfile] = useState(false);
+  const online = useOnline();
 
   // A student who closed the app partway through setup comes back signed in and never passes sign-in
   // again, so the same setup check sign-in uses runs here once per launch.
@@ -105,6 +109,7 @@ function Frame() {
           <Text style={{ color: c.acc, fontSize: 15, fontWeight: "600" }}>Sign in</Text>
         </Pressable>
       ) : null}
+      {online ? null : <NxBanner icon="wifi_off" title="You're offline" sub="Notes and recordings save on this phone and sync when you are back." />}
       <Slot />
       <ProfileMenu visible={profile} onClose={() => setProfile(false)} />
     </View>

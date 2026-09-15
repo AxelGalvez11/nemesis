@@ -10,6 +10,7 @@ import { addFileSource, addNoteSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
 import { addBlockAfter, setBlockText, setChecked, setPageTitle } from "@/api/spaceWrite";
 import { BlockEditor, type NewBlockType } from "@/components/nx/editor/BlockEditor";
+import { SkelBar, SkelBody, SkelGroup, SkelList, SkelPage } from "@/components/nx/Skeleton";
 import { addCard, deckCards, deleteCard, updateCard } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
 import { CardEditor, type CardDraft } from "@/components/nx/CardEditor";
@@ -229,7 +230,7 @@ export default function PageScreen() {
         }
       >
         {page.isLoading ? (
-          <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
+          <SkelPage />
         ) : page.error ? (
           <Text style={[styles.note, { color: c.t2 }]}>{(page.error as Error).message}</Text>
         ) : (
@@ -314,7 +315,18 @@ export default function PageScreen() {
               ) : (
                 <>
                   <NxSection label="In this page" right={canEdit ? <NxAddPill onPress={() => setAddOpen(true)} /> : undefined} />
-                  {sourceBusy ? <NxRow lead={<ActivityIndicator color={c.t3} style={{ width: 36 }} />} title={sourceBusy} meta="Reading…" /> : null}
+                  {sources.isLoading ? <SkelList rows={3} section={false} /> : null}
+                  {sourceBusy ? (
+                    <NxRow
+                      lead={
+                        <SkelGroup>
+                          <SkelBar width={36} height={36} radius={10} />
+                        </SkelGroup>
+                      }
+                      title={sourceBusy}
+                      meta="Reading…"
+                    />
+                  ) : null}
                   {sourceError ? <Text style={[styles.note, { color: c.danger, paddingTop: 4 }]}>{sourceError}</Text> : null}
                   {own.map((s) => (
                     <NxRow key={s.id} lead={s.mime === "text/x-nemesis-note" ? <NxEmoji emoji="📝" /> : <NxIconTile icon={sourceIcon(s)} />} title={s.name} meta={sourceMeta(s)} />
@@ -372,7 +384,11 @@ export default function PageScreen() {
                       />
                       {expanded ? (
                         <View style={[styles.cards, { borderColor: c.ln }]}>
-                          {openCards.isLoading ? <ActivityIndicator style={{ margin: 12 }} color={c.t3} /> : null}
+                          {openCards.isLoading ? (
+                            <SkelGroup style={{ paddingVertical: 12 }}>
+                              <SkelBody lines={[70, 90, 0, 60, 84]} />
+                            </SkelGroup>
+                          ) : null}
                           {(openCards.data ?? []).map((card) => (
                             <Pressable
                               key={card.id}
@@ -399,7 +415,7 @@ export default function PageScreen() {
       </ScrollView>
 
       {scrolledPast ? (
-        <View style={[StyleSheet.absoluteFillObject, { bottom: undefined, height: insets.top + 50 }]} pointerEvents="box-none">
+        <View style={[StyleSheet.absoluteFill, { bottom: undefined, height: insets.top + 50 }]} pointerEvents="box-none">
           <BlurView intensity={60} tint="systemChromeMaterial" style={[styles.scrollBar, { paddingTop: insets.top + 2, borderBottomColor: c.ln }]}>
             <NxIconButton icon="chev_l" size={22} label="Back" onPress={() => router.back()} />
             <Text numberOfLines={1} style={{ flex: 1, textAlign: "center", fontSize: 16, lineHeight: 22, fontWeight: "600", color: c.t1 }}>
@@ -412,7 +428,7 @@ export default function PageScreen() {
 
       <Animated.View
         pointerEvents={editing ? "box-none" : "box-none"}
-        style={[StyleSheet.absoluteFillObject, { top: undefined, height: insets.bottom + 90, opacity: barShown, transform: [{ translateY: barShown.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] }]}
+        style={[StyleSheet.absoluteFill, { top: undefined, height: insets.bottom + 90, opacity: barShown, transform: [{ translateY: barShown.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] }]}
       >
       <NxBottomBar
         ask={tab === "notes" ? "Ask about this note" : "Ask about this page"}

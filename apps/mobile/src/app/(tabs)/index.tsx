@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SkelNotesHome } from "@/components/nx/Skeleton";
+import { useOnline } from "@/lib/useOnline";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +29,7 @@ export default function NotesHome() {
   const { spaceId, pages, tree, recents, loading, error, refetch, refreshing } = useSpacePages();
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState(false);
+  const online = useOnline();
   const [making, setMaking] = useState(false);
   const [makeError, setMakeError] = useState<string | null>(null);
 
@@ -93,7 +96,7 @@ export default function NotesHome() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
+        <SkelNotesHome />
       ) : firstDay ? (
         <View style={{ flex: 1 }}>
           <View style={styles.center}>
@@ -101,11 +104,19 @@ export default function NotesHome() {
               <NxIcon name="notes" size={40} color={c.t1} strokeWidth={1.5} />
             </View>
             <Text style={[styles.centerTitle, { color: c.t1 }]}>Your notes live here</Text>
-            <Text style={[styles.centerText, { color: c.t2 }]}>Start a note. Nemesis and your own AI can read everything you keep here.</Text>
+            <Text style={[styles.centerText, { color: c.t2 }]}>Record a class or start a note. Nemesis and your own AI can read everything you keep here.</Text>
             {makeError ? <Text style={{ color: c.danger, fontSize: 14 }}>{makeError}</Text> : null}
           </View>
-          <View style={[styles.actions, { paddingBottom: insets.bottom + 12 }]}>
-            <NxButton label={making ? "Making your note" : "New note"} icon="compose" disabled={making || !spaceId} onPress={() => void newPage()} />
+          <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+            <NxButton label="Record a class" icon="mic" disabled={making || !spaceId} onPress={() => void newPage({ title: `Recording, ${shortDate()}` })} />
+            <Pressable
+              onPress={() => void newPage()}
+              disabled={making || !spaceId}
+              style={({ pressed }) => [styles.btn2, { backgroundColor: c.card, borderColor: c.ring, opacity: making || !spaceId ? 0.4 : pressed ? 0.7 : 1 }]}
+            >
+              <NxIcon name="compose" size={18} color={c.t1} />
+              <Text style={{ fontSize: 16, fontWeight: "500", color: c.t1 }}>New note</Text>
+            </Pressable>
           </View>
         </View>
       ) : (
@@ -128,7 +139,7 @@ export default function NotesHome() {
 
             {comingUp.length ? (
               <>
-                <NxSection label="Coming up" />
+                <NxSection label="Coming up" right={<Text style={{ fontSize: 13, lineHeight: 18, color: c.t3 }}>Google Calendar</Text>} />
                 {comingUp.map((e, i) => (
                   <NxRow
                     key={e.id}
@@ -155,7 +166,12 @@ export default function NotesHome() {
             <NxSection label="Private" />
             {tree.flatMap((n) => renderNode(n, 0))}
           </ScrollView>
-          <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new" } })} onSearch={() => router.push("/search")} right={spaceId ? <NxNewButton onPress={() => setMenu(true)} /> : null} />
+          <NxBottomBar
+            ask={online ? "Ask Nemesis" : "Ask Nemesis is offline"}
+            onAsk={online ? () => router.push({ pathname: "/c/[id]", params: { id: "new" } }) : undefined}
+            onSearch={() => router.push("/search")}
+            right={spaceId && online ? <NxNewButton onPress={() => setMenu(true)} /> : null}
+          />
         </>
       )}
       <NewMenu
@@ -223,4 +239,5 @@ const styles = StyleSheet.create({
   centerTitle: { fontSize: 22, lineHeight: 28, fontWeight: "600", letterSpacing: -0.3, textAlign: "center" },
   centerText: { fontSize: 16, lineHeight: 24, textAlign: "center" },
   actions: { paddingHorizontal: 20, gap: 8 },
+  btn2: { height: 50, borderRadius: 10, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
 });

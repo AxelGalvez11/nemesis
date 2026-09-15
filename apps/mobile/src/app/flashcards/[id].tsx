@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { SkelFlashcard } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cardQuiz, deckCards, markCard, reviewQueue, type Card } from "@/api/study";
@@ -82,7 +83,7 @@ export default function FlashcardsReview() {
         cards.error ? (
           <Text style={[styles.note, { color: c.t2 }]}>These cards could not be loaded. Close and try again.</Text>
         ) : (
-          <ActivityIndicator style={{ marginTop: 80 }} color={c.t3} />
+          <SkelFlashcard />
         )
       ) : done ? (
         <StudyDone

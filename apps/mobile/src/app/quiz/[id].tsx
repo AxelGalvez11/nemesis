@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SkelFlashcard } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -110,9 +111,9 @@ export default function QuizScreen() {
       {!uid ? (
         <Centered title="Sign in to take a quiz" text="Quizzes are written from your own flashcards." />
       ) : cards.isLoading || round.isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={c.t3} />
-          <Text style={{ color: c.t2, fontSize: 15, marginTop: 12 }}>Writing your quiz</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: c.t2, fontSize: 15, fontWeight: "500", textAlign: "center", paddingTop: 14 }}>Writing your quiz</Text>
+          <SkelFlashcard />
         </View>
       ) : cards.error || round.error ? (
         <Centered title="The quiz could not be made" text="Check your connection, then close and try again." />

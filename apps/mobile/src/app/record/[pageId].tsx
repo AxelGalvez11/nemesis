@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SkelPage } from '@/components/nx/Skeleton';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -223,7 +224,7 @@ export default function RecordScreen() {
         {loadError ? (
           <Text style={[styles.note, { color: c.t2 }]}>{loadError}</Text>
         ) : !page ? (
-          <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
+          <SkelPage />
         ) : (
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 160 }}>
             <Text style={[nxType.pageEmoji, { paddingHorizontal: 20, paddingTop: 14 }]}>{iconOf(page.page.props.icon, '🎙️')}</Text>

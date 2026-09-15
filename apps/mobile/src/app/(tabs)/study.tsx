@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SkelList } from "@/components/nx/Skeleton";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PageSummary } from "@/api/space";
@@ -104,7 +105,7 @@ export default function StudyTab() {
         }
       >
         {loading ? (
-          <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
+          <SkelList rows={6} lead="emoji" />
         ) : decks.error ? (
           <Text style={[styles.note, { color: c.t2 }]}>Your flashcards could not be loaded. Pull down to try again.</Text>
         ) : (

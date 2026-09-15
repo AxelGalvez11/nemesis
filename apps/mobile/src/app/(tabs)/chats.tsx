@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { ActionSheetIOS, Alert, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { SkelList } from "@/components/nx/Skeleton";
 import { useFocusEffect, useRouter, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { deleteThread, listThreads, pinThread, renameThread } from "@/api/chat";
@@ -168,7 +169,7 @@ export default function ChatsTab() {
         }
       >
         {threads === null ? (
-          <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
+          <SkelList rows={7} lead="none" />
         ) : (
           groups.map((g) => (
             <View key={g.label}>

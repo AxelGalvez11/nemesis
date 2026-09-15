@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SkelBar, SkelGroup } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import Animated, { FadeIn, SlideInDown, useReducedMotion } from "react-native-reanimated";
@@ -67,7 +68,16 @@ export default function SetScreen() {
         </View>
         <View style={[styles.rule, { backgroundColor: c.ln }]} />
         <Text style={[nxType.section, { color: c.t2, paddingHorizontal: 20, paddingTop: 18 }]}>Cards</Text>
-        {cards.isLoading ? <ActivityIndicator style={{ marginTop: 20 }} color={c.t3} /> : null}
+        {cards.isLoading ? (
+          <SkelGroup style={{ paddingHorizontal: 20 }}>
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={[styles.qa, { borderBottomColor: c.ln, gap: 8 }]}>
+                <SkelBar width={i % 2 ? "58%" : "74%"} height={13} />
+                <SkelBar width={i % 2 ? "82%" : "46%"} height={11} />
+              </View>
+            ))}
+          </SkelGroup>
+        ) : null}
         {cards.error ? <Text style={{ paddingHorizontal: 20, paddingTop: 12, fontSize: 15, color: c.t2 }}>These cards could not be loaded.</Text> : null}
         <View style={{ paddingHorizontal: 20 }}>
           {(cards.data ?? []).map((card) => (
