@@ -528,12 +528,22 @@ export default function PageScreen() {
                   </View>
                   <Text style={[styles.centerTitle, { color: c.t1 }]}>No sources yet</Text>
                   <Text style={[styles.centerText, { color: c.t2 }]}>
-                    {parent ? `This page starts fresh. What you add here also counts for ${parent.props.title || "the page above it"}.` : "Add files, photos, links or other notes, then use Create to make flashcards from them."}
+                    {parent
+                      ? parent.props.title
+                        ? `This page starts fresh. What you add here also counts for ${parent.props.title}, the page above it.`
+                        : "This page starts fresh. What you add here also counts for the page above it."
+                      : "Add files, photos, links or other notes, then use Create to make flashcards from them."}
                   </Text>
                   {sourceError ? <Text style={{ color: c.danger, fontSize: 14 }}>{sourceError}</Text> : null}
                   {canEdit ? (
-                    <View style={{ alignSelf: "stretch", marginTop: 8 }}>
-                      <NxButton label="Add a source" icon="plus" onPress={() => setAddOpen(true)} />
+                    <View style={{ alignSelf: "stretch", marginTop: 8, alignItems: "center", gap: 14 }}>
+                      <View style={{ alignSelf: "stretch" }}>
+                        <NxButton label="Add a source" icon="plus" onPress={() => setAddOpen(true)} />
+                      </View>
+                      {/* Canvas SubPage: a quiet way out to the note itself. */}
+                      <Pressable onPress={() => setTab("notes")} hitSlop={8} accessibilityRole="button">
+                        <Text style={{ fontSize: 15, color: c.t2 }}>Or start writing in Notes</Text>
+                      </Pressable>
                     </View>
                   ) : null}
                 </View>
