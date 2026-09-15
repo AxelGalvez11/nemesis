@@ -141,7 +141,9 @@ export function BlockEditor({
   const c = useNx();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const tileW = (width - 32 - 12) / 2;
+  // Floored with a point to spare: two tiles and the gap that add up to exactly the row width wrap one per line
+  // after rounding (the panel came out as a single column).
+  const tileW = Math.floor((width - 32 - 12) / 2) - 1;
 
   const titles = useMemo(() => new Map((pages ?? []).map((p) => [p.id, p.title])), [pages]);
   const titleOf = useCallback((id: string) => titles.get(id) ?? '', [titles]);
@@ -374,6 +376,9 @@ export function BlockEditor({
     setNotice(null);
     setPanel(p);
     Keyboard.dismiss();
+    // The panel takes the keyboard's place, so the toolbar sits on top of it (canvas AddBlock). With a software
+    // keyboard it is already there; with a hardware keyboard it has to rise from its resting spot.
+    lift.value = withTiming(panelH, { duration: 280, easing: EASE });
   };
   const closePanel = () => {
     setPanel(null);
