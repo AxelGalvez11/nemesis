@@ -332,6 +332,7 @@ const styles = StyleSheet.create({
   crumbWrap: { flex: 1, alignItems: 'center' },
   crumb: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 10 },
   note: { paddingHorizontal: 20, paddingTop: 16, fontSize: 15, lineHeight: 22 },
-  typed: { paddingHorizontal: 20, paddingTop: 16, minHeight: 200, textAlignVertical: 'top' },
+  // Canvas Recording: typed lines sit ~33pt apart, the same rhythm as "What you typed" after the recording ends.
+  typed: { paddingHorizontal: 20, paddingTop: 16, minHeight: 200, textAlignVertical: 'top', lineHeight: 33 },
   pillDock: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 });
