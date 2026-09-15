@@ -107,7 +107,7 @@ export default function QuizScreen() {
       {/* Presentation is set in _layout: changing it from inside the screen loops when opened by link. */}
       <Stack.Screen options={{ headerShown: false }} />
       {/* The quiz header names the set. No emoji (owner 2026-09-15). */}
-      <NxStudyHeader title={name} onClose={close} />
+      <NxStudyHeader title={page ? page.props.title || "Untitled" : name} onClose={close} />
 
       {!uid ? (
         <Centered title="Sign in to take a quiz" text="Quizzes are written from your own flashcards." />
