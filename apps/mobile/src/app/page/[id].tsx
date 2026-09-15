@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Modal, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, Animated, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { setFavorite, trashPage, visitPage } from "@/api/pageMenu";
 import { BlurView } from "expo-blur";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -80,6 +81,40 @@ export default function PageScreen() {
       })
       .catch(() => undefined);
   }, [id, qc]);
+  useEffect(() => {
+    if (id) void visitPage(id).catch(() => undefined);
+  }, [id]);
+
+  // The dots menu (canvas page_header): favourite and move to trash. Trash is restorable from the web.
+  const more = () => {
+    const spaceId = page.data?.space_id;
+    if (!spaceId) return;
+    const fav = space.favoriteIds.has(id);
+    const options = [fav ? "Remove from favorites" : "Add to favorites", ...(canEdit ? ["Move to trash"] : []), "Cancel"];
+    const run = async (label: string) => {
+      try {
+        if (label === "Move to trash") {
+          await trashPage(spaceId, id);
+          await qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
+          await qc.invalidateQueries({ queryKey: ["ws-bootstrap"] });
+          router.back();
+        } else if (label !== "Cancel") {
+          await setFavorite(id, !fav);
+          await qc.invalidateQueries({ queryKey: ["ws-bootstrap"] });
+        }
+      } catch (e) {
+        setEditError(e instanceof Error ? e.message : "That did not work. Try again.");
+      }
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: options.length - 1, destructiveButtonIndex: canEdit ? 1 : undefined, title: title || "Untitled" },
+        (i) => void run(options[i]!),
+      );
+    } else {
+      Alert.alert(title || "Untitled", undefined, options.map((o) => ({ text: o, style: o === "Cancel" ? "cancel" : o === "Move to trash" ? "destructive" : "default", onPress: () => void run(o) })));
+    }
+  };
   const record = () => router.push({ pathname: "/record/[pageId]", params: { pageId: id } });
   const titles = useMemo(() => new Map(children.map((ch) => [ch.id, ch])), [children]);
   const parent = page.data?.ancestors[page.data.ancestors.length - 1];
@@ -211,7 +246,7 @@ export default function PageScreen() {
             void Share.share({ message: `${title || "Untitled"}\n\n${text}`.trim() });
           }}
         />
-        <View style={{ width: 44 }} />
+        <NxIconButton icon="dots" label="More" onPress={more} />
       </View>
 
       <ScrollView

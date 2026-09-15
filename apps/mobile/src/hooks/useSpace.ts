@@ -25,6 +25,7 @@ export function useSpacePages() {
     byId,
     tree: buildTree(list),
     recents: (boot.data?.recents ?? []).filter((p) => isFresh(p.created_at)),
+    favoriteIds: new Set((boot.data?.favorites ?? []).map((p) => p.id)),
     loading: boot.isLoading || pages.isLoading,
     error: (boot.error ?? pages.error) as Error | null,
     refetch: async () => {

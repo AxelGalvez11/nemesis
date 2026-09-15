@@ -23,9 +23,19 @@ type Op =
   | { op: 'update'; id: string; base?: number; bases?: Record<string, number>; set?: Record<string, unknown>; lists?: Record<string, { ins?: [string, string | null][]; del?: string[] }> };
 
 export function newId(): string {
-  // RFC 4122 v4 from crypto.getRandomValues (Hermes has it on SDK 56).
+  // RFC 4122 v4. 🔴 Hermes has NO global `crypto` (a tap on New note threw "Property 'crypto' doesn't exist"),
+  // and a polyfill is a native module, so the bytes come from getRandomValues only when it exists, else
+  // Math.random mixed with the clock. These ids only need to be unique, not secret.
   const b = new Uint8Array(16);
-  crypto.getRandomValues(b);
+  const g = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (g?.getRandomValues) g.getRandomValues(b);
+  else {
+    let t = Date.now();
+    for (let i = 0; i < 16; i++) {
+      b[i] = (Math.floor(Math.random() * 256) ^ (t & 0xff)) & 0xff;
+      t = Math.floor(t / 256) || Math.floor(Math.random() * 2 ** 32);
+    }
+  }
   b[6] = (b[6]! & 0x0f) | 0x40;
   b[8] = (b[8]! & 0x3f) | 0x80;
   const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
