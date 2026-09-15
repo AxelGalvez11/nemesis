@@ -86,6 +86,34 @@ export async function appendBlock(
   return id;
 }
 
+/**
+ * Adds a block right after `after` inside the same parent (page or block), or at the end of the page when
+ * `after` is null. A page block also creates the sub-page it points at.
+ */
+export async function addBlockAfter(
+  spaceId: string,
+  pageId: string,
+  pageContent: string[],
+  after: { id: string; parentId: string | null } | null,
+  type: string,
+): Promise<string> {
+  const id = newId();
+  const parent = after?.parentId ?? pageId;
+  const ops: Op[] = [];
+  if (type === 'page') {
+    const subId = newId();
+    ops.push({ op: 'create', id: subId, kind: 'page', type: 'page', parent_id: pageId, props: { title: '', content: [] } });
+    ops.push({ op: 'create', id, kind: 'block', type: 'page', parent_id: parent, props: { pageId: subId, title: [] } });
+  } else {
+    ops.push({ op: 'create', id, kind: 'block', type, parent_id: parent, props: { title: [], ...(type === 'to_do' ? { checked: false } : {}) } });
+  }
+  const listField = parent === pageId ? 'content' : 'children';
+  const anchor = after ? after.id : lastOf(pageContent);
+  ops.push({ op: 'update', id: parent, lists: { [listField]: { ins: [[id, anchor]] } } });
+  await apply(spaceId, ops);
+  return id;
+}
+
 /** Replaces a block's text. `fieldVersion` is the `fv.title` the phone loaded; a newer edit elsewhere comes back as a conflict. */
 export async function setBlockText(spaceId: string, blockId: string, text: string, fieldVersion?: number): Promise<'saved' | 'conflict'> {
   const res = await apply(spaceId, [

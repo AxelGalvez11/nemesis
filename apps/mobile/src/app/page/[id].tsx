@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { makeFlashcards } from "@/api/makeCards";
 import { addFileSource, addNoteSource } from "@/api/pageSources";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
-import { setPageTitle } from "@/api/spaceWrite";
+import { addBlockAfter, setBlockText, setChecked, setPageTitle } from "@/api/spaceWrite";
+import { BlockEditor, type NewBlockType } from "@/components/nx/editor/BlockEditor";
 import { addCard, deckCards, deleteCard, updateCard } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
 import { CardEditor, type CardDraft } from "@/components/nx/CardEditor";
@@ -31,6 +32,8 @@ export default function PageScreen() {
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
   const [tab, setTab] = useState<WsTab>("notes");
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const page = useQuery({ queryKey: ["ws-page", id], queryFn: () => loadPage(id), enabled: !!id });
   const sources = useQuery({ queryKey: ["ws-sources", id], queryFn: () => pageSources(id), enabled: !!id });
@@ -53,6 +56,40 @@ export default function PageScreen() {
   const subTotals = children.slice(0, 20).map((ch, i) => ({ page: ch, count: childSources[i]?.data?.length ?? 0 })).filter((x) => x.count > 0);
   const totalSources = own.length + subTotals.reduce((n, x) => n + x.count, 0);
   const recording = blocks.find((b) => b.type === "transcription");
+
+  const spaceIdOfPage = page.data?.space_id ?? null;
+  const pageContent = (page.data?.page.props.content as string[] | undefined) ?? [];
+  const reloadPage = () => void qc.invalidateQueries({ queryKey: ["ws-page", id] });
+  const saveText = async (block: Block, text: string) => {
+    if (!spaceIdOfPage) return;
+    try {
+      const result = await setBlockText(spaceIdOfPage, block.id, text, block.titleVersion);
+      if (result === "conflict") setEditError("This line was changed somewhere else, so the newest version is shown.");
+      reloadPage();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "That change did not save.");
+    }
+  };
+  const toggle = async (block: Block, checked: boolean) => {
+    if (!spaceIdOfPage) return;
+    try {
+      await setChecked(spaceIdOfPage, block.id, checked);
+      reloadPage();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "That change did not save.");
+    }
+  };
+  const addBlock = async (type: NewBlockType, afterId: string | null) => {
+    if (!spaceIdOfPage) return;
+    try {
+      const after = afterId ? blocks.find((b) => b.id === afterId) : undefined;
+      await addBlockAfter(spaceIdOfPage, id, pageContent, after ? { id: after.id, parentId: after.parentId === id ? null : after.parentId } : null, type);
+      reloadPage();
+      if (type === "page") void qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "The block could not be added.");
+    }
+  };
 
   const refreshSources = () => {
     void qc.invalidateQueries({ queryKey: ["ws-sources", id] });
@@ -189,10 +226,32 @@ export default function PageScreen() {
                 </View>
                 <View style={[styles.rule, { backgroundColor: c.ln }]} />
                 <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 6 }}>
-                  {blocks.length === 0 ? <Text style={[nxType.body, { color: c.t3 }]}>This page is empty.</Text> : null}
-                  {numbered(blocks).map(({ block, n }) => (
-                    <BlockView key={block.id} block={block} n={n} linked={block.pageId ? titles.get(block.pageId) : undefined} onOpen={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })} />
-                  ))}
+                  {editError ? <Text style={{ color: c.danger, fontSize: 14 }}>{editError}</Text> : null}
+                  {editing ? (
+                    <>
+                      <BlockEditor
+                        blocks={blocks}
+                        onSaveText={(b, t) => void saveText(b, t)}
+                        onToggle={(b, v) => void toggle(b, v)}
+                        onAddBlock={(type, after) => void addBlock(type, after)}
+                        onOpenPage={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })}
+                      />
+                      <Pressable onPress={() => void addBlock("text", blocks.length ? blocks[blocks.length - 1]!.id : null)} style={{ paddingVertical: 10 }}>
+                        <Text style={[nxType.body, { color: c.t3 }]}>{blocks.length ? "Add a line" : "Tap to start writing"}</Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      {blocks.length === 0 ? (
+                        <Pressable disabled={!canEdit} onPress={() => setEditing(true)}>
+                          <Text style={[nxType.body, { color: c.t3 }]}>{canEdit ? "Tap the pencil to start writing." : "This page is empty."}</Text>
+                        </Pressable>
+                      ) : null}
+                      {numbered(blocks).map(({ block, n }) => (
+                        <BlockView key={block.id} block={block} n={n} linked={block.pageId ? titles.get(block.pageId) : undefined} onOpen={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })} />
+                      ))}
+                    </>
+                  )}
                 </View>
               </>
             ) : null}
@@ -301,7 +360,24 @@ export default function PageScreen() {
         )}
       </ScrollView>
 
-      <NxBottomBar ask={tab === "notes" ? "Ask about this note" : "Ask about this page"} onAsk={() => router.push("/chat")} />
+      <NxBottomBar
+        ask={tab === "notes" ? "Ask about this note" : "Ask about this page"}
+        onAsk={() => router.push("/chat")}
+        right={
+          tab === "notes" && canEdit ? (
+            <Pressable
+              onPress={() => {
+                setEditError(null);
+                setEditing((e) => !e);
+              }}
+              style={[styles.round, { backgroundColor: editing ? c.inv : c.card, borderColor: c.ring }]}
+              accessibilityLabel={editing ? "Done editing" : "Edit this note"}
+            >
+              <NxIcon name={editing ? "check" : "compose"} size={20} color={editing ? c.onInv : c.t1} strokeWidth={editing ? 2.2 : 1.6} />
+            </Pressable>
+          ) : null
+        }
+      />
 
       {/* Add a source (canvas AddSource): only the ways that work from the phone today. */}
       <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
@@ -587,4 +663,5 @@ const styles = StyleSheet.create({
   sheetHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sheetTitle: { fontSize: 19, lineHeight: 24, fontWeight: "600", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   tick: { width: 22, height: 22, borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  round: { width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: "center", justifyContent: "center", shadowColor: "#2a1c00", shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } },
 });

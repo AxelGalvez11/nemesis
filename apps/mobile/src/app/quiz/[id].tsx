@@ -7,25 +7,43 @@ import * as Haptics from "expo-haptics";
 import { buildRound, choiceFor, type ChoiceQuestion, type MatchRound, type QuizItem } from "@/api/quiz";
 import { deckCards, markCard } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
-import { NxButton, NxIconButton } from "@/components/nx/primitives";
-import { NxMatchTile, NxQuizOption, type OptState, type PairState } from "@/components/nx/study";
-import { useDecks } from "@/hooks/useSpace";
+import { NxIcon } from "@/components/nx/NxIcon";
+import {
+  NxFootButton,
+  NxMatchTile,
+  NxQLabel,
+  NxQText,
+  NxQuizBox,
+  NxQuizOption,
+  NxSparkChip,
+  NxStudyHeader,
+  type OptState,
+  type PairState,
+} from "@/components/nx/study";
+import { ExplainSheet } from "@/components/nx/study/ExplainSheet";
+import { StudyDone } from "@/components/nx/study/StudyDone";
+import { useDecks, useSpacePages } from "@/hooks/useSpace";
+import { iconOf } from "@/lib/fresh";
 import { useNx } from "@/theme/nx";
 
-// Active recall quiz (canvas: QuizRecall, QuizChoice, QuizMatch; memory: gizmo-quiz-teardown).
-// Think first, then 4 options. Right: green, moves on by itself. Wrong: red, the right answer and Continue.
-// Missed cards come back at the end of the round. A progress bar, no "3 of 10". No hearts, XP or streaks.
+type Source = { emoji: string; title: string; onPress: () => void } | null;
+
+// Active recall quiz (canvas QuizRecall, QuizChoice, QuizMatch; memory: gizmo-quiz-teardown).
+// Think first, then 4 options. Right: green, moves on by itself. Wrong: red, the right answer, Explain and
+// Continue. Missed cards come back at the end of the round. No hearts, XP or streaks.
 // Every first answer also grades the card for spaced repetition (right = good, wrong = again).
 export default function QuizScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const c = useNx();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
   const decks = useDecks();
+  const space = useSpacePages();
   const deck = decks.data?.find((d) => d.id === id);
+  const name = deck?.name.split("::").pop() ?? "";
+  const page = deck?.page_id ? space.byId.get(deck.page_id) : undefined;
   const cards = useQuery({ queryKey: ["study-cards", id], queryFn: () => deckCards(id), enabled: !!id });
 
   const [roundNo, setRoundNo] = useState(0);
@@ -38,7 +56,6 @@ export default function QuizScreen() {
   });
 
   const [queue, setQueue] = useState<QuizItem[]>([]);
-  const [total, setTotal] = useState(0);
   const [index, setIndex] = useState(0);
   const graded = useRef(new Set<string>());
   const [firstTry, setFirstTry] = useState({ right: 0, wrong: 0 });
@@ -46,7 +63,6 @@ export default function QuizScreen() {
   useEffect(() => {
     if (!round.data) return;
     setQueue(round.data.items);
-    setTotal(round.data.items.length);
     setIndex(0);
     graded.current = new Set();
     setFirstTry({ right: 0, wrong: 0 });
@@ -65,31 +81,31 @@ export default function QuizScreen() {
     if (!ok) {
       // Back at the end of the round, with the options shuffled again.
       const again = choiceFor(q.card, round.data?.options.get(q.card.id), cards.data ?? [], true);
-      if (again) {
-        setQueue((list) => [...list, again]);
-        setTotal((n) => n + 1);
-      }
+      if (again) setQueue((list) => [...list, again]);
     }
   };
 
-  const close = () => {
+  const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["study-decks"] });
     void qc.invalidateQueries({ queryKey: ["study-cards", id] });
+  };
+  const close = () => {
+    refresh();
     router.back();
   };
 
-  const progress = total ? Math.min(1, index / total) : 0;
+  const source: Source = page
+    ? {
+        emoji: iconOf(page.props.icon),
+        title: page.props.title || "Untitled",
+        onPress: () => router.push({ pathname: "/page/[id]", params: { id: page.id } }),
+      }
+    : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Stack.Screen options={{ headerShown: false, presentation: "fullScreenModal" }} />
-      <View style={[styles.header, { paddingTop: insets.top + 2 }]}>
-        <NxIconButton icon="x" size={22} label="Close" onPress={close} />
-        <View style={[styles.track, { backgroundColor: c.sel }]}>
-          <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: c.acc }]} />
-        </View>
-        <View style={{ width: 44 }} />
-      </View>
+      <NxStudyHeader title={name} onClose={close} />
 
       {!uid ? (
         <Centered title="Sign in to take a quiz" text="Quizzes are written from your own flashcards." />
@@ -98,26 +114,34 @@ export default function QuizScreen() {
           <ActivityIndicator color={c.t3} />
           <Text style={{ color: c.t2, fontSize: 15, marginTop: 12 }}>Writing your quiz</Text>
         </View>
+      ) : cards.error || round.error ? (
+        <Centered title="The quiz could not be made" text="Check your connection, then close and try again." />
       ) : round.data && round.data.items.length === 0 ? (
         <Centered title="Nothing to quiz yet" text="Add a few cards to this set, then try again." />
       ) : finished ? (
-        <View style={styles.center}>
-          <Text style={{ fontSize: 26, fontWeight: "600", color: c.t1 }}>Round complete</Text>
-          <Text style={{ fontSize: 15, color: c.t2, marginTop: 4 }}>{deck?.name.split("::").pop() ?? ""}</Text>
-          <View style={styles.summary}>
-            <Stat label="Right first time" value={firstTry.right} color={c.ok} />
-            <Stat label="To review" value={firstTry.wrong} color={c.danger} />
-          </View>
-          <View style={{ alignSelf: "stretch", marginTop: 24, gap: 10, paddingHorizontal: 24 }}>
-            <NxButton label="Next round" onPress={() => setRoundNo((n) => n + 1)} />
-            <Pressable onPress={close} style={styles.textBtn}>
-              <Text style={{ color: c.t2, fontSize: 15 }}>Finish</Text>
-            </Pressable>
-          </View>
-        </View>
+        <StudyDone
+          title="Round done"
+          sub={firstTry.wrong ? "The cards you missed will come back sooner." : "You got every card right the first time."}
+          got={firstTry.right}
+          missed={firstTry.wrong}
+          primary="Next round"
+          onPrimary={() => setRoundNo((n) => n + 1)}
+          secondary="Back to Study"
+          onSecondary={() => {
+            refresh();
+            router.dismissTo("/study");
+          }}
+        />
       ) : item ? (
         item.kind === "choice" ? (
-          <Choice key={`q-${roundNo}-${index}`} q={item} onAnswered={(ok) => answer(item, ok)} onNext={() => setIndex((i) => i + 1)} />
+          <Choice
+            key={`q-${roundNo}-${index}`}
+            q={item}
+            initial={round.data?.options.get(item.card.id)?.explain}
+            source={source}
+            onAnswered={(ok) => answer(item, ok)}
+            onNext={() => setIndex((i) => i + 1)}
+          />
         ) : (
           <Match key={`m-${roundNo}-${index}`} round={item} onNext={() => setIndex((i) => i + 1)} />
         )
@@ -126,59 +150,64 @@ export default function QuizScreen() {
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: number; color: string }) {
-  const c = useNx();
-  return (
-    <View style={{ alignItems: "center", flex: 1 }}>
-      <Text style={{ fontSize: 30, fontWeight: "700", color }}>{value}</Text>
-      <Text style={{ fontSize: 13, color: c.t2 }}>{label}</Text>
-    </View>
-  );
-}
-
 function Centered({ title, text }: { title: string; text: string }) {
   const c = useNx();
   return (
     <View style={styles.center}>
-      <Text style={{ fontSize: 20, fontWeight: "600", color: c.t1 }}>{title}</Text>
+      <Text style={{ fontSize: 20, fontWeight: "600", color: c.t1, textAlign: "center" }}>{title}</Text>
       <Text style={{ fontSize: 15, lineHeight: 22, color: c.t2, textAlign: "center", marginTop: 6 }}>{text}</Text>
     </View>
   );
 }
 
-function Choice({ q, onAnswered, onNext }: { q: ChoiceQuestion; onAnswered: (ok: boolean) => void; onNext: () => void }) {
+function Choice({
+  q,
+  initial,
+  source,
+  onAnswered,
+  onNext,
+}: {
+  q: ChoiceQuestion;
+  initial?: string;
+  source: Source;
+  onAnswered: (ok: boolean) => void;
+  onNext: () => void;
+}) {
   const c = useNx();
   const insets = useSafeAreaInsets();
   const [showing, setShowing] = useState(q.retry === true);
   const [picked, setPicked] = useState<number | null>(null);
   const [explain, setExplain] = useState(false);
   const right = picked !== null && picked === q.answer;
+  const wrong = picked !== null && !right;
 
   // A right answer moves on by itself, like Gizmo.
   useEffect(() => {
     if (!right) return;
-    const t = setTimeout(onNext, 700);
+    const t = setTimeout(onNext, 800);
     return () => clearTimeout(t);
   }, [right, onNext]);
 
   const stateFor = (i: number): OptState => {
     if (picked === null) return "idle";
-    if (i === q.answer) return "right";
-    if (i === picked) return "wrong";
-    return "muted";
+    if (i === q.answer) return "ok";
+    if (i === picked) return "bad";
+    return "dim";
   };
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 120, gap: 12 }}>
-        <Text style={[styles.label, { color: q.retry ? c.danger : c.t3 }]}>
-          {q.retry ? "Previous mistake" : showing ? "Choose the answer" : "Think of the answer first"}
-        </Text>
-        <Text style={{ fontSize: 22, lineHeight: 30, fontWeight: "600", color: c.t1 }}>{q.prompt}</Text>
-        {showing
-          ? q.options.map((opt, i) => (
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
+        <View style={styles.qHead}>
+          <NxQLabel>{!showing ? "Active recall" : q.retry ? "Try this one again" : "Multiple choice"}</NxQLabel>
+          <NxQText>{q.prompt}</NxQText>
+        </View>
+        <NxQuizBox>
+          {showing ? (
+            q.options.map((opt, i) => (
               <NxQuizOption
                 key={i}
+                first={i === 0}
                 text={opt}
                 state={stateFor(i)}
                 onPress={() => {
@@ -187,29 +216,46 @@ function Choice({ q, onAnswered, onNext }: { q: ChoiceQuestion; onAnswered: (ok:
                 }}
               />
             ))
-          : null}
-        {picked !== null && !right && explain ? (
-          <View style={[styles.explain, { backgroundColor: c.sunk }]}>
-            <Text style={{ fontSize: 15, lineHeight: 22, color: c.t1 }}>{q.explain}</Text>
+          ) : (
+            <>
+              <View style={styles.think}>
+                <NxIcon name="bulb" size={26} color={c.acc} />
+                <Text style={{ fontSize: 16, lineHeight: 23, color: c.t2, textAlign: "center" }}>Think of the answer first, then check yourself</Text>
+              </View>
+              <Pressable
+                onPress={() => setShowing(true)}
+                style={({ pressed }) => [styles.show, { borderTopColor: c.ln, backgroundColor: pressed ? c.soft : "transparent" }]}
+              >
+                <Text style={{ fontSize: 16, fontWeight: "600", color: c.t1 }}>Show options</Text>
+              </Pressable>
+            </>
+          )}
+        </NxQuizBox>
+        {wrong ? (
+          <View style={{ paddingTop: 16, paddingHorizontal: 16 }}>
+            <NxSparkChip label="Explain" onPress={() => setExplain(true)} />
           </View>
         ) : null}
       </ScrollView>
-      <View style={[styles.foot, { paddingBottom: insets.bottom + 12 }]}>
-        {!showing ? (
-          <NxButton label="Show options" onPress={() => setShowing(true)} />
-        ) : picked === null || right ? null : (
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            {!explain ? (
-              <Pressable onPress={() => setExplain(true)} style={[styles.secondary, { borderColor: c.ring }]}>
-                <Text style={{ color: c.t1, fontSize: 16, fontWeight: "500" }}>Explain</Text>
-              </Pressable>
-            ) : null}
-            <View style={{ flex: 1 }}>
-              <NxButton label="Continue" onPress={onNext} />
-            </View>
-          </View>
-        )}
-      </View>
+      <NxFootButton label="Continue" disabled={!wrong} onPress={onNext} />
+      <ExplainSheet
+        visible={explain}
+        onClose={() => setExplain(false)}
+        front={q.prompt}
+        back={q.card.back}
+        initial={initial}
+        source={
+          source
+            ? {
+                ...source,
+                onPress: () => {
+                  setExplain(false);
+                  source.onPress();
+                },
+              }
+            : null
+        }
+      />
     </View>
   );
 }
@@ -217,7 +263,7 @@ function Choice({ q, onAnswered, onNext }: { q: ChoiceQuestion; onAnswered: (ok:
 function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
   const c = useNx();
   const insets = useSafeAreaInsets();
-  const rights = useMemo(() => {
+  const shuffledRights = useMemo(() => {
     const ids = round.pairs.map((p) => p.cardId);
     for (let i = ids.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -225,67 +271,77 @@ function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
     }
     return ids;
   }, [round]);
-  const [picked, setPicked] = useState<string | null>(null);
+  const byId = useMemo(() => new Map(round.pairs.map((p) => [p.cardId, p])), [round]);
+  const [pickL, setPickL] = useState<string | null>(null);
+  const [pickR, setPickR] = useState<string | null>(null);
   const [matched, setMatched] = useState<string[]>([]);
-  const [missed, setMissed] = useState(false);
-  const byId = new Map(round.pairs.map((p) => [p.cardId, p]));
+  const [bad, setBad] = useState<{ l: string; r: string } | null>(null);
   const done = matched.length === round.pairs.length;
 
   useEffect(() => {
-    if (!missed) return;
-    const t = setTimeout(() => setMissed(false), 700);
+    if (!bad) return;
+    const t = setTimeout(() => setBad(null), 600);
     return () => clearTimeout(t);
-  }, [missed]);
+  }, [bad]);
 
-  const leftState = (cid: string): PairState => (matched.includes(cid) ? "matched" : picked === cid ? "picked" : "idle");
+  const tryPair = (l: string, r: string) => {
+    setPickL(null);
+    setPickR(null);
+    if (l === r) {
+      void Haptics.selectionAsync();
+      setMatched((m) => [...m, l]);
+    } else {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setBad({ l, r });
+    }
+  };
+
+  // Matched pairs line up at the top, side by side; the rest keep their places below.
+  const leftRest = round.pairs.map((p) => p.cardId).filter((cid) => !matched.includes(cid));
+  const rightRest = shuffledRights.filter((cid) => !matched.includes(cid));
+  const rows: [string, string][] = [...matched.map((cid): [string, string] => [cid, cid]), ...leftRest.map((cid, i): [string, string] => [cid, rightRest[i]!])];
+
+  const leftState = (cid: string): PairState => (matched.includes(cid) ? "ok" : bad?.l === cid ? "bad" : pickL === cid ? "pick" : "idle");
+  const rightState = (cid: string): PairState => (matched.includes(cid) ? "ok" : bad?.r === cid ? "bad" : pickR === cid ? "pick" : "idle");
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 120, gap: 12 }}>
-        <Text style={[styles.label, { color: c.t3 }]}>Match each one to its answer</Text>
-        {missed ? <Text style={{ color: c.danger, fontSize: 14 }}>Not that one. Try again.</Text> : null}
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1, gap: 10 }}>
-            {round.pairs.map((p) => (
-              <NxMatchTile key={`l-${p.cardId}`} text={p.left} state={leftState(p.cardId)} onPress={() => setPicked(p.cardId)} />
-            ))}
-          </View>
-          <View style={{ flex: 1, gap: 10 }}>
-            {rights.map((rid) => (
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
+        <View style={styles.qHead}>
+          <NxQLabel>Matching</NxQLabel>
+          <NxQText>Match each one to its answer</NxQText>
+        </View>
+        <View style={styles.pairs}>
+          {rows.map(([l, r]) => (
+            <View key={`${l}-${r}`} style={styles.pairRow}>
               <NxMatchTile
-                key={`r-${rid}`}
-                text={byId.get(rid)?.right ?? ""}
-                state={matched.includes(rid) ? "matched" : "idle"}
-                onPress={() => {
-                  if (!picked) return;
-                  if (picked === rid) {
-                    void Haptics.selectionAsync();
-                    setMatched((m) => [...m, rid]);
-                    setPicked(null);
-                  } else {
-                    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                    setMissed(true);
-                  }
-                }}
+                text={byId.get(l)?.left ?? ""}
+                state={leftState(l)}
+                onPress={() => (pickR ? tryPair(l, pickR) : setPickL((p) => (p === l ? null : l)))}
               />
-            ))}
-          </View>
+              <View style={styles.pairIcon}>
+                <NxIcon name="sync" size={14} color={c.t3} />
+              </View>
+              <NxMatchTile
+                text={byId.get(r)?.right ?? ""}
+                state={rightState(r)}
+                onPress={() => (pickL ? tryPair(pickL, r) : setPickR((p) => (p === r ? null : r)))}
+              />
+            </View>
+          ))}
         </View>
       </ScrollView>
-      <View style={[styles.foot, { paddingBottom: insets.bottom + 12 }]}>{done ? <NxButton label="Continue" onPress={onNext} /> : null}</View>
+      <NxFootButton label="Continue" disabled={!done} onPress={onNext} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4 },
-  track: { flex: 1, height: 6, borderRadius: 3, overflow: "hidden" },
-  fill: { height: 6, borderRadius: 3 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
-  summary: { flexDirection: "row", alignSelf: "stretch", marginTop: 24, paddingHorizontal: 24 },
-  label: { fontSize: 13, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.6 },
-  explain: { borderRadius: 14, padding: 14 },
-  foot: { position: "absolute", left: 16, right: 16, bottom: 0 },
-  secondary: { height: 50, paddingHorizontal: 20, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  textBtn: { height: 44, alignItems: "center", justifyContent: "center" },
+  qHead: { paddingTop: 26, paddingHorizontal: 20, gap: 10 },
+  think: { paddingVertical: 30, paddingHorizontal: 24, alignItems: "center", gap: 10 },
+  show: { height: 52, borderTopWidth: 1, alignItems: "center", justifyContent: "center" },
+  pairs: { paddingTop: 20, paddingHorizontal: 16, gap: 10 },
+  pairRow: { flexDirection: "row", alignItems: "stretch", gap: 6 },
+  pairIcon: { width: 20, alignItems: "center", justifyContent: "center" },
 });

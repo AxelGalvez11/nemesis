@@ -27,6 +27,8 @@ export type SpaceRecord = {
   props: Record<string, unknown>;
   alive: boolean;
   edited_at: string | null;
+  /** Field versions (ws_apply): which record version last set each field. */
+  fv?: Record<string, number>;
 };
 
 export type LoadedPage = {
@@ -114,7 +116,7 @@ export function recordText(title: unknown): string {
   return title.map((seg) => (Array.isArray(seg) && typeof seg[0] === 'string' ? seg[0] : '')).join('');
 }
 
-export type Block = { id: string; type: string; text: string; checked?: boolean; pageId?: string; transcript?: string; depth: number };
+export type Block = { id: string; type: string; text: string; checked?: boolean; pageId?: string; transcript?: string; depth: number; parentId: string | null; titleVersion?: number };
 
 /** Flattens a loaded page into render order: page.props.content, then each block's children, depth-first. */
 export function pageBlocks(loaded: LoadedPage): Block[] {
@@ -140,6 +142,8 @@ export function pageBlocks(loaded: LoadedPage): Block[] {
         pageId: typeof p.pageId === 'string' ? p.pageId : undefined,
         transcript,
         depth,
+        parentId: r.parent_id,
+        titleVersion: typeof r.fv?.title === 'number' ? r.fv.title : undefined,
       });
       walk(p.children, depth + 1);
     }
