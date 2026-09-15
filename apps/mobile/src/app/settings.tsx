@@ -108,7 +108,8 @@ export default function SettingsScreen() {
         </Group>
 
         <Text style={{ paddingTop: 16, fontSize: 12, color: c.t3, textAlign: "center" }}>
-          Nemesis {Constants.expoConfig?.version ?? ""}
+          {/* Major and minor only, like the canvas ("Nemesis 1.0"). */}
+          Nemesis {(Constants.expoConfig?.version ?? "").split(".").slice(0, 2).join(".")}
         </Text>
       </ScrollView>
     </View>

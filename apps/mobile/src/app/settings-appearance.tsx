@@ -75,7 +75,8 @@ export default function AppearanceScreen() {
                 accessibilityState={{ selected: on }}
                 accessibilityLabel={`Accent ${hex}`}
               >
-                <View style={[styles.swatchRing, { borderColor: on ? hex : "transparent" }]}>
+                {/* The chosen colour gets a dark ring with a gap (canvas Appearance), not a ring in its own colour. */}
+                <View style={[styles.swatchRing, { borderColor: on ? c.t1 : "transparent" }]}>
                   <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: hex }} />
                 </View>
               </Pressable>

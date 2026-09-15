@@ -82,7 +82,8 @@ function ThemedApp() {
     <SafeAreaProvider>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
         {/* Settings slides up from the bottom as a sheet (ChatGPT-style), owner call. */}
-        <Stack.Screen name="settings" options={{ presentation: "modal" }} />
+        {/* A full-screen push with its own back chevron at the top (canvas Settings), not a sheet. */}
+        <Stack.Screen name="settings" options={{ presentation: "card" }} />
         <Stack.Screen name="settings-upgrade" options={{ presentation: "modal" }} />
       </Stack>
       <OfflineBanner />

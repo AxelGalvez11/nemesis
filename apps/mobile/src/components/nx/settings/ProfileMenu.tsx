@@ -46,7 +46,8 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={onClose} accessibilityLabel="Close menu" />
 
-      <Pressable onPress={onClose} style={[styles.avatarSlot, { top: insets.top + 6 }]} accessibilityLabel="Close menu">
+      {/* Sits exactly over the tab bar's avatar (NxTopTabs: 10pt side padding, 44pt button, insets.top + 2). */}
+      <Pressable onPress={onClose} style={[styles.avatarSlot, { top: insets.top + 2 }]} accessibilityLabel="Close menu">
         <View style={[styles.avatarRing, { backgroundColor: c.card, borderColor: c.inv }]}>
           <Text style={{ color: c.t1, fontSize: 12, fontWeight: '600' }}>{initial}</Text>
         </View>
@@ -96,7 +97,7 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
 }
 
 const styles = StyleSheet.create({
-  avatarSlot: { position: 'absolute', left: 4, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  avatarSlot: { position: 'absolute', left: 10, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   avatarRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   card: {
     position: 'absolute',
