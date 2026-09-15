@@ -162,6 +162,8 @@ export interface ThemeColors {
   surface: string;
   surface2: string;
   raised: string;
+  /** iOS grouped-table page background — the Settings sheet's grey behind white cards. */
+  bgGrouped: string;
   /** Translucent panel fill (the mission screens' tokens.json `surface`). */
   glass: string;
   /** Semi-opaque frosted fill for glass BUTTONS + MENUS — readable, but translucent
@@ -206,6 +208,12 @@ export interface ThemeColors {
    *  it through the accent/status contrast machinery, and do NOT reach for it
    *  as a general "secondary text" shade — that's what the flatten removed. */
   textHint: string;
+  /** The composer card's fill — measured #FBFBFB on the reference (IMG_6529/6532), a hair off
+   *  the page so the hairline border and shadow carry the card, not a grey fill. */
+  composer: string;
+  /** The reference's blue: capability chips in the composer, "Upgrade plan", links. */
+  blue: string;
+  blueFaint: string;
   // accent family
   accent: string;
   accentDim: string;
@@ -231,6 +239,10 @@ export interface ThemeColors {
 // edges. ALL text is pure white — same owner ask killed every gray text tier
 // (the old #e9eaee/#9a9da6/#6f7278 ramp is in git history).
 const DARK_BASE = {
+  bgGrouped: "#000000",
+  composer: "#161617",
+  blue: "#3a83f7",
+  blueFaint: "rgba(58,131,247,0.16)",
   bg: "#000000",
   bg2: "#000000",
   surface: "#0a0a0a",
@@ -254,32 +266,35 @@ const DARK_BASE = {
   scrim: "rgba(0,0,0,0.58)",
 } as const;
 
-// Light = the same monochrome identity on paper. Pure white page (owner
-// 2026-07-21: match ChatGPT's plain white, not the old bluish #f8faff seed);
-// secondary fills are neutral grays so cards/menus still read on white.
-// ALL text is pure black — same owner ask killed every gray text tier
-// (the old #16181d/#5a5e68/#8b8f99 ramp is in git history).
+// Light = the ChatGPT iPhone app's palette, MEASURED off the owner's reference screenshots
+// (2026-09-01, ~/Downloads/chatgptios, sampled at 3x): page #FFFFFF, menus #F9F9F9, chips and
+// tiles #F3F3F3, primary text #0D0D0D, secondary #8F8F8F / #8A8A8D, placeholder #8E8E8E. The
+// owner's instruction was one-to-one — "font spacing icons literally everything" — so these are
+// the reference's numbers, not a Nemesis interpretation of them. The 2026-07-21 "no gray text"
+// flatten is superseded by that instruction: the reference's secondary text IS grey.
 const LIGHT_BASE = {
   bg: "#ffffff",
-  bg2: "#f4f4f5",
-  surface: "#ffffff",
-  surface2: "#f2f2f3",
+  bg2: "#ffffff",
+  bgGrouped: "#f2f2f6",
+  composer: "#fbfbfb",
+  surface: "#f9f9f9",
+  surface2: "#f3f3f3",
   raised: "#ffffff",
   glass: "rgba(20,21,24,0.05)",
-  glassPanel: "rgba(255,255,255,0.8)",
-  glassMenu: "rgba(255,255,255,0.96)",
+  glassPanel: "rgba(255,255,255,0.86)",
+  glassMenu: "rgba(249,249,249,0.97)",
   pageShadow: "rgba(24,26,32,0.16)",
   pageDim: "transparent",
-  line: "rgba(22,24,29,0.10)",
-  line2: "rgba(22,24,29,0.18)",
-  lineMuted: "rgba(90,94,104,0.22)",
-  // A clear step DOWN from surface2 (#f2f2f3) — light mode inverts.
-  skeleton: "#dcdcde",
-  text: "#000000",
-  text2: "#000000",
-  text3: "#000000",
-  // The old mid-gray tier, kept alive for hint text only (see textHint).
-  textHint: "#8b8f99",
+  line: "rgba(0,0,0,0.08)",
+  line2: "rgba(0,0,0,0.14)",
+  lineMuted: "rgba(0,0,0,0.12)",
+  skeleton: "#e6e6e6",
+  text: "#0d0d0d",
+  text2: "#8f8f8f",
+  text3: "#8a8a8d",
+  textHint: "#8e8e8e",
+  blue: "#3a83f7",
+  blueFaint: "#e8f3fe",
   scrim: "rgba(0,0,0,0.35)",
 } as const;
 
@@ -297,13 +312,16 @@ const NEUTRAL_ACCENT = {
     accentFaint: "rgba(110,110,110,0.12)",
     accentLine: "rgba(110,110,110,0.35)",
   },
+  // Light Default = the reference's green, measured: send button #53B559, sidebar pill #52B357,
+  // the learner's bubble #DEF3E5 with #48A04C text. The other swatches still apply their own
+  // hue on top of this base, so a learner who wants a different colour keeps that setting.
   light: {
-    accent: "#404040",
-    accentDim: "#363636",
-    accentDeep: "#333333",
+    accent: "#53b559",
+    accentDim: "#4aa350",
+    accentDeep: "#3f8f45",
     onAccent: "#ffffff",
-    accentFaint: "rgba(64,64,64,0.12)",
-    accentLine: "rgba(64,64,64,0.35)",
+    accentFaint: "#def3e5",
+    accentLine: "rgba(83,181,89,0.35)",
   },
 } as const;
 
@@ -338,7 +356,9 @@ export function buildColors(mode: ResolvedMode, accentId: string): ThemeColors {
   // Status colors keep their hue but get pushed until they read on this surface
   // (matters in light mode, where the dark-tuned pastels wash out as text).
   const warn = ensureContrast(STATUS_BASE.warn, base.bg, MIN_TEXT_CONTRAST);
-  const danger = ensureContrast(STATUS_BASE.danger, base.bg, MIN_TEXT_CONTRAST);
+  // The reference's Delete red (#E0423B, measured) sits under the 4.5:1 floor on white; the
+  // owner's one-to-one instruction wins for that one colour in light mode.
+  const danger = dark ? ensureContrast(STATUS_BASE.danger, base.bg, MIN_TEXT_CONTRAST) : "#e0423b";
   const info = ensureContrast(STATUS_BASE.info, base.bg, MIN_TEXT_CONTRAST);
   const good = ensureContrast(STATUS_BASE.good, base.bg, MIN_TEXT_CONTRAST);
 

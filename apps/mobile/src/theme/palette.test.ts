@@ -33,22 +33,35 @@ Deno.test("dark mode = pure black pages, pure white text (owner 2026-07-21)", ()
 // stricter floor was what forced the light-mode picks down into muddy territory.
 // 3.5 still clears WCAG's 3:1 bar for UI components and large text. The status
 // colors keep 4.5 in the test below — they carry warnings, so they stay strict.
-Deno.test("every accent clears 3.5:1 against both backgrounds", () => {
+// 🔴 THE LIGHT DEFAULT IS THE REFERENCE'S GREEN, MEASURED, AND IT DOES NOT CLEAR 3.5:1 ON WHITE
+// (≈2.6:1). Owner, 2026-09-01: the phone matches the ChatGPT iPhone app one-to-one — "font spacing
+// icons literally everything" — so the colour is the reference's, not a contrast-adjusted cousin.
+// Every OTHER swatch is still synthesized and still clears the floor.
+Deno.test("the light Default is the reference's green; every other accent clears 3.5:1", () => {
+  const light = buildColors("light", DEFAULT_ACCENT_ID);
+  assertEquals(light.accent, "#53b559");
+  assertEquals(light.accentFaint, "#def3e5");
+  assertEquals(light.onAccent, "#ffffff");
   for (const swatch of ACCENT_SWATCHES) {
+    if (swatch.id === DEFAULT_ACCENT_ID) continue;
     for (const mode of ["dark", "light"] as const) {
       const colors = buildColors(mode, swatch.id);
       const ratio = contrastRatio(colors.accent, colors.bg);
       assertEquals(ratio >= 3.5, true, `${swatch.id} on ${mode} bg: ${ratio.toFixed(2)}`);
     }
   }
+  const darkDefault = buildColors("dark", DEFAULT_ACCENT_ID);
+  assertEquals(contrastRatio(darkDefault.accent, darkDefault.bg) >= 3.5, true);
 });
 
-Deno.test("status colors read on the light background too", () => {
+Deno.test("status colours read on the light background; Delete is the reference's red exactly", () => {
   const light = buildColors("light", DEFAULT_ACCENT_ID);
-  for (const key of ["warn", "danger", "info", "good"] as const) {
+  for (const key of ["warn", "info", "good"] as const) {
     const ratio = contrastRatio(light[key], light.bg);
     assertEquals(ratio >= 4.5, true, `${key} on light bg: ${ratio.toFixed(2)}`);
   }
+  // Measured on IMG_6536 (the … menu's Delete row). Under 4.5:1 on white, kept anyway: one-to-one.
+  assertEquals(light.danger, "#e0423b");
 });
 
 Deno.test("unknown accent ids fall back to the default swatch", () => {
@@ -56,33 +69,35 @@ Deno.test("unknown accent ids fall back to the default swatch", () => {
   assertEquals(colors.accent, buildColors("dark", DEFAULT_ACCENT_ID).accent);
 });
 
-Deno.test("light mode = pure white paper, pure black text", () => {
+// Measured off the owner's ChatGPT iPhone screenshots, 2026-09-01 (see palette.ts LIGHT_BASE).
+Deno.test("light mode = the reference's measured palette", () => {
   const light = buildColors("light", DEFAULT_ACCENT_ID);
-  // Pure white page (owner 2026-07-21: ChatGPT-style white, not the old #f8faff tint).
   assertEquals(light.bg, "#ffffff");
-  assertEquals(light.surface, "#ffffff");
-  assertEquals(light.text, "#000000");
-  assertEquals(light.text2, "#000000");
-  assertEquals(light.text3, "#000000");
+  assertEquals(light.bg2, "#ffffff");
+  assertEquals(light.bgGrouped, "#f2f2f6");
+  assertEquals(light.surface, "#f9f9f9");
+  assertEquals(light.surface2, "#f3f3f3");
+  assertEquals(light.text, "#0d0d0d");
+  assertEquals(light.text2, "#8f8f8f");
+  assertEquals(light.text3, "#8a8a8d");
+  assertEquals(light.textHint, "#8e8e8e");
+  assertEquals(light.blue, "#3a83f7");
+  assertEquals(light.blueFaint, "#e8f3fe");
   assertEquals(contrastRatio(light.text, light.bg) >= 10, true);
 });
 
-Deno.test("textHint is the ONLY muted text tone, in both modes (owner 2026-07-22)", () => {
-  for (const mode of ["dark", "light"] as const) {
-    const colors = buildColors(mode, DEFAULT_ACCENT_ID);
-    // It is genuinely gray — not another alias of the flat tier.
-    assertEquals(colors.textHint !== colors.text, true);
-    assertEquals(colors.textHint !== colors.text2, true);
-    assertEquals(colors.textHint !== colors.text3, true);
-    // ...and it sits BETWEEN the page and the body text, so it reads as a
-    // hint rather than as content, but is never invisible.
-    const hint = contrastRatio(colors.textHint, colors.bg);
-    assertEquals(hint > 1.5, true);
-    assertEquals(hint < contrastRatio(colors.text, colors.bg), true);
-    // The global flatten is untouched — this token is an addition, not a
-    // re-introduction of the old three-tier gray ramp.
-    assertEquals(colors.text, colors.text2);
-    assertEquals(colors.text2, colors.text3);
+Deno.test("dark mode keeps the flat white text with one hint tone; light mode has the reference's grey tiers", () => {
+  const dark = buildColors("dark", DEFAULT_ACCENT_ID);
+  assertEquals(dark.text, dark.text2);
+  assertEquals(dark.text2, dark.text3);
+  assertEquals(dark.textHint !== dark.text, true);
+  const hint = contrastRatio(dark.textHint, dark.bg);
+  assertEquals(hint > 1.5 && hint < contrastRatio(dark.text, dark.bg), true);
+  const light = buildColors("light", DEFAULT_ACCENT_ID);
+  // Secondary text is a real grey now (the reference's), sitting between the page and the body.
+  for (const key of ["text2", "text3", "textHint"] as const) {
+    const ratio = contrastRatio(light[key], light.bg);
+    assertEquals(ratio > 1.5 && ratio < contrastRatio(light.text, light.bg), true, key);
   }
 });
 
@@ -103,13 +118,14 @@ Deno.test("the palette is the web app's seven, in the same order", () => {
 
 // A null hue means achromatic. Synthesizing it through hslToHex with any
 // stand-in hue is exactly how a "no colour" accent ends up faintly coloured.
-Deno.test("Default is a true grey in both modes, and nothing else is", () => {
-  for (const mode of ["dark", "light"] as const) {
-    const grey = buildColors(mode, DEFAULT_ACCENT_ID).accent;
-    const [, r, g, b] = /^#(..)(..)(..)$/.exec(grey) ?? [];
-    assertEquals(r, g, `${mode} accent ${grey}`);
-    assertEquals(g, b, `${mode} accent ${grey}`);
-  }
+// A null hue means achromatic in DARK mode, where Default is still the web's neutral grey. In
+// light mode Default is the reference's green (see above); the coloured swatches stay coloured.
+Deno.test("Default is a true grey in dark mode, the reference's green in light, and blue reads blue", () => {
+  const grey = buildColors("dark", DEFAULT_ACCENT_ID).accent;
+  const [, r, g, b] = /^#(..)(..)(..)$/.exec(grey) ?? [];
+  assertEquals(r, g, `dark accent ${grey}`);
+  assertEquals(g, b, `dark accent ${grey}`);
+  assertEquals(buildColors("light", DEFAULT_ACCENT_ID).accent, "#53b559");
   const blue = buildColors("dark", "blue").accent;
   const [, br, , bb] = /^#(..)(..)(..)$/.exec(blue) ?? [];
   assertEquals(parseInt(bb ?? "0", 16) > parseInt(br ?? "0", 16), true, `blue should read blue: ${blue}`);

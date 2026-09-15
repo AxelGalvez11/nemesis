@@ -2,16 +2,24 @@ import { useEffect, useState } from "react";
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { SlideUpSheet } from "./StudySheet";
-import type { ChatSource } from "@/lib/chat-thread";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
+
+// The minimal shape both callers' source objects satisfy: chat.tsx's ChatSource (title, url,
+// description) and the canvas's ThreadSource (title, url) — widened from the old ChatSource-only
+// prop so CanvasActionRow/CanvasTurn can pass a canvas turn's sources without a chat-specific
+// `description` field they don't have. A ChatSource still satisfies this structurally.
+export interface SourceLike {
+  title: string;
+  url: string;
+}
 
 export function SourcesPill({
   sources,
   onPress,
 }: {
-  sources: ChatSource[];
+  sources: SourceLike[];
   onPress: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -34,6 +42,14 @@ export function SourcesPill({
   );
 }
 
+// Row pitch measured off IMG_6534 (`rows_ygrid.png`): six consecutive row-tops land 61.7-63.3pt
+// apart — 62pt. Favicon diameter measured on the same crop (`favicon_grid5.png`) at ~28pt: the
+// circle spans both text lines (site name + title), not just the first, which is why it reads
+// far larger than the action row's 16pt stack (CanvasActionRow) — that one sits beside a single
+// line of body text instead of a two-line block.
+const ROW_HEIGHT = 62;
+const FAVICON_SIZE = 28;
+
 export function SourcesSheet({
   visible,
   onClose,
@@ -41,13 +57,12 @@ export function SourcesSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  sources: ChatSource[];
+  sources: SourceLike[];
 }) {
   const styles = useThemedStyles(createStyles);
   return (
     <SlideUpSheet
       compactTitle
-      headerDivider
       hideClose
       onClose={onClose}
       title="Sources"
@@ -66,7 +81,7 @@ export function SourcesSheet({
             ]}
             testID={`chat-sources-sheet-row-${index}`}
           >
-            <SourceFavicon source={source} size={24} />
+            <SourceFavicon source={source} size={FAVICON_SIZE} />
             <View style={styles.rowCopy}>
               <Text style={styles.rowSite} numberOfLines={1}>{hostnameOf(source.url)}</Text>
               <Text style={styles.rowTitle} numberOfLines={2}>
@@ -81,7 +96,7 @@ export function SourcesSheet({
   );
 }
 
-function SourceFavicon({ source, size }: { source: ChatSource; size: number }) {
+function SourceFavicon({ source, size }: { source: SourceLike; size: number }) {
   const styles = useThemedStyles(createStyles);
   const [failed, setFailed] = useState(false);
   const uri = faviconOf(source.url);
@@ -108,9 +123,12 @@ export function hostnameOf(url: string): string {
   return (match?.[1] ?? url).replace(/^www\./, "");
 }
 
+// Google's favicon service (task instruction) rather than the site's own /favicon.ico — a
+// consistent, reliably-sized square for every domain instead of whatever each site happens to
+// serve (some have none at all).
 function faviconOf(url: string): string | null {
-  const match = /^(https?):\/\/(?:[^/@]*@)?([^/:?#]+)/i.exec(url);
-  return match ? `${match[1]}://${match[2]}/favicon.ico` : null;
+  const host = hostnameOf(url);
+  return host ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32` : null;
 }
 
 const createStyles = (c: ThemeColors) =>
@@ -148,13 +166,16 @@ const createStyles = (c: ThemeColors) =>
     list: { flexShrink: 1 },
     row: {
       flexDirection: "row",
-      alignItems: "flex-start",
+      // The favicon sits centered against the WHOLE two-line block (site name + title), not
+      // pinned to the first line — measured on IMG_6534's row 1, where the circle spans both.
+      alignItems: "center",
       gap: space(3),
-      paddingVertical: space(3),
+      minHeight: ROW_HEIGHT,
+      paddingVertical: space(2),
     },
     rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.line },
     rowPressed: { backgroundColor: c.surface },
     rowCopy: { flex: 1, gap: 2 },
-    rowSite: { ...type.small, color: c.text },
-    rowTitle: { ...type.body, color: c.text, fontWeight: "600" },
+    rowSite: { ...type.micro, color: c.text2 },
+    rowTitle: { ...type.small, color: c.text },
   });

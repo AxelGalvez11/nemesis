@@ -178,7 +178,10 @@ export function SlideUpSheet({
           The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
       <Animated.View style={[styles.sheetWrap, { bottom: keyboardHeight, transform: [{ translateY }] }]}>
-        <GlassSurface style={styles.sheet} fallbackColor={c.glassPanel}>
+        {/* Opaque, not glass: every sheet in the reference (Sources, Add files, Add sources, Settings)
+            is a solid white surface — measured #FFFFFF on IMG_6534/6528/6546 — and the page never
+            shows through it. */}
+        <GlassSurface style={styles.sheet} fallbackColor={c.raised} opaque>
           <GestureDetector gesture={headerPan}>
             <View>
               <View style={styles.grabberRow}>
