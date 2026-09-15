@@ -1,73 +1,87 @@
-import { Redirect } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import * as SecureStore from "expo-secure-store";
+import { useState } from "react";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { PageNode } from "@/api/space";
+import { NxIcon } from "@/components/nx/NxIcon";
+import { NxBottomBar, NxRow, NxSection } from "@/components/nx/primitives";
+import { useSpacePages } from "@/hooks/useSpace";
+import { ago } from "@/lib/ago";
+import { nxType, useNx } from "@/theme/nx";
 
-import { newThreadId } from "@/api/chat";
-import { listCalendarEvents } from "@/api/cloudCalendar";
-import { fetchLibrary } from "@/api/cloudLibrary";
-import { useAuth } from "@/auth/AuthProvider";
-import { readOnboarding } from "@/lib/onboarding";
-import { decideOnboardingGate, type GateDecision } from "@/lib/onboarding-gate";
+// Notes, the home tab (canvas artboard "Main"): recent pages, then every page as a tree, Notion style.
+export default function NotesHome() {
+  const c = useNx();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { tree, recents, loading, error, refetch, refreshing } = useSpacePages();
+  const [open, setOpen] = useState<Record<string, boolean>>({});
 
-// Home ("/") — cloud-first phone (owner call 2026-07-20): Mac-dispatch "sessions"
-// are removed from the phone entirely; chat is the app's home screen, matching
-// the web app. See docs/design/nemesis-cloud-first-phone-2026-07.md §10.
-//
-// Cold launch lands on a FRESH chat (owner ask 2026-07-21), not the resumed
-// last thread — so we hand Chat a brand-new thread id the same way the
-// drawer's "New chat" button does. The id was never saved, so ChatScreen
-// loads zero messages and shows the welcome state; prior threads stay one
-// drawer-tap away. Leaving the id off would trip chat.tsx's no-param fallback,
-// which deliberately resumes the most-recent thread (delete-active-thread
-// relies on that), so the id must be supplied here.
-//
-// This screen is ALSO the first-run gate. See lib/onboarding-gate.ts for why the
-// wait below is a keychain read on nearly every launch rather than a network
-// call, and onboarding-gate.test.ts for the test that pins it.
+  const openPage = (id: string) => router.push({ pathname: "/page/[id]", params: { id } });
 
-/** How far either side of today to look for a single event. Wide enough that a
- *  syllabus imported for next term still proves the account is not new, narrow
- *  enough to stay one indexed query. Only ever runs on a device with no marker. */
-const PROBE_YEARS = 3;
+  const renderNode = (node: PageNode, level: number): React.ReactNode[] => {
+    const expanded = !!open[node.id];
+    const rows: React.ReactNode[] = [
+      <Pressable key={node.id} onPress={() => openPage(node.id)} style={({ pressed }) => [styles.tree, { paddingLeft: 6 + level * 22 }, pressed && { backgroundColor: c.soft }]}>
+        <Pressable
+          hitSlop={6}
+          disabled={node.children.length === 0}
+          onPress={() => setOpen((o) => ({ ...o, [node.id]: !o[node.id] }))}
+          style={styles.chev}
+          accessibilityLabel={expanded ? "Collapse" : "Expand"}
+        >
+          {node.children.length ? <NxIcon name={expanded ? "chev_d" : "chev_r"} size={14} color={c.t3} strokeWidth={2} /> : null}
+        </Pressable>
+        <Text style={styles.treeEmoji}>{node.props.icon || "📄"}</Text>
+        <Text numberOfLines={1} style={[nxType.rowTitle, { color: c.t1, flex: 1 }]}>
+          {node.props.title || "Untitled"}
+        </Text>
+      </Pressable>,
+    ];
+    if (expanded) for (const child of node.children) rows.push(...renderNode(child, level + 1));
+    return rows;
+  };
 
-export default function Home() {
-  const freshId = useMemo(() => newThreadId(), []);
-  const { session } = useAuth();
-  const uid = session?.user?.id ?? null;
-  const [decision, setDecision] = useState<GateDecision | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      // Signed out: the auth gate owns this launch, not this screen. Fall
-      // through to chat exactly as it did before this file learned to ask.
-      if (!uid) {
-        if (live) setDecision("app");
-        return;
-      }
-      const stored = await readOnboarding(SecureStore);
-      const next = await decideOnboardingGate(stored, async () => {
-        const year = new Date().getUTCFullYear();
-        const [library, events] = await Promise.all([
-          fetchLibrary(uid),
-          listCalendarEvents(uid, { from: `${year - PROBE_YEARS}-01-01`, to: `${year + PROBE_YEARS}-12-31` }),
-        ]);
-        return {
-          hasEvents: events.length > 0,
-          hasLibrary: library.notes.length > 0 || library.folders.length > 0,
-        };
-      });
-      if (live) setDecision(next);
-    })();
-    return () => {
-      live = false;
-    };
-  }, [uid]);
-
-  // Nothing, deliberately not a spinner: on the common path this resolves within
-  // a keychain read, and loading chrome that appears for one frame is the only
-  // thing anybody would notice about it.
-  if (decision === null) return null;
-  if (decision === "onboarding") return <Redirect href={"/onboarding" as never} />;
-  return <Redirect href={`/chat?c=${freshId}` as never} />;
+  return (
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refetch} tintColor={c.t3} />}
+      >
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 48 }} color={c.t3} />
+        ) : error ? (
+          <Text style={[styles.note, { color: c.t2 }]}>Your pages could not be loaded. Pull down to try again.</Text>
+        ) : (
+          <>
+            {recents.length ? (
+              <>
+                <NxSection label="Recent" />
+                {recents.slice(0, 4).map((p) => (
+                  <NxRow
+                    key={`r-${p.id}`}
+                    lead={<Text style={styles.recentEmoji}>{p.props.icon || "📄"}</Text>}
+                    title={p.props.title || "Untitled"}
+                    meta={ago(p.edited_at)}
+                    onPress={() => openPage(p.id)}
+                  />
+                ))}
+              </>
+            ) : null}
+            <NxSection label="Pages" />
+            {tree.length ? tree.flatMap((n) => renderNode(n, 0)) : <Text style={[styles.note, { color: c.t2 }]}>No pages yet. Pages you make on the web show up here.</Text>}
+          </>
+        )}
+      </ScrollView>
+      <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push("/chat")} />
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  tree: { flexDirection: "row", alignItems: "center", minHeight: 44, paddingRight: 16 },
+  chev: { width: 32, height: 44, alignItems: "center", justifyContent: "center" },
+  treeEmoji: { width: 26, fontSize: 18, textAlign: "center", marginRight: 6 },
+  recentEmoji: { width: 32, fontSize: 20, textAlign: "center" },
+  note: { paddingHorizontal: 20, paddingTop: 24, fontSize: 15, lineHeight: 22 },
+});

@@ -1,29 +1,26 @@
-import { Redirect, Slot } from "expo-router";
+import { Redirect, Slot, usePathname, useRouter } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/auth/AuthProvider";
 import { DrawerProvider, useShell } from "@/components/AppDrawer";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
 import { TopBar } from "@/components/TopBar";
-import { useTheme } from "@/theme/ThemeProvider";
+import { NxIconButton, NxTopTabs, type NxTabKey } from "@/components/nx/primitives";
+import { useNx } from "@/theme/nx";
 
-// The app shell (liquid-glass redesign): the desktop layout, translated to the
-// phone. ALL pages live in the sidebar drawer — Sessions · Chat · Library · Study ·
-// Graph · Calendar — exactly like the desktop sidebar (owner call 2026-07-17: no
-// bottom tab bar). The glass TopBar and the glass drawer float above the content,
-// which scrolls underneath them; screens pad themselves via useShellPadding().
-// Guarded: an un-authenticated, non-guest visitor is redirected to sign-in; a
-// guest is let in and screens render guest affordances where a session is required.
+// The 2026-09 app shell (canvas "Nemesis iPhone Screens"): three tabs on top like Notion — Notes (home),
+// Study, Chats. Signed-out visitors go to sign-in.
+//
+// 🔴 THE OLD FULL CHAT STILL RUNS INSIDE THE OLD CHROME. `/chat` is the working chat screen (2k lines,
+// streaming, tools, recording) and it reads useShell() and pads for the glass TopBar, so it keeps its
+// DrawerProvider + TopBar until the full-screen chat of the new design replaces it.
 export default function AppShellLayout() {
   const { session, isGuest, loading } = useAuth();
-  const { colors: c } = useTheme();
+  const c = useNx();
 
   if (loading) {
     return (
-      <View
-        testID="auth-loading"
-        style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: c.bg }}
-      >
-        <ActivityIndicator color={c.accent} />
+      <View testID="auth-loading" style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: c.bg }}>
+        <ActivityIndicator color={c.t2} />
       </View>
     );
   }
@@ -31,19 +28,44 @@ export default function AppShellLayout() {
 
   return (
     <DrawerProvider>
-      <ShellFrame />
+      <Frame />
     </DrawerProvider>
   );
 }
 
-/** The page plus its floating chrome. Split out of the layout above only so it
- *  can read useShell() — the hook needs a provider ABOVE it, and the layout is
- *  the component rendering that provider. Chrome disappears in immersive mode
- *  (chat's record workspace, owner 2026-07-22: "the chat page should become
- *  full screen"); the page itself never unmounts, so nothing reloads. */
-function ShellFrame() {
-  const { colors: c } = useTheme();
+function tabFor(path: string): NxTabKey | null {
+  if (path === "/" || path === "/index") return "notes";
+  if (path.startsWith("/study")) return "study";
+  if (path.startsWith("/chats")) return "chats";
+  return null;
+}
+
+function Frame() {
+  const c = useNx();
+  const path = usePathname();
+  const router = useRouter();
+  const { session } = useAuth();
+  const active = tabFor(path);
+
+  if (!active) return <LegacyFrame />;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <NxTopTabs
+        active={active}
+        initial={session?.user?.email ?? "N"}
+        onAvatar={() => router.push("/settings")}
+        onChange={(k) => router.replace(k === "notes" ? "/" : k === "study" ? "/study" : "/chats")}
+        right={active === "chats" ? <NxIconButton icon="compose" label="New chat" onPress={() => router.push("/chat")} /> : null}
+      />
+      <Slot />
+    </View>
+  );
+}
+
+function LegacyFrame() {
   const { immersive } = useShell();
+  const c = useNx();
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <Slot />
