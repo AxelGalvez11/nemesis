@@ -5,7 +5,8 @@
  */
 import React, { useEffect } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { NxPressable } from '../NxPressable';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ChatSource } from '@/lib/chat-thread';
@@ -168,7 +169,7 @@ export function SourcesPill({ sources, onPress }: { sources: ChatSource[]; onPre
   if (!sources.length) return null;
   return (
     <View style={{ flexDirection: 'row' }}>
-      <Pressable onPress={onPress} style={({ pressed }) => [styles.pill, { borderColor: c.ring }, pressed && { backgroundColor: c.soft }]}>
+      <NxPressable onPress={onPress} scaleTo={0.96} style={({ pressed }) => [styles.pill, { borderColor: c.ring }, pressed && { backgroundColor: c.soft }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {sources.slice(0, 3).map((s, i) => (
             <View key={`${s.url}-${i}`} style={{ marginLeft: i ? -8 : 0 }}>
@@ -177,7 +178,7 @@ export function SourcesPill({ sources, onPress }: { sources: ChatSource[]; onPre
           ))}
         </View>
         <Text style={{ color: c.t1, fontSize: 14 }}>{sources.length === 1 ? '1 source' : `${sources.length} sources`}</Text>
-      </Pressable>
+      </NxPressable>
     </View>
   );
 }
@@ -259,11 +260,15 @@ export function MarkStack({ sources }: { sources: ChatSource[] }) {
 export function CobaltGlow({ height = 320, opacity = 0.14, solid = 0.25, breathe = true }: { height?: number; opacity?: number; solid?: number; breathe?: boolean }) {
   const c = useNx();
   const o = useSharedValue(1);
+  const reduce = useReducedMotion();
   useEffect(() => {
-    if (!breathe) return;
+    if (!breathe || reduce) {
+      o.value = 1;
+      return;
+    }
     o.value = withRepeat(withTiming(0.08 / 0.14, { duration: 1600, easing: Easing.inOut(Easing.ease) }), -1, true);
     return () => cancelAnimation(o);
-  }, [breathe, o]);
+  }, [breathe, reduce, o]);
   const a = useAnimatedStyle(() => ({ opacity: o.value }));
   return (
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { top: undefined, height }, a]}>
@@ -307,10 +312,10 @@ export function ChatHero({ hasNotes, onSuggest }: { hasNotes: boolean; onSuggest
       </Text>
       <View style={{ alignItems: 'flex-start', gap: 8, marginTop: 6 }}>
         {SUGGESTIONS.map((s) => (
-          <Pressable key={s} onPress={() => onSuggest(s)} style={({ pressed }) => [styles.chip, { borderColor: c.ring }, pressed && { backgroundColor: c.soft }]}>
+          <NxPressable key={s} onPress={() => onSuggest(s)} scaleTo={0.96} style={({ pressed }) => [styles.chip, { borderColor: c.ring }, pressed && { backgroundColor: c.soft }]}>
             <NxIcon name="spark" size={16} color={c.t1} />
             <Text style={{ color: c.t1, fontSize: 15 }}>{s}</Text>
-          </Pressable>
+          </NxPressable>
         ))}
       </View>
     </View>

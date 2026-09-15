@@ -5,11 +5,12 @@
  */
 import React, { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View, useColorScheme, type ViewStyle } from 'react-native';
-import Animated, { Easing, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, ZoomIn, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
-import { nxEase, useNx } from '@/theme/nx';
+import { nxDuration, nxEase, useNx } from '@/theme/nx';
 import { NxIcon, type NxIconName } from './NxIcon';
+import { NxPressable } from './NxPressable';
+import { nxEasing } from './motion';
 
 /** `color-mix(in srgb, <hex> a%, transparent)` from the canvas, as rgba. */
 export function tint(hex: string, alpha: number): string {
@@ -79,31 +80,31 @@ export function NxMarkButtons({ visible, onMiss, onGot }: { visible: boolean; on
   const c = useNx();
   const float = useFloat();
   const insets = useSafeAreaInsets();
+  const reduce = useReducedMotion();
+  // They rise in once the card has turned (280ms) and get out of the way at once when a mark is made.
+  const v = useSharedValue(visible ? 1 : 0);
+  useEffect(() => {
+    const to = visible ? 1 : 0;
+    v.value = reduce ? to : withTiming(to, { duration: visible ? nxDuration.base : 90, easing: nxEasing });
+  }, [visible, reduce, v]);
+  const show = useAnimatedStyle(() => ({ opacity: v.value, transform: [{ translateY: (1 - v.value) * 8 }] }));
   const btn = (icon: NxIconName, color: string, fn: () => void, label: string) => (
     <View style={styles.markCol}>
-      <Pressable
-        accessibilityLabel={label}
-        disabled={!visible}
-        onPress={() => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          fn();
-        }}
-        style={({ pressed }) => [styles.mark, float, { transform: [{ scale: pressed ? 0.94 : 1 }] }]}
-      >
+      <NxPressable accessibilityLabel={label} disabled={!visible} haptic="light" scaleTo={0.9} onPress={fn} style={[styles.mark, float]}>
         <NxIcon name={icon} size={26} color={color} strokeWidth={2} />
-      </Pressable>
+      </NxPressable>
       <Text style={{ fontSize: 12, color: c.t2 }}>{label}</Text>
     </View>
   );
   return (
-    <View
+    <Animated.View
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
-      style={[styles.marks, { paddingBottom: Math.max(40, insets.bottom + 6), opacity: visible ? 1 : 0 }]}
+      style={[styles.marks, { paddingBottom: Math.max(40, insets.bottom + 6) }, show]}
     >
       {btn('x', c.danger, onMiss, 'Missed it')}
       {btn('check', c.ok, onGot, 'Got it')}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -112,9 +113,15 @@ export function NxQLabel({ children }: { children: string }) {
   return <Text style={{ fontSize: 13, lineHeight: 18, fontWeight: '500', color: c.t3 }}>{children}</Text>;
 }
 
+/** The question. Each new question fades in (the quiz remounts it per question). */
 export function NxQText({ children }: { children: string }) {
   const c = useNx();
-  return <Text style={{ fontSize: 21, lineHeight: 28, fontWeight: '600', letterSpacing: -0.3, color: c.t1 }}>{children}</Text>;
+  const reduce = useReducedMotion();
+  return (
+    <Animated.Text entering={reduce ? undefined : FadeIn.duration(nxDuration.base)} style={{ fontSize: 21, lineHeight: 28, fontWeight: '600', letterSpacing: -0.3, color: c.t1 }}>
+      {children}
+    </Animated.Text>
+  );
 }
 
 /** The rounded box the options (or the think-first prompt) sit in. */
@@ -127,18 +134,38 @@ export type OptState = 'idle' | 'ok' | 'bad' | 'dim';
 
 export function NxQuizOption({ text, state, first, onPress }: { text: string; state: OptState; first?: boolean; onPress?: () => void }) {
   const c = useNx();
+  const reduce = useReducedMotion();
+  const lit = state === 'ok' || state === 'bad';
   const bg = state === 'ok' ? tint(c.ok, 0.16) : state === 'bad' ? tint(c.danger, 0.13) : 'transparent';
   const fg = state === 'ok' ? c.ok : state === 'bad' ? c.danger : state === 'dim' ? c.t3 : c.t1;
+  // Green or red washes in (180ms) rather than snapping; the tick or cross pops in with it.
+  const wash = useSharedValue(lit ? 1 : 0);
+  useEffect(() => {
+    wash.value = reduce ? (lit ? 1 : 0) : withTiming(lit ? 1 : 0, { duration: nxDuration.fast, easing: nxEasing });
+  }, [lit, reduce, wash]);
+  const washStyle = useAnimatedStyle(() => ({ opacity: wash.value }));
+  const pop = reduce ? undefined : ZoomIn.duration(nxDuration.fast);
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={state !== 'idle'}
-      style={({ pressed }) => [styles.opt, { backgroundColor: pressed ? c.soft : bg, borderTopWidth: first ? 0 : 1, borderTopColor: c.ln }]}
-    >
-      <Text style={{ flex: 1, fontSize: 16, lineHeight: 22, color: fg, fontWeight: state === 'ok' ? '600' : state === 'bad' ? '500' : '400' }}>{text}</Text>
-      {state === 'ok' ? <NxIcon name="check" size={18} color={c.ok} strokeWidth={2.2} /> : null}
-      {state === 'bad' ? <NxIcon name="x" size={18} color={c.danger} strokeWidth={2.2} /> : null}
-    </Pressable>
+    <Animated.View entering={reduce ? undefined : FadeIn.duration(nxDuration.fast)}>
+      <Pressable
+        onPress={onPress}
+        disabled={state !== 'idle'}
+        style={({ pressed }) => [styles.opt, { backgroundColor: pressed ? c.soft : 'transparent', borderTopWidth: first ? 0 : 1, borderTopColor: c.ln }]}
+      >
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: bg }, washStyle]} />
+        <Text style={{ flex: 1, fontSize: 16, lineHeight: 22, color: fg, fontWeight: state === 'ok' ? '600' : state === 'bad' ? '500' : '400' }}>{text}</Text>
+        {state === 'ok' ? (
+          <Animated.View entering={pop}>
+            <NxIcon name="check" size={18} color={c.ok} strokeWidth={2.2} />
+          </Animated.View>
+        ) : null}
+        {state === 'bad' ? (
+          <Animated.View entering={pop}>
+            <NxIcon name="x" size={18} color={c.danger} strokeWidth={2.2} />
+          </Animated.View>
+        ) : null}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -154,19 +181,21 @@ export function NxMatchTile({ text, state, onPress }: { text: string; state: Pai
         ? { borderWidth: 2, borderColor: state === 'pick' ? c.acc : c.danger, margin: -1 }
         : { borderWidth: 1, borderColor: c.ring };
   return (
-    <Pressable onPress={onPress} disabled={state === 'ok'} style={[styles.pair, ring]}>
+    <NxPressable onPress={onPress} disabled={state === 'ok'} scaleTo={0.96} style={[styles.pair, ring]}>
       <View style={styles.pairInner}>
         <Text style={{ fontSize: 14, lineHeight: 19, fontWeight: '500', textAlign: 'center', color: state === 'ok' ? c.ok : c.t1 }}>{text}</Text>
       </View>
-    </Pressable>
+    </NxPressable>
   );
 }
 
 export function NxModeCard({ icon, title, sub, on, onPress }: { icon: NxIconName; title: string; sub: string; on?: boolean; onPress: () => void }) {
   const c = useNx();
   return (
-    <Pressable
+    <NxPressable
       onPress={onPress}
+      haptic={on ? undefined : 'selection'}
+      scaleTo={0.98}
       accessibilityRole="radio"
       accessibilityState={{ selected: !!on }}
       style={[styles.mode, on ? { borderWidth: 2, borderColor: c.acc, margin: -1, padding: 15 } : { borderWidth: 1, borderColor: c.ring }]}
@@ -178,7 +207,7 @@ export function NxModeCard({ icon, title, sub, on, onPress }: { icon: NxIconName
         <Text style={{ fontSize: 16, lineHeight: 21, fontWeight: '600', color: c.t1 }}>{title}</Text>
         <Text style={{ fontSize: 14, lineHeight: 19, color: c.t2 }}>{sub}</Text>
       </View>
-    </Pressable>
+    </NxPressable>
   );
 }
 
@@ -186,27 +215,30 @@ export function NxModeCard({ icon, title, sub, on, onPress }: { icon: NxIconName
 export function NxSparkChip({ label, onPress, height = 38 }: { label: string; onPress: () => void; height?: number }) {
   const c = useNx();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.chip, { height, borderColor: c.ring, backgroundColor: pressed ? c.soft : 'transparent' }]}>
+    <NxPressable onPress={onPress} scaleTo={0.95} style={({ pressed }) => [styles.chip, { height, borderColor: c.ring, backgroundColor: pressed ? c.soft : 'transparent' }]}>
       <NxIcon name="spark" size={15} color={c.t1} />
       <Text style={{ fontSize: 14, fontWeight: height === 38 ? '500' : '400', color: c.t1 }}>{label}</Text>
-    </Pressable>
+    </NxPressable>
   );
 }
 
-/** The dark full-width button pinned to the bottom (canvas quiz_foot). Dimmed to .35 while it cannot be used. */
+/** The dark full-width button pinned to the bottom (canvas quiz_foot). Dimmed to .35 while it cannot be used; it brightens over 180ms when it can. */
 export function NxFootButton({ label, disabled, onPress }: { label: string; disabled?: boolean; onPress: () => void }) {
   const c = useNx();
   const insets = useSafeAreaInsets();
+  const reduce = useReducedMotion();
+  const o = useSharedValue(disabled ? 0.35 : 1);
+  useEffect(() => {
+    const to = disabled ? 0.35 : 1;
+    o.value = reduce ? to : withTiming(to, { duration: nxDuration.fast, easing: nxEasing });
+  }, [disabled, reduce, o]);
+  const fade = useAnimatedStyle(() => ({ opacity: o.value }));
   return (
-    <View style={[styles.foot, { bottom: Math.max(insets.bottom, 34) }]}>
-      <Pressable
-        onPress={onPress}
-        disabled={disabled}
-        style={({ pressed }) => [styles.footBtn, { backgroundColor: c.inv, opacity: disabled ? 0.35 : pressed ? 0.85 : 1 }]}
-      >
+    <Animated.View style={[styles.foot, { bottom: Math.max(insets.bottom, 34) }, fade]}>
+      <NxPressable onPress={onPress} disabled={disabled} style={({ pressed }) => [styles.footBtn, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}>
         <Text style={{ color: c.onInv, fontSize: 16, fontWeight: '500' }}>{label}</Text>
-      </Pressable>
-    </View>
+      </NxPressable>
+    </Animated.View>
   );
 }
 

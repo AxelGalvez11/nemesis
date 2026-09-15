@@ -5,9 +5,11 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
-import { nxSize, nxType, useNx } from '@/theme/nx';
+import Animated, { FadeIn, LinearTransition, useReducedMotion } from 'react-native-reanimated';
+import { nxDuration, nxSize, nxType, useNx } from '@/theme/nx';
 import { NxIcon, type NxIconName } from './NxIcon';
+import { NxPressable } from './NxPressable';
+import { nxEasing, nxHaptic } from './motion';
 
 export type NxTabKey = 'notes' | 'study' | 'chats';
 
@@ -36,36 +38,45 @@ export function NxTopTabs({
 }) {
   const c = useNx();
   const insets = useSafeAreaInsets();
+  const reduce = useReducedMotion();
+  // The open tab's pill grows in place: neighbours slide over (layout), the label fades in.
+  const slide = reduce ? undefined : LinearTransition.duration(nxDuration.base).easing(nxEasing);
+  const fade = reduce ? undefined : FadeIn.duration(nxDuration.fast);
   return (
     <View style={[styles.tabsBar, { paddingTop: insets.top + 2 }]}>
-      <Pressable onPress={onAvatar} hitSlop={4} style={styles.iconBtn} accessibilityLabel="Profile">
+      <NxPressable onPress={onAvatar} hitSlop={4} scaleTo={0.92} style={styles.iconBtn} accessibilityLabel="Profile">
         <View style={[styles.avatar, { backgroundColor: c.sel }]}>
           <Text style={{ color: c.t1, fontSize: 12, fontWeight: '600' }}>{(initial ?? 'N').slice(0, 1).toUpperCase()}</Text>
         </View>
-      </Pressable>
+      </NxPressable>
       {TABS.map((t) => {
         const on = t.key === active;
-        return on ? (
-          <View key={t.key} style={styles.tabWrap}>
-            <View style={[styles.tabOn, { backgroundColor: c.sel }]} accessibilityRole="tab" accessibilityState={{ selected: true }}>
-              <NxIcon name={t.icon} size={18} color={c.t1} />
-              <Text style={{ fontSize: 14, fontWeight: '500', color: c.t1 }}>{t.label}</Text>
-            </View>
-          </View>
-        ) : (
-          <Pressable
-            key={t.key}
-            onPress={() => {
-              void Haptics.selectionAsync();
-              onChange(t.key);
-            }}
-            accessibilityRole="tab"
-            accessibilityLabel={t.label}
-            accessibilityState={{ selected: false }}
-            style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.5 }]}
-          >
-            <NxIcon name={t.icon} size={20} color={c.t2} />
-          </Pressable>
+        return (
+          <Animated.View key={t.key} layout={slide}>
+            {on ? (
+              <Animated.View key="on" entering={fade} style={styles.tabWrap}>
+                <View style={[styles.tabOn, { backgroundColor: c.sel }]} accessibilityRole="tab" accessibilityState={{ selected: true }}>
+                  <NxIcon name={t.icon} size={18} color={c.t1} />
+                  <Text style={{ fontSize: 14, fontWeight: '500', color: c.t1 }}>{t.label}</Text>
+                </View>
+              </Animated.View>
+            ) : (
+              <NxPressable
+                key="off"
+                scaleTo={0.9}
+                onPress={() => {
+                  nxHaptic('selection');
+                  onChange(t.key);
+                }}
+                accessibilityRole="tab"
+                accessibilityLabel={t.label}
+                accessibilityState={{ selected: false }}
+                style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.5 }]}
+              >
+                <NxIcon name={t.icon} size={20} color={c.t2} />
+              </NxPressable>
+            )}
+          </Animated.View>
         );
       })}
       <View style={{ flex: 1 }} />
@@ -157,24 +168,24 @@ export function NxPill({ label, icon, onPress, inverse }: { label: string; icon?
   const c = useNx();
   const fg = inverse ? c.onInv : c.t1;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.pill, { backgroundColor: inverse ? c.inv : c.sel }, pressed && { opacity: 0.7 }]}>
+    <NxPressable onPress={onPress} scaleTo={0.95} style={({ pressed }) => [styles.pill, { backgroundColor: inverse ? c.inv : c.sel }, pressed && { opacity: 0.7 }]}>
       {icon ? <NxIcon name={icon} size={16} color={fg} /> : null}
       <Text style={[nxType.pill, { color: fg }]}>{label}</Text>
-    </Pressable>
+    </NxPressable>
   );
 }
 
 export function NxButton({ label, icon, onPress, disabled }: { label: string; icon?: NxIconName; onPress?: () => void; disabled?: boolean }) {
   const c = useNx();
   return (
-    <Pressable
+    <NxPressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [styles.button, { backgroundColor: c.inv, opacity: disabled ? 0.4 : pressed ? 0.8 : 1 }]}
     >
       {icon ? <NxIcon name={icon} size={18} color={c.onInv} strokeWidth={2} /> : null}
       <Text style={{ color: c.onInv, fontSize: 16, fontWeight: '500' }}>{label}</Text>
-    </Pressable>
+    </NxPressable>
   );
 }
 
@@ -197,16 +208,16 @@ export function NxBottomBar({
     <View pointerEvents="box-none" style={[styles.bottom, { bottom: Math.max(insets.bottom, 12) + 4 }]}>
       {/* Only drawn when there is somewhere to go: a search button that does nothing reads as broken. */}
       {onSearch ? (
-        <Pressable onPress={onSearch} style={[styles.round, float]} accessibilityLabel="Search">
+        <NxPressable onPress={onSearch} scaleTo={0.92} style={[styles.round, float]} accessibilityLabel="Search">
           <NxIcon name="search" size={20} color={c.t1} />
-        </Pressable>
+        </NxPressable>
       ) : null}
-      <Pressable onPress={onAsk} style={[styles.ask, float]}>
+      <NxPressable onPress={onAsk} scaleTo={0.98} style={[styles.ask, float]}>
         <NxIcon name="spark" size={18} color={c.t3} />
         <Text numberOfLines={1} style={{ color: c.t3, fontSize: 15 }}>
           {ask}
         </Text>
-      </Pressable>
+      </NxPressable>
       {right}
     </View>
   );
@@ -215,10 +226,10 @@ export function NxBottomBar({
 export function NxNewButton({ onPress }: { onPress: () => void }) {
   const c = useNx();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.newBtn, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}>
+    <NxPressable onPress={onPress} haptic="light" scaleTo={0.95} style={({ pressed }) => [styles.newBtn, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}>
       <NxIcon name="plus" size={18} color={c.onInv} strokeWidth={2} />
       <Text style={{ color: c.onInv, fontSize: 15, fontWeight: '500' }}>New</Text>
-    </Pressable>
+    </NxPressable>
   );
 }
 

@@ -59,6 +59,18 @@ const P = {
   undo: () => <><Path d="M9 14L4 9l5-5" /><Path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></>,
   bullets: () => <><Circle cx="5" cy="7" r="1" /><Circle cx="5" cy="12" r="1" /><Circle cx="5" cy="17" r="1" /><Path d="M9 7h11M9 12h11M9 17h11" /></>,
   turn: () => <><Path d="M17 3l3 3-3 3" /><Path d="M20 6H9a5 5 0 0 0-5 5" /><Path d="M7 21l-3-3 3-3" /><Path d="M4 18h11a5 5 0 0 0 5-5" /></>,
+  // Database view and property icons (hand-drawn in the same 24px, round-cap style; not in gen.py).
+  table: () => <><Rect x="3.5" y="5" width="17" height="14" rx="2" /><Path d="M3.5 10h17" /><Path d="M9.5 10v9" /></>,
+  board: () => <><Rect x="3.5" y="4.5" width="5" height="15" rx="1.5" /><Rect x="9.5" y="4.5" width="5" height="10" rx="1.5" /><Rect x="15.5" y="4.5" width="5" height="12.5" rx="1.5" /></>,
+  timeline: () => <><Path d="M4 6.5h9" /><Path d="M8 12h12" /><Path d="M6 17.5h8" /></>,
+  gallery: () => <><Rect x="4" y="4" width="7" height="7" rx="1.5" /><Rect x="13" y="4" width="7" height="7" rx="1.5" /><Rect x="4" y="13" width="7" height="7" rx="1.5" /><Rect x="13" y="13" width="7" height="7" rx="1.5" /></>,
+  chart: () => <><Path d="M4 20h16" /><Path d="M7 16.5V11" /><Path d="M12 16.5V6" /><Path d="M17 16.5V9" /></>,
+  feed: () => <><Rect x="4" y="3.5" width="16" height="7.5" rx="2" /><Rect x="4" y="13" width="16" height="7.5" rx="2" /><Path d="M7.5 7.25h6" /><Path d="M7.5 16.75h6" /></>,
+  pin: () => <><Path d="M12 21s-6.5-5.8-6.5-11a6.5 6.5 0 0 1 13 0c0 5.2-6.5 11-6.5 11z" /><Circle cx="12" cy="10" r="2.3" /></>,
+  donut: () => <><Circle cx="12" cy="12" r="8.5" /><Circle cx="12" cy="12" r="3.5" /><Path d="M12 3.5V8.5" /></>,
+  trash: () => <><Path d="M4.5 7h15" /><Path d="M9.5 7V4.5h5V7" /><Path d="M6.5 7l1 13h9l1-13" /></>,
+  open_out: () => <><Path d="M14 4h6v6" /><Path d="M20 4l-9 9" /><Path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></>,
+  selectprop: () => <><Circle cx="12" cy="12" r="8.5" /><Path d="M8.5 10.5l3.5 3.5 3.5-3.5" /></>,
 } as const;
 
 export type NxIconName = keyof typeof P | 'dots' | 'mark';

@@ -2,8 +2,12 @@
  * Settings building blocks, measured off gen.py: page_header, .grp, .gr, icbox, value, chev, .sw,
  * .pb, pb_go, ai_logo, .sec. Kept in this folder so the shared primitives stay untouched.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import Animated, { interpolateColor, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import { nxDuration } from '@/theme/nx';
+import { NxPressable } from '../NxPressable';
+import { nxEasing, nxHaptic } from '../motion';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -138,16 +142,29 @@ export function NavTrail({ value }: { value?: string }) {
 export function NxSwitch({ on, onChange, label }: { on: boolean; onChange: (next: boolean) => void; label: string }) {
   const c = useNx();
   const acc = useAccent();
+  const reduce = useReducedMotion();
+  // The knob slides and the track tints over 180ms; a selection tap confirms the change.
+  const p = useSharedValue(on ? 1 : 0);
+  useEffect(() => {
+    p.value = reduce ? (on ? 1 : 0) : withTiming(on ? 1 : 0, { duration: nxDuration.fast, easing: nxEasing });
+  }, [on, reduce, p]);
+  const ring = c.ring;
+  const track = useAnimatedStyle(() => ({ backgroundColor: interpolateColor(p.value, [0, 1], [ring, acc]) }));
+  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: 18 * p.value }] }));
   return (
     <Pressable
-      onPress={() => onChange(!on)}
+      onPress={() => {
+        nxHaptic('selection');
+        onChange(!on);
+      }}
       hitSlop={9}
       accessibilityRole="switch"
       accessibilityState={{ checked: on }}
       accessibilityLabel={label}
-      style={[s.sw, { backgroundColor: on ? acc : c.ring }]}
+      style={s.sw}
     >
-      <View style={[s.knob, { left: on ? 21 : 3 }]} />
+      <Animated.View style={[StyleSheet.absoluteFill, { borderRadius: 13 }, track]} />
+      <Animated.View style={[s.knob, { left: 3 }, knob]} />
     </Pressable>
   );
 }
@@ -170,15 +187,16 @@ export function Pill({
   const bg = tone === 'inv' ? c.inv : tone === 'go' ? GO_GREEN : c.sel;
   const fg = tone === 'inv' ? c.onInv : tone === 'go' ? '#ffffff' : c.t1;
   return (
-    <Pressable
+    <NxPressable
       onPress={onPress}
       disabled={disabled}
       hitSlop={5}
+      scaleTo={0.95}
       style={({ pressed }) => [s.pb, { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.75 : 1 }]}
     >
       {icon ? <NxIcon name={icon} size={16} color={fg} /> : null}
       <Text style={{ color: fg, fontSize: 14, fontWeight: '500' }}>{label}</Text>
-    </Pressable>
+    </NxPressable>
   );
 }
 

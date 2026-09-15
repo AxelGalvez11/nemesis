@@ -36,7 +36,7 @@ import {
   type StyleProp,
   type TextStyle,
 } from 'react-native';
-import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { linkEmbed, openEmbed, pickAndUploadMedia, sourceEmbed, type MediaKind } from '@/api/noteMedia';
@@ -45,6 +45,10 @@ import { addBlockComment, saveBlockTitle } from '@/api/spaceWrite';
 import { nxType, useNx } from '@/theme/nx';
 import { NxIcon, type NxIconName } from '../NxIcon';
 import { NxButton } from '../primitives';
+import { NxMark } from '../NxMark';
+import { NxPressable } from '../NxPressable';
+import { nxEasing, nxHaptic } from '../motion';
+import { DatabaseBlock } from '../db/DatabaseBlock';
 import { BookmarkEmbed, FileEmbed } from './FileEmbed';
 import { applyEdit, hasMark, insertMention, mentionOf, plainOf, rawText, segDisplay, segsOf, toggleMark, type Seg } from './rich';
 
@@ -83,6 +87,12 @@ export type BlockEditorProps = {
   onChanged?: () => void;
   /** The typing toolbar is showing (a field is focused or a panel is open): the page hides its Ask bar. */
   onEngaged?: (on: boolean) => void;
+  /** Adds a database after `afterId` (end of page when null). The Database tile is hidden when this is not passed. */
+  onAddDatabase?: (afterId: string | null) => void;
+  /** Sub-page ids that are databases (api/database.ts databasePageIdsOf): their page blocks draw the database inline. */
+  databasePageIds?: ReadonlySet<string>;
+  /** Whether the reader may edit the databases drawn inline. Defaults to true (the editor is only shown to editors). */
+  canEdit?: boolean;
 };
 
 const TEXT_TYPES = new Set(['text', 'header', 'sub_header', 'sub_sub_header', 'header_4', 'bulleted_list', 'numbered_list', 'to_do', 'quote', 'callout', 'toggle']);
@@ -137,6 +147,9 @@ export function BlockEditor({
   onTurnInto,
   onChanged,
   onEngaged,
+  onAddDatabase,
+  databasePageIds,
+  canEdit = true,
 }: BlockEditorProps) {
   const c = useNx();
   const insets = useSafeAreaInsets();
@@ -398,6 +411,7 @@ export function BlockEditor({
   const toolbarStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(lift.value + 10) }] }));
 
   // Mic: the button presses in with a blue tint, the keyboard goes down, then the recorder opens (canvas RecordStart).
+  const reduceMotion = useReducedMotion();
   const micScale = useSharedValue(1);
   const micTint = useSharedValue(0);
   const [micOn, setMicOn] = useState(false);
@@ -405,8 +419,12 @@ export function BlockEditor({
   const record = () => {
     if (!onRecord) return;
     setMicOn(true);
-    micScale.value = withSequence(withTiming(0.8, { duration: 80 }), withTiming(1.06, { duration: 100 }), withTiming(1, { duration: 90 }));
-    micTint.value = withSequence(withTiming(1, { duration: 80 }), withTiming(0.8, { duration: 100 }), withTiming(0, { duration: 240 }));
+    nxHaptic('light');
+    // canvas .micpress: presses in, overshoots a touch, settles; the blue tint fades after. Reduced motion skips both.
+    if (!reduceMotion) {
+      micScale.value = withSequence(withTiming(0.8, { duration: 80, easing: nxEasing }), withTiming(1.06, { duration: 100, easing: nxEasing }), withTiming(1, { duration: 90, easing: nxEasing }));
+      micTint.value = withSequence(withTiming(1, { duration: 80, easing: nxEasing }), withTiming(0.8, { duration: 100, easing: nxEasing }), withTiming(0, { duration: 240, easing: nxEasing }));
+    }
     setTimeout(() => {
       if (panelRef.current) hideToolbar();
       Keyboard.dismiss();
@@ -618,6 +636,13 @@ export function BlockEditor({
     }
     const pad = { marginLeft: b.depth * 20 };
     const p = b.props ?? {};
+    if (b.type === 'page' && b.pageId && databasePageIds?.has(b.pageId) && spaceId && pageId) {
+      return (
+        <View key={b.id} style={pad}>
+          <DatabaseBlock spaceId={spaceId} pageId={pageId} block={b} canEdit={canEdit} onChanged={onChanged} />
+        </View>
+      );
+    }
     if (b.type === 'page' && b.pageId) {
       return (
         <Pressable key={b.id} onPress={() => onOpenPage(b.pageId!)} style={[styles.line, { alignItems: 'center', minHeight: 32 }, pad]}>
@@ -712,6 +737,16 @@ export function BlockEditor({
         hideToolbar();
       },
     }),
+    onAddDatabase
+      ? tile('database', {
+          icon: 'table',
+          label: 'Database',
+          onPress: () => {
+            onAddDatabase(lastFocused.current);
+            hideToolbar();
+          },
+        })
+      : null,
     onRecord
       ? tile('recording', {
           icon: 'mic',
@@ -842,7 +877,7 @@ export function BlockEditor({
                         onAsk();
                       }}
                     >
-                      <NxIcon name="mark" size={18} color={c.t1} />
+                      <NxMark size={18} color={c.t1} />
                     </Tool>
                   ) : null}
                   <Tool label="Add a block" on={panel === 'add' && addFrom === 'plus'} onPress={() => openAdd('plus')}>
@@ -979,16 +1014,17 @@ export function BlockEditor({
 function Tool({ label, on, disabled, onPress, children }: { label: string; on?: boolean; disabled?: boolean; onPress: () => void; children: React.ReactNode }) {
   const c = useNx();
   return (
-    <Pressable
+    <NxPressable
       onPress={onPress}
       disabled={disabled}
+      scaleTo={0.9}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: !!on, disabled: !!disabled }}
       style={({ pressed }) => [styles.tool, on ? { backgroundColor: c.sel } : pressed ? { backgroundColor: c.soft } : null, disabled && { opacity: 0.35 }]}
     >
       {children}
-    </Pressable>
+    </NxPressable>
   );
 }
 

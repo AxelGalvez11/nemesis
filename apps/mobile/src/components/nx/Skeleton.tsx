@@ -5,6 +5,7 @@
  */
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { nxSize, useNx } from '@/theme/nx';
 
 const Pulse = createContext<Animated.Value | null>(null);
@@ -12,8 +13,14 @@ const Pulse = createContext<Animated.Value | null>(null);
 function usePulse(): Animated.Value {
   const shared = useContext(Pulse);
   const own = useRef(new Animated.Value(1)).current;
+  const reduce = useReducedMotion();
   useEffect(() => {
     if (shared) return;
+    if (reduce) {
+      // Reduced motion: the bars hold still at a middle grey instead of breathing.
+      own.setValue(0.7);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(own, { toValue: 0.45, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
@@ -22,7 +29,7 @@ function usePulse(): Animated.Value {
     );
     loop.start();
     return () => loop.stop();
-  }, [shared, own]);
+  }, [shared, own, reduce]);
   return shared ?? own;
 }
 

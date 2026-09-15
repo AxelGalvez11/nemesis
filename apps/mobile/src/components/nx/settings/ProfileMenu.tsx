@@ -5,6 +5,8 @@
  */
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { NxDim, useNxPopStyle, useNxPresence } from '../motion';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +22,10 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
   const { signOut } = useAuth();
   const { name, email, initial, session } = useSettingsProfile();
   const plan = usePlan();
+  // Scales down out of the avatar (top left) and fades; closing reverses it.
+  const { mounted, p } = useNxPresence(visible);
+  const pop = useNxPopStyle(p, -6);
+  const ringFade = useAnimatedStyle(() => ({ opacity: p.value }));
 
   const go = (path: string) => {
     onClose();
@@ -43,20 +49,24 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
   const divider = <View style={{ height: 1, backgroundColor: c.ln, marginVertical: 4 }} />;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={onClose} accessibilityLabel="Close menu" />
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'box-none' : 'none'}>
+      <NxDim p={p} onPress={onClose} label="Close menu" />
 
       {/* Sits exactly over the tab bar's avatar (NxTopTabs: 10pt side padding, 44pt button, insets.top + 2). */}
-      <Pressable onPress={onClose} style={[styles.avatarSlot, { top: insets.top + 2 }]} accessibilityLabel="Close menu">
-        <View style={[styles.avatarRing, { backgroundColor: c.card, borderColor: c.inv }]}>
-          <Text style={{ color: c.t1, fontSize: 12, fontWeight: '600' }}>{initial}</Text>
-        </View>
-      </Pressable>
+      <Animated.View style={[styles.avatarSlot, { top: insets.top + 2 }, ringFade]}>
+        <Pressable onPress={onClose} style={styles.avatarHit} accessibilityLabel="Close menu">
+          <View style={[styles.avatarRing, { backgroundColor: c.card, borderColor: c.inv }]}>
+            <Text style={{ color: c.t1, fontSize: 12, fontWeight: '600' }}>{initial}</Text>
+          </View>
+        </Pressable>
+      </Animated.View>
 
-      <View
+      <Animated.View
         style={[
           styles.card,
-          { top: insets.top + 56, backgroundColor: c.card, borderColor: c.ring },
+          { top: insets.top + 56, backgroundColor: c.card, borderColor: c.ring, transformOrigin: 'top left' },
+          pop,
         ]}
       >
         <View style={styles.who}>
@@ -91,13 +101,15 @@ export function ProfileMenu({ visible, onClose }: { visible: boolean; onClose: (
             {row('logout', 'Sign out', () => void doSignOut(), true)}
           </>
         ) : null}
+      </Animated.View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  avatarSlot: { position: 'absolute', left: 10, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  avatarSlot: { position: 'absolute', left: 10, width: 44, height: 44 },
+  avatarHit: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   avatarRing: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   card: {
     position: 'absolute',

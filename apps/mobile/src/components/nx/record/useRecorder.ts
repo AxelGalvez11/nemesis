@@ -69,14 +69,23 @@ export function useRecorder() {
     return () => clearInterval(t);
   }, [state]);
 
-  /** Asks once; when the answer was already no, reports denied without a prompt iOS would not show anyway. */
-  const start = useCallback(async (): Promise<boolean> => {
+  /**
+   * Asks once; when the answer was already no, reports denied without a prompt iOS would not show anyway.
+   * 🔴 Capture runs on-device only (privacy), so a phone without Apple's on-device speech model (the Simulator, some
+   * older or region-locked phones) never starts the audio engine. That is reported as 'unsupported', not as a broken
+   * microphone or a permission problem.
+   */
+  const start = useCallback(async (): Promise<'ok' | 'denied' | 'unsupported' | 'error'> => {
     try {
       const current = await ExpoSpeechRecognitionModule.getPermissionsAsync();
       const perm = current.granted || !current.canAskAgain ? current : await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!perm.granted) {
         set('denied');
-        return false;
+        return 'denied';
+      }
+      if (!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()) {
+        set('error');
+        return 'unsupported';
       }
       uris.current = [];
       banked.current = 0;
@@ -86,10 +95,10 @@ export function useRecorder() {
       ExpoSpeechRecognitionModule.start(OPTIONS);
       set('recording');
       void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => undefined);
-      return true;
+      return 'ok';
     } catch {
       set('error');
-      return false;
+      return 'error';
     }
   }, []);
 

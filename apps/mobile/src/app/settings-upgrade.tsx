@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { paywallOptions, purchasePaywallOption, purchasesAvailable, restorePurchases, type PaywallOption } from "@/lib/purchases";
 import { useNx } from "@/theme/nx";
 import { NxIcon } from "@/components/nx/NxIcon";
+import { NxMark } from "@/components/nx/NxMark";
 import { goBack, useAccent, usePlan } from "@/components/nx/settings/kit";
 
 // Upgrade to Pro (canvas artboard "Upgrade"). Sold only through Apple's purchase sheet (RevenueCat,
@@ -110,7 +111,8 @@ export default function UpgradeScreen() {
       </View>
 
       <View style={styles.hero}>
-        <NxIcon name="mark" size={44} color="#ffffff" />
+        {/* Canvas Upgrade: the .logo mark, dots pop in then wave. */}
+        <NxMark size={44} color="#ffffff" />
         <Text style={styles.heroTitle}>Nemesis Pro</Text>
         <Text style={styles.heroSub}>Record every class and ask as much as you want.</Text>
       </View>

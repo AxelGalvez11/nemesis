@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ActionSheetIOS, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { NxSheet } from "@/components/nx/motion";
+import { NxPressable } from "@/components/nx/NxPressable";
 import { SkelBar, SkelGroup } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import Animated, { FadeIn, SlideInDown, useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { deckCards, isDue } from "@/api/study";
 import { NxIcon, type NxIconName } from "@/components/nx/NxIcon";
@@ -21,7 +22,6 @@ export default function SetScreen() {
   const c = useNx();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const reduce = useReducedMotion();
   const [choosing, setChoosing] = useState(false);
   const [mode, setMode] = useState<Mode>("quiz");
   const decks = useDecks();
@@ -96,22 +96,17 @@ export default function SetScreen() {
       </ScrollView>
       <NxFootButton label="Study" disabled={!cards.data?.length} onPress={() => setChoosing(true)} />
 
-      <Modal visible={choosing} transparent animationType="none" onRequestClose={() => setChoosing(false)} statusBarTranslucent>
-        <Animated.View entering={reduce ? undefined : FadeIn.duration(180)} style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setChoosing(false)} accessibilityLabel="Close" />
-        </Animated.View>
-        <Animated.View entering={reduce ? undefined : SlideInDown.duration(320)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: Math.max(insets.bottom, 30) }]}>
+      <NxSheet visible={choosing} onClose={() => setChoosing(false)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: Math.max(insets.bottom, 30) }]}>
           <View style={[styles.grab, { backgroundColor: c.ring }]} />
           <Text style={{ paddingTop: 8, fontSize: 22, lineHeight: 28, fontWeight: "600", color: c.t1 }}>How do you want to study?</Text>
           <NxModeCard icon="bulb" title="Active recall quiz" sub="Think first, then multiple choice, matching and more" on={mode === "quiz"} onPress={() => setMode("quiz")} />
           <NxModeCard icon="cards" title="Flashcards" sub="Flip each card, then mark X or check" on={mode === "cards"} onPress={() => setMode("cards")} />
           <View style={{ paddingTop: 6 }}>
-            <Pressable onPress={start} style={({ pressed }) => [styles.start, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}>
+            <NxPressable onPress={start} style={({ pressed }) => [styles.start, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}>
               <Text style={{ color: c.onInv, fontSize: 16, fontWeight: "500" }}>Start</Text>
-            </Pressable>
+            </NxPressable>
           </View>
-        </Animated.View>
-      </Modal>
+      </NxSheet>
     </View>
   );
 }
@@ -137,7 +132,7 @@ const styles = StyleSheet.create({
   propLabel: { width: 128, flexDirection: "row", alignItems: "center", gap: 8 },
   rule: { height: 1, marginHorizontal: 20, marginTop: 10 },
   qa: { paddingVertical: 12, gap: 2, borderBottomWidth: 1 },
-  sheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 8, gap: 12 },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 8, gap: 12 },
   grab: { width: 36, height: 5, borderRadius: 9999, alignSelf: "center" },
   start: { height: 50, borderRadius: 14, alignItems: "center", justifyContent: "center" },
 });

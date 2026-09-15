@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { NxIcon } from '@/components/nx/NxIcon';
 import { subscribeMicLevel } from '@/lib/mic-level';
 import { useNx } from '@/theme/nx';
@@ -72,24 +73,31 @@ export function RecordPill({
   const enter = useRef(new Animated.Value(0)).current;
   const halo = useRef(new Animated.Value(1)).current;
   const dot = useRef(new Animated.Value(1)).current;
+  const reduce = useReducedMotion();
 
   useEffect(() => {
+    // Reduced motion (the canvas `prefers-reduced-motion` block): no entrance, no breathing halo.
+    if (reduce) {
+      enter.setValue(1);
+      halo.setValue(1);
+      return;
+    }
     // `recin`: fades up from 20 px below at 95% scale, on the canvas's ease.
     Animated.timing(enter, { toValue: 1, duration: 420, easing: Easing.bezier(0.32, 0.72, 0, 1), useNativeDriver: true }).start();
     const a = loop(halo, 0.08 / 0.26, 1600);
     a.start();
     return () => a.stop();
-  }, [enter, halo]);
+  }, [enter, halo, reduce]);
 
   useEffect(() => {
-    if (paused) {
+    if (paused || reduce) {
       dot.setValue(1);
       return;
     }
     const a = loop(dot, 0.35, 700);
     a.start();
     return () => a.stop();
-  }, [paused, dot]);
+  }, [paused, dot, reduce]);
 
   return (
     <Animated.View

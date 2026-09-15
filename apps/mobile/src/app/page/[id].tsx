@@ -15,6 +15,11 @@ import { embedUrl, openEmbed } from "@/api/noteMedia";
 import { BlockEditor, turnIntoProps, type NewBlockType, type SaveResult, type TurnIntoType } from "@/components/nx/editor/BlockEditor";
 import { BookmarkEmbed, FileEmbed } from "@/components/nx/editor/FileEmbed";
 import { SkelBar, SkelBody, SkelGroup, SkelList, SkelPage } from "@/components/nx/Skeleton";
+import Reanimated from "react-native-reanimated";
+import { NxDim, NxSheet, nxHaptic, useNxPopStyle, useNxPresence } from "@/components/nx/motion";
+import { NxPressable } from "@/components/nx/NxPressable";
+import { createDatabase, databasePageIdsOf, isDatabasePage } from "@/api/database";
+import { DatabaseBlock } from "@/components/nx/db/DatabaseBlock";
 import { addCard, deckCards, deleteCard, updateCard } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
 import { CardEditor, type CardDraft } from "@/components/nx/CardEditor";
@@ -135,6 +140,21 @@ export default function PageScreen() {
   const spaceIdOfPage = page.data?.space_id ?? null;
   const pageContent = (page.data?.page.props.content as string[] | undefined) ?? [];
   const reloadPage = () => void qc.invalidateQueries({ queryKey: ["ws-page", id] });
+
+  // Databases inside a note (Notion style). On the web a database is its own page linked by a page block; the phone
+  // draws those linked pages inline with their views (api/database.ts).
+  const databaseIds = useMemo(() => databasePageIdsOf(page.data), [page.data]);
+  const addDatabase = async (afterId: string | null) => {
+    if (!spaceIdOfPage) return;
+    try {
+      const after = afterId ? blocks.find((b) => b.id === afterId) : undefined;
+      await createDatabase(spaceIdOfPage, id, pageContent, after?.id ?? null, after && after.parentId !== id ? after.parentId : null);
+      reloadPage();
+      void qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "The database could not be added.");
+    }
+  };
   const saveText = async (block: Block, text: string) => {
     if (!spaceIdOfPage) return;
     try {
@@ -194,6 +214,9 @@ export default function PageScreen() {
 
   // ── Sources: the Add pop-up ─────────────────────────────────────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
+  // The Add pop-up grows out of its top-right corner and shrinks back on close (canvas AddSource).
+  const addMenu = useNxPresence(addOpen);
+  const addPop = useNxPopStyle(addMenu.p);
   const [notePicker, setNotePicker] = useState(false);
   const [sourceBusy, setSourceBusy] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -252,7 +275,9 @@ export default function PageScreen() {
       const { deckId } = await makeFlashcards(uid, id, { includeNotes: useNotes, sourceIds: chosen.map((s) => s.id), subPageIds: subChosen.map((x) => x.page.id) });
       await qc.invalidateQueries({ queryKey: ["study-decks"] });
       setOpenDeck(deckId);
+      nxHaptic("success");
     } catch (e) {
+      nxHaptic("error");
       setMakeError(e instanceof Error ? e.message : "The flashcards could not be made.");
     } finally {
       setMaking(false);
@@ -372,7 +397,10 @@ export default function PageScreen() {
                 <View style={[styles.rule, { backgroundColor: c.ln }]} />
                 <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 6 }}>
                   {editError ? <Text style={{ color: c.danger, fontSize: 14 }}>{editError}</Text> : null}
-                  {editing ? (
+                  {/* A database opened as its own page ("Open as a full page") shows its views instead of blocks. */}
+                  {isDatabasePage(page.data) && spaceIdOfPage ? (
+                    <DatabaseBlock spaceId={spaceIdOfPage} pageId={id} block={{ id }} canEdit={canEdit} onChanged={reloadPage} />
+                  ) : editing ? (
                     <>
                       <BlockEditor
                         blocks={blocks}
@@ -397,6 +425,9 @@ export default function PageScreen() {
                           refreshSources();
                         }}
                         onEngaged={setToolbarUp}
+                        onAddDatabase={(after) => void addDatabase(after)}
+                        databasePageIds={databaseIds}
+                        canEdit={canEdit}
                       />
                       <Pressable onPress={() => void addBlock("text", blocks.length ? blocks[blocks.length - 1]!.id : null)} style={{ paddingVertical: 10 }}>
                         <Text style={[nxType.body, { color: c.t3 }]}>{blocks.length ? "Add a line" : "Tap to start writing"}</Text>
@@ -409,9 +440,13 @@ export default function PageScreen() {
                           <Text style={[nxType.body, { color: c.t3 }]}>{canEdit ? "Tap the pencil to start writing." : "This page is empty."}</Text>
                         </Pressable>
                       ) : null}
-                      {numbered(blocks).map(({ block, n }) => (
-                        <BlockView key={block.id} block={block} n={n} linked={block.pageId ? titles.get(block.pageId) : undefined} onOpen={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })} />
-                      ))}
+                      {numbered(blocks).map(({ block, n }) =>
+                        block.type === "page" && block.pageId && databaseIds.has(block.pageId) && spaceIdOfPage ? (
+                          <DatabaseBlock key={block.id} spaceId={spaceIdOfPage} pageId={id} block={block} canEdit={canEdit} onChanged={reloadPage} />
+                        ) : (
+                          <BlockView key={block.id} block={block} n={n} linked={block.pageId ? titles.get(block.pageId) : undefined} onOpen={(pid) => router.push({ pathname: "/page/[id]", params: { id: pid } })} />
+                        ),
+                      )}
                     </>
                   )}
                 </View>
@@ -493,9 +528,9 @@ export default function PageScreen() {
                         </Pressable>
                       </View>
                     </View>
-                    <Pressable onPress={() => void make()} disabled={making || picked === 0} style={({ pressed }) => [styles.makeBtn, { opacity: pressed || making ? 0.85 : 1 }]}>
+                    <NxPressable onPress={() => void make()} disabled={making || picked === 0} scaleTo={0.97} style={({ pressed }) => [styles.makeBtn, { opacity: pressed || making ? 0.85 : 1 }]}>
                       {making ? <ActivityIndicator color="#1b2a6b" /> : <Text style={{ fontSize: 16, fontWeight: "600", color: "#1b2a6b" }}>Make flashcards</Text>}
-                    </Pressable>
+                    </NxPressable>
                   </View>
                 </View>
                 {makeError ? <Text style={[styles.note, { color: c.danger }]}>{makeError}</Text> : null}
@@ -604,19 +639,19 @@ export default function PageScreen() {
       ) : null}
 
       {/* Add a source (canvas AddSource): only the ways that work from the phone today. */}
-      <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={() => setAddOpen(false)} accessibilityLabel="Close" />
-        <View style={[styles.popup, { top: insets.top + 290, backgroundColor: c.card, borderColor: c.ring }]}>
-          <MenuOption icon="file" label="Files" onPress={() => uid && void runSource("Adding a file", () => addFileSource(uid, id))} />
-          <MenuOption icon="mic" label="Record" onPress={() => { setAddOpen(false); record(); }} />
-          <MenuOption icon="notes" label="Another note" onPress={() => { setAddOpen(false); setNotePicker(true); }} />
+      <Modal visible={addMenu.mounted} transparent animationType="none" onRequestClose={() => setAddOpen(false)}>
+        <View style={StyleSheet.absoluteFill} pointerEvents={addOpen ? "box-none" : "none"}>
+          <NxDim p={addMenu.p} onPress={() => setAddOpen(false)} />
+          <Reanimated.View style={[styles.popup, { top: insets.top + 290, backgroundColor: c.card, borderColor: c.ring, transformOrigin: "top right" }, addPop]}>
+            <MenuOption icon="file" label="Files" onPress={() => uid && void runSource("Adding a file", () => addFileSource(uid, id))} />
+            <MenuOption icon="mic" label="Record" onPress={() => { setAddOpen(false); record(); }} />
+            <MenuOption icon="notes" label="Another note" onPress={() => { setAddOpen(false); setNotePicker(true); }} />
+          </Reanimated.View>
         </View>
       </Modal>
 
       {/* Another note: pick one of your pages. */}
-      <Modal visible={notePicker} transparent animationType="slide" onRequestClose={() => setNotePicker(false)}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={() => setNotePicker(false)} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 12, maxHeight: "70%" }]}>
+      <NxSheet visible={notePicker} onClose={() => setNotePicker(false)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 12, maxHeight: "70%" }]}>
           <View style={[styles.grab, { backgroundColor: c.ring }]} />
           <Text style={[styles.sheetTitle, { color: c.t1 }]}>Add a note</Text>
           <ScrollView>
@@ -627,13 +662,10 @@ export default function PageScreen() {
               ))}
             {space.pages.length <= 1 ? <Text style={[styles.note, { color: c.t2 }]}>You have no other notes yet.</Text> : null}
           </ScrollView>
-        </View>
-      </Modal>
+      </NxSheet>
 
       {/* Create, choose sources (canvas CreateSources). */}
-      <Modal visible={pickOpen} transparent animationType="slide" onRequestClose={() => setPickOpen(false)}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={() => setPickOpen(false)} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
+      <NxSheet visible={pickOpen} onClose={() => setPickOpen(false)} style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.grab, { backgroundColor: c.ring }]} />
           <View style={styles.sheetHead}>
             <Text style={[styles.sheetTitle, { color: c.t1, paddingHorizontal: 0 }]}>Make flashcards from</Text>
@@ -681,8 +713,7 @@ export default function PageScreen() {
               onPress={() => setPickOpen(false)}
             />
           </View>
-        </View>
-      </Modal>
+      </NxSheet>
 
       <CardEditor
         visible={!!editor}
@@ -982,7 +1013,7 @@ const styles = StyleSheet.create({
   popup: { position: "absolute", right: 16, width: 236, borderRadius: 18, padding: 6, borderWidth: StyleSheet.hairlineWidth, shadowColor: "#2a1c00", shadowOpacity: 0.1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } },
   opt: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 52, paddingHorizontal: 14, borderRadius: 12 },
   optTile: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  sheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8 },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8 },
   grab: { width: 36, height: 5, borderRadius: 3, alignSelf: "center" },
   sheetHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sheetTitle: { fontSize: 19, lineHeight: 24, fontWeight: "600", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },

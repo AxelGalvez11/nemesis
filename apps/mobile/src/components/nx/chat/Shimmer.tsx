@@ -5,7 +5,7 @@
  */
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, View, type TextStyle } from 'react-native';
-import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withTiming, type SharedValue } from 'react-native-reanimated';
+import Animated, { Easing, cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming, type SharedValue } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 const HALF = 0.365;
@@ -22,13 +22,16 @@ function Letter({ ch, at, t, style }: { ch: string; at: number; t: SharedValue<n
 
 export function ShimmerText({ text, style, live = true }: { text: string; style: TextStyle; live?: boolean }) {
   const t = useSharedValue(0);
+  const reduce = useReducedMotion();
+  const moving = live && !reduce;
   useEffect(() => {
-    if (!live) return;
+    if (!moving) return;
     t.value = 0;
     t.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.linear }), -1, false);
     return () => cancelAnimation(t);
-  }, [live, t]);
-  if (!live) return <Text style={style}>{text}</Text>;
+  }, [moving, t]);
+  // Reduced motion: the words stay put (the spinner beside them still says the step is live).
+  if (!moving) return <Text style={style}>{text}</Text>;
   const chars = Array.from(text);
   const n = Math.max(1, chars.length - 1);
   return (

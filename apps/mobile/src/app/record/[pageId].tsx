@@ -69,8 +69,15 @@ export default function RecordScreen() {
     Keyboard.dismiss();
     if (!pageId) return;
     loadPage(pageId).then(setPage, (e: Error) => setLoadError(e.message));
-    void rec.start().then((ok) => {
-      if (!ok && alive.current) setPhase({ kind: 'micoff' });
+    void rec.start().then((result) => {
+      if (!alive.current || result === 'ok') return;
+      if (result === 'unsupported') {
+        setPhase({
+          kind: 'failed',
+          body: "This phone can't record privately yet. Nemesis records on the phone itself, and Apple's speech model is not installed here. Try on another iPhone, or come back after an iOS update.",
+          canKeepAudio: false,
+        });
+      } else setPhase({ kind: 'micoff' });
     });
     // Start once, when the screen opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Animated, Easing, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NxIcon, type NxIconName } from '@/components/nx/NxIcon';
+import { NxPressable } from '@/components/nx/NxPressable';
+import { SkelBody, SkelGroup } from '@/components/nx/Skeleton';
+import { Spinner } from '@/components/nx/chat/Shimmer';
+import { NxSheet } from '@/components/nx/motion';
 import { nxType, useNx } from '@/theme/nx';
 
 // The states around a recording, from the canvas: the property rows under the title (gen.py `props`), the
@@ -29,22 +31,7 @@ export function PropRows({ rows }: { rows: { icon: NxIconName; label: string; va
   );
 }
 
-function Spinner({ color }: { color: string }) {
-  const turn = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const a = Animated.loop(Animated.timing(turn, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true }));
-    a.start();
-    return () => a.stop();
-  }, [turn]);
-  return (
-    <Animated.View style={{ transform: [{ rotate: turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round">
-        <Path d="M12 3a9 9 0 1 0 9 9" />
-      </Svg>
-    </Animated.View>
-  );
-}
-
+/** WritingNotes: the canvas spinner (800ms a turn, shared with the chat) and skeleton lines that breathe. */
 export function WritingNotesCard({ step }: { step: string }) {
   const c = useNx();
   return (
@@ -54,9 +41,9 @@ export function WritingNotesCard({ step }: { step: string }) {
         <Text style={{ fontSize: 15, fontWeight: '500', color: c.t1 }}>Writing your notes…</Text>
       </View>
       <Text style={[nxType.rowMeta, { color: c.t2 }]}>{step}</Text>
-      {[92, 78, 86, 60].map((w) => (
-        <View key={w} style={{ height: 12, width: `${w}%`, borderRadius: 4, backgroundColor: c.sel }} />
-      ))}
+      <SkelGroup>
+        <SkelBody />
+      </SkelGroup>
     </View>
   );
 }
@@ -109,25 +96,22 @@ export function NotesFailedCard({
 export function MicOffSheet({ visible, onOpenSettings, onNotNow }: { visible: boolean; onOpenSettings: () => void; onNotNow: () => void }) {
   const c = useNx();
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onNotNow}>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={onNotNow} accessibilityLabel="Close" />
-      <View style={[styles.sheet, { backgroundColor: c.bg }]}>
-        <View style={{ width: 36, height: 5, borderRadius: 9999, backgroundColor: c.ring }} />
+    <NxSheet visible={visible} onClose={onNotNow} style={[styles.sheet, { backgroundColor: c.bg }]}>
+      <View style={{ width: 36, height: 5, borderRadius: 9999, backgroundColor: c.ring }} />
         <View style={[styles.circle, { backgroundColor: c.sel }]}>
           <NxIcon name="micoff" size={36} color={c.t1} strokeWidth={1.5} />
         </View>
         <Text style={[styles.sheetTitle, { color: c.t1 }]}>Turn on the microphone</Text>
         <Text style={[styles.sheetBody, { color: c.t2 }]}>Microphone access is off for Nemesis. Turn it on in the iPhone Settings app, then tap Record again.</Text>
         <View style={{ alignSelf: 'stretch', paddingHorizontal: 20, paddingTop: 24, gap: 6 }}>
-          <Pressable onPress={onOpenSettings} accessibilityRole="button" style={({ pressed }) => [styles.btn, { backgroundColor: c.inv, opacity: pressed ? 0.8 : 1 }]}>
+          <NxPressable onPress={onOpenSettings} accessibilityRole="button" style={({ pressed }) => [styles.btn, { backgroundColor: c.inv, opacity: pressed ? 0.8 : 1 }]}>
             <Text style={{ fontSize: 16, fontWeight: '500', color: c.onInv }}>Open Settings</Text>
-          </Pressable>
-          <Pressable onPress={onNotNow} accessibilityRole="button" style={styles.txt}>
+          </NxPressable>
+          <Pressable onPress={onNotNow} accessibilityRole="button" style={({ pressed }) => [styles.txt, pressed && { opacity: 0.5 }]}>
             <Text style={{ fontSize: 15, color: c.t2 }}>Not now</Text>
           </Pressable>
         </View>
-      </View>
-    </Modal>
+    </NxSheet>
   );
 }
 
@@ -138,7 +122,7 @@ const styles = StyleSheet.create({
   pbSlot: { height: 44, justifyContent: 'center' },
   pb: { height: 34, paddingHorizontal: 14, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', gap: 6 },
   pbText: { fontSize: 14, fontWeight: '500' },
-  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8, paddingBottom: 30, alignItems: 'center' },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8, paddingBottom: 30, alignItems: 'center' },
   circle: { marginTop: 26, width: 72, height: 72, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { paddingHorizontal: 32, paddingTop: 18, fontSize: 22, lineHeight: 28, fontWeight: '600', textAlign: 'center' },
   sheetBody: { paddingHorizontal: 32, paddingTop: 8, fontSize: 16, lineHeight: 24, textAlign: 'center' },

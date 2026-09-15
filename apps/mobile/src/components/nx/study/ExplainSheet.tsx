@@ -4,9 +4,9 @@
  * (api/chat.ts completeOnce), written only from the card, in any subject.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SkelBody, SkelGroup } from '../Skeleton';
-import Animated, { FadeIn, SlideInDown, useReducedMotion } from 'react-native-reanimated';
+import { NxSheet } from '../motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { completeOnce } from '@/api/chat';
 import { useAuth } from '@/auth/AuthProvider';
@@ -41,7 +41,6 @@ export function ExplainSheet({
   const c = useNx();
   const float = useFloat();
   const insets = useSafeAreaInsets();
-  const reduce = useReducedMotion();
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
 
@@ -100,15 +99,13 @@ export function ExplainSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <Animated.View entering={reduce ? undefined : FadeIn.duration(180)} style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Back to the card" />
-      </Animated.View>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.fill} pointerEvents="box-none">
-        <Animated.View
-          entering={reduce ? undefined : SlideInDown.duration(320)}
-          style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: Math.max(insets.bottom - 8, 26) }]}
-        >
+    <NxSheet
+      visible={visible}
+      onClose={onClose}
+      avoidKeyboard
+      closeLabel="Back to the card"
+      style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: Math.max(insets.bottom - 8, 26) }]}
+    >
           <View style={[styles.grab, { backgroundColor: c.ring }]} />
           <View style={styles.titleRow}>
             <Text style={{ flex: 1, fontSize: 20, lineHeight: 26, fontWeight: '600', color: c.t1 }}>Why this is the answer</Text>
@@ -172,14 +169,11 @@ export function ExplainSheet({
           <Pressable onPress={onClose} style={({ pressed }) => [styles.txt, pressed && { opacity: 0.5 }]}>
             <Text style={{ fontSize: 15, color: c.t2 }}>Back to the card</Text>
           </Pressable>
-        </Animated.View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </NxSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, justifyContent: 'flex-end' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 8, paddingHorizontal: 20, gap: 12 },
   grab: { width: 36, height: 5, borderRadius: 9999, alignSelf: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'center' },

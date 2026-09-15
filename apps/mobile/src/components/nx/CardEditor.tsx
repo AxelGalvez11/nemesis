@@ -5,9 +5,10 @@
  * 🔴 NEVER MOUNT THIS ON A STUDY SCREEN. Flip and quiz stay free of editors (cards-are-output-only lesson).
  */
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNx } from '@/theme/nx';
+import { NxSheet } from './motion';
 
 export type CardDraft = { id?: string; front: string; back: string };
 
@@ -80,10 +81,7 @@ export function CardEditor({
   const field = [styles.field, { backgroundColor: c.sunk, color: c.t1 }];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: c.dim }]} onPress={onClose} accessibilityLabel="Close" />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.wrap} pointerEvents="box-none">
-        <View style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
+    <NxSheet visible={visible} onClose={onClose} avoidKeyboard style={[styles.sheet, { backgroundColor: c.bg, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.grab, { backgroundColor: c.ring }]} />
           <View style={styles.head}>
             <Pressable onPress={onClose} hitSlop={8}>
@@ -104,14 +102,11 @@ export function CardEditor({
               <Text style={{ color: c.danger, fontSize: 16 }}>Delete card</Text>
             </Pressable>
           ) : null}
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </NxSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, justifyContent: 'flex-end' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 8, gap: 8 },
   grab: { width: 36, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 6 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 6 },

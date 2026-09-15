@@ -4,25 +4,17 @@
  */
 import React, { useEffect } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Rect } from 'react-native-svg';
-import { nxEase, useNx } from '@/theme/nx';
+import { useNx } from '@/theme/nx';
 import { NxIcon, type NxIconName } from '../NxIcon';
+import { NxMark } from '../NxMark';
+import { NxPressable } from '../NxPressable';
 
 export const COBALT = require('../../../../assets/images/nx/cobalt-hd.jpg');
 export const CYAN_SOFT = require('../../../../assets/images/nx/cyan-soft.jpg');
 
-const ease = Easing.bezier(nxEase[0], nxEase[1], nxEase[2], nxEase[3]);
 const inOut = Easing.inOut(Easing.ease);
 
 /* ---------- gradient art with the slow drift ---------- */
@@ -83,59 +75,8 @@ export function DriftingGradient({ width, height, tall = false }: { width: numbe
 
 /* ---------- the three-dot logo: pops in, then waves ---------- */
 
-const DOTS = [
-  { cx: 8, cy: 9, delayIn: 0, delayWave: 1000 },
-  { cx: 20, cy: 9, delayIn: 130, delayWave: 1180 },
-  { cx: 14, cy: 20, delayIn: 260, delayWave: 1360 },
-];
-
-function Dot({ size, color, cx, cy, delayIn, delayWave, reduce }: { size: number; color: string; cx: number; cy: number; delayIn: number; delayWave: number; reduce: boolean }) {
-  const unit = size / 28;
-  const pop = useSharedValue(reduce ? 1 : 0);
-  const wave = useSharedValue(0);
-  useEffect(() => {
-    if (reduce) {
-      pop.value = 1;
-      return;
-    }
-    pop.value = withDelay(delayIn, withTiming(1, { duration: 560, easing: ease }));
-    // dotwave 2800ms: rest, rise to the peak at 25%, back by 55%, rest to 100%.
-    wave.value = withDelay(
-      delayWave,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 700, easing: inOut }),
-          withTiming(0, { duration: 840, easing: inOut }),
-          withTiming(0, { duration: 1260 }),
-        ),
-        -1,
-        false,
-      ),
-    );
-  }, [reduce, pop, wave, delayIn, delayWave]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: pop.value * (1 - 0.28 * wave.value),
-    transform: [{ translateY: -1.8 * unit * wave.value }, { scale: pop.value * (1 + 0.08 * wave.value) }],
-  }));
-  const d = 8 * unit;
-  return (
-    <Animated.View
-      style={[{ position: 'absolute', left: (cx - 4) * unit, top: (cy - 4) * unit, width: d, height: d, borderRadius: d / 2, backgroundColor: color }, style]}
-    />
-  );
-}
-
-export function AnimatedMark({ size, color }: { size: number; color: string }) {
-  const reduce = useReducedMotion();
-  return (
-    <View style={{ width: size, height: size }} accessibilityRole="image" accessibilityLabel="Nemesis">
-      {DOTS.map((dot) => (
-        <Dot key={dot.cx} size={size} color={color} reduce={reduce} {...dot} />
-      ))}
-    </View>
-  );
-}
+/** Moved to the shared NxMark (also used on Upgrade); kept under this name for the sign-in screen. */
+export const AnimatedMark = NxMark;
 
 /* ---------- onboarding frame ---------- */
 
@@ -214,7 +155,7 @@ export function PrimaryButton({ label, icon, onPress, busy, disabled, testID }: 
   const c = useNx();
   const off = !!disabled || !!busy;
   return (
-    <Pressable
+    <NxPressable
       onPress={onPress}
       disabled={off}
       testID={testID}
@@ -230,7 +171,7 @@ export function PrimaryButton({ label, icon, onPress, busy, disabled, testID }: 
           <Text style={{ color: c.onInv, fontSize: 16, fontWeight: '500' }}>{label}</Text>
         </>
       )}
-    </Pressable>
+    </NxPressable>
   );
 }
 
@@ -238,7 +179,7 @@ export function PrimaryButton({ label, icon, onPress, busy, disabled, testID }: 
 export function OutlineButton({ label, lead, onPress, busy, disabled, testID }: { label: string; lead?: React.ReactNode; onPress: () => void; busy?: boolean; disabled?: boolean; testID?: string }) {
   const c = useNx();
   return (
-    <Pressable
+    <NxPressable
       onPress={onPress}
       disabled={disabled || busy}
       testID={testID}
@@ -257,21 +198,23 @@ export function OutlineButton({ label, lead, onPress, busy, disabled, testID }: 
           <Text style={{ color: c.t1, fontSize: 16, fontWeight: '500' }}>{label}</Text>
         </>
       )}
-    </Pressable>
+    </NxPressable>
   );
 }
 
 export function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   const c = useNx();
   return (
-    <Pressable
+    <NxPressable
       onPress={onPress}
+      haptic="selection"
+      scaleTo={0.95}
       accessibilityRole="radio"
       accessibilityState={{ selected: on }}
       style={[s.chip, on ? { backgroundColor: c.acc, borderColor: c.acc } : { borderColor: c.ring }]}
     >
       <Text style={{ fontSize: 15, color: on ? '#ffffff' : c.t1 }}>{label}</Text>
-    </Pressable>
+    </NxPressable>
   );
 }
 
@@ -311,10 +254,10 @@ export function Pill({ label, icon, onPress, go }: { label: string; icon?: NxIco
   const c = useNx();
   const fg = go ? '#ffffff' : c.t1;
   return (
-    <Pressable onPress={onPress} hitSlop={5} accessibilityRole="button" style={({ pressed }) => [s.pill, { backgroundColor: go ? '#2fa56a' : c.sel, opacity: pressed ? 0.75 : 1 }]}>
+    <NxPressable onPress={onPress} hitSlop={5} scaleTo={0.95} accessibilityRole="button" style={({ pressed }) => [s.pill, { backgroundColor: go ? '#2fa56a' : c.sel, opacity: pressed ? 0.75 : 1 }]}>
       {icon ? <NxIcon name={icon} size={16} color={fg} /> : null}
       <Text style={{ color: fg, fontSize: 14, fontWeight: '500' }}>{label}</Text>
-    </Pressable>
+    </NxPressable>
   );
 }
 

@@ -1,13 +1,17 @@
 /**
  * "Done for today" (canvas CardsDone): the green rendered-art card with a slow drift, the Got it / Missed it
  * tally, a primary button and a quiet text button. The gradient is a picture (green.jpg), never a CSS gradient.
+ * Arriving here is the end of a sitting or a quiz round: the card settles in (420ms), the tally and buttons
+ * follow, and the phone gives one success tap.
  */
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { StyleSheet, Text, View } from 'react-native';
+import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NxIcon } from '@/components/nx/NxIcon';
-import { useNx } from '@/theme/nx';
+import { NxPressable } from '@/components/nx/NxPressable';
+import { nxEasing, nxHaptic } from '@/components/nx/motion';
+import { nxDuration, useNx } from '@/theme/nx';
 
 const green = require('../../../../assets/images/nx/green.jpg');
 
@@ -35,10 +39,15 @@ export function StudyDone({
   const reduce = useReducedMotion();
   // Canvas .gdrift: translate(-3%,-2%) scale 1 rotate 0 → translate(6%,5%) scale 1.14 rotate 7deg, 16s, alternate.
   const t = useSharedValue(0);
+  const enter = useSharedValue(reduce ? 1 : 0);
   useEffect(() => {
+    nxHaptic('success');
+    enter.value = reduce ? 1 : withTiming(1, { duration: nxDuration.slow, easing: nxEasing });
     if (reduce) return;
     t.value = withRepeat(withTiming(1, { duration: 16000, easing: Easing.inOut(Easing.ease) }), -1, true);
-  }, [reduce, t]);
+    // Mount only: the tap and the entrance belong to arriving, not to later prop changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const drift = useAnimatedStyle(() => ({
     transform: [
       { translateX: `${-3 + 9 * t.value}%` },
@@ -47,10 +56,12 @@ export function StudyDone({
       { rotate: `${7 * t.value}deg` },
     ],
   }));
+  const settle = useAnimatedStyle(() => ({ opacity: enter.value, transform: [{ translateY: (1 - enter.value) * 16 }, { scale: 0.96 + 0.04 * enter.value }] }));
+  const follow = (delay: number) => (reduce ? undefined : FadeIn.delay(delay).duration(nxDuration.base));
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={styles.art}>
+      <Animated.View style={[styles.art, settle]}>
         {/* Oversized so the drift never shows an edge. */}
         <Animated.Image source={green} resizeMode="cover" style={[styles.img, drift]} />
         <View style={styles.tick}>
@@ -58,21 +69,21 @@ export function StudyDone({
         </View>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.sub}>{sub}</Text>
-      </View>
-      <View style={[styles.grp, { backgroundColor: c.sunk }]}>
+      </Animated.View>
+      <Animated.View entering={follow(120)} style={[styles.grp, { backgroundColor: c.sunk }]}>
         <Tally label="Got it" value={got} />
         <Tally label="Missed it" value={missed} top />
-      </View>
-      <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, 34) }]}>
-        <Pressable onPress={onPrimary} style={({ pressed }) => [styles.btn, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}>
+      </Animated.View>
+      <Animated.View entering={follow(200)} style={[styles.actions, { paddingBottom: Math.max(insets.bottom, 34) }]}>
+        <NxPressable onPress={onPrimary} style={({ pressed }) => [styles.btn, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}>
           <Text style={{ color: c.onInv, fontSize: 16, fontWeight: '500' }}>{primary}</Text>
-        </Pressable>
+        </NxPressable>
         {secondary && onSecondary ? (
-          <Pressable onPress={onSecondary} style={({ pressed }) => [styles.txt, pressed && { opacity: 0.5 }]}>
+          <NxPressable onPress={onSecondary} style={({ pressed }) => [styles.txt, pressed && { opacity: 0.5 }]}>
             <Text style={{ fontSize: 15, color: c.t2 }}>{secondary}</Text>
-          </Pressable>
+          </NxPressable>
         ) : null}
-      </View>
+      </Animated.View>
     </View>
   );
 }
