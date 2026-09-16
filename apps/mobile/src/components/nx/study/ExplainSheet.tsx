@@ -15,7 +15,6 @@ import { AnswerText, UserBubble } from '@/components/nx/chat/parts';
 import { LiveSteps, SettledSteps, type TurnTrail } from '@/components/nx/chat/Steps';
 import { NxSparkChip, useFloat } from '@/components/nx/study';
 import type { ChatMsg } from '@/lib/chat-thread';
-import { reasoningGlimpse } from '@/lib/reasoning-preview';
 import type { ThinkingPhase } from '@/lib/thinking-phase';
 import { useNx } from '@/theme/nx';
 import { NxSheet } from '../motion';
@@ -77,7 +76,6 @@ export function ExplainSheet({
   const [streaming, setStreaming] = useState('');
   const [phase, setPhase] = useState<ThinkingPhase>({ kind: 'routing' });
   const [trail, setTrail] = useState<TurnTrail>(EMPTY_TRAIL);
-  const [glimpse, setGlimpse] = useState('');
   const [failed, setFailed] = useState(false);
   const [draft, setDraft] = useState('');
   const reasoningRef = useRef('');
@@ -87,13 +85,6 @@ export function ExplainSheet({
   const key = `${front}\n${back}\n${picked ?? ''}`;
   const keyRef = useRef(key);
   keyRef.current = key;
-
-  // The thinking preview refreshes a few times a second, like the chat.
-  useEffect(() => {
-    if (!sending) return;
-    const t = setInterval(() => setGlimpse(reasoningGlimpse(reasoningRef.current)), 250);
-    return () => clearInterval(t);
-  }, [sending]);
 
   /** One turn. `shown` is what the bubble says; the first, automatic turn has no bubble. */
   const ask = useCallback(
@@ -111,7 +102,6 @@ export function ExplainSheet({
       setStreaming('');
       setPhase({ kind: 'routing' });
       setTrail(EMPTY_TRAIL);
-      setGlimpse('');
       reasoningRef.current = '';
       streamRef.current = '';
       const started = Date.now();
@@ -236,7 +226,7 @@ export function ExplainSheet({
         )}
         {sending ? (
           <View style={{ gap: 12, paddingTop: 2 }}>
-            {!streaming ? <LiveSteps phase={phase} trail={trail} glimpse={glimpse} /> : null}
+            {!streaming ? <LiveSteps phase={phase} trail={trail} /> : null}
             {streaming ? <AnswerText text={streaming} /> : null}
           </View>
         ) : null}

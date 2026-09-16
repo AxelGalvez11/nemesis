@@ -3,7 +3,7 @@
  * Live: the current step shimmers. Settled: one quiet line that opens into the steps. No checkmarks.
  */
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import type { ChatMsg, ChatSource } from '@/lib/chat-thread';
 import { phaseLabel, type ThinkingPhase } from '@/lib/thinking-phase';
 import { useNx } from '@/theme/nx';
@@ -23,9 +23,8 @@ function plural(n: number, one: string, many: string) {
 /** Everything a running turn has shown so far, so earlier steps stay on screen as later ones start. */
 export type TurnTrail = { queries: string[]; thoughtMs: number; found: number };
 
-export function LiveSteps({ phase, trail, glimpse }: { phase: ThinkingPhase; trail: TurnTrail; glimpse: string }) {
+export function LiveSteps({ phase, trail }: { phase: ThinkingPhase; trail: TurnTrail }) {
   const c = useNx();
-  const [open, setOpen] = useState(true);
   if (phase.kind === 'writing') return null;
   const live = { fontSize: 15, lineHeight: 20, fontWeight: '500' as const, color: c.t1 };
   const quiet = { fontSize: 15, lineHeight: 20, color: c.t2 };
@@ -68,19 +67,12 @@ export function LiveSteps({ phase, trail, glimpse }: { phase: ThinkingPhase; tra
   } else {
     current = (
       <>
-        {/* No spinners (owner 2026-09-15): each step leads with an icon for what it is doing. */}
-        <StepLine
-          lead={<StepIcon name={phase.kind === "reading-photo" ? "image" : "bulb"} color={c.t2} />}
-          onPress={glimpse ? () => setOpen((o) => !o) : undefined}
-          trail={glimpse ? <StepIcon name={open ? 'chev_d' : 'chev_r'} size={14} color={c.t3} /> : undefined}
-        >
+        {/* No spinners (owner 2026-09-15): each step leads with an icon for what it is doing.
+            🔴 AND NO RAW WORKING-OUT (owner 2026-09-16: "it should only show reasoning when its helpful to
+            the user"). What the turn is DOING is useful and stays; the model's private monologue does not. */}
+        <StepLine lead={<StepIcon name={phase.kind === "reading-photo" ? "image" : "bulb"} color={c.t2} />}>
           <ShimmerText text={phase.kind === 'reading-photo' ? 'Reading your photo' : 'Thinking'} style={live} />
         </StepLine>
-        {glimpse && open ? (
-          <View style={{ borderRadius: 10, backgroundColor: c.sunk, paddingVertical: 10, paddingHorizontal: 12 }}>
-            <Text style={{ fontSize: 14, lineHeight: 21, color: c.t2 }}>{glimpse}</Text>
-          </View>
-        ) : null}
       </>
     );
   }
@@ -127,11 +119,7 @@ export function SettledSteps({ msg, onOpenSource }: { msg: ChatMsg; onOpenSource
       {open ? (
         <View style={{ marginTop: -4, marginLeft: 2, paddingVertical: 2, paddingLeft: 14, borderLeftWidth: 1.5, borderLeftColor: c.ln, gap: 6 }}>
           {thought ? <StepLabel icon="bulb" text={thought} /> : null}
-          {thoughtText ? (
-            <Text numberOfLines={8} style={{ fontSize: 14, lineHeight: 21, color: c.t2 }}>
-              {thoughtText}
-            </Text>
-          ) : null}
+          {/* The saved working-out is not shown (owner 2026-09-16); how long it thought, and what it read, are. */}
           {web.length ? <StepLabel icon="globe" text="Searched the web" /> : null}
           {web.map((s, i) => (
             <ResultRow key={`w${i}`} source={s} onPress={() => onOpenSource(s)} />

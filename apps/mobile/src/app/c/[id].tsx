@@ -22,7 +22,6 @@ import { LiveSteps, SettledSteps, type TurnTrail } from '@/components/nx/chat/St
 import { useSpacePages } from '@/hooks/useSpace';
 import { ATTACHMENT_CONTEXT_MAX_CHARS, type ChatMsg, type ChatSource } from '@/lib/chat-thread';
 import { deriveThreadTitle } from '@/lib/chat-threads';
-import { reasoningGlimpse } from '@/lib/reasoning-preview';
 import type { ThinkingPhase } from '@/lib/thinking-phase';
 import { useNx } from '@/theme/nx';
 import { PageMenu, type PageMenuItem } from '@/components/nx/PageMenu';
@@ -55,7 +54,6 @@ export default function ChatScreen() {
   const [streaming, setStreaming] = useState('');
   const streamRef = useRef('');
   const reasoningRef = useRef('');
-  const [glimpse, setGlimpse] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [web, setWeb] = useState(false);
   const [attached, setAttached] = useState<Attached | null>(null);
@@ -116,12 +114,8 @@ export default function ChatScreen() {
     }
   }, []);
 
-  // Where the reasoning preview reaches the screen: a few times a second, not on every token.
-  useEffect(() => {
-    if (!sending) return;
-    const t = setInterval(() => setGlimpse(reasoningGlimpse(reasoningRef.current)), 250);
-    return () => clearInterval(t);
-  }, [sending]);
+  // 🔴 The model's private working-out is no longer put on screen (owner 2026-09-16: "it should only show
+  // reasoning when its helpful to the user"). The steps say what the turn is doing; that is the useful part.
 
   const send = useCallback(
     async (override?: string, withPage?: Attached | null) => {
@@ -147,7 +141,6 @@ export default function ChatScreen() {
       setStreaming('');
       setPhase({ kind: 'routing' });
       setTrail(EMPTY_TRAIL);
-      setGlimpse('');
       streamRef.current = '';
       reasoningRef.current = '';
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -339,7 +332,7 @@ export default function ChatScreen() {
           )}
           {sending ? (
             <View style={{ gap: 12, paddingTop: 2 }}>
-              {!streaming ? <LiveSteps phase={phase} trail={trail} glimpse={glimpse} /> : null}
+              {!streaming ? <LiveSteps phase={phase} trail={trail} /> : null}
               {streaming ? <AnswerText text={streaming} /> : null}
             </View>
           ) : null}
