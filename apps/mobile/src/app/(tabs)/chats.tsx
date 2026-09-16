@@ -8,6 +8,7 @@ import { deleteThread, listThreads, pinThread, renameThread } from "@/api/chat";
 import { useAuth } from "@/auth/AuthProvider";
 import { Composer } from "@/components/nx/chat/Composer";
 import { ChatHero, CobaltGlow } from "@/components/nx/chat/parts";
+import { NoteAskBar } from "@/components/nx/NoteAskBar";
 import { NxIcon } from "@/components/nx/NxIcon";
 import { NxBottomBar, NxRow, NxSection } from "@/components/nx/primitives";
 import { useSpacePages } from "@/hooks/useSpace";
@@ -63,6 +64,7 @@ export default function ChatsTab() {
   const { pages } = useSpacePages();
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [asking, setAsking] = useState(false);
   // A chat row's long-press options, in the app's own pop-up. Items stay while it animates out.
   const [rowMenu, setRowMenu] = useState<{ open: boolean; title: string; items: PageMenuItem[] }>({ open: false, title: "", items: [] });
 
@@ -132,7 +134,8 @@ export default function ChatsTab() {
         <View style={styles.hero}>
           <ChatHero hasNotes={pages.length > 0} onSuggest={(s) => router.push(openChat("new", s))} />
         </View>
-        <Composer value="" onChange={() => undefined} onSend={() => undefined} onPress={() => router.push(openChat("new"))} />
+        <Composer value="" onChange={() => undefined} onSend={() => undefined} onPress={() => setAsking(true)} />
+        <AskHere asking={asking} setAsking={setAsking} onSend={(q) => router.push(openChat("new", q))} />
       </View>
     );
   }
@@ -183,9 +186,25 @@ export default function ChatsTab() {
           ))
         )}
       </ScrollView>
-      <NxBottomBar ask="Ask Nemesis" onSearch={() => router.push("/search" as Href)} onAsk={() => router.push(openChat("new"))} />
+      <NxBottomBar ask="Ask Nemesis" onSearch={() => router.push("/search" as Href)} onAsk={() => setAsking(true)} />
+      <AskHere asking={asking} setAsking={setAsking} onSend={(q) => router.push(openChat("new", q))} />
       <PageMenu anchor="bottom" visible={rowMenu.open} title={rowMenu.title} onClose={() => setRowMenu((m) => ({ ...m, open: false }))} items={rowMenu.items} />
     </View>
+  );
+}
+
+/** Owner 2026-09-15: the question is typed where you are; only sending opens the chat. */
+function AskHere({ asking, setAsking, onSend }: { asking: boolean; setAsking: (v: boolean) => void; onSend: (q: string) => void }) {
+  return (
+    <NoteAskBar
+      visible={asking}
+      onClose={() => setAsking(false)}
+      page={null}
+      onSend={(q) => {
+        setAsking(false);
+        onSend(q);
+      }}
+    />
   );
 }
 

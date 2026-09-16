@@ -11,7 +11,7 @@ import { settlePageRecordings } from "@/api/recording";
 import { addFileSource, addLinkSource, addNoteSource, addPhotoSource, removeSource } from "@/api/pageSources";
 import { PhotoCaptureSheet } from "@/components/PhotoCaptureSheet";
 import { loadPage, pageBlocks, pageSources, type Block, type PageSource, type PageSummary } from "@/api/space";
-import { addBlockAfter, createPage, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
+import { addBlockAfter, insertBlockAfter, setBlockText, setBlockType, setChecked, setPageTitle } from "@/api/spaceWrite";
 import { NoteAskBar } from "@/components/nx/NoteAskBar";
 import { PageMenu } from "@/components/nx/PageMenu";
 import { embedUrl, openEmbed } from "@/api/noteMedia";
@@ -49,17 +49,11 @@ export default function PageScreen() {
   const [tab, setTab] = useState<WsTab>("notes");
   const [editing, setEditing] = useState(false);
   const [toolbarUp, setToolbarUp] = useState(false);
-  // Notion's bottom bar: ≡ opens Recents, Ask AI raises the AI bar with this note's pill, the pencil offers
-  // AI Meeting Notes / Chat / Page. Typing starts by tapping a line; putting the keyboard away ends it.
-  const [recentsOpen, setRecentsOpen] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
+  // The bottom is just the Ask AI bar (owner 2026-09-15): it raises the AI bar with this note's pill.
+  // Typing starts by tapping a line; putting the keyboard away ends it.
   const [askOpen, setAskOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{ id: string; at: number } | null>(null);
   const engagedOnce = useRef(false);
-  const recentsMenu = useNxPresence(recentsOpen);
-  const recentsPop = useNxPopStyle(recentsMenu.p);
-  const composeMenu = useNxPresence(composeOpen);
-  const composePop = useNxPopStyle(composeMenu.p);
 
   // Scrolled down a long note (canvas NoteScrolled): past the title a slim frosted bar with the page name
   // appears; scrolling down tucks the Ask bar away, scrolling up brings it back.
@@ -177,26 +171,30 @@ export default function PageScreen() {
     setFocusRequest({ id: blockId, at: Date.now() });
     setEditing(true);
   };
+  /** A new line with the cursor already in it, the way a regular notes app behaves (owner 2026-09-15: there is
+   *  no "Add a line" row, so an empty note and the space under the last line have to write straight away). */
+  const startWriting = async (afterId: string | null) => {
+    if (!spaceIdOfPage || !canEdit) return;
+    setEditError(null);
+    setEditing(true);
+    try {
+      const after = afterId ? blocks.find((b) => b.id === afterId) : undefined;
+      const anchor = after ? { id: after.id, parentId: after.parentId === id ? null : after.parentId } : null;
+      await addBlockAfter(spaceIdOfPage, id, pageContent, anchor, "text");
+      const fresh = await page.refetch();
+      const next = fresh.data ? pageBlocks(fresh.data) : [];
+      const last = next[next.length - 1];
+      if (last) setFocusRequest({ id: last.id, at: Date.now() });
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "The line could not be added.");
+    }
+  };
   const onEditorEngaged = (on: boolean) => {
     setToolbarUp(on);
     if (on) engagedOnce.current = true;
     else if (engagedOnce.current) {
       engagedOnce.current = false;
       setEditing(false);
-    }
-  };
-  const makePage = async (kind: "page" | "meeting") => {
-    const sid = page.data?.space_id;
-    setComposeOpen(false);
-    if (!sid) return;
-    try {
-      const day = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      const pid = await createPage(sid, kind === "meeting" ? { title: `Meeting, ${day}` } : {});
-      void qc.invalidateQueries({ queryKey: ["ws-all-pages"] });
-      if (kind === "meeting") router.push({ pathname: "/record/[pageId]", params: { pageId: pid } });
-      else router.push({ pathname: "/page/[id]", params: { id: pid, fresh: "1" } });
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : "The page could not be made.");
     }
   };
   const titles = useMemo(() => new Map(children.map((ch) => [ch.id, ch])), [children]);
@@ -470,7 +468,8 @@ export default function PageScreen() {
                       used to be the block's own title, so the row read "Recording  Recording". */}
                   <Prop icon="calendar" label="Date" value={formatDate(page.data?.page.edited_at)} />
                   {recording ? <Prop icon="mic" label="Recording" value={recordingLength(recording)} /> : null}
-                  <Prop icon="file" label="Sources" value={String(totalSources)} />
+                  {/* Owner 2026-09-15: a note with no sources does not say "Sources 0". */}
+                  {totalSources > 0 ? <Prop icon="file" label="Sources" value={String(totalSources)} /> : null}
                 </View>
                 <View style={[styles.rule, { backgroundColor: c.ln }]} />
                 <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 6 }}>
@@ -508,14 +507,20 @@ export default function PageScreen() {
                         databasePageIds={databaseIds}
                         canEdit={canEdit}
                       />
-                      <Pressable onPress={() => void addBlock("text", blocks.length ? blocks[blocks.length - 1]!.id : null)} style={{ paddingVertical: 10 }}>
-                        <Text style={[nxType.body, { color: c.t3 }]}>{blocks.length ? "Add a line" : "Tap to start writing"}</Text>
-                      </Pressable>
+                      {/* Owner 2026-09-15: no "Add a line" row. Tapping the empty space below starts a new line,
+                          the way a regular notes app does. */}
+                      <Pressable
+                        onPress={() => void startWriting(blocks.length ? blocks[blocks.length - 1]!.id : null)}
+                        style={{ height: 220 }}
+                        accessibilityLabel="Write another line"
+                      />
                     </>
                   ) : (
                     <>
-                      {blocks.length === 0 ? (
-                        <Pressable disabled={!canEdit} onPress={() => setEditing(true)}>
+                      {/* A note whose only line is blank looks empty, so it keeps the invitation to write
+                          (before this it drew nothing at all and there was no way back into typing). */}
+                      {!blocks.some((b) => b.type !== "text" || (b.text ?? "").trim().length > 0) ? (
+                        <Pressable disabled={!canEdit} onPress={() => void startWriting(blocks.length ? blocks[blocks.length - 1]!.id : null)}>
                           <Text style={[nxType.body, { color: c.t3 }]}>{canEdit ? "Tap here to start writing." : "This page is empty."}</Text>
                         </Pressable>
                       ) : null}
@@ -528,6 +533,18 @@ export default function PageScreen() {
                           </Pressable>
                         ),
                       )}
+                      {/* The space under the last line writes, like a regular notes app (owner 2026-09-15). */}
+                      {canEdit ? (
+                        <Pressable
+                          onPress={() => {
+                            const last = blocks[blocks.length - 1];
+                            if (last && last.type === "text" && !(last.text ?? "").trim()) startEditing(last.id);
+                            else void startWriting(last ? last.id : null);
+                          }}
+                          style={{ height: 220 }}
+                          accessibilityLabel="Write another line"
+                        />
+                      ) : null}
                     </>
                   )}
                 </View>
@@ -696,22 +713,8 @@ export default function PageScreen() {
         pointerEvents="box-none"
         style={[StyleSheet.absoluteFill, { top: undefined, height: insets.bottom + 90, opacity: barShown, transform: [{ translateY: barShown.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) }] }]}
       >
-      <NxBottomBar
-        ask="Ask AI"
-        onAsk={() => setAskOpen(true)}
-        left={
-          <NxPressable onPress={() => setRecentsOpen(true)} scaleTo={0.92} style={[styles.round, { backgroundColor: c.card, borderColor: c.ring }]} accessibilityLabel="Recents">
-            <NxIcon name="menu" size={22} color={c.t1} />
-          </NxPressable>
-        }
-        right={
-          spaceIdOfPage ? (
-            <NxPressable onPress={() => setComposeOpen(true)} haptic="light" scaleTo={0.92} style={[styles.round, { backgroundColor: c.card, borderColor: c.ring }]} accessibilityLabel="New">
-              <NxIcon name="compose" size={20} color={c.t1} />
-            </NxPressable>
-          ) : null
-        }
-      />
+      {/* Owner 2026-09-15: the note's bottom is just the Ask AI bar (the ≡ Recents and pencil buttons are gone). */}
+      <NxBottomBar ask="Ask AI" onAsk={() => setAskOpen(true)} />
       </Animated.View>}
 
       {/* 🔴 NOT an InputAccessoryView: that only draws while a software keyboard is up, so with a hardware keyboard
@@ -849,56 +852,6 @@ export default function PageScreen() {
             />
           </View>
       </NxSheet>
-
-      {/* ≡ Recents: a small pop-up of the pages opened last, rising from the bottom-left button. */}
-      <Modal visible={recentsMenu.mounted} transparent animationType="none" onRequestClose={() => setRecentsOpen(false)}>
-        <View style={StyleSheet.absoluteFill} pointerEvents={recentsOpen ? "box-none" : "none"}>
-          <NxDim p={recentsMenu.p} onPress={() => setRecentsOpen(false)} />
-          <Reanimated.View style={[styles.menuPop, { left: 12, bottom: Math.max(insets.bottom, 12) + 60, backgroundColor: c.card, borderColor: c.ring, transformOrigin: "bottom left" }, recentsPop]}>
-            <Text style={[nxType.section, { color: c.t2, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4 }]}>Recents</Text>
-            {space.recents.filter((p) => p.id !== id).slice(0, 6).map((p) => (
-              <Pressable
-                key={p.id}
-                onPress={() => {
-                  setRecentsOpen(false);
-                  router.push({ pathname: "/page/[id]", params: { id: p.id } });
-                }}
-                style={({ pressed }) => [styles.recentRow, pressed && { backgroundColor: c.soft }]}
-              >
-                <View style={{ width: 24, alignItems: "center" }}>
-                  <NxIcon name="notes" size={18} color={c.t2} strokeWidth={1.6} />
-                </View>
-                <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, color: c.t1 }}>
-                  {p.props.title || "Untitled"}
-                </Text>
-                <Text style={[nxType.rowMeta, { color: c.t3 }]}>{ago(p.edited_at)}</Text>
-              </Pressable>
-            ))}
-            {space.recents.filter((p) => p.id !== id).length === 0 ? (
-              <Text style={{ fontSize: 15, color: c.t2, paddingHorizontal: 14, paddingVertical: 12 }}>Pages you open show up here.</Text>
-            ) : null}
-          </Reanimated.View>
-        </View>
-      </Modal>
-
-      {/* Pencil: AI Meeting Notes, Chat, Page (Notion's new menu), rising from the bottom-right button. */}
-      <Modal visible={composeMenu.mounted} transparent animationType="none" onRequestClose={() => setComposeOpen(false)}>
-        <View style={StyleSheet.absoluteFill} pointerEvents={composeOpen ? "box-none" : "none"}>
-          <NxDim p={composeMenu.p} onPress={() => setComposeOpen(false)} />
-          <Reanimated.View style={[styles.menuPop, { right: 12, width: 240, bottom: Math.max(insets.bottom, 12) + 60, backgroundColor: c.card, borderColor: c.ring, transformOrigin: "bottom right" }, composePop]}>
-            <MenuOption icon="mic" label="AI Meeting Notes" onPress={() => void makePage("meeting")} />
-            <MenuOption
-              icon="bubble"
-              label="Chat"
-              onPress={() => {
-                setComposeOpen(false);
-                router.push({ pathname: "/c/[id]", params: { id: "new" } });
-              }}
-            />
-            <MenuOption icon="file" label="Page" onPress={() => void makePage("page")} />
-          </Reanimated.View>
-        </View>
-      </Modal>
 
       <PageMenu visible={menuOpen} onClose={() => setMenuOpen(false)} items={menuItems()} />
       <PageMenu

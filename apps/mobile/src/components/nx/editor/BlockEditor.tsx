@@ -36,7 +36,7 @@ import {
   type StyleProp,
   type TextStyle,
 } from 'react-native';
-import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { linkEmbed, openEmbed, pickAndUploadMedia, sourceEmbed, type MediaKind } from '@/api/noteMedia';
@@ -45,9 +45,7 @@ import { addBlockComment, saveBlockTitle } from '@/api/spaceWrite';
 import { nxType, useNx } from '@/theme/nx';
 import { NxIcon, type NxIconName } from '../NxIcon';
 import { NxButton } from '../primitives';
-import { NxMark } from '../NxMark';
 import { NxPressable } from '../NxPressable';
-import { nxEasing, nxHaptic } from '../motion';
 import { DatabaseBlock } from '../db/DatabaseBlock';
 import { BookmarkEmbed, FileEmbed } from './FileEmbed';
 import { InlineImage } from './InlineImage';
@@ -285,7 +283,6 @@ export function BlockEditor({
 
   // ── Undo: snapshots of a field before a burst of typing (a pause over 1.2s starts a new one) or a format ────────
   const undoStack = useRef<{ id: string; segs: Seg[]; at: number }[]>([]);
-  const [undoDepth, setUndoDepth] = useState(0);
   const remember = (id: string, segs: Seg[], force = false) => {
     const s = undoStack.current;
     const top = s[s.length - 1];
@@ -296,14 +293,6 @@ export function BlockEditor({
     }
     s.push({ id, segs, at: now });
     if (s.length > 100) s.shift();
-    setUndoDepth(s.length);
-  };
-  const undo = () => {
-    const entry = undoStack.current.pop();
-    setUndoDepth(undoStack.current.length);
-    if (!entry) return;
-    setDraft(entry.id, entry.segs);
-    flush(entry.id);
   };
 
   const change = (id: string, text: string) => {
@@ -317,6 +306,8 @@ export function BlockEditor({
 
   // ── Keyboard, toolbar, panels ────────────────────────────────────────────────────────────────────────────────
   const [engaged, setEngaged] = useState(false);
+  /** Only the line being typed on shows "Type something", like a regular notes app (owner 2026-09-15). */
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [panel, setPanelState] = useState<Panel | null>(null);
   const panelRef = useRef<Panel | null>(null);
   const setPanel = useCallback((p: Panel | null) => {
@@ -369,6 +360,13 @@ export function BlockEditor({
     const hide = Keyboard.addListener(hideEvent, (e: KeyboardEvent) => {
       kbUp.current = false;
       if (panelRef.current) return; // the panel takes the keyboard's place; the toolbar stays put
+      // 🔴 A LINE STILL BEING TYPED ON KEEPS ITS BAR. On the Simulator (and with any hardware keyboard) iOS shows
+      // and then hides its own accessory bar, which fires a hide event while the line is still focused; parking the
+      // toolbar off-screen there left a focused note with no bottom bar at all.
+      if (focusedRef.current) {
+        lift.value = withTiming(Math.max(insets.bottom, 12) - 10, { duration: e.duration || 250, easing: EASE });
+        return;
+      }
       lift.value = withTiming(HIDDEN, { duration: (e.duration || 250) + 60, easing: EASE }, (done) => {
         if (done) runOnJS(disengage)();
       });
@@ -377,11 +375,12 @@ export function BlockEditor({
       show.remove();
       hide.remove();
     };
-  }, [lift, disengage]);
+  }, [lift, disengage, insets.bottom]);
 
   const onFieldFocus = (id: string) => {
     focusedRef.current = id;
     lastFocused.current = id;
+    setFocusedId(id);
     setEngaged(true);
     if (panelRef.current) setPanel(null);
     // 🔴 No keyboard event comes with a hardware keyboard (the Simulator, an iPad keyboard), so the toolbar would stay
@@ -390,6 +389,7 @@ export function BlockEditor({
   };
   const onFieldBlur = (id: string) => {
     if (focusedRef.current === id) focusedRef.current = null;
+    setFocusedId((cur) => (cur === id ? null : cur));
     flush(id);
     // Focus went to another field on the page (the title): the keyboard stays up, but these tools are not for it.
     setTimeout(() => {
@@ -421,31 +421,7 @@ export function BlockEditor({
 
   const toolbarStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(lift.value + 10) }] }));
 
-  // Mic: the button presses in with a blue tint, the keyboard goes down, then the recorder opens (canvas RecordStart).
-  const reduceMotion = useReducedMotion();
-  const micScale = useSharedValue(1);
-  const micTint = useSharedValue(0);
-  const [micOn, setMicOn] = useState(false);
-  const micStyle = useAnimatedStyle(() => ({ transform: [{ scale: micScale.value }], backgroundColor: `rgba(59,147,240,${0.2 * micTint.value})` }));
-  const record = () => {
-    if (!onRecord) return;
-    setMicOn(true);
-    nxHaptic('light');
-    // canvas .micpress: presses in, overshoots a touch, settles; the blue tint fades after. Reduced motion skips both.
-    if (!reduceMotion) {
-      micScale.value = withSequence(withTiming(0.8, { duration: 80, easing: nxEasing }), withTiming(1.06, { duration: 100, easing: nxEasing }), withTiming(1, { duration: 90, easing: nxEasing }));
-      micTint.value = withSequence(withTiming(1, { duration: 80, easing: nxEasing }), withTiming(0.8, { duration: 100, easing: nxEasing }), withTiming(0, { duration: 240, easing: nxEasing }));
-    }
-    setTimeout(() => {
-      if (panelRef.current) hideToolbar();
-      Keyboard.dismiss();
-    }, 150);
-    setTimeout(() => {
-      setMicOn(false);
-      onRecord();
-    }, 280);
-  };
-
+  // The mic button left the toolbar with the rest of it (owner 2026-09-15); a recording starts from + , Recording.
   const openAdd = (from: 'plus' | 'image') => {
     if (panelRef.current === 'add' && addFromRef.current === from) {
       closePanel();
@@ -734,7 +710,7 @@ export function BlockEditor({
       default:
         return (
           <View key={b.id} style={[styles.line, pad, b.type.includes('header') && { marginTop: 8 }]}>
-            {field(b, style, b.type === 'text' ? 'Type something' : ' ')}
+            {field(b, style, b.type === 'text' && focusedId === b.id ? 'Type something' : ' ')}
           </View>
         );
     }
@@ -889,54 +865,29 @@ export function BlockEditor({
             ) : null}
             <Animated.View style={[styles.toolbarWrap, toolbarStyle]}>
               <View style={[styles.toolbar, { backgroundColor: c.card, borderColor: c.ring }]}>
-                <ScrollView horizontal keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={styles.tools}>
-                  {onAsk ? (
-                    <Tool
-                      label="Ask Nemesis about this note"
-                      onPress={() => {
-                        Keyboard.dismiss();
-                        setPanel(null);
-                        onAsk();
-                      }}
-                    >
-                      <NxMark size={18} color={c.t1} />
-                    </Tool>
-                  ) : null}
-                  <Tool label="Add a block" on={panel === 'add' && addFrom === 'plus'} onPress={() => openAdd('plus')}>
-                    <NxIcon name="plus" size={20} color={toolColor(panel === 'add' && addFrom === 'plus')} />
-                  </Tool>
-                  <Tool label="Text style" on={panel === 'style'} onPress={() => (panel === 'style' ? closePanel() : openPanel('style'))}>
-                    <NxIcon name="aa" size={20} color={toolColor(panel === 'style')} />
-                  </Tool>
-                  {onRecord ? (
-                    <Animated.View style={[styles.tool, micStyle]}>
-                      <Pressable onPress={record} accessibilityRole="button" accessibilityLabel="Record" style={styles.toolHit}>
-                        <NxIcon name="mic" size={20} color={micOn ? c.acc : c.t2} />
-                      </Pressable>
-                    </Animated.View>
-                  ) : null}
-                  <Tool label="Add a file or link" on={panel === 'add' && addFrom === 'image'} onPress={() => openAdd('image')}>
-                    <NxIcon name="image" size={20} color={toolColor(panel === 'add' && addFrom === 'image')} />
-                  </Tool>
-                  {onTurnInto ? (
-                    <Tool label="Turn into" on={panel === 'turn'} onPress={() => (panel === 'turn' ? closePanel() : openPanel('turn'))}>
-                      <NxIcon name="turn" size={20} color={toolColor(panel === 'turn')} />
-                    </Tool>
-                  ) : null}
-                  <Tool label="Undo" disabled={undoDepth === 0} onPress={undo}>
-                    <NxIcon name="undo" size={20} color={c.t2} />
-                  </Tool>
-                  {spaceId ? (
-                    <Tool label="Comment on this line" onPress={() => openSheet({ kind: 'comment' })}>
-                      <NxIcon name="comment" size={20} color={c.t2} />
-                    </Tool>
-                  ) : null}
-                  {pages ? (
-                    <Tool label="Mention a page" onPress={() => openSheet({ kind: 'mention' })}>
-                      <NxIcon name="at" size={20} color={c.t2} />
-                    </Tool>
-                  ) : null}
-                </ScrollView>
+                {/* Owner 2026-09-15: while taking notes the bottom is just the Ask AI bar. The + stays with it, so
+                    blocks, pictures and a recording are still one tap away. */}
+                <Tool label="Add a block" on={panel === 'add' && addFrom === 'plus'} onPress={() => openAdd('plus')}>
+                  <NxIcon name="plus" size={20} color={toolColor(panel === 'add' && addFrom === 'plus')} />
+                </Tool>
+                {onAsk ? (
+                  <Pressable
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setPanel(null);
+                      onAsk();
+                    }}
+                    style={[styles.askField, { backgroundColor: c.sunk }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ask AI about this note"
+                  >
+                    <Text numberOfLines={1} style={{ fontSize: 15, color: c.t3 }}>
+                      Ask AI
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
                 <View style={[styles.divider, { backgroundColor: c.ln }]} />
                 <Pressable
                   onPress={() => (panel ? closePanel() : Keyboard.dismiss())}
@@ -1113,6 +1064,7 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', gap: 10 },
   box: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, marginTop: 4, alignItems: 'center', justifyContent: 'center' },
   toolbarWrap: { position: 'absolute', left: 12, right: 12, bottom: 0 },
+  askField: { flex: 1, height: 38, borderRadius: 19, justifyContent: 'center', paddingHorizontal: 14, marginRight: 6 },
   toolbar: {
     height: 48,
     borderRadius: 24,

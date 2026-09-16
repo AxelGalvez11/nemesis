@@ -86,6 +86,8 @@ function ThemedApp() {
         <Stack.Screen name="settings-upgrade" options={{ presentation: "modal" }} />
         <Stack.Screen name="flashcards/[id]" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="quiz/[id]" options={{ presentation: "fullScreenModal" }} />
+        {/* Owner 2026-09-15: a chat opens from the bottom up. */}
+        <Stack.Screen name="c/[id]" options={{ presentation: "modal" }} />
       </Stack>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
     </SafeAreaProvider>

@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PageSummary } from "@/api/space";
 import type { Deck } from "@/api/study";
+import { NoteAskBar } from "@/components/nx/NoteAskBar";
 import { NxIcon } from "@/components/nx/NxIcon";
 import { NxBottomBar, NxButton, NxSection } from "@/components/nx/primitives";
 import { tint } from "@/components/nx/study";
@@ -22,6 +23,7 @@ export default function StudyTab() {
   const decks = useDecks();
   const space = useSpacePages();
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [asking, setAsking] = useState(false);
 
   const roots = useMemo(() => fileByPage(decks.data ?? [], space.byId), [decks.data, space.byId]);
 
@@ -114,7 +116,9 @@ export default function StudyTab() {
           </>
         )}
       </ScrollView>
-      <NxBottomBar ask="Ask Nemesis" onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new" } })} onSearch={() => router.push("/search")} />
+      <NxBottomBar ask="Ask Nemesis" onAsk={() => setAsking(true)} onSearch={() => router.push("/search")} />
+      {/* Owner 2026-09-15: the question is typed here; only sending opens the chat. */}
+      <NoteAskBar visible={asking} onClose={() => setAsking(false)} page={null} onSend={(q) => { setAsking(false); router.push({ pathname: "/c/[id]", params: { id: "new", q } }); }} />
     </View>
   );
 }

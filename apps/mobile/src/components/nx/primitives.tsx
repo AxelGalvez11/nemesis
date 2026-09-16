@@ -227,9 +227,8 @@ export function NxBottomBar({
           <View style={{ width: 32, height: 32, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: c.ring, backgroundColor: c.card, alignItems: 'center', justifyContent: 'center' }}>
             <NxMark size={16} color={c.t1} />
           </View>
-        ) : (
-          <NxIcon name="spark" size={18} color={c.t3} />
-        )}
+        ) : null}
+        {/* Owner 2026-09-15: no star icon in the Ask bar. */}
         <Text numberOfLines={1} style={{ color: c.t3, fontSize: 15 }}>
           {ask}
         </Text>

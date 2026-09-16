@@ -10,6 +10,7 @@ import type { PageNode, PageSummary } from "@/api/space";
 import { createPage } from "@/api/spaceWrite";
 import { useAuth } from "@/auth/AuthProvider";
 import { NewMenu } from "@/components/nx/NewMenu";
+import { NoteAskBar } from "@/components/nx/NoteAskBar";
 import { NxIcon } from "@/components/nx/NxIcon";
 import { NxBottomBar, NxButton, NxNewButton, NxPill, NxRow, NxSection } from "@/components/nx/primitives";
 import { useSpacePages } from "@/hooks/useSpace";
@@ -28,6 +29,7 @@ export default function NotesHome() {
   const { spaceId, pages, tree, recents, loading, error, refetch, refreshing } = useSpacePages();
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState(false);
+  const [asking, setAsking] = useState(false);
   const online = useOnline();
   const [making, setMaking] = useState(false);
   const [makeError, setMakeError] = useState<string | null>(null);
@@ -177,12 +179,14 @@ export default function NotesHome() {
           </ScrollView>
           {menu ? null : <NxBottomBar
             ask={online ? "Ask Nemesis" : "Ask Nemesis is offline"}
-            onAsk={online ? () => router.push({ pathname: "/c/[id]", params: { id: "new" } }) : undefined}
+            onAsk={online ? () => setAsking(true) : undefined}
             onSearch={() => router.push("/search")}
             right={spaceId && online ? <NxNewButton onPress={() => setMenu(true)} /> : null}
           />}
         </>
       )}
+      {/* Owner 2026-09-15: the question is typed here; only sending opens the chat, which rises from the bottom. */}
+      <NoteAskBar visible={asking} onClose={() => setAsking(false)} page={null} onSend={(q) => { setAsking(false); router.push({ pathname: "/c/[id]", params: { id: "new", q } }); }} />
       <NewMenu
         visible={menu}
         busy={making}
