@@ -4,7 +4,8 @@ import { StyleSheet, Text, View } from "react-native";
 import { SkelFlashcard } from "@/components/nx/Skeleton";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cardQuiz, deckCards, markCard, reviewQueue, type Card } from "@/api/study";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { cardQuiz, deckCards, markCard, readSchedule, reviewQueue, undoMark, type Card, type CardSchedule } from "@/api/study";
 import { NxFlashcard, NxMarkButtons, NxStudyHeader } from "@/components/nx/study";
 import { ExplainSheet } from "@/components/nx/study/ExplainSheet";
 import { StudyDone } from "@/components/nx/study/StudyDone";
@@ -29,6 +30,9 @@ export default function FlashcardsReview() {
   const [tally, setTally] = useState({ got: 0, missed: 0 });
   const firstMark = useRef(new Set<string>());
   const shownAt = useRef(Date.now());
+  // Every mark of this sitting, newest last, so a swipe to the right can take the last one back.
+  const history = useRef<{ card: Card; before: CardSchedule | null; got: boolean }[]>([]);
+  const [undone, setUndone] = useState(false);
 
   useEffect(() => {
     if (cards.data && queue === null) setQueue(reviewQueue(cards.data, Date.now(), phone.newPerDay));
@@ -53,6 +57,10 @@ export default function FlashcardsReview() {
     const took = Date.now() - shownAt.current;
     shownAt.current = Date.now();
     try {
+      // Where the card stands now, read before grading moves it, so the undo has something to restore.
+      const before = await readSchedule(current.id).catch(() => null);
+      history.current.push({ card: current, before, got });
+      setUndone(false);
       await markCard(current.id, got, took);
       setFailed(null);
       // The last mark of the sitting: re-read only after it saved, so "due tomorrow" sees the new date.
@@ -61,6 +69,30 @@ export default function FlashcardsReview() {
       setFailed("That mark did not save. Check your connection.");
     }
   };
+
+  /** Take back the last mark: the card comes straight back, answer showing, and its schedule is restored. */
+  const undo = () => {
+    const last = history.current.pop();
+    if (!last) return;
+    setQueue([last.card, ...(queue ?? []).filter((card) => card.id !== last.card.id)]);
+    setFlipped(true);
+    setUndone(true);
+    firstMark.current.delete(last.card.id);
+    setTally((t) => (last.got ? { ...t, got: Math.max(0, t.got - 1) } : { ...t, missed: Math.max(0, t.missed - 1) }));
+    shownAt.current = Date.now();
+    if (last.before) {
+      void undoMark(last.card.id, last.before).catch(() => setFailed("That undo did not save. Check your connection."));
+    }
+  };
+
+  // Owner: swipe right to undo. A near-horizontal drag only, so turning the card over still works.
+  const swipeToUndo = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX(26)
+    .failOffsetY([-24, 24])
+    .onEnd((e) => {
+      if (e.translationX > 70) undo();
+    });
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["study-decks"] });
@@ -105,7 +137,16 @@ export default function FlashcardsReview() {
         />
       ) : current ? (
         <>
-          <NxFlashcard front={current.front} back={current.back} flipped={flipped} onFlip={() => setFlipped((f) => !f)} onExplain={() => setExplain(true)} />
+          {/* What is still waiting, Anki's way (owner 2026-09-16). */}
+          <Left queue={queue ?? []} />
+          <GestureDetector gesture={swipeToUndo}>
+            <View style={{ flex: 1 }}>
+              <NxFlashcard front={current.front} back={current.back} flipped={flipped} onFlip={() => setFlipped((f) => !f)} onExplain={() => setExplain(true)} />
+            </View>
+          </GestureDetector>
+          <Text style={[styles.hint, { color: c.t3 }]}>
+            {undone ? "Put back. Answer it again." : history.current.length ? "Swipe right to undo" : ""}
+          </Text>
           {failed ? <Text style={[styles.failed, { color: c.danger }]}>{failed}</Text> : null}
           <NxMarkButtons visible={flipped} onMiss={() => void mark(false)} onGot={() => void mark(true)} />
           <ExplainSheet
@@ -128,6 +169,27 @@ export default function FlashcardsReview() {
           />
         </>
       ) : null}
+    </View>
+  );
+}
+
+/** What is still waiting in this sitting: how many left, how many never seen, how many already in rotation. */
+function Left({ queue }: { queue: Card[] }) {
+  const c = useNx();
+  const fresh = queue.filter((card) => !card.state || card.state === "new").length;
+  const counts: { value: number; label: string; color: string }[] = [
+    { value: queue.length, label: "left", color: c.t1 },
+    { value: fresh, label: "new", color: c.t2 },
+    { value: queue.length - fresh, label: "in review", color: c.t3 },
+  ];
+  return (
+    <View style={styles.left}>
+      {counts.map((n) => (
+        <View key={n.label} style={styles.count}>
+          <Text style={{ fontSize: 14, fontWeight: "600", color: n.color }}>{n.value}</Text>
+          <Text style={{ fontSize: 13, color: c.t3 }}>{n.label}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -160,4 +222,7 @@ function nextDue(name: string, cards: Card[], now = Date.now()): string {
 const styles = StyleSheet.create({
   note: { paddingHorizontal: 20, paddingTop: 40, fontSize: 15, lineHeight: 22, textAlign: "center" },
   failed: { fontSize: 13, textAlign: "center", paddingTop: 10 },
+  left: { flexDirection: "row", justifyContent: "center", gap: 14, paddingTop: 2, paddingBottom: 2 },
+  count: { flexDirection: "row", alignItems: "baseline", gap: 4 },
+  hint: { fontSize: 13, textAlign: "center", paddingTop: 2, minHeight: 18 },
 });

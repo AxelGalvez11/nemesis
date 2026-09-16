@@ -179,6 +179,47 @@ export async function deleteCard(cardId: string): Promise<void> {
   if (error) throw new Error(`study_cards: ${error.message}`);
 }
 
+/** Everything a mark moves on a card, kept so the mark can be put back exactly as it was. */
+export type CardSchedule = {
+  due_at: string;
+  state: string | null;
+  stability: number | null;
+  difficulty: number | null;
+  interval_days: number | null;
+  lapses: number | null;
+  repetitions: number | null;
+  remaining_steps: number | null;
+  last_reviewed_at: string | null;
+  quality: number | null;
+};
+
+const SCHEDULE_COLUMNS = 'due_at,state,stability,difficulty,interval_days,lapses,repetitions,remaining_steps,last_reviewed_at,quality';
+
+/** Read where a card stands before grading it, so an undo has something to restore. */
+export async function readSchedule(cardId: string): Promise<CardSchedule | null> {
+  const { data, error } = await supabase.from('study_cards').select(SCHEDULE_COLUMNS).eq('id', cardId).maybeSingle();
+  if (error) throw new Error(`study_cards: ${error.message}`);
+  return (data as CardSchedule | null) ?? null;
+}
+
+/**
+ * Undo the last mark on a card (owner, canvas comment 2026-09-16: "a way to undo, i suggest a swipe to the
+ * right"). The card goes back to where it stood, and the review it logged is dropped so the history does not
+ * keep an answer the student took back.
+ */
+export async function undoMark(cardId: string, before: CardSchedule): Promise<void> {
+  const { error } = await supabase.from('study_cards').update(before).eq('id', cardId);
+  if (error) throw new Error(`study_cards: ${error.message}`);
+  const { data: last } = await supabase
+    .from('study_review_logs')
+    .select('id')
+    .eq('card_id', cardId)
+    .order('reviewed_at', { ascending: false })
+    .limit(1);
+  const logId = last?.[0]?.id as string | undefined;
+  if (logId) await supabase.from('study_review_logs').delete().eq('id', logId);
+}
+
 export async function markCard(cardId: string, got: boolean, durationMs?: number): Promise<void> {
   const { error } = await supabase.rpc('grade_study_card', {
     p_card_id: cardId,
