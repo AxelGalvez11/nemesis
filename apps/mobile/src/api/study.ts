@@ -9,12 +9,14 @@
  *
  * 🔴 X AND CHECK ONLY. The design has no Again/Hard/Good/Easy buttons; X grades `again`, check grades `good`.
  */
+import { isFresh } from '@/lib/fresh';
 import { supabase } from './supabase';
 
 export const LEARN_AHEAD_MINUTES = 20;
 const STEP_STATES = ['learning', 'relearning'];
 
-export type Deck = { id: string; name: string; page_id: string | null; updated_at: string | null; cards: number; due: number };
+/** `due` is waiting now, `fresh` has never been seen, `review` is already in rotation (Anki's three numbers). */
+export type Deck = { id: string; name: string; page_id: string | null; updated_at: string | null; cards: number; due: number; fresh: number; review: number };
 
 export type Card = {
   id: string;
@@ -64,13 +66,14 @@ export async function listDecks(): Promise<Deck[]> {
   if (!uid) return [];
   const { data: decks, error } = await supabase
     .from('study_decks')
-    .select('id,name,page_id,updated_at')
+    .select('id,name,page_id,updated_at,created_at')
     .eq('user_id', uid)
-    // Only sets made from a page's Create tab. Old decks have no page and are not shown (lib/fresh.ts).
-    .not('page_id', 'is', null)
     .order('updated_at', { ascending: false });
   if (error) throw new Error(`study_decks: ${error.message}`);
-  const counts = new Map<string, { cards: number; due: number }>();
+  // Sets the rebuilt app made: filed under a page, or written by hand in Study since the rebuild began.
+  // Everything older stays hidden, decks and all (lib/fresh.ts).
+  const shown = (decks ?? []).filter((d) => d.page_id !== null || isFresh(d.created_at as string | null));
+  const counts = new Map<string, { cards: number; due: number; fresh: number; review: number }>();
   const now = Date.now();
   for (let from = 0; ; from += 1000) {
     const { data: rows, error: e2 } = await supabase
@@ -80,14 +83,26 @@ export async function listDecks(): Promise<Deck[]> {
       .range(from, from + 999);
     if (e2) throw new Error(`study_cards: ${e2.message}`);
     for (const r of rows ?? []) {
-      const c = counts.get(r.deck_id) ?? { cards: 0, due: 0 };
+      const c = counts.get(r.deck_id) ?? { cards: 0, due: 0, fresh: 0, review: 0 };
       c.cards += 1;
+      // Anki's three numbers: never seen, waiting for you now, and already in rotation.
+      if (!r.state || r.state === 'new') c.fresh += 1;
+      else c.review += 1;
       if (isDue(r as Card, now)) c.due += 1;
       counts.set(r.deck_id, c);
     }
     if (!rows || rows.length < 1000) break;
   }
-  return (decks ?? []).map((d) => ({ ...d, cards: counts.get(d.id)?.cards ?? 0, due: counts.get(d.id)?.due ?? 0 }));
+  return shown.map((d) => ({
+    id: d.id,
+    name: d.name,
+    page_id: d.page_id,
+    updated_at: d.updated_at,
+    cards: counts.get(d.id)?.cards ?? 0,
+    due: counts.get(d.id)?.due ?? 0,
+    fresh: counts.get(d.id)?.fresh ?? 0,
+    review: counts.get(d.id)?.review ?? 0,
+  }));
 }
 
 export async function deckCards(deckId: string): Promise<Card[]> {

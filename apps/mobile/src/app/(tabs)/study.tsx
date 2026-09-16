@@ -1,77 +1,30 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SkelList } from "@/components/nx/Skeleton";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { PageSummary } from "@/api/space";
 import type { Deck } from "@/api/study";
 import { NoteAskBar } from "@/components/nx/NoteAskBar";
 import { NxIcon } from "@/components/nx/NxIcon";
-import { NxBottomBar, NxButton, NxSection } from "@/components/nx/primitives";
+import { NxBottomBar, NxButton, NxChevron, NxSection } from "@/components/nx/primitives";
 import { tint } from "@/components/nx/study";
-import { useDecks, useSpacePages } from "@/hooks/useSpace";
+import { useDecks } from "@/hooks/useSpace";
 import { nxType, useNx } from "@/theme/nx";
 
-// Study (canvas "Study, filed by page" and "Study, nothing yet"): every flashcard set, filed in folders that
-// follow the page tree. Due counts are small grey badges; there is no cards-due card (owner).
-type Folder = { page: PageSummary; folders: Folder[]; decks: Deck[]; due: number; sets: number };
-
+// Study: every flashcard set in one plain list, newest first (owner, canvas comment 2026-09-16: "make study
+// page only show decks, remove the page folder format"). Each row carries Anki's three numbers, and New set
+// opens a page for writing cards by hand.
 export default function StudyTab() {
   const c = useNx();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const decks = useDecks();
-  const space = useSpacePages();
-  const [open, setOpen] = useState<Record<string, boolean>>({});
   const [asking, setAsking] = useState(false);
 
-  const roots = useMemo(() => fileByPage(decks.data ?? [], space.byId), [decks.data, space.byId]);
-
-  const deckRow = (d: Deck, level: number) => (
-    <Row
-      key={d.id}
-      level={level}
-      state="leaf"
-      lead={
-        <View style={[styles.set, { backgroundColor: tint(c.acc, 0.14) }]}>
-          <NxIcon name="cards" size={16} color={c.acc} />
-        </View>
-      }
-      title={d.name.split("::").pop() || d.name}
-      meta={`${d.cards} card${d.cards === 1 ? "" : "s"}`}
-      due={d.due}
-      onPress={() => router.push({ pathname: "/set/[id]", params: { id: d.id } })}
-    />
-  );
-
-  // The first page starts open, like the canvas; the rest start folded. A folded page shows its due total.
-  const folderRows = (f: Folder, level: number, openByDefault: boolean): React.ReactNode[] => {
-    const expanded = open[f.page.id] ?? openByDefault;
-    const rows: React.ReactNode[] = [
-      <Row
-        key={f.page.id}
-        level={level}
-        state={expanded ? "open" : "closed"}
-        lead={
-          <View style={styles.emojiBox}>
-            <NxIcon name="notes" size={20} color={c.t2} strokeWidth={1.6} />
-          </View>
-        }
-        title={f.page.props.title || "Untitled"}
-        meta={`${f.sets} set${f.sets === 1 ? "" : "s"}`}
-        due={expanded ? 0 : f.due}
-        onPress={() => setOpen((o) => ({ ...o, [f.page.id]: !expanded }))}
-      />,
-    ];
-    if (expanded) {
-      for (const sub of f.folders) rows.push(...folderRows(sub, level + 1, openByDefault));
-      for (const d of f.decks) rows.push(deckRow(d, level + 1));
-    }
-    return rows;
-  };
-
-  const loading = decks.isLoading || space.loading;
-  const empty = !loading && !decks.error && roots.length === 0;
+  const sets = decks.data ?? [];
+  const loading = decks.isLoading;
+  const empty = !loading && !decks.error && sets.length === 0;
+  const newSet = () => router.push("/new-set" as Href);
 
   if (empty) {
     return (
@@ -81,10 +34,13 @@ export default function StudyTab() {
             <NxIcon name="book" size={40} color={c.t1} strokeWidth={1.5} />
           </View>
           <Text style={[styles.emptyTitle, { color: c.t1 }]}>Nothing to study yet</Text>
-          <Text style={[styles.emptyText, { color: c.t2 }]}>Open a page, add sources, then use Create to make flashcards. They show up here, filed by page.</Text>
+          <Text style={[styles.emptyText, { color: c.t2 }]}>Write a set yourself, or open a note and use Create to have Nemesis write one from it.</Text>
         </View>
-        <View style={{ paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 34), gap: 8 }}>
-          <NxButton label="Go to Notes" icon="notes" onPress={() => router.replace("/")} />
+        <View style={{ paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 34), gap: 10 }}>
+          <NxButton label="New set" icon="plus" onPress={newSet} />
+          <Pressable onPress={() => router.replace("/")} hitSlop={8} style={styles.quiet} accessibilityRole="button">
+            <Text style={{ fontSize: 15, color: c.t2 }}>Or start from a note</Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -94,26 +50,23 @@ export default function StudyTab() {
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={decks.isRefetching}
-            onRefresh={() => {
-              void decks.refetch();
-              void space.refetch();
-            }}
-            tintColor={c.t3}
-          />
-        }
+        refreshControl={<RefreshControl refreshing={decks.isRefetching} onRefresh={() => void decks.refetch()} tintColor={c.t3} />}
       >
+        <NxSection
+          label="Sets"
+          right={
+            <Pressable onPress={newSet} hitSlop={8} accessibilityRole="button" accessibilityLabel="New set" style={({ pressed }) => [styles.newPill, { borderColor: c.ring, backgroundColor: pressed ? c.soft : "transparent" }]}>
+              <NxIcon name="plus" size={15} color={c.t1} strokeWidth={2} />
+              <Text style={{ fontSize: 14, fontWeight: "500", color: c.t1 }}>New set</Text>
+            </Pressable>
+          }
+        />
         {loading ? (
           <SkelList rows={6} lead="emoji" />
         ) : decks.error ? (
           <Text style={[styles.note, { color: c.t2 }]}>Your flashcards could not be loaded. Pull down to try again.</Text>
         ) : (
-          <>
-            <NxSection label="By page" />
-            {roots.flatMap((f, i) => folderRows(f, 0, i === 0))}
-          </>
+          sets.map((d) => <SetRow key={d.id} deck={d} onPress={() => router.push({ pathname: "/set/[id]", params: { id: d.id } })} />)
         )}
       </ScrollView>
       <NxBottomBar ask="Ask Nemesis" onAsk={() => setAsking(true)} onSearch={() => router.push("/search")} />
@@ -123,66 +76,44 @@ export default function StudyTab() {
   );
 }
 
-function Row({ level, state, lead, title, meta, due, onPress }: { level: number; state: "open" | "closed" | "leaf"; lead: React.ReactNode; title: string; meta?: string; due?: number; onPress: () => void }) {
+/** One set: its name, how many cards it holds, and what is waiting (owner: "like in anki"). */
+function SetRow({ deck, onPress }: { deck: Deck; onPress: () => void }) {
   const c = useNx();
+  const counts: { label: string; value: number; color: string }[] = [
+    { label: "due", value: deck.due, color: c.acc },
+    { label: "new", value: deck.fresh, color: c.t2 },
+    { label: "in review", value: deck.review, color: c.t3 },
+  ];
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={state === "leaf" ? undefined : { expanded: state === "open" }}
-      style={({ pressed }) => [styles.row, { paddingLeft: 6 + level * 20 }, pressed && { backgroundColor: c.soft }]}
-    >
-      <View style={styles.chev}>{state === "leaf" ? null : <NxIcon name={state === "open" ? "chev_d" : "chev_r"} size={14} color={c.t3} strokeWidth={2} />}</View>
-      {lead}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontSize: 16, lineHeight: 21, color: c.t1 }}>
-          {title}
-        </Text>
-        {meta ? <Text style={[nxType.rowMeta, { color: c.t2 }]}>{meta}</Text> : null}
+    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.soft }]}>
+      <View style={[styles.set, { backgroundColor: tint(c.acc, 0.14) }]}>
+        <NxIcon name="cards" size={16} color={c.acc} />
       </View>
-      {due ? (
-        <View style={[styles.badge, { backgroundColor: c.sel }]}>
-          <Text style={{ fontSize: 13, fontWeight: "500", color: c.t1 }}>{due} due</Text>
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <Text numberOfLines={1} style={{ fontSize: 16, lineHeight: 21, color: c.t1 }}>
+          {deck.name.split("::").pop() || deck.name}
+        </Text>
+        <View style={styles.counts}>
+          {counts.map((n) => (
+            <View key={n.label} style={styles.count}>
+              <Text style={{ fontSize: 13, fontWeight: "600", color: n.value ? n.color : c.t3 }}>{n.value}</Text>
+              <Text style={[nxType.rowMeta, { color: c.t3 }]}>{n.label}</Text>
+            </View>
+          ))}
         </View>
-      ) : null}
+      </View>
+      <NxChevron />
     </Pressable>
   );
 }
 
-/** Files each deck under its page and that page's ancestors, so the Study tab reads like the Notes tree. Decks without a page are not shown. */
-function fileByPage(decks: Deck[], byId: Map<string, PageSummary>): Folder[] {
-  const folders = new Map<string, Folder>();
-  const roots: Folder[] = [];
-  const folderFor = (page: PageSummary): Folder => {
-    let f = folders.get(page.id);
-    if (f) return f;
-    f = { page, folders: [], decks: [], due: 0, sets: 0 };
-    folders.set(page.id, f);
-    const parent = page.parent_id ? byId.get(page.parent_id) : undefined;
-    if (parent) folderFor(parent).folders.push(f);
-    else roots.push(f);
-    return f;
-  };
-  for (const d of decks) {
-    const page = d.page_id ? byId.get(d.page_id) : undefined;
-    if (!page) continue;
-    folderFor(page).decks.push(d);
-    for (let p: PageSummary | undefined = page; p; p = p.parent_id ? byId.get(p.parent_id) : undefined) {
-      const f = folders.get(p.id);
-      if (!f) break;
-      f.sets += 1;
-      f.due += d.due;
-    }
-  }
-  return roots;
-}
-
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 50, paddingRight: 16 },
-  chev: { width: 24, alignItems: "center" },
-  emojiBox: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-  set: { width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  badge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 9999 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 60, paddingLeft: 16, paddingRight: 16 },
+  set: { width: 32, height: 32, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  counts: { flexDirection: "row", gap: 12 },
+  count: { flexDirection: "row", alignItems: "baseline", gap: 4 },
+  newPill: { flexDirection: "row", alignItems: "center", gap: 5, height: 30, paddingLeft: 9, paddingRight: 12, borderRadius: 9999, borderWidth: 1 },
+  quiet: { height: 44, alignItems: "center", justifyContent: "center" },
   note: { paddingHorizontal: 20, paddingTop: 24, fontSize: 15, lineHeight: 22 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, paddingHorizontal: 32 },
   circle: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },

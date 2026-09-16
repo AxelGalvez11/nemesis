@@ -199,7 +199,9 @@ export default function SearchScreen() {
             selectionColor={c.acc}
             returnKeyType="search"
             autoCorrect={false}
-            style={{ flex: 1, color: c.t1, fontSize: 16, padding: 0 }}
+            // 🔴 A bare padding:0 input takes its intrinsic height (about 1.2 lines), which slices the tops and
+            // tails off 16pt text (owner, canvas comment 2026-09-16: "words are clipped here"). Fill the field.
+            style={{ flex: 1, height: 40, color: c.t1, fontSize: 16, paddingVertical: 0, paddingHorizontal: 0 }}
           />
           {q ? (
             <Pressable onPress={() => setQ('')} hitSlop={10} accessibilityLabel="Clear">
