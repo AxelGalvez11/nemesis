@@ -11,9 +11,10 @@ import { deckCards, markCard } from "@/api/study";
 import { useAuth } from "@/auth/AuthProvider";
 import { NxIcon } from "@/components/nx/NxIcon";
 import {
-  NxFootButton,
   NxMatchTile,
+  NxQCount,
   NxQLabel,
+  NxQuizNav,
   NxQText,
   NxQuizBox,
   NxQuizOption,
@@ -28,11 +29,13 @@ import { useDecks, useSpacePages } from "@/hooks/useSpace";
 import { useNx } from "@/theme/nx";
 
 type Source = { title: string; onPress: () => void } | null;
+/** Where you are in the round, and the two ways out (owner 2026-09-16: back and forward, not one Continue). */
+type Nav = { at: number; of: number; backDisabled: boolean; last: boolean; onBack: () => void; onNext: () => void };
 
 // Active recall quiz (canvas QuizRecall, QuizChoice, QuizMatch; memory: gizmo-quiz-teardown).
 // Straight into 4 options (owner 2026-09-15). Right: green. Wrong: red and the right answer. Either way Explain
-// (why the right one is right and the wrong ones wrong) and Continue. Missed cards come back at the end of the
-// round. No hearts, XP or streaks.
+// (why the right one is right and the wrong ones wrong), a count of where you are, and back / Next at the foot
+// (owner 2026-09-16). Missed cards come back at the end of the round. No hearts, XP or streaks.
 // Every first answer also grades the card for spaced repetition (right = good, wrong = again).
 export default function QuizScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -61,6 +64,10 @@ export default function QuizScreen() {
   const [index, setIndex] = useState(0);
   const graded = useRef(new Set<string>());
   const [firstTry, setFirstTry] = useState({ right: 0, wrong: 0 });
+  // 🔴 Owner 2026-09-16: you can walk back through the quiz, so what you answered lives HERE, not inside the
+  // question. A question component is remounted whenever the index changes, and its own state would be lost.
+  const [picks, setPicks] = useState<Record<number, number>>({});
+  const [pairsDone, setPairsDone] = useState<Record<number, string[]>>({});
 
   useEffect(() => {
     if (!round.data) return;
@@ -68,10 +75,22 @@ export default function QuizScreen() {
     setIndex(0);
     graded.current = new Set();
     setFirstTry({ right: 0, wrong: 0 });
+    setPicks({});
+    setPairsDone({});
   }, [round.data]);
 
   const item = queue[index];
   const finished = round.data !== undefined && queue.length > 0 && index >= queue.length;
+
+  // Where you are in the round, and the two ways out of the question you are on.
+  const nav: Nav = {
+    at: index + 1,
+    of: queue.length,
+    backDisabled: index === 0,
+    last: index === queue.length - 1,
+    onBack: () => setIndex((i) => Math.max(0, i - 1)),
+    onNext: () => setIndex((i) => i + 1),
+  };
 
   const answer = (q: ChoiceQuestion, ok: boolean) => {
     void Haptics.notificationAsync(ok ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error);
@@ -142,11 +161,21 @@ export default function QuizScreen() {
             q={item}
             initial={round.data?.options.get(item.card.id)?.explain}
             source={source}
-            onAnswered={(ok) => answer(item, ok)}
-            onNext={() => setIndex((i) => i + 1)}
+            picked={picks[index] ?? null}
+            onPick={(i) => {
+              setPicks((p) => ({ ...p, [index]: i }));
+              answer(item, i === item.answer);
+            }}
+            nav={nav}
           />
         ) : (
-          <Match key={`m-${roundNo}-${index}`} round={item} onNext={() => setIndex((i) => i + 1)} />
+          <Match
+            key={`m-${roundNo}-${index}`}
+            round={item}
+            matched={pairsDone[index] ?? []}
+            onMatched={(ids) => setPairsDone((m) => ({ ...m, [index]: ids }))}
+            nav={nav}
+          />
         )
       ) : null}
     </View>
@@ -167,17 +196,18 @@ function Choice({
   q,
   initial,
   source,
-  onAnswered,
-  onNext,
+  picked,
+  onPick,
+  nav,
 }: {
   q: ChoiceQuestion;
   initial?: string;
   source: Source;
-  onAnswered: (ok: boolean) => void;
-  onNext: () => void;
+  picked: number | null;
+  onPick: (i: number) => void;
+  nav: Nav;
 }) {
   const insets = useSafeAreaInsets();
-  const [picked, setPicked] = useState<number | null>(null);
   const [explain, setExplain] = useState(false);
   const answered = picked !== null;
   const wrong = answered && picked !== q.answer;
@@ -195,7 +225,10 @@ function Choice({
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
         <View style={styles.qHead}>
-          <NxQLabel>{q.retry ? "Try this one again" : "Multiple choice"}</NxQLabel>
+          <View style={styles.qTop}>
+            <NxQLabel>{q.retry ? "Try this one again" : "Multiple choice"}</NxQLabel>
+            <NxQCount at={nav.at} of={nav.of} />
+          </View>
           <NxQText>{q.prompt}</NxQText>
         </View>
         <NxQuizBox>
@@ -207,8 +240,7 @@ function Choice({
               state={stateFor(i)}
               onPress={() => {
                 if (answered) return;
-                setPicked(i);
-                onAnswered(i === q.answer);
+                onPick(i);
               }}
             />
           ))}
@@ -219,7 +251,13 @@ function Choice({
           </View>
         ) : null}
       </ScrollView>
-      <NxFootButton label="Continue" disabled={!answered} onPress={onNext} />
+      <NxQuizNav
+        onBack={nav.onBack}
+        onNext={nav.onNext}
+        backDisabled={nav.backDisabled}
+        nextDisabled={!answered}
+        nextLabel={nav.last ? "Finish" : "Next"}
+      />
       <ExplainSheet
         visible={explain}
         onClose={() => setExplain(false)}
@@ -244,7 +282,7 @@ function Choice({
   );
 }
 
-function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
+function Match({ round, matched, onMatched, nav }: { round: MatchRound; matched: string[]; onMatched: (ids: string[]) => void; nav: Nav }) {
   const c = useNx();
   const insets = useSafeAreaInsets();
   const shuffledRights = useMemo(() => {
@@ -258,7 +296,6 @@ function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
   const byId = useMemo(() => new Map(round.pairs.map((p) => [p.cardId, p])), [round]);
   const [pickL, setPickL] = useState<string | null>(null);
   const [pickR, setPickR] = useState<string | null>(null);
-  const [matched, setMatched] = useState<string[]>([]);
   const [bad, setBad] = useState<{ l: string; r: string } | null>(null);
   const done = matched.length === round.pairs.length;
 
@@ -273,7 +310,7 @@ function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
     setPickR(null);
     if (l === r) {
       void Haptics.selectionAsync();
-      setMatched((m) => [...m, l]);
+      onMatched([...matched, l]);
     } else {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setBad({ l, r });
@@ -292,7 +329,10 @@ function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
     <View style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}>
         <View style={styles.qHead}>
-          <NxQLabel>Matching</NxQLabel>
+          <View style={styles.qTop}>
+            <NxQLabel>Matching</NxQLabel>
+            <NxQCount at={nav.at} of={nav.of} />
+          </View>
           <NxQText>Match each one to its answer</NxQText>
         </View>
         <View style={styles.pairs}>
@@ -315,7 +355,13 @@ function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
           ))}
         </View>
       </ScrollView>
-      <NxFootButton label="Continue" disabled={!done} onPress={onNext} />
+      <NxQuizNav
+        onBack={nav.onBack}
+        onNext={nav.onNext}
+        backDisabled={nav.backDisabled}
+        nextDisabled={!done}
+        nextLabel={nav.last ? "Finish" : "Next"}
+      />
     </View>
   );
 }
@@ -323,6 +369,7 @@ function Match({ round, onNext }: { round: MatchRound; onNext: () => void }) {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
   qHead: { paddingTop: 26, paddingHorizontal: 20, gap: 10 },
+  qTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   pairs: { paddingTop: 20, paddingHorizontal: 16, gap: 10 },
   pairRow: { flexDirection: "row", alignItems: "stretch", gap: 6 },
   pairIcon: { width: 20, alignItems: "center", justifyContent: "center" },

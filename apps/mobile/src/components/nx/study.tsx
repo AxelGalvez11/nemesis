@@ -242,6 +242,59 @@ export function NxFootButton({ label, disabled, onPress }: { label: string; disa
   );
 }
 
+/**
+ * The quiz's footer: back on the left, forward on the right (owner 2026-09-16, replacing one Continue button).
+ * Back is quiet and outlined so the filled one stays the thing to press; both grey out when they lead nowhere.
+ */
+export function NxQuizNav({ onBack, onNext, backDisabled, nextDisabled, nextLabel }: {
+  onBack: () => void;
+  onNext: () => void;
+  backDisabled?: boolean;
+  nextDisabled?: boolean;
+  nextLabel: string;
+}) {
+  const c = useNx();
+  const insets = useSafeAreaInsets();
+  const reduce = useReducedMotion();
+  const o = useSharedValue(nextDisabled ? 0.35 : 1);
+  useEffect(() => {
+    const to = nextDisabled ? 0.35 : 1;
+    o.value = reduce ? to : withTiming(to, { duration: nxDuration.fast, easing: nxEasing });
+  }, [nextDisabled, reduce, o]);
+  const fade = useAnimatedStyle(() => ({ opacity: o.value }));
+  return (
+    <View style={[styles.foot, { bottom: Math.max(insets.bottom, 34), flexDirection: 'row', gap: 10 }]}>
+      <NxPressable
+        onPress={onBack}
+        disabled={backDisabled}
+        accessibilityLabel="The question before"
+        style={({ pressed }) => [styles.navBack, { borderColor: c.ring, backgroundColor: pressed ? c.soft : 'transparent', opacity: backDisabled ? 0.35 : 1 }]}
+      >
+        <NxIcon name="chev_l" size={20} color={c.t1} strokeWidth={2} />
+      </NxPressable>
+      <Animated.View style={[{ flex: 1 }, fade]}>
+        <NxPressable
+          onPress={onNext}
+          disabled={nextDisabled}
+          style={({ pressed }) => [styles.footBtn, { backgroundColor: c.inv, opacity: pressed ? 0.85 : 1 }]}
+        >
+          <Text style={{ color: c.onInv, fontSize: 16, fontWeight: '500' }}>{nextLabel}</Text>
+        </NxPressable>
+      </Animated.View>
+    </View>
+  );
+}
+
+/** "3 of 12", beside the question's label. */
+export function NxQCount({ at, of }: { at: number; of: number }) {
+  const c = useNx();
+  return (
+    <Text style={{ fontSize: 13, lineHeight: 18, fontWeight: '500', color: c.t3, fontVariant: ['tabular-nums'] }}>
+      {at} of {of}
+    </Text>
+  );
+}
+
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 4, paddingRight: 48, paddingBottom: 2 },
   ib: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
@@ -264,4 +317,5 @@ const styles = StyleSheet.create({
   chip: { paddingLeft: 12, paddingRight: 14, borderRadius: 9999, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
   foot: { position: 'absolute', left: 16, right: 16 },
   footBtn: { height: 50, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  navBack: { width: 50, height: 50, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 });
