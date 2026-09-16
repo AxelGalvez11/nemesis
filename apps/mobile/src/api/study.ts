@@ -210,14 +210,21 @@ export async function readSchedule(cardId: string): Promise<CardSchedule | null>
 export async function undoMark(cardId: string, before: CardSchedule): Promise<void> {
   const { error } = await supabase.from('study_cards').update(before).eq('id', cardId);
   if (error) throw new Error(`study_cards: ${error.message}`);
-  const { data: last } = await supabase
+  // The review to drop is the one that moved the card away from where it stood, matched on that exact
+  // previous due date, so a stale or unrelated row can never be the one deleted.
+  const { data: rows, error: readError } = await supabase
     .from('study_review_logs')
-    .select('id')
+    .select('id,previous_due,reviewed_at')
     .eq('card_id', cardId)
     .order('reviewed_at', { ascending: false })
-    .limit(1);
-  const logId = last?.[0]?.id as string | undefined;
-  if (logId) await supabase.from('study_review_logs').delete().eq('id', logId);
+    .limit(5);
+  if (readError) throw new Error(`study_review_logs: ${readError.message}`);
+  const target = (rows ?? []).find((r) => Date.parse(String(r.previous_due)) === Date.parse(before.due_at)) ?? rows?.[0];
+  const logId = target?.id as string | undefined;
+  if (!logId) return;
+  const { data: removed, error: deleteError } = await supabase.from('study_review_logs').delete().eq('id', logId).select('id');
+  if (deleteError) throw new Error(`study_review_logs: ${deleteError.message}`);
+  if (!removed?.length) throw new Error('That review could not be removed from your history.');
 }
 
 export async function markCard(cardId: string, got: boolean, durationMs?: number): Promise<void> {
