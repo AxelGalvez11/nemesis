@@ -870,6 +870,10 @@ export function BlockEditor({
                 <Tool label="Add a block" on={panel === 'add' && addFrom === 'plus'} onPress={() => openAdd('plus')}>
                   <NxIcon name="plus" size={20} color={toolColor(panel === 'add' && addFrom === 'plus')} />
                 </Tool>
+                {/* Formatting stays with the bar (owner 2026-09-15: bold, headings and lists, the Notion way). */}
+                <Tool label="Text style" on={panel === 'style'} onPress={() => (panel === 'style' ? closePanel() : openPanel('style'))}>
+                  <NxIcon name="aa" size={20} color={toolColor(panel === 'style')} />
+                </Tool>
                 {onAsk ? (
                   <Pressable
                     onPress={() => {

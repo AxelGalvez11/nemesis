@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShell } from "./AppDrawer";
 import { GlassSurface } from "./GlassSurface";
@@ -81,30 +81,8 @@ function GlassButton({
   );
 }
 
-const MARK = require("../../assets/images/nemesis-mark.png");
-// 1.240 = the trimmed mark's native width/height (the bolder 1254px flat master,
-// owner-supplied 2026-07-17); keeps the wings from squashing.
-const MARK_ASPECT = 1.24;
-
-// The Nemesis mark — the winged logo, flat white on transparent, from the brand master.
-// `size` is the rendered HEIGHT in points; width follows the mark's own aspect ratio.
-// Width and height are BOTH explicit on purpose: static require()'d images carry their
-// intrinsic pixel size as a default style, and on-device that default beat the
-// height+aspectRatio combination (owner screenshot, build 6). Explicit dimensions win.
-// tintColor recolors the white master to the theme's text tone so it reads in light mode.
-// No longer used by TopBar itself (owner call 2026-07-18 dropped the top chrome
-// wordmark), but stays exported — sign-in.tsx still renders the mark as page branding.
-export function LogoMark({ size = 16, tint }: { size?: number; tint?: string }) {
-  const { colors: c } = useTheme();
-  return (
-    <Image
-      source={MARK}
-      style={{ width: Math.round(size * MARK_ASPECT), height: size, tintColor: tint ?? c.text }}
-      resizeMode="contain"
-      accessibilityLabel="Nemesis"
-    />
-  );
-}
+// The old winged logo and its LogoMark component were deleted (owner 2026-09-15: "delete it for good").
+// The mark is now the three dots, drawn as vectors by components/nx/NxMark.tsx and NxIcon's "mark".
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
