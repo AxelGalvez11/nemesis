@@ -1,8 +1,9 @@
 /**
  * Typing into a page (canvas: NoteTyping, AddBlock, AddMedia, RecordStart). Each text-like block is a field; while
- * one is focused a floating toolbar rides 10px above the keyboard: the Nemesis mark (ask), + (blocks and media),
- * Aa (text style), mic (record), image (media), turn (turn into), undo, comment, @ (mention a page), then the pinned
- * keyboard-down key. Tools appear ONLY while typing, like Notion (owner ruling); reading shows none.
+ * one is focused a floating toolbar rides 10px above the keyboard: + (blocks and media), Aa (text style),
+ * turn (turn into), @ (mention a page), then the pinned keyboard-down key. No Ask AI while the keyboard is up
+ * (owner 2026-09-16): typing is for writing, and Ask AI waits on the page's bottom bar, which comes back the
+ * moment the keyboard goes down. Tools appear ONLY while typing, like Notion (owner ruling); reading shows none.
  *
  * 🔴 THE TOOLBAR IS NOT AN InputAccessoryView. In this build (RN 0.85, new architecture) an accessory view draws
  * nothing (measured, see components/NoteBlockEditor.tsx). The toolbar and panels live in a FullWindowOverlay and
@@ -79,7 +80,6 @@ export type BlockEditorProps = {
   pages?: { id: string; title: string; icon?: string | null }[];
   /** This page's sources, for Media > From sources. */
   sources?: PageSource[];
-  onAsk?: () => void;
   onFlashcards?: () => void;
   onTurnInto?: (block: Block, type: TurnIntoType) => void;
   /** Something outside the blocks' text changed: a comment was added, or a file was read into Sources. */
@@ -143,7 +143,6 @@ export function BlockEditor({
   pageId,
   pages,
   sources,
-  onAsk,
   onFlashcards,
   onTurnInto,
   onChanged,
@@ -865,8 +864,7 @@ export function BlockEditor({
             ) : null}
             <Animated.View style={[styles.toolbarWrap, toolbarStyle]}>
               <View style={[styles.toolbar, { backgroundColor: c.card, borderColor: c.ring }]}>
-                {/* Owner 2026-09-15: while taking notes the bottom is just the Ask AI bar. The + stays with it, so
-                    blocks, pictures and a recording are still one tap away. */}
+                {/* The + keeps blocks, pictures and a recording one tap away. */}
                 <Tool label="Add a block" on={panel === 'add' && addFrom === 'plus'} onPress={() => openAdd('plus')}>
                   <NxIcon name="plus" size={20} color={toolColor(panel === 'add' && addFrom === 'plus')} />
                 </Tool>
@@ -874,24 +872,16 @@ export function BlockEditor({
                 <Tool label="Text style" on={panel === 'style'} onPress={() => (panel === 'style' ? closePanel() : openPanel('style'))}>
                   <NxIcon name="aa" size={20} color={toolColor(panel === 'style')} />
                 </Tool>
-                {onAsk ? (
-                  <Pressable
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setPanel(null);
-                      onAsk();
-                    }}
-                    style={[styles.askField, { backgroundColor: c.sunk }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Ask AI about this note"
-                  >
-                    <Text numberOfLines={1} style={{ fontSize: 15, color: c.t3 }}>
-                      Ask AI
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <View style={{ flex: 1 }} />
-                )}
+                {/* 🔴 NO ASK AI HERE (owner 2026-09-16: "users want to write not ask ai here"). The keyboard being up
+                    means the student is writing, so the bar carries writing tools only; Ask AI is the page's bottom
+                    bar, which comes back the moment the keyboard goes down. */}
+                <Tool label="Turn into" on={panel === 'turn'} onPress={() => (panel === 'turn' ? closePanel() : openPanel('turn'))}>
+                  <NxIcon name="turn" size={20} color={toolColor(panel === 'turn')} />
+                </Tool>
+                <Tool label="Mention a page" onPress={() => openSheet({ kind: 'mention' })}>
+                  <Text style={{ fontSize: 19, fontWeight: '500', color: c.t2 }}>@</Text>
+                </Tool>
+                <View style={{ flex: 1 }} />
                 <View style={[styles.divider, { backgroundColor: c.ln }]} />
                 <Pressable
                   onPress={() => (panel ? closePanel() : Keyboard.dismiss())}
@@ -1068,7 +1058,6 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', gap: 10 },
   box: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, marginTop: 4, alignItems: 'center', justifyContent: 'center' },
   toolbarWrap: { position: 'absolute', left: 12, right: 12, bottom: 0 },
-  askField: { flex: 1, height: 38, borderRadius: 19, justifyContent: 'center', paddingHorizontal: 14, marginRight: 6 },
   toolbar: {
     height: 48,
     borderRadius: 24,

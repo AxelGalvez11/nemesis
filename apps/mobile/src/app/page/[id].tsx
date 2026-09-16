@@ -492,7 +492,6 @@ export default function PageScreen() {
                         onRecord={record}
                         pages={space.pages.filter((p) => p.id !== id).map((p) => ({ id: p.id, title: p.props.title || "Untitled" }))}
                         sources={own}
-                        onAsk={() => router.push({ pathname: "/c/[id]", params: { id: "new", page: id } })}
                         onFlashcards={() => {
                           setEditing(false);
                           setTab("create");
