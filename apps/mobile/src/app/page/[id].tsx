@@ -364,7 +364,10 @@ export default function PageScreen() {
   };
 
   const sourceTotal = chosen.length + subChosen.reduce((n, x) => n + x.count, 0);
-  const sourcesLabel = `${useNotes ? "Notes and " : ""}${sourceTotal} source${sourceTotal === 1 ? "" : "s"}`;
+  // "Notes and 0 sources" read as a mistake on a page that has none yet (owner 2026-09-16).
+  const sourcesLabel = sourceTotal === 0
+    ? (useNotes ? "This page's notes" : "Nothing chosen")
+    : `${useNotes ? "Notes and " : ""}${sourceTotal} source${sourceTotal === 1 ? "" : "s"}`;
 
   // A brand-new page (canvas NewPage): only the title cursor, with Record / Lecture notes / Study guide / More
   // riding on the keyboard. Any of them, or leaving the title, turns it into the normal page.
@@ -552,31 +555,46 @@ export default function PageScreen() {
 
             {tab === "sources" ? (
               totalSources === 0 && !sources.isLoading && !sourceBusy ? (
-                <View style={styles.fresh}>
-                  <View style={[styles.circle, { backgroundColor: c.sel }]}>
-                    <NxIcon name="clip" size={36} color={c.t1} strokeWidth={1.5} />
-                  </View>
-                  <Text style={[styles.centerTitle, { color: c.t1 }]}>No sources yet</Text>
-                  <Text style={[styles.centerText, { color: c.t2 }]}>
+                // 🔴 Owner 2026-09-16: Sources and Create must look like the same tab. An empty Sources tab is
+                // therefore the SAME gradient card as Make flashcards, not a grey circle in the middle of a
+                // blank screen.
+                <>
+                  {canEdit ? (
+                    <View style={styles.makeCard}>
+                      <Image source={cobalt} style={styles.makeArt} resizeMode="cover" />
+                      <View style={{ padding: 18, gap: 14 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                          <View style={styles.makeIcon}>
+                            <NxIcon name="clip" size={22} color="#ffffff" />
+                          </View>
+                          <View style={{ flex: 1, alignItems: "flex-start" }}>
+                            <Text style={{ fontSize: 19, lineHeight: 24, fontWeight: "600", color: "#ffffff" }}>Add a source</Text>
+                            <Text style={{ fontSize: 14, lineHeight: 19, color: "rgba(255,255,255,0.86)", marginTop: 3 }}>
+                              Files, photos, links or another note
+                            </Text>
+                          </View>
+                        </View>
+                        <NxPressable onPress={() => setAddOpen(true)} scaleTo={0.97} style={({ pressed }) => [styles.makeBtn, { opacity: pressed ? 0.85 : 1 }]}>
+                          <Text style={{ fontSize: 16, fontWeight: "600", color: "#1b2a6b" }}>Add a source</Text>
+                        </NxPressable>
+                      </View>
+                    </View>
+                  ) : null}
+                  {sourceError ? <Text style={[styles.note, { color: c.danger }]}>{sourceError}</Text> : null}
+                  <Text style={[styles.note, { color: c.t2, paddingTop: 14 }]}>
                     {parent
                       ? parent.props.title
                         ? `This page starts fresh. What you add here also counts for ${parent.props.title}, the page above it.`
                         : "This page starts fresh. What you add here also counts for the page above it."
                       : "Add files, photos, links or other notes, then use Create to make flashcards from them."}
                   </Text>
-                  {sourceError ? <Text style={{ color: c.danger, fontSize: 14 }}>{sourceError}</Text> : null}
                   {canEdit ? (
-                    <View style={{ alignSelf: "stretch", marginTop: 126, alignItems: "center", gap: 14 }}>
-                      <View style={{ alignSelf: "stretch" }}>
-                        <NxButton label="Add a source" icon="plus" onPress={() => setAddOpen(true)} />
-                      </View>
-                      {/* Canvas SubPage: a quiet way out to the note itself. */}
-                      <Pressable onPress={() => setTab("notes")} hitSlop={8} accessibilityRole="button">
-                        <Text style={{ fontSize: 15, color: c.t2 }}>Or start writing in Notes</Text>
-                      </Pressable>
-                    </View>
+                    /* Canvas SubPage: a quiet way out to the note itself. */
+                    <Pressable onPress={() => setTab("notes")} hitSlop={8} accessibilityRole="button" style={{ height: 44, justifyContent: "center", paddingHorizontal: 20 }}>
+                      <Text style={{ fontSize: 15, color: c.acc, fontWeight: "500" }}>Or start writing in Notes</Text>
+                    </Pressable>
                   ) : null}
-                </View>
+                </>
               ) : (
                 <>
                   <NxSection label="In this page" right={canEdit ? <NxAddPill onPress={() => setAddOpen(true)} /> : undefined} />
@@ -641,6 +659,18 @@ export default function PageScreen() {
                   </View>
                 </View>
                 {makeError ? <Text style={[styles.note, { color: c.danger }]}>{makeError}</Text> : null}
+
+                {/* Nothing made and nothing to read yet: the same shape as an empty Sources tab (owner 2026-09-16). */}
+                {!pageDecks.length && totalSources === 0 ? (
+                  <>
+                    <Text style={[styles.note, { color: c.t2, paddingTop: 14 }]}>
+                      Nemesis reads what is on this page and writes the cards. Add sources first and it can read those too.
+                    </Text>
+                    <Pressable onPress={() => setTab("sources")} hitSlop={8} accessibilityRole="button" style={{ height: 44, justifyContent: "center", paddingHorizontal: 20 }}>
+                      <Text style={{ fontSize: 15, color: c.acc, fontWeight: "500" }}>Or add a source first</Text>
+                    </Pressable>
+                  </>
+                ) : null}
 
                 {pageDecks.length ? <NxSection label="Made in this page" /> : null}
                 {pageDecks.map((d) => {
